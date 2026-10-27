@@ -137,7 +137,7 @@ describe('public SEO/AEO content coverage', () => {
   test('renders MDX source documents as clean agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['docs', 'index.md']);
     expect(resolved?.markdown).toContain(
-      'Install the CLI, run a session, and merge your first change request',
+      'A plain-language guide to Kortix',
     );
     expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');

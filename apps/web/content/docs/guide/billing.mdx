@@ -1,0 +1,106 @@
+---
+title: "Plans & billing"
+description: "The Free and Credits plans, Enterprise, what uses credits, the account wallet, top-ups and plan changes."
+---
+
+Kortix bills an account through credits. Credits sit in one wallet for the whole account, and every project spends from it. Members are free and unlimited, so adding people never changes the bill. This page explains the plans, what spends credits, and how to add more.
+
+To see your balance, open the project menu → **Switch Project** → **Account settings** → **Billing** → **Plan**.
+
+## Plans
+
+An account is on one of two plans: Free or Credits. See [kortix.com/pricing](https://kortix.com/pricing) for what each plan costs and grants.
+
+| | Free | Credits |
+| --- | --- | --- |
+| Billed | No charge | A monthly amount you choose |
+| Credits | A grant every month | 100 credits per dollar of your monthly amount, every billing cycle |
+| Members | Unlimited | Unlimited, no per-member charge |
+| Kortix-managed models | None | All |
+| Buy credits and auto top-up | No | Yes |
+| Projects | 1 | 200 |
+
+- Every plan can use models on your own provider key or a ChatGPT subscription. See [Models](/docs/guide/models).
+- On Free, credits pay for compute and your own models only.
+- Credits tiers run from 5,000 to 1,000,000 credits a month. Every tier has the same rate. A bigger tier buys more credits, never a cheaper credit.
+
+### Enterprise
+
+Enterprise is not a plan. It turns on extra features on either plan: single sign-on, directory sync, groups and custom roles, the audit log, and branding. With an Enterprise license, an account has no project limit. To get one, select **Talk to sales** in the app, or email [support@kortix.com](mailto:support@kortix.com). See [Security](/docs/guide/security).
+
+## What uses credits
+
+| What | How it is counted |
+| --- | --- |
+| Kortix-managed models | The tokens each request uses, at the provider's base price plus a 5.5% platform fee. |
+| Models on your own key | Nothing for the first $1,000 of usage a month. After that, 5% of each request's list price. A ChatGPT subscription is never charged. |
+| Session machines | The size the machine reserves, for the seconds it runs. App machines count too. |
+| Web tools | Each web search, image search or web scraping request that goes through Kortix. |
+
+A stopped or sleeping machine costs nothing. The default machine costs about $0.11 an hour, about 11 credits.
+
+## The wallet
+
+The wallet holds two kinds of credits:
+
+| Kind | Comes from | Expires |
+| --- | --- | --- |
+| Expiring | Your plan's grant | Unused credits roll over for one month. The next grant then replaces them. |
+| Non-expiring | Top-ups, bonuses, refunds and promotions | Never |
+
+Kortix spends expiring credits first. Work that already finished is always recorded, even if the balance goes below zero. A new run needs a positive balance.
+
+## Add credits
+
+Only paid plans can buy credits. Purchased credits never expire. A top-up of $50 or more adds a bonus, from +1% up to +5% for $1,000 or more.
+
+<Steps>
+  <Step title="Add credits once">
+    On **Billing → Plan**, select **Add credits**, choose an amount, and pay.
+  </Step>
+  <Step title="Or turn on auto top-up">
+    In **Auto top-up**, set the amount to add and the balance that triggers it. Both are at least 100 credits. Auto top-up needs a saved payment method.
+  </Step>
+</Steps>
+
+A card payment adds credits at once. A bank debit can take several business days. If an auto top-up charge fails for good, Kortix turns auto top-up off and emails every owner the reason.
+
+## Change your plan
+
+| Change | What happens |
+| --- | --- |
+| Move from Free to Credits | Choose a tier on **Billing → Plan** and select **Subscribe**. |
+| Raise the monthly amount | You pay the difference now, for the rest of the cycle, and get that share of the new credits. |
+| Lower the monthly amount | It applies from the next renewal. No refund. Credits you have stay. |
+| Cancel | **Cancel subscription** ends the plan at the end of the billing period. **Reactivate subscription** undoes it until then. |
+
+Manage the payment method and invoices under **Manage billing**. Only the owner role can change billing by default. Every member can see it. See [Work as a team](/docs/guide/teams).
+
+## Running out
+
+When the balance reaches zero, agents pause and automations stop starting sessions. The account's Apps stop too, and visitors see an **App paused** page.
+
+To continue, add credits or update the payment method. On Free, subscribe to Credits or wait for the next monthly grant. A member who cannot add credits can select **Ask an owner**. Every owner then gets an email with the balance.
+
+## Track usage
+
+| Where | What it shows |
+| --- | --- |
+| **Billing → Plan** | Plan, wallet, spend this period, auto top-up |
+| **Billing → Usage** | Kortix charges and the credit history |
+| **Customize → Models → Costs** in a project | Model spend and budgets for that project |
+
+## Tips
+
+- Send easy tasks to a smaller model.
+- Write clear instructions. A well-defined task needs fewer turns.
+- Stay in one session for follow-ups. Repeated turns reuse the prompt cache.
+- Do not reserve a bigger machine than the work needs.
+- Check **Billing → Usage** and fix the costliest sessions first.
+- Turn on auto top-up so agents never pause by surprise.
+
+For a billing question, email [support@kortix.com](mailto:support@kortix.com).
+
+## For developers
+
+- [REST API](/docs/api)

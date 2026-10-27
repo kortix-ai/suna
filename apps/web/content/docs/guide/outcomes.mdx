@@ -1,0 +1,95 @@
+---
+title: Outcomes
+description: "Give Kortix an outcome, and an agent owns it until it is verifiably done: it plans, works, chases people, waits and has the result checked."
+---
+
+Most requests are tasks: do this once, now. Some are outcomes: "make sure our old bank account is fully closed", or "get the grant application submitted". An outcome can take days or months and depends on other people. In Kortix, an outcome is a **Goal**. You state the outcome once and walk away. An agent plans the work, does it, chases the people it needs, waits when it must, and stops only when a separate check confirms the result.
+
+## What you can do
+
+- Hand over an objective, not a list of steps.
+- Agree up front on how "done" will be proven.
+- Let the agent follow up with you and with others until it has what it needs.
+- Watch progress at any time, and edit the goal's files yourself.
+- Stop a goal whenever you choose.
+
+## How it works
+
+### The goal folder
+
+Each goal is a folder in Kortix Drive, in your own folder or in a shared company folder. The folder is the goal's memory. If a session ends, a new one continues from the folder alone. It holds:
+
+- the goal file: the objective, its success criteria, the open items and the status;
+- a log, with one line per action;
+- notes: your original request, the constraints and one thread per person;
+- `docs/` for material, and `evidence/` for proof.
+
+You can open and edit these files. Your edits win. See [Memory and Drive](/docs/guide/memory-and-drive).
+
+### Plan
+
+The agent writes 2 to 6 success criteria that someone else can check. Each one names its proof. It records your constraints, such as a spending limit. Anything outside a constraint becomes a question for you, not an action.
+
+### Work
+
+The agent acts on the most useful open item on each turn. It can hand heavy or parallel work to worker sessions, each doing one item.
+
+### Chase
+
+The agent depends on people, so it acts like a colleague who needs something to do the job.
+
+- It asks once, precisely: what it needs, why, and how to send it.
+- It uses the channels your project already has, such as Slack. It keeps one thread per person and asks you to reply there.
+- It follows up when an answer is late, and each follow-up is firmer: a reminder, then the cost of the delay, then a short daily ping.
+- It chases outside parties, such as a vendor or a bank, the same way.
+
+### Wake
+
+Nothing runs between turns. Three things wake the goal: a daily heartbeat reminder, a reply from a person, or a step the agent scheduled for itself. If the session's computer fails, the next heartbeat starts a new session that takes over.
+
+### Check
+
+The agent never judges its own work. When every criterion has its proof, it starts a separate verifier session that did none of the work. The verifier checks each proof and writes PASS or FAIL. The goal is done only when everything passes. A FAIL sends the goal back to work.
+
+A goal moves through these states: draft, active, waiting on a person, waiting on an outside event, verifying, then done. It ends early only when you say stop. It never ends because it is hard, slow or blocked. A blocked goal waits and chases.
+
+## Set it up
+
+<Steps>
+<Step title="Turn on the features">
+Goals is an experimental feature that needs Platinum. In **Customize** → **Settings** → **Feature flags**, turn on **Goals**, **Volumes** and **Reminders**.
+</Step>
+<Step title="State the outcome">
+In a chat, describe the outcome, for example "make sure…" or "keep at it until…". Say if it belongs to your team or company. Otherwise it goes in your own folder.
+</Step>
+<Step title="Read the plan">
+The agent replies with the outcome, the success criteria, the first thing it needs from you, and where to watch it.
+</Step>
+<Step title="Watch it">
+Open the **Goals** page in the project sidebar for status, health, the next wake and what the goal waits on. In the session, the **Goal** button in the header shows the same.
+</Step>
+</Steps>
+
+<Callout type="warning">
+Do not delete the session that coordinates an open goal. If you delete it, the goal stops waking.
+</Callout>
+
+## Examples
+
+- **Close an account.** Acme asks: "make sure our old business bank account is fully closed." The agent requests the closure, asks the finance lead to approve a sign-in prompt, waits for written confirmation, and checks for charges afterwards.
+- **Submit an application.** Northwind needs a funding application in before a deadline. The agent drafts it, chases each colleague for their figures, and raises the pressure as the deadline nears.
+- **Collect documents.** An agent gathers signed forms from five suppliers. It keeps one thread per supplier and marks each form received in the goal file.
+- **Fix a recurring problem.** Acme wants failed invoice emails to stop. The agent finds the cause, fixes it, and a verifier confirms that new invoices arrive.
+
+## Tips
+
+- Phrase the goal as a result that is true or false: "the account is closed", not "work on the account".
+- Name hard limits up front, such as budget or who may be contacted.
+- Answer in the thread the agent opened. That reply wakes the goal at once.
+- Keep passwords out of the goal folder. Store them as secrets.
+- For a simple recurring job, a [schedule](/docs/guide/automations) is enough. Use a goal when the work needs follow-through.
+
+## For developers
+
+- [CLI](/docs/cli)
+- [kortix.yaml reference](/docs/project/manifest)

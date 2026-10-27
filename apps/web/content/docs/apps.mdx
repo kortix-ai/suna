@@ -235,7 +235,7 @@ registered with `listed: true`. Every other App (a poller, a bot, a backend)
 sits in the **Background** list under the grid: one row per App with its
 status, how it runs, the trigger that calls it and its last activity. Opening
 a background App shows what it does: how it runs, the triggers that call it
-and the agents its [events](/docs/connect/triggers#app-events) start. In the
+and the agents its [events](/docs/guide/automations) start. In the
 web app, **Settings → Show on Apps page** moves an App between the grid and
 the list. Like every App setting kortix.yaml can declare, the switch commits
 `display.listed` to `apps.<slug>` in kortix.yaml; a push that edits it applies
@@ -652,7 +652,7 @@ Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps re
 (also `all` and `none`; needs a v2 `kortix.yaml`), or in Customize → Agents →
 the agent → **Apps**. The App's access dialog lists the agents granted to it.
 From code, call `apps.access.agents(appId)`. See
-[Agents & permissions](/docs/project/agents).
+[Agents & permissions](/docs/guide/agents).
 
 A script, a CI job or a service account calls a non-public App with a personal access
 key (`kortix_pat_`) or a service account key (`kortix_sa_`), in `Authorization: Bearer` or
@@ -662,7 +662,7 @@ never accepts a Kortix credential.
 
 An `openapi` or `http` connector whose base URL is an App of the same project
 needs no Kortix credential. The connector gateway adds a signed, 60-second
-assertion for the calling session. See [Connectors](/docs/connect/connectors).
+assertion for the calling session. See [Connectors](/docs/guide/connectors).
 
 ## Triggers and App events
 
@@ -670,9 +670,9 @@ An App can start agents, and triggers can call it.
 
 | You want | Use |
 |---|---|
-| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/connect/triggers#app-events). |
-| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/connect/triggers#call-an-app). |
-| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/connect/triggers#call-an-app). |
+| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/guide/automations). |
+| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide/automations). |
+| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide/automations). |
 
 To react to the outside world, try a connector event first, then a webhook,
 then a schedule. Post App events only when none of these works. An App never
@@ -698,7 +698,7 @@ Kortix sets these variables in every machine:
 | `KORTIX_APP_VIEWER_SECRET` | The key that verifies the signed viewer header |
 | `KORTIX_APP_ACCOUNT_ID` | The account that owns the App |
 | `KORTIX_APP_ID` | The App's id |
-| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/connect/triggers#app-events) and scheduled runs. A secret. |
+| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/guide/automations) and scheduled runs. A secret. |
 | `KORTIX_APP_EVENTS_URL` | Where the App posts App events |
 
 Your own values come from `env` and `secrets` in the `kortix.yaml` block:
@@ -715,7 +715,7 @@ Your own values come from `env` and `secrets` in the `kortix.yaml` block:
 - A name cannot be in both `env` and `secrets`.
 - `secrets` maps a runtime name to a project secret identifier. The secret must
   have the `environment` exposure. Kortix resolves it when it creates the
-  machine and never writes it into the image. See [Secrets](/docs/project/secrets).
+  machine and never writes it into the image. See [Secrets](/docs/guide/security).
 
 ## URLs and what visitors see
 
@@ -1051,7 +1051,7 @@ types: [SDK reference](/docs/sdk/reference#the-project-handle) and
 | `project.app.deploy` | Upload artifacts, deploy, roll back, start and stop. Start, stop, restart and destroy machines. Scale. Create, extend, snapshot and fork volumes. |
 | `project.app.admin` | `exec`, restore or destroy a volume, open an `access: admins` service, delete an App that has volumes, read the App's event credentials (`GET …/apps/<app_id>/events/credentials`) |
 
-See [Accounts & access](/docs/accounts) for roles and custom roles.
+See [Accounts & access](/docs/guide/teams) for roles and custom roles.
 
 `<app>` is an App id or slug. Every subcommand takes `--project <id>`,
 `--host <name>` and `--json`.

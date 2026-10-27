@@ -1,0 +1,97 @@
+---
+title: Slack, Teams & email
+description: "Work with agents from Slack, Microsoft Teams and email, where each person acts as their own linked Kortix account."
+---
+
+Your team already lives in Slack, Microsoft Teams and email. Channels bring agents there. Mention the bot with a task, and the agent replies in the same thread with live progress. In Slack and Teams, each person links their own Kortix account once. After that, Kortix knows who asked, checks that this person may run the agent, and keeps each project's work inside that project's own conversations.
+
+## What you can do
+
+- **Hand off a task where you talk.** Mention the bot in a Slack channel or Teams chat, or message it directly.
+- **Follow the work live.** The agent replies in the thread with its steps while it works, then the answer.
+- **Answer questions and approve actions in place.** When the agent needs a decision or an approval, a card with buttons appears in the thread.
+- **Stop a run.** The agent's live message has a **Stop** button.
+- **Pick the agent and model per channel.** Each channel can run its own agent and model.
+- **Email the agent.** Each email thread becomes one session, and the agent replies by email.
+
+## How it works
+
+### One thread, one session
+
+- **In Slack, one thread is one session.** The first message in a thread starts the session. Later messages in the thread continue it.
+- **In a Slack channel, only a mention reaches the agent.** A reply without a mention stays between people. The agent reads the thread the next time someone mentions it.
+- **In a direct message with the bot, every message reaches the agent.** That session is private to you.
+- **In Teams, each channel post is its own session.** A personal or group chat keeps one session until someone sends `/new`.
+
+### Each person is their own account
+
+A Slack or Teams message carries no Kortix login. So each person links their Kortix account once, with `/kortix login` in Slack or `/login` in Teams. Only you see the link. It works once and expires after 10 minutes.
+
+After that:
+
+- Kortix checks that the sender is a project member who may start sessions.
+- The agent acts with its own permissions, not with the sender's role.
+- Your own keys and connected accounts reach only your private chat with the bot, never a shared channel.
+- A person who is not in the project gets a card to request access. The account owners and admins receive the request.
+
+### Who may join a conversation
+
+Each channel has a join policy. It decides who may join a session that started there.
+
+| Policy | Who may join |
+| --- | --- |
+| Open (the default) | Any linked project member |
+| Approval | The session owner approves or denies each new person |
+| Owner only | Only the person who started the session |
+
+### Approvals in the thread
+
+When an agent asks for a decision, the card shows the title, a summary, a risk note and buttons, such as **Approve** and **Deny**. Every card also has **View in Kortix**. When an agent wants to use a connected tool that needs approval, the card shows what it will do. A project manager, or the person who started the session, selects **Approve** or **Deny**.
+
+## Set it up
+
+<Steps>
+<Step title="Connect Slack or Teams">
+Open **Customize → Connectors** and select the **Channels** scope. Select **Add to Slack**, or connect **Microsoft Teams**. For Teams, a tenant admin grants consent once, and the Kortix app appears in your organization's Teams catalog.
+</Step>
+<Step title="Add the bot">
+Invite the bot to a Slack channel, or add the Kortix app to a Teams chat or channel. A direct message with the bot needs no invite.
+</Step>
+<Step title="Link your account">
+Send `/kortix login` in Slack or `/login` in Teams, open the link, and sign in. You do this once per Slack workspace or Teams tenant.
+</Step>
+<Step title="Mention the bot with a task">
+The agent replies in the thread, with live progress.
+</Step>
+</Steps>
+
+When one Slack workspace or Teams tenant serves several projects, the first message in a new channel shows a project picker. The choice binds the channel to that project.
+
+### Email
+
+Email is experimental and off by default. Turn on the **Email channel** project flag in **Customize → Settings → Feature flags**. Then open **Customize → Connectors → Kortix** and select **Connect** on Email. The inbox runs on your own Resend account, or on a Kortix-managed address where your host offers one.
+
+- **One email thread is one session.** A reply in the thread continues it.
+- **When the agent has a question, it asks in its reply.** Your answer in the thread reaches it.
+- **Email has no account link.** Choose **Who can email the agent** instead. Kortix drops mail from anyone else.
+- **An inbox is private or shared.** A private inbox starts sessions as you. A shared inbox starts project sessions.
+
+## Examples
+
+- **Acme's sales channel.** A rep mentions the bot: "Summarize this week's new leads and flag the top five." The agent replies in the thread with its steps, then the list.
+- **Northwind's finance team in Teams.** The agent prepares a vendor payment and posts an approval card. The finance manager selects **Approve** without leaving Teams.
+- **A support inbox at Acme.** Customers' emails reach a shared inbox restricted to Acme's own domain. Each thread is a session, and the agent drafts the reply in the thread.
+- **A private direct message.** A Northwind manager messages the bot directly to draft a performance note. The session stays private to that manager.
+
+## Tips
+
+- Use **Approval** or **Owner only** in channels where conversations may hold sensitive details.
+- Pin an agent to a channel so everyone there gets the same specialist. In Slack, the bare `/kortix` opens the channel panel to change the agent, model and policy.
+- Restrict a shared email inbox to your company's domain. An inbox without a list accepts mail from every sender.
+- `/kortix whoami` in Slack or `/whoami` in Teams shows which Kortix account you are linked as.
+- Telegram is also available as an experimental channel. See the developer reference.
+
+## For developers
+
+- [kortix.yaml reference](/docs/project/manifest)
+- [CLI](/docs/cli)

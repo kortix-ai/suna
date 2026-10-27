@@ -1,0 +1,91 @@
+---
+title: Models
+description: "Choose which AI models your agents use: Kortix-managed models, your own provider keys, or a ChatGPT subscription, per project, agent or session."
+---
+
+A model is the AI that an agent thinks with. Kortix does not lock you to one vendor. You can run on Kortix-managed models with no setup, connect your own provider keys, or use a ChatGPT subscription you already pay for. You choose a default for the project, a model per agent, or a different model for one session. Every model request goes through one Kortix gateway, so the same budgets, access rules and cost reports apply whichever model you pick.
+
+## What you can do
+
+- **Start with no setup.** On Kortix Cloud, a new session runs on the platform default model. You connect nothing.
+- **Bring your own provider.** Connect a key from a provider such as Anthropic, OpenAI, Google, Mistral or Amazon Bedrock.
+- **Use your ChatGPT subscription.** Connect a ChatGPT Plus or Pro account and run on your plan.
+- **Pick the right model for the work.** Choose a model per session, pin one to an agent, or set a project default.
+- **Set how hard the model thinks.** Use the thinking control in the composer when a model offers reasoning levels.
+- **Keep a backup.** Set a fallback list, so another model takes over when the first one fails.
+- **Cap spend.** Set a budget per project or per member, and get warned or blocked at the limit.
+- **Limit what people may use.** Hide models from the picker, or turn off a provider or a model completely.
+
+## How it works
+
+### Kortix-managed models
+
+Kortix-managed models need no key. The model picker lists them under **Kortix**, with each model's context size and image support.
+
+- Managed models need the Credits plan or Enterprise. They are not available on Free.
+- Managed requests use credits from your account's wallet. See [Billing](/docs/guide/billing).
+- Managed models run only through inference providers with zero data retention.
+- The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for those.
+- A self-hosted Kortix has no managed models. Connect your own providers there.
+
+### Your own keys and subscriptions
+
+When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/guide/billing).
+
+By default, a provider key belongs to the whole project. A project can turn on per-person keys with a feature flag. Then each member can add keys and ChatGPT accounts for their own use, and choose to share them.
+
+A shared session, an automation, or a Slack or Teams conversation uses only keys shared with the whole project. Your private keys stay in your private sessions.
+
+### Which model a session uses
+
+A session that names no model uses the first of these that is set:
+
+1. The model chosen for the session, the [channel](/docs/guide/channels) or the [automation](/docs/guide/automations).
+2. The model pinned to the agent.
+3. The project default.
+4. The account default, for every project that has no default of its own.
+5. The platform default.
+
+A default that cannot run, for example after its key was removed, falls back to another connected provider, then to the platform default. A stale default never fails a session.
+
+## Set it up
+
+<Steps>
+<Step title="Run on the default">
+Start a session. On Kortix Cloud it runs on the platform default model.
+</Step>
+<Step title="Pick another model">
+Choose a model in the composer's model picker. A stopped session uses the new model when it starts again. Switching a running session restarts the agent on its computer and ends the turn in progress.
+</Step>
+<Step title="Connect your own provider">
+Open **Customize → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
+</Step>
+<Step title="Set a budget">
+Open **Customize → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
+</Step>
+</Steps>
+
+Account owners, admins and project managers get an email at 80% and at 100% of a budget.
+
+### Fallback models
+
+Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
+
+## Examples
+
+- **Acme** runs everyday research and drafting on the Kortix-managed default, with a monthly project budget set to **Block**.
+- **Northwind's legal team** pins a model from its own Anthropic key to its contract-review agent, so every review runs on that model.
+- **A consultant at Acme** connects a personal ChatGPT subscription for private sessions. Shared sessions keep using the project's keys.
+- **Northwind** wants to run only on its own providers. It sets a project default on its own provider first, then disables the **Kortix** provider.
+
+## Tips
+
+- Match the model to the work: send easy tasks to a smaller model.
+- Stay in one session for related work. Repeated turns in one session reuse the prompt cache.
+- Set a budget before you open a project to a large team.
+- To stop a model being used, disable it. Hiding it from the picker only changes the list.
+
+## For developers
+
+- [kortix.yaml reference](/docs/project/manifest)
+- [REST API](/docs/api)

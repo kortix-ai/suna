@@ -1,82 +1,91 @@
 ---
-title: Docs
-description: "The open-source AI Operating System: agents, skills, memory and connectors live in a git repo you own, and every session runs on its own cloud computer."
+title: Guide
+description: "A plain-language guide to Kortix, the open-source AI Operating System: what it is, what you can do with it, and how the pieces fit."
 ---
 
-## What Kortix is
+Kortix is the open-source AI Operating System. Your agents, skills, company memory and connectors live in one git repo that your company owns. Every session runs on its own cloud computer. Agents do finished work, and people review it before it lands. This guide explains Kortix in plain language, from your first chat to running a whole team on it.
 
-Kortix is the open-source AI Operating System. Your agents, skills, company memory, and connectors live in one git repo you own. Each session runs on its own cloud computer. It is an open-source alternative to Claude Cowork and ChatGPT Work.
+## What you can do with Kortix
 
-Kortix is for teams that want agents that do finished work, reviewed by people. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. To start, follow the [Quickstart](/docs/quickstart).
+- **Hand off real work.** Ask an agent to research a market, draft a report, update a spreadsheet or build a small website. It works on its own computer and shows you the result.
+- **Teach it how your company works.** Write down a process once as a skill. Every agent can then follow it.
+- **Connect your tools.** Give agents governed access to the apps your team already uses.
+- **Run work on a schedule.** Start an agent every morning, on a webhook, or when something happens in a connected app.
+- **Stay in control.** Agents ask before risky actions. Their changes wait for a person to approve them.
+- **Work from anywhere.** Use the web app, the desktop and mobile apps, Slack, Microsoft Teams or email.
 
 ## How it works
 
 <Steps>
-
-<Step title="A project is a git repo">
-A project is a git repo with `kortix.yaml` at its root. Kortix hosts the repo, or you connect your own. Agents, skills, memory, tools, triggers and connectors are files in it. See [Git](/docs/git) and the [`kortix.yaml` reference](/docs/project/manifest).
+<Step title="A project holds everything">
+A project is your company's workspace. Agents, skills, memory and connector settings are files in one git repo. Kortix hosts the repo for you, or you connect your own on GitHub.
 </Step>
-
-<Step title="A session is one agent run">
-A session runs one agent in its own sandbox. The sandbox clones the repo and works on a new branch. The branch name is the `session_id`, a UUID with no prefix. See [Sessions](/docs/work/sessions).
+<Step title="You start a session">
+A session is one piece of agent work. You type a request, and an agent picks it up. The session runs on its own cloud computer, so it never touches your laptop or other sessions.
 </Step>
-
-<Step title="The agent opens a change request">
-The agent commits, pushes the session branch, and opens a change request against the project's default branch.
+<Step title="The agent does the work">
+The agent reads your instructions and skills, uses its tools and connectors, and produces the result. If it needs a decision, it asks you.
 </Step>
-
-<Step title="A person merges it">
-A person with the `project.gitops.merge` permission reviews the change request and merges it into the default branch. A session can merge its own change request only when its agent's `kortix_permissions` grant in `kortix.yaml` includes `project.gitops.merge`. The starter `kortix` agent has `kortix_permissions: all`, so it can. To require a person, give the agent a `kortix_permissions` list without `project.gitops.merge`. See [Change requests](/docs/git#change-requests).
+<Step title="A person approves the change">
+When an agent changes the project itself, for example a skill or its memory, it opens a change request. A person reviews it on the **Review** page and merges it.
 </Step>
-
 </Steps>
 
-## The parts
+## How the pieces fit
 
-Each part of an operating system maps to a Kortix feature.
-
-| Operating system part | Kortix feature | Read |
+| Piece | What it is | Read |
 | --- | --- | --- |
-| Processes | Sessions: one sandbox and one branch per session | [Sessions](/docs/work/sessions) |
-| File system | The project repo | [Projects](/docs/project) |
-| Programs | Agents and skills | [Agents & permissions](/docs/project/agents) |
-| Drivers | Connectors | [Connectors](/docs/connect/connectors) |
-| Scheduler | Triggers | [Triggers & reminders](/docs/connect/triggers) |
-| Permissions | Roles, grants and connector policies | [Accounts & access](/docs/accounts) |
-| Shell | Web, desktop, mobile, CLI, TUI, Slack, Teams, email and the MCP server | [Where you use Kortix](#where-you-use-kortix) |
-| Updates | Change requests | [Git](/docs/git) |
+| Agents | Assistants with a job description, a model and a set of permissions. | [Agents](/docs/guide/agents) |
+| Skills | Written playbooks an agent follows for a specific task. | [Skills](/docs/guide/skills) |
+| Memory and shared folders | What the project knows about itself, plus files your team shares with agents. | [Memory & Drive](/docs/guide/memory-and-drive) |
+| Connectors | Governed access to the apps, APIs and services your team uses. | [Connectors](/docs/guide/connectors) |
+| Automations | Schedules, webhooks and app events that start agents, plus reminders. | [Automations](/docs/guide/automations) |
+| Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide/outcomes) |
+| Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide/computers) |
+| Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide/apps) |
+| Channels | Start work from Slack, Microsoft Teams or email. | [Channels](/docs/guide/channels) |
+| Models | The AI models your agents run on, including your own provider keys. | [Models](/docs/guide/models) |
+| Everywhere | Web, desktop, mobile and the other places you use Kortix. | [Everywhere](/docs/guide/everywhere) |
+| Teams | Accounts, members, roles and who may run which agent. | [Teams](/docs/guide/teams) |
 
-## Where you use Kortix
+## Why it is built this way
 
-| Surface | What it does | Read |
-| --- | --- | --- |
-| Web, desktop and mobile apps | Start and follow sessions, review change requests, and manage projects and accounts. | [Web, desktop & mobile](/docs/clients) |
-| CLI | `kortix` creates projects, runs sessions, and manages agents, secrets, connectors and triggers from a terminal or a script. | [CLI](/docs/cli) |
-| TUI | `kortix tui` runs the whole product as a terminal app. The TUI is experimental. | [TUI](/docs/tui) |
-| Git | `kortix projects clone` clones a project through the authenticated Kortix git proxy. Any git client then commits and pushes. | [Git](/docs/git) |
-| Kortix MCP server | Your MCP client starts sessions, reads files and calls connectors as you, through `/v1/mcp` on the API. | [Kortix MCP server](/docs/connect/mcp) |
-| REST API | The HTTP API under `/v1`. Its interactive reference is at [api.kortix.com/v1/docs](https://api.kortix.com/v1/docs). | [REST API](/docs/api) |
-| SDK | `@kortix/sdk` is the typed TypeScript client for the API and each session's runtime. | [SDK](/docs/sdk) |
-| Slack, Teams and email | Mention the bot in Slack or Microsoft Teams with a task, and it starts a session. An email to the agent's inbox starts a session too (experimental: the `email_channel` flag). | [Slack, Teams & email](/docs/connect/channels) |
-| Self-hosting | The `kortix self-host` commands install and run the full stack on your own infrastructure. | [Self-hosting](/docs/host) |
+- **You own it.** Your agents and know-how are files in a repo you control. Kortix is open source. Run it on Kortix Cloud, in your VPC, or on your own network.
+- **Every change is reviewable.** An agent's change to the project is a change request. You see exactly what changed before it lands.
+- **Credentials stay safe.** Connector credentials stay on the Kortix server. They never enter the agent's computer.
+- **Everything is recorded.** The audit log records every action.
 
-## Security and data
+<Callout type="info">
+New to Kortix? Start with [Get started](/docs/guide/get-started). It takes you from sign-up to your first finished task.
+</Callout>
 
-- Connector credentials are brokered server-side and never enter the machine. See [Connectors](/docs/connect/connectors).
-- A secret can be egress-enforced. The sandbox holds a handle. Kortix substitutes the real value outside the sandbox, only on approved HTTPS hosts. Environment is the default exposure. Egress-enforced is experimental. See [Secrets](/docs/project/secrets).
-- Kortix-managed models run on zero-data-retention endpoints. See [Models](/docs/project/models).
-- The experimental `us_region` flag places a project's new Platinum sandboxes in a US region, where the instance offers one. It sets compute placement only. It does not move the API, the database or the archive. See [Feature flags](/docs/project#feature-flags).
-- Every action is recorded in the audit log. The log keeps 90 days of events live, and the archive keeps them up to 365 days. Reading, exporting and streaming the audit log depend on the plan. See [Accounts & access](/docs/accounts).
-
-## Where to go next
+## Every guide page
 
 <CardGroup>
-  <Card icon="rocket" title="Quickstart" href="/docs/quickstart">Install the CLI, run a session, and merge your first change request.</Card>
-  <Card icon="git-branch" title="Git" href="/docs/git">Clone a project, push from any git client, and review change requests.</Card>
-  <Card icon="file-code" title="kortix.yaml reference" href="/docs/project/manifest">Every key of the file that configures a project.</Card>
-  <Card icon="play" title="Sessions" href="/docs/work/sessions">Start, steer, stop and share agent runs.</Card>
-  <Card icon="plug" title="Connectors" href="/docs/connect/connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
-  <Card icon="app-window" title="Apps" href="/docs/apps">Deploy sites, services and backends from a project. Apps are available in every project.</Card>
-  <Card icon="code" title="SDK" href="/docs/sdk">Build on Kortix from TypeScript.</Card>
-  <Card icon="server" title="Self-hosting" href="/docs/host">Install and operate Kortix on your own infrastructure.</Card>
+  <Card icon="rocket" title="Get started" href="/docs/guide/get-started">Sign up, run your first chat, connect a tool and invite your team.</Card>
+  <Card icon="bot" title="Agents" href="/docs/guide/agents">What an agent is, the built-in agent, and how to create your own.</Card>
+  <Card icon="book-open" title="Skills" href="/docs/guide/skills">Write a playbook once, and every agent can follow it.</Card>
+  <Card icon="hard-drive" title="Memory & Drive" href="/docs/guide/memory-and-drive">What the project remembers, and the files you share with agents.</Card>
+  <Card icon="plug" title="Connectors" href="/docs/guide/connectors">Give agents governed access to your apps.</Card>
+  <Card icon="clock" title="Automations" href="/docs/guide/automations">Start agents on a schedule, a webhook or an app event.</Card>
+  <Card icon="target" title="Outcomes" href="/docs/guide/outcomes">Let an agent own an objective until it is done.</Card>
+  <Card icon="monitor" title="Computers" href="/docs/guide/computers">The cloud computer behind every session, and your own machine.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/guide/apps">Deploy sites, services and backends from a project.</Card>
+  <Card icon="message-square" title="Channels" href="/docs/guide/channels">Work with agents from Slack, Microsoft Teams and email.</Card>
+  <Card icon="cpu" title="Models" href="/docs/guide/models">Choose the models your agents run on.</Card>
+  <Card icon="globe" title="Everywhere" href="/docs/guide/everywhere">Web, desktop, mobile and more.</Card>
+  <Card icon="users" title="Teams" href="/docs/guide/teams">Members, roles and access.</Card>
+  <Card icon="shield" title="Security" href="/docs/guide/security">How Kortix keeps your data and credentials safe.</Card>
+  <Card icon="credit-card" title="Billing" href="/docs/guide/billing">Plans, credits and usage.</Card>
 </CardGroup>
+
+## For developers
+
+- [Quickstart](/docs/quickstart)
+- [Git and change requests](/docs/git)
+- [kortix.yaml reference](/docs/project/manifest)
+- [CLI](/docs/cli)
+- [SDK](/docs/sdk)
+- [REST API](/docs/api)
+- [Apps reference](/docs/apps)
+- [Self-hosting](/docs/host)

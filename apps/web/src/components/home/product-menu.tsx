@@ -42,17 +42,19 @@ export const MEGA_MENUS: MegaMenu[] = [
       },
       {
         title: 'Building blocks',
+        // Each opens its Guide page (docs revamp, 2026-10-27).
         links: [
-          { label: 'Agents', href: '/docs/project/agents' },
+          { label: 'Agents', href: '/docs/guide/agents' },
+          { label: 'Skills', href: '/docs/guide/skills' },
           // Apps: the compute platform (sites, internal tools, backends with data,
-          // functions and realtime), docs/apps.mdx.
-          { label: 'Apps', href: '/docs/apps' },
-          // Drive: shared folders for people and agents (the Files feature, /drives).
-          { label: 'Drive', href: '/docs/work/runtime#files' },
-          { label: 'Connectors', href: '/docs/connect/connectors' },
-          { label: 'Triggers', href: '/docs/connect/triggers' },
-          { label: 'Computers', href: '/docs/connect/computers' },
-          { label: 'Models', href: '/docs/project/models' },
+          // functions and realtime).
+          { label: 'Apps', href: '/docs/guide/apps' },
+          // Drive: shared folders for people and agents (the Files feature).
+          { label: 'Drive', href: '/docs/guide/memory-and-drive' },
+          { label: 'Connectors', href: '/docs/guide/connectors' },
+          { label: 'Automations', href: '/docs/guide/automations' },
+          { label: 'Computers', href: '/docs/guide/computers' },
+          { label: 'Models', href: '/docs/guide/models' },
         ],
       },
       {
@@ -86,7 +88,7 @@ export const MEGA_MENUS: MegaMenu[] = [
       {
         title: 'Learn',
         links: [
-          { label: 'Documentation', href: '/docs' },
+          { label: 'Guide', href: '/docs' },
           { label: 'Use cases', href: '/use-cases' },
           { label: 'Blog', href: '/blog' },
           { label: 'Changelog', href: '/changelog' },

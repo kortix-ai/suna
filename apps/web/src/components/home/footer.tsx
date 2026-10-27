@@ -37,7 +37,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
     links: [
       // /docs/reference/cli 404s — there is no reference/ directory. The page
       // is content/docs/cli.mdx, routed at /docs/cli.
-      { label: 'Documentation', href: '/docs' },
+      { label: 'Guide', href: '/docs' },
       { label: 'CLI', href: '/docs/cli' },
       { label: 'Marketplace', href: '/marketplace' },
     ],

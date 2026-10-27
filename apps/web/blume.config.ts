@@ -1,26 +1,29 @@
 import { defineConfig } from 'blume';
 
-// The sidebar, in reading order. Each group is one reader goal: start, build
-// the project, run work, connect, ship Apps, administer, self-host, develop.
+// The sidebar, in reading order. The Guide comes first: the A-to-Z journey
+// of Kortix in plain language for business readers (founder, 2026-10-27).
+// Every Guide page ends with "For developers"
+// links into the technical reference, which follows under "Developers".
 // Every page id must exist under content/docs; Blume renders a group's items
 // in this exact order. This tree is the only nav source: content/docs has no
 // meta.ts files.
 const sidebar = [
-  { label: 'Get started', items: ['index', 'quickstart', 'clients'] },
+  { label: 'Guide', items: ['index', 'guide/get-started'] },
+  { label: 'Build your AI OS', items: ['guide/agents', 'guide/skills', 'guide/memory-and-drive', 'guide/connectors'] },
   {
-    label: 'Project',
-    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets'],
+    label: 'Run it 24/7',
+    items: ['guide/automations', 'guide/outcomes', 'guide/computers', 'guide/apps'],
   },
-  { label: 'Run work', items: ['work/sessions', 'work/runtime'] },
+  { label: 'Work where you are', items: ['guide/channels', 'guide/everywhere', 'guide/models'] },
+  { label: 'Teams and trust', items: ['guide/teams', 'guide/security', 'guide/billing'] },
+  // Less is more (founder, 2026-10-27): the technical reference is the few
+  // pages a developer needs. Removed pages redirect to their Guide page
+  // (next.config.ts). Kortix Capture's pages and the generated audit-actions
+  // reference stay built but unlisted: the app links to them.
   {
-    label: 'Connect',
-    items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/mcp'],
+    label: 'Developers',
+    items: ['quickstart', 'git', 'project/manifest', 'cli', 'api', 'apps', 'host'],
   },
-  { label: 'Kortix Capture', items: ['capture', 'capture/rollout'] },
-  { label: 'Ship', items: ['apps'] },
-  { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
-  { label: 'Self-host', items: ['host'] },
-  { label: 'Develop', items: ['git', 'cli', 'tui', 'api'] },
   { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/ui', 'sdk/genui', 'sdk/reference'] },
 ];
 
@@ -138,7 +141,7 @@ export default defineConfig({
     // active tab; `href` overrides where a tab actually sends the reader, which
     // is how a tab can point off-site.
     tabs: [
-      { label: 'Docs', path: '/' },
+      { label: 'Guide', path: '/' },
       {
         // The URL sits in `path`, not `href`. Blume validates every tab whose
         // path starts with "/" against the page tree and warns when nothing

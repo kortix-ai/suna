@@ -1,0 +1,96 @@
+---
+title: Skills
+description: "A skill is a written playbook an agent follows for a specific task: when to write one, how to add one, and how agents improve their own skills with your approval."
+---
+
+A skill is a written playbook. It tells an agent how your company does one specific task, step by step. An agent loads a skill only when the task needs it, so you can have many skills without cluttering every conversation. Skills matter because they capture know-how once. Every agent you allow can then follow the same process, and the process gets better over time instead of living in one person's head.
+
+## What a skill is
+
+- **A short document in your project.** It has a name, a description, and the steps. Reference files, such as a template or a checklist, can sit beside it.
+- **Loaded on demand.** The agent reads each skill's description and decides when to load it. Write the description as "when to use this", not only "what this is".
+- **Shared.** One skill can serve many agents. You choose which agents may load it.
+- **Versioned.** Skills are files in your project's git repo. Every change is recorded, and you can see who changed what.
+
+## When to write a skill
+
+Write a skill when:
+
+- You give an agent the same instructions for the second time.
+- A task has a fixed order of steps, a required format, or rules that must not be skipped.
+- Several agents or several people need to do the task the same way.
+- A new teammate would need a written guide to do the task well.
+
+Keep a one-off request in the chat. Keep an agent's general role in its instructions. A skill is for one repeatable task.
+
+## Skills you get out of the box
+
+A new project includes ready-made skills for common work: documents, spreadsheets, PDFs, presentations, websites, web apps, browsing the web and converting documents to Markdown.
+
+Kortix also adds a set of system skills to every session. They teach agents how to use Kortix itself, for example its memory, connectors and Apps. You cannot change or remove these.
+
+More skills are in the [marketplace](https://kortix.com/marketplace). Installing one starts a session that adds the skill to your project and opens a change request for you to review.
+
+## Add a skill
+
+<Steps>
+<Step title="Open Skills">
+Select **Customize** in the sidebar, then **Skills** → **New**.
+</Step>
+<Step title="Choose how to write it">
+**Create in chat** starts a session where an agent writes the skill with you. Describe the task and how your team does it. **Create with a form** lets you write it yourself.
+</Step>
+<Step title="Give agents access">
+Open **Customize** → **Agents** → the agent → **Skills**, and turn on the new skill. The built-in `kortix` agent may load every skill.
+</Step>
+<Step title="Try it">
+Start a session and ask for the task. The agent loads the skill when the task matches its description.
+</Step>
+</Steps>
+
+To remove a skill, open its card under **Customize** → **Skills** and select **Remove**.
+
+## Agents improve their own skills
+
+Skills do not have to stay as you first wrote them. Agents can propose improvements, and a person decides what lands.
+
+<Steps>
+<Step title="An agent proposes a change">
+An agent edits a skill in its own session. The edit does not affect anyone else yet.
+</Step>
+<Step title="It opens a change request">
+The agent opens a change request. It shows exactly which lines of the skill changed.
+</Step>
+<Step title="A person reviews it">
+The change appears on the **Review** page. Select **Ship it** to merge it, or ask for changes. Your note goes back to the agent that proposed it.
+</Step>
+<Step title="Every agent uses the new version">
+Once merged, new sessions use the improved skill. Running sessions pick it up as well.
+</Step>
+</Steps>
+
+Every new project includes the `harness-reflector` agent. It reviews recent sessions, then improves skills, instructions, tools and memory. It bundles its work into one change request titled `harness: …` and never merges it. A daily schedule runs it, but the schedule ships switched off. Turning it on is a one-line change to the project config, merged like any other change.
+
+<Callout type="info">
+No agent change to a skill reaches your team until a person approves it. You stay in control of how your company works.
+</Callout>
+
+## Examples
+
+- **Weekly sales report at Acme.** The skill names the CRM fields to pull, the regions to group by, the chart to include, and who receives the report.
+- **Support ticket triage at Northwind.** The skill says how to classify a ticket by product area and urgency, and which tickets go to a person right away.
+- **New customer onboarding.** The skill lists the welcome email template, the accounts to create, and the checklist to send to the account manager.
+- **Brand-safe writing.** The skill holds the tone of voice, the words to avoid, and a template for blog posts.
+
+## Tips
+
+- **Write the description first.** It decides when an agent loads the skill. Start with "Use when…".
+- **Use numbered steps.** Agents follow an ordered list more reliably than prose.
+- **Add examples of good output.** Put a sample report or reply in a reference file beside the skill.
+- **Keep each skill to one task.** Split a long skill into two.
+- **Read the change requests.** An agent's proposed edit often shows where your process was unclear.
+
+## For developers
+
+- [Change requests](/docs/git#change-requests)
+- [kortix.yaml reference](/docs/project/manifest)

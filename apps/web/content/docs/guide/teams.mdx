@@ -1,0 +1,106 @@
+---
+title: "Work as a team"
+description: "Invite your team, decide who can do what in each project, share sessions, and approve agents' work before it reaches the company repository."
+---
+
+Kortix is built for a whole company, not one person. An account holds your projects and the people who work in them. You decide who can open each project, which agents they can use, and who sees each session. Agents do not change the company's shared setup on their own. Their work arrives as a change request, and a person approves it.
+
+## How it works
+
+- **Account.** Your company's home in Kortix. It holds projects, members and settings. One login can belong to several accounts.
+- **Project.** A workspace with its own agents, skills, connectors and files. Each project is one git repository.
+- **Account role.** Each person has one: owner, admin or member.
+- **Project role.** Each person has a role in each project they work in: manager or member.
+- **Group.** A named set of people. Give a group access, and every person in it gets it.
+
+### Account roles
+
+| Role | What they can do |
+| --- | --- |
+| Owner | Everything an admin can do. They can also delete the account and make other people owners. |
+| Admin | Invite and remove members, change roles, manage groups, create projects and change the plan. They act as manager on every project. |
+| Member | Work in the projects they are given. They see the plan, but they cannot create projects or change billing. |
+
+### Project roles
+
+| Role | What they can do |
+| --- | --- |
+| Manager | Everything in the project: edit agents, skills, connectors, secrets and triggers, merge work, and manage access. |
+| Member | Open the project, start and follow sessions, and send work for review. They cannot change settings or merge code. |
+
+Members are unlimited and cost nothing extra. See [Billing](/docs/guide/billing).
+
+## Set it up
+
+<Steps>
+  <Step title="Create a team account first">
+    The account Kortix creates when you sign up is personal. It cannot use single sign-on, and a project cannot move to another account later. Open the project menu, select **Switch Project**, then **Create an account…**. Create your team's projects there.
+  </Step>
+  <Step title="Invite your teammates">
+    Open **Account settings** → **Members** and select **Invite**. Type their email addresses and pick a role. A person with a Kortix login joins at once. Everyone else gets an email invite that stays valid for 14 days.
+  </Step>
+  <Step title="Give them a project">
+    Open **Account settings** → **Projects**, pick the project, and select **Grant access**. Pick **Manager** or **Member**. You can also set a date when the access ends.
+  </Step>
+  <Step title="Choose their agents">
+    In the same dialog, set **Agents** to **All agents** or **Only these…**. A member without any agent cannot start a session.
+  </Step>
+</Steps>
+
+Owners and admins reach every project without a grant.
+
+## Groups
+
+A group saves you from granting access one person at a time. Create an "Engineering" group, give it a project, and everyone in it gets that project. A group only adds access. It never takes away access a person already has.
+
+Creating groups and adding people to them is an Enterprise feature. If your company uses an identity provider, it can keep your groups in sync for you. See [Security](/docs/guide/security).
+
+## Who sees what
+
+A member sees only themselves in the member list. They do not see other members or groups. Owners and admins see everyone. In a project, people still appear where their work shows, for example as the owner of a session.
+
+A person who opens a project they cannot read sees **Request access**. Kortix tells the project's managers, who approve or reject it.
+
+## Share a session
+
+A session is private to the person who started it. The owner chooses who else can open it:
+
+| Option | Who can open it |
+| --- | --- |
+| **Only you** | The owner. This is the default. |
+| **Specific people** | The owner, plus the members and groups they pick. |
+| **Whole project** | Every member of the project. |
+
+Everyone with access can read the conversation and continue it. Only the owner can change who has access.
+
+You can also create a **Public link**. It shows the conversation, read-only, to anyone with the link, without sign-in. You can revoke it at any time.
+
+## How agents' work reaches the company repository
+
+Your company's agents, skills and settings live in one shared repository. Kortix keeps it safe from unreviewed changes:
+
+1. Each session works on its own branch, a private copy of the repository.
+2. When the agent finishes, it opens a change request. A change request asks to merge that branch into the shared one.
+3. The change request appears on the **Review** page.
+4. A person reads the changes and approves, closes, or asks for changes.
+5. A note that asks for changes goes back to the agent as a new message.
+
+An agent cannot merge its own change request unless you give it that permission on purpose. A merge that changes agents or triggers also needs the matching permission.
+
+## Examples
+
+- **A new hire.** Acme invites a new support lead as a member. An admin gives her the Support project as a member, with only the support agent. She starts sessions on day one, but she cannot change the agent's setup.
+- **A reviewed improvement.** A Northwind agent finds a better way to triage tickets and updates its own skill. It opens a change request. The project manager reads it on **Review** and merges it. From then on, every new session uses the better skill.
+
+## Tips
+
+- Create the team account before you create projects. A project cannot move between accounts.
+- Use groups instead of one-by-one grants once your team grows.
+- Share a session with **Whole project** when the whole team should follow the work.
+- Keep merge rights with people until you trust an agent's changes.
+- When someone leaves, remove them from **Members**. Their personal keys and the tokens of their running sessions stop working at once.
+
+## For developers
+
+- [Git and change requests](/docs/git)
+- [REST API](/docs/api)

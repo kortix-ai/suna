@@ -11,7 +11,7 @@ shortlist reads as short paragraphs with one block per section.
 ## How the agent learns the blocks
 
 The catalog ships as the `kortix-genui` system skill, not as system-prompt text. With the `genui`
-[project flag](/docs/project#feature-flags) on, every new session lists the skill by name and a
+[project flag](/docs) on, every new session lists the skill by name and a
 one-line description. The agent loads the full catalog only when an answer needs a block, so a turn
 without UI pays nothing for it. With the flag off, the skill is hidden. An agent with an explicit
 `skills:` list in `kortix.yaml` sees the skill only when the list names `kortix-genui`.

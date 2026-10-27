@@ -14,7 +14,6 @@ import { join } from 'node:path';
 
 const web = join(import.meta.dir, '../../..');
 const read = (path: string) => readFileSync(join(web, path), 'utf8');
-const flat = (text: string) => text.replace(/\s+/g, ' ');
 
 const SESSION_KINDS = ['turn_done', 'turn_error', 'question', 'permission'] as const;
 
@@ -52,23 +51,13 @@ describe('notification_center copy', () => {
     });
   }
 
-  test('the registry, the flag docs, and the sessions docs name both flag-off pushes', () => {
+  // The technical docs pages that repeated these lines were folded into the
+  // plain-language Guide (2026-10-27); the registry stays the source of truth.
+  test('the registry names both flag-off pushes', () => {
     const registry = read('../api/src/feature-flags/registry.ts');
     const entry = registry.slice(registry.indexOf("key: 'notification_center'"));
-    for (const text of [
-      entry.slice(0, entry.indexOf('enforcementNote')),
-      flat(read('content/docs/project/index.mdx')),
-      flat(read('content/docs/work/sessions.mdx')),
-    ]) {
-      expect(text).toContain("only the session creator's phone gets a session push");
-      expect(text).toContain("an account owner's phone gets one when a trigger starts failing");
-    }
-  });
-
-  test('the notifications docs say a phone also has its own switch', () => {
-    const docs = flat(read('content/docs/work/sessions.mdx'));
-    expect(docs).toContain(
-      'A phone also has its own switch for **Turn finished**, **Turn failed**, **Question**, and **Permission request**. It gets these only while both switches are on.',
-    );
+    const text = entry.slice(0, entry.indexOf('enforcementNote'));
+    expect(text).toContain("only the session creator's phone gets a session push");
+    expect(text).toContain("an account owner's phone gets one when a trigger starts failing");
   });
 });

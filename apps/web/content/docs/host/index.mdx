@@ -130,7 +130,7 @@ kortix self-host start
 | Sandbox provider | `platinum` (the default) or the legacy `daytona`, written to `ALLOWED_SANDBOX_PROVIDERS`, plus that provider's settings (below). |
 | Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
 | Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, suggested `p.<domain>`, which needs a `*.p.<domain>` record. In domain mode the default answer is configure. |
-| Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/connect/connectors). |
+| Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/guide/connectors). |
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
 | Provider | Key | Other settings and defaults |
@@ -142,7 +142,7 @@ kortix self-host start
 **Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
 </Callout>
 
-SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Sign-in, SSO & API keys](/docs/accounts/identity).
+SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Sign-in, SSO & API keys](/docs/guide/security).
 
 ## First sign-in and setup
 
@@ -150,7 +150,7 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
-5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. See [Connect your own provider](/docs/project/models#connect-your-own-provider).
+5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. See [Connect your own provider](/docs/guide/models).
 6. **Turn on email.** Set one connection string:
 
    ```sh
@@ -193,7 +193,7 @@ What the stack does by itself:
 
 - Only Caddy publishes public ports, 80 and 443. Every other published port binds `127.0.0.1`.
 - `.env` and `docker-compose.yml` are written with mode `0600`.
-- [Connectors](/docs/connect/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
+- [Connectors](/docs/guide/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
 Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
@@ -220,7 +220,7 @@ Platform admins open `/admin`. On a self-hosted instance, a platform admin is a 
 |---|---|---|
 | Overview | `/admin` | Live instance numbers, refreshed every 15 seconds. |
 | Accounts | `/admin/accounts` | Every account. Filter, sort and inspect one. |
-| Projects | `/admin/projects` | Every project across every account, most active first, with its operator-managed [feature flags](/docs/project#feature-flags). |
+| Projects | `/admin/projects` | Every project across every account, most active first, with its operator-managed [feature flags](/docs). |
 | Analytics | `/admin/analytics` | Daily platform activity, by UTC day. |
 | Sandboxes | `/admin/sandboxes` | Where new sandboxes are placed, and the live fleet. |
 | Git | `/admin/git` | The instance's managed GitHub identity. When `MANAGED_GIT_*` environment variables set it, the page is read-only. |
@@ -228,7 +228,7 @@ Platform admins open `/admin`. On a self-hosted instance, a platform admin is a 
 
 ## Connect your clients
 
-`kortix self-host start` registers the CLI host `selfhost` on the server. To point the web, CLI, TUI, desktop and mobile clients at the instance, see [Connect to a self-hosted instance](/docs/clients#connect-to-a-self-hosted-instance).
+`kortix self-host start` registers the CLI host `selfhost` on the server. To point the web, CLI, TUI, desktop and mobile clients at the instance, see [Connect to a self-hosted instance](/docs/guide/everywhere).
 
 ## Integrations
 
@@ -237,15 +237,15 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | Variables | Effect |
 |---|---|
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
-| `COMPOSIO_WEBHOOK_SECRET` | Composio [connector events](/docs/connect/triggers#connector-events) (the `event_triggers` flag, **Composio event triggers**). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
-| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the connector events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
-| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/connect/connectors#the-app-catalog) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
+| `COMPOSIO_WEBHOOK_SECRET` | Composio [connector events](/docs/guide/automations) (the `event_triggers` flag, **Composio event triggers**). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
+| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the connector events that Kortix checks itself ([source `mcp`](/docs/guide/automations)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide/connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/guide/channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `RESEND_API_KEY` | Transactional email, and the Resend team that holds managed inboxes for the email channel. |
 | `RESEND_MANAGED_EMAIL_ENABLED` | `true` offers Kortix-managed inboxes on `RESEND_MANAGED_DOMAIN`. Unset: projects connect email only with their own Resend key. Each managed inbox is billed to the deployment's Resend team. |
 | `RESEND_MANAGED_DOMAIN` | Domain for managed inboxes, verified with receiving on in that Resend team. |
-| `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
+| `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/guide/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Project Files (`volumes`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
@@ -363,7 +363,7 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 | `ALLOWED_SANDBOX_PROVIDERS` | `platinum` | The providers sessions may use, comma-separated. `daytona` is a legacy fallback. |
 | `KORTIX_DEFAULT_SANDBOX_CPU`, `_MEMORY_GB`, `_DISK_GB` | `2`, `4`, `20` | The sandbox size when a template sets none. |
 
-Users see the effect of these values on [Sessions](/docs/work/sessions) and [Sandboxes & previews](/docs/work/runtime).
+Users see the effect of these values on [Sessions](/docs/guide/computers) and [Sandboxes & previews](/docs/guide/computers).
 
 ### Logs, containers and the database console
 

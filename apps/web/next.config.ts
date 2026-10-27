@@ -588,6 +588,94 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/host',
         permanent: true,
       },
+      // The 2026-10-27 Guide rewrite (founder: "less is more"): the technical
+      // pages a business reader does not need are gone. Each lands on the Guide
+      // page that now explains it; the remaining reference is under Developers.
+      {
+        source: '/docs/accounts',
+        destination: '/docs/guide/teams',
+        permanent: true,
+      },
+      {
+        source: '/docs/accounts/identity',
+        destination: '/docs/guide/security',
+        permanent: true,
+      },
+      {
+        source: '/docs/clients',
+        destination: '/docs/guide/everywhere',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/channels',
+        destination: '/docs/guide/channels',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/computers',
+        destination: '/docs/guide/computers',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/connectors',
+        destination: '/docs/guide/connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/mcp',
+        destination: '/docs/guide/connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/triggers',
+        destination: '/docs/guide/automations',
+        permanent: true,
+      },
+      {
+        source: '/docs/credits',
+        destination: '/docs/guide/billing',
+        permanent: true,
+      },
+      {
+        source: '/docs/project',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/agents',
+        destination: '/docs/guide/agents',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/models',
+        destination: '/docs/guide/models',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/secrets',
+        destination: '/docs/guide/security',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/tools',
+        destination: '/docs/guide/agents',
+        permanent: true,
+      },
+      {
+        source: '/docs/tui',
+        destination: '/docs/guide/everywhere',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/runtime',
+        destination: '/docs/guide/computers',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/sessions',
+        destination: '/docs/guide/computers',
+        permanent: true,
+      },
       // The 2026-10 docs rewrite folded 45 pages into 31. Every removed page
       // lands on the section that now owns its content.
       {
@@ -607,17 +695,17 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/permissions',
-        destination: '/docs/project/agents#what-an-agent-may-do',
+        destination: '/docs/guide/agents',
         permanent: true,
       },
       {
         source: '/docs/work',
-        destination: '/docs/work/sessions',
+        destination: '/docs/guide/computers',
         permanent: true,
       },
       {
         source: '/docs/work/notifications',
-        destination: '/docs/work/sessions#notifications',
+        destination: '/docs/guide/computers',
         permanent: true,
       },
       {
@@ -627,32 +715,32 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/work/harnesses',
-        destination: '/docs/project/agents#harnesses-opencode-and-pi',
+        destination: '/docs/guide/agents',
         permanent: true,
       },
       {
         source: '/docs/connect',
-        destination: '/docs/connect/connectors',
+        destination: '/docs/guide/connectors',
         permanent: true,
       },
       {
         source: '/docs/connect/slack',
-        destination: '/docs/connect/channels#slack',
+        destination: '/docs/guide/channels',
         permanent: true,
       },
       {
         source: '/docs/connect/teams',
-        destination: '/docs/connect/channels#microsoft-teams',
+        destination: '/docs/guide/channels',
         permanent: true,
       },
       {
         source: '/docs/connect/reminders',
-        destination: '/docs/connect/triggers#reminders',
+        destination: '/docs/guide/automations',
         permanent: true,
       },
       {
         source: '/docs/feature-flags',
-        destination: '/docs/project#feature-flags',
+        destination: '/docs',
         permanent: true,
       },
       {
@@ -687,7 +775,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/sdk/connectors',
-        destination: '/docs/connect/connectors#call-connectors-from-code',
+        destination: '/docs/guide/connectors',
         permanent: true,
       },
       // The help centre merged into /support, and /support was removed
@@ -695,7 +783,7 @@ const nextConfig = (): NextConfig => ({
       // /help/credits, which has a counterpart in the docs tree.
       {
         source: '/help/credits',
-        destination: '/docs/credits',
+        destination: '/docs/guide/billing',
         permanent: true,
       },
       {
@@ -714,7 +802,7 @@ const nextConfig = (): NextConfig => ({
       // for preview links and review references, not for search indexes.
       {
         source: '/support/credits',
-        destination: '/docs/credits',
+        destination: '/docs/guide/billing',
         permanent: true,
       },
       // Marketing pages removed on 2026-10-26. They are indexed public URLs,
@@ -748,7 +836,7 @@ const nextConfig = (): NextConfig => ({
       // /compare section was retired with no direct replacement.
       {
         source: '/credits-explained',
-        destination: '/docs/credits',
+        destination: '/docs/guide/billing',
         permanent: true,
       },
       {

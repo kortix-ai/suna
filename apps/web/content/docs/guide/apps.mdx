@@ -1,0 +1,87 @@
+---
+title: Apps
+description: "Build and host websites, internal tools and backends at a stable URL, with Kortix sign-in, access control and releases built in."
+---
+
+An App is a website, an internal tool or a backend that your project hosts on Kortix. Each App has one stable URL, a setting for who may open it, and numbered releases. Kortix signs people in before your App runs, so a tool for your team needs no login system of its own. You do not need to be a developer to get one: ask an agent to build and deploy it, then share the link.
+
+## What you can do
+
+- **Host a website or a page.** A static App is a set of files that Kortix serves directly, with no server to run.
+- **Run an internal tool.** A server App runs your code on machines that Kortix builds and keeps running.
+- **Keep data.** A backend App can hold a database with server functions, realtime updates, file storage, schedules and search, from a ready-made template.
+- **Decide who opens it.** Keep an App private, open it to the project, to chosen people and groups, to anyone with a password, or to the public.
+- **Know who is looking.** Kortix tells your App who the signed-in visitor is: name, email, role and groups.
+- **Ship safely.** Every deploy makes a new release. A failed release never replaces the live one, and you can roll back.
+- **Connect Apps to agents.** An App can ask an agent to start work, and an automation can call an App on a schedule.
+- **List tools you already use.** Add a dashboard or vendor tool that runs elsewhere, and Kortix shows it beside your own Apps.
+
+## How it works
+
+Every App you may open is listed at **Apps** in the project sidebar. The page shows each App's live state, a preview and its access controls. An App's detail lists its releases.
+
+You create and deploy Apps from an agent session, the command line or code. For most people, that means you describe the App to an agent. The agent builds it on its [cloud computer](/docs/guide/computers) and deploys it.
+
+### Who can open an App
+
+| Access | Who can open the App |
+| --- | --- |
+| Private (the default) | Only the person who created it |
+| Project | Everyone who can read the project |
+| Restricted | The members and groups you list |
+| Password | Anyone with the password |
+| Public | Anyone. No sign-in. |
+
+Project managers, account owners and account admins can open every App in the project. A private App stays manageable after its creator leaves. When you change who can access an App, everyone signs in again.
+
+### Always on or on demand
+
+A server App runs in one of two modes:
+
+- **Always on.** It runs around the clock, and Kortix restarts it when it stops. Use it for live updates, background work and databases.
+- **On demand.** It stops after a quiet period. The next visitor or automation wakes it. A stopped on-demand App uses no compute.
+
+A new App is always on. A static App has nothing to run, so neither mode applies.
+
+### Releases and rollback
+
+Each deploy creates a new numbered release. A release never changes. If a new release fails its checks, visitors keep the previous one. A rollback creates a new release from an older one. An App's stored data stays when you roll back, because a rollback changes code and settings, never the data. Kortix also takes a daily snapshot of an App's stored data.
+
+## Set it up
+
+<Steps>
+<Step title="Describe the App to an agent">
+Start a session and say what you need: who uses it, what it shows, and what data it keeps.
+</Step>
+<Step title="Let the agent build and deploy it">
+The agent builds the App on its cloud computer and deploys it. A new App is private: only you can open it.
+</Step>
+<Step title="Open it and check it">
+Open the App from **Apps** in the project sidebar, in a browser where you are signed in to Kortix.
+</Step>
+<Step title="Share it">
+Set who may open it, for example the whole project or a group. Then send people the link.
+</Step>
+</Steps>
+
+To add a tool that runs somewhere else, select **Add app** on the Apps page and enter its address.
+
+## Examples
+
+- **An internal sales dashboard at Acme.** An agent builds a dashboard that reads the team's numbers and shares it with the Sales group. Each person sees it under their own Kortix login.
+- **A customer request form at Northwind.** A public page lets customers send a request. The App posts an event for each new request, and an [automation](/docs/guide/automations) hands it to an agent that drafts a reply.
+- **A small database-backed tool at Acme.** Operations tracks equipment loans in an App with its own database. The tool knows who is signed in, so it records who took what.
+- **A vendor tool in one place.** Northwind adds its analytics dashboard, which runs elsewhere, so the team opens it from the same Apps page.
+
+## Tips
+
+- Start private. Open the App to the project or a group once it works.
+- Never use **Public** for internal data. A public App does not know who the visitor is.
+- Choose on demand for a tool people open now and then. Choose always on for anything that must answer at once or keep running.
+- Running Apps use compute from your account's credits. When the balance runs out, Kortix stops the account's running Apps until credits are added. See [Billing](/docs/guide/billing).
+- An agent opens a private or restricted App only when that App is on the agent's list of Apps. See [Agents](/docs/guide/agents).
+
+## For developers
+
+- [Apps reference](/docs/apps)
+- [CLI](/docs/cli)
