@@ -34,7 +34,6 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  eyebrow: 'AI Transformation',
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map your company, unify your data and build your apps.',
   sub: 'Our team works inside your company, from strategy to shipped software, on Kortix, our open-source AI Operating System. One flat monthly fee. You own every line.',

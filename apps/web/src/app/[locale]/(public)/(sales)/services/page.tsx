@@ -160,11 +160,8 @@ export default function ServicesPage() {
         >
           <DitherField />
         </div>
-        <div className="relative mx-auto flex max-w-4xl flex-col items-center gap-6 text-center">
-          <p className="bg-foreground/8 text-foreground w-fit rounded-sm px-2 py-1 font-mono text-xs font-medium uppercase">
-            {hero.eyebrow}
-          </p>
-          <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
+        <div className="relative mx-auto flex max-w-5xl flex-col items-center gap-6 text-center">
+          <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl">
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
@@ -180,7 +177,7 @@ export default function ServicesPage() {
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
 
-        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-2 lg:grid-cols-5">
+        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-3 lg:grid-cols-5">
           {hero.does.map((item) => {
             const Icon = OFFER_ICONS[item.icon];
             return (
@@ -200,7 +197,7 @@ export default function ServicesPage() {
           {hero.logos.map((logo) => (
             <span
               key={logo.alt}
-              className={cn(LOGO_TILE_BACKGROUND, 'flex h-11 items-center rounded-md border px-4')}
+              className={cn(LOGO_TILE_BACKGROUND, 'flex h-12 items-center rounded-md border px-4')}
             >
               <Image
                 src={logo.src}
@@ -208,7 +205,8 @@ export default function ServicesPage() {
                 width={logo.width}
                 height={logo.height}
                 unoptimized
-                className="h-6 w-auto"
+                // A stacked mark (CityU) reads small at a wordmark's height.
+                className={logo.width / logo.height > 2.5 ? 'h-6 w-auto' : 'h-9 w-auto'}
               />
             </span>
           ))}
