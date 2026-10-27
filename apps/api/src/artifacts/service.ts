@@ -105,7 +105,7 @@ export function contentTypeFor(path: string): string {
 }
 
 export function isTextType(contentType: string): boolean {
-  return /^text\/|json|xml|svg|javascript/.test(contentType);
+  return /^(text\/|application\/(json|xml|javascript)\b|image\/svg\+xml)/.test(contentType);
 }
 
 /** A file path inside an artifact folder: relative, no `.`/`..`/empty segment. Null when it cannot be one. */

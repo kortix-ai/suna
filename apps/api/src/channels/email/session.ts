@@ -174,6 +174,8 @@ export async function handleEmailEvent(event: IntegrationEvent, run: { finalAtte
 // never takes every job slot.
 registerEventConsumer('email.', handleEmailEvent, { visibilityMs: 7 * 60_000, batch: 2 });
 
+const HTML_ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>' } as const;
+
 /**
  * A readable body for an HTML-only email. Linear in the input: a sender
  * controls it, and a quadratic pattern stalled the API on crafted HTML (a run
@@ -186,10 +188,8 @@ export function stripHtml(html: string | null | undefined): string {
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n'),
   )
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    // One pass: `&amp;lt;` is the text `&lt;`, never a `<`.
+    .replace(/&(nbsp|amp|lt|gt);/g, (_, name: keyof typeof HTML_ENTITIES) => HTML_ENTITIES[name])
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

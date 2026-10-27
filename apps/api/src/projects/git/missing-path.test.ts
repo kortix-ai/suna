@@ -36,7 +36,7 @@ test('file readers return typed missing-file errors for paths present in the bar
     await runGit(['init', source], undefined, false);
     await runGit(['-c', 'user.name=Kortix Test', '-c', 'user.email=agent@kortix.ai', 'commit', '--allow-empty', '-m', 'empty'], source, false);
     const ref = (await runGit(['rev-parse', 'HEAD'], source, false)).stdout.trim();
-    const project = { projectId: root, repoUrl: source, defaultBranch: ref, gitAuthToken: 'synthetic' };
+    const project = { projectId: root, repoUrl: source, defaultBranch: ref, manifestPath: 'kortix.yaml', gitAuthToken: 'synthetic' };
     const mirror = await refreshMirror(project);
     await writeFile(join(mirror, 'untracked.txt'), 'not committed');
     await expect(readRepoFile(project, 'untracked.txt')).rejects.toBeInstanceOf(RepoFileNotFoundError);
