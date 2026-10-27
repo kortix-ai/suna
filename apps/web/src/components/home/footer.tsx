@@ -22,7 +22,7 @@ type FooterSection = {
 
 const FOOTER_SECTIONS: FooterSection[] = [
   {
-    title: 'Product',
+    title: 'AI OS',
     links: [
       { label: 'Security', href: '/security' },
       { label: 'Self-hosted', href: '/self-hosted' },
@@ -46,6 +46,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Company',
     links: [
+      { label: 'Services', href: '/services' },
       { label: 'About', href: '/about' },
       { label: 'Careers', href: '/careers' },
       { label: 'Blog', href: '/blog' },

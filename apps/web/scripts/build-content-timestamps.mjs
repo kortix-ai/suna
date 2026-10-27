@@ -53,11 +53,17 @@ const MARKETING_SOURCES = {
   legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
+  services: 'apps/web/src/app/[locale]/(public)/(marketing)/services/page.tsx',
   'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
+  cli: 'apps/web/src/app/[locale]/(public)/(marketing)/cli/page.tsx',
+  desktop: 'apps/web/src/app/[locale]/(public)/(marketing)/desktop/page.tsx',
+  mobile: 'apps/web/src/app/[locale]/(public)/(marketing)/mobile/page.tsx',
+  slack: 'apps/web/src/app/[locale]/(public)/(marketing)/slack/page.tsx',
+  teams: 'apps/web/src/app/[locale]/(public)/(marketing)/teams/page.tsx',
 };
 
 function gitAvailable() {

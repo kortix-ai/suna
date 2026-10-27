@@ -29,6 +29,7 @@ export const LOCALIZED_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
+  '/services',
   '/white-label',
   '/cli',
   '/desktop',

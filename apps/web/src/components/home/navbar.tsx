@@ -67,6 +67,7 @@ type MenuId = MegaMenu['id'];
 
 /** Links in the bar that navigate directly, beside the three menus. */
 const PLAIN_LINKS = [
+  { label: 'Services', href: '/services' },
   { label: 'Enterprise', href: '/enterprise' },
   { label: 'Pricing', href: '/pricing' },
 ];

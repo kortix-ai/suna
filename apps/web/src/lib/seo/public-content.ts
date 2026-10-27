@@ -64,6 +64,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
+  '/services',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -187,6 +188,15 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
     htmlPath: '/security',
     markdownPath: '/markdown/security.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'services',
+    // ACCURACY: never "AI transformation" (kortix-brand voice-and-tone.md).
+    title: 'AI Restructuring: strategy and Forward Deployed Engineers',
+    description:
+      'Our team audits how your company works, then builds agents into your product, processes and people on the Kortix AI Operating System, in a repo you own.',
+    htmlPath: '/services',
   },
   {
     kind: 'marketing',
