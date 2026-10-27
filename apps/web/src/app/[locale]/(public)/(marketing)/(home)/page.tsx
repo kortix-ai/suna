@@ -23,9 +23,9 @@ export default function Home() {
       <SandBandHero />
       <WorksWithStrip />
       <CaseStudies />
+      <PillarsBand />
       <ProblemSolution />
       <HowItWorksTabs />
-      <PillarsBand />
       <UseCasesBand />
       <TrustBand />
       <LandingFaqSection />
