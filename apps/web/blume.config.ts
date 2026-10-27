@@ -9,18 +9,19 @@ import { defineConfig } from 'blume';
 // meta.ts files.
 const sidebar = [
   // The Guide is ONE scrollable page (content/docs/index.mdx, founder
-  // 2026-10-27); these entries jump to its sections.
-  { label: 'Guide', items: ['index', { label: 'Get started', href: '/docs#get-started' }] },
+  // 2026-10-27); these entries jump to its sections. Blume prefixes them
+  // with the /docs base.
+  { label: 'Guide', items: ['index', { label: 'Get started', href: '/#get-started' }] },
   {
     label: 'Build your AI OS',
-    items: [{ label: 'Agents', href: '/docs#agents' }, { label: 'Skills', href: '/docs#skills' }, { label: 'Memory and Drive', href: '/docs#memory-and-drive' }, { label: 'Connectors', href: '/docs#connectors' }],
+    items: [{ label: 'Agents', href: '/#agents' }, { label: 'Skills', href: '/#skills' }, { label: 'Memory and Drive', href: '/#memory-and-drive' }, { label: 'Connectors', href: '/#connectors' }],
   },
   {
     label: 'Run it 24/7',
-    items: [{ label: 'Automations', href: '/docs#automations' }, { label: 'Outcomes', href: '/docs#outcomes' }, { label: 'Computers', href: '/docs#computers' }, { label: 'Apps', href: '/docs#apps' }],
+    items: [{ label: 'Automations', href: '/#automations' }, { label: 'Outcomes', href: '/#outcomes' }, { label: 'Computers', href: '/#computers' }, { label: 'Apps', href: '/#apps' }],
   },
-  { label: 'Work where you are', items: [{ label: 'Channels', href: '/docs#channels' }, { label: 'Everywhere', href: '/docs#everywhere' }, { label: 'Models', href: '/docs#models' }] },
-  { label: 'Teams and trust', items: [{ label: 'Teams', href: '/docs#teams' }, { label: 'Security', href: '/docs#security' }, { label: 'Billing', href: '/docs#billing' }] },
+  { label: 'Work where you are', items: [{ label: 'Channels', href: '/#channels' }, { label: 'Everywhere', href: '/#everywhere' }, { label: 'Models', href: '/#models' }] },
+  { label: 'Teams and trust', items: [{ label: 'Teams', href: '/#teams' }, { label: 'Security', href: '/#security' }, { label: 'Billing', href: '/#billing' }] },
   // Less is more (founder, 2026-10-27): the technical reference is the few
   // pages a developer needs. Removed pages redirect to their Guide page
   // (next.config.ts). Kortix Capture's pages and the generated audit-actions
