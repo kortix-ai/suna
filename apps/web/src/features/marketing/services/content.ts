@@ -37,8 +37,10 @@ export const hero = {
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map how your company works. Then we automate it.',
   sub: 'We set your AI strategy, then do the work inside your company: we map how every team works, unify your data, automate the work with agents and build the custom software you need. Then we teach your team to run it. You own everything we build.',
-  assurances: ['One flat monthly fee', 'Strategy and build, one team', 'Everything in a repo you own'],
+  assurances: [`${PRICE.now} a month, flat`, 'Strategy and build, one team', 'Everything in a repo you own'],
 } as const;
+
+export const caseCta = 'See what we would build for your company.';
 
 export const intro = {
   title: 'Book an intro call',
@@ -208,14 +210,14 @@ export const faq = {
   titleMuted: 'Answered before you ask.',
   items: [
     {
-      id: 'team',
-      q: 'Who does the work?',
-      a: 'Our own team: strategists who map how your company works, and Forward Deployed Engineers who build it. They work inside your company, in your tools.',
-    },
-    {
       id: 'price',
       q: 'What does it cost?',
       a: `${PRICE.now} a month, flat. No day rates, no change orders.`,
+    },
+    {
+      id: 'team',
+      q: 'Who does the work?',
+      a: 'Our own team: strategists who map how your company works, and Forward Deployed Engineers who build it. They work inside your company, in your tools.',
     },
     {
       id: 'data',

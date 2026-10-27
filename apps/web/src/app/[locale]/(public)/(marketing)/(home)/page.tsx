@@ -1,3 +1,4 @@
+import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
 import { HowItWorksTabs } from '@/features/marketing/landing-sections/how-it-works-tabs';
 import { TrustBand } from '@/features/marketing/landing-sections/trust-band';
 import { UseCasesBand } from '@/features/marketing/landing-sections/use-cases-band';
@@ -20,6 +21,7 @@ export default function Home() {
       <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
       <SandBandHero />
       <WorksWithStrip />
+      <CaseStudies />
       <ProblemSolution />
       <HowItWorksTabs />
       <UseCasesBand />

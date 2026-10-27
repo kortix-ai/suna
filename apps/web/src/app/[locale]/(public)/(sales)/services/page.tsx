@@ -1,6 +1,7 @@
 'use client';
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
 import { Disclosure, DisclosureList } from '@/features/marketing/kit/disclosure';
 import { DitherGlyph } from '@/features/marketing/kit/dither-glyph';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
@@ -8,6 +9,7 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, PageFrame, SpecGrid } from '@/features/marketing/kit/page-frame';
 import {
   benefits,
+  caseCta,
   closing,
   compare,
   education,
@@ -134,6 +136,15 @@ export default function ServicesPage() {
       <Band>
         <SpecGrid items={proof} cols="lg:grid-cols-4" />
       </Band>
+
+      <CaseStudies />
+      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
+        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
+        <div className="flex flex-wrap gap-2.5">
+          <IntroButton variant="primary" />
+          <JoinButton variant="secondary" />
+        </div>
+      </div>
 
       {/* ── the three things we do ─────────────────────────────────────── */}
       <Block id="services">
