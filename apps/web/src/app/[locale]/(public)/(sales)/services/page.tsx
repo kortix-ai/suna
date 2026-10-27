@@ -177,11 +177,11 @@ export default function ServicesPage() {
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
 
-        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-3 lg:grid-cols-5">
+        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-lg border lg:grid-cols-5">
           {hero.does.map((item) => {
             const Icon = OFFER_ICONS[item.icon];
             return (
-              <li key={item.id} className="bg-background flex flex-col gap-3 p-5 text-left">
+              <li key={item.id} className="bg-background flex flex-col gap-3 p-5 text-left last:col-span-2 lg:last:col-span-1">
                 <Icon className="text-foreground size-5" aria-hidden />
                 <div>
                   <p className="text-foreground text-base font-medium">{item.k}</p>
