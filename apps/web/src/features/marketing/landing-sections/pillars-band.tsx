@@ -1,11 +1,11 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { CheckIcon, CodeIcon, ShieldCheckIcon, UsersThreeIcon } from '@phosphor-icons/react/dist/ssr';
 
-// The three pillars, in the founder's order and words (2026-10-27): Multiplayer
-// AI; Sovereign, open source ("own your data and run on your own infra");
-// Extensible ("your company as code … every piece of context, every agent").
-// Every fact is a claims.md row: Channels, Permissions, Path to `main`,
-// Source, Hosting, Models, Secrets, Connectors.
+// The three pillars, in the founder's order and words (kortix-brand D16):
+// Multiplayer AI; Company as code ("extensible, powered by pi"); Sovereign and
+// open ("own your data and run on your own infra"). Every fact is a claims.md
+// row: Channels, Permissions, Path to `main`, Harness, Connectors, Source,
+// Hosting, Models, Secrets.
 const PILLARS = [
   {
     id: 'multiplayer',
@@ -21,9 +21,22 @@ const PILLARS = [
     ],
   },
   {
+    id: 'company-as-code',
+    icon: CodeIcon,
+    name: 'Company as code',
+    line: 'Extensible, powered by pi.',
+    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo. Every session runs pi, the open-source agent harness, so you can extend anything.',
+    facts: [
+      'Every agent and skill a file in git',
+      'Sessions run on pi, open source',
+      '3,000+ apps, plus MCP, OpenAPI and raw HTTP',
+      'A CLI and a TypeScript SDK',
+    ],
+  },
+  {
     id: 'sovereign',
     icon: ShieldCheckIcon,
-    name: 'Sovereign, open source',
+    name: 'Sovereign and open',
     line: 'Own your data and your infrastructure.',
     body: 'Kortix is open source. Run it on Kortix Cloud, in your VPC or on your own on-prem network, with any model and your own keys.',
     facts: [
@@ -33,26 +46,13 @@ const PILLARS = [
       'Secrets encrypted per project',
     ],
   },
-  {
-    id: 'extensible',
-    icon: CodeIcon,
-    name: 'Extensible',
-    line: 'Your company, as code.',
-    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo: versioned, reviewed and extended like software.',
-    facts: [
-      'Every agent and skill a file in git',
-      'Company memory as files agents read',
-      '3,000+ apps, plus MCP, OpenAPI and raw HTTP',
-      'A CLI and a TypeScript SDK',
-    ],
-  },
 ] as const;
 
 /** The three pillars: each name is the cell's headline, its meaning under it. */
 export function PillarsBand() {
   return (
     <section id="pillars" className="scroll-mt-16 py-20 lg:py-28">
-      <Heading title="Multiplayer. Sovereign. Extensible." titleMuted="The AI OS your whole company owns." />
+      <Heading title="Multiplayer. Company as code. Sovereign." titleMuted="The AI OS your whole company owns." />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
           {PILLARS.map(({ id, icon: Icon, name, line, body, facts }) => (

@@ -63,12 +63,12 @@ export function SandBandHero() {
             pattern): sits close under the title, muted, two lines at most. */}
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="text-foreground block">The open-source AI Operating System</span>
+            <span className="text-foreground block">The sovereign AI Operating System</span>
             <OwnedLine />
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Multiplayer AI for your whole team. Open source, on your infrastructure or ours. Your
-            company as code: every agent and every piece of context in one git repo you own.
+            Multiplayer AI for your whole team. Your company as code, extensible and powered by pi.
+            Sovereign and open source, on your infrastructure or ours.
           </p>
         </div>
 

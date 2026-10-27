@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D16 The home hero says "The sovereign AI Operating System", and the home page leads with three pillars
+- **Date:** 2026-10-27
+- **Decision:** The home page hero and the launch film open on "The sovereign AI Operating System". Right after the hero, the home page leads with three pillars, in this order and with these names: **Multiplayer AI** ("One AI for the whole team."), **Company as code** ("Extensible, powered by pi."), **Sovereign and open** ("Own your data and your infrastructure."). "Open source" stays in the pillar and in sentences. pi is named as the open-source agent harness every session runs.
+- **Why:** founder, 2026-10-27: "today we are launching the sovereign AI Operating System", then "what has to come forward are the 3 CORE PIECES … MULTIPLAYER AI. COMPANY AS CODE / EXTENSIBLE POWERED BY PI & SOVEREIGN/OPEN".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`, [claims.md](verbal/claims.md) row "Harness".
+- **Supersedes:** D10's tagline in the home hero only. Page titles, README, CLI banner, auth screen and meta descriptions keep "The open-source AI Operating System" until the founder extends this decision.
+- **Source:** the `services-page` branch.
+
 ### D15 `/services` sells "AI Transformation" for a flat $20,000 a month, with a quiet guarantee
 - **Date:** 2026-10-27
 - **Decision:** The site sells two things: the AI OS (every product page) and AI Transformation, a done-for-you service, on `/services`. `/services` is a standalone sales page with its own shell and an AI OS | Services switcher. The page says "we" and "our team". The roles (Deployment Strategists, Forward Deployed Engineers) appear once, in the FAQ, with no headcount and no "full time". The page sells three things in one membership: AI Strategy (an audit, baselines, a ranked roadmap), AI Transformation (map the company, unify its data, automate the work with agents, build custom software) and AI Education (we teach the customer's existing team). The price is a flat $20,000 a month: no discount, no "limited time", no strike-through. The guarantee stays low-key, one line, never a card or a headline: "Not loving it in the first 2 weeks? Get 50% back, no questions asked." "Join now" is a Stripe Payment Link. "AI Transformation" is the service's name on `/services` only.
