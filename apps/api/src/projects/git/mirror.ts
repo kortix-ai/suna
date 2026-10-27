@@ -494,7 +494,8 @@ export function fetchMirrorWithRetry(deps: {
  * failure (auth, corrupt repo, timeout) would. Git emits the stable wording
  * `fatal: path '<path>' does not exist in '<ref>'` on stderr (which becomes the
  * `GitOperationError` message/`stderr` via `classifyGitError`). Anchor on the
- * stable `does not exist in` substring; the path + ref are variable. Used by
+ * stable missing-path wording, including `exists on disk, but not in` when
+ * the path exists locally but not in the requested tree. Used by
  * `readRepoFile` to convert this single class into a null sentinel (mirroring
  * `getFileAtRef`'s `{ found: false }` from #3537) while letting genuine git
  * failures still throw (Better Stack pattern `a8d20288…`).
@@ -502,7 +503,7 @@ export function fetchMirrorWithRetry(deps: {
 export function isGitPathNotFoundError(err: unknown): boolean {
   if (!isGitOperationError(err)) return false;
   const text = `${err.message}\n${err.stderr}`;
-  return text.includes('does not exist in');
+  return text.includes('does not exist in') || /fatal: path '[^\n]*' exists on disk, but not in '/.test(text);
 }
 
 /** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */

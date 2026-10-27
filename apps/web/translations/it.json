@@ -20464,7 +20464,9 @@
       "text7c0a91e5b3d2": "Strumenti non classificati",
       "text9d2b6f0c41ae": "Strumenti e regole",
       "openThreadAction": "Apri thread",
-      "untitledThread": "Thread senza titolo"
+      "untitledThread": "Thread senza titolo",
+      "text314ae71b8c8d": "Artefatti",
+      "textfe204b549282": "artefatti documenti documento slide presentazione lavagna design dashboard pagina pubblicato condividi"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -23345,6 +23347,22 @@
       "agentsFailedPeopleAdded": "Aggiunti {what} a #{name}. Impossibile aggiungere gli agenti: restano selezionati.",
       "allAdded": "Tutti quelli del progetto sono già qui.",
       "noMatches": "Nessun risultato per “{query}”."
+    },
+    "privateNotIn": {
+      "row": "Canali privati di cui non fai parte",
+      "title": "Canali privati di cui non fai parte",
+      "description": "Puoi rinominare, archiviare e aggiungere persone. Solo i membri leggono il contenuto di un canale, quindi non puoi aggiungerti da solo.",
+      "meta": "{count, plural, =0 {Nessun membro} one {# membro} other {# membri}} · creato da {name}",
+      "metaNoCreator": "{count, plural, =0 {Nessun membro} one {# membro} other {# membri}}",
+      "archived": "Archiviato",
+      "menu": "Opzioni per #{name}",
+      "addPeople": "Aggiungi persone",
+      "rename": "Rinomina",
+      "archive": "Archivia",
+      "unarchive": "Ripristina",
+      "archivedToast": "#{name} archiviato",
+      "unarchivedToast": "#{name} ripristinato",
+      "failed": "Impossibile aggiornare #{name}. Riprova."
     }
   }
 }

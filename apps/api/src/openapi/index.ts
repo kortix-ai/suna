@@ -37,6 +37,13 @@ export const json = <T extends z.ZodTypeAny>(schema: T, description: string) => 
 });
 
 /**
+ * An optional text query parameter, documented. A repeated key reads as its
+ * first value, as `c.req.query()` reads it. The handler validates the value.
+ */
+export const queryText = (description: string) =>
+  z.preprocess((value) => (Array.isArray(value) ? value[0] : value), z.string().optional()).openapi({ description });
+
+/**
  * Standard error responses for the given status codes, keyed for `responses`.
  * Generic over the literal codes so the keys stay literal (e.g. `401`, not
  * `number`) — zod-openapi's typed handler needs the literal status union, so a

@@ -234,6 +234,7 @@ Read spend and requests:
 ```bash
 kortix gateway usage --days 7      # requests, errors and cost by model
 kortix gateway sources --hours 24  # spend by trigger, member, channel and API
+kortix gateway logs --limit 100    # the 100 newest requests (1 to 100, default 50)
 kortix gateway logs --failed       # recent failed requests
 kortix gateway logs <log-id>       # one request in full
 kortix gateway test deepseek-v4.1-flash glm-5.3-flash --prompt "Say hi"
