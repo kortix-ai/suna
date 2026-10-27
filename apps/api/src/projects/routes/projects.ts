@@ -33,6 +33,7 @@ import {
   serializeProject,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -192,6 +193,7 @@ export function registerProjectsRoutes(): void {
           install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
         }, 409);
       }
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
 

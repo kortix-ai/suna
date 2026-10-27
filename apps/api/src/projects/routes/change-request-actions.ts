@@ -10,7 +10,7 @@ import { refusesSelfMerge } from '../change-request-policy';
 // barrel wholesale with `mock.module`.
 import { manifestChange } from '../change-request-governance';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, boundedIssues, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
@@ -28,6 +28,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
@@ -170,7 +171,7 @@ export function registerChangeRequestActionsRoutes(): void {
             {
               error: 'Manifest validation failed — merge blocked.',
               code: 'MANIFEST_INVALID',
-              issues: [{ path: 'imports', message: found.importError, severity: 'error' }],
+              ...boundedIssues([{ path: 'imports', message: found.importError, severity: 'error' }]),
             },
             422,
           );
@@ -182,7 +183,7 @@ export function registerChangeRequestActionsRoutes(): void {
               {
                 error: 'Manifest validation failed — merge blocked.',
                 code: 'MANIFEST_INVALID',
-                issues: verdict.issues,
+                ...boundedIssues(verdict.issues),
               },
               422,
             );
@@ -215,6 +216,7 @@ export function registerChangeRequestActionsRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Merge failed',

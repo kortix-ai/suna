@@ -1458,6 +1458,7 @@ flow(
       'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
       'DELETE /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/accounts/tokens',
@@ -1593,6 +1594,33 @@ flow(
       (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: params(s4) })).status(200);
       (await pin(s4, true)).status(404);
       (await archive(s4, true)).status(404);
+    });
+
+    await ctx.step('a list read right after a pin or archive, with the ETag from before it, is a fresh 200, never a 304 from before the write', async () => {
+      const s5 = await seed();
+      const revalidate = async (query: Record<string, string>, etag: string) =>
+        owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query, headers: { 'If-None-Match': etag } });
+      const etagOf = async (query: Record<string, string>) =>
+        (await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id }, query })).status(200).header('etag')!;
+      // Within the poll memo's 2 s window: the memo still holds the ETag from before the write.
+      const pinnedEtag = await etagOf({ pinned: 'only' });
+      await state(pin(s5, true), {});
+      const pinned = (await revalidate({ pinned: 'only' }, pinnedEtag)).status(200).json<Row[]>();
+      if (!pinned.some((row) => row.session_id === s5)) throw new Error('the pinned list after the pin misses the session');
+      const archivedEtag = await etagOf({ archived: 'only' });
+      await state(archive(s5, true), {});
+      const archived = (await revalidate({ archived: 'only' }, archivedEtag)).status(200).json<Row[]>();
+      if (!archived.some((row) => row.session_id === s5)) throw new Error('the archived list after the archive misses the session');
+      // A rename and a delete change the list the same way.
+      const s6 = await seed();
+      const listEtag = await etagOf({});
+      (await owner.patch('/v1/projects/:projectId/sessions/:sessionId', { name: 'Renamed for the memo check' }, { params: params(s6) })).status(200);
+      const renamed = (await revalidate({}, listEtag)).status(200).json<Array<Row & { name?: string }>>();
+      if (renamed.find((row) => row.session_id === s6)?.name !== 'Renamed for the memo check') throw new Error('the list after the rename shows the old name');
+      const beforeDelete = await etagOf({});
+      (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: params(s6) })).status(200);
+      const afterDelete = (await revalidate({}, beforeDelete)).status(200).json<Row[]>();
+      if (afterDelete.some((row) => row.session_id === s6)) throw new Error('the list after the delete still holds the session');
     });
 
     const db = await openFlowDb(ctx.env);

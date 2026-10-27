@@ -24,6 +24,7 @@ import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * At most one forced mirror refresh per project per window. A miss is the only
@@ -278,6 +279,7 @@ export function registerResourceGrantsRoutes(): void {
       try {
         config = await loadConfigWithFiles(loaded.row);
       } catch (err) {
+        rethrowDatabaseError(err);
         return c.json(
           {
             error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}`,

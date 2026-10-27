@@ -3,6 +3,7 @@ import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createLlmGatewayRateLimitMiddleware } from '../middleware/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';
+import { rethrowDatabaseError } from '../shared/database-errors';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
 //
@@ -465,6 +466,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       if (c.req.raw.signal.aborted || err?.name === 'AbortError') {
         return new Response(null, { status: 499 });
       }
+      rethrowDatabaseError(error);
       // Say what actually happened. Until 2026-08-24 every throw here was
       // reported as "unreachable", which is what a ZlibError (the gateway
       // forwarded `content-encoding: gzip` on a body fetch had already

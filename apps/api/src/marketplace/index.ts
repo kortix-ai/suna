@@ -29,6 +29,7 @@ import {
 } from './catalog';
 import { addSource, listSources, removeSource } from './sources-store';
 import { readJsonObject } from '../shared/http-body';
+import { rethrowDatabaseError } from '../shared/database-errors';
 
 // The browse list is anonymous and can return the whole catalog (6 MB on the
 // hosted deployment). A content-addressed ETag makes repeats a 304 and the
@@ -315,6 +316,7 @@ marketplaceApp.openapi(
       warmMarketplaceCatalog();
       return c.json({ source });
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json({ error: (err as Error).message }, 400);
     }
   },
