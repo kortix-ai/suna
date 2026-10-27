@@ -148,8 +148,10 @@ test('a refused reorder (409 group_order_stale) puts the old order back and read
   expect(requests()).toContain('GET /projects/P1/session-groups');
 });
 
-test('filing shows group_id on the cached rows at once, then refetches the session lists', async () => {
+test('filing shows the new group_id at once and takes the row out of the no-group list, then refetches the session lists', async () => {
   await mount();
+  const own = qk.project.session('P1', 'S1');
+  client.setQueryData(own, row('S1'));
   let done!: Promise<unknown>;
   await act(async () => {
     done = api.file.mutateAsync({ sessionId: 'S1', groupId: 'A' });
@@ -157,7 +159,8 @@ test('filing shows group_id on the cached rows at once, then refetches the sessi
   await settle();
   expect(requests()).toEqual(['PUT /projects/P1/sessions/S1/group']);
   expect(held[0]!.body).toEqual({ group_id: 'A' });
-  expect(cachedRow('S1').group_id).toBe('A');
+  expect(client.getQueryData<ProjectSession>(own)!.group_id).toBe('A');
+  expect(cachedRow('S1')).toBeUndefined();
   expect(cachedRow('S2').group_id).toBeNull();
   await act(async () => {
     held[0]!.respond(200, { session_id: 'S1', group_id: 'A' });
@@ -165,6 +168,26 @@ test('filing shows group_id on the cached rows at once, then refetches the sessi
   });
   await settle();
   expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+});
+
+test('filing moves the row between the cached group lists at once: out of its old list, into the new one', async () => {
+  await mount();
+  const groupA = qk.project.sessionsPaged('P1', 'visible', { group: 'A' });
+  const groupB = qk.project.sessionsPaged('P1', 'visible', { group: 'B' });
+  client.setQueryData(groupA, { pages: [{ items: [row('S3', 'A')], next_cursor: null }], pageParams: [null] });
+  client.setQueryData(groupB, { pages: [{ items: [], next_cursor: null }], pageParams: [null] });
+  const ids = (key: readonly unknown[]) =>
+    client.getQueryData<{ pages: Array<{ items: ProjectSession[] }> }>(key)!.pages.flatMap((p) => p.items.map((r) => r.session_id));
+
+  await act(async () => {
+    void api.file.mutateAsync({ sessionId: 'S3', groupId: 'B' }).catch(() => undefined);
+    void api.file.mutateAsync({ sessionId: 'S2', groupId: 'A' }).catch(() => undefined);
+  });
+  await settle();
+  expect(ids(groupA)).toEqual(['S2']);
+  expect(ids(groupB)).toEqual(['S3']);
+  expect(ids(listKey)).toEqual(['S1']);
+  expect(cachedRow('S1').group_id).toBeNull();
 });
 
 /**

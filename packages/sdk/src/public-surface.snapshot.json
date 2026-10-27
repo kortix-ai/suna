@@ -1612,6 +1612,7 @@
     "readStartStash",
     "reconcileOptimisticPrompts",
     "recoverFromSendFailure",
+    "refileCachedProjectSession",
     "refreshProjectProviderState",
     "refreshRuntimeConfiguration",
     "rejectQuestion",

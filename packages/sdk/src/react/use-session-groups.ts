@@ -13,7 +13,7 @@ import {
 } from '../core/rest/projects-client/session-groups';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
-import { updateCachedProjectSessions } from './session-cache-write';
+import { findCachedProjectSession, refileCachedProjectSession, updateCachedProjectSessions } from './session-cache-write';
 
 /**
  * The project's session groups, in order. Members create, rename and reorder
@@ -98,17 +98,21 @@ export function useReorderProjectSessionGroups(projectId: string) {
 }
 
 /**
- * File a session into a group (`groupId`) or into none (`null`). Every cached
- * list and the session's own entry show the new `group_id` at once; then the
- * paged lists refetch, so the row leaves one group's section and enters the
- * other's. A refusal rejects the returned promise; the refetch puts the row back.
+ * File a session into a group (`groupId`) or into none (`null`). At once, every
+ * cached copy carries the new `group_id`, the row leaves the cached list of
+ * its old group and enters the list of its new one (page one); then the paged
+ * lists refetch and put it in its place. A refusal rejects the returned
+ * promise; the refetch puts the row back.
  */
 export function useSetProjectSessionGroup(projectId: string) {
   const queryClient = useQueryClient();
-  const write = (sessionId: string, groupId: string | null) =>
+  const write = (sessionId: string, groupId: string | null) => {
     updateCachedProjectSessions(queryClient, projectId, (sessions) =>
       sessions.map((session) => (session.session_id === sessionId ? { ...session, group_id: groupId } : session)),
     );
+    const moved = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
+    if (moved) refileCachedProjectSession(queryClient, projectId, moved);
+  };
   return useMutation({
     mutationFn: ({ sessionId, groupId }: { sessionId: string; groupId: string | null }) =>
       setProjectSessionGroup(projectId, sessionId, groupId),

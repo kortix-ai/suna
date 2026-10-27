@@ -269,6 +269,39 @@ export function removeCachedProjectSession(
 }
 
 /**
+ * Move a cached session to the lists its new state belongs in: replace it, or
+ * add it to page one, in every list it belongs in, and take it out of every
+ * group list (`group` filter) it no longer belongs in. The optimistic
+ * counterpart of filing a session into a group. Lists without a group filter
+ * keep the row where it is: their membership did not change.
+ */
+export function refileCachedProjectSession(
+  queryClient: QueryClient,
+  projectId: string,
+  session: ProjectSession,
+): void {
+  const queries = queryClient.getQueryCache().findAll({
+    queryKey: qk.project.sessionsScope(projectId),
+    predicate: (query) => isSessionCacheKey(projectId, query),
+  });
+  for (const query of queries) {
+    if (sessionBelongsInList(projectId, query, session)) {
+      queryClient.setQueryData(query.queryKey, (cached: unknown) => upsertIntoCachedSessionShape(cached, session));
+      continue;
+    }
+    const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
+    const filters = rest[0] === 'list-paged' ? (rest[2] as ListFilters | undefined) : undefined;
+    if (!filters?.group) continue;
+    queryClient.setQueryData(query.queryKey, (cached: unknown) =>
+      applyToCachedSessionShape(cached, (rows) => {
+        const kept = rows.filter((row) => row.session_id !== session.session_id);
+        return kept.length === rows.length ? rows : kept;
+      }),
+    );
+  }
+}
+
+/**
  * Insert a session into every cached list for this project, or replace it
  * wherever it is already cached. The optimistic counterpart of a create.
  */
