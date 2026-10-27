@@ -287,6 +287,18 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(delivered[0]).toMatchObject({ sessionId: winner, idempotencyKey: `telegram:${BOT_ID}:${event.id}` });
   });
 
+  test('a racing create bound the chat to a session that cannot take the message: retry, then drop on the last attempt', async () => {
+    await holdClaim(937);
+    onSleep = async () => {
+      if (!(await threadRow(937))) await bindChat(937);
+    };
+    deliverResult = 'no-session';
+    const event = update('me too', ALLOWED, 937);
+    await expect(handleTelegramEvent(event)).rejects.toThrow('cannot take the message');
+    await handleTelegramEvent(event, { finalAttempt: true });
+    expect(created).toHaveLength(0);
+  });
+
   test('a message whose racing create bound the chat and freed its claim follows up instead of creating', async () => {
     // Between this message's lookup and its claim, another message's create
     // bound the chat and released its claim (the actor lookup runs in between).

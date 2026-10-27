@@ -200,7 +200,7 @@ export async function routeChannelMessage(
   if (!claim) {
     const thread = await waitForThreadSession(target);
     if (thread) {
-      await followUp(port, message, thread, run);
+      await followUpJustBound(port, message, thread, run);
       return;
     }
     if (!run.finalAttempt) throw new Error(`${target.platform} thread create in flight`);
@@ -214,7 +214,7 @@ export async function routeChannelMessage(
   const bound = await findChatThread(target);
   if (bound) {
     await releaseThreadCreate(keys.createClaim, claim);
-    await followUp(port, message, bound, run);
+    await followUpJustBound(port, message, bound, run);
     return;
   }
 
@@ -248,7 +248,12 @@ export async function routeChannelMessage(
     // instead of waiting for a thread this attempt never bound. Unless the
     // lifecycle holds the create: the retry returns above, and the bind (or
     // the create's dead letter) frees the claim, so no other message starts a
-    // second session meanwhile. A failed read keeps it: the claim expires.
+    // second session while the create runs. A failed read keeps it: the claim
+    // expires.
+    // ponytail: a create whose replica dies keeps the claim only for its TTL
+    // (10 min); the lifecycle reclaims that create after its lease and grace
+    // (5 + 5 min). A message in the gap can start a second session. Upgrade:
+    // refresh the claim from the create's lease heartbeat.
     const owner = await lifecycle.createCommandStatus(keys.create, target.projectId).catch(() => 'unknown' as const);
     if (owner !== 'unknown' && !createStarted(owner)) await releaseThreadCreate(keys.createClaim, claim);
     throw error;
@@ -274,6 +279,26 @@ export async function routeChannelMessage(
   });
   await releaseThreadCreate(keys.createClaim, claim);
   await port.notify(target, { kind: 'create_failed', error: result.error });
+}
+
+/**
+ * A follow-up into a thread a racing message just bound. When that session
+ * cannot take it (it is gone, or the port restarts the thread), retry the
+ * message: the retry finds the thread and starts it over. The last attempt
+ * drops it.
+ */
+async function followUpJustBound(
+  port: ChannelPort,
+  message: ChannelMessage,
+  thread: { sessionId: string; projectId: string },
+  run: { finalAttempt: boolean },
+): Promise<void> {
+  if ((await followUp(port, message, thread, run)) !== 'no-session') return;
+  if (!run.finalAttempt) throw new Error(`${message.target.platform} thread session cannot take the message`);
+  logger.warn('[channel] the thread session a racing message bound cannot take this one; dropped', {
+    platform: message.target.platform,
+    sessionId: thread.sessionId,
+  });
 }
 
 /** A create the lifecycle owns: it binds the thread and delivers the first prompt. */
