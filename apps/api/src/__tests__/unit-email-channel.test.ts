@@ -140,9 +140,12 @@ const event: ResendInboxEmailReceivedEvent = {
     inbox_id: "inb-1",
     thread_id: "thr-1",
     email_id: "eml-1",
-    from: "Customer <customer@example.com>",
-    to: ["agent@example.com"],
-    subject: "Need help",
+    email: {
+      id: "eml-1",
+      from: "Customer <customer@example.com>",
+      to: ["agent@example.com"],
+      subject: "Need help",
+    },
   },
 };
 
@@ -353,6 +356,20 @@ describe("Resend webhook: store, then ack", () => {
     dbResults = [[{ projectId: "proj-1" }], [CHANNEL_ON], []];
     const res = await post(event, "msg_again");
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(dbResults).toHaveLength(0);
+  });
+
+  test("the sender policy reads the sender from the event's email headers (data.email.from)", async () => {
+    inboxWebhookSecret = SECRET;
+    inboxPolicy = {
+      mode: "restricted",
+      allowedEmails: ["customer@example.com"],
+      allowedDomains: [],
+      allowedRegex: null,
+    };
+    dbResults = [[{ projectId: "proj-1" }], [CHANNEL_ON], [{ jobId: "job-1" }]];
+    const res = await post(event, "msg_allowed");
     expect(await res.json()).toEqual({ ok: true });
     expect(dbResults).toHaveLength(0);
   });
