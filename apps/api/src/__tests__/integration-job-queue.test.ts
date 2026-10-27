@@ -3,14 +3,42 @@
  * Enqueue is idempotent per (queue, key); a claim is exclusive (SKIP LOCKED)
  * until its visibility timeout passes; a failure backs off and dies after
  * max_attempts; a stale worker cannot complete a job another worker re-claimed.
+ * A running job holds one slot of its replica: a slow job stops no other queue,
+ * and a job whose last claim never settled is dead instead of claimed forever.
  */
 import { expect, test } from 'bun:test';
 import { jobQueue } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { claimJobs, completeJob, enqueueJob, failJob, pruneFinishedJobs } from '../shared/job-queue';
+import { claimJobs, completeJob, enqueueJob, failJob, pruneFinishedJobs, registerJobHandler, runJobBatch } from '../shared/job-queue';
 
 const queue = () => `test-${crypto.randomUUID()}`;
+
+/** A handler that waits until `open()`, and counts its runs. */
+function gated() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => (open = resolve));
+  const handler = { runs: 0, open, run: async () => { handler.runs++; await opened; } };
+  return handler;
+}
+
+/** `onSlotFree` for `runJobBatch`, and a promise per settle count. */
+function settles() {
+  let count = 0;
+  const waiting: Array<{ at: number; resolve: () => void }> = [];
+  return {
+    onSlotFree: () => {
+      count++;
+      for (const w of waiting.filter((w) => w.at <= count)) w.resolve();
+    },
+    reached: (at: number) => new Promise<void>((resolve) => (count >= at ? resolve() : waiting.push({ at, resolve }))),
+  };
+}
+
+const statuses = async (q: string) =>
+  (await db.select({ status: jobQueue.status, attempts: jobQueue.attempts }).from(jobQueue).where(eq(jobQueue.queue, q)))
+    .map((r) => `${r.status}/${r.attempts}`)
+    .sort();
 
 async function row(q: string, key: string) {
   const [r] = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, q), eq(jobQueue.jobKey, key)));
@@ -78,4 +106,68 @@ test('a done job is never re-run by a re-enqueue, and pruning drops old finished
   await pruneFinishedJobs(7);
   const left = await db.select({ key: jobQueue.jobKey }).from(jobQueue).where(eq(jobQueue.queue, q));
   expect(left.map((r) => r.key)).toEqual([job!.jobKey === 'old' ? 'live' : 'old']);
+});
+
+test('a slow job holds one slot: another queue runs, and the slow queue waits only for its own batch', async () => {
+  const slow = queue();
+  const fast = queue();
+  const gate = gated();
+  let fastRuns = 0;
+  registerJobHandler(slow, gate.run, 60_000, 1);
+  registerJobHandler(fast, async () => { fastRuns++; }, 60_000);
+  await enqueueJob(slow, 's1');
+  await enqueueJob(slow, 's2');
+  await enqueueJob(fast, 'f1');
+  const settled = settles();
+
+  // The call returns while the slow job still runs (the tick used to wait for it).
+  expect(await runJobBatch(4, { wait: false, onSlotFree: settled.onSlotFree })).toBe(2);
+  await settled.reached(1);
+  expect(fastRuns).toBe(1);
+  expect(await statuses(fast)).toEqual(['done/1']);
+  // One slow job runs (batch 1); its second waits unclaimed.
+  expect(await statuses(slow)).toEqual(['queued/0', 'queued/1']);
+  expect(await runJobBatch(4, { wait: false, onSlotFree: settled.onSlotFree })).toBe(0);
+
+  gate.open();
+  await settled.reached(2);
+  expect(await runJobBatch()).toBe(1);
+  expect(await statuses(slow)).toEqual(['done/1', 'done/1']);
+});
+
+test('a replica runs at most `limit` jobs at once across its queues', async () => {
+  const queues = [queue(), queue(), queue()];
+  const gates = queues.map(() => gated());
+  queues.forEach((q, i) => registerJobHandler(q, gates[i]!.run, 60_000));
+  for (const q of queues) await enqueueJob(q, 'k');
+  const settled = settles();
+
+  expect(await runJobBatch(2, { wait: false, onSlotFree: settled.onSlotFree })).toBe(2);
+  const all = (await Promise.all(queues.map(statuses))).flat().sort();
+  expect(all).toEqual(['queued/0', 'queued/1', 'queued/1']);
+  expect(await runJobBatch(2, { wait: false, onSlotFree: settled.onSlotFree })).toBe(0);
+
+  gates.forEach((g) => g.open());
+  await settled.reached(2);
+  expect(await runJobBatch(2)).toBe(1);
+  expect((await Promise.all(queues.map(statuses))).flat()).toEqual(['done/1', 'done/1', 'done/1']);
+});
+
+test('a job whose last claim never settled is dead, not run again, and keeps its earlier error', async () => {
+  const q = queue();
+  let runs = 0;
+  registerJobHandler(q, async () => { runs++; }, 60_000);
+  await enqueueJob(q, 'k', {}, { maxAttempts: 2 });
+  // Attempt 2 of 2 was claimed and its replica died: the claim expired unsettled.
+  await db
+    .update(jobQueue)
+    .set({ attempts: 2, lastError: 'boom 1', lockedUntil: sql`now() - interval '1 second'` })
+    .where(and(eq(jobQueue.queue, q), eq(jobQueue.jobKey, 'k')));
+
+  expect(await runJobBatch()).toBe(1);
+  expect(runs).toBe(0);
+  const r = await row(q, 'k');
+  expect(r.status).toBe('dead');
+  expect(r.lastError).toStartWith('attempt 2 of 2 never settled');
+  expect(r.lastError).toEndWith('previous: boom 1');
 });
