@@ -8,7 +8,7 @@ import {
   agentsInSpace,
   bindingSpace,
   listProjectDirectory,
-  type ProjectSpace,
+  type ManifestSpace,
   type SpaceTab,
 } from '@kortix/sdk';
 import {
@@ -68,7 +68,7 @@ export function SpaceTabPanel({
   tab,
 }: {
   projectId: string;
-  space: ProjectSpace;
+  space: ManifestSpace;
   tab: SpaceTab | null;
 }) {
   if (!tab) return <RoomTab projectId={projectId} space={space} />;
@@ -92,7 +92,7 @@ export function SpaceTabPanel({
   }
 }
 
-function RoomTab({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+function RoomTab({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const t = useTranslations('spaces');
   const rooms = useFeatureFlag(projectId, 'agent_rooms');
   if (!rooms.isLoading && !rooms.enabled) {
@@ -115,7 +115,7 @@ function RoomTab({ projectId, space }: { projectId: string; space: ProjectSpace 
 }
 
 /** The top of the room: what the space is for, who posts in it, and how to bring someone in. */
-function RoomIntro({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+function RoomIntro({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const t = useTranslations('spaces');
   const locale = useLocale();
   const agents = agentsInSpace(space.name, useProjectConfig(projectId)?.agents ?? []);

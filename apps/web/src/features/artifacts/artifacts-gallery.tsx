@@ -7,7 +7,7 @@ import {
   listSpaces,
   type Artifact,
   type ArtifactListScope,
-  type ProjectSpace,
+  type ManifestSpace,
 } from '@kortix/sdk';
 import { prefetchArtifact, useArtifactMutations, useArtifacts, useProjectConfig } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -183,7 +183,7 @@ function ArtifactCard({
   /** The space the artifact resolves to now (`PROJECT_WIDE_SPACE`: project-wide). */
   current: string;
   /** Where "Move to space" can bind it. */
-  spaces: ProjectSpace[];
+  spaces: ManifestSpace[];
 }) {
   const t = useTranslations('artifacts');
   const locale = useLocale();

@@ -9,11 +9,22 @@
  * Contract: effects are convergence work, not part of the toggle's success —
  * the API response does not wait for them. Every effect is retried once and
  * failures are logged at error level with the flag + project; the reconcilers
- * they call are themselves idempotent and re-run on their periodic sweeps.
+ * they call are themselves idempotent. The connector and event-subscription
+ * ones re-run on their periodic sweeps. The `project_channels` backfill re-runs
+ * only from the call that creates `#general` (`ensureDefaultSpace`: a channel
+ * list, a session create or a warm claim): a failure after `#general` exists is
+ * not retried until the flag is toggled again.
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
+import { refreshRunningThreadNotes } from '../drives/space-folders';
+import {
+  reconcileEventSubscriptionsFromCatalog,
+  recordChannelsReenabled,
+  releaseProjectEventSubscriptions,
+  retireWarmProjectSessions,
+  turnOnChannels,
+} from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
 export interface FeatureFlagToggleContext {
@@ -22,6 +33,10 @@ export interface FeatureFlagToggleContext {
   accountId: string;
   /** The project's metadata AFTER the write. */
   metadata: unknown;
+  /** The project's metadata BEFORE the write, read in the write's transaction; absent = unknown. */
+  previousMetadata?: unknown;
+  /** The write's DB time (`projects.updated_at`, ms). Absent: not a flag write, never "turned on again". */
+  writtenAt?: Date;
 }
 
 type ToggleEffect = (ctx: FeatureFlagToggleContext) => Promise<void>;
@@ -43,6 +58,20 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
     else await releaseProjectEventSubscriptions(projectId);
   },
+  // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
+  // On again (off before the write, `#general` older than the write): mark the intro seen for the
+  // project's members (no intro on a second turn-on) and record the `#general` line with the count.
+  // A `#general` made after the write (a channel list in the window before this effect) is a first on.
+  // Both: running threads' /drives/README.md gains or drops its channel section (that never throws).
+  project_channels: async ({ projectId, accountId, metadata, previousMetadata, writtenAt }) => {
+    if (resolveFeatureFlag(metadata, 'project_channels')) {
+      const { generalCreatedAt, filed } = await turnOnChannels(projectId, accountId);
+      if (writtenAt && generalCreatedAt < writtenAt && !resolveFeatureFlag(previousMetadata, 'project_channels')) {
+        await recordChannelsReenabled({ accountId, projectId }, filed, writtenAt);
+      }
+    }
+    await refreshRunningThreadNotes(projectId);
+  },
 };
 
 /**
@@ -50,7 +79,21 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
  * error-level log that names the flag and project so a failed convergence is
  * findable instead of a silent console.warn.
  */
-export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
+export function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
+  const run = runWithRetry(ctx).finally(() => inflight.delete(run));
+  inflight.add(run);
+  return run;
+}
+
+// replica-local: the effects this process started; tests await them (toggleEffectsSettled).
+const inflight = new Set<Promise<void>>();
+
+/** Resolves when every toggle effect this process started has finished. */
+export async function toggleEffectsSettled(): Promise<void> {
+  await Promise.all([...inflight]);
+}
+
+async function runWithRetry(ctx: FeatureFlagToggleContext): Promise<void> {
   // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS): a warm box
   // from before the change must not be adopted, or its skills and CLI keep the old flag.
   const own = TOGGLE_EFFECTS[ctx.key];
@@ -68,7 +111,7 @@ export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext)
     } catch (second) {
       console.error(
         `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.projectId}; ` +
-          'state converges on the next periodic reconcile',
+          'not retried here: connectors and event subscriptions converge on their periodic sweeps; project_channels converges only if #general did not exist yet (the call that creates it files unassigned sessions), else on the next toggle',
         second instanceof Error ? second.message : second,
         first instanceof Error ? `(first attempt: ${first.message})` : '',
       );

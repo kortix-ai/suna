@@ -10,7 +10,7 @@ import {
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
 import { isProjectAdminPath, ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
-import { ProjectSpacesNav } from './project-spaces-nav';
+import { ManifestSpacesNav } from './manifest-spaces-nav';
 import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
@@ -58,7 +58,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
       {items.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
-      <ProjectSpacesNav projectId={projectId} />
+      <ManifestSpacesNav projectId={projectId} />
       <MoreNavItem projectId={projectId} items={items} />
     </>
   );

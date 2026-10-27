@@ -2,7 +2,7 @@
 
 import { type FormEvent, type ReactNode, useState } from 'react';
 
-import { spaceTabKey, spaceTabs, type ProjectSpace, type SpaceTab } from '@kortix/sdk';
+import { spaceTabKey, spaceTabs, type ManifestSpace, type SpaceTab } from '@kortix/sdk';
 import { useArtifacts, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
 import {
   AppWindowIcon,
@@ -67,7 +67,7 @@ export function SpaceTabMenu({
   children,
 }: {
   projectId: string;
-  space: ProjectSpace;
+  space: ManifestSpace;
   /** Called with the new tab's key, to open it. */
   onAdded: (key: string) => void;
   children: ReactNode;

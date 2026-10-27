@@ -11,7 +11,7 @@
  */
 
 import { ApiError } from '../../http/api-client';
-import type { ResourceBinding } from './spaces';
+import type { ResourceBinding } from './manifest-spaces';
 import { getProjectDrive, listDriveFolder, readDriveFile, uploadDriveFile } from './drives';
 import { listProjectReminders, type ProjectReminder } from './session-reminders';
 

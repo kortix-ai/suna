@@ -2,7 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { PROJECT_WIDE_SPACE, groupBySpace, listSpaces, type ProjectSpace } from '@kortix/sdk';
+import { PROJECT_WIDE_SPACE, groupBySpace, listSpaces, type ManifestSpace } from '@kortix/sdk';
 
 // The Goals and Artifacts pages filter by space. Nothing is bound yet in a
 // project that just declared a space: the selected space still needs a tab,
@@ -10,7 +10,7 @@ import { PROJECT_WIDE_SPACE, groupBySpace, listSpaces, type ProjectSpace } from 
 
 const config = {
   agents: [{ name: 'closer', space: 'sales' }],
-  spaces: [{ name: 'sales', label: 'Sales' }] as ProjectSpace[],
+  spaces: [{ name: 'sales', label: 'Sales' }] as ManifestSpace[],
 };
 let active: string | null = null;
 let param: string | null = null;

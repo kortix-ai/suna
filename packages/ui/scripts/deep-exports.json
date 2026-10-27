@@ -238,7 +238,6 @@
     "./markdown/doc-editor/doc-menus",
     "./markdown/doc-editor/markdown",
     "./markdown/setup-links/api-base",
-    "./markdown/setup-links/app-credentials-form",
     "./markdown/setup-links/approval-decision",
     "./markdown/setup-links/connector-handshake",
     "./markdown/setup-links/connector-link-info",

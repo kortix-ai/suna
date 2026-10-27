@@ -6,7 +6,9 @@
  *
  * A route that returns null is a page the host does not serve: every link to
  * it is hidden and no navigation goes there. `project` and `session` are the
- * two pages every session host serves, so they cannot be null.
+ * two pages every session host serves, so they cannot be null. `channel` and
+ * `dm` cannot be null either: the sidebar links them only while the project's
+ * `project_channels` flag is on.
  *
  * Defaults: apps/web's paths.
  */
@@ -37,6 +39,12 @@ export interface UiRoutes {
    * capability root, for example `models` or `triggers?id=<slug>`.
    */
   customize: (projectId: string, path?: string) => string | null;
+  /** A channel of the project, by slug (`project_channels` flag). */
+  channel: (projectId: string, slug: string) => string;
+  /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
+  dm: (projectId: string, agentName: string) => string;
+  /** The project's Company memory (`project_channels` flag); a page is `?page=<page_id>`. */
+  memory: (projectId: string) => string | null;
 }
 
 const DEFAULT_ROUTES = {
@@ -53,6 +61,9 @@ const DEFAULT_ROUTES = {
   members: (p: string) => `/projects/${p}/members`,
   sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,
+  channel: (p: string, slug: string) => `/projects/${p}/c/${slug}`,
+  dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
+  memory: (p: string) => `/projects/${p}/memory`,
 };
 
 export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;
@@ -66,6 +77,15 @@ export function setUiRoutes(overrides: Partial<UiRoutes>): void {
 
 export function uiRoutes(): UiRoutes {
   return routes;
+}
+
+/** A channel slug or DM agent name from its URL segment; null when a hand-typed escape is malformed. */
+export function decodeSpaceSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
 }
 
 /**

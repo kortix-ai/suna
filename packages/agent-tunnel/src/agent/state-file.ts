@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'f
 import { join } from 'path';
 
 import type { TunnelAgentStatus } from './agent';
+import { isAlive } from './process-liveness';
 import { agentTunnelHome } from './service-paths';
 import { agentTunnelVersion } from './version';
 
@@ -45,16 +46,6 @@ export function writeAgentState(
     renameSync(tmp, stateFilePath(home));
   } catch {
     // Observers fall back to "unknown"; the tunnel itself is unaffected.
-  }
-}
-
-function isAlive(pid: unknown): boolean {
-  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 

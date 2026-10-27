@@ -5,6 +5,7 @@ import {
   accounts,
   projectSessionGrants,
   projectSessions,
+  projectSpaces,
   projectTriggerRuntime,
   projectTriggerSessionAccessGrants,
   projects,
@@ -226,5 +227,77 @@ describe('trigger session access — migrated database', () => {
           ),
         ),
     ).toHaveLength(0);
+  });
+
+  test('a run filed in a DM gets DM-only sharing whatever the trigger stores; a space change re-shares nothing', async () => {
+    const dmSlug = `e2e-dm-${crypto.randomUUID().slice(0, 8)}`;
+    const [dm] = await db
+      .insert(projectSpaces)
+      .values({
+        accountId: context.accountId,
+        projectId: context.projectId,
+        kind: 'dm',
+        name: agentName,
+        dmUserId: context.memberId,
+        dmAgentName: agentName,
+      })
+      .returning();
+    const [channel] = await db
+      .insert(projectSpaces)
+      .values({ accountId: context.accountId, projectId: context.projectId, kind: 'channel', slug: dmSlug, name: dmSlug })
+      .returning();
+    // A flag-off write left `project` on a trigger that posts to the DM.
+    await db.insert(projectTriggerRuntime).values({
+      projectId: context.projectId,
+      slug: dmSlug,
+      spaceId: dm!.spaceId,
+      sessionAccessMode: 'project',
+      updatedAt: new Date(),
+    });
+    const run = (sessionId: string, spaceId: string, visibility: 'private' | 'project') => ({
+      sessionId,
+      accountId: context.accountId,
+      projectId: context.projectId,
+      branchName: sessionId,
+      agentName,
+      status: 'provisioning' as const,
+      createdBy: humanStandIn,
+      visibility,
+      spaceId,
+      metadata: { trigger_kind: 'git', trigger_slug: dmSlug },
+      updatedAt: new Date(),
+    });
+    const dmRun = `e2e-trigger-dm-${crypto.randomUUID()}`;
+    const channelRun = `e2e-trigger-channel-${crypto.randomUUID()}`;
+    await db.insert(projectSessions).values([run(dmRun, dm!.spaceId, 'private'), run(channelRun, channel!.spaceId, 'project')]);
+
+    await applyTriggerSessionAccess({ projectId: context.projectId, sessionId: dmRun, triggerSlug: dmSlug });
+    const visibilityOf = async (sessionId: string) =>
+      (await db.select({ v: projectSessions.visibility }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId)))[0]?.v;
+    const grantsOf = async (sessionId: string) =>
+      (await db.select().from(projectSessionGrants).where(eq(projectSessionGrants.sessionId, sessionId))).map((g) => g.principalId);
+    expect(await visibilityOf(dmRun)).toBe('restricted');
+    expect(await grantsOf(dmRun)).toEqual([context.memberId]);
+
+    // A move (propagate: false) narrows nothing: the old channel thread stays project-visible.
+    await setTriggerSessionAccess({
+      projectId: context.projectId,
+      accountId: context.accountId,
+      slug: dmSlug,
+      access: { mode: 'members', memberIds: [context.memberId], groupIds: [] },
+      propagate: false,
+    });
+    expect(await visibilityOf(channelRun)).toBe('project');
+    expect(await grantsOf(channelRun)).toEqual([]);
+
+    // An explicit `project` save re-shares earlier runs, but never a DM thread.
+    await setTriggerSessionAccess({
+      projectId: context.projectId,
+      accountId: context.accountId,
+      slug: dmSlug,
+      access: { mode: 'project', memberIds: [], groupIds: [] },
+    });
+    expect(await visibilityOf(dmRun)).toBe('restricted');
+    expect(await grantsOf(dmRun)).toEqual([context.memberId]);
   });
 });

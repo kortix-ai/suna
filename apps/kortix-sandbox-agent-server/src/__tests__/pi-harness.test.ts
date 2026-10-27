@@ -1642,6 +1642,23 @@ describe('pi extensions', () => {
     expect(two).toContain('EXTENSION RULE')
   })
 
+  test('the Kortix prompt route carries system to the model for its turn only', async () => {
+    const r = await boot({ script: [{ text: 'a' }, { text: 'b' }] })
+    const root = r.service.runtime()!.rootId
+    const sentBefore = gateway.sent.length
+    const post = (body: unknown) =>
+      r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await post({ parts: [{ type: 'text', text: 'one' }], system: '## Memory\n- Q4 launch — dates and owners' })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore && !r.service.runtime()!.busy())
+    expect((await post({ parts: [{ type: 'text', text: 'two' }] })).status).toBe(202)
+    await waitFor(() => gateway.sent.length > sentBefore + 1 && !r.service.runtime()!.busy())
+    const [one, two] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain('## Memory\n- Q4 launch — dates and owners')
+    expect(two).not.toContain('## Memory')
+    // pi keeps the text out of the stored transcript.
+    expect(JSON.stringify(await r.user(`/session/${root}/message`).then((res) => res.json()))).not.toContain('## Memory')
+  })
+
   test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {
     const r = await boot({
       script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],

@@ -108,8 +108,9 @@ export function parseEventFlags(
 }
 
 /** Event flags on a non-event trigger are a hard error — the platform would never read them. */
-export function strayEventFlag(tf: Record<string, string | undefined>): string | null {
-  const stray = EVENT_ONLY_FLAGS.find(([, key]) => tf[key] !== undefined);
+export function strayEventFlag(tf: Record<string, string | undefined>, type?: string): string | null {
+  // An App event trigger takes --event: the event name it listens for.
+  const stray = EVENT_ONLY_FLAGS.find(([, key]) => tf[key] !== undefined && !(type === 'app' && key === 'event'));
   return stray ? `${stray[0]} is only valid on an event trigger (--type event).` : null;
 }
 
@@ -248,7 +249,7 @@ export async function triggersAddLocal(
   }
   if (!tf.prompt && !tf.targetApp) return fail('--prompt is required (or --target-app).');
   if (type !== 'event') {
-    const stray = strayEventFlag(tf);
+    const stray = strayEventFlag(tf, type);
     if (stray) return fail(stray);
   }
   const appProblem = appFlagProblem(type, tf) ?? scheduleFlagProblem(type, tf);
@@ -292,7 +293,7 @@ export async function triggersAddLocal(
           ? { every: formatDurationSeconds(every!.seconds) }
           : { cron: tf.cron, ...(tf.timezone && tf.timezone !== 'UTC' ? { timezone: tf.timezone } : {}) }
         : type === 'app'
-          ? { event: '*', app: tf.app }
+          ? { event: tf.event?.trim() || '*', app: tf.app }
           : type === 'event' && event
             ? {
                 event: event.event, connector: event.connector,

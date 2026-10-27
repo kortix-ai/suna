@@ -193,28 +193,28 @@ describe('trigger-created session visibility', () => {
   test('project manager can open a private trigger-created session', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(true);
   });
 
   test('ordinary project member cannot open a private trigger-created session', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(false);
   });
 
   test('manager still cannot open an ordinary private human session', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
-      { metadata: {}, canManageProject: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true },
     )).toBe(false);
   });
 
   test('trigger agent service account remains the private-session owner', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: serviceAccount, groupIds: [] }, INTERACTIVE,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
   });
 
@@ -223,11 +223,11 @@ describe('trigger-created session visibility', () => {
       'restricted', serviceAccount,
       [{ principalType: 'member', principalId: ALICE }],
       { userId: ALICE, groupIds: [] }, INTERACTIVE,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
     expect(isProjectSessionVisibleTo(
       'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
   });
 
@@ -244,7 +244,7 @@ describe('trigger-created session visibility', () => {
     ]) {
       expect(isProjectSessionVisibleTo(
         'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
-        { metadata: incomplete, canManageProject: true },
+        { metadata: incomplete, spaceVisible: true, canManageProject: true },
       )).toBe(false);
     }
   });
@@ -279,7 +279,7 @@ describe('trigger-created session visibility', () => {
   test('a session-bound agent token does NOT get the manager override', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(false);
   });
 
@@ -288,18 +288,18 @@ describe('trigger-created session visibility', () => {
     // the normal state for a logged-in human, so it can never mean "an agent".
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(true);
   });
 
   test('the owner still sees their own session, bound or not', () => {
     expect(isProjectSessionVisibleTo(
       'private', ALICE, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
     expect(isProjectSessionVisibleTo(
       'private', ALICE, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
   });
 
@@ -308,13 +308,13 @@ describe('trigger-created session visibility', () => {
     // explicit grant — it only stops the manager shortcut.
     expect(isProjectSessionVisibleTo(
       'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(true);
     expect(isProjectSessionVisibleTo(
       'restricted', serviceAccount,
       [{ principalType: 'member', principalId: ALICE }],
       { userId: ALICE, groupIds: [] }, BOUND_AGENT,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(true);
   });
 
@@ -327,7 +327,7 @@ describe('trigger-created session visibility', () => {
         callerSessionId: 'trigger-session-a',
         boundCredentialSessionId: 'trigger-session-a',
       },
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(false);
   });
 
@@ -352,7 +352,7 @@ describe('trigger-created session visibility', () => {
   test('the session own credential opens a private trigger-created session', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(true);
   });
 
@@ -361,7 +361,7 @@ describe('trigger-created session visibility', () => {
     // `canManageProject`, is the authority.
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
-      { metadata, canManageProject: false },
+      { metadata, spaceVisible: true, canManageProject: false },
     )).toBe(true);
   });
 
@@ -369,7 +369,7 @@ describe('trigger-created session visibility', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] },
       { origin: 'user', sessionId: 'own-session', callerSessionId: 'own-session', boundCredentialSessionId: 'own-session' },
-      { metadata: {}, canManageProject: false },
+      { spaceVisible: true, metadata: {}, canManageProject: false },
     )).toBe(true);
   });
 
@@ -377,7 +377,7 @@ describe('trigger-created session visibility', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
       { origin: 'trigger', sessionId: 'worker-session', callerSessionId: 'coordinator-session', boundCredentialSessionId: 'coordinator-session' },
-      { metadata: { spawned_by_session: 'coordinator-session' }, canManageProject: false },
+      { spaceVisible: true, metadata: { spawned_by_session: 'coordinator-session' }, canManageProject: false },
     )).toBe(true);
   });
 
@@ -386,7 +386,7 @@ describe('trigger-created session visibility', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
       { origin: 'trigger', sessionId: 'trigger-session-b', callerSessionId: 'other-session', boundCredentialSessionId: 'other-session' },
-      { metadata, canManageProject: true },
+      { metadata, spaceVisible: true, canManageProject: true },
     )).toBe(false);
   });
 });
@@ -533,7 +533,7 @@ describe('account session oversight', () => {
   test('oversight opens another member\'s private session', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
-      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true, accountSessionOversight: true },
     )).toBe(true);
   });
 
@@ -541,18 +541,18 @@ describe('account session oversight', () => {
     expect(isProjectSessionVisibleTo(
       'restricted', BOB, [{ principalType: 'member', principalId: 'user-carol' }],
       { userId: ALICE, groupIds: [] }, HUMAN,
-      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true, accountSessionOversight: true },
     )).toBe(true);
   });
 
   test('without oversight a private session stays owner-only, even for a manager', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
-      { metadata: {}, canManageProject: true, accountSessionOversight: false },
+      { spaceVisible: true, metadata: {}, canManageProject: true, accountSessionOversight: false },
     )).toBe(false);
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
-      { metadata: {}, canManageProject: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true },
     )).toBe(false);
   });
 
@@ -560,7 +560,7 @@ describe('account session oversight', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] },
       { origin: 'user', sessionId: 'sess-1', callerSessionId: 'sess-other', boundCredentialSessionId: 'sess-other' },
-      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true, accountSessionOversight: true },
     )).toBe(false);
   });
 
@@ -568,7 +568,83 @@ describe('account session oversight', () => {
     expect(isProjectSessionVisibleTo(
       'private', BOB, [], { userId: ALICE, groupIds: [] },
       { origin: 'backend', sessionId: 'sess-1', callerSessionId: 'sess-2', boundCredentialSessionId: 'sess-2' },
-      { metadata: {}, canManageProject: true, accountSessionOversight: true },
+      { spaceVisible: true, metadata: {}, canManageProject: true, accountSessionOversight: true },
     )).toBe(false);
+  });
+});
+
+/**
+ * Private channels: `spaceVisible` is the thread's channel verdict
+ * (`canSeeSpace`). False hides the thread from everyone but the thread's own
+ * credential and an overseeing admin, whatever the thread's own sharing.
+ */
+describe('private channel threads (spaceVisible)', () => {
+  const HUMAN = { origin: 'user', sessionId: 'sess-p', callerSessionId: 'supabase-login', boundCredentialSessionId: null };
+  const triggerRun = { source: 'trigger:scheduler', trigger_kind: 'git', trigger_slug: 'daily-review' };
+
+  test('a project-visible thread of a hidden private channel is refused to a project member', () => {
+    expect(isProjectSessionVisibleTo(
+      'project', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: false, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('a member of the channel opens the same thread', () => {
+    expect(isProjectSessionVisibleTo(
+      'project', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: false, spaceVisible: true },
+    )).toBe(true);
+  });
+
+  test('the thread\'s own creator who left the channel is refused', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', ALICE, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: false, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('a restricted grant to a non-member gives nothing', () => {
+    expect(isProjectSessionVisibleTo(
+      'restricted', BOB, [{ principalType: 'member', principalId: ALICE }], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: false, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('the trigger-run manager override does not open a hidden private channel run', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', 'trigger-agent-service-account', [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: triggerRun, canManageProject: true, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('account session oversight still opens it (audited by the caller)', () => {
+    expect(isProjectSessionVisibleTo(
+      'project', BOB, [], { userId: ALICE, groupIds: [] }, HUMAN,
+      { metadata: {}, canManageProject: true, accountSessionOversight: true, spaceVisible: false },
+    )).toBe(true);
+  });
+
+  test('oversight never reaches a hidden channel through a session-bound token', () => {
+    expect(isProjectSessionVisibleTo(
+      'project', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'sess-p', callerSessionId: 'sess-g', boundCredentialSessionId: 'sess-g' },
+      { metadata: {}, canManageProject: false, accountSessionOversight: true, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('a thread\'s own credential no longer opens its thread once the channel is hidden from it (launcher removed)', () => {
+    expect(isProjectSessionVisibleTo(
+      'project', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'sess-p', callerSessionId: 'sess-p', boundCredentialSessionId: 'sess-p' },
+      { metadata: {}, canManageProject: false, spaceVisible: false },
+    )).toBe(false);
+  });
+
+  test('a thread\'s own credential opens its thread while the channel is visible to it', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'sess-p', callerSessionId: 'sess-p', boundCredentialSessionId: 'sess-p' },
+      { metadata: {}, canManageProject: false, spaceVisible: true },
+    )).toBe(true);
   });
 });

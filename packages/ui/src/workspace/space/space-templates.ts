@@ -1,6 +1,6 @@
 /**
  * Space templates and the pure `kortix.yaml` edits that create a space and
- * set its tabs. A space is `spaces.<slug>` (see `ProjectSpace` in
+ * set its tabs. A space is `spaces.<slug>` (see `ManifestSpace` in
  * `@kortix/sdk`). Every edit round-trips through the `yaml` document model,
  * so comments and the rest of the manifest stay as they were.
  */

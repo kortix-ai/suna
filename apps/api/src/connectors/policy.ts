@@ -298,13 +298,13 @@ function firstMatchOrNull(
   policies: Policy[],
   args?: Record<string, unknown> | null,
   argsAvailable = false,
-): PolicyAction | null {
+): Policy | null {
   if (policies.length === 0) return null;
   const ordered = [...policies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   for (const p of ordered) {
     if (!matchesPolicy(p.match, path)) continue;
     if (!ruleApplies(p, args, argsAvailable)) continue;
-    return p.action;
+    return p;
   }
   return null;
 }
@@ -368,16 +368,22 @@ export interface EffectiveResolveResult {
  * for its agent: a guardrail for every caller belongs in project `policies:`.
  */
 export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveResolveResult {
+  const { action, source } = resolveEffectiveRule(input);
+  return { action, source };
+}
+
+/** `resolveEffectiveAction` plus the rule that decided, when a rule did. */
+export function resolveEffectiveRule(input: EffectiveResolveInput): EffectiveResolveResult & { rule?: Policy } {
   const args = input.args ?? null;
   const argsAvailable = input.argsAvailable ?? false;
 
   if (input.setMissing) return { action: 'block', source: 'policy_set' };
 
   const projectHit = firstMatchOrNull(input.fullPath, input.projectPolicies, args, argsAvailable);
-  if (projectHit) return { action: projectHit, source: 'project' };
+  if (projectHit) return { action: projectHit.action, source: 'project', rule: projectHit };
 
   const setHit = firstMatchOrNull(input.relPath, input.setPolicies ?? [], args, argsAvailable);
-  if (setHit) return { action: setHit, source: 'policy_set' };
+  if (setHit) return { action: setHit.action, source: 'policy_set', rule: setHit };
 
   const connectorHit = firstMatchOrNull(
     input.relPath,
@@ -385,7 +391,7 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
     args,
     argsAvailable,
   );
-  if (connectorHit) return { action: connectorHit, source: 'connector' };
+  if (connectorHit) return { action: connectorHit.action, source: 'connector', rule: connectorHit };
 
   // A `sensitive` connector gates EVERYTHING by default — reads included —
   // regardless of default_mode. A per-connector "sensitive" is a deliberate,
@@ -396,3 +402,4 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
 }
+

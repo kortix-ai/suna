@@ -3,12 +3,12 @@ import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import type { App, ProjectGoal, ProjectSpace } from '@kortix/sdk';
+import type { App, ProjectGoal, ManifestSpace } from '@kortix/sdk';
 
 // The space page is a channel: the room tab first, then the configured tabs
 // (or the defaults), with `?tab=` picking one. Hooks are mocked by resolved module.
 
-let spaces: ProjectSpace[] = [];
+let spaces: ManifestSpace[] = [];
 let tabParam: string | null = null;
 let flags: Record<string, boolean> = {};
 const agents = [
@@ -98,7 +98,7 @@ test('an unknown ?tab= falls back to the room', () => {
 });
 
 test('a tab of a feature that is off is hidden', () => {
-  const space: ProjectSpace = { name: 'sales', tabs: [{ type: 'goals' }, { type: 'apps' }, { type: 'artifact', artifact: 'a1' }] };
+  const space: ManifestSpace = { name: 'sales', tabs: [{ type: 'goals' }, { type: 'apps' }, { type: 'artifact', artifact: 'a1' }] };
   expect(visibleSpaceTabs(space, { goals: false, artifacts: false }).map((entry) => entry.key)).toEqual(['apps']);
   expect(visibleSpaceTabs(space, { goals: true, artifacts: true }).map((entry) => entry.key)).toEqual([
     'goals',

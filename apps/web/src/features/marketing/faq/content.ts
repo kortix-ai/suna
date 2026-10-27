@@ -63,7 +63,10 @@
  *    block", never "it asks first".
  *  - MERGE is default-deny for AGENTS, not human-only. `project.cr.merge` is a
  *    grantable capability (`apps/api/src/projects/routes/change-request-actions.ts:63`). Do not
- *    write "only a human can merge".
+ *    write "only a human can merge". The capability is `project.gitops.merge`
+ *    now (the old spelling still resolves). Do not write that the grant
+ *    "cannot be widened without an approved change": a dashboard config edit
+ *    can commit straight to the default branch (claims.md correction 7).
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value in the session, readable by any
  *    command the agent runs. Only
@@ -114,7 +117,7 @@ export const faq = {
       id: 'guardrails',
       question: 'What stops it doing something I did not want?',
       answer:
-        'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent — an admin has to grant it in kortix.yaml, and that grant is itself an edit somebody else has to merge.',
+        'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.',
     },
     {
       id: 'audit',

@@ -134,7 +134,7 @@ function StepGlyph({ outcome, resolved }: { outcome: Outcome; resolved: boolean 
             {denied ? (
               <ProhibitIcon weight="bold" className="text-kortix-red size-4" />
             ) : (
-              <CheckIcon weight="bold" className="text-muted-foreground size-3.5" />
+              <CheckIcon weight="bold" className="text-ring size-3.5" />
             )}
           </m.span>
         )}

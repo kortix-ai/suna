@@ -54,6 +54,11 @@ import {
   setConnectorPolicies,
   listConnectorPolicySets,
   upsertConnectorPolicySet,
+  listConnectorAgents,
+  getConnectorRulesMatrix,
+  setConnectorOAuth2ClientCredentials,
+  type ConnectorAgentRow,
+  type ConnectorRulesMatrix,
   renameConnectorPolicySet,
   deleteConnectorPolicySet,
   type ConnectorPolicySet,
@@ -1780,4 +1785,48 @@ test('moveConnector POSTs the account to sign in on and returns the next step', 
   nextResponse = { status: 200, body: { status: 'moved' } };
   await moveConnector('p1', 'gmail');
   expect(last().body).toEqual({});
+});
+
+test('upsertConnectorPolicySet sends a template: the server writes its rules', async () => {
+  nextResponse = { status: 200, body: { ok: true, created: true, template: 'read_only', rules: 3 } };
+  const result = await upsertConnectorPolicySet('P1', 'gmail', 'read_only', { template: 'read_only' });
+  expect(last().body).toEqual({ template: 'read_only' });
+  expect(result.rules).toBe(3);
+});
+
+test('listConnectorAgents GETs every agent of a connector with its rule set', async () => {
+  nextResponse = { status: 200, body: { slug: 'gmail', policy_sets: ['read_only'], agents: [{ agent: 'support', granted: true, policy_set: 'read_only', policy_set_missing: false }] } };
+  const result = await listConnectorAgents('P1', 'gmail');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/agents');
+  expect(last().method).toBe('GET');
+  const row: ConnectorAgentRow | undefined = result.agents[0];
+  expect(row?.policy_set).toBe('read_only');
+});
+
+test('getConnectorRulesMatrix GETs connectors × agents', async () => {
+  nextResponse = { status: 200, body: { connectors: [{ slug: 'gmail', name: 'Gmail', policy_sets: [] }], agents: [{ agent: 'ops', cells: { gmail: { granted: false, policy_set: null, policy_set_missing: false } } }] } };
+  const matrix: ConnectorRulesMatrix = await getConnectorRulesMatrix('P1');
+  expect(last().url).toContain('/connectors/projects/P1/rules-matrix');
+  expect(matrix.agents[0]?.cells.gmail?.granted).toBe(false);
+});
+
+test('setConnectorOAuth2ClientCredentials PUTs the client credentials and reads the first expiry', async () => {
+  nextResponse = { status: 200, body: { ok: true, slug: 'billing', account: 'default', expires_at: '2026-10-24T12:00:00.000Z' } };
+  const result = await setConnectorOAuth2ClientCredentials('P1', 'billing', {
+    token_url: 'https://auth.example.test/token',
+    client_id: 'abc',
+    client_secret: 'x',
+    scopes: ['read'],
+  });
+  expect(last().method).toBe('PUT');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/billing/oauth2/connection');
+  expect(last().body).toEqual({ token_url: 'https://auth.example.test/token', client_id: 'abc', client_secret: 'x', scopes: ['read'] });
+  expect(result.expires_at).toBe('2026-10-24T12:00:00.000Z');
+});
+
+test('installDiscoverConnector passes as_new_profile and reads an existing profile', async () => {
+  nextResponse = { status: 200, body: { ok: true, existing: true, slug: 'wiki', name: 'Wiki', provider: 'mcp', way: { id: 'w', kind: 'mcp', name: 'Wiki', oneClick: true }, next: 'ready' } };
+  const result = await installDiscoverConnector('P1', { id: 'kortix:deepwiki', as_new_profile: true });
+  expect(last().body).toEqual({ id: 'kortix:deepwiki', as_new_profile: true });
+  expect(result.existing).toBe(true);
 });

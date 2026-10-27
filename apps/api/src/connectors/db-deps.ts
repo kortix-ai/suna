@@ -9,6 +9,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
+import { isProjectSessionPrincipal } from '../middleware/agent-scope';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { invalidateProjectMirror } from '../projects/git';
 import {
@@ -39,6 +40,7 @@ import {
   type ConnectorDraft,
   deleteConnectorFromManifest,
   getProjectPoliciesFromManifest,
+  rulesMatrixFromManifest,
   setConnectorCredentialModeInManifest,
   setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
@@ -65,7 +67,8 @@ import {
   connectorCatalogDirectIds,
   connectorCatalogDirectMcpUrls,
 } from './connector-catalog';
-import { kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { catalogDegraded, kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { connectorIdentity } from './catalog-install';
 import { catalogTools } from './catalog-tools';
 import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
@@ -93,7 +96,6 @@ import {
   mergeRequestingSession,
   readRequestingSessionId,
 } from './db-deps-connect';
-import { appFormInfo, submitAppForm } from './composio-app-form';
 import { makeDbGatewayDeps } from './db-deps-gateway';
 import {
   resolveAdmin,
@@ -195,9 +197,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
         )),
   listConnectorPolicySets,
-  upsertConnectorPolicySet: async (projectId, accountId, slug, name, description) =>
+  upsertConnectorPolicySet: async (projectId, accountId, slug, name, description, policies) =>
     (await policySetsUnsupportedFor(projectId, slug)) ??
-    upsertConnectorPolicySetInManifest(projectId, accountId, slug, name, description),
+    upsertConnectorPolicySetInManifest(projectId, accountId, slug, name, description, policies),
   renameConnectorPolicySet: async (projectId, accountId, slug, from, to) =>
     (await policySetsUnsupportedFor(projectId, slug)) ??
     renameConnectorPolicySetInManifest(projectId, accountId, slug, from, to),
@@ -232,7 +234,6 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         return { connected: r.connected, accountId: r.accountId };
       }
     : undefined,
-  appForm: { info: appFormInfo, submit: submitAppForm },
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         const rejected = { ok: false, connected: false } as const;
@@ -531,6 +532,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     }
     const mcp = await loadMcpConnector(projectId, slug);
     if (mcp) {
+      // A server with nothing to sign in to is usable now: answer that, and
+      // never create an account row a refused sign-in would leave behind.
+      if (!mcp.needsSignIn) {
+        return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connected: true, isNoAuth: true };
+      }
       // Kortix runs the sign-in itself: the link is the provider's consent page,
       // and the OAuth callback stores the token on the connection.
       if (!userId) return null;
@@ -767,13 +773,29 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
-  listDiscoverConnectors: (input) => kortixMcpCatalog.list(input),
+  listDiscoverConnectors: async (input) => ({ ...(await kortixMcpCatalog.list(input)), degraded: catalogDegraded() }),
   catalogDirectIds: () => connectorCatalogDirectIds(),
   catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
-  listDiscoverSections: (input) => kortixMcpCatalog.sections(input),
+  listDiscoverSections: async (input) => ({ ...(await kortixMcpCatalog.sections(input)), degraded: catalogDegraded() }),
+  isAgentCaller: (c) => isProjectSessionPrincipal(c),
+  customConnectorSetupUrl: (projectId, draft) => {
+    const query = new URLSearchParams({ tab: 'browse', custom: '1' });
+    for (const key of ['provider', 'url', 'transport', 'endpoint', 'spec', 'baseUrl', 'name'] as const) {
+      if (typeof draft[key] === 'string' && draft[key]) query.set(key === 'baseUrl' ? 'base_url' : key, draft[key] as string);
+    }
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/customize/connectors?${query}`;
+  },
+  listConnectorIdentities: async (projectId) =>
+    (
+      await db
+        .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+    ).map((row) => ({ slug: row.slug, identity: connectorIdentity({ provider: row.provider, ...(row.config as Record<string, string>) }) })),
   discoverConnectorTools: (variant) => catalogTools(variant),
   getDiscoverConnector: (id) => kortixMcpCatalog.detail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
+  getRulesMatrix: rulesMatrixFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),
 };

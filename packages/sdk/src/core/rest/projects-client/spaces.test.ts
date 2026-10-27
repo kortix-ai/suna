@@ -1,124 +1,366 @@
-import { describe, expect, test } from 'bun:test';
-
+import { beforeEach, expect, mock, test } from 'bun:test';
+import { ApiError } from '../../http/api/errors';
+import { configureKortix } from '../../http/config';
 import {
-  agentsInSpace,
-  bindingSpace,
-  DEFAULT_SPACE_HEADER,
-  DEFAULT_SPACE_TABS,
-  groupBySpace,
-  listSpaces,
-  PROJECT_WIDE_SPACE,
+  addProjectSpaceLink,
+  createProjectSpace,
+  getChannelsOnboarding,
+  getOrCreateProjectDm,
+  getProjectSpaceGeneralNotice,
+  getPrivateChannelsAvailable,
+  addProjectSpaceMembers,
+  joinProjectSpace,
+  leaveProjectSpace,
+  listProjectSpaceMembers,
+  removeProjectSpaceMember,
+  markChannelsOnboarding,
+  listProjectSpaceApps,
+  listProjectSpaceLinks,
+  listProjectSpaces,
+  listPrivateChannelsNotIn,
+  pinProjectSpaceLink,
+  removeProjectSpaceLink,
+  updateProjectSpace,
+  type ChannelsOnboarding,
   type ProjectSpace,
-  spaceHeader,
-  spaceTabKey,
-  spaceTabs,
-} from './spaces.ts';
+  type ProjectSpaceLink,
+  type ProjectSpaceMemberList,
+} from './spaces';
 
-const declared: ProjectSpace[] = [
-  { name: 'marketing', label: 'Marketing', order: 2 },
-  { name: 'engineering', label: 'Engineering', order: 1 },
-];
+let calls: { url: string; method: string; body: unknown }[] = [];
+let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
 
-const team = [
-  { name: 'builder', space: 'engineering' },
-  { name: 'writer', space: 'marketing' },
-  { name: 'helper' },
-];
-
-describe('groupBySpace', () => {
-  test('groups by `space` by default: declared by order, then undeclared, then Project-wide last', () => {
-    const agents = [...team, { name: 'scout', space: 'security' }, { name: 'refactorer', space: 'engineering' }];
-    const groups = groupBySpace(agents, declared);
-    expect(groups.map((g) => [g.name, g.items.map((i) => i.name)])).toEqual([
-      ['engineering', ['builder', 'refactorer']],
-      ['marketing', ['writer']],
-      ['security', ['scout']],
-      [PROJECT_WIDE_SPACE, ['helper']],
-    ]);
-    expect(groups[0]).toMatchObject({ label: 'Engineering', isDefault: false });
-    expect(groups[2]?.label).toBe('security');
-    expect(groups.at(-1)).toMatchObject({ label: 'Project-wide', isDefault: true });
-  });
-
-  test('a blank space folds into Project-wide, and an empty declared space is omitted', () => {
-    const groups = groupBySpace([{ name: 'x', space: '  ' }, { name: 'y', space: null }], declared);
-    expect(groups.map((g) => g.name)).toEqual([PROJECT_WIDE_SPACE]);
-  });
-
-  test('takes an accessor, so any resource groups through bindingSpace', () => {
-    const goals = [
-      { slug: 'g1', goal: { agent: 'builder' } },
-      { slug: 'g2', goal: null },
-    ];
-    const groups = groupBySpace(goals, declared, (g) => bindingSpace(g.goal, team));
-    expect(groups.map((g) => [g.name, g.items.map((i) => i.slug)])).toEqual([
-      ['engineering', ['g1']],
-      [PROJECT_WIDE_SPACE, ['g2']],
-    ]);
-  });
-
-  test('a space named `general` is a real space, not the Project-wide bucket', () => {
-    const groups = groupBySpace([{ name: 'a', space: 'general' }, { name: 'b' }], [{ name: 'general', label: 'General' }]);
-    expect(groups.map((g) => [g.name, g.isDefault])).toEqual([
-      ['general', false],
-      [PROJECT_WIDE_SPACE, true],
-    ]);
-  });
-});
-
-describe('bindings and listing', () => {
-  test('bindingSpace: an explicit space wins, else the agent space, else project-wide (null)', () => {
-    expect(bindingSpace({ space: 'ops', agent: 'builder' }, team)).toBe('ops');
-    expect(bindingSpace({ agent: 'builder' }, team)).toBe('engineering');
-    expect(bindingSpace({ agent: 'helper' }, team)).toBeNull();
-    expect(bindingSpace({ agent: 'unknown' }, team)).toBeNull();
-    expect(bindingSpace({ space: '  ', agent: null }, team)).toBeNull();
-    expect(bindingSpace(null, team)).toBeNull();
-  });
-
-  test('agentsInSpace lists the agents whose space is the slug', () => {
-    expect(agentsInSpace('engineering', [...team, { name: 'refactorer', space: 'engineering' }])).toEqual([
-      'builder',
-      'refactorer',
-    ]);
-    expect(agentsInSpace('ops', team)).toEqual([]);
-  });
-
-  test('listSpaces: declared spaces even with no agents, then referenced ones', () => {
-    const spaces = listSpaces({
-      agents: [{ name: 'scout', space: 'security' }, { name: 'helper' }, { name: 'builder', space: 'engineering' }],
-      spaces: [...declared, { name: 'ops', label: 'Ops', order: 3 }, { name: 'general' }],
+beforeEach(() => {
+  calls = [];
+  nextResponse = { status: 200, body: {} };
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
+    calls.push({
+      url: String(url),
+      method: opts.method ?? 'GET',
+      body: opts.body ? JSON.parse(opts.body) : undefined,
     });
-    expect(spaces.map((s) => s.name)).toEqual(['engineering', 'marketing', 'ops', 'general', 'security']);
-    expect(spaces.find((s) => s.name === 'security')).toEqual({ name: 'security' });
-    expect(listSpaces({ agents: [] })).toEqual([]);
-    expect(listSpaces(null)).toEqual([]);
+    return new Response(JSON.stringify(nextResponse.body), {
+      status: nextResponse.status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+});
+
+configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+
+const general: ProjectSpace = {
+  space_id: '00000000-0000-4000-8000-000000000001',
+  kind: 'channel',
+  slug: 'general',
+  name: 'general',
+  description: null,
+  is_default: true,
+  dm_agent_name: null,
+  archived_at: null,
+  created_at: '2026-10-20T00:00:00.000Z',
+  updated_at: '2026-10-20T00:00:00.000Z',
+};
+
+test('listProjectSpaces GETs the project spaces and returns the array', async () => {
+  nextResponse = { status: 200, body: { spaces: [general] } };
+  const spaces = await listProjectSpaces('P1');
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces', method: 'GET', body: undefined }]);
+  expect(spaces).toEqual([general]);
+});
+
+test('getProjectSpaceGeneralNotice reads #general\'s turned-on-again line from the spaces list, or null', async () => {
+  const notice = { kind: 'reenabled' as const, at: '2026-10-23T00:00:00.000Z', count: 4 };
+  nextResponse = { status: 200, body: { spaces: [general], general_notice: notice } };
+  expect(await getProjectSpaceGeneralNotice('P1')).toEqual(notice);
+  nextResponse = { status: 200, body: { spaces: [general] } };
+  expect(await getProjectSpaceGeneralNotice('P1')).toBeNull();
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/projects/P1/spaces',
+  ]);
+});
+
+test('getPrivateChannelsAvailable reads private_channels_available from the spaces list; an older API that sends none reads false', async () => {
+  nextResponse = { status: 200, body: { spaces: [general], private_channels_available: true } };
+  expect(await getPrivateChannelsAvailable('P1')).toBe(true);
+  nextResponse = { status: 200, body: { spaces: [general] } };
+  expect(await getPrivateChannelsAvailable('P1')).toBe(false);
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/projects/P1/spaces',
+  ]);
+});
+
+test('listPrivateChannelsNotIn GETs the manager list of private channels and returns its array', async () => {
+  const row = {
+    space_id: '00000000-0000-4000-8000-000000000009',
+    name: 'deals',
+    slug: 'deals',
+    member_count: 0,
+    created_by: null,
+    created_by_name: null,
+    created_at: '2026-10-20T00:00:00.000Z',
+    archived_at: null,
+  };
+  nextResponse = { status: 200, body: { channels: [row] } };
+  expect(await listPrivateChannelsNotIn('P1')).toEqual([row]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces/private', method: 'GET', body: undefined }]);
+});
+
+test('getChannelsOnboarding GETs the caller\'s onboarding state', async () => {
+  const state: ChannelsOnboarding = {
+    intro_seen: false,
+    get_started: { visible: true, create_channel: true, remember: false, open_dm: false },
+  };
+  nextResponse = { status: 200, body: state };
+  expect(await getChannelsOnboarding('P1')).toEqual(state);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/onboarding/channels', method: 'GET', body: undefined }]);
+});
+
+test('markChannelsOnboarding POSTs { mark } and resolves on 204', async () => {
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
+    calls.push({ url: String(url), method: opts.method ?? 'GET', body: opts.body ? JSON.parse(opts.body) : undefined });
+    return new Response(null, { status: 204 });
+  }) as unknown as typeof fetch;
+  expect(await markChannelsOnboarding('P1', 'channels_intro')).toBeUndefined();
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/onboarding/channels/marks', method: 'POST', body: { mark: 'channels_intro' } },
+  ]);
+});
+
+test('markChannelsOnboarding rejects an unknown mark with 400 and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 400, body: { error: true, message: 'Validation failed' } };
+  const error = await markChannelsOnboarding('P1', 'nope' as never).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 400 });
+  expect(errors).toEqual([]);
+});
+
+test('createProjectSpace POSTs the name and description', async () => {
+  nextResponse = { status: 201, body: { ...general, slug: 'design', name: 'Design', is_default: false } };
+  const space = await createProjectSpace('P1', { name: 'Design', description: 'UI work' });
+  expect(calls[0]).toEqual({
+    url: 'http://test.local/v1/projects/P1/spaces',
+    method: 'POST',
+    body: { name: 'Design', description: 'UI work' },
+  });
+  expect(space.slug).toBe('design');
+});
+
+test('createProjectSpace sends visibility private and reads the channel back as private', async () => {
+  nextResponse = { status: 201, body: { ...general, slug: 'deals', name: 'deals', is_default: false, visibility: 'private' } };
+  const space = await createProjectSpace('P1', { name: 'deals', visibility: 'private' });
+  expect(calls[0]!.body).toEqual({ name: 'deals', visibility: 'private' });
+  const visibility: 'public' | 'private' | undefined = space.visibility;
+  expect(visibility).toBe('private');
+});
+
+test('updateProjectSpace makes a public channel private', async () => {
+  nextResponse = { status: 200, body: { ...general, visibility: 'private' } };
+  await updateProjectSpace('P1', general.space_id, { visibility: 'private' });
+  expect(calls[0]!.body).toEqual({ visibility: 'private' });
+});
+
+test('createProjectSpace rejects a taken slug with code slug_taken and the existing space', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'A channel with this name exists', code: 'slug_taken', space_id: general.space_id, archived: true },
+  };
+  const error = await createProjectSpace('P1', { name: 'general' }).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({
+    status: 409,
+    code: 'slug_taken',
+    data: { space_id: general.space_id, archived: true },
   });
 });
 
-describe('tabs and header', () => {
-  test('a space with no tabs gets the default views', () => {
-    expect(spaceTabs({ name: 'eng' })).toEqual(DEFAULT_SPACE_TABS);
-    expect(DEFAULT_SPACE_TABS.map((t) => t.type)).toEqual(['goals', 'apps', 'artifacts']);
+test('updateProjectSpace PATCHes the space by id', async () => {
+  nextResponse = { status: 200, body: { ...general, archived_at: '2026-10-20T01:00:00.000Z' } };
+  const space = await updateProjectSpace('P1', general.space_id, { archived: true, description: null });
+  expect(calls[0]).toEqual({
+    url: `http://test.local/v1/projects/P1/spaces/${general.space_id}`,
+    method: 'PATCH',
+    body: { archived: true, description: null },
   });
+  expect(space.archived_at).toBe('2026-10-20T01:00:00.000Z');
+});
 
-  test('configured tabs replace the defaults, an empty list included', () => {
-    const tabs = [{ type: 'link' as const, url: 'https://example.com' }];
-    expect(spaceTabs({ name: 'eng', tabs })).toEqual(tabs);
-    expect(spaceTabs({ name: 'eng', tabs: [] })).toEqual([]);
+test('updateProjectSpace sends the channel agent list in order and reads it back, first agent the default', async () => {
+  nextResponse = { status: 200, body: { ...general, agents: ['writer', 'kortix'] } };
+  const space = await updateProjectSpace('P1', general.space_id, { agents: ['writer', 'kortix'] });
+  expect(calls[0]).toEqual({
+    url: `http://test.local/v1/projects/P1/spaces/${general.space_id}`,
+    method: 'PATCH',
+    body: { agents: ['writer', 'kortix'] },
   });
+  const agents: string[] | undefined = space.agents;
+  expect(agents).toEqual(['writer', 'kortix']);
+});
 
-  test('spaceTabKey: views by type, pinned items by target, the rest by position', () => {
-    expect(spaceTabKey({ type: 'goals' }, 4)).toBe('goals');
-    expect(spaceTabKey({ type: 'app', app: 'crm' }, 1)).toBe('app-crm');
-    expect(spaceTabKey({ type: 'artifact', artifact: 'a1' }, 1)).toBe('artifact-a1');
-    expect(spaceTabKey({ type: 'board' }, 2)).toBe('board-2');
-    expect(spaceTabKey({ type: 'link', url: 'https://x.test' }, 3)).toBe('link-3');
-    expect(spaceTabKey({ type: 'files', path: 'docs' }, 0)).toBe('files-0');
-  });
+test('updateProjectSpace rejects a taken slug with slug_taken and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = {
+    status: 409,
+    body: { error: 'A channel with this name exists', code: 'slug_taken', space_id: general.space_id, archived: false },
+  };
+  const error = await updateProjectSpace('P1', 'S2', { name: 'general' }).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 409, code: 'slug_taken', data: { space_id: general.space_id, archived: false } });
+  expect(errors).toEqual([]);
+});
 
-  test('spaceHeader: every item by default, else the configured list', () => {
-    expect(spaceHeader({ name: 'eng' })).toEqual(DEFAULT_SPACE_HEADER);
-    expect(spaceHeader({ name: 'eng', header: ['agents'] })).toEqual(['agents']);
+test('getOrCreateProjectDm POSTs the agent name to the DM route', async () => {
+  nextResponse = {
+    status: 200,
+    body: { ...general, kind: 'dm', slug: null, name: 'kortix', is_default: false, dm_agent_name: 'kortix' },
+  };
+  const dm = await getOrCreateProjectDm('P1', 'kortix');
+  expect(calls[0]).toEqual({
+    url: 'http://test.local/v1/projects/P1/spaces/dm',
+    method: 'POST',
+    body: { agent_name: 'kortix' },
   });
+  expect(dm.kind).toBe('dm');
+  expect(dm.dm_agent_name).toBe('kortix');
+});
+
+test('getOrCreateProjectDm rejects an unknown agent with agent_not_found and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 404, body: { error: 'Agent not found', code: 'agent_not_found' } };
+  const error = await getOrCreateProjectDm('P1', 'ghost').catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 404, code: 'agent_not_found' });
+  expect(errors).toEqual([]);
+});
+
+const link: ProjectSpaceLink = {
+  link_id: 'L1',
+  space_id: general.space_id,
+  url: 'https://example.test/spec',
+  title: 'Spec',
+  created_by: 'U1',
+  created_by_name: 'Ana',
+  created_at: '2026-10-21T00:00:00.000Z',
+  can_delete: true,
+  pinned: false,
+  pinned_by_name: null,
+  pinned_at: null,
+  source: 'message',
+  session_id: 'T1',
+  last_shared_at: '2026-10-22T00:00:00.000Z',
+  display_title: 'Spec',
+  site_name: 'Example',
+  icon_url: 'https://example.test/favicon.ico',
+};
+
+// A link built by a consumer without the fetched fields (an older API, a hand-made fixture) still type-checks.
+const legacyLink: ProjectSpaceLink = (({ display_title, site_name, icon_url, ...rest }) => rest)(link);
+
+test('a link from an API without the fetched fields lists unchanged', async () => {
+  nextResponse = { status: 200, body: { links: [legacyLink] } };
+  expect(await listProjectSpaceLinks('P1', 'S1')).toEqual([legacyLink]);
+});
+
+test('listProjectSpaceApps GETs the channel apps and returns the array', async () => {
+  nextResponse = { status: 200, body: { apps: [{ app_id: 'A1' }] } };
+  const apps = await listProjectSpaceApps('P1', 'S1');
+  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces/S1/apps', method: 'GET', body: undefined }]);
+  expect(apps).toEqual([{ app_id: 'A1' }] as never);
+});
+
+test('space links: list GETs, add POSTs url and title, remove DELETEs by id', async () => {
+  nextResponse = { status: 200, body: { links: [link] } };
+  expect(await listProjectSpaceLinks('P1', 'S1')).toEqual([link]);
+  nextResponse = { status: 201, body: link };
+  expect(await addProjectSpaceLink('P1', 'S1', { url: link.url, title: 'Spec' })).toEqual(link);
+  nextResponse = { status: 200, body: { ok: true } };
+  await removeProjectSpaceLink('P1', 'S1', 'L1');
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links', method: 'GET', body: undefined },
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links', method: 'POST', body: { url: link.url, title: 'Spec' } },
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'DELETE', body: undefined },
+  ]);
+});
+
+test('pinProjectSpaceLink PATCHes { pinned } and returns the link, or null from an older server that removed it on unpin', async () => {
+  const pinned = { ...link, pinned: true, pinned_by_name: 'Ana', pinned_at: '2026-10-23T00:00:00.000Z' };
+  nextResponse = { status: 200, body: { link: pinned } };
+  expect(await pinProjectSpaceLink('P1', 'S1', 'L1', true)).toEqual(pinned);
+  nextResponse = { status: 200, body: { link: null } };
+  expect(await pinProjectSpaceLink('P1', 'S1', 'L1', false)).toBeNull();
+  expect(calls).toEqual([
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: true } },
+    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: false } },
+  ]);
+});
+
+test('pinProjectSpaceLink rejects a full channel with 409 link_limit and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 409, body: { error: 'A channel pins at most 200 links. Unpin one first.', code: 'link_limit' } };
+  const error = await pinProjectSpaceLink('P1', 'S1', 'L1', true).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 409, code: 'link_limit' });
+  expect(errors).toEqual([]);
+});
+
+test('addProjectSpaceLink rejects a bad url with 400 and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 400, body: { error: true, message: 'Validation failed' } };
+  const error = await addProjectSpaceLink('P1', 'S1', { url: 'ftp://x' }).catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 400 });
+  expect(errors).toEqual([]);
+});
+
+const memberList: ProjectSpaceMemberList = {
+  members: [
+    {
+      user_id: 'U1',
+      name: 'Priya Rao',
+      avatar_url: null,
+      is_creator: true,
+      is_viewer: true,
+      added_at: '2026-10-25T00:00:00.000Z',
+      can_remove: false,
+    },
+  ],
+  implicit: false,
+  can_add: true,
+};
+
+test('channel members: list, add in bulk, remove, join and leave reach their routes and return the list', async () => {
+  nextResponse = { status: 200, body: memberList };
+  const base = 'http://test.local/v1/projects/P1/spaces/S1';
+  expect(await listProjectSpaceMembers('P1', 'S1')).toEqual(memberList);
+  expect(await addProjectSpaceMembers('P1', 'S1', ['U2', 'U3'])).toEqual(memberList);
+  expect(await removeProjectSpaceMember('P1', 'S1', 'U2')).toEqual(memberList);
+  expect(await joinProjectSpace('P1', 'S1')).toEqual(memberList);
+  expect(await leaveProjectSpace('P1', 'S1')).toEqual(memberList);
+  expect(calls).toEqual([
+    { url: `${base}/members`, method: 'GET', body: undefined },
+    { url: `${base}/members`, method: 'POST', body: { user_ids: ['U2', 'U3'] } },
+    { url: `${base}/members/U2`, method: 'DELETE', body: undefined },
+    { url: `${base}/join`, method: 'POST', body: undefined },
+    { url: `${base}/members/me`, method: 'DELETE', body: undefined },
+  ]);
+});
+
+test('adding someone outside the project rejects with ApiError 400 not_project_member', async () => {
+  nextResponse = { status: 400, body: { error: 'Only members of the project can be added to a channel.', code: 'not_project_member', user_ids: ['U9'] } };
+  const error = await addProjectSpaceMembers('P1', 'S1', ['U9']).catch((e) => e);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.status).toBe(400);
+  expect(error.code).toBe('not_project_member');
 });

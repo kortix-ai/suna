@@ -410,10 +410,7 @@ export function ScheduleView({
   const closeTrigger = () => navigateSheet({ slug: null });
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
-  const invalidate = useCallback(
-    () => queryClient.invalidateQueries({ queryKey }),
-    [queryClient, queryKey],
-  );
+  const invalidate = useCallback(() => queryClient.invalidateQueries({ queryKey }), [queryClient, queryKey]);
 
   /* ── Mutations shared by the row menu and the detail panel ───────────── */
 

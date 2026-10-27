@@ -46,15 +46,14 @@ import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
-  appsOpenableByUser,
   appAccessSessionUrl,
-  filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { accessibleApps } from './space-apps';
 import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manifest';
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
@@ -314,10 +313,8 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       // Only the Apps the caller may see AND open: no card that is listed and
       // then refuses to open. An App left out answers 404 on GET, never 403.
-      const visible = await filterAppsVisibleToUser(rows, loaded.userId);
-      const openable = await appsOpenableByUser(visible, loaded.userId);
-      const accessible = visible.filter((row) => openable.has(row.appId));
-      return c.json({ apps: await appsJson(accessible, loaded.userId, openable) });
+      const accessible = await accessibleApps(rows, loaded.userId);
+      return c.json({ apps: await appsJson(accessible.rows, loaded.userId, accessible.openable) });
     },
   );
 

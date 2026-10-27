@@ -8,7 +8,7 @@ import {
   spaceHeader,
   spaceTabKey,
   spaceTabs,
-  type ProjectSpace,
+  type ManifestSpace,
   type SpaceTab,
 } from '@kortix/sdk';
 import {
@@ -50,7 +50,7 @@ const PILE = 4;
 
 /** The tabs a viewer sees, in order: a tab of a feature the project has off is hidden. */
 export function visibleSpaceTabs(
-  space: ProjectSpace,
+  space: ManifestSpace,
   flags: { goals: boolean; artifacts: boolean },
 ): Array<{ key: string; tab: SpaceTab; index: number }> {
   return spaceTabs(space)
@@ -156,7 +156,7 @@ function SpaceTabTrigger({ value, tab }: { value: string; tab: SpaceTab }) {
  * of `ProjectPageHeader`, so it clears the desktop window controls the same
  * way. Below `@3xl` the action buttons drop their labels.
  */
-function SpaceHeader({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+function SpaceHeader({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const config = useProjectConfig(projectId);
   const sidebar = useOptionalSidebar();
   const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
@@ -295,7 +295,7 @@ function NewSessionInSpace({ projectId, slug }: { projectId: string; slug: strin
   );
 }
 
-function AskMyKortix({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+function AskMyKortix({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const t = useTranslations('spaces');
   const configure = useConfigureThread(projectId);
   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { PROJECT_WIDE_SPACE, type SpaceGroup, type ProjectSpace } from '@kortix/sdk';
+import { PROJECT_WIDE_SPACE, type SpaceGroup, type ManifestSpace } from '@kortix/sdk';
 
 import { ALL_SPACES } from '../../customize/shared/catalog/catalog-space-tabs';
 import { useTranslations } from '../../i18n';
@@ -20,7 +20,7 @@ export function SpaceFilterTabs<T>({
   onValueChange,
 }: {
   /** `listSpaces(config)`. */
-  spaces: ProjectSpace[];
+  spaces: ManifestSpace[];
   /** `groupBySpace(items, …)`: the counts. */
   groups: Array<SpaceGroup<T>>;
   value: string;
@@ -50,7 +50,7 @@ export function SpaceFilterTabs<T>({
 }
 
 /** The name a filtered empty state shows for `value`. */
-export function spaceFilterLabel(value: string, spaces: ProjectSpace[], projectWide: string): string {
+export function spaceFilterLabel(value: string, spaces: ManifestSpace[], projectWide: string): string {
   if (value === PROJECT_WIDE_SPACE) return projectWide;
   const space = spaces.find((candidate) => candidate.name === value);
   return space?.label || space?.name || value;

@@ -1,6 +1,6 @@
 {
   "id": "7b4c1550-0c30-4423-9a10-5980f141b2c7",
-  "prevId": "c1bebaa2-c154-47a2-8f07-6ab9aee915ec",
+  "prevId": "3a1d9ad6-9779-46b5-9187-5337e592ed36",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14315,6 +14315,52 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.memory_thread_loads": {
+      "name": "memory_thread_loads",
+      "schema": "kortix",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "first_loaded_at": {
+          "name": "first_loaded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "layers": {
+          "name": "layers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "memory_thread_loads_session_id_project_sessions_session_id_fk": {
+          "name": "memory_thread_loads_session_id_project_sessions_session_id_fk",
+          "tableFrom": "memory_thread_loads",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.notification_preferences": {
       "name": "notification_preferences",
       "schema": "kortix",
@@ -18384,6 +18430,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "secrets_allowlist": {
           "name": "secrets_allowlist",
           "type": "jsonb",
@@ -18433,6 +18485,34 @@
         }
       },
       "indexes": {
+        "idx_project_sessions_space": {
+          "name": "idx_project_sessions_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_sessions\".\"space_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_project_sessions_account": {
           "name": "idx_project_sessions_account",
           "columns": [
@@ -18703,6 +18783,20 @@
             "project_id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_sessions_space_fk": {
+          "name": "project_sessions_space_fk",
+          "tableFrom": "project_sessions",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -19152,6 +19246,567 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_space_links": {
+      "name": "project_space_links",
+      "schema": "kortix",
+      "columns": {
+        "link_id": {
+          "name": "link_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "pinned": {
+          "name": "pinned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "pinned_by": {
+          "name": "pinned_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pinned_at": {
+          "name": "pinned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_shared_at": {
+          "name": "last_shared_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "fetched_title": {
+          "name": "fetched_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "site_name": {
+          "name": "site_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "icon_url": {
+          "name": "icon_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetch_failed_at": {
+          "name": "fetch_failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uniq_project_space_links_space_url": {
+          "name": "uniq_project_space_links_space_url",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_links_space": {
+          "name": "idx_project_space_links_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_links_session": {
+          "name": "idx_project_space_links_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_space_links_project": {
+          "name": "idx_project_space_links_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_space_links_space_id_project_spaces_space_id_fk": {
+          "name": "project_space_links_space_id_project_spaces_space_id_fk",
+          "tableFrom": "project_space_links",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_space_links_project_id_projects_project_id_fk": {
+          "name": "project_space_links_project_id_projects_project_id_fk",
+          "tableFrom": "project_space_links",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_space_links_session_id_project_sessions_session_id_fk": {
+          "name": "project_space_links_session_id_project_sessions_session_id_fk",
+          "tableFrom": "project_space_links",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_space_links_source_check": {
+          "name": "project_space_links_source_check",
+          "value": "\"kortix\".\"project_space_links\".\"source\" in ('manual', 'message')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.project_space_members": {
+      "name": "project_space_members",
+      "schema": "kortix",
+      "columns": {
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_space_members_user": {
+          "name": "idx_project_space_members_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_space_members_space_id_project_spaces_space_id_fk": {
+          "name": "project_space_members_space_id_project_spaces_space_id_fk",
+          "tableFrom": "project_space_members",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_space_members_space_id_user_id_pk": {
+          "name": "project_space_members_space_id_user_id_pk",
+          "columns": [
+            "space_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_spaces": {
+      "name": "project_spaces",
+      "schema": "kortix",
+      "columns": {
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "project_space_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "dm_user_id": {
+          "name": "dm_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dm_agent_name": {
+          "name": "dm_agent_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agents": {
+          "name": "agents",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "project_space_visibility",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'public'"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_project_spaces_channel_slug": {
+          "name": "uniq_project_spaces_channel_slug",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'channel'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uniq_project_spaces_dm": {
+          "name": "uniq_project_spaces_dm",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dm_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dm_agent_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'dm'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uniq_project_spaces_default": {
+          "name": "uniq_project_spaces_default",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_spaces\".\"is_default\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_spaces_project": {
+          "name": "idx_project_spaces_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_spaces_account_id_accounts_account_id_fk": {
+          "name": "project_spaces_account_id_accounts_account_id_fk",
+          "tableFrom": "project_spaces",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_spaces_project_id_projects_project_id_fk": {
+          "name": "project_spaces_project_id_projects_project_id_fk",
+          "tableFrom": "project_spaces",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_spaces_kind_shape_check": {
+          "name": "project_spaces_kind_shape_check",
+          "value": "(\"kortix\".\"project_spaces\".\"kind\" = 'channel' and \"kortix\".\"project_spaces\".\"slug\" is not null and \"kortix\".\"project_spaces\".\"dm_user_id\" is null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is null) or (\"kortix\".\"project_spaces\".\"kind\" = 'dm' and \"kortix\".\"project_spaces\".\"slug\" is null and \"kortix\".\"project_spaces\".\"dm_user_id\" is not null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is not null)"
+        },
+        "project_spaces_private_channel_check": {
+          "name": "project_spaces_private_channel_check",
+          "value": "\"kortix\".\"project_spaces\".\"visibility\" = 'public' or (\"kortix\".\"project_spaces\".\"kind\" = 'channel' and not \"kortix\".\"project_spaces\".\"is_default\")"
+        }
+      },
       "isRLSEnabled": false
     },
     "kortix.project_trigger_event_polls": {
@@ -20130,6 +20785,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "space_id": {
+          "name": "space_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -20174,6 +20835,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_project_trigger_runtime_space": {
+          "name": "idx_project_trigger_runtime_space",
+          "columns": [
+            {
+              "expression": "space_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_trigger_runtime\".\"space_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -20201,6 +20878,20 @@
           ],
           "columnsTo": [
             "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_trigger_runtime_space_fk": {
+          "name": "project_trigger_runtime_space_fk",
+          "tableFrom": "project_trigger_runtime",
+          "tableTo": "project_spaces",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "space_id"
+          ],
+          "columnsTo": [
+            "space_id"
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -20339,6 +21030,68 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_user_marks": {
+      "name": "project_user_marks",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mark": {
+          "name": "mark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "project_user_marks_project_id_projects_project_id_fk": {
+          "name": "project_user_marks_project_id_projects_project_id_fk",
+          "tableFrom": "project_user_marks",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_user_marks_project_id_user_id_mark_pk": {
+          "name": "project_user_marks_project_id_user_id_mark_pk",
+          "columns": [
+            "project_id",
+            "user_id",
+            "mark"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -29139,6 +29892,22 @@
         "private",
         "project",
         "restricted"
+      ]
+    },
+    "kortix.project_space_kind": {
+      "name": "project_space_kind",
+      "schema": "kortix",
+      "values": [
+        "channel",
+        "dm"
+      ]
+    },
+    "kortix.project_space_visibility": {
+      "name": "project_space_visibility",
+      "schema": "kortix",
+      "values": [
+        "public",
+        "private"
       ]
     },
     "kortix.project_status": {

@@ -690,16 +690,9 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/connect/connectors#call-connectors-from-code',
         permanent: true,
       },
-      // The help centre was a second support surface: it wore the app sidebar
-      // and a ⌘K modal to host exactly one article, while /support carried the
-      // FAQ, the contact addresses and the account-deletion steps. They merged
-      // into /support, so every help URL lands on its counterpart there.
-      //
-      // Permanent (308), because these are indexed public URLs and the merge is
-      // not going to be undone. /help went to the hub; /help/credits went to
-      // the credits guide, which now lives in the docs tree. /help/:path*
-      // catches nothing today — the tree held only the index and credits — and
-      // exists so a stale deep link ends on the hub instead of the marketing 404.
+      // The help centre merged into /support, and /support was removed
+      // (2026-10-26). Every help URL lands on the contact page, except
+      // /help/credits, which has a counterpart in the docs tree.
       {
         source: '/help/credits',
         destination: '/docs/credits',
@@ -707,12 +700,12 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/help',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       {
         source: '/help/:path*',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       // The credits guide is reference material, so it lives in the docs tree
@@ -724,6 +717,32 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/credits',
         permanent: true,
       },
+      // Marketing pages removed on 2026-10-26. They are indexed public URLs,
+      // listed in the old sitemap and llms.txt, so each one keeps resolving:
+      // /support (and its locale copies) goes to the contact page, the rest
+      // go home. The Markdown twins go to the home page's twin.
+      ...['/support'].flatMap((page) => [
+        { source: page, destination: '/contact', permanent: true },
+        { source: `${page}/:path*`, destination: '/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale/contact', permanent: true },
+      ]),
+      ...[
+        '/agent-computer',
+        '/agents-and-skills',
+        '/automations',
+        '/channels',
+        '/company-as-code',
+        '/connectors',
+        '/solutions',
+      ].flatMap((page) => [
+        { source: page, destination: '/', permanent: true },
+        { source: `${page}/:path*`, destination: '/', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale', permanent: true },
+        { source: `/markdown${page}.md`, destination: '/markdown/index.md', permanent: true },
+        { source: `/markdown${page}/:path*`, destination: '/markdown/index.md', permanent: true },
+      ]),
       // Removed pages that may live on in old links and search indexes.
       // /credits-explained became the credits guide in the docs tree; the
       // /compare section was retired with no direct replacement.

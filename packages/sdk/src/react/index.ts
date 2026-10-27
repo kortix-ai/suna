@@ -254,6 +254,27 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
+export {
+  useAddProjectSpaceLink,
+  useAddProjectSpaceMembers,
+  useChannelsOnboarding,
+  useJoinProjectSpace,
+  useLeaveProjectSpace,
+  useProjectSpaceMembers,
+  useRemoveProjectSpaceMember,
+  useCreateProjectSpace,
+  useMarkChannelsOnboarding,
+  useOpenProjectDm,
+  usePinProjectSpaceLink,
+  useProjectSpaceApps,
+  useProjectSpaceGeneralNotice,
+  usePrivateChannelsAvailable,
+  usePrivateChannelsNotIn,
+  useProjectSpaceLinks,
+  useProjectSpaces,
+  useRemoveProjectSpaceLink,
+  useUpdateProjectSpace,
+} from './use-project-spaces';
 export * from './use-sessions-needing-input';
 // The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
 export * from './use-review-summary';
@@ -263,6 +284,7 @@ export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-memory';
 export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`

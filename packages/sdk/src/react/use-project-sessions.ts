@@ -14,8 +14,8 @@
  * tested without mounting react-query, plus the hook itself.
  */
 
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { focusManager, keepPreviousData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   listProjectSessionsPage,
   type ListProjectSessionsOptions,
@@ -83,12 +83,44 @@ export function shouldScanPastEmptySessionPages(
   return data.pages.every((page) => page.items.length === 0);
 }
 
+type ProjectSessionPages = { pages: ProjectSessionPage[]; pageParams: unknown[] };
+
+/**
+ * Put a fresh read of page one in front of the loaded pages. Rows the fresh
+ * page pushed off stay in page one: page two's cursor starts after them, so
+ * dropping them would hide them until the next full refetch. Page one keeps
+ * its cursor for the same reason.
+ */
+function withFreshFirstPage(data: ProjectSessionPages | undefined, fresh: ProjectSessionPage): ProjectSessionPages | undefined {
+  const [first, ...rest] = data?.pages ?? [];
+  if (!data || !first) return data;
+  const freshIds = new Set(fresh.items.map((session) => session.session_id));
+  const pushedOff = first.items.filter((session) => !freshIds.has(session.session_id));
+  return { ...data, pages: [{ ...first, items: [...fresh.items, ...pushedOff] }, ...rest] };
+}
+
 export interface UseProjectSessionsOptions
-  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view'> {
+  extends Pick<
+    ListProjectSessionsOptions,
+    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'createdBy' | 'agent' | 'updatedAfter'
+  > {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
+  /**
+   * Experimental. With `refetchInterval`, poll page one only, not every
+   * loaded page: new and newly active sessions (they sort first) show up,
+   * and an older page the viewer loaded is not re-read on every tick. Its
+   * rows refresh on the next full refetch (a mutation, a window focus).
+   */
+  pollFirstPageOnly?: boolean;
   refetchOnWindowFocus?: boolean;
+  /**
+   * When a filter changes, keep the previous filter's rows (`isPlaceholderData`
+   * true, `isLoading` false) until the new list answers, so a search field
+   * does not blank the list on every keystroke.
+   */
+  keepPreviousData?: boolean;
 }
 
 /**
@@ -99,31 +131,53 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels, view } = options ?? {};
+  const { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter } = options ?? {};
+  const filters = { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter };
+  const queryKey = qk.project.sessionsPaged(projectId, scope, filters);
+  const readPage = (cursor: string | null) =>
+    listProjectSessionsPage(projectId, { scope, limit: options?.limit, cursor, ...filters });
+  const intervalFor = (data: ProjectSessionPages | undefined) => {
+    const interval = options?.refetchInterval;
+    if (typeof interval !== 'function') return interval ?? false;
+    return interval(flattenProjectSessionPages(data));
+  };
+  const pollFirstPageOnly = options?.pollFirstPageOnly === true;
   const query = useInfiniteQuery({
-    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, view }),
+    queryKey,
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
-      listProjectSessionsPage(projectId, {
-        scope,
-        limit: options?.limit,
-        cursor: pageParam,
-        parent,
-        startedBy,
-        q,
-        labels,
-        view,
-      }),
+    queryFn: ({ pageParam }) => readPage(pageParam),
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
+    placeholderData: options?.keepPreviousData ? keepPreviousData : undefined,
     ...contract('inventory'),
-    refetchInterval: (query) => {
-      const interval = options?.refetchInterval;
-      if (typeof interval !== 'function') return interval ?? false;
-      return interval(flattenProjectSessionPages(query.state.data));
-    },
+    refetchInterval: (query) => (pollFirstPageOnly ? false : intervalFor(query.state.data)),
   });
+
+  // pollFirstPageOnly: one timer per answer. A tick skipped while the window
+  // is not focused (as `refetchInterval` does), or a failed read, re-arms it.
+  const queryClient = useQueryClient();
+  const [rearm, setRearm] = useState(0);
+  const pollMs = pollFirstPageOnly && query.isSuccess ? intervalFor(query.data) : false;
+  useEffect(() => {
+    if (!pollMs) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      if (!focusManager.isFocused()) return setRearm((n) => n + 1);
+      readPage(null).then(
+        (fresh) => {
+          if (live) queryClient.setQueryData<ProjectSessionPages>(queryKey, (data) => withFreshFirstPage(data, fresh));
+        },
+        () => live && setRearm((n) => n + 1),
+      );
+    }, pollMs);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // The answer's timestamp re-arms the timer; the key's parts identify the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollMs, query.dataUpdatedAt, rearm, projectId, scope, parent, startedBy, q, view, spaceId, createdBy, agent, updatedAfter, options?.limit]);
 
   // A failed fetch ends the scan: Load more (or a refetch) is the retry.
   const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
@@ -148,7 +202,8 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
      * A poll refetches EVERY loaded page, so a viewer who has pressed
      * "Load more" several times pays for each of them on every tick. That is
      * the intended trade — it is bounded by what the viewer actually asked to
-     * see, where the old behavior was bounded by nothing.
+     * see, where the old behavior was bounded by nothing. `pollFirstPageOnly`
+     * opts out of it.
      */
     sessions: flattenProjectSessionPages(query.data),
   };

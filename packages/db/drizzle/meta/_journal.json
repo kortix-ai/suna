@@ -1286,7 +1286,14 @@
     {
       "idx": 183,
       "version": "7",
-      "when": 1792833209000,
+      "when": 1792955176796,
+      "tag": "20261025190616_project_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1792999999000,
       "tag": "20261024091329_artifact_bindings",
       "breakpoints": true
     }

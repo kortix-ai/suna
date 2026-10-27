@@ -193,6 +193,7 @@
     "./emoji-picker": "./src/primitives/emoji-picker.tsx",
     "./emoji-tint": "./src/primitives/emoji-tint.ts",
     "./empty": "./src/primitives/empty.tsx",
+    "./empty-art": "./src/primitives/empty-art.tsx",
     "./empty-state": "./src/primitives/empty-state.tsx",
     "./entity-avatar": "./src/primitives/entity-avatar.tsx",
     "./error-boundary": "./src/primitives/error-boundary.tsx",
@@ -394,7 +395,6 @@
     "./markdown/doc-editor/doc-menus": "./src/markdown/doc-editor/doc-menus.tsx",
     "./markdown/doc-editor/markdown": "./src/markdown/doc-editor/markdown.ts",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
-    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -423,6 +423,7 @@
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/primitives/radio-group.tsx",
     "./resizable": "./src/primitives/resizable.tsx",
+    "./resize-seam": "./src/primitives/resize-seam.ts",
     "./scroll-area": "./src/primitives/scroll-area.tsx",
     "./section": "./src/primitives/section.tsx",
     "./section-card": "./src/primitives/section-card.tsx",
@@ -1242,6 +1243,10 @@
         "types": "./dist/primitives/empty.d.ts",
         "import": "./dist/primitives/empty.js"
       },
+      "./empty-art": {
+        "types": "./dist/primitives/empty-art.d.ts",
+        "import": "./dist/primitives/empty-art.js"
+      },
       "./empty-state": {
         "types": "./dist/primitives/empty-state.d.ts",
         "import": "./dist/primitives/empty-state.js"
@@ -2043,10 +2048,6 @@
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
       },
-      "./markdown/setup-links/app-credentials-form": {
-        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
-        "import": "./dist/markdown/setup-links/app-credentials-form.js"
-      },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",
         "import": "./dist/markdown/setup-links/approval-decision.js"
@@ -2152,6 +2153,10 @@
       "./resizable": {
         "types": "./dist/primitives/resizable.d.ts",
         "import": "./dist/primitives/resizable.js"
+      },
+      "./resize-seam": {
+        "types": "./dist/primitives/resize-seam.d.ts",
+        "import": "./dist/primitives/resize-seam.js"
       },
       "./scroll-area": {
         "types": "./dist/primitives/scroll-area.d.ts",
@@ -2777,12 +2782,9 @@
     "@tanstack/react-virtual": "^3.13.12",
     "@tiptap/core": "3.30.5",
     "@tiptap/extension-bubble-menu": "3.30.5",
-    "@tiptap/extension-code": "3.30.5",
-    "@tiptap/extension-code-block": "3.30.5",
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
-    "@tiptap/extension-image": "3.30.5",
     "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
@@ -2813,7 +2815,6 @@
     "jszip": "^3.10.1",
     "katex": "^0.18.7",
     "maplibre-gl": "6.12.0",
-    "marked": "^16.4.2",
     "mermaid": "^11.12.0",
     "motion": "^12.40.0",
     "papaparse": "^5.5.2",
@@ -2837,14 +2838,18 @@
     "sql.js": "^1.14.1",
     "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
-    "turndown": "^7.2.1",
-    "turndown-plugin-gfm": "^1.0.2",
     "unified": "^11.0.5",
     "uqr": "0.1.3",
     "use-intl": "^4.13.4",
     "vaul": "^1.1.2",
-    "yaml": "^2.8.2",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@tiptap/extension-code": "3.30.5",
+    "@tiptap/extension-code-block": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "marked": "^16.4.2",
+    "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2",
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "@kortix/sdk": "workspace:^",
@@ -2887,7 +2892,6 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-test-renderer": "^19.3.0",
-    "@types/turndown": "^5.0.5",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9.39.4",
     "happy-dom": "^20.14.5",
@@ -2900,6 +2904,7 @@
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
     "tw-animate-css": "^1.2.4",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@types/turndown": "^5.0.5"
   }
 }

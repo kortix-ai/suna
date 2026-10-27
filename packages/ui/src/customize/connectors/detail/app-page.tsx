@@ -5,21 +5,36 @@ import { ChannelHeroLogoInHeader } from '../../sections/component/channel-hero-f
 import { discoverLogoSource, type ConnectorLogoSource } from '../../../internal/connector-logo/connector-logo-source';
 import { ComputerAppPage } from './computer-app-page';
 
-import { getDiscoverConnector, getDiscoverConnectorTools, getProjectDetail, listConnectors } from '@kortix/sdk';
+import {
+  getDiscoverConnector,
+  getDiscoverConnectorTools,
+  getProjectDetail,
+  listConnections,
+  listConnectors,
+} from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  DotsThreeIcon,
   GlobeIcon,
   PlugIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { lazyClient } from '../../../lib/lazy-client';
-import { UiLink as Link, useUiSearchParams } from '../../../providers/ui-provider';
-import { useState, type ReactNode } from 'react';
+import { UiLink as Link, useUiRouter, useUiSearchParams } from '../../../providers/ui-provider';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '../../../primitives/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../primitives/dropdown-menu';
+import { humanizeToolName, toolBucket } from '../tools/tool-groups';
+import { connectorAccounts } from './use-connector-detail';
 import { Button } from '../../../primitives/button';
 import { Skeleton } from '../../../primitives/skeleton';
 import { EmptyState } from '../../../primitives/empty-state';
@@ -44,6 +59,7 @@ import {
   appRefFromLocation,
   connectorHref,
   connectorsHref,
+  waysFromParams,
 } from '../connector-routes';
 import {
   discoverInstallTarget,
@@ -134,7 +150,10 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
   const search = useUiSearchParams();
+  const router = useUiRouter();
   const app = appRefFromLocation(appSegment, search);
+  // `?ways=1`: stay on this page for an installed app (another profile).
+  const ways = waysFromParams(search);
 
   const accountId = useProjectAccountId(projectId);
   const canWrite =
@@ -145,6 +164,13 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract(FRESHNESS.connectors),
+  });
+
+  // Same key and fetcher as the Accounts tab: the "Installed" rows count accounts like it.
+  const connectionsQuery = useQuery({
+    queryKey: ['connections', projectId],
+    queryFn: () => listConnections(projectId),
+    staleTime: 30_000,
   });
 
   const projectQuery = useQuery({
@@ -183,10 +209,26 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   // that one shows progress; the others are disabled until it ends.
   const [pendingControl, setPendingControl] = useState<string | null>(null);
 
+  // One page per app: once the project has exactly one profile of it, the
+  // app's page is that connector's page. A Kortix channel keeps its own page.
+  const installedOnce =
+    app && resolved && detail?.item.kind !== 'kortix' && !ways
+      ? catalogEntryConnectors(connectorsQuery.data?.connectors ?? [], {
+          source: app.source,
+          slug: app.slug,
+          name: resolved.name,
+        } as CatalogEntry)
+      : [];
+  const redirectTo =
+    installedOnce.length === 1 && app ? connectorHref(projectId, installedOnce[0]!.slug, { app }) : null;
+  useEffect(() => {
+    if (redirectTo) router.replace(redirectTo);
+  }, [redirectTo, router]);
+
   // The connector list is part of the page, not a late addition: Install reads
   // it to reuse the app's connector, and a list that is still empty would make
   // it create a second one.
-  if (appQuery && (appQuery.isPending || connectorsQuery.isPending)) {
+  if (redirectTo || (appQuery && (appQuery.isPending || connectorsQuery.isPending))) {
     return (
       <DetailPageShell busy>
         <Skeleton className="h-4 w-24 rounded-sm py-0" />
@@ -246,20 +288,22 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   // `catalogEntryConnectors` reads only `source`, `slug`, and `name`.
   const entry = { source: app.source, slug: app.slug, name: resolved.name } as CatalogEntry;
   const inProject = catalogEntryConnectors(connectors, entry);
+  // `GMAIL_SEND_EMAIL` reads "Send email" on the Gmail page, as on the Tools tab.
+  const appNames = [app.slug, resolved.name];
   const installing = pendingKey === app.slug;
   /** `name` tells the page's Install controls apart for assistive tech; `key`
    *  tells them apart for the progress indicator. */
   type Surface = ResolvedApp['surfaces'][number];
   /** Install one way: a one-click MCP server opens the MCP dialog, which
    *  names the profile; every other way asks for the name first. */
-  const startInstall = (key: string, surface: Surface, name: string) => {
+  const startInstall = (key: string, surface: Surface, name: string, asNewProfile = false) => {
     const target = surface.target;
     if (!target) return;
     setPendingControl(key);
     // The way the user picked is the way installed.
     const mcpUrl = surface.kind === 'mcp' && surface.oneClick ? surface.url : null;
     const askName = () =>
-      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app });
+      ask({ target, way: { kind: surface.kind, oneClick: surface.oneClick }, connectors, app, asNewProfile });
     if (!mcpUrl) {
       askName();
       return;
@@ -273,8 +317,51 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   };
   /** `name` tells the page's Install controls apart for assistive tech; `key`
    *  tells them apart for the progress indicator. */
-  const installMenu = (key: string, surface: Surface, variant: 'default' | 'secondary', name: string) =>
-    surface.setupHref ? (
+  // The profile this way already installed, if any: its action is Add
+  // account on that profile, never a second profile.
+  const installedFor = (surface: Surface) =>
+    surface.target ? inProject.find((connector) => connector.provider === surface.target?.provider) ?? null : null;
+  const installMenu = (key: string, surface: Surface, variant: 'default' | 'secondary', name: string) => {
+    const installed = installedFor(surface);
+    if (installed && !surface.setupHref) {
+      const addAccount = (
+        <Button asChild size="sm" variant={variant} className="shrink-0">
+          <Link
+            href={connectorHref(projectId, installed.slug, { app, addAccount: true })}
+            aria-label={t('addAccountNamed', { name: connectorDisplayName(installed) })}
+          >
+            {tSharing('addAccount')}
+          </Link>
+        </Button>
+      );
+      // The header holds one action. A second profile of an installed way is
+      // rare and quiet: the row's overflow menu, never a button beside Add account.
+      if (key === 'header' || !canWrite) return addAccount;
+      return (
+        <span className="flex shrink-0 items-center gap-1">
+          {addAccount}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('wayMoreNamed', { name })}
+                disabled={installing}
+              >
+                <DotsThreeIcon className="size-4 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => startInstall(key, surface, name, true)}>
+                {t('anotherProfileTitle')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
+      );
+    }
+    return surface.setupHref ? (
       <Button asChild size="sm" variant={variant} className="shrink-0">
         <Link href={surface.setupHref} aria-label={t('setUpNamed', { name })}>
           {t('waySetUp')}
@@ -290,6 +377,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
         disabled={installing}
       />
     ) : null;
+  };
   const primary = resolved.surfaces[0] ?? null;
   // A Kortix channel's own page draws the channel as its hero; the ways list
   // keeps only the other ways (the vendor's MCP server, Composio, the API).
@@ -299,7 +387,6 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   const waySurfaces = channelPlatform
     ? resolved.surfaces.filter((surface) => surface.kind !== 'kortix')
     : resolved.surfaces;
-  const waysCount = resolved.surfaces.length + resolved.references.length;
   const infoCells: Array<{
     key: string;
     label: string;
@@ -338,8 +425,6 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
   }
   if (primary?.kind)
     infoCells.push({ key: 'runs', label: t('infoRunsOver'), value: wayKindLabel(primary.kind) });
-  if (waysCount > 1)
-    infoCells.push({ key: 'ways', label: t('waysToConnect'), value: String(waysCount) });
 
   return (
     <DetailPageShell>
@@ -359,14 +444,17 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
         </div>
         {primary && !channelPlatform ? (
           <div className="flex shrink-0 items-center gap-2">
-            {resolved.surfaces.length > 1 ? (
+            {resolved.surfaces.length > 1 && !installedFor(primary) ? (
               <span className="text-muted-foreground text-xs">
                 {primary.kind === 'kortix'
                   ? t('setUpWhere')
                   : t('installsWay', { kind: wayKindLabel(primary.kind) })}
               </span>
             ) : null}
-            {installMenu('header', primary, 'default', resolved.name)}
+            {installMenu('header', primary, 'default', resolved.name) ?? (
+              // A member without connector write: say who can, not nothing.
+              <span className="text-muted-foreground text-xs">{t('askAdminToInstall')}</span>
+            )}
           </div>
         ) : null}
       </header>
@@ -405,15 +493,15 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
 
       {inProject.length > 0 ? (
         <section className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-foreground text-sm font-medium">
-              {projectName ? t('installedIn', { project: projectName }) : t('installedHere')}
-            </h2>
-            <p className="text-muted-foreground text-xs">{t('installedHint')}</p>
-          </div>
+          <h2 className="text-foreground text-sm font-medium">
+            {projectName ? t('installedIn', { project: projectName }) : t('installedHere')}
+          </h2>
           <ul className={ROW_GROUP}>
             {inProject.map((connector) => {
-              const tone = connectorStatusTone(connector);
+              const tone = connectorStatusTone(
+                connector,
+                connectionsQuery.data ? connectorAccounts(connectionsQuery.data.connections, connector).length : undefined,
+              );
               return (
                 <li key={connector.slug}>
                   <Link
@@ -459,6 +547,7 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
           <h2 className="text-foreground text-sm font-medium">
             {channelPlatform ? t('otherWaysToConnect') : t('waysToConnect')}
           </h2>
+          {waySurfaces.length > 0 ? (
           <ul className={ROW_GROUP}>
             {waySurfaces.map((surface) => (
               <li key={surface.key} className={SURFACE_ROW}>
@@ -500,31 +589,32 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
                 {installMenu(surface.key, surface, 'secondary', surface.label)}
               </li>
             ))}
-            {resolved.references.map((reference) => (
-              <li key={reference.key} className={SURFACE_ROW}>
-                <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <span className="text-foreground truncate text-sm font-medium">
-                    {reference.label}
-                  </span>
-                  <Badge variant="muted" size="xs">
-                    {reference.kind}
-                  </Badge>
-                </span>
-                {reference.href ? (
-                  <Button asChild variant="outline" size="sm" className="shrink-0">
-                    <a href={reference.href} target="_blank" rel="noreferrer">
-                      {tI18nComplete.raw('text7af023c43013')}
-                      <ArrowSquareOutIcon className="size-3.5 shrink-0" />
-                    </a>
-                  </Button>
-                ) : (
-                  <Badge variant="secondary" size="sm">
-                    {tI18nComplete.raw('textdf0453d185c4')}
-                  </Badge>
-                )}
-              </li>
-            ))}
           </ul>
+          ) : null}
+          {/* A way Kortix cannot install is a pointer, not a row with a dead end. */}
+          {resolved.references.length > 0 ? (
+            <p className="text-muted-foreground text-xs text-pretty">
+              {t('otherWaysLead')}{' '}
+              {resolved.references.map((reference, index) => (
+                <Fragment key={reference.key}>
+                  {index > 0 ? ', ' : null}
+                  {reference.href ? (
+                    <a
+                      href={reference.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-foreground inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
+                    >
+                      {reference.label}
+                      <ArrowSquareOutIcon aria-hidden className="size-3 shrink-0" />
+                    </a>
+                  ) : (
+                    reference.label
+                  )}
+                </Fragment>
+              ))}
+            </p>
+          ) : null}
         </section>
       ) : null}
       {shownWay ? (
@@ -546,18 +636,39 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
           ) : toolsQuery.data && toolsQuery.data.tools.length > 0 ? (
             <>
               <p className="text-muted-foreground text-xs">{t(`toolsSource_${toolsQuery.data.source}`)}</p>
-              <ul className={ROW_GROUP}>
-                {(allTools ? toolsQuery.data.tools : toolsQuery.data.tools.slice(0, TOOLS_PREVIEW)).map((tool) => (
-                  <li key={tool.name} className="space-y-0.5 px-4 py-2.5">
-                    <span className="text-foreground block font-mono text-xs break-all">{tool.name}</span>
-                    {tool.description ? (
-                      <span className="text-muted-foreground line-clamp-2 text-xs text-pretty" title={tool.description}>
-                        {tool.description}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+              {groupAppTools(
+                allTools ? toolsQuery.data.tools : toolsQuery.data.tools.slice(0, TOOLS_PREVIEW),
+                appNames,
+              ).map((group) => (
+                <div key={group.key} className="space-y-2">
+                  <h3 className="text-muted-foreground text-xs">
+                    {tI18nComplete.raw(TOOL_GROUP_LABEL[group.key])} · {group.tools.length}
+                  </h3>
+                  <ul className={ROW_GROUP}>
+                    {group.tools.map((tool) => {
+                      const title = humanizeToolName(tool.name, appNames);
+                      return (
+                        <li key={tool.name} className="min-w-0 px-4 py-2.5">
+                          {/* The Tools tab's row: the title in words, the id in mono, one line of description. */}
+                          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                            <span className="text-foreground text-sm font-medium">{title}</span>
+                            {title !== tool.name ? (
+                              <code className="text-muted-foreground max-w-full truncate font-mono text-xs">
+                                {tool.name}
+                              </code>
+                            ) : null}
+                          </span>
+                          {tool.description ? (
+                            <span className="text-muted-foreground block truncate text-xs" title={tool.description}>
+                              {tool.description}
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
               {!allTools && toolsQuery.data.tools.length > TOOLS_PREVIEW ? (
                 <Button type="button" variant="outline" size="sm" onClick={() => setAllTools(true)}>
                   {t('toolsShowAll', { count: toolsQuery.data.tools.length })}
@@ -595,6 +706,26 @@ function CatalogAppPage({ projectId, appSegment }: { projectId: string; appSegme
       ) : null}
     </DetailPageShell>
   );
+}
+
+const TOOL_GROUP_LABEL = {
+  read: 'textdd28b5cb26fd',
+  write: 'texted26c1af81cf',
+  unclassified: 'text7c0a91e5b3d2',
+} as const;
+
+/** A catalogue way's tools in the Tools tab's buckets, by the same rule. */
+function groupAppTools<T extends { name: string; description?: string | null; risk?: string | null }>(
+  tools: readonly T[],
+  appNames: readonly string[],
+) {
+  const groups = { read: [] as T[], write: [] as T[], unclassified: [] as T[] };
+  for (const tool of tools) {
+    groups[toolBucket({ path: tool.name, name: tool.name, risk: tool.risk ?? 'unknown' }, appNames)].push(tool);
+  }
+  return (['read', 'write', 'unclassified'] as const)
+    .filter((key) => groups[key].length > 0)
+    .map((key) => ({ key, tools: groups[key] }));
 }
 
 /** The managed catalogue's `authType` as a `connectorPages` key. */

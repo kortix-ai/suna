@@ -269,6 +269,11 @@ export interface SessionChatInputProps {
    */
   notice?: string | null;
   /**
+   * The notice reports a sleeping computer: a moon, not a spinner. Default:
+   * `notice` is `SESSION_NOTICE.idle`. A host that rewords the notice says it.
+   */
+  noticeAsleep?: boolean;
+  /**
    * Renders a "Retry" action inline in the notice bar when set. Wired to
    * `requestRuntimeReconnect()` for a confirmed-unreachable runtime, or a
    * runtime that has been booting/connecting past a sane ceiling with no
@@ -361,6 +366,12 @@ export interface SessionChatInputProps {
    * reads as a detached strip, so there the controls belong on the one bar.
    */
   underbarPlacement?: 'below' | 'inline';
+  /**
+   * The agent picker shows the agent's tile alone, its name in the tooltip
+   * and the menu. A narrow inline toolbar (a channel's thread panel) gives
+   * the model name the width instead.
+   */
+  agentPickerCompact?: boolean;
 
   /**
    * Where the `/` menu docks relative to the card. `'above'` (default) keeps

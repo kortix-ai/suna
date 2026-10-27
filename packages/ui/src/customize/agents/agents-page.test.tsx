@@ -34,7 +34,7 @@ describe('AgentsPage access line', () => {
             name: 'store-builder',
             path: 'agents/store-builder.md',
             mode: 'primary',
-            scope: { env: [], connectors: ['shopify', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' },
+            scope: { env: [], connectors: ['notion', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' },
           },
           {
             name: 'reflector',

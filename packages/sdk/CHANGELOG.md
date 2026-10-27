@@ -18,6 +18,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default. The pi `agent` tool takes `session: "separate" | "same"` per call (default `"separate"`: a real
   child session on its own sandbox). Off is the project kill switch: every call runs in the parent session.
 
+### Deprecated (app form)
+- `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
+  and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call
+  answers 404. The names stay exported until the next major.
+
 ### Added (connector policy sets)
 - `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet`,
   `deleteConnectorPolicySet` and the `ConnectorPolicySet` type: named rule sets on one connector

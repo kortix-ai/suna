@@ -11,14 +11,33 @@
 //          when `public` (the content server)
 //   edit   who may write the path in Files (the folder rules of the drive)
 //   share  the creator, or project.artifact.manage (public: project.artifact.public)
+//
+// A private channel's folder (`/Channels/<space_id>`, `<space_id>` a private
+// channel of the project) follows the one Drive rule
+// (`onlyVisiblePrivateGrants`): only the channel's members, and only its own
+// threads' tokens, reach its files. Any other root under `/Channels` is an
+// ordinary folder. An artifact rooted there is viewed only
+// by them, whatever its sharing, and is never `project` or `public`.
 import { artifacts, projectSessions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { signStableChannelState } from '../channels/core/signed-state';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { normalizeDrivePath } from '../drives/access';
-import { folderAccess, folderAccessAtLeast, type FolderLevel } from '../drives/folders';
-import { ensurePersonalFolder, ensureProjectDrive, getDrive, listFolderGrants, readDriveVolume, writeDriveVolume, type DriveRow } from '../drives/service';
+import { folderAccess, folderAccessAtLeast, pathWithinFolder, PRIVATE_CHANNELS_DIR, privateChannelFolderOf, type FolderLevel } from '../drives/folders';
+import {
+  ensurePersonalFolder,
+  ensureProjectDrive,
+  getDrive,
+  listFolderGrants,
+  onlyVisiblePrivateGrants,
+  projectPrivateChannelFolders,
+  readDriveVolume,
+  readOnlyOutside,
+  writeDriveVolume,
+  type DriveRow,
+} from '../drives/service';
 import {
   DriveStorageError,
   listVolumeCommits,
@@ -149,11 +168,48 @@ export interface Viewer {
   projectWrite: boolean;
   /** project.artifact.manage: may change how any artifact they can view is shared. */
   manageAny: boolean;
+  /**
+   * The private channel folders the caller may see (`privateChannelFoldersFor`,
+   * with the caller's session binding): a token reaches only its own thread's channel.
+   */
+  privateFolders: ReadonlySet<string>;
+  /** Every private channel folder of the project (`privateChannelFoldersFor`): only these paths are reserved. */
+  allPrivateFolders: ReadonlySet<string>;
+  /**
+   * The caller is a private channel's thread (`sessionPrivateChannelFolder`):
+   * it writes only this folder, and publishes there. Null otherwise.
+   */
+  channelFolder: string | null;
 }
 
 async function accessAt(drive: DriveRow, path: string, viewer: Viewer, level: FolderLevel): Promise<boolean> {
-  const access = folderAccess(path, await listFolderGrants(drive), { userId: viewer.userId, projectMember: true, admin: viewer.projectWrite });
+  let grants = onlyVisiblePrivateGrants(await listFolderGrants(drive), { all: viewer.allPrivateFolders, visible: viewer.privateFolders });
+  if (viewer.channelFolder) grants = readOnlyOutside(grants, viewer.channelFolder);
+  const access = folderAccess(path, grants, {
+    userId: viewer.userId,
+    projectMember: true,
+    admin: viewer.projectWrite && !viewer.channelFolder,
+    privateChannelFolders: viewer.allPrivateFolders,
+  });
   return folderAccessAtLeast(access, level);
+}
+
+/** The private channel folder `root` is in, or null. Reads the project's private channels only for a root under `/Channels`. */
+async function privateFolderOfRoot(projectId: string, root: string): Promise<string | null> {
+  if (root === PRIVATE_CHANNELS_DIR || !pathWithinFolder(root, PRIVATE_CHANNELS_DIR)) return null;
+  return privateChannelFolderOf(root, await projectPrivateChannelFolders(projectId));
+}
+
+/** The private channel folder an artifact lives in, or null. */
+export function artifactPrivateFolder(row: Pick<ArtifactRow, 'root' | 'projectId'>): Promise<string | null> {
+  return privateFolderOfRoot(row.projectId, row.root);
+}
+
+/** A private channel's file never leaves the channel as an artifact: 403 for `project` or `public` there. `folder`: the private channel folder of the artifact, or null. */
+function refuseWiderThanChannel(folder: string | null, visibility: ArtifactVisibility | undefined): void {
+  if (visibility && visibility !== 'private' && folder) {
+    throw new ArtifactError(403, 'An artifact in a private channel stays private to the channel’s members', 'private_channel');
+  }
 }
 
 function decodeFile(path: string, file: FileInput): Uint8Array<ArrayBuffer> {
@@ -201,13 +257,17 @@ async function exists(volume: string, path: string): Promise<boolean> {
 /**
  * Publish new files as an artifact in the author's own folder in Files: a
  * folder `/Users/<them>/Artifacts/<slug>/` with `index.md` or `index.html`
- * and everything beside it (a doc's images and videos land there too).
+ * and everything beside it (a doc's images and videos land there too). From a
+ * private channel's thread (`channelFolder`) it lands in that channel's
+ * `Artifacts/` folder instead, and stays private to the channel.
  */
 export async function publishNew(
   scope: { accountId: string; projectId: string },
   author: Author,
   input: { title?: string; description?: string | null; visibility?: ArtifactVisibility; files: Record<string, FileInput> } & Binding,
+  channelFolder: string | null = null,
 ): Promise<ArtifactRow> {
+  if (channelFolder) refuseWiderThanChannel(channelFolder, input.visibility);
   const files = encodeFiles(input.files);
   const entry = ENTRIES.find((e) => files.some((f) => f.rel === e));
   if (!entry) throw new ArtifactError(400, 'An artifact needs an index.md (a doc) or an index.html (a page)', 'missing_entry');
@@ -215,7 +275,7 @@ export async function publishNew(
   const entryText = new TextDecoder().decode(files.find((f) => f.rel === entry)!.bytes);
   const title = input.title?.trim() || titleOf(type, entryText) || 'Untitled';
   const drive = await ensureProjectDrive(scope.accountId, scope.projectId);
-  const home = await ensurePersonalFolder(drive, author.userId);
+  const home = channelFolder ?? (await ensurePersonalFolder(drive, author.userId));
   const root = await writeDriveVolume(drive, async (volume) => {
     const base = join(join(home, 'Artifacts'), slugify(title));
     let candidate = base;
@@ -266,6 +326,9 @@ export async function share(
     throw new ArtifactError(400, `An artifact is a folder. Share the folder that holds ${name} (with an index.md or index.html), or publish the file to make one`, 'share_folder');
   }, () => null);
   if (!target) throw new ArtifactError(404, 'File or folder not found', 'not_found');
+  if (input.visibility && input.visibility !== 'private') {
+    refuseWiderThanChannel(await privateFolderOfRoot(scope.projectId, target.root), input.visibility);
+  }
   const type = typeOfEntry(target.entry)!;
   const text = await (await readVolumeFile(drive.platinumVolumeName, join(target.root, target.entry))).text();
   const [row] = await db.insert(artifacts).values({
@@ -429,14 +492,21 @@ export async function getArtifactById(artifactId: string): Promise<ArtifactRow |
 
 export type ListScope = 'all' | 'mine' | 'shared' | 'pinned';
 
-/** The artifacts of a project that `userId` may view, newest change first. */
+/** The artifacts of a project the viewer may view (`canView`), newest change first. */
 export async function listArtifacts(
   projectId: string,
-  userId: string,
+  viewer: Pick<Viewer, 'userId' | 'privateFolders' | 'allPrivateFolders'>,
   opts: { scope: ListScope; type?: string; q?: string; limit: number; space?: string; agents?: string[]; unbound?: boolean },
 ) {
+  const userId = viewer.userId;
   const visible = sql`(${artifacts.visibility} <> 'private' or ${artifacts.createdByUserId} = ${userId} or ${userId}::uuid = any(${artifacts.sharedWithUserIds}))`;
-  const filters = [eq(artifacts.projectId, projectId), visible];
+  // A private channel's artifacts only for its members (the twin of canView):
+  // none rooted in a private channel folder the viewer may not see.
+  const hidden = [...viewer.allPrivateFolders].filter((folder) => !viewer.privateFolders.has(folder));
+  // Qualified: inside the subquery a bare `root` must bind to the outer artifacts row.
+  const root = qualifiedColumn(artifacts.root);
+  const inChannel = sql`not exists (select 1 from unnest(${`{${hidden.join(',')}}`}::text[]) f where ${root} = f or ${root} like f || '/%')`;
+  const filters = [eq(artifacts.projectId, projectId), visible, inChannel];
   // A space: rows bound to it, plus rows with no space owned by one of its
   // agents (the caller passes them, so the server needs no manifest).
   if (opts.space) {
@@ -455,19 +525,23 @@ export async function listArtifacts(
   return db.select().from(artifacts).where(and(...filters)).orderBy(desc(artifacts.updatedAt)).limit(opts.limit);
 }
 
-export function canView(row: ArtifactRow, userId: string): boolean {
-  return row.visibility !== 'private' || row.createdByUserId === userId || row.sharedWithUserIds.includes(userId);
+/** Who sees an artifact: its sharing, and for one in a private channel, only that channel's members. */
+export function canView(row: ArtifactRow, viewer: Pick<Viewer, 'userId' | 'privateFolders' | 'allPrivateFolders'>): boolean {
+  const folder = privateChannelFolderOf(row.root, viewer.allPrivateFolders);
+  if (folder && !viewer.privateFolders.has(folder)) return false;
+  return row.visibility !== 'private' || row.createdByUserId === viewer.userId || row.sharedWithUserIds.includes(viewer.userId);
 }
 
 /** May change how the artifact is shared, rename it or remove it from Artifacts. */
 export function canManage(row: ArtifactRow, viewer: Viewer): boolean {
-  return row.createdByUserId === viewer.userId || (viewer.manageAny && canView(row, viewer.userId));
+  return canView(row, viewer) && (row.createdByUserId === viewer.userId || viewer.manageAny);
 }
 
 export async function updateArtifactMeta(
   row: ArtifactRow,
   patch: { title?: string; description?: string | null; visibility?: ArtifactVisibility; shared_with_user_ids?: string[] } & Binding,
 ): Promise<ArtifactRow> {
+  if (patch.visibility && patch.visibility !== 'private') refuseWiderThanChannel(await artifactPrivateFolder(row), patch.visibility);
   const meta = {
     ...(patch.title?.trim() ? { title: patch.title.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),

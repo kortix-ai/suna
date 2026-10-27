@@ -1,238 +1,194 @@
 'use client';
 
-import { type FormEvent, useState } from 'react';
-
-import { CaretRightIcon, HashIcon, PlusIcon, StackSimpleIcon } from '@phosphor-icons/react';
-
-import { listSpaces } from '@kortix/sdk';
-import { useFeatureFlag, useProjectConfig, useRoomConversations } from '@kortix/sdk/react';
+import { useProjectSpaces, useVisibleAgents } from '@kortix/sdk/react';
+import { CaretRightIcon, PlusIcon } from '@phosphor-icons/react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { useTranslations } from '../../i18n';
-import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
-import { useProjectCan } from '../../internal/lib/use-project-can';
-import { useActiveSpace } from '../../internal/stores/active-space-store';
-import { uiRoutes } from '../../lib/routes';
-import { cn } from '../../lib/utils';
-import { UiLink as Link, useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { AgentMark } from '../../internal/components/agent-mark';
+import { ProjectNavRow } from '../../internal/layout/project-nav-row';
+import { cn } from '../../internal/lib/utils';
+import {
+  selectCollapsedSections,
+  useSessionFilterStore,
+} from '../../internal/stores/session-filter-store';
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
-import { CountBadge } from '../../primitives/count-badge';
-import { Field, FieldLabel } from '../../primitives/field';
-import { Input } from '../../primitives/input';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '../../primitives/modal';
-import { RadioGroup, RadioGroupItem } from '../../primitives/radio-group';
-import {
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from '../../primitives/sidebar';
-import { Textarea } from '../../primitives/textarea';
-import { errorToast, successToast } from '../../primitives/toast';
-import { addSpaceToManifest, slugifySpace, SPACE_TEMPLATES } from '../space/space-templates';
-import { useManifestWrite } from '../space/use-space-manifest';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitives/disclosure';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+import Hint from '../../primitives/hint';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '../../primitives/sidebar';
+import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { CreateChannelDialog } from '../spaces/create-channel-dialog';
+import { PrivateChannelsNotInRow } from '../spaces/private-channels-not-in';
+import { agentLabel } from '../spaces/space-timeline';
+import { ChannelGlyph } from '../spaces/channel-glyph';
+
+/** Collapse state lives in the persisted session-filter store, beside the session sections. */
+const CHANNELS_SECTION_ID = 'section:channels';
+const DMS_SECTION_ID = 'section:dms';
+
+/** `href`, or a page under it. */
+function isAt(pathname: string | null, href: string): boolean {
+  return !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+}
 
 /**
- * Spaces in the project sidebar, listed like channels: `# name` and the unread
- * count of the space's room. A declared space with no agents is listed. A row
- * opens the space page and makes the space active, so the project home's
- * composer starts only its agents. A project with no spaces still shows the
- * section to a viewer who may create one, and nothing to anyone else.
+ * The sidebar under the `project_channels` flag: Channels, then Direct
+ * messages, in the slot the session list holds with the flag off. A section
+ * renders once its data arrives: no skeleton rows for navigation.
  */
 export function ProjectSpacesNav({ projectId }: { projectId: string }) {
-  const t = useTranslations('spaces');
-  const config = useProjectConfig(projectId);
-  const [, setActive] = useActiveSpace(projectId);
+  const t = useTranslations('sidebar');
   const pathname = useUiPathname();
-  const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
-  const rooms = useRoomConversations(roomsOn ? projectId : null);
-  const [open, setOpen] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE).allowed === true;
-  const spaces = listSpaces(config);
-  const unread = new Map((rooms.data ?? []).map((room) => [room.name, room.unread]));
-  const here = pathname.replace(/\/$/, '');
+  const router = useUiRouter();
+  const spaces = useProjectSpaces(projectId);
+  const agents = useVisibleAgents({ projectId });
+  const [createOpen, setCreateOpen] = useState(false);
+  const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
+  const collapsed = useMemo(() => new Set(collapsedSections), [collapsedSections]);
+  const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
-  if (spaces.length === 0 && !canWrite) return null;
+  const channels = spaces.data?.filter((space) => space.kind === 'channel' && !space.archived_at);
 
   return (
-    <>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-          className="group/menu-button text-sidebar-foreground"
+    <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-2">
+      {spaces.isError && !spaces.data ? (
+        <div className="space-y-1.5 px-2 py-2">
+          <p className="text-destructive/80 text-xs">{t('spaces.loadError')}</p>
+          <Button variant="outline" size="xs" onClick={() => spaces.refetch()}>
+            {t('retry')}
+          </Button>
+        </div>
+      ) : null}
+      {channels ? (
+        <SpacesSection
+          title={t('spaces.channels')}
+          open={!collapsed.has(CHANNELS_SECTION_ID)}
+          onToggle={() => toggleSectionCollapsed(projectId, CHANNELS_SECTION_ID)}
+          action={{ label: t('spaces.addChannel'), onClick: () => setCreateOpen(true) }}
         >
-          <span className="shrink-0">
-            <StackSimpleIcon />
-          </span>
-          <span className="truncate">{t('nav.title')}</span>
-          <CaretRightIcon
-            weight="bold"
-            className={cn('text-muted-foreground ml-auto size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
-          />
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-      {open ? (
-        <SidebarMenuSub>
-          {spaces.map((space) => {
-            const href = uiRoutes().space(projectId, space.name);
-            const count = unread.get(space.name) ?? 0;
+          {channels.map((channel) => {
+            const href = uiRoutes().channel(projectId, channel.slug ?? '');
             return (
-              <SidebarMenuSubItem key={space.name}>
-                <SidebarMenuSubButton asChild isActive={!!href && here.endsWith(href.replace(/\/$/, ''))}>
-                  {href ? (
-                    <Link href={href} onClick={() => setActive(space.name)}>
-                      <HashIcon className="text-muted-foreground size-3.5 shrink-0" />
-                      <span className={cn('truncate', count > 0 && 'text-foreground font-medium')}>
-                        {space.label || space.name}
-                      </span>
-                      {count > 0 ? (
-                        <CountBadge count={count} className="ml-auto" aria-label={t('nav.unread', { count })} />
-                      ) : null}
-                    </Link>
-                  ) : (
-                    <span>{space.label || space.name}</span>
-                  )}
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
+              <ProjectNavRow
+                key={channel.space_id}
+                href={href}
+                active={isAt(pathname, href)}
+                label={`#${channel.slug}`}
+              >
+                <ChannelGlyph visibility={channel.visibility} />
+                <span>{channel.slug}</span>
+              </ProjectNavRow>
             );
           })}
-          {canWrite ? (
-            <SidebarMenuSubItem>
-              <SidebarMenuSubButton asChild>
-                <button type="button" onClick={() => setCreating(true)} className="text-muted-foreground">
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  <span className="truncate">{t('nav.new')}</span>
-                </button>
-              </SidebarMenuSubButton>
-            </SidebarMenuSubItem>
-          ) : null}
-        </SidebarMenuSub>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => setCreateOpen(true)} className="text-muted-foreground hover:text-sidebar-foreground">
+              <PlusIcon />
+              <span>{t('spaces.addChannel')}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <PrivateChannelsNotInRow projectId={projectId} />
+        </SpacesSection>
       ) : null}
-      {canWrite ? <NewSpaceModal projectId={projectId} open={creating} onOpenChange={setCreating} /> : null}
-    </>
+      {/* Waits for the channels: drawn first, the agents jumped down when the channels arrived. */}
+      {spaces.data && agents.length > 0 ? (
+        <SpacesSection
+          title={t('spaces.directMessages')}
+          open={!collapsed.has(DMS_SECTION_ID)}
+          onToggle={() => toggleSectionCollapsed(projectId, DMS_SECTION_ID)}
+          // Every visible agent already has a DM row: the `+` makes a new agent.
+          action={{ label: t('spaces.newAgent'), onClick: () => router.push(customizePath(projectId, 'agents')) }}
+        >
+          {agents.map((agent) => {
+            const name = agentLabel(agent.name);
+            const href = uiRoutes().dm(projectId, agent.name);
+            return (
+              <ProjectNavRow
+                key={agent.name}
+                href={href}
+                active={isAt(pathname, href)}
+                label={name}
+                // The row forces every svg to size-4: the pixel mark keeps its 14px glyph.
+                className="[&_[data-slot=agent-mark]>svg]:size-[14px]!"
+              >
+                <AgentMark slug={agent.name} size={14} />
+                <span>{name}</span>
+              </ProjectNavRow>
+            );
+          })}
+        </SpacesSection>
+      ) : null}
+      <CreateChannelDialog projectId={projectId} open={createOpen} onOpenChange={setCreateOpen} />
+    </FadedScrollArea>
   );
 }
 
-/** Create a space: a name, a description and the starting tabs, written as
- *  `spaces.<slug>` into `kortix.yaml`. Then open it. */
-function NewSpaceModal({
-  projectId,
+/**
+ * A collapsible section: the muted label, then the caret, then a `+` at the
+ * trailing edge. The caret and the `+` stay hidden until the header is hovered
+ * or focused, so the list reads as names, not chrome. A collapsed section keeps
+ * its caret, so a closed section still says it holds more.
+ *
+ * The `+` is a sibling of the trigger, not inside it: a button nested in a
+ * `role="button"` is invalid, and its click would also toggle the section.
+ */
+function SpacesSection({
+  title,
   open,
-  onOpenChange,
+  onToggle,
+  action,
+  children,
 }: {
-  projectId: string;
+  title: string;
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onToggle: () => void;
+  /** The header's `+`: its label (tooltip and accessible name) and what it does. */
+  action: { label: string; onClick: () => void };
+  children: ReactNode;
 }) {
-  const t = useTranslations('spaces');
-  const write = useManifestWrite(projectId);
-  const router = useUiRouter();
-  const config = useProjectConfig(projectId);
-  const [, setActive] = useActiveSpace(projectId);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [templateId, setTemplateId] = useState<string>(SPACE_TEMPLATES[0]!.id);
-  const [pending, setPending] = useState(false);
-  const trimmed = name.trim();
-  const slug = slugifySpace(trimmed);
-  const taken = !!trimmed && listSpaces(config).some((space) => space.name === slug);
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!trimmed || taken || pending) return;
-    const template = SPACE_TEMPLATES.find((candidate) => candidate.id === templateId) ?? SPACE_TEMPLATES[0]!;
-    setPending(true);
-    try {
-      await write((yaml) => addSpaceToManifest(yaml, { slug, label: trimmed, description, tabs: template.tabs }));
-      successToast(t('create.created'));
-      setName('');
-      setDescription('');
-      setTemplateId(SPACE_TEMPLATES[0]!.id);
-      onOpenChange(false);
-      setActive(slug);
-      const href = uiRoutes().space(projectId, slug);
-      if (href) router.push(href);
-    } catch (error) {
-      errorToast(t('create.error'), { description: error instanceof Error ? error.message : undefined });
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>{t('create.title')}</ModalTitle>
-          <ModalDescription>{t('create.description')}</ModalDescription>
-        </ModalHeader>
-        <form onSubmit={handleSubmit}>
-          <ModalBody className="space-y-4">
-            <Field>
-              <FieldLabel htmlFor="space-name">{t('create.name')}</FieldLabel>
-              <Input
-                id="space-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t('create.namePlaceholder')}
-                aria-invalid={taken || undefined}
-                autoFocus
-              />
-              {trimmed ? (
-                <p className="text-muted-foreground text-xs">
-                  {taken ? t('create.taken', { slug }) : <span className="font-mono">#{slug}</span>}
-                </p>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="space-description">{t('create.about')}</FieldLabel>
-              <Textarea
-                id="space-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder={t('create.aboutPlaceholder')}
-                rows={2}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t('create.template')}</FieldLabel>
-              <RadioGroup value={templateId} onValueChange={setTemplateId} className="gap-0">
-                {SPACE_TEMPLATES.map((template) => (
-                  <label
-                    key={template.id}
-                    htmlFor={`space-template-${template.id}`}
-                    className="hover:bg-hover flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition-colors"
-                  >
-                    <RadioGroupItem id={`space-template-${template.id}`} value={template.id} className="mt-0.5" />
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-foreground text-sm">{t(`templates.${template.id}.label`)}</span>
-                      <span className="text-muted-foreground text-xs">{t(`templates.${template.id}.description`)}</span>
-                    </span>
-                  </label>
-                ))}
-              </RadioGroup>
-            </Field>
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
-              {t('cancel')}
-            </Button>
-            <Button type="submit" disabled={pending || !trimmed || taken} aria-busy={pending || undefined}>
-              {t('create.submit')}
-            </Button>
-          </ModalFooter>
-        </form>
-      </ModalContent>
-    </Modal>
+    <Disclosure
+      open={open}
+      onOpenChange={onToggle}
+      className="group/section"
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+    >
+      <div className="group/section-header flex h-8 items-center gap-1 pr-1">
+        <DisclosureTrigger>
+          <div
+            className={cn(
+              'text-muted-foreground hover:text-sidebar-foreground flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-2 text-sm font-medium',
+              'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
+            )}
+          >
+            <span className="truncate">{title}</span>
+            <CaretRightIcon
+              aria-hidden
+              className={cn(
+                'duration-normal size-3 shrink-0 transition-[rotate,opacity] ease-out',
+                'opacity-0 group-focus-within/section-header:opacity-100 group-hover/section-header:opacity-100',
+                'group-data-[state=closed]/section:opacity-100 group-data-[state=open]/section:rotate-90',
+              )}
+            />
+          </div>
+        </DisclosureTrigger>
+        <Hint label={action.label} side="right">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={action.label}
+            onClick={action.onClick}
+            className="text-muted-foreground hover:text-sidebar-foreground shrink-0 opacity-0 group-focus-within/section-header:opacity-100 group-hover/section-header:opacity-100 focus-visible:opacity-100"
+          >
+            <PlusIcon className="size-3.5" />
+          </Button>
+        </Hint>
+      </div>
+      <DisclosureContent contentClassName="pt-px">
+        <SidebarMenu className="gap-px">{children}</SidebarMenu>
+      </DisclosureContent>
+    </Disclosure>
   );
 }

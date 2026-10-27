@@ -10,6 +10,9 @@ import {
   legacyDetailRedirect,
   connectorSearchFromParams,
   withConnectorSearch,
+  browseForAnotherProfileHref,
+  rulesHref,
+  waysFromParams,
 } from './connector-routes';
 
 const BASE = '/projects/p1/customize/connectors';
@@ -33,6 +36,7 @@ describe('connectorsHref', () => {
   });
   test('a scope rides as ?scope=', () => {
     expect(connectorsHref('p1', 'connected')).toBe(`${BASE}?scope=connected`);
+    expect(rulesHref('p1')).toBe(`${BASE}?rules=1`);
   });
 });
 
@@ -106,7 +110,7 @@ describe('legacyDetailRedirect', () => {
 // only in component state, so browser Back showed the full catalogue again.
 describe('the catalogue search in the URL', () => {
   test('reads the trimmed query from ?q=', () => {
-    expect(connectorSearchFromParams(new URLSearchParams('q=Shopify'))).toBe('Shopify');
+    expect(connectorSearchFromParams(new URLSearchParams('q=Notion'))).toBe('Notion');
     expect(connectorSearchFromParams(new URLSearchParams('scope=channels&q=%20slack%20'))).toBe('slack');
     expect(connectorSearchFromParams(new URLSearchParams('scope=channels'))).toBe('');
     expect(connectorSearchFromParams(null)).toBe('');
@@ -114,9 +118,21 @@ describe('the catalogue search in the URL', () => {
 
   test('writes a non-empty query and drops an empty one, keeping the other params', () => {
     const params = new URLSearchParams('scope=channels');
-    withConnectorSearch(params, ' Shopify ');
-    expect(params.toString()).toBe('scope=channels&q=Shopify');
+    withConnectorSearch(params, ' Notion ');
+    expect(params.toString()).toBe('scope=channels&q=Notion');
     withConnectorSearch(params, '   ');
     expect(params.toString()).toBe('scope=channels');
+  });
+});
+
+describe('another profile', () => {
+  const app = { source: 'discover' as const, slug: 'gmail', id: 'composio:gmail' };
+  test('the app page keeps itself open with ways=1', () => {
+    expect(appHref('p1', app, { ways: true })).toBe(`${BASE}/gmail?id=composio%3Agmail&ways=1`);
+    expect(waysFromParams(new URLSearchParams('ways=1'))).toBe(true);
+    expect(waysFromParams(new URLSearchParams(''))).toBe(false);
+  });
+  test('Browse searches for the app and links its cards to the app page', () => {
+    expect(browseForAnotherProfileHref('p1', 'Gmail')).toBe(`${BASE}?scope=all&ways=1&q=Gmail`);
   });
 });

@@ -1,8 +1,10 @@
 import type { TriggerList } from '@kortix/api-contract';
-import { apps, connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
+import { hiddenSpaceIds } from '../../shared/space-access';
+import { apps, connectorConnections, connectors, projectSpaces, projectTriggerRuntime } from '@kortix/db';
 import { type TriggerFilter, cronIntervalError, formatDurationSeconds, normalizeTriggerEntry, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../../config';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
@@ -42,7 +44,14 @@ export async function validateAppTriggerTarget(projectId: string, app: string): 
 export async function loadTriggersForResponse(
   projectId: string,
   project: ProjectRow,
+  /**
+   * The caller (`bound`: `callerKortixSessionId`): another member's DM and a
+   * private channel the caller is not in read as no space. Absent: every DM
+   * and every private channel does.
+   */
+  viewer?: { userId: string; bound: string | null },
 ): Promise<TriggerList> {
+  const viewerUserId = viewer?.userId;
   const gitProject = await withProjectGitAuth(project);
   let manifest: ParsedManifest | null = null;
   let loaded: LoadedTriggers;
@@ -89,6 +98,35 @@ export async function loadTriggersForResponse(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
+  const channels = resolveFeatureFlag(project.metadata, 'project_channels');
+  // A channel, or the caller's own DM: a DM's existence is never disclosed to anyone else.
+  const spaceIds = [...new Set(runtimeRows.flatMap((row) => (row.spaceId ? [row.spaceId] : [])))];
+  const hidden = channels && spaceIds.length && viewer ? await hiddenSpaceIds(projectId, viewer.userId, viewer.bound) : null;
+  const listedSpaces = new Set(
+    channels && spaceIds.length
+      ? (
+          await db
+            .select({
+              spaceId: projectSpaces.spaceId,
+              kind: projectSpaces.kind,
+              dmUserId: projectSpaces.dmUserId,
+              visibility: projectSpaces.visibility,
+            })
+            .from(projectSpaces)
+            .where(inArray(projectSpaces.spaceId, spaceIds))
+        )
+          .filter((space) =>
+            space.kind === 'channel'
+              ? space.visibility === 'public' || (hidden !== null && !hidden.has(space.spaceId))
+              : Boolean(viewerUserId && space.dmUserId === viewerUserId),
+          )
+          .map((space) => space.spaceId)
+      : [],
+  );
+  const listedSpaceId = (slug: string) => {
+    const spaceId = runtimeBySlug.get(slug)?.spaceId;
+    return spaceId && listedSpaces.has(spaceId) ? spaceId : null;
+  };
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
 
@@ -141,6 +179,8 @@ export async function loadTriggersForResponse(
       // Overlap (KRTX-1721); null = unset (`skip` for cron, `allow` otherwise).
       overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
+      // The channel or DM its runs post to; omitted while `project_channels` is off.
+      ...(channels ? { space_id: listedSpaceId(spec.slug) } : {}),
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,

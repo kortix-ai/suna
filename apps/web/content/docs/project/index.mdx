@@ -200,6 +200,7 @@ A flag the deployment does not support is unavailable. It stays off whatever the
 A toggle of these flags also updates running state. The API response does not wait for it.
 
 - `event_triggers`: connector event subscriptions start or stop.
+- `project_channels`: on, the project gets its `#general` channel, and every session that is in no channel moves into `#general`. Off: nothing is deleted.
 
 ### Every flag
 
@@ -214,7 +215,8 @@ A toggle of these flags also updates running state. The API response does not wa
 | `secrets_egress` | Network-Enforced Secrets | On | Experimental | Always | Offers the "Enforce at the network" option for a secret. Off: every secret loads into the sandbox environment. See [Secrets](/docs/project/secrets). |
 | `pooled_provider_secrets` | Pooled Provider Secrets | Off | Experimental | Always | Members connect their own ChatGPT subscriptions and provider keys, share them, and choose which ones each session uses. See [Models](/docs/project/models#shared-keys-and-chatgpt-accounts). |
 | `us_region` | US Region | Off | Experimental | With Platinum and a configured US region (`PLATINUM_API_KEY`, `KORTIX_PLATINUM_US_REGION`) | New Platinum sandboxes start in the US region. This moves compute only, not the API, database or archives. Existing sandboxes keep their region. If the image cannot be copied to the region, the session starts in the home region. See [Sandboxes & previews](/docs/work/runtime#sandbox-providers). |
-| `event_triggers` | Composio event triggers | Off | Beta | Always | Events in connected apps start agents. Off: the event routes answer `feature_disabled`, and a `type: event` trigger has status `error`. See [App events](/docs/connect/triggers#connector-events). |
+| `event_triggers` | Composio event triggers | Off | Beta | Always | Events in connected apps start agents. Off: the event routes answer `feature_disabled`, and a `type: event` trigger has status `error`. See [Connector events](/docs/connect/triggers#connector-events). |
+| `project_channels` | Channels | Off | Experimental | Always | Organize work in channels. Each new message in a channel, or in a direct message with an agent, starts a thread. Replaces the session list in the sidebar. A private channel hides the channel from people who are not in it. Code changes (git branches) and the agents’ own tools aren’t private. Off: the `/projects/:id/spaces` routes answer `feature_disabled`; channels and threads stay stored. |
 | `notification_center` | Notification Center | Off | Beta | Always | A bell inbox, browser push and email for the people a session concerns, plus trigger and reminder alerts. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing. See [Notifications](/docs/work/sessions#notifications). |
 | `agent_rooms` | Rooms | Off | Experimental | Always | Named chat rooms where agent sessions and people post. Off: nothing of Rooms exists in the project. On: the Rooms page, the `kortix rooms` command and the `kortix-rooms` agent skill appear. |
 | `volumes` | Volumes | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared Files for the project: the Files page and the `drives` flag. See [Files](/docs/work/runtime#files). |

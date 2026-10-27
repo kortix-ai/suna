@@ -7,6 +7,19 @@ A connector gives a project governed access to one external app, MCP server or A
 
 This page is for project members who connect apps, decide who may use them, and call them from sessions or code.
 
+## Profile, account, rule set
+
+Three things answer three questions:
+
+| Thing | Answers | Example | Where it lives |
+| --- | --- | --- | --- |
+| **Profile** (a connector) | How does Kortix reach the app? | Linear over its MCP server | `connectors:` in `kortix.yaml` |
+| **Account** (a connection) | Who does a call run as? | the team inbox, your own inbox | Kortix, never `kortix.yaml` |
+| **Rule set** (a policy set) | What may this agent do? | `read_only` for the support agent | `connectors[].policy_sets`, given in `agents.<name>.policy_sets` |
+
+- Install an app once for each way you connect it. A second sign-in is a new account on the same profile. Different rules for one agent are a rule set on the same profile.
+- Every call is decided in this order, and the first layer with a matching rule decides: project rules → the calling agent's rule set → the profile's base rules → sensitive tools need approval → the project default mode. See [Policies and approvals](#policies-and-approvals).
+
 ## What a connector is
 
 A connector has:
@@ -59,7 +72,7 @@ A connector page has up to four tabs:
 | --- | --- | --- |
 | **Accounts** | The accounts the connector can run as. | Everyone with access to the project. |
 | **Tools** | Each action, and whether it runs, needs approval, or is blocked. | Members who can change connectors. |
-| **Triggers** | [Composio event triggers](/docs/connect/triggers#connector-events) on this connector. | Everyone, when the app has events. |
+| **Triggers** | [Connector event](/docs/connect/triggers#connector-events) on this connector. | Everyone, when the app has events. |
 | **Settings** | Connection details and **Remove connector**. | Members who can change connectors. Absent on the computer connector. |
 
 ### Add an MCP server from its URL
@@ -279,10 +292,14 @@ The SDK has the same two calls: `p.connectors.listMoves()` and `p.connectors.mov
 ### From the CLI
 
 ```bash
-kortix connectors apps gmail                                   # search the managed catalog
-kortix connectors add gmail --provider composio --app gmail --apply
-kortix connectors connect gmail                                # authorize your account
+kortix connectors catalog gmail                  # find the app; `installed as <slug>` marks one the project has
+kortix connectors catalog install composio:gmail # add the profile, the recommended way
+kortix connectors connect gmail                  # authorize your account
 ```
+
+- `catalog install` is idempotent. When the project already has a profile for the same app and way (the same MCP URL, Composio toolkit, OpenAPI spec, GraphQL endpoint or Kortix provider), it changes nothing, names that slug with the three next steps, and exits `3`. `--new-profile` adds a second profile anyway, with the slug suffix `-2`, `-3`, ….
+- After install the CLI prints one next step: `Ready` (the app needs no sign-in: call it), `connect <slug>`, `credential <slug>`, or, when the profile's first sync failed, the reason, with exit `1`.
+- `kortix connectors add <slug> --provider <p> …` declares a profile by hand, for an app the catalog lacks.
 
 - Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
 - With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
@@ -394,22 +411,6 @@ kortix connectors connect-finalize gmail                 # confirm; pass the sam
 - A project secret works as the credential when it is an active project secret, not a personal one, stored with `--scope connector`: `kortix secrets set BILLING_KEY=- --scope connector`. A binding answers `409` when the connector needs no credential, is a channel, or already has a stored credential, or when the secret is missing, inactive or not connector-scoped. A secret narrowed to some people works only in their private sessions (`credential_not_shared`). See [Secrets](/docs/project/secrets).
 - A connect link for an account that is already authorized shows **Already connected**. To change the login, add a new account, [make it the default](#which-account-a-call-uses), then disconnect the old one.
 
-### Connect Shopify
-
-Composio holds no Shopify app, and Shopify stopped issuing admin-created app tokens (`shpat_…`) on January 1, 2026. A Shopify account therefore runs on a Shopify app that you own. **Connect** on a `composio` Shopify connector opens a Kortix form, not a sign-in page:
-
-1. In the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard), create an app in the organization that owns the store.
-2. On the app's version, select the Admin API scopes that your agents need, then release the version.
-3. Install the app on the store.
-4. In Kortix, select **Connect** on the Shopify connector. Enter the store's myshopify.com name (`acme` for `acme.myshopify.com`), and the **Client ID** and **Client secret** from the app's **Settings**.
-
-- Composio runs Shopify's client-credentials grant with the app's credentials. Kortix passes the secret to Composio and keeps no copy. Each account gets its own Composio auth config.
-- The app and the store must be in the same Shopify organization. A store in another organization, such as a client's store, cannot connect this way.
-- When Shopify refuses the exchange, the form shows the reason: no store at that name, no app with that Client ID, an app in another organization, or a wrong secret. The API answers `422` `shopify_refused`.
-- The form link works for 1 hour. A newer **Connect** on the same account replaces it (`409`).
-- `kortix connectors connect <slug>` prints the same form link.
-- To change the app or the store, add a new account. An account connected earlier with an admin token keeps working.
-
 ### Connect links inside a session
 
 A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. This works on `composio` connectors and on `mcp` connectors with one-click sign-in. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.
@@ -440,7 +441,24 @@ kortix connectors authorize docs-search --status   # exits non-zero on error
 | `--client-id`, `--client-secret` | Uses an existing OAuth app, for servers without dynamic registration. |
 | `--success-redirect`, `--error-redirect` | Where the browser lands after approval or denial. Without them the browser shows **Connected. You can close this tab and return to Kortix.**, or the failure with its reason code. |
 
-Kortix refreshes the connector's tool catalog when authorization completes. Direct API connectors also support the client credentials grant (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`). Kortix refreshes access tokens before they expire and stores each rotated refresh token.
+Kortix refreshes the connector's tool catalog when authorization completes. Kortix refreshes access tokens before they expire and stores each rotated refresh token.
+
+#### OAuth2 client credentials
+
+An OpenAPI or HTTP API that issues tokens to a client id and secret (machine-to-machine) needs no sign-in:
+
+```bash
+kortix secrets get BILLING_CLIENT_SECRET | kortix connectors credential billing-api \
+  --oauth2-client-credentials \
+  --token-url https://auth.example.com/oauth/token \
+  --client-id abc123 --client-secret-from - --scope "read write"
+```
+
+- The secret comes from stdin (`-`), a file path, or a prompt. Kortix never prints it back.
+- Kortix requests a token before it stores anything. A refused token request answers `503`, `oauth2_token_failed`, with the provider's reason in `detail`, and nothing is stored.
+- `--audience <aud>` adds the `audience` parameter some providers require.
+- A bad body answers `400`, `invalid_oauth2`.
+- The API route is `PUT /v1/connectors/projects/<project_id>/connectors/<slug>/oauth2/connection` `{ token_url, client_id, client_secret, token_endpoint_auth_method?, scopes?, audience?, resource? }`. `token_endpoint_auth_method` is `client_secret_basic` (default), `client_secret_post`, `client_secret_jwt`, `private_key_jwt` or `none`. It answers `{ ok, slug, account, expires_at }`. `DELETE …/connectors/<slug>/credential` removes it.
 
 ## Share accounts and give agents access
 
@@ -630,13 +648,27 @@ An agent that holds `project.session.start` can start a session as another agent
 **Give an agent a set.**
 
 ```bash
-kortix connectors policy gmail sets                                       # sets on gmail, with the agents that use each
-kortix connectors policy gmail sets create read_only --description "Read and search, never send"
+kortix connectors policy-sets gmail ls                                   # sets on gmail, with the agents that use each
+kortix connectors policy-sets gmail create read_only --template read-only --description "Read and search, never send"
 kortix connectors policy gmail --policy-set read_only set "send_*" block   # the set's rules: ls, set, rm, clear
-kortix connectors policy gmail sets rename read_only readonly             # also rewrites every agent that uses it
-kortix connectors policy gmail sets rm readonly                           # refused while an agent uses it
+kortix connectors policy gmail effective --policy-set read_only           # what each tool does for that agent
+kortix connectors policy-sets gmail rename read_only readonly             # also rewrites every agent that uses it
+kortix connectors policy-sets gmail rm readonly                           # refused while an agent uses it
 kortix agents scope support --policy-set gmail=read_only                  # repeat the flag per connector; gmail=base removes the entry
+kortix connectors agents gmail                                            # which agents may call gmail, and their set
+kortix connectors rules                                                   # every agent × every connector: access and set
 ```
+
+**Templates.** `--template` starts a set from each tool's likely risk. A tool the provider marks as a read is a read. On an MCP server or a managed app, Kortix also reads the tool name: `get_`, `list_`, `read_`, `search_`, `fetch_`, `find_`, `query_`, `describe_` and `lookup_` are reads. On an OpenAPI, HTTP or GraphQL API the method decides.
+
+| Template | Every tool that is not a read | Reads |
+| --- | --- | --- |
+| `read-only` | `block` | no rule |
+| `ask-before-writes` | `require_approval` | no rule |
+
+A tool whose risk is unknown gets the rule, so a template never lets an unclassified tool run. A read falls through to the base rules. Run `policy <slug> effective` to see the result for every tool.
+
+**Effective rules.** `kortix connectors policy <slug> effective [--policy-set <name>]` lists every tool with its risk, its decision (`runs`, `asks`, `blocked`) and the layer that decided: project rule, rule set, base rules, sensitive, or default mode.
 
 - Every command commits `kortix.yaml` on the default branch and syncs the connector at once.
 - Changing an agent's `policy_sets` needs `project.agent.write` and `project.connector.write`. An agent session needs `project.connector.write` in its own grant to add, change or remove any `policy_sets` entry, its own included (`403`, `agent_grant_escalation`). See [Changes to agents are governed](/docs/project/agents#changes-to-agents-are-governed).
@@ -651,10 +683,12 @@ In the web app, the **Tools** tab on a connector page switches between the base 
 | Route | What it does |
 | --- | --- |
 | `GET …/policy-sets` | `{ sets: [{ name, description, policies, agents }] }`, sets with no rules included. |
-| `PUT …/policy-sets/<name>` `{ description? }` | Creates the set, or sets or clears its description. Answers `created`. A body with `policies` answers `400`, `use_policies_route`. |
+| `PUT …/policy-sets/<name>` `{ description?, template? }` | Creates the set, or sets or clears its description. `template` is `read_only` or `ask_before_writes`. Answers `created`. |
 | `PUT …/policy-sets/<name>/name` `{ name }` | Renames the set and every agent reference in one commit. `409`, `policy_set_exists` when the new name is taken. |
 | `DELETE …/policy-sets/<name>` | Deletes the set. `409`, `policy_set_in_use` with `agents` while an agent uses it. |
-| `GET`/`PUT …/policies?policy_set=<name>` | Reads or replaces the set's rules. Without `policy_set`, or with `base`, the base rules. `404`, `policy_set_not_found` for an unknown set. |
+| `GET`/`PUT …/policies?policy_set=<name>` | Reads or replaces the set's rules. Without `policy_set`, or with `base`, the base rules. `404`, `policy_set_not_found` for an unknown set. `GET` also answers `effective: [{ path, action, source, risk, rule? }]`, every tool after every layer, and `sensitive`. `source` is `project`, `policy_set`, `connector` (the base rules), `risk_default` or `allow_all` (the default mode, or sensitive when `sensitive` is `true`). |
+| `GET …/agents` | `{ slug, agents: [{ agent, granted, policy_set }] }`. |
+| `GET /v1/connectors/projects/<project_id>/rules-matrix` | Every connector with its sets, and every agent with `{ granted, policy_set }` per connector. |
 
 `PUT /v1/projects/<project_id>/agents/<agent>/scope` takes `policy_sets: { <slug>: <name> | null }`. It merges per connector, and `null` or `base` removes the entry. In the SDK, use `p.connectors.policySets` and the `policySet` option of `p.connectors.policies`: see the [SDK reference](/docs/sdk/reference#connectors-and-policies).
 
@@ -829,6 +863,8 @@ In React, `useConnectorQuery(projectId, slug, action, args)` from `@kortix/sdk/r
 ## Errors
 
 A denied call answers `{ ok: false, status: "denied", reason }` plus a `hint` or `message` that names the fix. A failed call answers `{ ok: false, status: "error", reason, upstream_status }`.
+
+A tool that ran and reported its own failure (an MCP result with `isError: true`) answers HTTP `200` with `{ ok: false, status: "tool_error", error, result }`: `error` is the tool's first text block, `result` the raw result. The call reached the tool, so the transport and the rules worked; fix the arguments. `kortix connectors call` exits `1` on a denial, an error and a `tool_error`. A rejected token prints `Token rejected … Run kortix login` (with `--json`, `{ ok: false, code: "unauthorized" }`).
 
 An `error` reason starts with the code in the table. Text after the first `:` is detail (`upstream_timeout: …`). For an upstream failure, read `upstream_status`: `reason` can be the provider's own text. In the SDK, `ConnectorCallError.code` is always the bare code or `upstream_<status>`.
 

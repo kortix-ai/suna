@@ -1,224 +1,420 @@
-/**
- * Spaces. A space is a channel: a room where people and agents post, plus the
- * tabs the space configures (Goals, Apps, Artifacts, Files, a Board, a pinned
- * App, Artifact or link). It is declared in `kortix.yaml` as `spaces.<slug>`,
- * and an agent joins one with `agents.<name>.space`. Apps, Goals and
- * Artifacts bind to a space or to an agent (`ResourceBinding`).
- *
- * Pure and framework-free: these helpers turn the config summary into the
- * ordered lists, groups and tabs a host renders.
- */
+// Project spaces — `/v1/projects/:id/spaces` (apps/api/src/projects/routes/project-spaces.ts).
+// A space is a channel of the project or the caller's DM with one agent. A
+// session filed into a space carries its `space_id` (`createProjectSession`,
+// `listProjectSessions({ spaceId })`). Every route answers 403
+// `feature_disabled` while the project's `project_channels` flag is off.
 
-/** The group of a resource bound to no space: the Project-wide bucket. Not a
- *  valid space slug (a slug starts with a letter or a digit), so a space named
- *  `general` never collides with it. */
-export const PROJECT_WIDE_SPACE = '_project';
+import { backendApi } from '../../http/api-client';
+import type { App } from './apps';
+import { unwrap } from './shared';
 
-/** One block of a board tab: a room, a file, an App, an embedded page or text. */
-export interface SpaceBlock {
-  type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
-  label?: string;
-  /** chat: the name of a project room. */
-  room?: string;
-  /** artifact: a project file path. */
-  path?: string;
-  /** app: a Kortix App slug. */
-  app?: string;
-  /** iframe: a url to embed in a sandboxed frame. */
-  url?: string;
-  /** text: markdown content. */
-  text?: string;
-}
-
-/** The tab types after the room tab. The room tab is implicit and always first. */
-export type SpaceTabType = 'goals' | 'apps' | 'artifacts' | 'files' | 'board' | 'app' | 'artifact' | 'link';
-
-/** One configured tab of a space (`spaces.<slug>.tabs[]`). */
-export interface SpaceTab {
-  type: SpaceTabType;
-  /** The tab's name. Absent: the host names it by type or target. */
-  label?: string;
-  /** files: a project folder path. */
-  path?: string;
-  /** app: a Kortix App slug. */
-  app?: string;
-  /** artifact: an `artifact_id`. */
-  artifact?: string;
-  /** link: an http(s) url. */
-  url?: string;
-  /** link: true embeds the page; absent or false shows a link card. */
-  embed?: boolean;
-  /** board: the grid's blocks, in order. */
-  blocks?: SpaceBlock[];
-}
-
-/** One item of a space header (`spaces.<slug>.header[]`). */
-export type SpaceHeaderItem = 'agents' | 'members' | 'needs_you' | 'new_session' | 'ask_my_kortix';
-
-/** What a header shows when the space configures none: every item. */
-export const DEFAULT_SPACE_HEADER: readonly SpaceHeaderItem[] = [
-  'agents',
-  'members',
-  'needs_you',
-  'new_session',
-  'ask_my_kortix',
-];
-
-/** The tabs a space shows after its room when it configures none. */
-export const DEFAULT_SPACE_TABS: readonly SpaceTab[] = [{ type: 'goals' }, { type: 'apps' }, { type: 'artifacts' }];
-
-/** A space of the project: a `spaces:` entry, or a slug an agent names. */
+/** A channel of the project, or the caller's DM with one agent. Same fields as the API's `Space`. */
 export interface ProjectSpace {
-  /** The slug: the key in `spaces:`, and the name of the space's room. */
+  space_id: string;
+  kind: 'channel' | 'dm';
+  /** Channels: lowercase `a-z0-9-`, 1–40 characters. Null for a DM. */
+  slug: string | null;
   name: string;
-  /** Display label; falls back to the slug. */
-  label?: string;
-  description?: string;
-  /** Sort position among declared spaces; lower first. */
-  order?: number;
-  /** What the header shows, in order. Absent: `DEFAULT_SPACE_HEADER`. */
-  header?: SpaceHeaderItem[];
-  /** The tabs after the room, in order. Absent: `DEFAULT_SPACE_TABS`. */
-  tabs?: SpaceTab[];
+  description: string | null;
+  /** True for the project's `#general` only. */
+  is_default: boolean;
+  /** The agent of a DM. Null for a channel. */
+  dm_agent_name: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. Absent on older APIs. */
+  can_edit?: boolean;
+  /**
+   * The channel's agents, in order: the first is the channel's default for a
+   * new thread. Empty: no agent list, a new thread starts on the project's
+   * default. Always empty for a DM. Absent on older APIs.
+   */
+  agents?: string[];
+  /**
+   * The caller is in the channel: always for `#general` and a DM, for another
+   * channel once added or joined. A non-member of a public channel still
+   * reads and posts. Absent on older APIs.
+   */
+  is_member?: boolean;
+  /**
+   * `public`: every project member sees and opens it. `private`: only its
+   * members see the channel and its threads. `#general` and a DM are always
+   * `public`. Absent on older APIs (read it as `public`).
+   */
+  visibility?: 'public' | 'private';
 }
 
-/** One rendered group: a space and the items in it, in input order. */
-export interface SpaceGroup<T> {
+export interface CreateProjectSpaceInput {
+  /** 1–80 characters. The slug is derived from it. */
   name: string;
-  label: string;
+  /** At most 500 characters. */
   description?: string;
-  items: T[];
-  /** True for the Project-wide bucket. */
-  isDefault: boolean;
+  /** People added with the creator (who is always a member); every id a member of the project, at most 100. */
+  member_ids?: string[];
+  /** Default `public`. `private`: only its members see it. */
+  visibility?: 'public' | 'private';
 }
 
-/** The tabs a space shows after its room: its own, else the defaults. */
-export function spaceTabs(space: ProjectSpace): readonly SpaceTab[] {
-  return space.tabs ?? DEFAULT_SPACE_TABS;
-}
-
-/** The header items a space shows: its own, else every item. */
-export function spaceHeader(space: ProjectSpace): readonly SpaceHeaderItem[] {
-  return space.header ?? DEFAULT_SPACE_HEADER;
+export interface UpdateProjectSpaceInput {
+  name?: string;
+  /** `null` clears the description. */
+  description?: string | null;
+  /** `true` archives the channel; `false` unarchives it. */
+  archived?: boolean;
+  /**
+   * Replaces the channel's agent list, in order: the first is the default.
+   * Every name must be an agent of the project, each once (else 400
+   * `invalid_agents`); at most 50. `[]` clears it.
+   */
+  agents?: string[];
+  /**
+   * `private` makes a public channel private: the people who started a thread
+   * in it or added a link become members. One way only.
+   */
+  visibility?: 'private';
 }
 
 /**
- * The stable key of a tab, for a `?tab=` deep link. A view is its type, a
- * pinned App or Artifact is its target; a board, a link and a folder are their
- * position (`board-2`). The room tab is `room`.
+ * The project's live channels (`#general` first, then oldest first), then the
+ * caller's DMs. The first call creates `#general`. A background read: a
+ * failure reaches the caller's query state, not the host error handler.
  */
-export function spaceTabKey(tab: SpaceTab, index: number): string {
-  if (tab.type === 'goals' || tab.type === 'apps' || tab.type === 'artifacts') return tab.type;
-  if (tab.type === 'app' && tab.app) return `app-${tab.app}`;
-  if (tab.type === 'artifact' && tab.artifact) return `artifact-${tab.artifact}`;
-  return `${tab.type}-${index}`;
+export async function listProjectSpaces(projectId: string): Promise<ProjectSpace[]> {
+  const body = unwrap(
+    await backendApi.get<{ spaces: ProjectSpace[] }>(`/projects/${projectId}/spaces`, { showErrors: false }),
+  );
+  return body.spaces;
 }
 
-type SpaceMember = { name: string; space?: string | null };
-
-function declaredMap(spaces?: ProjectSpace[]): Map<string, ProjectSpace> {
-  const declared = new Map<string, ProjectSpace>();
-  for (const s of spaces ?? []) if (s?.name) declared.set(s.name, s);
-  return declared;
+/**
+ * `#general`'s "turned on again" line: `count` sessions started while Channels
+ * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ */
+export interface ProjectSpaceGeneralNotice {
+  kind: 'reenabled';
+  at: string;
+  count: number;
 }
 
-/** Declared first (by `order`, label, slug), then undeclared alphabetically, then Project-wide. */
-function bySpaceRank(declared: Map<string, ProjectSpace>) {
-  const rank = (name: string): [number, number, string] => {
-    if (name === PROJECT_WIDE_SPACE) return [2, 0, name];
-    const s = declared.get(name);
-    if (s) return [0, s.order ?? Number.MAX_SAFE_INTEGER, (s.label ?? name).toLowerCase()];
-    return [1, 0, name.toLowerCase()];
+/**
+ * `#general`'s "turned on again" line, or null when there is none. Read from
+ * the spaces list (`GET /spaces`), so it costs the same request. A background read.
+ */
+export async function getProjectSpaceGeneralNotice(projectId: string): Promise<ProjectSpaceGeneralNotice | null> {
+  const body = unwrap(
+    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/projects/${projectId}/spaces`, {
+      showErrors: false,
+    }),
+  );
+  return body.general_notice ?? null;
+}
+
+/**
+ * Whether this deployment lets a channel be private (create with `visibility:
+ * 'private'`, or make one private). Read from the spaces list; an older API
+ * that sends no field reads false. A background read.
+ */
+export async function getPrivateChannelsAvailable(projectId: string): Promise<boolean> {
+  const body = unwrap(
+    await backendApi.get<{ private_channels_available?: boolean }>(`/projects/${projectId}/spaces`, {
+      showErrors: false,
+    }),
+  );
+  return body.private_channels_available === true;
+}
+
+/**
+ * Create a channel. A name whose slug is taken rejects with an `ApiError`:
+ * `status` 409, `code` `'slug_taken'`, and `data.space_id` / `data.archived`
+ * name the existing channel; `data.can_edit` says whether the caller may
+ * unarchive it, so the caller offers that only when it may. A name
+ * with no slug characters rejects with 400 `invalid_name`. The caller shows
+ * both, so neither reaches the host error handler.
+ */
+export async function createProjectSpace(projectId: string, input: CreateProjectSpaceInput) {
+  return unwrap(
+    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces`, input, { showErrors: false }),
+  );
+}
+
+/**
+ * Rename, describe, archive or unarchive a channel, or replace its agent list. Only its creator or a
+ * project manager may (`can_edit`); anyone else rejects with 403 `forbidden`.
+ * A rename whose slug is taken rejects with 409 `slug_taken` (fields as in
+ * `createProjectSpace`). The caller shows the error, so it never reaches the
+ * host error handler.
+ */
+export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
+  return unwrap(
+    await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+  );
+}
+
+/**
+ * The caller's DM with `agentName`, created on the first call. An agent the
+ * project does not declare rejects with 404 `agent_not_found`. The caller
+ * shows the error, so it never reaches the host error handler.
+ */
+export async function getOrCreateProjectDm(projectId: string, agentName: string) {
+  return unwrap(
+    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
+  );
+}
+
+/** A person in a channel. Same fields as the API's `SpaceMember`. */
+export interface ProjectSpaceMember {
+  user_id: string;
+  /** The display name, else the email's local part. Never an email. */
+  name: string;
+  avatar_url: string | null;
+  /** The channel's creator. */
+  is_creator: boolean;
+  is_viewer: boolean;
+  /** When they were added or joined; null in `#general` and for backfilled rows. */
+  added_at: string | null;
+  /** The caller may remove them: a manager anyone, the creator anyone but themself, a member only themself (Leave). */
+  can_remove: boolean;
+}
+
+/** A channel's people: the same list for every viewer, the caller first. */
+export interface ProjectSpaceMemberList {
+  members: ProjectSpaceMember[];
+  /** `#general`: every project member is in it; nobody is added and nobody leaves. */
+  implicit: boolean;
+  /** The caller may add people: a member of the channel, its creator or a project manager. */
+  can_add: boolean;
+}
+
+/** A channel's people. `#general` lists every project member. A background read. */
+export async function listProjectSpaceMembers(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.get<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
+  );
+}
+
+/**
+ * Add people to a channel in one request; resolves to the list after the add.
+ * Someone already in it is skipped. An id outside the project rejects with
+ * 400 `not_project_member` (`data.user_ids` names them; nobody is added). A
+ * caller outside the channel who is neither its creator nor a project manager
+ * rejects with 403 `forbidden`. `#general` rejects with 400 `default_channel`.
+ * The caller shows the error.
+ */
+export async function addProjectSpaceMembers(
+  projectId: string,
+  spaceId: string,
+  userIds: string[],
+): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.post<ProjectSpaceMemberList>(
+      `/projects/${projectId}/spaces/${spaceId}/members`,
+      { user_ids: userIds },
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * Remove someone from a channel; resolves to the list after. A manager
+ * removes anyone, the creator anyone but themself, a member only themself.
+ * The creator rejects with 403 `creator_not_removable` unless a manager
+ * removes them; another refusal is 403 `forbidden`.
+ */
+export async function removeProjectSpaceMember(
+  projectId: string,
+  spaceId: string,
+  userId: string,
+): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.delete<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members/${userId}`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/** A private channel the caller is not in, as a project manager sees it: no content (`GET /spaces/private`). */
+export interface PrivateChannelSummary {
+  space_id: string;
+  name: string;
+  slug: string;
+  /** Its people who still have project access. 0: everyone left, a manager can add people. */
+  member_count: number;
+  created_by: string | null;
+  /** The creator's display name, null when unknown. */
+  created_by_name: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+/**
+ * Project managers: the private channels they are not in, archived ones too.
+ * A manager renames or archives one with `updateProjectSpace` and adds or
+ * removes its people with `addProjectSpaceMembers` / `removeProjectSpaceMember`
+ * (never themself: 403 `manager_self_add`). Anyone else rejects with 403
+ * `forbidden`. A background read.
+ */
+export async function listPrivateChannelsNotIn(projectId: string): Promise<PrivateChannelSummary[]> {
+  return unwrap(
+    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/projects/${projectId}/spaces/private`, { showErrors: false }),
+  ).channels;
+}
+
+/** The caller joins a public channel. Idempotent. `#general` rejects with 400 `default_channel`. */
+export async function joinProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return unwrap(
+    await backendApi.post<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/join`, undefined, {
+      showErrors: false,
+    }),
+  );
+}
+
+/** The caller leaves a channel. Its creator rejects with 403 `creator_not_removable` (only a manager removes them). */
+export async function leaveProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return removeProjectSpaceMember(projectId, spaceId, 'me');
+}
+
+/** A link of a channel (its Links tab): added with "Add link" or shared in a thread. Same fields as the API's `SpaceLink`. */
+export interface ProjectSpaceLink {
+  link_id: string;
+  space_id: string;
+  url: string;
+  title: string | null;
+  created_by: string | null;
+  /** The creator's display name or email; null when unknown. */
+  created_by_name: string | null;
+  created_at: string;
+  /** The caller may remove it: they added it, or they manage the project. */
+  can_delete: boolean;
+  /** Agents in the channel read pinned links. Every link starts unpinned (added or shared in a thread) until a member pins it. */
+  pinned: boolean;
+  /** Who pinned it; null while unpinned or when unknown. */
+  pinned_by_name: string | null;
+  /** When it was pinned; null while unpinned. */
+  pinned_at: string | null;
+  /** `manual`: added with "Add link". `message`: collected from a person's message in a thread of the channel. */
+  source: 'manual' | 'message';
+  /** The latest thread that shared it; null for a link no thread shared. */
+  session_id: string | null;
+  last_shared_at: string;
+  /** The row's name: the title a member gave, else the page's fetched title, else the decoded path, else the host. Absent on older APIs: fall back to `title ?? url`. */
+  display_title?: string;
+  /** The page's `og:site_name`, fetched by the server; null until fetched or when the page has none. Absent on older APIs. */
+  site_name?: string | null;
+  /** The page's icon URL, fetched by the server; null until fetched or when none passed the address check. A remote URL: load it only through an image proxy. Absent on older APIs. */
+  icon_url?: string | null;
+}
+
+export interface AddProjectSpaceLinkInput {
+  /** An http(s) URL, at most 2,048 characters. */
+  url: string;
+  /** At most 200 characters. */
+  title?: string;
+}
+
+/**
+ * The channel's Apps: the project's Apps with a deployment made from one of
+ * its threads, only those the caller may open. A background read.
+ */
+export async function listProjectSpaceApps(projectId: string, spaceId: string): Promise<App[]> {
+  const body = unwrap(
+    await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/spaces/${spaceId}/apps`, { showErrors: false }),
+  );
+  return body.apps;
+}
+
+/** The channel's links, newest first. A background read. */
+export async function listProjectSpaceLinks(projectId: string, spaceId: string): Promise<ProjectSpaceLink[]> {
+  const body = unwrap(
+    await backendApi.get<{ links: ProjectSpaceLink[] }>(`/projects/${projectId}/spaces/${spaceId}/links`, {
+      showErrors: false,
+    }),
+  );
+  return body.links;
+}
+
+/**
+ * Add a link to a channel, unpinned, with the caller as its adder. A URL that
+ * is not http(s), longer than 2,048 characters, or a title over 200 rejects
+ * with 400. A channel that already holds 200 added links rejects with 409
+ * `link_limit`. The caller shows both. The
+ * stored `url` is the parsed form (`new URL(url).href`).
+ */
+export async function addProjectSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
+  return unwrap(
+    await backendApi.post<ProjectSpaceLink>(`/projects/${projectId}/spaces/${spaceId}/links`, input, {
+      showErrors: false,
+    }),
+  );
+}
+
+/** Remove a link. Only its creator or a project manager may: anyone else gets 403 `forbidden`. */
+export async function removeProjectSpaceLink(projectId: string, spaceId: string, linkId: string): Promise<void> {
+  unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/spaces/${spaceId}/links/${linkId}`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/**
+ * Pin or unpin a link. Agents in the channel read the pinned ones. Unpinning
+ * only clears the pin: the link stays listed (`removeProjectSpaceLink` removes
+ * it). Returns the link; null only from an older server, where unpinning an
+ * added link removed it. A channel that already pins 200 links rejects pinning
+ * with 409 `link_limit`.
+ */
+export async function pinProjectSpaceLink(
+  projectId: string,
+  spaceId: string,
+  linkId: string,
+  pinned: boolean,
+): Promise<ProjectSpaceLink | null> {
+  const body = unwrap(
+    await backendApi.patch<{ link: ProjectSpaceLink | null }>(
+      `/projects/${projectId}/spaces/${spaceId}/links/${linkId}`,
+      { pinned },
+      { showErrors: false },
+    ),
+  );
+  return body.link;
+}
+
+/** A mark a member leaves once per project: the intro dialog seen, or a "Get started" row done or dismissed. */
+export type ChannelsOnboardingMark =
+  | 'channels_intro'
+  | 'get_started.dismissed'
+  | 'get_started.channel'
+  | 'get_started.remember'
+  | 'get_started.dm';
+
+/**
+ * The caller's Channels onboarding state. A "Get started" row is done when its
+ * mark is present or its fact is true: the caller created a channel, saved
+ * memory in `#general`, or owns a DM.
+ */
+export interface ChannelsOnboarding {
+  /** The member intro dialog was seen (or Channels was turned on again). */
+  intro_seen: boolean;
+  get_started: {
+    /** Show the block: not dismissed and not every row done. */
+    visible: boolean;
+    create_channel: boolean;
+    remember: boolean;
+    open_dm: boolean;
   };
-  return (a: string, b: string) => {
-    const [ga, oa, la] = rank(a);
-    const [gb, ob, lb] = rank(b);
-    return ga - gb || oa - ob || la.localeCompare(lb);
-  };
 }
 
-/**
- * Where a viewable resource (an App, a Goal, an Artifact) is grouped. Both
- * fields are optional; neither means project-wide. Grouping only: a binding
- * never grants access (`agents.<name>.apps` and the other grants stay the only
- * permission source). `Artifact`, `AppDisplay` and `ProjectGoalDocument` each
- * satisfy it structurally.
- */
-export interface ResourceBinding {
-  /** A space slug: a key of the manifest's `spaces:` map. */
-  space?: string | null;
-  /** An agent name, a built-in agent included. */
-  agent?: string | null;
+/** The caller's Channels onboarding state. A background read. */
+export async function getChannelsOnboarding(projectId: string): Promise<ChannelsOnboarding> {
+  return unwrap(
+    await backendApi.get<ChannelsOnboarding>(`/projects/${projectId}/onboarding/channels`, { showErrors: false }),
+  );
 }
 
-/**
- * The space a binding resolves to: its `space`, else the `space` of its
- * `agent`, else null (project-wide). A name that resolves to nothing is never
- * an error: an unknown space groups under its own slug, and an unknown agent
- * counts as having no space.
- */
-export function bindingSpace(
-  binding: ResourceBinding | null | undefined,
-  agents: ReadonlyArray<SpaceMember>,
-): string | null {
-  const space = binding?.space?.trim();
-  if (space) return space;
-  const agent = binding?.agent?.trim();
-  if (!agent) return null;
-  return agents.find((a) => a.name === agent)?.space?.trim() || null;
-}
-
-/** The names of the agents whose `space` is `slug`, in manifest order. */
-export function agentsInSpace(slug: string, agents: ReadonlyArray<SpaceMember>): string[] {
-  return agents.filter((a) => a.space?.trim() === slug).map((a) => a.name);
-}
-
-/**
- * Group items by space: declared spaces (by `order`, label, slug), then
- * undeclared ones alphabetically, then Project-wide (`PROJECT_WIDE_SPACE`)
- * last. A declared space with no items is omitted. `spaceOf` names an item's
- * space and defaults to its `space` field; for a bound resource pass
- * `(item) => bindingSpace(item, config.agents)`.
- */
-export function groupBySpace<T>(
-  items: T[],
-  spaces?: ProjectSpace[],
-  spaceOf: (item: T) => string | null | undefined = (item) => (item as { space?: string | null }).space,
-): Array<SpaceGroup<T>> {
-  const declared = declaredMap(spaces);
-  const buckets = new Map<string, T[]>();
-  for (const item of items) {
-    const raw = spaceOf(item);
-    const name = (typeof raw === 'string' ? raw.trim() : '') || PROJECT_WIDE_SPACE;
-    const bucket = buckets.get(name);
-    if (bucket) bucket.push(item);
-    else buckets.set(name, [item]);
-  }
-  return [...buckets.keys()].sort(bySpaceRank(declared)).map((name) => {
-    const s = declared.get(name);
-    return {
-      name,
-      label: s?.label ?? (name === PROJECT_WIDE_SPACE ? 'Project-wide' : name),
-      description: s?.description,
-      items: buckets.get(name)!,
-      isDefault: name === PROJECT_WIDE_SPACE,
-    };
-  });
-}
-
-/**
- * Every space of a project, in order: the declared ones (an empty space
- * included), then the ones agents name without declaring. The sidebar lists
- * these.
- */
-export function listSpaces(
-  config: { agents?: ReadonlyArray<SpaceMember>; spaces?: ProjectSpace[] } | null | undefined,
-): ProjectSpace[] {
-  const declared = declaredMap(config?.spaces);
-  const names = new Set(declared.keys());
-  for (const agent of config?.agents ?? []) {
-    const name = agent.space?.trim();
-    if (name) names.add(name);
-  }
-  return [...names].sort(bySpaceRank(declared)).map((name) => declared.get(name) ?? { name });
+/** Record one onboarding mark for the caller. Idempotent. An unknown mark rejects with 400; the caller shows it. */
+export async function markChannelsOnboarding(projectId: string, mark: ChannelsOnboardingMark): Promise<void> {
+  unwrap(
+    await backendApi.post<unknown>(`/projects/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
+  );
 }

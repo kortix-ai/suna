@@ -21,6 +21,7 @@
     "./sandbox": "./src/sandbox/index.ts",
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
     "./connector-sections": "./src/connector-sections.ts",
+    "./tool-risk": "./src/tool-risk.ts",
     "./app-connect": "./src/app-connect.ts",
     "./app-config": "./src/app-config.ts",
     "./app-templates": "./src/app-templates.ts",

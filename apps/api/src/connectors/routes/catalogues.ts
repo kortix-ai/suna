@@ -1,6 +1,6 @@
 /** Catalogue browse routes: Discover (the Kortix catalog: Kortix apps, integrations.sh, Composio), easy-connect toolkits, Pipedream apps. */
 import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
-import { CatalogInstallError, catalogInstallDraft } from '../catalog-install';
+import { CatalogInstallError, catalogInstallDraft, connectorIdentity, freeSlug, installedSlugs } from '../catalog-install';
 import { type ConnectorCatalogDetail, canonicalCatalogId } from '../connector-catalog';
 import { allowedSourceValidationResponse } from './admin';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
@@ -59,8 +59,8 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const limit = Number(c.req.query('limit'));
       try {
         const hidden = await hiddenKortixApps(deps, projectId);
-        return c.json(
-          await deps.listDiscoverConnectors({
+        const [page, profiles] = await Promise.all([
+          deps.listDiscoverConnectors({
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
             category: c.req.query('category') || undefined,
@@ -69,7 +69,9 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
             ...kindsQuery(c),
             exclude: hidden,
           }),
-        );
+          deps.listConnectorIdentities?.(projectId) ?? [],
+        ]);
+        return c.json(withInstalledItems(page, profiles));
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -109,15 +111,23 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const maxCategories = Number(c.req.query('maxCategories'));
       try {
         const hidden = await hiddenKortixApps(deps, projectId);
-        return c.json(
-          await deps.listDiscoverSections({
+        const [page, profiles] = await Promise.all([
+          deps.listDiscoverSections({
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
             ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
             ...(oneClickQuery(c) ? { oneClick: true } : {}),
             ...kindsQuery(c),
             exclude: hidden,
           }),
-        );
+          deps.listConnectorIdentities?.(projectId) ?? [],
+        ]);
+        const body = page as { sections?: unknown[]; popular?: Array<Record<string, unknown>> } | null;
+        if (!body || !Array.isArray(body.sections)) return c.json(page);
+        return c.json({
+          ...body,
+          ...(Array.isArray(body.popular) ? { popular: markInstalled(body.popular, profiles) } : {}),
+          sections: body.sections.map((section) => withInstalledItems(section, profiles)),
+        });
       } catch (error) {
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
@@ -149,7 +159,11 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
-        return c.json(await visibleDetail(deps, projectId, c.req.query('id')));
+        const [detail, profiles] = await Promise.all([
+          visibleDetail(deps, projectId, c.req.query('id')),
+          deps.listConnectorIdentities?.(projectId) ?? [],
+        ]);
+        return c.json(withInstalledDetail(detail as ConnectorCatalogDetail, profiles));
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
@@ -163,6 +177,9 @@ const InstallBody = z.object({
   way: z.string().optional().openapi({ description: 'A variant id from the detail. Default: the recommended way.' }),
   name: z.string().optional().openapi({ description: 'Display name. Default: the app name.' }),
   slug: z.string().optional().openapi({ description: 'Slug in kortix.yaml. Default: from the name.' }),
+  as_new_profile: z.boolean().optional().openapi({
+    description: 'Add another profile of a way the project already has. Default: answer the existing profile (`existing: true`).',
+  }),
 });
 
 function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
@@ -255,6 +272,38 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
         throw error;
       }
       const { draft, way } = built;
+      const summary = {
+        name: draft.name,
+        provider: draft.provider,
+        way: { id: way.id, kind: way.kind, name: way.name, oneClick: way.oneClick === true },
+      };
+      const signIn = way.kind === 'composio' || (way.kind === 'mcp' && way.oneClick === true);
+      // The way is already a profile: answer it, before any network probe.
+      const profiles = (await deps.listConnectorIdentities?.(projectId)) ?? [];
+      const identity = connectorIdentity(draft);
+      const same = identity ? profiles.find((p) => p.identity === identity) : undefined;
+      if (same && body.as_new_profile !== true) {
+        const view = (await deps.listConnectors(projectId, admin.userId, { includeSchemas: false })).find(
+          (row) => row.slug === same.slug,
+        );
+        const next =
+          view?.state === 'error'
+            ? 'fix'
+            : view?.state === 'needs_account'
+              ? signIn ? 'connect' : 'credential'
+              : 'ready';
+        return c.json({
+          ok: true,
+          existing: true,
+          slug: same.slug,
+          ...summary,
+          next,
+          ...(next === 'fix' && view?.state_reason ? { error: view.state_reason } : {}),
+        });
+      }
+      if (body.as_new_profile === true && !body.slug) {
+        draft.slug = freeSlug(String(draft.slug), profiles.map((p) => p.slug));
+      }
       try {
         // Best effort, as on the web: a server that cannot be probed now still
         // installs, and its sign-in or credential is set on the profile later.
@@ -265,23 +314,22 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
           });
           if (discovery?.recommended) draft.auth = discovery.recommended;
         }
-        let result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
-        // A default slug the project already uses: one more try with a suffix.
-        if (!result.ok && result.status === 409 && !body.slug) {
-          draft.slug = `${draft.slug}-${Math.random().toString(36).slice(2, 8)}`;
-          result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
-        }
+        const authType = (draft.auth as { type?: string } | undefined)?.type;
+        const next =
+          way.kind === 'composio' ? 'connect' : !authType || authType === 'none' ? 'ready' : signIn ? 'connect' : 'credential';
+        const result = await deps.createConnector(projectId, admin.accountId, draft, admin.userId);
         if (!result.ok) return c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
-        const oauth = way.kind === 'composio' || (way.kind === 'mcp' && way.oneClick === true);
-        const credential = (draft.auth as { type?: string } | undefined)?.type;
+        // A way that still needs a sign-in or a credential cannot list its tools
+        // yet; its sync error is expected, and the next step stays that account.
+        const syncError = next === 'ready' ? result.sync?.errors.find((e) => e.slug === draft.slug)?.error : undefined;
         return c.json({
           ok: true,
+          existing: false,
           slug: draft.slug,
-          name: draft.name,
-          provider: draft.provider,
-          way: { id: way.id, kind: way.kind, name: way.name, oneClick: way.oneClick === true },
+          ...summary,
           sync: result.sync,
-          next: oauth ? 'connect' : credential && credential !== 'none' ? 'credential' : 'ready',
+          next: syncError ? 'fix' : next,
+          ...(syncError ? { error: syncError } : {}),
         });
       } catch (err) {
         const validation = allowedSourceValidationResponse(c, err);
@@ -523,4 +571,33 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
       return c.json(result);
     },
   );
+}
+
+type Profiles = ReadonlyArray<{ slug: string; identity: string | null }>;
+
+/** `installed` on each list item: the profiles that are its way in. A list
+ *  item names only an MCP URL or a toolkit; other kinds match on the detail. */
+function withInstalledItems(page: unknown, profiles: Profiles): unknown {
+  const body = page as { items?: Array<Record<string, unknown>> } | null;
+  if (!body || !Array.isArray(body.items)) return page;
+  return { ...body, items: markInstalled(body.items, profiles) };
+}
+
+function markInstalled(items: Array<Record<string, unknown>>, profiles: Profiles): Array<Record<string, unknown>> {
+  return items.map((item) => {
+    const composio = item.composio as { slug?: string } | undefined;
+    const identity =
+      item.kind === 'composio'
+        ? connectorIdentity({ provider: 'composio', app: composio?.slug })
+        : typeof item.mcpUrl === 'string'
+          ? connectorIdentity({ provider: 'mcp', url: item.mcpUrl })
+          : null;
+    return { ...item, installed: identity ? profiles.filter((p) => p.identity === identity).map((p) => p.slug) : [] };
+  });
+}
+
+function withInstalledDetail(detail: ConnectorCatalogDetail, profiles: Profiles): unknown {
+  if (!detail || !Array.isArray(detail.variants)) return detail;
+  const variants = detail.variants.map((way) => ({ ...way, installed: installedSlugs(way, profiles) }));
+  return { ...detail, installed: [...new Set(variants.flatMap((way) => way.installed))], variants };
 }

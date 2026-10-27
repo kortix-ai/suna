@@ -56,6 +56,14 @@ export function bindProjectOperations(
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnectorPolicySet>>) =>
           P.deleteConnectorPolicySet(projectId, ...a),
       },
+      /** Every declared agent on one connector: granted, and its rule set. */
+      agents: (...a: DropFirst<Parameters<typeof P.listConnectorAgents>>) =>
+        P.listConnectorAgents(projectId, ...a),
+      /** Every connector × every agent, in one request. */
+      rulesMatrix: () => P.getConnectorRulesMatrix(projectId),
+      /** OAuth2 client credentials on a connector's shared account. */
+      setOAuth2ClientCredentials: (...a: DropFirst<Parameters<typeof P.setConnectorOAuth2ClientCredentials>>) =>
+        P.setConnectorOAuth2ClientCredentials(projectId, ...a),
       /** Pipedream and Composio connectors and the Kortix app each moves to. */
       listMoves: () => P.listConnectorMoves(projectId),
       /** Move a Pipedream or Composio connector to its Kortix app; it keeps its slug. */

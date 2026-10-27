@@ -1044,9 +1044,9 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/support',
-    // "help" is the important one: this page absorbed /help, and that is still
-    // the word people reach for. Deliberately NOT "account", "delete" or
+    href: '/contact',
+    // "help" is the important one: it is still the word people reach for.
+    // Deliberately NOT "account", "delete" or
     // "billing" — those queries belong to the account sections and the
     // delete-account action, and a support row answering them would push the
     // real destination down the list (command-palette-search.test.ts pins the

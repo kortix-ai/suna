@@ -63,6 +63,10 @@ interface CatalogAction {
   name: string;
   description: string;
   risk: string;
+  /** What the tool likely does, for grouping (`likelyToolRisk`): an
+   *  un-annotated MCP tool's stored `write` is a fallback, so its name decides.
+   *  The admin list only; the gateway enforces `risk`. */
+  likely_risk?: 'read' | 'write' | 'unknown';
   inputSchema: Record<string, unknown> | null;
   /** JSON Schema of the call's `output`; only with `includeOutputSchemas`. */
   outputSchema?: Record<string, unknown> | null;
@@ -74,6 +78,8 @@ export interface CatalogAccount {
   owner_type: string;
   is_default: boolean;
 }
+import type { RulesMatrix } from './agent-rules-matrix';
+
 export interface CatalogConnector {
   slug: string;
   name: string;
@@ -127,6 +133,14 @@ export interface AdminConnectorView extends CatalogConnector {
    * `safeConnectorLastError`: no URL query, credential, or bearer value.
    */
   lastError: string | null;
+  /** The one state to show: `disabled`, `error` (its tools could not be
+   *  loaded), `needs_account` (it needs an account and has none the caller can
+   *  use) or `connected`. Derived from `status`, `secretSet` and `lastError`. */
+  state: 'disabled' | 'error' | 'needs_account' | 'connected';
+  /** Why, in a few words, for every state but `connected`. */
+  state_reason: string | null;
+  /** False: the connector runs with no account (a public server). */
+  auth_needed: boolean;
 }
 
 export interface SyncResult {
@@ -226,7 +240,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     projectId: string,
     slug: string,
     input: UpdateConnectionCredentialInput,
-  ): Promise<CrudOutcome>;
+  ): Promise<CrudOutcome & { account?: string | null; oauth2ExpiresAt?: number }>;
   /** Bind or unbind a brokered project secret as the connector credential. */
   setConnectorSecretBinding?(
     projectId: string,
@@ -290,6 +304,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     slug: string,
     name: string,
     description: string | null | undefined,
+    /** Replace the set's rules in the same commit (a template). */
+    policies?: Array<{ match: string; action: PolicyAction }>,
   ): Promise<CrudOutcome & { created?: boolean }>;
   /** Rename a policy set and every agent reference to it, in one commit. */
   renameConnectorPolicySet?(
@@ -299,6 +315,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     from: string,
     to: string,
   ): Promise<CrudOutcome>;
+  /** Every declared agent × every connector: granted and its rule set (`agent-rules-matrix.ts`). */
+  getRulesMatrix?(projectId: string): Promise<RulesMatrix | null>;
   /** Delete a policy set; 409 `policy_set_in_use` while an agent uses it. */
   deleteConnectorPolicySet?(
     projectId: string,
@@ -479,24 +497,6 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     sig: string | null,
   ): Promise<{ ok: boolean; connected: boolean }>;
   /**
-   * The public form that connects a toolkit on the customer's own app
-   * (`composio-app-form.ts`). No user auth: the sealed token is the capability.
-   */
-  appForm?: {
-    info(token: string): Promise<{
-      app: string;
-      name: string;
-      connector: string;
-      connected: boolean;
-      connected_as: string | null;
-      expires_at: string;
-    }>;
-    submit(
-      token: string,
-      body: { store?: unknown; client_id?: unknown; client_secret?: unknown },
-    ): Promise<{ connected: true; connected_as: string; success_redirect_uri?: string }>;
-  };
-  /**
    * A page of the Pipedream catalogue, filtered by query and/or category.
    *
    * Category filtering is served from a server-side snapshot of the whole
@@ -562,6 +562,11 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string): Promise<unknown>;
+  /** Every profile's slug and the way in it is (`connectorIdentity`): install
+   *  answers an existing profile and the catalogue marks `installed`. */
+  listConnectorIdentities?(projectId: string): Promise<Array<{ slug: string; identity: string | null }>>;
+  /** The web page where a person reviews and adds a custom server an agent asked for. */
+  customConnectorSetupUrl?(projectId: string, draft: Record<string, unknown>): string;
   /** The tools one way to connect offers, before install (`catalog-tools.ts`). */
   discoverConnectorTools?(variant: ConnectorSurfaceVariant): Promise<CatalogTools>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */

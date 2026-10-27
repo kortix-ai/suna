@@ -196,6 +196,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     }
   });
 
+  test('project_channels is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('project_channels')).toMatchObject({
+      stability: 'experimental',
+      enabled: false,
+      operator_only: false,
+    });
+    expect(resolveFeatureFlag({}, 'project_channels')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { project_channels: true } }, 'project_channels')).toBe(true);
+  });
+
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
     // Saved history is how web, mobile and the CLI show a session while its
     // computer is off. Projects that stored `false` keep theirs too.

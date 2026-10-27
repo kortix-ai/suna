@@ -1,7 +1,7 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
-import type { ProjectSpace } from './spaces';
+import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import { retiredEndpointError } from '../../http/api/errors';
 import type { SandboxProviderName } from '../platform-client/types';
@@ -97,6 +97,7 @@ export type FeatureFlagKey =
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  | 'project_channels'
   | 'agent_rooms'
   | 'goals'
   | 'workspace_volume'
@@ -150,6 +151,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'volumes',
   'drives',
   'session_log_restore',
+  'project_channels',
   'agent_rooms',
   'goals',
   'workspace_volume',
@@ -316,7 +318,7 @@ export interface ProjectConfigSummary {
   env: { required: string[]; optional: string[] };
   /** The spaces from `kortix.yaml` top-level `spaces:`. Absent on older
    *  servers. `listSpaces(config)` adds the ones agents name. */
-  spaces?: ProjectSpace[];
+  spaces?: ManifestSpace[];
 }
 
 export interface ProjectDetail {

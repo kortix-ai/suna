@@ -6,6 +6,7 @@ import { localizeUiCatalog, translateUiCatalogText } from '../i18n/ui-catalog/lo
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '../i18n/ui-catalog/product-catalog-translation-keys.generated';
 import type { UiTranslator } from '../i18n';
 
+import { appAdminsOnly } from '@kortix/shared/app-config';
 import { cn } from '../lib/utils';
 import { stripTrailingSlashes, type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppViewerTokenScope, type ProjectTrigger } from '@kortix/sdk';
 
@@ -118,24 +119,8 @@ export function appStatus(
   };
 }
 
-/**
- * Does this App offer `capability`? The ONE way the Apps UI branches between
- * Apps: the server lists what each App supports (`app.capabilities`), and a
- * control shows only for the Apps that support it.
- */
-/**
- * The Apps the grid shows as cards (`display`): registered with `listed: true`,
- * and not a tab of a parent that exists. A tab whose parent is gone stays
- * reachable as a card. Background Apps (a poller, a bot, a backend) stay out
- * of the grid unless their author registers them.
- */
-export function gridApps(apps: App[], canAdmin = true): App[] {
-  const slugs = new Set(apps.map((app) => app.slug));
-  return apps.filter((app) =>
-    app.display?.listed === true
-    && !(app.display?.parent && slugs.has(app.display.parent))
-    && (canAdmin || !appAdminsOnly(app)));
-}
+// The grid rule is shared with the API's channel Apps count (`@kortix/shared/app-config`).
+export { appAdminsOnly, gridApps } from '@kortix/shared/app-config';
 
 /** The Apps of the project that are neither a card nor a tab: the ones the page counts as hidden. */
 export function hiddenApps(apps: App[], canAdmin = true): App[] {
@@ -175,10 +160,6 @@ export function childApps(apps: App[], app: App, canAdmin = true): App[] {
 }
 
 /**
- * Its primary service is `access: admins` (a backend's admin dashboard): only
- * project admins can open it, so nobody else is shown a card or tab for it.
- */
-/**
  * The App whose live preview a card shows: the App itself, or, when it hides
  * its own (`display.preview: none`), its first tab the viewer may open (a
  * backend's dashboard). Null: the card shows an icon.
@@ -189,16 +170,17 @@ export function cardPreviewApp(apps: App[], app: App, canAdmin = true): App | nu
   return first && appCan(first, 'preview') && first.viewer_can_access !== false ? first : null;
 }
 
-export function appAdminsOnly(app: App): boolean {
-  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
-}
-
 /** A tab's label: the App's name without its parent's slug ("crm-data-dashboard" → "Dashboard"). */
 export function appTabLabel(child: App, parent: App): string {
   const name = child.name.startsWith(`${parent.slug}-`) ? child.name.slice(parent.slug.length + 1) : child.name;
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+/**
+ * Does this App offer `capability`? The ONE way the Apps UI branches between
+ * Apps: the server lists what each App supports (`app.capabilities`), and a
+ * control shows only for the Apps that support it.
+ */
 export function appCan(app: App, capability: AppCapability): boolean {
   return app.capabilities?.includes(capability) ?? false;
 }

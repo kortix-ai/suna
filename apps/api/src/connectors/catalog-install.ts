@@ -85,3 +85,66 @@ export function catalogInstallDraft(
     },
   };
 }
+
+/**
+ * What makes two profiles the same way in: the MCP server URL, the managed
+ * toolkit, the API document, or the GraphQL endpoint. Install answers the
+ * existing profile for a way the project already has (a second one needs
+ * `as_new_profile`). Null: nothing to match on (a channel, a computer).
+ */
+export function connectorIdentity(c: {
+  provider?: string | null;
+  url?: string | null;
+  app?: string | null;
+  spec?: unknown;
+  endpoint?: string | null;
+}): string | null {
+  const provider = c.provider ?? '';
+  const value =
+    provider === 'mcp'
+      ? c.url
+      : provider === 'composio' || provider === 'pipedream'
+        ? c.app?.toLowerCase()
+        : provider === 'graphql'
+          ? c.endpoint
+          : provider === 'openapi' || provider === 'postman' || provider === 'http'
+            ? typeof c.spec === 'string' ? c.spec : null
+            : null;
+  if (!value) return null;
+  return `${provider}:${normalizeEndpoint(value)}`;
+}
+
+/** Lower-case scheme and host, no fragment, no trailing slash. The query stays: it can select a different server. */
+function normalizeEndpoint(value: string): string {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    return url.toString().replace(/\/+(\?|$)/, '$1');
+  } catch {
+    return value.replace(/\/+$/, '');
+  }
+}
+
+/** The identity of a catalogue way, as it would install. */
+export function wayIdentity(way: ConnectorSurfaceVariant): string | null {
+  if (way.kind === 'composio') return connectorIdentity({ provider: 'composio', app: way.composio?.slug });
+  return way.connector ? connectorIdentity(way.connector) : null;
+}
+
+/** The project's profiles that are this way. */
+export function installedSlugs(
+  way: ConnectorSurfaceVariant,
+  profiles: ReadonlyArray<{ slug: string; identity: string | null }>,
+): string[] {
+  const identity = wayIdentity(way);
+  return identity ? profiles.filter((p) => p.identity === identity).map((p) => p.slug) : [];
+}
+
+/** `base`, else `base-2`, `base-3`, …: the first slug the project does not use. */
+export function freeSlug(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}

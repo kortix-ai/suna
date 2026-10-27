@@ -1,4 +1,5 @@
 import { isSelectableAgent } from '@kortix/sdk';
+import type { ProjectSpace } from '@kortix/sdk';
 import type { Agent } from '@kortix/sdk/react';
 
 /**
@@ -72,6 +73,35 @@ export interface ComposerAgentResolution {
 export function composerSelectableAgents(agents: Agent[] | undefined): Agent[] {
   if (!Array.isArray(agents)) return [];
   return agents.filter(isSelectableAgent);
+}
+
+/**
+ * The agents anyone who posts in this channel may run, granted or not (the
+ * server's `channelAgentNames`): the channel's agents,
+ * else the project default. None in a DM or with no space: its own rules apply.
+ */
+export function channelRunnableAgents(
+  space: Pick<ProjectSpace, 'agents' | 'kind'> | null | undefined,
+  projectDefault: string | null | undefined,
+): string[] {
+  if (space?.kind !== 'channel') return [];
+  const agents = space.agents ?? [];
+  return agents.length > 0 ? [...agents] : projectDefault ? [projectDefault] : [];
+}
+
+/**
+ * The roster plus a channel's agents: whoever may
+ * post in a channel runs its agents there without an agent grant, and the
+ * server applies the same rule (`agent-access.ts`, `channelRunnableAgents`).
+ * A name missing from the roster gets a plain primary entry. `undefined`
+ * (still loading) stays `undefined`.
+ */
+export function withChannelAgents(agents: Agent[] | undefined, channelAgents: readonly string[] | undefined): Agent[] | undefined {
+  if (!agents || !channelAgents?.length) return agents;
+  const known = new Set(agents.map((a) => a.name));
+  const missing = channelAgents.filter((name) => !known.has(name));
+  if (missing.length === 0) return agents;
+  return [...agents, ...missing.map((name) => ({ name, mode: 'primary' }) as unknown as Agent)];
 }
 
 export function resolveComposerAgent(input: {

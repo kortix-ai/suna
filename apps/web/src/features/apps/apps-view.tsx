@@ -431,7 +431,7 @@ export interface AppSelect {
   note: string | null;
 }
 
-function AppCard({
+export function AppCard({
   projectId,
   app,
   shown,
