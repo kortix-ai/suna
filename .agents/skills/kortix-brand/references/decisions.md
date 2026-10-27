@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D20 Core marketing copy does not name pi
+- **Date:** 2026-10-27
+- **Decision:** The home hero, the pillars and other core marketing copy do not name pi. The Company as code pillar reads "Extensible to the core." and says the agent harness is open source and yours to extend. pi stays named in docs, the changelog, developer pages and claims.md row "Harness".
+- **Why:** founder, 2026-10-27: "remove the PI everywhere in core context as nobody will know what it is out of box".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/pillars-band.tsx`.
+- **Supersedes:** D16's "Extensible, powered by pi." pillar line and its naming of pi in the home copy.
+- **Source:** the `services-page` branch.
+
 ### D19 The `/about` hero: "We are building the Operating System for superintelligence"
 - **Date:** 2026-10-27
 - **Decision:** The `/about` hero reads "We are building the Operating System for superintelligence. One you own end to end, every part of it." "Superintelligence" is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.

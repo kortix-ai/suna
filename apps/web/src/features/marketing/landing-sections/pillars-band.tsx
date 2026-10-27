@@ -2,11 +2,12 @@ import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { Heading } from '@/features/marketing/kit/page-frame';
 
 // The three pillars, in the founder's order and words (kortix-brand D16):
-// Multiplayer AI; Company as code ("extensible, powered by pi"); Sovereign and
+// Multiplayer AI; Company as code (extensible); Sovereign and
 // open ("own your data and run on your own infra"). Each is its own section
 // so the Product menu's anchors (#multiplayer, #company-as-code, #sovereign)
 // land on it. Every fact is a claims.md row: Channels, Permissions, Path to
-// `main`, Harness, Connectors, Source, Hosting, Models, Secrets.
+// `main`, Connectors, Source, Hosting, Models, Secrets. No "pi" in this copy
+// (D20): buyers do not know the harness name.
 const PILLARS = [
   {
     id: 'multiplayer',
@@ -26,14 +27,14 @@ const PILLARS = [
   {
     id: 'company-as-code',
     title: 'Company as code.',
-    titleMuted: 'Extensible, powered by pi.',
+    titleMuted: 'Extensible to the core.',
     body: [
       'We treat your whole company like code. **Every agent, skill, rule, connector and piece of context is a file in one git repo.**',
-      'Every session runs **pi, the open-source agent harness**, so you can extend anything.',
+      'The agents and the harness they run on are **open source**, so you can extend anything.',
     ],
     cells: [
       { k: 'Files in git', v: 'Agents and skills you version, review and roll back.' },
-      { k: 'pi', v: 'Every session runs on the open-source agent harness.' },
+      { k: 'Open harness', v: 'The agent runtime is open source: change how agents work.' },
       { k: 'Connectors', v: '3,000+ apps, plus MCP, OpenAPI and raw HTTP.' },
       { k: 'CLI and SDK', v: 'Script it from the CLI, build on it with the TypeScript SDK.' },
     ],
