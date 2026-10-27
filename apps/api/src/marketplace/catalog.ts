@@ -23,7 +23,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
-import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
+import { AGENTS_DIR, agentFileCandidates, ENV_NAME_RE, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
@@ -465,7 +465,14 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
     let requiredSecrets: string[] = [];
     try {
       const env = parseYaml(files.find((f) => f.path === "kortix.yaml")?.content ?? "")?.env;
-      if (Array.isArray(env?.required)) requiredSecrets = env.required;
+      // Read env.required the way the platform does (projects/git/config.ts
+      // asStringArray): names only, trimmed, upper-cased; capabilitiesOf dedupes.
+      if (Array.isArray(env?.required)) {
+        requiredSecrets = env.required
+          .filter((s: unknown): s is string => typeof s === "string")
+          .map((s: string) => s.trim().toUpperCase())
+          .filter((s: string) => ENV_NAME_RE.test(s));
+      }
     } catch {
       // An unparseable kortix.yaml just lists no requirements.
     }
