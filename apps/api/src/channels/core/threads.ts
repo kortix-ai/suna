@@ -1,5 +1,6 @@
-import { and, eq } from 'drizzle-orm';
-import { chatThreads, projectSessions } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { chatEventDedup, chatThreads, projectSessions } from '@kortix/db';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 
 /**
@@ -122,6 +123,50 @@ export async function dropChatThread(key: ChatThreadKey, sessionId?: string): Pr
   await db
     .delete(chatThreads)
     .where(sessionId ? and(threadRow(key), eq(chatThreads.sessionId, sessionId)) : threadRow(key));
+}
+
+/** A claim outlives a create that never finishes (a crash) by at most this long. */
+const CREATE_CLAIM_TTL_MS = 10 * 60_000;
+
+/**
+ * Claim the first create of a thread. An expired claim (a create that never
+ * finished) is taken over in the same statement. Returns the owner token for
+ * `releaseThreadCreate`, or null while another create holds it. A DB error
+ * throws: no create runs unclaimed.
+ */
+export async function claimThreadCreate(key: string): Promise<Date | null> {
+  const expiresAt = new Date(Date.now() + CREATE_CLAIM_TTL_MS);
+  const rows = await db
+    .insert(chatEventDedup)
+    .values({ eventId: key, expiresAt })
+    .onConflictDoUpdate({
+      target: chatEventDedup.eventId,
+      set: { expiresAt },
+      setWhere: sql`${chatEventDedup.expiresAt} < now()`,
+    })
+    .returning({ eventId: chatEventDedup.eventId });
+  return rows.length > 0 ? expiresAt : null;
+}
+
+/** Release only our own claim: after a takeover, the row belongs to the new owner. */
+export async function releaseThreadCreate(key: string, token: Date): Promise<void> {
+  await db.delete(chatEventDedup).where(and(eq(chatEventDedup.eventId, key), eq(chatEventDedup.expiresAt, token)));
+}
+
+/**
+ * Free the thread-create claim a channel create carries (`bind_chat_thread.createClaim`):
+ * the lifecycle calls it after the bind, and when it gives the create up. A
+ * claim another create took over stays. Never throws: a claim left behind expires.
+ */
+export async function releaseCreateClaims(
+  actions: ReadonlyArray<{ type: string; createClaim?: { key: string; token: string } }> | undefined,
+): Promise<void> {
+  for (const action of actions ?? []) {
+    if (action.type !== 'bind_chat_thread' || !action.createClaim) continue;
+    const { key, token } = action.createClaim;
+    await releaseThreadCreate(key, new Date(token)).catch((error) =>
+      logger.warn('[channel] thread create claim not released; it expires', { key, error: String(error) }));
+  }
 }
 
 export type FollowUpRoute = { kind: 'here' } | { kind: 'thread_project'; projectId: string } | { kind: 'refused' };

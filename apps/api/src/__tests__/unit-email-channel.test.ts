@@ -523,6 +523,10 @@ describe("dispatchResendEmailEvent", () => {
         platform: "email",
         workspaceId: "inb-1",
         threadId: "thr-1",
+        createClaim: {
+          key: "email:threadcreate:inb-1:thr-1",
+          token: expect.any(String),
+        },
       },
       expect.objectContaining({
         type: "deliver_prompt",

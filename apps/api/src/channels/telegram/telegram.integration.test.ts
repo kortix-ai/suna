@@ -19,7 +19,8 @@ import { config as appConfig } from '../../config';
 import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
 import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
-import { adoptChatThreads, bindChatThread } from '../core/threads';
+import { adoptChatThreads, bindChatThread, claimThreadCreate } from '../core/threads';
+import { applyPostCreateActions, createCommandStatus, createSession } from '../../projects/session-lifecycle/create-session';
 import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
@@ -211,7 +212,13 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
       body: { agent_name: 'default', title_source: 'summarize the release' },
       metadata: { source: 'telegram', telegram: { bot_id: BOT_ID, chat_id: 777 } },
       postCreate: [
-        { type: 'bind_chat_thread', platform: 'telegram', workspaceId: BOT_ID, threadId: '777' },
+        {
+          type: 'bind_chat_thread',
+          platform: 'telegram',
+          workspaceId: BOT_ID,
+          threadId: '777',
+          createClaim: { key: claimKey(777), token: expect.any(String) },
+        },
         { type: 'deliver_prompt', source: 'telegram', userId: ACTOR },
       ],
     });
@@ -446,6 +453,67 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     duringCreate = null;
     await expect(handleTelegramEvent(update('anyone?', ALLOWED, 936))).rejects.toThrow('in flight');
     expect(created).toHaveLength(1);
+  });
+
+  test('the lifecycle frees a chat create claim once its bind lands, and only its own', async () => {
+    const bindWith = (chat: number, createClaim?: { key: string; token: string }) =>
+      newSession().then((sessionId) =>
+        applyPostCreateActions({
+          projectId: PROJECT,
+          sessionId,
+          actions: [{ type: 'bind_chat_thread', platform: 'telegram', workspaceId: BOT_ID, threadId: String(chat), createClaim }],
+        }),
+      );
+
+    const token = (await claimThreadCreate(claimKey(941)))!;
+    expect(await bindWith(941, { key: claimKey(941), token: token.toISOString() })).toEqual({ ok: true });
+    expect((await threadRow(941))?.sessionId).toBeDefined();
+    expect(await claimRows(941)).toHaveLength(0);
+
+    // Another create took the claim over: its owner token differs, so it stays.
+    await holdClaim(942);
+    expect(await bindWith(942, { key: claimKey(942), token: new Date(Date.now() + 1).toISOString() })).toEqual({ ok: true });
+    expect(await claimRows(942)).toHaveLength(1);
+
+    // A bind queued before the field existed carries no claim: nothing is freed.
+    await holdClaim(943);
+    expect(await bindWith(943)).toEqual({ ok: true });
+    expect(await claimRows(943)).toHaveLength(1);
+  });
+
+  test('a chat create the lifecycle gives up frees the chat at once', async () => {
+    const archived = crypto.randomUUID();
+    await db.insert(projects).values({
+      projectId: archived,
+      accountId: ACCOUNT,
+      name: 'telegram-v2-archived',
+      repoUrl: 'https://example.test/a.git',
+      status: 'archived',
+    });
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.projectId, archived));
+      const token = (await claimThreadCreate(claimKey(944)))!;
+      const idempotencyKey = `telegram:create:${BOT_ID}:dead-letter-${crypto.randomUUID()}`;
+      const result = await createSession({
+        source: 'telegram',
+        project: project!,
+        userId: ACTOR,
+        requestingPrincipalType: 'human',
+        body: {},
+        visibility: 'project',
+        metadata: {},
+        queuePolicy: 'never',
+        idempotencyKey,
+        postCreate: [
+          { type: 'bind_chat_thread', platform: 'telegram', workspaceId: BOT_ID, threadId: '944', createClaim: { key: claimKey(944), token: token.toISOString() } },
+        ],
+      });
+      expect(result.error?.body.code).toBe('project_archived');
+      expect(await createCommandStatus(idempotencyKey, archived)).toBe('dead_lettered');
+      expect(await claimRows(944)).toHaveLength(0);
+    } finally {
+      await db.delete(projects).where(eq(projects.projectId, archived));
+    }
   });
 
   test('a chat whose first session is still starting: wait 8 s, retry, and on the last attempt say so', async () => {

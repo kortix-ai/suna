@@ -19,12 +19,19 @@
  */
 import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
 import type { TurnErrorInfo } from '../slack/errors';
-import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from './threads';
+import {
+  type ChatThreadKey,
+  claimThreadCreate,
+  dropChatThread,
+  findChatThread,
+  releaseThreadCreate,
+  touchChatThread,
+} from './threads';
 
 type CreateError = NonNullable<Awaited<ReturnType<typeof createSession>>['error']>;
 
@@ -124,8 +131,6 @@ export interface ChannelSessionPlan {
 /** Up to 8 s for a racing message's create to bind the thread. */
 const CREATE_WAIT_POLL_MS = 250;
 const CREATE_WAIT_POLLS = 32;
-/** A claim outlives a create that never finishes (a crash) by at most this long. */
-const CREATE_CLAIM_TTL_MS = 10 * 60_000;
 
 const defaultLifecycle = {
   createCommandStatus,
@@ -221,30 +226,35 @@ export async function routeChannelMessage(
       queuePolicy: 'on_backpressure',
       idempotencyKey: keys.create,
       postCreate: [
-        { type: 'bind_chat_thread', platform: target.platform, workspaceId: target.workspaceId, threadId: target.threadId },
+        {
+          type: 'bind_chat_thread',
+          platform: target.platform,
+          workspaceId: target.workspaceId,
+          threadId: target.threadId,
+          createClaim: { key: keys.createClaim, token: claim.toISOString() },
+        },
         { type: 'deliver_prompt', source: target.platform, text: plan.prompt, userId },
       ],
     });
   } catch (error) {
     // Free the thread so the transport's retry creates under the same key,
     // instead of waiting for a thread this attempt never bound. Unless the
-    // lifecycle holds the create: the retry returns above, and the claim
-    // stays until it expires, so no other message starts a second session
-    // meanwhile. A failed read keeps it too.
+    // lifecycle holds the create: the retry returns above, and the bind (or
+    // the create's dead letter) frees the claim, so no other message starts a
+    // second session meanwhile. A failed read keeps it: the claim expires.
     const owner = await lifecycle.createCommandStatus(keys.create, target.projectId).catch(() => 'unknown' as const);
     if (owner !== 'unknown' && !createStarted(owner)) await releaseThreadCreate(keys.createClaim, claim);
     throw error;
   }
 
   if (result.sessionId && !result.error) {
-    // The create bound the thread: later messages find it, so the claim is spent.
+    // The create bound the thread and freed the claim (a deduped older create
+    // may carry another token, so free ours too).
     await releaseThreadCreate(keys.createClaim, claim);
     return;
   }
   if (!result.error || result.requeued) {
-    // ponytail: the claim stays until it expires; the drain binds the thread but
-    // never releases it, so a session that dies within 10 min of a queued create
-    // blocks a new one until then. Fix: a release post-create action.
+    // The drain binds the thread, then frees this claim with its token.
     await port.notify(target, { kind: 'create_pending' });
     return;
   }
@@ -293,31 +303,6 @@ async function followUp(
     await port.notify(target, { kind: 'follow_up_failed' });
   }
   return outcome;
-}
-
-/**
- * Claim the first create of a thread. An expired claim (a create that never
- * finished) is taken over in the same statement. Returns the owner token for
- * `releaseThreadCreate`, or null while another create holds it. A DB error
- * throws: no create runs unclaimed.
- */
-async function claimThreadCreate(key: string): Promise<Date | null> {
-  const expiresAt = new Date(Date.now() + CREATE_CLAIM_TTL_MS);
-  const rows = await db
-    .insert(chatEventDedup)
-    .values({ eventId: key, expiresAt })
-    .onConflictDoUpdate({
-      target: chatEventDedup.eventId,
-      set: { expiresAt },
-      setWhere: sql`${chatEventDedup.expiresAt} < now()`,
-    })
-    .returning({ eventId: chatEventDedup.eventId });
-  return rows.length > 0 ? expiresAt : null;
-}
-
-/** Release only our own claim: after a takeover, the row belongs to the new owner. */
-async function releaseThreadCreate(key: string, token: Date): Promise<void> {
-  await db.delete(chatEventDedup).where(and(eq(chatEventDedup.eventId, key), eq(chatEventDedup.expiresAt, token)));
 }
 
 async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId: string; projectId: string } | null> {

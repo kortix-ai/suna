@@ -40,6 +40,13 @@ export type SessionLifecyclePostCreateAction =
       platform: 'slack' | 'telegram' | string;
       workspaceId: string;
       threadId: string;
+      /**
+       * The thread-create claim this create holds (`channels/core/threads.ts`):
+       * its `chat_event_dedup` key and owner token (the claim's `expires_at`,
+       * ISO). Freed after the bind or when the create is given up. Absent on
+       * Slack and Teams binds, and on commands queued before it existed.
+       */
+      createClaim?: { key: string; token: string };
     }
   | {
       type: 'deliver_prompt';
