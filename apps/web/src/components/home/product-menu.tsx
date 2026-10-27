@@ -47,6 +47,8 @@ export const MEGA_MENUS: MegaMenu[] = [
           // Apps: the compute platform (sites, internal tools, backends with data,
           // functions and realtime), docs/apps.mdx.
           { label: 'Apps', href: '/docs/apps' },
+          // Drive: shared folders for people and agents (the Files feature, /drives).
+          { label: 'Drive', href: '/docs/work/runtime#files' },
           { label: 'Connectors', href: '/docs/connect/connectors' },
           { label: 'Triggers', href: '/docs/connect/triggers' },
           { label: 'Computers', href: '/docs/connect/computers' },
