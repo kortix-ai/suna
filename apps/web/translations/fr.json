@@ -1301,7 +1301,9 @@
         "offTitle": "Désactiver les Canaux ?",
         "offBody": "Les canaux, la mémoire, les fichiers et les liens restent enregistrés. La liste des sessions revient pour tout le monde.",
         "turnOff": "Désactiver"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "Mises à niveau disponibles",

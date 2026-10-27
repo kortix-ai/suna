@@ -842,7 +842,9 @@ const catalog = {
         "offTitle": "Turn off Channels?",
         "offBody": "Channels, memory, files and links stay saved. The session list comes back for everyone.",
         "turnOff": "Turn off"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "Available upgrades",

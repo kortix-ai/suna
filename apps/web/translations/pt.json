@@ -1301,7 +1301,9 @@
         "offTitle": "Desativar Canais?",
         "offBody": "Canais, memória, arquivos e links continuam salvos. A lista de sessões volta para todos.",
         "turnOff": "Desativar"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "Atualizações disponíveis",

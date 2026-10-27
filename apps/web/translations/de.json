@@ -1301,7 +1301,9 @@
         "offTitle": "Kanäle ausschalten?",
         "offBody": "Kanäle, Speicher, Dateien und Links bleiben gespeichert. Die Sitzungsliste kommt für alle zurück.",
         "turnOff": "Ausschalten"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",

@@ -65,6 +65,7 @@ import {
 } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
 import { Skeleton } from '../../../primitives/skeleton';
+import { Badge } from '../../../primitives/badge';
 import { Switch } from '../../../primitives/switch';
 import { errorToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
@@ -106,6 +107,9 @@ export interface ExperimentalCopy {
   emptyTitle: string;
   emptyDescription: string;
   permission: string;
+  /** The badge on a work-in-progress flag, and what it means. */
+  wip: string;
+  wipNote: string;
 }
 
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
@@ -120,6 +124,8 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   emptyTitle: 'No experimental features',
   emptyDescription: 'This deployment exposes no per-project feature flags.',
   permission: "You need the project's settings permission to change a feature flag.",
+  wip: 'Work in progress',
+  wipNote: 'Not recommended yet: it can change or break.',
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
@@ -220,9 +226,17 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
+          {feature.wip ? (
+            <Badge variant="warning" size="xs">
+              {copy.wip}
+            </Badge>
+          ) : null}
           <span className="text-muted-foreground text-xs">{originLabel(feature, copy)}</span>
         </div>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+          {feature.wip ? `${copy.wipNote} ` : null}
+          {feature.description}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
@@ -529,6 +543,8 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
           emptyTitle: t('emptyTitle'),
           emptyDescription: t('emptyDescription'),
           permission: t('permission'),
+          wip: t('wip'),
+          wipNote: t('wipNote'),
         }}
       />
     </>

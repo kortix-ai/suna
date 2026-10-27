@@ -139,6 +139,8 @@ export interface FeatureFlagDef {
   /** One sentence: what it does and what to expect. */
   description: string;
   stability: FeatureFlagStability;
+  /** Work in progress: not recommended yet. The clients mark the row (Marko, 2026-10-27). */
+  wip?: boolean;
   /** Platform support gate (operator env). Hidden in UI when false. */
   available: () => boolean;
   /** Per-project default when the project hasn't made an explicit choice. */
@@ -388,6 +390,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
     stability: 'experimental',
+    wip: true,
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Off by default again (Marko, 2026-10-27): a project turns it on.
@@ -469,6 +472,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
     stability: 'experimental',
+    wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
@@ -488,6 +492,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
     stability: 'experimental',
+    wip: true,
     available: () => true,
     // Off by default again (Marko, 2026-10-27): a project turns it on.
     platformDefault: () => false,
@@ -524,6 +529,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
     stability: 'experimental',
+    wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
@@ -617,6 +623,8 @@ export interface FeatureFlagView {
   overridden: boolean;
   /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
   operator_only: boolean;
+  /** Work in progress: not recommended yet. */
+  wip: boolean;
   /** Always `project`: no flag is set for a whole organization. Kept for the wire contract. */
   scope: 'project' | 'organization';
 }
@@ -644,6 +652,7 @@ export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
       enabled,
       overridden: explicitOverride(metadata, f.key) !== undefined,
       operator_only: isOperatorOnlyFeatureFlag(f.key),
+      wip: f.wip === true,
       scope: 'project' as const,
     }];
   });

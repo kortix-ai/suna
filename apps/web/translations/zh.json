@@ -1301,7 +1301,9 @@
         "offTitle": "关闭频道？",
         "offBody": "频道、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
         "turnOff": "关闭"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "可用升级",

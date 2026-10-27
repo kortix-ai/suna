@@ -1301,7 +1301,9 @@
         "offTitle": "Disattivare i Canali?",
         "offBody": "Canali, memoria, file e link restano salvati. L’elenco delle sessioni torna per tutti.",
         "turnOff": "Disattiva"
-      }
+      },
+      "wip": "Work in progress",
+      "wipNote": "Not recommended yet: it can change or break."
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",
