@@ -70,7 +70,7 @@ Kortix is the open-source AI Operating System: your agents, their skills, your c
 
 **The problem and why now.** See [concepts.md](concepts.md) section 6. Do not restate them here.
 
-**Rule.** Write the mission with "AGI" only in the mission and manifesto, never in a category or product noun. — *Why:* D1 retires "open AGI platform". The mission is founder voice about direction, not a product claim. — *Where:* marketing (about, careers) | deck. — *When silent:* leave "AGI" out of product copy.
+**Rule.** Write the mission with "AGI" only in the mission and manifesto, never in a category or product noun. "Superintelligence" follows the same rule and appears in the `/about` hero only (D19). — *Why:* D1 retires "open AGI platform". The mission is founder voice about direction, not a product claim. — *Where:* marketing (about, careers) | deck. — *When silent:* leave "AGI" out of product copy.
 
 ## 3. Vision and mission
 

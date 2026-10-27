@@ -27,32 +27,48 @@ export const MEGA_MENUS: MegaMenu[] = [
   {
     id: 'product',
     label: 'Product',
+    // What the product is and what it is made of. Pricing lives in the bar
+    // only. The pillar links land on the home page's pillar cells (ids in
+    // landing-sections/pillars-band.tsx); the building blocks open their docs.
     groups: [
       {
-        title: 'Platform',
+        title: 'The AI OS',
         links: [
-          { label: 'Security', href: '/security' },
-          // ACCURACY: never "air-gapped" (see site-config.ts).
-          { label: 'Self-hosted', href: '/self-hosted' },
-          { label: 'Enterprise', href: '/enterprise' },
-          { label: 'Pricing', href: '/pricing' },
+          { label: 'Multiplayer AI', href: '/#multiplayer' },
+          { label: 'Company as code', href: '/#company-as-code' },
+          { label: 'Sovereign and open', href: '/#sovereign' },
+          { label: 'Outcomes, 24/7', href: '/#use-cases' },
         ],
       },
       {
-        title: 'Apps',
+        title: 'Building blocks',
         links: [
-          { label: 'Desktop', href: '/desktop' },
-          { label: 'Mobile', href: '/mobile' },
-          { label: 'CLI', href: '/cli' },
+          { label: 'Agents', href: '/docs/project/agents' },
+          { label: 'Connectors', href: '/docs/connect/connectors' },
+          { label: 'Triggers', href: '/docs/connect/triggers' },
+          { label: 'Computers', href: '/docs/connect/computers' },
+          { label: 'Models', href: '/docs/project/models' },
         ],
       },
       {
         // ACCURACY: the channel set is Slack, Microsoft Teams and email
         // (kortix-brand claims.md). Email has no page yet.
-        title: 'Channels',
+        title: 'Use it from',
         links: [
+          { label: 'Desktop', href: '/desktop' },
+          { label: 'Mobile', href: '/mobile' },
+          { label: 'CLI', href: '/cli' },
           { label: 'Slack', href: '/slack' },
           { label: 'Microsoft Teams', href: '/teams' },
+        ],
+      },
+      {
+        title: 'Run it',
+        links: [
+          { label: 'Security', href: '/security' },
+          // ACCURACY: never "air-gapped" (see site-config.ts).
+          { label: 'Self-hosted', href: '/self-hosted' },
+          { label: 'Enterprise', href: '/enterprise' },
         ],
       },
     ],

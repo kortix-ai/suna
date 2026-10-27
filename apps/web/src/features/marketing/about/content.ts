@@ -34,8 +34,10 @@
  */
 
 export const hero = {
-  title: 'We are building the open-source AI Operating System.',
-  titleMuted: 'Every company should own all of it.',
+  // Founder vision, future tense (kortix-brand D19): "superintelligence" is
+  // allowed here, in the hero of /about only, never as a product claim.
+  title: 'We are building the Operating System for superintelligence.',
+  titleMuted: 'One you own end to end, every part of it.',
   lead: 'Every agent, all of their data, every skill, every connector, the memory and the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',

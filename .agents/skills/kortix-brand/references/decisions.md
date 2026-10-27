@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D19 The `/about` hero: "We are building the Operating System for superintelligence"
+- **Date:** 2026-10-27
+- **Decision:** The `/about` hero reads "We are building the Operating System for superintelligence. One you own end to end, every part of it." "Superintelligence" is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.
+- **Why:** founder, 2026-10-27: "We are building the Operating System for SuperIntelligence that you can own e2e every aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts` (`hero`); [positioning.md](verbal/positioning.md) rule on "AGI", which this extends.
+- **Supersedes:** the `/about` hero line "We are building the open-source AI Operating System."
+- **Source:** the `services-page` branch.
+
 ### D18 The home page adds the Promise: "Hand it an outcome, agents run it 24/7"
 - **Date:** 2026-10-27
 - **Decision:** Beside the sovereign category line (D16), the home page says what Kortix does for a company: hand it an outcome and agents run it 24/7. The hero subhead opens with it, and the Outcomes section's header carries the outcome loop (Outcome, Plan, Work, Verify, Learn, 24/7) above each team's outcomes; there is no separate 24/7 section, built from triggers, sessions, change requests and memory. No early-access label: the founder states it works today. The copy says "agents" and "AI-native operating system for your company", never "AI workers", "AI employees", "self-driving" or "autonomous company".
