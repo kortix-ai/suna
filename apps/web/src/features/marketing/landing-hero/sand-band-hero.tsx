@@ -3,8 +3,46 @@
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 import { SessionWindow } from './session-window';
+
+// What a company owns with Kortix: the hero's last word cycles through these.
+const OWNED = ['agents', 'AI', 'data', 'intellectual property', 'company memory', 'workflows', 'know-how', 'infrastructure', 'code'];
+
+/**
+ * "for companies that own their <word>", the word changing every 2 s: the new
+ * word fades in, the old one goes at once. Every variant is stacked in one
+ * grid cell, so the line keeps the height of its longest variant and nothing
+ * below it moves. Opacity only, so reduced motion
+ * needs no variant (motion.md). Screen readers get one static sentence.
+ */
+function OwnedLine() {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setShown((n) => (n + 1) % OWNED.length), 2000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <span className="text-muted-foreground block">
+      <span className="sr-only">for companies that own their agents, AI, data and intellectual property</span>
+      <span aria-hidden className="grid">
+        {OWNED.map((word, n) => (
+          <span key={word} className="col-start-1 row-start-1">
+            <span className={n === 0 ? undefined : 'invisible'}>for companies that own their </span>
+            <span
+              // Only the incoming word transitions: the outgoing one goes at once, so two never overlap.
+              className={`text-foreground ${n === shown ? 'opacity-100 transition-opacity duration-slower ease-out' : 'opacity-0'}`}
+            >
+              {word}
+            </span>
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
 
 
 /**
@@ -26,11 +64,11 @@ export function SandBandHero() {
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
             <span className="text-foreground block">The open-source AI Operating System</span>
-            <span className="text-muted-foreground block">for companies that own their agents</span>
+            <OwnedLine />
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Agents, skills, memory and connectors live in one git repo you own. Any model, your
-            keys, in our cloud or self-hosted.
+            Multiplayer AI for your whole team. Agents, skills, memory and connectors as code in
+            one git repo you own. Any model, in our cloud or yours.
           </p>
         </div>
 
