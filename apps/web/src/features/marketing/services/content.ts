@@ -34,22 +34,33 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
+  eyebrow: 'AI Transformation',
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map your company, unify your data and build your apps.',
-  sub: 'Our team works inside your company, from strategy to shipped software, then teaches your people to run it. We build it all on Kortix, our open-source AI Operating System, and you own every line.',
-  /** The offer in five lines: the first thing a buyer reads after the title. */
+  sub: 'Our team works inside your company, from strategy to shipped software, on Kortix, our open-source AI Operating System. One flat monthly fee. You own every line.',
+  /** The offer as five tiles, right under the call to action. */
   does: [
-    { k: 'Map your company', v: 'every team, role and workflow' },
-    { k: 'Unify your data', v: 'every system in one place' },
-    { k: 'Automate the work', v: 'agents on the recurring jobs' },
-    { k: 'Build custom apps', v: 'internal tools and dashboards on your data' },
-    { k: 'Train your team', v: 'to run it and build the next one' },
+    { id: 'map', icon: 'map', k: 'Map your company', v: 'Every team, role and workflow.' },
+    { id: 'unify', icon: 'data', k: 'Unify your data', v: 'Every system in one place.' },
+    { id: 'automate', icon: 'loop', k: 'Automate the work', v: 'Agents on the recurring jobs.' },
+    { id: 'build', icon: 'app', k: 'Build custom apps', v: 'Internal tools on your data.' },
+    { id: 'train', icon: 'train', k: 'Train your team', v: 'To run it and build the next one.' },
   ],
-  assurances: [
-    `${PRICE.now} a month, flat`,
-    'Strategy and build, one team',
-    'Everything in a repo you own',
+  /** One quiet line under the buttons. */
+  terms: `${PRICE.now} a month, flat · Strategy and build, one team · Everything in a repo you own`,
+  /** The logo row: products built on Kortix (case-studies/content.ts naming rules). */
+  logosLabel: 'Built on Kortix',
+  logos: [
+    {
+      src: '/media/case-studies/cityu.svg',
+      alt: 'City University of Hong Kong',
+      width: 262,
+      height: 147,
+    },
+    { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
+    { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
   ],
+  logosLink: 'See the work',
 } as const;
 
 /** We build on our own product. Claims: claims.md rows Source, Connectors, Hosting. */

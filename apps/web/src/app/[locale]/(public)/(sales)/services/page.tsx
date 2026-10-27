@@ -3,7 +3,7 @@
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
 import { Disclosure, DisclosureList } from '@/features/marketing/kit/disclosure';
-import { DitherGlyph } from '@/features/marketing/kit/dither-glyph';
+import { DitherField } from '@/features/marketing/kit/dither-field';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import {
@@ -33,15 +33,20 @@ import {
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import {
+  AppWindowIcon,
   ArrowRightIcon,
+  ArrowsClockwiseIcon,
   CheckIcon,
+  DatabaseIcon,
   GitBranchIcon,
   GraduationCapIcon,
+  MapTrifoldIcon,
   PathIcon,
   ReceiptIcon,
   StackIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -60,6 +65,18 @@ import type { ReactNode } from 'react';
  */
 
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
+
+/** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
+const LOGO_TILE_BACKGROUND = 'bg-white';
+
+/** Icons for the hero's five offer tiles. */
+const OFFER_ICONS = {
+  map: MapTrifoldIcon,
+  data: DatabaseIcon,
+  loop: ArrowsClockwiseIcon,
+  app: AppWindowIcon,
+  train: GraduationCapIcon,
+} as const;
 
 const BENEFIT_ICONS = {
   team: UsersThreeIcon,
@@ -130,52 +147,78 @@ function Price({ className }: { className?: string }): ReactNode {
 export default function ServicesPage() {
   return (
     <PageFrame>
-      {/* ── hero: the offer, the promise, the intro call ─────────────────── */}
+      {/* ── hero: one promise, one ask, the offer as tiles, then proof ───── */}
       <section
         id="hero"
-        className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-44 lg:pb-24"
+        className="relative overflow-hidden px-6 pt-32 pb-16 lg:px-28 lg:pt-40 lg:pb-20"
       >
-        <div className="flex min-w-0 flex-col gap-7">
-          <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+        {/* The brand's dither field over the top band, faded out before the
+            title (same masks as the closing call to action). */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-81.5 [mask-image:linear-gradient(to_bottom,#000,transparent_150px),radial-gradient(50%_300px_at_50%_0,#000,transparent)]"
+        >
+          <DitherField />
+        </div>
+        <div className="relative mx-auto flex max-w-4xl flex-col items-center gap-6 text-center">
+          <p className="bg-foreground/8 text-foreground w-fit rounded-sm px-2 py-1 font-mono text-xs font-medium uppercase">
+            {hero.eyebrow}
+          </p>
+          <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">
             {hero.sub}
           </p>
-          <ul className="flex flex-col gap-2.5 text-base">
-            {hero.does.map((item) => (
-              <li key={item.k} className="flex items-start gap-3">
-                <CheckIcon className="text-foreground mt-1 size-4 shrink-0" aria-hidden />
-                <span>
-                  <span className="text-foreground font-medium">{item.k}</span>
-                  <span className="text-muted-foreground">: {item.v}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-2.5">
-            <JoinButton className="hit-area-y-1" />
+          <div className="flex flex-wrap justify-center gap-2.5 pt-2">
+            <IntroButton variant="primary" className="hit-area-y-1" />
             <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
               <a href="#pricing">See pricing</a>
             </MarketingButton>
           </div>
-          <ul className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            {hero.assurances.map((item) => (
-              <li key={item} className="flex items-center gap-2">
-                <CheckIcon className="text-foreground size-4" aria-hidden />
-                {item}
-              </li>
-            ))}
-          </ul>
+          <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
-        <div className="bg-card flex flex-col gap-5 rounded-lg border p-6 lg:p-8">
-          <DitherGlyph src="/media/services/team.svg" className="aspect-[15/11] w-28" />
-          <div>
-            <h2 className="text-foreground text-lg font-medium">{intro.title}</h2>
-            <p className="text-muted-foreground mt-2 text-sm text-pretty">{intro.body}</p>
-          </div>
-          <IntroButton variant="primary" className="w-full" />
+
+        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-2 lg:grid-cols-5">
+          {hero.does.map((item) => {
+            const Icon = OFFER_ICONS[item.icon];
+            return (
+              <li key={item.id} className="bg-background flex flex-col gap-3 p-5 text-left">
+                <Icon className="text-foreground size-5" aria-hidden />
+                <div>
+                  <p className="text-foreground text-base font-medium">{item.k}</p>
+                  <p className="text-muted-foreground mt-1 text-sm text-pretty">{item.v}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
+          <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
+          {hero.logos.map((logo) => (
+            <span
+              key={logo.alt}
+              className={cn(LOGO_TILE_BACKGROUND, 'flex h-11 items-center rounded-md border px-4')}
+            >
+              <Image
+                src={logo.src}
+                alt={logo.alt}
+                width={logo.width}
+                height={logo.height}
+                unoptimized
+                className="h-6 w-auto"
+              />
+            </span>
+          ))}
+          <a
+            href="#case-studies"
+            className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            {hero.logosLink}
+            <ArrowRightIcon aria-hidden className="size-3.5" />
+          </a>
         </div>
       </section>
 
