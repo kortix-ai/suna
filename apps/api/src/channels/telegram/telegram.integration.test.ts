@@ -80,6 +80,16 @@ const holdClaim = (chat: number, expiresInMs = 60_000) =>
 const threadRow = async (chat: number) =>
   (await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, String(chat)))))[0];
 const replies = () => calls.filter((c) => c.method === 'sendMessage').map((c) => String(c.body.text));
+/** The lifecycle's `create_session` row for a message, as `createSession` writes it. */
+const createCommand = (event: { id: string }, status: string, projectId = PROJECT) =>
+  db.insert(sessionLifecycleCommands).values({
+    commandType: 'create_session',
+    source: 'telegram',
+    status: status as never,
+    projectId,
+    accountId: ACCOUNT,
+    idempotencyKey: `telegram:create:${BOT_ID}:${event.id}`,
+  });
 
 async function newSession() {
   const sessionId = crypto.randomUUID();
@@ -372,6 +382,70 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(created).toHaveLength(2);
     expect(created[1]!.idempotencyKey).toBe(created[0]!.idempotencyKey);
     expect(sleeps).toBe(0);
+  });
+
+  test('a retry of a message whose create the lifecycle took routes nothing: its first prompt arrives once', async () => {
+    for (const [chat, status] of [[930, 'queued'], [931, 'running'], [932, 'succeeded']] as const) {
+      await bindChat(chat);
+      const event = update('deliver me once', ALLOWED, chat);
+      await createCommand(event, status);
+      await handleTelegramEvent(event);
+      await handleTelegramEvent(event, { finalAttempt: true });
+    }
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(0);
+    expect(sleeps).toBe(0);
+    expect(replies()).toHaveLength(0);
+  });
+
+  test('a message whose create the lifecycle gave up routes again', async () => {
+    await bindChat(933);
+    const event = update('try again', ALLOWED, 933);
+    await createCommand(event, 'dead_lettered');
+    await handleTelegramEvent(event);
+    expect(delivered).toHaveLength(1);
+  });
+
+  test('a create row of the same key in another project is not this message', async () => {
+    const other = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-v2-other', repoUrl: 'https://example.test/o.git' });
+    try {
+      const event = update('mine', ALLOWED, 934);
+      await createCommand(event, 'running', other);
+      await handleTelegramEvent(event);
+      expect(created).toHaveLength(1);
+    } finally {
+      await db.delete(projects).where(eq(projects.projectId, other));
+    }
+  });
+
+  test('a create that throws after the bind: the retry delivers nothing twice', async () => {
+    const event = update('bind then fail', ALLOWED, 935);
+    // The lifecycle wrote its row and bound the chat, then a later write threw.
+    duringCreate = async () => {
+      await createCommand(event, 'running');
+      await bindChat(935);
+    };
+    createThrows = true;
+    await expect(handleTelegramEvent(event)).rejects.toThrow('synthetic create failure');
+    createThrows = false;
+    duringCreate = null;
+    await handleTelegramEvent(event);
+    expect(created).toHaveLength(1);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('a create that throws after the lifecycle took it keeps the chat claimed: no second session meanwhile', async () => {
+    const event = update('queued then fail', ALLOWED, 936);
+    duringCreate = () => createCommand(event, 'queued');
+    createThrows = true;
+    await expect(handleTelegramEvent(event)).rejects.toThrow('synthetic create failure');
+    expect(await claimRows(936)).toHaveLength(1);
+
+    createThrows = false;
+    duringCreate = null;
+    await expect(handleTelegramEvent(update('anyone?', ALLOWED, 936))).rejects.toThrow('in flight');
+    expect(created).toHaveLength(1);
   });
 
   test('a chat whose first session is still starting: wait 8 s, retry, and on the last attempt say so', async () => {

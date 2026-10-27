@@ -8,6 +8,7 @@
  * keeps what only its platform has: webhook verification and intake, the
  * sender gate, commands, typing, prompts and the wording of every notice.
  *
+ *   a message whose create started → nothing: the lifecycle delivers it (a retry)
  *   a known thread       → a follow-up into its session
  *   its session is gone  → forget the thread, start a new session ("revived")
  *   a new thread         → claim the first create, start one session bound to it;
@@ -20,7 +21,7 @@ import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
+import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
 import type { TurnErrorInfo } from '../slack/errors';
 import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from './threads';
@@ -127,6 +128,7 @@ const CREATE_WAIT_POLLS = 32;
 const CREATE_CLAIM_TTL_MS = 10 * 60_000;
 
 const defaultLifecycle = {
+  createCommandStatus,
   createSession,
   deliverThroughQueue,
   resolveProjectAutomationActor,
@@ -153,6 +155,19 @@ export async function routeChannelMessage(
   run: { finalAttempt: boolean },
 ): Promise<void> {
   const { target, keys } = message;
+  // A retry of a message whose create already started (its replica died, a
+  // write after the bind threw, or its job was claimed again during a long
+  // create): the lifecycle delivers its first prompt. Routing it again would
+  // follow up under another key, and the message would arrive twice.
+  const create = await lifecycle.createCommandStatus(keys.create, target.projectId);
+  if (createStarted(create)) {
+    logger.info('[channel] create already started; the retry routes nothing', {
+      platform: target.platform,
+      projectId: target.projectId,
+      status: create,
+    });
+    return;
+  }
   const existing = await findChatThread(target);
   if (existing) {
     if ((await followUp(port, message, existing, run)) !== 'no-session') return;
@@ -212,8 +227,12 @@ export async function routeChannelMessage(
     });
   } catch (error) {
     // Free the thread so the transport's retry creates under the same key,
-    // instead of waiting for a thread this attempt never bound.
-    await releaseThreadCreate(keys.createClaim, claim);
+    // instead of waiting for a thread this attempt never bound. Unless the
+    // lifecycle holds the create: the retry returns above, and the claim
+    // stays until it expires, so no other message starts a second session
+    // meanwhile. A failed read keeps it too.
+    const owner = await lifecycle.createCommandStatus(keys.create, target.projectId).catch(() => 'unknown' as const);
+    if (owner !== 'unknown' && !createStarted(owner)) await releaseThreadCreate(keys.createClaim, claim);
     throw error;
   }
 
@@ -238,6 +257,11 @@ export async function routeChannelMessage(
   });
   await releaseThreadCreate(keys.createClaim, claim);
   await port.notify(target, { kind: 'create_failed', error: result.error });
+}
+
+/** A create the lifecycle owns: it binds the thread and delivers the first prompt. */
+function createStarted(status: Awaited<ReturnType<typeof createCommandStatus>>): boolean {
+  return status === 'queued' || status === 'running' || status === 'succeeded';
 }
 
 /** Forget a conversation (a `/new` command): the next message starts a new session. */

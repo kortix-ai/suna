@@ -180,6 +180,8 @@ beforeEach(() => {
     };
   });
   setChannelLifecycleForTest({
+    // A real read would take a result off the positional DB queue.
+    createCommandStatus: async () => null,
     resolveProjectAutomationActor: async () => "user-1",
     deliverThroughQueue: async (input) => {
       continueCalls.push({
