@@ -99,6 +99,8 @@ mock.module('@kortix/ui/workspace/sidebar/customize-sidebar-modal', () => ({
 }));
 mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
+  // The sidebar's Apps and extensions window reads it.
+  useOwnsPairedComputer: () => ({ isSuccess: true, owns: false, owned: [] }),
 }));
 mock.module('@kortix/ui/internal/layout/connect-mcp-modal', () => ({
   ConnectMcpModal: () => null,
