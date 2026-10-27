@@ -10,7 +10,6 @@ const selection = {
     return unsubscribe;
   },
 };
-mock.module('../../../i18n', () => ({ useTranslations: () => () => 'Could not copy to the clipboard' }));
 mock.module('@embedpdf/core/react', () => ({ useCapability: () => ({ provides: selection }) }));
 const errorToast = mock(() => {});
 mock.module('../../../primitives/toast', () => ({ errorToast }));
