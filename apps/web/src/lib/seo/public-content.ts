@@ -193,7 +193,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'services',
     // "AI Transformation" is allowed here only (kortix-brand decisions.md D15).
-    title: 'AI Transformation, done for you by a Forward Deployed Engineer',
+    title: 'AI Transformation, done for you',
     description:
       'We map how your company works, unify your data, automate the work with agents and build your custom software. One flat monthly fee. You own all of it.',
     htmlPath: '/services',

@@ -1,14 +1,14 @@
 /**
- * The /services sales page: AI Transformation, done for you by a Deployment
- * Strategist and a Forward Deployed Engineer, sold as one flat monthly
- * membership. The idea: we map
+ * The /services sales page: AI Transformation, done for you by our
+ * Deployment Strategists and Forward Deployed Engineers, sold as one flat
+ * monthly membership. The idea: we map
  * your org (what people do, how they work), unify your data, automate the
  * work and build your custom software. A standalone page with its own shell;
  * the AI OS site and this page link through `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
- *  - A Deployment Strategist and a Forward Deployed Engineer, full time.
- *    Name both roles wherever the page names the team.
+ *  - The team is "Deployment Strategists and Forward Deployed Engineers",
+ *    named in general: no headcount, no "full time" (founder, 2026-10-27).
  *  - A flat $20,000 a month. No discount, no "limited time", no strike-through
  *    price: the founder dropped the $5,000 launch discount as too fishy.
  *  - Guarantee, kept low-key (one line, never a card or a headline): "Not
@@ -33,16 +33,16 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  team: 'Deployment Strategist + Forward Deployed Engineer',
+  team: 'Deployment Strategists + Forward Deployed Engineers',
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map how your company works. Then we automate it.',
-  sub: 'A Deployment Strategist and a Forward Deployed Engineer join your company full time. The strategist maps what every team does and how it works. The engineer unifies your data, automates the work with agents, and builds the custom software your teams need. You own everything they build.',
-  assurances: ['One flat monthly fee', 'Two people, full time', 'Everything in a repo you own'],
+  sub: 'Our Deployment Strategists and Forward Deployed Engineers work inside your company. They map what every team does and how it works, unify your data, automate the work with agents, and build the custom software your teams need. You own everything they build.',
+  assurances: ['One flat monthly fee', 'Strategy and build, one team', 'Everything in a repo you own'],
 } as const;
 
 export const intro = {
   title: 'Book an intro call',
-  body: 'Meet your Deployment Strategist and Forward Deployed Engineer. We look at how your company works and pick the first function together.',
+  body: 'Meet the team. We look at how your company works and pick the first function together.',
 } as const;
 
 export const proof = [
@@ -54,7 +54,7 @@ export const proof = [
 
 export const stages = {
   title: 'What happens.',
-  titleMuted: 'Four stages, two people.',
+  titleMuted: 'Four stages, one team.',
   items: [
     {
       id: 'map',
@@ -120,7 +120,7 @@ export const compare = {
   columns: ['Kortix', 'Hire an AI team', 'A consultancy'] as const,
   rows: [
     { id: 'strategy', k: 'Strategy', v: ['A map of your org and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
-    { id: 'build', k: 'Build', v: ['The same two people build it', 'Once you have hired them', 'Another firm, another contract'] },
+    { id: 'build', k: 'Build', v: ['The same team builds it', 'Once you have hired them', 'Another firm, another contract'] },
     { id: 'data', k: 'Your data', v: ['Unified in one place', 'Up to you', 'Rarely in scope'] },
     { id: 'own', k: 'What you keep', v: ['Every agent and app, in your repo', 'What they build', 'The report'] },
     { id: 'price', k: 'Price', v: ['One flat monthly fee', 'Salaries, recruiting, equity', 'Day rates and change orders'] },
@@ -131,9 +131,9 @@ export const benefits = {
   title: 'Membership benefits.',
   titleMuted: 'Why companies join instead of hiring.',
   items: [
-    { id: 'team', icon: 'team', k: 'Two people, full time', v: 'A Deployment Strategist and a Forward Deployed Engineer on your company, in your tools.' },
+    { id: 'team', icon: 'team', k: 'Inside your company', v: 'Deployment Strategists and Forward Deployed Engineers in your teams and your tools.' },
     { id: 'flat', icon: 'flat', k: 'One flat fee', v: 'One price every month. No day rates, no change orders.' },
-    { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The strategist who maps your company and the engineer who automates it work side by side.' },
+    { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The people who map your company build the automation.' },
     { id: 'os', icon: 'os', k: 'Built on the AI OS', v: 'Agents, skills, memory and connectors on the open-source Kortix AI Operating System.' },
     { id: 'own', icon: 'repo', k: 'You own all of it', v: 'Every agent, skill and app lives in one git repo you own.' },
     { id: 'where', icon: 'cloud', k: 'Runs where you run', v: 'Kortix Cloud, your VPC, or your own on-prem network.' },
@@ -144,10 +144,9 @@ export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
   plan: 'AI Transformation',
-  lock: 'One flat monthly fee for both people, full time. No day rates, no change orders.',
+  lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
-    'A Deployment Strategist, full time',
-    'A Forward Deployed Engineer, full time',
+    'Deployment Strategists and Forward Deployed Engineers',
     'A map of your org and how it works',
     'Your data unified in one place',
     'Agents for your recurring work',
@@ -165,13 +164,13 @@ export const faq = {
   items: [
     {
       id: 'team',
-      q: 'What do the Deployment Strategist and the Forward Deployed Engineer do?',
-      a: 'The Deployment Strategist sits with your leaders and teams, maps what every person does and how they work, and decides what agents take first. The Forward Deployed Engineer connects your systems, unifies your data, builds the agents and the custom software, and keeps it all running.',
+      q: 'What do Deployment Strategists and Forward Deployed Engineers do?',
+      a: 'Deployment Strategists sit with your leaders and teams, map what every person does and how they work, and decide what agents take first. Forward Deployed Engineers connect your systems, unify your data, build the agents and the custom software, and keep it all running.',
     },
     {
       id: 'price',
       q: 'What does it cost?',
-      a: `${PRICE.now} a month, flat, for both people full time. No day rates, no change orders.`,
+      a: `${PRICE.now} a month, flat. No day rates, no change orders.`,
     },
     {
       id: 'data',
