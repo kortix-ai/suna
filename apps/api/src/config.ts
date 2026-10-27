@@ -810,6 +810,12 @@ const envSchema = z.object({
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
 
+  // ── Kortix in Chrome ─────────────────────────────────────────────────────
+  // Master switch until launch: on in local and dev only. Off, /v1/chrome/* and
+  // the extension's control socket answer 404 and the `chrome` project flag is
+  // unavailable (feature-flags/registry.ts).
+  KORTIX_CHROME_ENABLED: optBoolFalse,
+
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET: optStr,
   TUNNEL_ENABLED: optBoolTrue,
@@ -1538,6 +1544,7 @@ export const config = {
 
   // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
   TUNNEL_SIGNING_SECRET: env.TUNNEL_SIGNING_SECRET,
+  KORTIX_CHROME_ENABLED: env.KORTIX_CHROME_ENABLED,
   TUNNEL_ENABLED: env.TUNNEL_ENABLED,
   TUNNEL_HEARTBEAT_INTERVAL_MS: env.TUNNEL_HEARTBEAT_INTERVAL_MS,
   TUNNEL_HEARTBEAT_MAX_MISSED: env.TUNNEL_HEARTBEAT_MAX_MISSED,

@@ -160,6 +160,13 @@ async function upgradeAppOriginWs(req: Request, url: URL, server: any): Promise<
 
 async function upgradeChromeWs(req: Request, server: any): Promise<Response | undefined> {
   setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/chrome/ws');
+  // Until launch the feature exists only where KORTIX_CHROME_ENABLED is on.
+  if (!config.KORTIX_CHROME_ENABLED) {
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   if (!schemaReady) {
     return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
       status: 503,

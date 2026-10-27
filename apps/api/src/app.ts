@@ -168,7 +168,8 @@ app.route('/v1/drives', drivesApp); // personal, agent and company drives + thei
 // control socket (/v1/chrome/ws) is upgraded in inbound-dispatch.ts. The sandbox
 // routes (attach, release) take only a session-scoped credential, checked in the
 // handler; enforceTokenProjectScope lets that credential through (auth-scope.ts).
-import { chromeApp, chromeConnectionsApp, registerChromeRoutes } from './chrome/routes';
+import { chromeApp, chromeConnectionsApp, chromeMasterSwitch, registerChromeRoutes } from './chrome/routes';
+app.use('/v1/chrome/*', chromeMasterSwitch);
 app.use('/v1/chrome/*', supabaseAuth);
 registerChromeRoutes();
 app.route('/v1/chrome/connections', chromeConnectionsApp); // GET /v1/chrome/connections, PATCH|DELETE /v1/chrome/connections/:id

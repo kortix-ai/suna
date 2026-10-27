@@ -9,8 +9,10 @@
  * Protocol: .agents/skills/kortix-chrome/references/protocol.md
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { config } from '../config';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
+import { featureDisabledBody } from '../feature-flags/gate';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { isSessionSandboxCredential } from '../middleware/session-sandbox-credential';
 import { isUuid } from '../shared/validate';
@@ -69,6 +71,16 @@ function fail(c: Context, code: ChromeErrorCode, status: 403 | 404 | 408 | 409) 
 function notFound(c: Context) {
   return fail(c, 'chrome_not_found', 404);
 }
+
+/**
+ * Until launch, Kortix in Chrome exists only where KORTIX_CHROME_ENABLED is on
+ * (local and dev). Off, every /v1/chrome route answers 404, so the extension
+ * says this server does not have Kortix in Chrome.
+ */
+export const chromeMasterSwitch: MiddlewareHandler = async (c, next) => {
+  if (!config.KORTIX_CHROME_ENABLED) return c.json({ error: 'Not found' }, 404);
+  await next();
+};
 
 export function registerChromeRoutes(): void {
   chromeConnectionsApp.openapi(
@@ -137,6 +149,10 @@ export function registerChromeRoutes(): void {
     async (c) => {
       const session = sandboxSession(c);
       if (!session) return c.json({ error: 'browser attach requires a session sandbox token' }, 403) as never;
+      // Release stays open when the flag is off, so a session can always let go.
+      if (!(await projectFeatureFlagEnabled(session.projectId, 'chrome'))) {
+        return c.json(featureDisabledBody('chrome'), 403) as never;
+      }
       const body = c.req.valid('json');
       try {
         const result = await attachChrome({ ...session, chrome: body.chrome, ticket: body.ticket, ask: body.ask });

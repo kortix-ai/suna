@@ -69,9 +69,12 @@ export function useAppsDeepLink() {
 }
 
 export function AppsModal({
+  chrome,
   onOpenComputer,
   onOpenMcp,
 }: {
+  /** The project's `chrome` flag: the Kortix in Chrome card shows only with it on. */
+  chrome: boolean;
   onOpenComputer: () => void;
   onOpenMcp: () => void;
 }) {
@@ -97,7 +100,7 @@ export function AppsModal({
           </header>
           {open ? (
             <>
-              <ChromeSection onManage={() => setOpen(false)} />
+              {chrome ? <ChromeSection onManage={() => setOpen(false)} /> : null}
               <ComputerSection onOpenComputer={hand(onOpenComputer)} />
               <DevelopersSection onOpenMcp={hand(onOpenMcp)} />
             </>

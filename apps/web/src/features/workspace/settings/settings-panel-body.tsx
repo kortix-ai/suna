@@ -55,6 +55,7 @@ import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
 import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
 import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
 import { ChromeConnectionsTab } from '@kortix/ui/internal/chrome/chrome-connections-tab';
+import { useChromeOffered } from '@kortix/ui/internal/chrome/use-chrome-offered';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
@@ -168,9 +169,13 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // account-scoped tabs — see `ACCOUNT_SCOPED_SETTINGS_TABS` above.
   const resolvedAccountId = useSettingsAccountId(project?.account_id);
 
+  // Kortix in Chrome exists only where the platform switch is on (local, dev
+  // until launch): the browser list answers 404 elsewhere.
+  const chromeOffered = useChromeOffered(open);
   const isTabAllowed = useCallback(
-    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId }),
-    [projectId],
+    (t: SettingsTab) =>
+      isSettingsTabAllowed(t, { hasProject: !!projectId }) && (t !== 'chrome' || chromeOffered),
+    [projectId, chromeOffered],
   );
 
   const groups = useMemo(() => {

@@ -12,6 +12,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { openFlowDb, seedTurnSession } from '../fixtures/turn-end';
 
 const form = (fields: Record<string, string>) => {
@@ -459,6 +460,7 @@ flow(
       'POST /v1/chrome/release',
       'POST /v1/oauth/register',
       'POST /v1/oauth/token',
+      'PUT /v1/admin/api/projects/:id/features',
     ],
   },
   async (ctx) => {
@@ -476,6 +478,12 @@ flow(
     const attach = (extra: Record<string, unknown> = {}) => session.sandbox.post('/v1/chrome/attach', { ticket, ...extra });
     let attachmentId = '';
     try {
+      await ctx.step("the project's chrome flag off → attach 403 feature_disabled; cleared, it is on by default", async () => {
+        await setFeatureAsOperator(ctx, project.id, 'chrome', false);
+        (await attach()).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'chrome');
+        await setFeatureAsOperator(ctx, project.id, 'chrome', null);
+      });
+
       await ctx.step('mode always: attach → 200; the extension gets an attach frame without a prompt', async () => {
         const r = await attach();
         r.status(200).body().has('$.chrome.id', chrome.id).exists('$.attachmentId');
@@ -501,8 +509,11 @@ flow(
         if (s.sessionId !== session.sessionId || s.title !== 'Refactor the billing page') throw new Error(JSON.stringify(s));
       });
 
-      await ctx.step('release → 204; the extension gets detach; activeSessions empties', async () => {
+      await ctx.step('release → 204 with the flag off too; the extension gets detach; activeSessions empties', async () => {
+        // A session can always let go: release is not behind the flag.
+        await setFeatureAsOperator(ctx, project.id, 'chrome', false);
         (await session.sandbox.post('/v1/chrome/release', { attachmentId })).status(204);
+        await setFeatureAsOperator(ctx, project.id, 'chrome', null);
         const frame = await control.take((f) => f.type === 'detach');
         if (frame.attachmentId !== attachmentId) throw new Error(JSON.stringify(frame));
         const mine = (await listOf(ctx.client.as(owner))).find((b) => b.id === chrome.id);

@@ -195,6 +195,8 @@ export interface SettingsPaletteGroup {
 export interface SettingsPaletteParams {
   /** True only where `SettingsPanel` is mounted — see `openSettingsTab` in command-palette.tsx. */
   hasProject: boolean;
+  /** The platform offers Kortix in Chrome (`useChromeOffered`); off, its Settings row is not offered. */
+  chromeOffered?: boolean;
   // `flags: RailFlags` used to sit here. Marketplace, Review and Voice were
   // the only flag-gated rows and all three moved to `/projects/<id>/config`,
   // whose own sub-nav composes them
@@ -209,6 +211,7 @@ export interface SettingsPaletteParams {
  * tab is unreachable without a project.
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
+  if (tab === 'chrome' && !params.chromeOffered) return false;
   return params.hasProject || PALETTE_ACCOUNT_SCOPED_TABS.includes(tab);
 }
 

@@ -1,6 +1,8 @@
 ---
 name: kortix-chrome
 description: Drive the USER'S OWN Chrome (their real logged-in session) from a Kortix session, over CDP, through the Kortix Chrome extension. Load this when the task needs the user's logins or real browser state ("my browser", "my Chrome", "while I'm logged in", "check my inbox / dashboard / account", a site that needs the user's login, 2FA or cookies), or when a site blocks or captchas the sandbox's cloud browser. For public pages and anything that needs no login, use the sandbox browser (the `agent-browser` skill) instead.
+metadata:
+  kortix-feature-flag: chrome
 ---
 
 <skill name="kortix-chrome">

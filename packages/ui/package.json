@@ -252,6 +252,7 @@
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
     "./internal/chrome/chrome-connections-tab": "./src/internal/chrome/chrome-connections-tab.tsx",
     "./internal/chrome/extension": "./src/internal/chrome/extension.ts",
+    "./internal/chrome/use-chrome-offered": "./src/internal/chrome/use-chrome-offered.ts",
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
@@ -1474,6 +1475,10 @@
       "./internal/chrome/extension": {
         "types": "./dist/internal/chrome/extension.d.ts",
         "import": "./dist/internal/chrome/extension.js"
+      },
+      "./internal/chrome/use-chrome-offered": {
+        "types": "./dist/internal/chrome/use-chrome-offered.d.ts",
+        "import": "./dist/internal/chrome/use-chrome-offered.js"
       },
       "./internal/components/agent-mark": {
         "types": "./dist/internal/components/agent-mark.d.ts",

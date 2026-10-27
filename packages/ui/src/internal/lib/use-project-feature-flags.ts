@@ -48,6 +48,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const emailChannel = useFeatureFlag(projectId, 'email_channel');
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
+  const chrome = useFeatureFlag(projectId, 'chrome');
 
   return {
     flags: {
@@ -72,8 +73,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       email_channel: emailChannel.enabled,
       workspace_volume: workspaceVolume.enabled,
       session_groups: sessionGroups.enabled,
+      chrome: chrome.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: sessionGroups.isLoading,
+    isLoading: chrome.isLoading,
   };
 }

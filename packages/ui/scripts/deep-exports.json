@@ -107,6 +107,7 @@
     "./internal/capture/use-capture-area",
     "./internal/chrome/chrome-connections-tab",
     "./internal/chrome/extension",
+    "./internal/chrome/use-chrome-offered",
     "./internal/components/agent-mark",
     "./internal/components/hover-prefetch-link",
     "./internal/components/mobile-store-qr",

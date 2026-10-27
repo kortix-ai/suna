@@ -102,6 +102,8 @@ export type FeatureFlagKey =
   | 'email_channel'
   /** Session groups: named folders of the project's sessions that every member shares. Experimental, off by default. */
   | 'session_groups'
+  /** Kortix in Chrome: a session drives its owner's own Chrome through the extension. Experimental; on where the platform offers it. */
+  | 'chrome'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -154,6 +156,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'artifacts',
   'email_channel',
   'session_groups',
+  'chrome',
 ] as const;
 
 /**

@@ -268,6 +268,7 @@ export const TIERS: readonly CommandTier[] = [
             name: 'chrome',
             args: '<subcommand>',
             blurb: "Drive the user's own Chrome from a session (use, release, ls, status)",
+            featureFlag: 'chrome',
           },
           {
             name: 'goals',

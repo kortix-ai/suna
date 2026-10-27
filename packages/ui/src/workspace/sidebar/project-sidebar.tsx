@@ -84,6 +84,7 @@ export function ProjectSidebar({
   const accountId = useBillingAccountId();
   // Channels replace New session and the session list (fail-closed: off until the project answers).
   const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  const chrome = useFeatureFlag(projectId, 'chrome').enabled;
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -343,7 +344,9 @@ export function ProjectSidebar({
                     projectId={projectId}
                     onOpenConnect={() => setComputerConnectOpen(true)}
                   />
-                  <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  {chrome ? (
+                    <ProjectChromeNavItem onOpenConnect={() => useAppsModalStore.getState().setOpen(true)} />
+                  ) : null}
                 </SidebarMenu>
               </li>
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
@@ -363,6 +366,7 @@ export function ProjectSidebar({
       onOpenChange={setComputerConnectOpen}
     />
     <AppsModal
+      chrome={chrome}
       onOpenComputer={() => setComputerConnectOpen(true)}
       onOpenMcp={() => setConnectMcpOpen(true)}
     />
