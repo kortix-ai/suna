@@ -402,7 +402,8 @@ flow(
       r.status(200);
       const { tokenHash } = r.json<{ tokenHash: string }>();
       if (!tokenHash || tokenHash.length < 20) throw new Error(`tokenHash: ${tokenHash}`);
-      if (r.header('cache-control') !== 'no-store') throw new Error(`cache-control: ${r.header('cache-control')}`);
+      // Every credentialed response is `private, no-store` (middleware/cache-control.ts).
+      if (r.header('cache-control') !== 'private, no-store') throw new Error(`cache-control: ${r.header('cache-control')}`);
     });
   },
 );
