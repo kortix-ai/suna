@@ -18,7 +18,7 @@ import {
   GUARANTEE,
   hero,
   intro,
-  pillars,
+  onboarding,
   PRICE,
   pricing,
   proof,
@@ -183,11 +183,11 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      {/* ── the three things we do ─────────────────────────────────────── */}
+      {/* ── how an engagement starts ───────────────────────────────────── */}
       <Block id="services">
-        <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
+        <Heading title={onboarding.title} titleMuted={onboarding.titleMuted} />
         <Band className="mt-12">
-          <CellGrid items={pillars.items} cols="lg:grid-cols-3" />
+          <CellGrid items={onboarding.items} cols="lg:grid-cols-3" />
         </Band>
       </Block>
 

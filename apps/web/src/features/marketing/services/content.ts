@@ -1,7 +1,7 @@
 /**
  * The /services sales page: AI Transformation, done for you, sold as one
  * flat monthly membership. The idea: we map
- * your org (what people do, how they work), unify your data, automate the
+ * your company (what people do, how they work), unify your data, automate the
  * work and build your custom apps. A standalone page with its own shell;
  * the AI OS site and this page link through `SiteSwitcher`.
  *
@@ -62,18 +62,24 @@ export const proof = [
   { k: 'Your cloud or ours', v: 'Kortix Cloud, your VPC, on-prem' },
 ] as const;
 
-export const pillars = {
-  title: 'Strategy, transformation, education.',
-  titleMuted: 'One team for all three.',
+/** How an engagement starts. No durations: none is set (ACCURACY). */
+export const onboarding = {
+  title: 'How we start.',
+  titleMuted: 'One function first, then the next.',
   items: [
-    { id: 'strategy', n: '01', k: 'AI Strategy', v: 'Where AI pays off in your company, in what order, and what it returns.' },
+    { id: 'call', n: '01', k: 'Intro call', v: 'We look at how your company works and pick the first function together.' },
     {
-      id: 'transformation',
+      id: 'plan',
       n: '02',
-      k: 'AI Transformation',
-      v: 'We map your company, unify your data, automate the work and build your custom apps.',
+      k: 'Map and plan',
+      v: 'We map that function end to end and write the roadmap: what to automate first, second and third.',
     },
-    { id: 'education', n: '03', k: 'AI Education', v: 'We teach your existing team to run the agents and build the next ones.' },
+    {
+      id: 'ship',
+      n: '03',
+      k: 'Build and ship',
+      v: 'We unify its data, put agents on the recurring work, build the apps it needs and train the team. Then the next function.',
+    },
   ],
 } as const;
 
@@ -180,9 +186,10 @@ export const compare = {
   titleMuted: 'Better than a consultancy.',
   columns: ['Kortix', 'Hire an AI team', 'A consultancy'] as const,
   rows: [
-    { id: 'strategy', k: 'Strategy', v: ['A map of your org and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
+    { id: 'strategy', k: 'Strategy', v: ['A map of your company and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
     { id: 'build', k: 'Build', v: ['The same team builds it', 'Once you have hired them', 'Another firm, another contract'] },
     { id: 'data', k: 'Your data', v: ['Unified in one place', 'Up to you', 'Rarely in scope'] },
+    { id: 'apps', k: 'Custom apps', v: ['Built on your unified data', 'Once you hire engineers', 'Another project, another quote'] },
     { id: 'people', k: 'Your people', v: ['Trained on their own work', 'Up to you', 'A workshop, then gone'] },
     { id: 'own', k: 'Who owns the work', v: ['You do, in your own repo', 'You do', 'You get a report'] },
     { id: 'price', k: 'Price', v: ['One flat monthly fee', 'Salaries, recruiting, equity', 'Day rates and change orders'] },
@@ -195,7 +202,7 @@ export const benefits = {
   items: [
     { id: 'team', icon: 'team', k: 'Inside your company', v: 'Our team works in your teams and your tools.' },
     { id: 'flat', icon: 'flat', k: 'One flat fee', v: 'One price every month. No day rates, no change orders.' },
-    { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The people who map your company build the automation.' },
+    { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The people who map your company build its agents and apps.' },
     { id: 'os', icon: 'os', k: 'Built on the AI OS', v: 'Agents, skills, memory and connectors on the open-source Kortix AI Operating System.' },
     { id: 'own', icon: 'repo', k: 'You own all of it', v: 'Every agent, skill and app lives in one git repo you own.' },
     { id: 'where', icon: 'cloud', k: 'Runs where you run', v: 'Kortix Cloud, your VPC, or your own on-prem network.' },
@@ -209,7 +216,7 @@ export const pricing = {
   lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
     'An AI strategy and a ranked roadmap',
-    'A map of your org and how it works',
+    'A map of your company and how it works',
     'Your data unified in one place',
     'Agents for your recurring work',
     'Custom apps and internal tools',
@@ -233,6 +240,16 @@ export const faq = {
       id: 'team',
       q: 'Who does the work?',
       a: 'Our own team: strategists who map how your company works, and Forward Deployed Engineers who build it. They work inside your company, in your tools.',
+    },
+    {
+      id: 'need',
+      q: 'What do you need from us?',
+      a: 'A leader who can say yes, access to the tools your teams use, and time with the people who do the work. We do the rest.',
+    },
+    {
+      id: 'security',
+      q: 'Is our data safe?',
+      a: 'Kortix is open source and holds SOC 2 Type I, with Type II in progress. Secrets are encrypted per project, and you choose where it runs: Kortix Cloud, your VPC or your own on-prem network.',
     },
     {
       id: 'data',
@@ -274,6 +291,6 @@ export const faq = {
 } as const;
 
 export const closing = {
-  title: 'Plan it. Automate it. Teach it.',
-  titleMuted: 'Start this month.',
+  title: 'Map it. Build it. Run it.',
+  titleMuted: 'Start with one function this month.',
 } as const;
