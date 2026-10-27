@@ -6,8 +6,9 @@ reports them missing.
 
 1. **Download the HyperFrames skills.** Run `scripts/sync-hyperframes-skills.sh` from the repo root. It
    fetches `hyperframes`, `hyperframes-core`, `hyperframes-animation`, `hyperframes-keyframes`,
-   `hyperframes-registry`, `hyperframes-cli`, `hyperframes-creative` and `hyperframes-audio` with the
-   HyperFrames CLI, at the version `pipeline/package.json` pins, into `skills/`. Then run
+   `hyperframes-registry`, `hyperframes-cli`, `hyperframes-creative` and `hyperframes-audio` from the
+   HyperFrames GitHub repo, at the release tag for the version `pipeline/package.json` pins, into
+   `skills/`. Then run
    `kortix validate`; it must pass. A marketplace copy loses file permissions, so also restore the
    executable bit: `chmod +x bin/yt scripts/*.sh && git update-index --chmod=+x bin/yt scripts/*.sh`.
    Commit both and open a change request ("Install HyperFrames skills"). Sessions only see the skills
