@@ -473,14 +473,16 @@ describe('simple gateway pipeline', () => {
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ promptTokens: 10, completionTokens: 4 });
     expect(traces).toHaveLength(1);
+    expect(traces[0]?.metadata.usageEstimated).toBe(false);
   });
 
   test('a non-stream 200 with no usage object settles an estimate, not zero tokens', async () => {
     const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
     const body = JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'z'.repeat(800) } }] });
     const response = await handleChatCompletions(
       {
-        hooks: hooks(usage, []),
+        hooks: hooks(usage, traces),
         logger: { info() {}, warn() {}, error() {} },
         fetchImpl: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
       },
@@ -494,6 +496,7 @@ describe('simple gateway pipeline', () => {
     // 800 output chars / 4 = 200 tokens; 4,000 prompt chars / 4 + framing >= 1,000 tokens.
     expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 200 });
     expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+    expect(traces[0]?.metadata.usageEstimated).toBe(true);
   });
 
   test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {

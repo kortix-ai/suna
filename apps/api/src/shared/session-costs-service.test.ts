@@ -787,6 +787,9 @@ describe('listProjectGatewaySessionSpend service', () => {
       window_days: 45,
       sessions: [
         {
+          estimated_usage_value: null,
+          priced_requests: 0,
+          unpriced_requests: 0,
           session_id: sessionId,
           llm_cost: 0.4,
           compute_cost: 0.6,
