@@ -70,7 +70,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { jsonbSafeValue } from './lib/jsonb-safe';
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { threadRoom } from './lib/thread-memory';
 import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
 import { offloadLargeTexts } from './session-log-blobs';
