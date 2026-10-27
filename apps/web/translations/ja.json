@@ -20464,7 +20464,9 @@
       "text7c0a91e5b3d2": "未分類のツール",
       "text9d2b6f0c41ae": "ツールとルール",
       "openThreadAction": "スレッドを開く",
-      "untitledThread": "無題のスレッド"
+      "untitledThread": "無題のスレッド",
+      "text314ae71b8c8d": "アーティファクト",
+      "textfe204b549282": "アーティファクト ドキュメント スライド プレゼンテーション ボード デザイン ダッシュボード ページ 公開 共有"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -22949,8 +22951,8 @@
         "restoreShort": "復元",
         "viewing": "{time}のバージョンを表示中",
         "backToCurrent": "現在の版に戻る",
-        "added": "+{count}行",
-        "removed": "−{count}行",
+        "added": "+{count, plural, other {#行}}",
+        "removed": "−{count, plural, other {#行}}",
         "viewingBy": "作成者: {author}",
         "created": "ページを作成",
         "edited": "ページを編集"
@@ -23201,7 +23203,7 @@
       "rosterTitlePeople": "メンバー",
       "rosterTitleAgents": "エージェント",
       "viewAllMembers": "すべてのメンバーを表示",
-      "agentThreads": "{count}件のスレッド",
+      "agentThreads": "{count, plural, other {#件のスレッド}}",
       "threadFilter": {
         "search": "スレッドを検索",
         "filter": "フィルター",
@@ -23334,8 +23336,8 @@
       "inviteByEmail": "メールで招待",
       "confirmEmpty": "メンバーを追加",
       "confirm": "{what}を追加",
-      "peopleCount": "{count}人",
-      "agentsCount": "{count}個のエージェント",
+      "peopleCount": "{count, plural, other {#人}}",
+      "agentsCount": "{count, plural, other {#個のエージェント}}",
       "both": "{people}と{agents}",
       "added": "#{name} に{what}を追加しました。",
       "failed": "メンバーを追加できませんでした。もう一度お試しください。",
@@ -23345,6 +23347,22 @@
       "agentsFailedPeopleAdded": "#{name} に{what}を追加しました。エージェントは追加できませんでした。選択したままです。",
       "allAdded": "プロジェクトの全員がすでに参加しています。",
       "noMatches": "「{query}」に一致する項目はありません。"
+    },
+    "privateNotIn": {
+      "row": "参加していないプライベートチャンネル",
+      "title": "参加していないプライベートチャンネル",
+      "description": "名前の変更、アーカイブ、メンバーの追加ができます。チャンネルの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
+      "meta": "{count, plural, =0 {メンバーなし} other {#人のメンバー}} · 作成者: {name}",
+      "metaNoCreator": "{count, plural, =0 {メンバーなし} other {#人のメンバー}}",
+      "archived": "アーカイブ済み",
+      "menu": "#{name} のオプション",
+      "addPeople": "メンバーを追加",
+      "rename": "名前を変更",
+      "archive": "アーカイブ",
+      "unarchive": "アーカイブを解除",
+      "archivedToast": "#{name} をアーカイブしました",
+      "unarchivedToast": "#{name} のアーカイブを解除しました",
+      "failed": "#{name} を更新できませんでした。もう一度お試しください。"
     }
   }
 }

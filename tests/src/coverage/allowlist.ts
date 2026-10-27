@@ -235,4 +235,5 @@ export const externalRoutes: AllowEntry[] = [
   { method: "POST", path: "/v1/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress" },
   { method: "POST", path: "/v1/openai/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress, OpenAI-compat-namespace alias" },
   ...allowFor(SETUP_ROUTES, SETUP_REASON),
+  { method: "POST", path: "/v1/webhooks/sandbox/platinum", reason: "mounted only when PLATINUM_WEBHOOK_SECRET is set; the cloud manifest profile sets none" },
 ];
