@@ -6,6 +6,7 @@ import {
   missingAuthorKey,
   awaitsAgent,
   resolveTranscriptAuthors,
+  rewindableMessageIds,
   showAuthorName,
   stoppedByName,
 } from './message-author';
@@ -127,5 +128,29 @@ describe('stoppedByName', () => {
 
   test('a stop recorded for an agent session names nobody', () => {
     expect(stoppedByName({ authors: {}, initial_author: null, stops: { m1: parent } }, 'm1', 'u1')).toBeNull();
+  });
+});
+
+describe('rewindableMessageIds: the viewer edits only their own message, and only with no other person’s message after it', () => {
+  const member = (user_id: string) => ({ kind: 'member', user_id, name: user_id, email: null, avatar_url: null }) as const;
+  const agentSession = { kind: 'session', session_id: 's', name: 'agent' } as const;
+  const authors = new Map<string, ReturnType<typeof member> | typeof agentSession>([
+    ['m1', member('owner')],
+    ['m2', agentSession],
+    ['m3', member('member')],
+  ]);
+  const ids = ['m1', 'm2', 'm3'];
+
+  test("a member cannot rewind the owner's message; the owner cannot rewind past the member's reply", () => {
+    expect([...(rewindableMessageIds(ids, authors, 'member', 'owner') ?? [])]).toEqual(['m3']);
+    expect([...(rewindableMessageIds(ids, authors, 'owner', 'owner') ?? [])]).toEqual([]);
+  });
+
+  test("an agent's message is the starter's and never blocks; the owner rewinds when nobody else wrote after", () => {
+    expect([...(rewindableMessageIds(['m1', 'm2'], authors, 'owner', 'owner') ?? [])].sort()).toEqual(['m1', 'm2']);
+  });
+
+  test('no viewer id: nothing is filtered (the server still decides)', () => {
+    expect(rewindableMessageIds(ids, authors, undefined, 'owner')).toBeNull();
   });
 });

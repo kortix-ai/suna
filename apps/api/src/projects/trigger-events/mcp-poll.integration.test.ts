@@ -3,7 +3,7 @@
  * poll stream → a check through the real connector gateway against a
  * loopback MCP server → a delivery job → the trigger fires (fireGitTrigger
  * is the one fake). Covers the first check, dedup, the tool gate, transient
- * failures, the claim fence, pause, and the connectors_v2 gate.
+ * failures, the claim fence and pause.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
@@ -50,7 +50,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000009922';
 const CONNECTOR_ID = '00000000-0000-4000-a000-000000009923';
 const CONNECTION_ID = '00000000-0000-4000-a000-000000009924';
 const OWNER_ID = '00000000-0000-4000-a000-000000009925';
-const FLAGS = { event_triggers: true, connectors_v2: true, notification_center: true };
+const FLAGS = { event_triggers: true, notification_center: true };
 
 // The loopback MCP server: `list_items` answers `items`, newest first.
 let items: Array<Record<string, unknown>> = [];
@@ -84,10 +84,6 @@ const spec = (slug: string, type = 'new_item.list_items', config: Record<string,
   runAt: null,
   timezone: 'UTC',
   secretEnv: null,
-  run: null,
-  monitorMode: null,
-  intervalSeconds: null,
-  expectEventWithinSeconds: null,
   event: { connector: 'fake', type, config },
   sessionMode: 'fresh',
   pinnedSessionId: null,
@@ -472,27 +468,19 @@ describe('mcp event source — real PostgreSQL, loopback MCP server', () => {
     expect(toolCalls).toEqual([]);
   });
 
-  test('removing the trigger drops the stream; connectors_v2 off gives the legacy text', async () => {
+  test('removing the trigger drops the stream', async () => {
     await reconcile([spec('watch')]);
     expect(await stream()).toBeDefined();
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, []);
     expect(await stream()).toBeUndefined();
-
-    await reconcile([spec('watch')]);
-    await db.update(projects).set({ metadata: { experimental: { ...FLAGS, connectors_v2: false } } }).where(eq(projects.projectId, PROJECT_ID));
-    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('watch')]);
-    expect(await row('watch')).toMatchObject({ status: 'error', externalId: null, lastError: 'Connector "fake" (mcp) has no app-event source. Use an app connector.' });
-    expect(await stream()).toBeUndefined();
   });
 
-  test('event apps: a project MCP server is an event app with one event per list tool; off without connectors_v2', async () => {
+  test('event apps: a project MCP server is an event app with one event per list tool', async () => {
     const apps = await listEventApps(PROJECT_ID, ACCOUNT_ID);
     const fake = apps.find((a) => a.provider === 'mcp' && a.app === 'fake');
     expect(fake).toMatchObject({ connector: 'fake', eventCount: 1, connected: true, mcpUrl: null });
     expect(apps.find((a) => a.app === 'linear')).toMatchObject({ provider: 'mcp', connector: null, eventCount: 0, mcpUrl: 'https://mcp.linear.app/mcp' });
 
-    await db.update(projects).set({ metadata: { experimental: { ...FLAGS, connectors_v2: false } } }).where(eq(projects.projectId, PROJECT_ID));
-    expect((await listEventApps(PROJECT_ID, ACCOUNT_ID)).filter((a) => a.provider === 'mcp')).toEqual([]);
   });
 });
 

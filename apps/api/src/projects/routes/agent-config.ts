@@ -45,11 +45,11 @@ import {
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { auth, errors, json } from '../../openapi';
+import { RESPONSE_ISSUE_LIMIT, auth, boundedIssues, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
-import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
+import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
@@ -66,6 +66,7 @@ import {
   normalizeRequiredConnectorAliases,
   resolveBehaviorDraft,
   readAgentBlockV2,
+  dropEmptyPolicySets,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
@@ -79,6 +80,7 @@ import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
@@ -113,6 +115,9 @@ const AgentBlockSchema = z
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
     // Deprecated request alias. The handler normalizes it before serialization.
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
+    // Connector slug → policy set name. A PUT that omits it keeps the declared
+    // value; a PUT that changes it needs project.connector.write too.
+    policy_sets: z.record(z.string().min(1).max(128), z.string().max(64)).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
@@ -270,6 +275,7 @@ export function registerAgentConfigRoutes(): void {
         gitProject = await withProjectGitAuth(loaded.row);
         manifest = await loadManifestForEdit(gitProject);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -368,7 +374,7 @@ export function registerAgentConfigRoutes(): void {
       const parsed = DefaultAgentBodySchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) {
         return c.json(
-          { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+          { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
           400,
         );
       }
@@ -378,6 +384,7 @@ export function registerAgentConfigRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -386,7 +393,7 @@ export function registerAgentConfigRoutes(): void {
 
       const applied = applyDefaultAgentV2(manifest, agentName);
       if (!applied.ok) {
-        return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+        return c.json({ error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) }, 400);
       }
 
       manifest.raw = applied.raw;
@@ -415,6 +422,7 @@ export function registerAgentConfigRoutes(): void {
         if (isRemotePushPolicyRejection(error)) {
           return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
         }
+        rethrowDatabaseError(error);
         return c.json(
           { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
           502,
@@ -472,7 +480,7 @@ export function registerAgentConfigRoutes(): void {
       const parsed = AgentBlockSchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) {
         return c.json(
-          { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+          { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
           400,
         );
       }
@@ -499,6 +507,7 @@ export function registerAgentConfigRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -513,13 +522,13 @@ export function registerAgentConfigRoutes(): void {
             {
               error: `Unknown sandbox template "${governanceBlock.sandbox}"`,
               code: 'invalid_config',
-              issues: [
+              ...boundedIssues([
                 {
                   path: `agents.${agentName}.sandbox`,
                   message: 'must name an available project template or "default".',
                   severity: 'error',
                 },
-              ],
+              ]),
             },
             400,
           );
@@ -544,11 +553,26 @@ export function registerAgentConfigRoutes(): void {
             });
       if (!edit.ok) return c.json(edit.body, edit.status);
 
+      // `policy_sets: {}` clears the agent's sets: write no key at all.
+      const writtenBlock = (edit.raw.agents as Record<string, Record<string, unknown>> | undefined)?.[agentName];
+      if (writtenBlock) dropEmptyPolicySets(writtenBlock);
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
       if (parseProblem) {
         return c.json({ error: parseProblem.error, code: 'invalid_config' }, 400);
+      }
+      // Changing which policy set an agent runs under is a rule edit.
+      const grantBefore = grantsByAgent(extractAgents(manifest)).get(agentName);
+      const grantAfter = grantsByAgent(parsedCheck).get(agentName);
+      if (grantAfter && changedPolicySet(grantBefore, grantAfter) !== null) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
       }
       // An agent grants only what it holds (iam/agent-grant-ceiling.ts).
       await assertNoGrantEscalation(c, projectId, grantsByAgent(extractAgents(manifest)), grantsByAgent(parsedCheck));
@@ -591,6 +615,7 @@ export function registerAgentConfigRoutes(): void {
         if (isRemotePushPolicyRejection(err)) {
           return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
         }
+        rethrowDatabaseError(err);
         return c.json(
           { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },
           502,
@@ -655,6 +680,12 @@ async function prepareAgentConfigV2(
     for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
       if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
     }
+    // `policy_sets` is in the schema (the GET → PUT round trip carries it) but
+    // keeps the declared value when omitted, like the v3 grants.
+    const declaredSets = currentBlock.ok ? (currentBlock.block as Record<string, unknown> | null)?.policy_sets : undefined;
+    if ((governanceBlock as Record<string, unknown>).policy_sets === undefined && declaredSets !== undefined) {
+      (governanceBlock as Record<string, unknown>).policy_sets = declaredSets;
+    }
     const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
     if (explicitFile !== undefined) governanceBlock.file = explicitFile;
     else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;
@@ -671,7 +702,7 @@ async function prepareAgentConfigV2(
   }
 
   const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
-  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) } };
 
   // Validate the behavior half (if the request touches it at all) BEFORE
   // committing anything — a bad frontmatter shape must never land a
@@ -690,7 +721,7 @@ async function prepareAgentConfigV2(
       return {
         ok: false,
         status: 400,
-        body: { error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '), code: 'invalid_config', issues: errorIssues },
+        body: { error: errorIssues.slice(0, RESPONSE_ISSUE_LIMIT).map((i) => `${i.path}: ${i.message}`).join('; '), code: 'invalid_config', ...boundedIssues(errorIssues) },
       };
     }
     extraWrite = { path: agentMd.path, content: serializeAgentMarkdown(nextFrontmatter, nextBody) };
@@ -734,7 +765,7 @@ async function prepareAgentConfigV3(
     governance: { ...input.governance, ...(input.requestedFile !== undefined ? { file: input.requestedFile } : {}) },
     behavior: resolved.draft,
   });
-  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) } };
 
   // An unchanged prompt file is not rewritten.
   const { promptWrite } = applied;

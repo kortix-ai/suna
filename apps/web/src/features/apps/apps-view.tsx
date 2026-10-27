@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 
 import { Skeleton } from '@kortix/ui/skeleton';
@@ -13,7 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
 import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
@@ -27,10 +26,12 @@ import {
   appStatus,
   cardPreviewApp,
   gridApps,
+  hiddenApps,
 } from '@kortix/ui/apps';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
 import { AddExternalAppDialog } from './app-add-external';
+import { BackgroundApps } from './app-background-list';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from '@kortix/ui/apps';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from '@kortix/ui/apps';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -106,6 +107,32 @@ export function AppsView({ projectId }: { projectId: string }) {
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const [adding, setAdding] = useState(false);
+  const triggers = useProjectTriggers(projectId);
+  const grid = apps.data ? gridApps(apps.data, canAdmin) : [];
+  const background = apps.data ? hiddenApps(apps.data, canAdmin) : [];
+  // Open or closed is the reader's call and survives a reload. Until they
+  // choose, it opens only when there is no grid above it to look at instead.
+  const backgroundKey = `kortix:apps:background-open:${projectId}`;
+  const [backgroundChoice, setBackgroundChoice] = useState<boolean | null>(null);
+  // Read after mount: the server render has no storage, and the first client
+  // render must match it.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(backgroundKey);
+      if (stored !== null) setBackgroundChoice(stored === '1');
+    } catch {
+      // Blocked storage: keep the default.
+    }
+  }, [backgroundKey]);
+  const backgroundOpen = backgroundChoice ?? grid.length === 0;
+  const setBackgroundOpen = (next: boolean) => {
+    setBackgroundChoice(next);
+    try {
+      window.localStorage.setItem(backgroundKey, next ? '1' : '0');
+    } catch {
+      // Private window or blocked storage: the choice lasts until reload.
+    }
+  };
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
@@ -146,7 +173,7 @@ export function AppsView({ projectId }: { projectId: string }) {
         projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={apps.isLoading || !!apps.data?.length}
+        showColumns={apps.isLoading || grid.length > 0}
         onAdd={canWrite ? () => setAdding(true) : undefined}
       />
       <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
@@ -185,14 +212,14 @@ export function AppsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : apps.data && gridApps(apps.data, canAdmin).length ? (
+          ) : grid.length ? (
             /* A gallery grid, sized by the space it has rather than by the
                window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
             <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
-              {gridApps(apps.data, canAdmin).map((app) => (
+              {grid.map((app) => (
                 <AppCard
                   key={app.app_id}
                   projectId={projectId}
@@ -202,9 +229,22 @@ export function AppsView({ projectId }: { projectId: string }) {
                 />
               ))}
             </ul>
+          ) : background.length ? (
+            <p className="text-muted-foreground mb-7 text-sm text-pretty">{tI18nComplete.raw('text0d209cd1f377')}</p>
           ) : (
             <AppsEmptyState />
           )}
+          {background.length && !apps.isLoading ? (
+            <section className={cn(grid.length && 'mt-10')} aria-label={tI18nComplete.raw('textea2b8a878841')} data-testid="apps-background">
+              <BackgroundApps
+                apps={background}
+                triggers={triggers.data?.triggers ?? []}
+                open={backgroundOpen}
+                onOpenChange={setBackgroundOpen}
+                onOpen={setOpenAppId}
+              />
+            </section>
+          ) : null}
         </div>
       </div>
 
@@ -273,7 +313,7 @@ function AppsEmptyState() {
   );
 }
 
-function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
+export function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: App; shown: App | null; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // `shown` is the App whose live preview the card frames: the App itself, or
   // the first tab of one that hides its own (a backend shows its dashboard).
@@ -341,9 +381,10 @@ function AppCard({ projectId, app, shown, onOpen }: { projectId: string; app: Ap
           <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
             {app.name}
           </h3>
-          <Badge variant={status.live ? 'success' : 'muted'} className="shrink-0">
+          <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs">
+            {app.external_url ? null : <span aria-hidden className={cn('size-1.5 rounded-full', status.dot)} />}
             {status.label}
-          </Badge>
+          </span>
         </div>
       </button>
     </li>

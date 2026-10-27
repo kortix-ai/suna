@@ -168,6 +168,48 @@ const ignoredPathParts = [
   // renderers parse, not UI copy; wrapping them in i18n keys would corrupt the
   // data and the tests that import the array verbatim.
   '/packages/ui/src/session/tool/foreign-tool-calls.ts',
+  // English-only copy of the marketing rebuild (#10912): its PR records the new
+  // home, /self-hosted and /enterprise copy as English in every locale. Exact
+  // files, so the rest of the marketing tree stays audited. Move the copy into
+  // i18n keys and delete each line when its page is translated.
+  '/src/app/[locale]/(public)/(marketing)/contact/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/enterprise/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/pricing/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/security/page.tsx',
+  '/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/blog/[slug]/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/blog/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/use-cases/[slug]/page.tsx',
+  '/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
+  '/src/components/home/footer.tsx',
+  '/src/components/home/product-menu.tsx',
+  '/src/features/marketing/enterprise/summary.ts',
+  '/src/features/marketing/how-it-work/step/step-models.tsx',
+  '/src/features/marketing/kit/closing-cta.tsx',
+  '/src/features/marketing/kit/copy-row.tsx',
+  '/src/features/marketing/landing-hero/landing-hero.tsx',
+  '/src/features/marketing/landing-hero/sand-band-hero.tsx',
+  '/src/features/marketing/landing-hero/session-window.tsx',
+  '/src/features/marketing/landing-sections/config-as-code.tsx',
+  '/src/features/marketing/landing-sections/content.ts',
+  '/src/features/marketing/landing-sections/faq-section.tsx',
+  '/src/features/marketing/landing-sections/how-it-works-tabs.tsx',
+  '/src/features/marketing/landing-sections/problem-solution.tsx',
+  '/src/features/marketing/landing-sections/stack-section.tsx',
+  '/src/features/marketing/landing-sections/trust-band.tsx',
+  '/src/features/marketing/landing-sections/use-case-teams.ts',
+  '/src/features/marketing/landing-sections/works-with-strip.tsx',
+  '/src/features/marketing/security-page/approval-tabs.tsx',
+  '/src/features/marketing/security-page/summary.ts',
+  '/src/features/marketing/self-hosted/summary.ts',
+  '/src/features/marketing/surfaces/channel-content.ts',
+  '/src/features/marketing/surfaces/chat.tsx',
+  '/src/features/marketing/surfaces/compare-tabs.tsx',
+  '/src/features/marketing/surfaces/content.ts',
+  '/src/features/marketing/surfaces/frames.tsx',
+  '/src/features/marketing/surfaces/stages.tsx',
+  '/src/features/marketing/surfaces/surface-page.tsx',
+  '/src/lib/seo/public-content.ts',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -241,6 +283,22 @@ const allowedLiteralValues = new Set([
   'my-recordings',
   'us-east-1',
   'arn:aws:iam::123456789012:role/kortix-capture',
+  // The email inbox form (#10866): a Resend API key prefix, the inbox username
+  // and domain examples, the From header's angle brackets, and the sender name
+  // the API sends when none is set (channel-email.ts), shown verbatim.
+  're_…',
+  'support',
+  'support@example.com',
+  'mail.example.com',
+  '&lt;',
+  '&gt;',
+  'Kortix Agent',
+  // Channels (#10893): a rule-set slug example a user types verbatim, the sample
+  // sender's name in the email channel mock, and a class list on a tiptap key
+  // the scanner reads as a heading.
+  'read_only',
+  'Maya',
+  'text-base font-semibold',
 ]);
 
 const ignoredAttributes = new Set([
@@ -881,9 +939,6 @@ function scanFile(file) {
       const coveredSettingsRail =
         file === path.join(uiSrcDir, 'customize/settings/rail.ts') &&
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
-      const coveredOnboardingProfileFixture =
-        file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        catalogRoot === 'USE_CASE_OPTIONS';
       // The foreign-harness sample payloads (Codex / Claude Code session-log
       // fixtures) are synthetic DATA, not UI copy: they render as sample tool
       // content in tests and /debug/session-fixture, and translating what a
@@ -1136,7 +1191,6 @@ function scanFile(file) {
         !coveredAuditTitleText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
-        !coveredOnboardingProfileFixture &&
         !coveredForeignToolFixture &&
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&

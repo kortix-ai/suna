@@ -2,6 +2,7 @@
 
 import { ProjectAppsNavItem } from './footer/project-apps-nav';
 import { ProjectGoalsNavItem } from './footer/project-goals-nav';
+import { ProjectArtifactsNavItem } from './footer/project-artifacts-nav';
 import { ProjectRoomsNavItem } from './footer/project-rooms-nav';
 import { ProjectFilesNavItem } from './footer/project-files-nav';
 import { ProjectCustomizeNavItem } from '../../internal/layout/project-settings-nav';
@@ -172,5 +173,7 @@ function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: stri
       return <ProjectRoomsNavItem projectId={projectId} />;
     case 'goals':
       return <ProjectGoalsNavItem projectId={projectId} />;
+    case 'artifacts':
+      return <ProjectArtifactsNavItem projectId={projectId} />;
   }
 }

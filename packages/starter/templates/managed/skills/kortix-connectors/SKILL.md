@@ -5,182 +5,245 @@ description: Use Kortix connectors to reach external systems from a session, an 
 
 <skill name="kortix-connectors">
 
-<overview>
-A **connector** defines tools against an external system. A connector is
-**not** an account: one connector (e.g. Gmail) can hold several **accounts** —
-each one SHARED with the whole project or PRIVATE to one member. A
-**connector call** invokes one tool AS one account.
+<model>
+Three things, one per question:
 
-Use the **`kortix connectors` CLI** for normal agent work:
+- **Profile** (a connector): ONE way to reach an app, such as Linear over MCP.
+  Its slug is what `kortix connectors call <slug> <action>` takes. An app is
+  installed once per way.
+- **Account**: WHO a call runs as. A sign-in on the profile, shared with the
+  project or private to one member. One profile holds several.
+- **Rule set** (a policy set): WHAT one agent may do on the profile. Named
+  tool rules, given to an agent in `agents.<name>.policy_sets`.
 
-- `kortix connectors ls` lists connectors and actions (an `ACCOUNTS` column
-  shows how many each holds).
-- `kortix connectors discover "<intent>"` searches visible actions.
-- `kortix connectors show <connector>.<action>` shows one input schema and risk.
-- `kortix connectors accounts <slug>` lists the accounts a connector holds,
-  default first — see **Choosing the account** below before your first call
-  on a connector you have not used yet.
-- `kortix connectors call <connector> <action> '<json>' [--account <label>]`
-  invokes one action. Every successful result echoes `account`: say which one
-  ran when it matters.
-- `kortix connectors call … --reason "<what this does>"` tells the human what
-  the call does if a policy holds it for approval. The approver sees it next
-  to the real arguments. **Always pass it on a write whose args are only ids**
-  — `send_draft` (say who it goes to, the subject, and the body), a delete (say
-  what gets deleted), a merge. Without it the approver sees only `draft_id`.
-  A gated call returns `approval_url`: share it, then stop the turn. The human's
-  decision, and any message they add to it, arrives as your next prompt — a
-  deny with a message is an instruction, not a dead end. In a Slack or Teams
-  session Kortix posts an approval card in the thread itself
-  (`approval_instructions` says so): do not repost the link, just stop.
-- `kortix connectors call … --attach <file>` attaches a file (see **Attach
-  files** below). Never put base64 in args.
-- `kortix connectors call … --out <file>` writes the full JSON result to
-  `<file>` and prints only `saved_to`, `bytes`, and `shape` (keys, array
-  lengths, `pageInfo`). Use it for list and search calls; tool output above
-  ~50 KB is truncated. Then query the file with `jq` or `bun`, never `cat`.
-- `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
+Every call is decided in this order. The first layer with a matching rule
+decides:
 
-Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
-call runs through the connector gateway. The
-gateway resolves credentials, enforces access and policy, invokes the upstream
-system, and records an audit event. The sandbox carries `KORTIX_TOKEN`; it
-does not carry raw third-party credentials.
-</overview>
+1. project `policies:` (nothing overrides them);
+2. the calling agent's rule set on this profile;
+3. the profile's base `policies:`;
+4. `sensitive: true` → approval;
+5. `policy.default_mode`.
 
-<when-to-load>
-Load this skill when the user wants to:
+The gateway holds every credential, applies these rules, runs the call, and
+audits it. The sandbox carries only `KORTIX_TOKEN`.
+</model>
 
-- Act in an external app or API.
-- Inspect available connectors, actions, or connected computers.
-- Add or configure a connector or connection.
-- Request connector credentials without exposing the value.
-- Build a repeatable workflow that calls external systems.
+<fast-path>
+1. **See what exists.** `kortix connectors ls`: slugs, status, and an
+   `ACCOUNTS` column.
+2. **Add an app the project lacks**, then hand the human the link:
+   ```sh
+   kortix connectors catalog <name>          # `installed as <slug>` = it is already here
+   kortix connectors catalog install <id>    # e.g. kortix:linear, composio:gmail; live at once
+   kortix connectors connect <slug>          # prints the sign-in link for the human
+   ```
+   Install prints the next step. `Ready` means no sign-in is needed: call it.
+   Exit 3 means the app is already installed: use that slug. When the human
+   finishes signing in, Kortix tells you; do not mint a second link.
+3. **Pick the account** (see `<accounts>`). With 2 or more accounts, pass
+   `--account "<label>"`.
+4. **Read the action before calling it.** `kortix connectors show <slug>.<action>`
+   prints its input schema. The description says which filters run on the
+   server.
+5. **Call it. Send list-shaped results to a file.**
+   ```sh
+   kortix connectors call <slug> <action> '<json>' --account "<label>" --out /tmp/<name>.json
+   ```
+   The file holds `{ ok, account, data: { result: … } }`. `--out` prints the
+   shape; read it before you write a query. Filter on the server with the
+   action's own filters or the provider's search/query action. Do not
+   download everything to filter it. Paging, attachments and GraphQL field
+   selection: `references/calling.md`.
+6. **Analyze in a script.** One `jq` expression for a lookup. For grouping,
+   date windows or several metrics, write one `bun -e` or `python3` script.
 
-Do not load it for work that stays inside the local repository or sandbox.
-</when-to-load>
+Other reads: `kortix connectors discover "<intent>"` searches actions;
+`kortix connectors policy <slug> effective` shows what each tool does for you
+and which layer decided.
+</fast-path>
 
-<choosing-the-account>
-**A connector is not an account.** One connector (e.g. Gmail) can hold many
-accounts — shared with the whole project, or private to one member. Never
-assume "one connector, one account", and never infer which accounts exist
-from a `get_profile`/`whoami`-style call: that only ever answers for the ONE
-account it happened to run as. If a human asks which or how many accounts are
-connected, list them — do not guess from a profile call.
+<accounts>
+Never assume one profile means one account. Never infer accounts from a
+`get_profile`/`whoami` call: it answers only for the account it ran as.
 
-Procedure, every time you call a connector you have not just listed accounts for:
+Every time you call a profile you have not listed accounts for:
 
-1. **List the accounts:** `kortix connectors accounts <slug>` (default first;
-   `(pinned default)` marks the one an unnamed call uses).
-2. **One account** → just call. Nothing to choose.
-3. **Several accounts, and the human named one** → pass
-   `--account <label|id|me|project>` (`me` = your own private default,
-   `project` = the shared default).
-4. **Several accounts, and it is unclear which one** → ASK the human. Do not
-   guess, and do not silently use the default — several real accounts exist
-   and picking wrong sends the action to the wrong mailbox/workspace. If
-   nothing is named and nothing is pinned, the call is refused anyway with
-   reason `account_required` rather than guessing; a human can pin one going
-   forward with `kortix connectors accounts <slug> --default <label>`.
+1. `kortix connectors accounts <slug>` lists them, default first.
+2. One account: call.
+3. Several, and the human named one: pass `--account <label|id|me|project>`
+   (`me` = your own private default, `project` = the shared default).
+4. Several, and it is unclear which one: ASK. With nothing named and nothing
+   pinned the call is refused (`account_required`). A human pins a default
+   with `kortix connectors accounts <slug> --default <label>`.
 
-Always report which account ran when it could matter — read it off the
-result's `account` field, never assume.
-
-**Worked example.** A project has one Gmail connector (`gmail-ffiod0`) with
-two accounts:
+Report which account ran when it could matter: read the result's `account`.
 
 ```sh
-$ kortix connectors accounts gmail-ffiod0
-
+$ kortix connectors accounts gmail
   LABEL                 OWNER    DEFAULT  CONNECTION ID
   personal@example.com  private  no       11111111-…
   work@example.com      private  no       22222222-…
-
-  kortix connectors call gmail-ffiod0 <action> --account "personal@example.com"
-  kortix connectors call gmail-ffiod0 <action> --account "work@example.com"
-  kortix connectors call gmail-ffiod0 <action> --account me
-  kortix connectors call gmail-ffiod0 <action> --account project
-
-  2 accounts
-  No default pinned — unnamed calls will be refused with account_required;
-  pass --account or pin one: kortix connectors accounts gmail-ffiod0 --default <label>
 ```
 
-Neither account is pinned, so — asked "check my gmail" with no account named —
-the right move is to ASK which mailbox, not to call `get_profile` on whichever
-account resolves first and report "one account connected". If the human says
-"the work one", call with `--account "work@example.com"` and report: "Checked
-work@example.com — …".
+Asked "check my gmail" here, ask which mailbox. Told "the work one", call
+with `--account "work@example.com"` and say "Checked work@example.com — …".
 
-**Adding another account.** When the human wants a new one ("connect my other
-Gmail"), mint a link with a `--label` that tells it apart:
-`kortix connectors connect <slug> --label "Personal Gmail"`. The link opens a
-dialog where the human names the account and chooses who can use it; you are
-then told its name. Call it with `--account "<name>"` from then on.
-</choosing-the-account>
+**Another account** ("connect my other Gmail"): mint a link with a label,
+`kortix connectors connect <slug> --label "Personal Gmail"`. The human names
+the account and chooses who can use it; you are told its name. Never install
+a second profile to get a second account.
 
-<cli-first-loop>
-Use the CLI first. It is pre-authenticated in a session sandbox.
+**Email** inboxes are accounts of `kortix_email`. Kortix fills in `inbox_id`:
+```sh
+kortix connectors accounts kortix_email
+kortix connectors call kortix_email reply_message \
+  '{"thread_id":"<thread-id>","message_id":"<message-id>","text":"Reply text"}' \
+  --account "<inbox address>"
+```
+</accounts>
 
-1. List visible connectors:
+<approvals>
+A rule may hold a call for a human. Pass `--reason "<what this does>"` on
+every write whose args are only ids (`send_draft`: who it goes to, the
+subject, the body; a delete: what goes). The approver sees it next to the
+args.
+
+A held call returns `approval_url`: share it, then stop the turn. The
+decision, and any message with it, arrives as your next prompt. A deny with
+a message is an instruction. In a Slack or Teams session Kortix posts the
+approval card in the thread (`approval_instructions` says so): do not repost
+the link.
+</approvals>
+
+<connector-events>
+## Start an agent when something happens in a connected app
+
+To run an agent on a new email, a pull request or an issue, use a connector
+event trigger: `on: { event: <TYPE>, connector: <slug> }` (flat `type: event`).
+It is a beta behind the project flag `event_triggers` (**Composio event
+triggers**), off by default: ask the user to run
+`kortix projects features enable event_triggers`. Sources: `composio`, and
+`mcp` (Kortix checks the connected app itself). The prompt starts with
+`[Composio event: …]` or `[Connector event: …]`. These are not App events:
+an App event is one a Kortix App posts. Recipes: kortix-system →
+`references/scheduling.md` → Composio event triggers.
+</connector-events>
+
+<adding-connectors>
+Search the catalog first:
 
 ```sh
-kortix connectors ls
+kortix connectors catalog gmail                     # one row per app
+kortix connectors catalog crm --kind mcp,composio   # kortix, mcp, composio, openapi, graphql
+kortix connectors catalog notes --one-click         # apps the human connects by signing in
+kortix connectors catalog show composio:gmail       # every way to connect it + its tools
 ```
 
-2. Search by intent:
+Ways to connect, best first (the first is marked `recommended`):
+
+0. built by Kortix (`kind: kortix`): the channels Slack, Microsoft Teams,
+   Email and Telegram, and Computer. They are never installed. The human
+   sets them up: `kortix channels connect` (Slack; `--platform teams`),
+   `kortix channels email inboxes add`, Telegram on its web page, Computer
+   with `npx --yes @kortix/agent-tunnel@latest connect` on that machine or
+   the desktop app;
+1. a one-click MCP server: the vendor's own; the human only signs in;
+2. Composio: a third-party partner that runs the sign-in (one click);
+3. an MCP server that needs the human's own OAuth app or key, then the REST
+   (OpenAPI) and GraphQL APIs: they need a key or token after install.
 
 ```sh
-kortix connectors discover "send an email"
+kortix connectors catalog install kortix:linear
+kortix connectors catalog install composio:gmail --name "Support inbox"
+kortix connectors catalog install <id> --way <way-id>
 ```
 
-3. Inspect one action before an unfamiliar call:
+Install is idempotent: the same app the same way exits 3 and names the slug
+it already has. `--new-profile` makes a second profile; use it only for a
+human who asks for one. Another way of connecting (Stripe over MCP and over
+REST) is its own profile: different tools, different sign-in.
+
+The catalog is large, not complete. When it lacks the app, search the web for
+the vendor's MCP server (its developer docs, registry.modelcontextprotocol.io)
+or OpenAPI spec, then add it:
 
 ```sh
-kortix connectors show email_email_inbox_bjgk.reply_message
+kortix connectors add acme --provider mcp --url https://mcp.acme.com/mcp --transport http --apply
+kortix connectors add acme --provider openapi --spec https://acme.com/openapi.json --apply
 ```
 
-4. Call the action:
+Without `--apply`, `add` edits only this session branch's `kortix.yaml`. In a
+governed agent, a URL that is not in the catalog returns
+`custom_connector_needs_human` with a `setup_url`: hand it to the human.
+
+Credentials:
+- an API key the human gave you: `kortix secrets set NAME=- --scope connector`,
+  then `kortix connectors secret <slug> NAME`;
+- a key you lack: `kortix secrets request NAME --scope connector`;
+- OAuth2 client credentials (an OpenAPI or HTTP API with a client id and
+  secret): `kortix connectors credential <slug> --oauth2-client-credentials
+  --token-url <url> --client-id <id> --client-secret-from - [--scope "<a b>"]`,
+  secret on stdin. Kortix fetches and refreshes the tokens.
+
+Pipedream exists only for rollback compatibility with already-declared
+connectors. Never add one. If the
+catalog and the web have nothing, stop, explain the gap, and ask the human.
+</adding-connectors>
+
+<policy-sets>
+A rule set is a named rule list on one profile (`connectors[].policy_sets`).
+Give an agent one with `agents.<name>.policy_sets: { <slug>: <set> }`. A
+caller with no set (a person's token, a script, a trigger poll) gets the base
+rules. A pi subagent runs under the root session agent's set.
+
+```yaml
+connectors:
+  - slug: gmail
+    provider: composio
+    app: gmail
+    policy_sets:
+      read_only:
+        description: Read and search, never send
+        policies:
+          - match: send_*
+            action: block
+agents:
+  support:
+    connectors: [gmail]
+    policy_sets:
+      gmail: read_only
+```
+
+Each command commits `kortix.yaml` on the default branch and syncs:
 
 ```sh
-kortix connectors call email_email_inbox_bjgk reply_message \
-  '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
+kortix connectors policy-sets gmail ls                                  # sets + the agents that use each
+kortix connectors policy-sets gmail create read_only --template read-only   # or ask-before-writes
+kortix connectors policy gmail --policy-set read_only set "send_*" block   # ls, set, rm, clear
+kortix connectors policy gmail effective --policy-set read_only         # what each tool does now
+kortix connectors policy-sets gmail rename read_only readonly           # agents move with it
+kortix connectors policy-sets gmail rm readonly                         # refused while an agent uses it
+kortix agents scope support --policy-set gmail=read_only                # gmail=base removes the entry
+kortix connectors agents gmail                                          # who calls gmail, with which set
+kortix connectors rules                                                 # every agent × every profile
 ```
 
-**Attach files.** Write the file under `/workspace/artifacts` (or
-`output`, `reports`, `deliverables`), put the JSON args in a file, and pass
-`--attach`. The CLI stages the raw bytes and the gateway builds the
-provider's attachment item (Microsoft Graph, SendGrid, Postmark, Mailjet,
-Resend, Brevo, and the Email channel):
-
-```sh
-cat > /tmp/mail.json <<'JSON'
-{"user":"sender@example.com","body":{"message":{"subject":"Report",
- "body":{"contentType":"Text","content":"Attached."},
- "toRecipients":[{"emailAddress":{"address":"to@example.com"}}]},
- "saveToSentItems":true}}
-JSON
-kortix connectors call microsoft-graph sendmail @/tmp/mail.json \
-  --attach /workspace/artifacts/report.pdf
-```
-
-Leave the attachments array out of the JSON; `--attach` appends to it. For a
-field the CLI cannot find, run `kortix connectors upload <file> --connector
-<slug>` and put the printed `ref` (`{"$kortix_attachment":"<id>"}`) where the
-file belongs: in an `attachments` array, or as the value of a base64 field
-such as `contentBytes`. Pass the body as a JSON object, never as a string.
-
-For GraphQL actions, put selected fields in `args.__select`:
-
-```sh
-kortix connectors call internal_graph query.user \
-  '{"id":"1","__select":"id name email"}'
-```
-</cli-first-loop>
+- `--template read-only` blocks every tool that is not a read;
+  `ask-before-writes` asks for them. Unknown-risk tools count as writes.
+  Check the result with `policy <slug> effective`.
+- A name is `[a-z0-9][a-z0-9_-]{0,63}`; `base` is reserved. Channel profiles
+  and `computer` hold no sets.
+- Changing any agent's `policy_sets` needs `project.agent.write` AND
+  `project.connector.write`. Without both in your own grant you cannot change
+  any entry, your own included (`403 agent_grant_escalation`): ask the human.
+- `list_connectors` (MCP) shows `policy_set` per profile: the set YOUR agent
+  runs under, `null` for base rules.
+</policy-sets>
 
 <sdk-workflows>
 Use `@kortix/sdk` for dependent calls, pagination, branching, retries, or
-reusable scripts. Read `references/sdk.md` for the full pattern.
+reusable scripts. `references/sdk.md` has the full pattern.
 
 ```ts
 import { createKortix } from '@kortix/sdk';
@@ -193,30 +256,23 @@ const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
   : kortix.connectors;
 
-const matches = await connectors.search('send an email', { limit: 5 });
-const action = await connectors.describe(matches[0]!.tool);
-if (!action) throw new Error('Email action not found');
-
-const result = await connectors.call('email_email_inbox_bjgk.reply_message', {
-  inbox_id: 'email-inbox@agentmail.to',
-  message_id: '<message-id>',
-  text: 'Reply text',
-});
-
-if (!result.ok) {
-  throw new Error(`Connector call failed: ${result.reason ?? result.status ?? 'unknown'}`);
-}
+const result = await connectors.call(
+  'kortix_email.reply_message',
+  { thread_id: '<thread-id>', message_id: '<message-id>', text: 'Reply text' },
+  { account: '<inbox address>' },
+);
+if (!result.ok) throw new Error(`Call failed: ${result.reason ?? result.status ?? 'unknown'}`);
 ```
 
-Run repository scripts with `bun run path/to/script.ts`. Keep provider
-credentials out of code and repository files.
+Run scripts with `bun run path/to/script.ts`. Keep provider credentials out
+of code and repository files.
 </sdk-workflows>
 
 <from-apps-and-backends>
-App, Convex backend, and external-program code calls connectors through
-`@kortix/sdk` too. Never give that code a provider API key when a connector
-for the provider exists: a raw key skips policy, approvals, and audit. The
-Kortix credential decides which accounts a call reaches:
+App, Convex backend and external-program code calls connectors through
+`@kortix/sdk` too. Never give that code a provider key when a connector
+exists: a raw key skips rules, approvals and audit. The Kortix credential
+decides which accounts a call reaches:
 
 | Where the code runs | Credential | Reaches |
 |---|---|---|
@@ -225,72 +281,29 @@ Kortix credential decides which accounts a call reaches:
 | Convex action, App job with no viewer | a service account bearer (`kortix_sa_…`) in an env var | shared accounts nobody narrowed; never a private one |
 | External program, CI | a personal access token, `kortix tokens new <name> --project <id>` | the token owner's shared and private accounts |
 
-A service account is a human step. An agent session cannot create one. Ask
-the person to run `kortix tokens service-accounts new <name>` and
+A service account is a human step: ask the person to run
+`kortix tokens service-accounts new <name>` and
 `kortix access grant --service-account <id> --role member --project <id>`,
 and to store the bearer (`npx convex env set KORTIX_API_KEY …` for Convex; a
-project secret mapped under `apps.<slug>.secrets` for an App, with a name that
-does not start with `KORTIX_`). Build the rest while you wait. Recipes and
-errors: `references/sdk.md` → "Calling from an App, a backend, or a script".
+project secret under `apps.<slug>.secrets` for an App, not named `KORTIX_*`).
+Build the rest while you wait. Recipes: `references/sdk.md`.
 </from-apps-and-backends>
 
-<adding-connectors>
-Connector definitions live in `kortix.yaml`. Connections remain server-side.
-
-```yaml
-connectors:
-  - slug: stripe
-    name: Stripe API
-    provider: openapi
-    spec: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
-    auth:
-      type: bearer
-```
-
-Use `composio` for managed SaaS apps. Other supported direct providers are
-`mcp`, `openapi`, `postman`, `graphql`, and `http`. Add and connect a Composio
-toolkit with:
-
-```sh
-kortix connectors add github --provider composio --app github --apply
-kortix connectors connect github
-```
-
-Pipedream exists only for rollback compatibility with already-declared
-connectors. Never add a new Pipedream connector automatically. If Composio
-cannot satisfy the request, stop, explain the gap, and ask the human before any
-explicit `--allow-legacy-pipedream` retry.
-
-Surface the returned connection URL. For an API key you already have (the user
-gave it in chat), store it now: `kortix secrets set NAME=- --scope connector`.
-For one you lack, use `kortix secrets request NAME --scope connector`.
-
-Slack uses the channel flow. Do not add a Slack connector. Run:
-
-```sh
-kortix channels connect
-```
-</adding-connectors>
-
 <rules>
-- A connector is not an account. One connector (e.g. Gmail) can hold many
-  accounts (shared or private) — see **Choosing the account** above.
-- If the human asks which or how many accounts are connected, ALWAYS list
-  them with `kortix connectors accounts <slug>`. Never infer accounts from a
-  profile/whoami call.
-- Use `kortix connectors` for one-off agent actions.
-- Use `@kortix/sdk` for durable or testable workflows, and for App, Convex
-  backend, and external-program code (see **From apps and backends**).
-- Use Composio for every new managed SaaS connector. Never select Pipedream
-  unless the human explicitly approves the legacy rollback path.
-- Do not use raw provider tokens from the sandbox.
-- Treat `denied`, `not_shared`, `needs_auth`, `account_required`, and
-  `ok: false` as real outcomes — `account_required` means several accounts
-  are reachable and none was named or pinned; pass `--account` or ask the
-  human, do not retry blind.
-- Report which account ran when it could matter — read the result's
-  `account` field, never assume.
-- Confirm irreversible work before a destructive connector call.
+- Decision order: project rules → your rule set → base rules → sensitive →
+  default mode. A `policy_block` (with `policy_set` when your set decided)
+  or `policy_set_missing` is final: tell the human which set blocked which
+  action. Never route around it through another profile, account, or raw key.
+- A profile is not an account. Asked which or how many accounts exist, list
+  them with `kortix connectors accounts <slug>`.
+- Install an app once per way. Another account → `connect --label`. Other
+  rules for one agent → a rule set. Never a duplicate profile.
+- Treat `denied`, `not_shared`, `needs_auth`, `account_required`,
+  `tool_error` and `ok: false` as real outcomes. `call` exits 1 on them. Do
+  not retry blind.
+- Use the CLI for one-off actions; `@kortix/sdk` for durable workflows and
+  for App, backend and program code. Never use raw provider tokens.
+- Confirm irreversible work before a destructive call.
 </rules>
 
 </skill>

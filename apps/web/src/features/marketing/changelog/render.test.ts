@@ -26,6 +26,18 @@ describe('renderReleaseMarkdown', () => {
     expect(html).toContain('<a href="https://example.com/a" target="_blank" rel="noopener noreferrer">');
   });
 
+  test('#1234 becomes a pull request link; code and existing links are left alone', async () => {
+    const html = await renderReleaseMarkdown(
+      'Fixed the queue. (#10786) See [#12](https://example.com) and `#99`.',
+    );
+    expect(html).toContain(
+      '<a href="https://github.com/kortix-ai/suna/pull/10786" target="_blank" rel="noopener noreferrer" data-pr="">#10786</a>)',
+    );
+    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">#12</a>');
+    expect(html).toContain('<code>#99</code>');
+    expect(html).not.toContain('pull/12');
+  });
+
   test('raw HTML and unsafe URLs never reach the output', async () => {
     const html = await renderReleaseMarkdown(
       '<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n[x](javascript:alert(1))',

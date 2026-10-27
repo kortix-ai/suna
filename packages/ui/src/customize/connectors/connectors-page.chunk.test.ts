@@ -9,8 +9,7 @@ import { fileURLToPath } from 'node:url';
  *
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import
  * list pulls `@pipedream/sdk/browser` (10M installed), `HighlightedCode`
- * (shiki, 3.8M), `PoliciesPanel`, `DiscoverCatalogue` and
- * `ConnectorConnectionModal`. An ES module is all-or-nothing to the bundler, so
+ * (shiki, 3.8M) and `PoliciesPanel`. An ES module is all-or-nothing to the bundler, so
  * ONE static `import` anywhere in this graph puts all of it in front of a page
  * whose first paint is a grid of cards.
  *
@@ -36,7 +35,6 @@ const ROUTE_ENTRY = resolve(SRC, 'app/[locale]/(app)/projects/[id]/(capabilities
 /** Modules that must not be parsed before the connectors grid paints (paths under packages/ui/src). */
 const FORBIDDEN = [
   'customize/sections/connectors-view',
-  'customize/sections/discover-catalogue',
   'markdown/code',
 ];
 

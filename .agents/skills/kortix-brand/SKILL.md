@@ -92,3 +92,4 @@ Priority order and the five passes live in [visual/color.md](references/visual/c
 | How a person asks an agent to use this kit | [references/how-to-prompt.md](references/how-to-prompt.md) |
 | Live styleguide | the `/design-system` route in `apps/web` |
 | Canonical logo files | `apps/web/public/brandkit/` |
+| Merch print files: playing cards, chips, flags, posters, mugs, mats, totes, tees, a sticker pack, pin buttons, and the script that draws them | [references/merch/README.md](references/merch/README.md) |

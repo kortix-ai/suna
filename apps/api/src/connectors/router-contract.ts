@@ -4,6 +4,8 @@
  * is built against. Types only, so services (db-deps.ts and its siblings) can
  * implement them without importing the HTTP layer.
  */
+import type { CatalogTools } from './catalog-tools';
+import type { ConnectorCatalogKind, ConnectorSurfaceVariant } from './connector-catalog';
 import type { UpdateConnectionCredentialInput } from '@kortix/api-contract';
 import type { AgentGrant } from '@kortix/db';
 import type { ConnectorRouterAuth } from './http-principal';
@@ -61,6 +63,10 @@ interface CatalogAction {
   name: string;
   description: string;
   risk: string;
+  /** What the tool likely does, for grouping (`likelyToolRisk`): an
+   *  un-annotated MCP tool's stored `write` is a fallback, so its name decides.
+   *  The admin list only; the gateway enforces `risk`. */
+  likely_risk?: 'read' | 'write' | 'unknown';
   inputSchema: Record<string, unknown> | null;
   /** JSON Schema of the call's `output`; only with `includeOutputSchemas`. */
   outputSchema?: Record<string, unknown> | null;
@@ -72,6 +78,8 @@ export interface CatalogAccount {
   owner_type: string;
   is_default: boolean;
 }
+import type { RulesMatrix } from './agent-rules-matrix';
+
 export interface CatalogConnector {
   slug: string;
   name: string;
@@ -92,6 +100,10 @@ export interface CatalogConnector {
   accounts?: CatalogAccount[];
   /** Label of the account an unnamed call resolves to, or null if none. */
   default_account?: string | null;
+  /** The policy set the caller's agent runs under on this connector
+   *  (`agents.<a>.policy_sets`). Absent = the base rules. `actions` already
+   *  omits what the set blocks. */
+  policy_set?: string;
 }
 
 export interface AdminConnectorView extends CatalogConnector {
@@ -121,6 +133,14 @@ export interface AdminConnectorView extends CatalogConnector {
    * `safeConnectorLastError`: no URL query, credential, or bearer value.
    */
   lastError: string | null;
+  /** The one state to show: `disabled`, `error` (its tools could not be
+   *  loaded), `needs_account` (it needs an account and has none the caller can
+   *  use) or `connected`. Derived from `status`, `secretSet` and `lastError`. */
+  state: 'disabled' | 'error' | 'needs_account' | 'connected';
+  /** Why, in a few words, for every state but `connected`. */
+  state_reason: string | null;
+  /** False: the connector runs with no account (a public server). */
+  auth_needed: boolean;
 }
 
 export interface SyncResult {
@@ -137,8 +157,6 @@ export type CrudOutcome =
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
-/** Which catalogue Discover reads (`routes/catalogues.ts`). */
-export type DiscoverCatalogue = 'kortix' | 'integrations';
 
 export interface ProjectPolicyView {
   match: string;
@@ -222,7 +240,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     projectId: string,
     slug: string,
     input: UpdateConnectionCredentialInput,
-  ): Promise<CrudOutcome>;
+  ): Promise<CrudOutcome & { account?: string | null; oauth2ExpiresAt?: number }>;
   /** Bind or unbind a brokered project secret as the connector credential. */
   setConnectorSecretBinding?(
     projectId: string,
@@ -266,7 +284,46 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   getConnectorPolicies?(
     projectId: string,
     slug: string,
-  ): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+    policySet?: string | null,
+  ): Promise<
+    | { policies: Array<{ match: string; action: string }>; policy_set?: string }
+    | { error: string; code: 'policy_set_not_found' }
+    | null
+  >;
+  /** List a connector's policy sets (`connectors[].policy_sets`) with the agents using each. */
+  listConnectorPolicySets?(
+    projectId: string,
+    slug: string,
+  ): Promise<{
+    sets: Array<{ name: string; description: string | null; policies: Array<{ match: string; action: string }>; agents: string[] }>;
+  } | null>;
+  /** Create a policy set, or change its description, in kortix.yaml + re-sync. */
+  upsertConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    name: string,
+    description: string | null | undefined,
+    /** Replace the set's rules in the same commit (a template). */
+    policies?: Array<{ match: string; action: PolicyAction }>,
+  ): Promise<CrudOutcome & { created?: boolean }>;
+  /** Rename a policy set and every agent reference to it, in one commit. */
+  renameConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    from: string,
+    to: string,
+  ): Promise<CrudOutcome>;
+  /** Every declared agent × every connector: granted and its rule set (`agent-rules-matrix.ts`). */
+  getRulesMatrix?(projectId: string): Promise<RulesMatrix | null>;
+  /** Delete a policy set; 409 `policy_set_in_use` while an agent uses it. */
+  deleteConnectorPolicySet?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    name: string,
+  ): Promise<CrudOutcome>;
   /** Read a connector's definition (provider + connection fields) from kortix.yaml for editing. */
   getConnectorConfig?(
     projectId: string,
@@ -307,6 +364,7 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     accountId: string,
     slug: string,
     policies: Array<{ match: string; action: string }>,
+    policySet?: string | null,
   ): Promise<CrudOutcome>;
   /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link.
    *  null = not pipedream. `userId` is accepted for back-compat but unused —
@@ -439,24 +497,6 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     sig: string | null,
   ): Promise<{ ok: boolean; connected: boolean }>;
   /**
-   * The public form that connects a toolkit on the customer's own app
-   * (`composio-app-form.ts`). No user auth: the sealed token is the capability.
-   */
-  appForm?: {
-    info(token: string): Promise<{
-      app: string;
-      name: string;
-      connector: string;
-      connected: boolean;
-      connected_as: string | null;
-      expires_at: string;
-    }>;
-    submit(
-      token: string,
-      body: { store?: unknown; client_id?: unknown; client_secret?: unknown },
-    ): Promise<{ connected: true; connected_as: string; success_redirect_uri?: string }>;
-  };
-  /**
    * A page of the Pipedream catalogue, filtered by query and/or category.
    *
    * Category filtering is served from a server-side snapshot of the whole
@@ -496,25 +536,39 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     categories: Array<{ key: string; label: string; count: number }>;
     indexReady: boolean;
   }>;
-  /** Browse the Discover catalogue: integrations.sh, or Kortix's own MCP apps
-   *  (`connectors_v2`). */
+  /** Browse the Discover catalogue: Kortix's apps, integrations.sh and the
+   *  managed toolkits as one (`mcp-apps.ts`). */
   listDiscoverConnectors?(input: {
-    catalogue?: DiscoverCatalogue;
     q?: string;
     cursor?: string;
     /** A browse-section key from `listDiscoverSections`. */
     category?: string;
     limit?: number;
+    /** Only the apps that connect with nothing to set up. */
+    oneClick?: boolean;
+    kinds?: readonly ConnectorCatalogKind[];
+    /** App ids the project cannot use yet, left out before counting. */
+    exclude?: ReadonlySet<string>;
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
   listDiscoverSections?(input: {
-    catalogue?: DiscoverCatalogue;
     perCategory?: number;
     maxCategories?: number;
+    oneClick?: boolean;
+    kinds?: readonly ConnectorCatalogKind[];
+    /** App ids the project cannot use yet, left out before counting. */
+    exclude?: ReadonlySet<string>;
   }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
-  getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;
+  getDiscoverConnector?(id: string): Promise<unknown>;
+  /** Every profile's slug and the way in it is (`connectorIdentity`): install
+   *  answers an existing profile and the catalogue marks `installed`. */
+  listConnectorIdentities?(projectId: string): Promise<Array<{ slug: string; identity: string | null }>>;
+  /** The web page where a person reviews and adds a custom server an agent asked for. */
+  customConnectorSetupUrl?(projectId: string, draft: Record<string, unknown>): string;
+  /** The tools one way to connect offers, before install (`catalog-tools.ts`). */
+  discoverConnectorTools?(variant: ConnectorSurfaceVariant): Promise<CatalogTools>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */

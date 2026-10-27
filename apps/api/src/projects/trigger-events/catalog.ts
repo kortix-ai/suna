@@ -6,12 +6,11 @@ import { logger } from '../../lib/logger';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import { db } from '../../shared/db';
 import { RESERVED_CONNECTOR_SLUGS } from '../connectors';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
 import { MCP_APPS } from '../../connectors/mcp-apps';
 import { MCP_SOURCE_ID, connectorEventApp, projectConnectorsOfApp } from './mcp-source';
-import { allEventSources, eventSourceAvailable, eventSourceFor, unknownSourceMessage } from './registry';
+import { allEventSources, eventSourceFor, unknownSourceMessage } from './registry';
 import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
 
@@ -28,11 +27,6 @@ export type EventTypeCatalog =
   | { kind: 'unavailable' }
   | { kind: 'provider_error'; message: string };
 
-async function projectMetadataOf(projectId: string): Promise<unknown> {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
-  return row?.metadata ?? null;
-}
-
 /**
  * One adapter's events for one app, through the shared cache. No connector
  * needed. With a project in view, the source must be available to it, and an
@@ -42,12 +36,10 @@ async function projectMetadataOf(projectId: string): Promise<unknown> {
 export async function listAppEventTypes(
   source: string,
   app: string,
-  scope?: { projectId: string; metadata?: unknown },
+  scope?: { projectId: string },
 ): Promise<EventTypeCatalog> {
   const provider = eventSourceFor(source);
   if (!provider || !provider.configured() || !app) return { kind: 'unavailable' };
-  const metadata = scope ? (scope.metadata !== undefined ? scope.metadata : await projectMetadataOf(scope.projectId)) : undefined;
-  if (!eventSourceAvailable(provider.id, metadata)) return { kind: 'unavailable' };
   let items: EventTypeInfo[];
   if (provider.id === MCP_SOURCE_ID) {
     // Kortix's own types are static code: nothing to cache, and no cache entry per probed app name.
@@ -80,17 +72,15 @@ export async function listConnectorEventTypes(
   projectId: string,
   connectorSlug: string,
   source?: string | null,
-  projectMetadata?: unknown,
 ): Promise<EventTypeCatalog> {
-  const metadata = projectMetadata !== undefined ? projectMetadata : await projectMetadataOf(projectId);
-  const connector = await connectorInfo(projectId, connectorSlug, metadata);
+  const connector = await connectorInfo(projectId, connectorSlug);
   if (!connector.found) return { kind: 'connector_not_found' };
   // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
   if (source && source !== connector.provider) return { kind: 'unavailable' };
   if (!connector.app) return { kind: 'unavailable' };
   const provider = eventSourceFor(connector.provider);
   if (provider?.listConnectorEventTypes && connector.connectorId) {
-    if (!provider.configured() || !eventSourceAvailable(provider.id, metadata)) return { kind: 'unavailable' };
+    if (!provider.configured()) return { kind: 'unavailable' };
     try {
       const items = await provider.listConnectorEventTypes({ connectorId: connector.connectorId, app: connector.app });
       return { kind: 'ok', provider: provider.id, app: connector.app, items };
@@ -108,12 +98,11 @@ export async function validateEventTrigger(
   projectId: string,
   event: { connector: string; source?: string | null; type: string; config: Record<string, unknown> },
 ): Promise<string | null> {
-  const metadata = await projectMetadataOf(projectId);
   if (event.source) {
-    const unknown = unknownSourceMessage(event.source, metadata);
+    const unknown = unknownSourceMessage(event.source);
     if (unknown) return unknown;
   }
-  const catalog = await listConnectorEventTypes(projectId, event.connector, event.source, metadata);
+  const catalog = await listConnectorEventTypes(projectId, event.connector, event.source);
   if (catalog.kind !== 'ok') return null;
   return eventConfigProblem(catalog.items, event.connector, event.type, event.config);
 }
@@ -207,11 +196,9 @@ export async function listEventApps(projectId: string, accountId: string): Promi
     .select({ connectorId: connectors.connectorId, slug: connectors.slug, name: connectors.name, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
-  const metadata = await projectMetadataOf(projectId);
-  // connectors_v2 installs apps from the Kortix MCP catalog: a Composio app stays listed only where the project has one.
-  const catalogOnly = resolveFeatureFlag(metadata, 'connectors_v2');
+  // Apps install from the Kortix catalog: a Composio app stays listed only where the project has one.
   const out: EventAppEntry[] = [];
-  for (const provider of allEventSources(metadata)) {
+  for (const provider of allEventSources()) {
     if (!provider.configured()) continue;
     let cached = eventAppCache.get(provider.id);
     if (!cached || cached.expires < Date.now()) {
@@ -233,11 +220,11 @@ export async function listEventApps(projectId: string, accountId: string): Promi
     for (const item of items) {
       const profiles = rows.filter((r) => r.provider === provider.id && connectorEventApp(r) === item.app);
       const row = profiles[0];
-      if (catalogOnly && provider.id !== MCP_SOURCE_ID && !row) continue;
+      if (provider.id !== MCP_SOURCE_ID && !row) continue;
       const eventCount = provider.id === MCP_SOURCE_ID && row && provider.listConnectorEventTypes
         ? (await provider.listConnectorEventTypes({ connectorId: row.connectorId, app: item.app })).length
         : item.eventCount;
-      const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }, metadata) : null;
+      const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }) : null;
       const connected = resolved?.kind === 'ok';
       out.push({
         provider: provider.id,

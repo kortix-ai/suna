@@ -43,7 +43,7 @@ function TrustColumn({
         aria-hidden
         className="bg-muted-foreground text-muted-foreground-foreground flex size-5 items-center justify-center rounded-sm"
       >
-        <CheckIcon className="size-3" weight="bold" />
+        <CheckIcon className="text-ring size-3" weight="bold" />
       </span>
       <h3 className="text-foreground mt-4 text-base font-medium tracking-tight">{title}</h3>
       <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{body}</p>

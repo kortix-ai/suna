@@ -10,6 +10,26 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-25
+
+### D14 Empty states of a tab, folder or list draw `EmptyArt`
+- **Date:** 2026-10-25
+- **Decision:** The empty state of a tab, a folder or a list is `EmptyState` with `media={<EmptyArt icon={…} />}`: the stacked-card illustration (`packages/ui/src/primitives/empty-art.tsx`) with one Phosphor glyph on the front card (no glyph: a document, for an empty folder). Then one title, one sentence, and outline buttons with a leading icon (`Button variant="outline" size="sm"`). No other decorative tile, illustration or card.
+- **Why:** Jay, 2026-10-25: the channel tabs (Memory, Links, Triggers, Apps, Threads) and the Files folders draw one picture for "nothing here yet", so every empty tab reads the same. One muted line on a full-height tab read as a broken page.
+- **Where:** `visual/layout.md` (States), `verbal/voice-and-tone.md` section 4, `kortix-design-system` (Required primitives, Which component for which state, Dos and Don'ts). Shipped in `packages/ui/src/workspace/spaces/space-links.tsx`, `space-triggers.tsx`, `space-threads-tab.tsx`, `packages/ui/src/workspace/memory/memory-empty.tsx`, `apps/web/src/features/apps/space-apps-view.tsx`, `apps/web/src/features/drives/space-folder-view.tsx`, `packages/ui/src/files/project/components/drive-explorer.tsx`.
+- **Supersedes:** D4g ("one muted line, no icon tile") and Q4 ("the pixel mark as a sibling above `EmptyState size=\"sm\"`") for the empty state of a tab, a folder or a list.
+- **Source:** Jay Suthar, the `project-channels` branch.
+
+### R1 Role badges: one hue per rank, the owner purple
+- **Date:** 2026-10-25
+- **Decision:** Role badges read as a ladder: owner `royal` (`bg-kortix-purple/15`), account admin `info` (blue), project manager `success` (green), custom role `secondary` and member `default` (neutral ink), no access `muted`. Every role badge is borderless (`ring-0`) and sans (`normal-case`). `kortix-purple` gets its one meaning: the owner.
+- **Why:** Jay, 2026-10-25: a project member in muted text read as "no access", and the owner in grey did not read as the top of the hierarchy. "The owner should be royal."
+- **Where:** `packages/ui/src/primitives/badge.tsx` (`royal`), `ROLE_TONE` in `apps/web/src/features/accounts/hub/member-table.tsx`, `visual/color.md` (Accents and status).
+- **Supersedes:** the `kortix-purple` "Reserved" row in `visual/color.md`.
+- **Source:** Jay Suthar, account Members and project access tables.
+
+---
+
 ## 2026-10-19
 
 ### K9 `@kortix/ui`: the shared Tailwind v4 component library

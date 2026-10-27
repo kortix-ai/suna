@@ -695,6 +695,14 @@ export async function ensureDefaultConnection(input: {
   if (connector.providerType === 'computer') {
     throw new Error('Computer accounts are added by pairing a computer, not by a credential');
   }
+  // An email account is one Resend inbox. An inbox-less shared row would win
+  // the default and answer every email call with no inbox.
+  if (
+    connector.providerType === 'channel' &&
+    (connector.config as Record<string, unknown> | null)?.platform === 'email'
+  ) {
+    throw new Error('Email accounts are added by adding an inbox, not by a credential');
+  }
 
   // Its own row: labelled `connector.name` on create, or marked as its slot
   // once finalize relabelled it to the authorized identity or someone renamed it.
@@ -808,7 +816,7 @@ export async function upsertOAuth2Credential(
     createdBy?: string | null;
   },
   runtime: OAuth2CredentialRuntime = {},
-): Promise<void> {
+): Promise<{ expiresAt: number }> {
   const token = runtime.acquire
     ? await runtime.acquire(opts.oauth2)
     : await acquireOAuth2ClientCredentialsToken(opts.oauth2);
@@ -820,6 +828,7 @@ export async function upsertOAuth2Credential(
     kind: 'oauth2_client_credentials',
     createdBy: opts.createdBy,
   });
+  return { expiresAt: token.expires_at };
 }
 
 /**

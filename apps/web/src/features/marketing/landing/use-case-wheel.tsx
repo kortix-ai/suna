@@ -3,7 +3,6 @@
 import { cn } from '@kortix/ui';
 import { useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from '@/components/site-link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   getLocalizedLandingContent,
@@ -602,16 +601,6 @@ export function UseCaseWheel(): ReactNode {
                 style={{ transform: "translate(-50%, -50%)" }}
               >
                 <UseCaseCard card={card} index={index} active={index === activeIndex} />
-                {card.href && index === activeIndex ? (
-                  // The whole card is the target. An overlay keeps it a card
-                  // that happens to navigate, with no extra row of chrome, and
-                  // only the head card is reachable — the rest are blurred.
-                  <Link
-                    href={card.href}
-                    aria-label={`${card.role} — ${card.headline}`}
-                    className="focus-visible:ring-ring absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:outline-none"
-                  />
-                ) : null}
               </article>
             ))}
           </div>

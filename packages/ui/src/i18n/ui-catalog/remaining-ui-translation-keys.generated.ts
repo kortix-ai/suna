@@ -1,5 +1,17 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  "Connector events": 'text0ba357fa63f8',
+  "Connector event": 'textca395c4d19b2',
+  "connector event": 'text6064256ee716',
+  "New connector event": 'text85a6c98e5584',
+  "Search connector events": 'text165d9237c163',
+  "No connector events yet": 'texta9caf7909165',
+  "Have an agent run when one of your Kortix Apps emits an event.": 'text451ef98453d2',
+  "App event": 'text5441e7146193',
+  "New App event": 'text064694999e1f',
+  "Search App events": 'text1934aa0740bb',
+  "No App events yet": 'text25db7e5609e5',
+  "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.": 'text9f8f92588517',
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',
@@ -859,7 +871,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Its own machine. Every session boots an isolated Linux cloud computer with your repo and your tools already on it, on its own git branch — the session id, the sandbox id and the branch name are one and the same string. The agent can install, run and break anything inside it; only what it commits survives, because the machine is destroyed with everything on it.':
     'text97bbd1c3b346',
   'What stops it doing something I did not want?': 'textc145665dd580',
-  'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent — an admin has to grant it in kortix.yaml, and that grant is itself an edit somebody else has to merge.':
+  'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.':
     'texta9fe46474f33',
   'Can I see everything an agent did?': 'text3a8d0e57770e',
   'It is all recorded, on every plan. Recording is never gated — actions, approvals and the session transcript are captured whatever you pay. Reading, exporting and streaming that audit trail out to your own SIEM is an Enterprise entitlement, so on the lower plans the record exists but the export does not.':

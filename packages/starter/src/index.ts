@@ -55,6 +55,8 @@ export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge
 export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
+  'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
   'kortix-drives',

@@ -1,7 +1,10 @@
 'use client';
 
 import {
+  addEmailDomain,
   connectEmail,
+  listEmailDomains,
+  verifyEmailDomain,
   connectSlack,
   connectTelegram,
   disconnectEmail,
@@ -15,6 +18,9 @@ import {
   getTelegramInstallation,
   setTelegramAllowedUsers,
   updateEmailPolicy,
+  type EmailDomain,
+  type EmailDomainList,
+  type EmailDomainResult,
   type EmailInstallation,
   type EmailMode,
   type EmailSenderPolicy,
@@ -26,7 +32,17 @@ import {
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-export type { EmailInstallation, EmailMode, EmailSenderPolicy, SlackInstallation, SlackMode, TelegramInstallation };
+export type {
+  EmailDomain,
+  EmailDomainList,
+  EmailDomainResult,
+  EmailInstallation,
+  EmailMode,
+  EmailSenderPolicy,
+  SlackInstallation,
+  SlackMode,
+  TelegramInstallation,
+};
 
 const key = (projectId: string | null) =>
   ['channels', 'slack-install', projectId ?? 'none'] as const;
@@ -121,7 +137,7 @@ export function useEmailMode(projectId: string | null) {
     queryFn: () =>
       projectId
         ? getEmailMode(projectId)
-        : ({ provider: 'agentmail', managed_available: false } satisfies EmailMode),
+        : ({ provider: 'resend', managed_available: false } satisfies EmailMode),
   });
 }
 
@@ -146,6 +162,28 @@ export function useConnectEmail() {
       qc.invalidateQueries({ queryKey: emailKey(projectId, connector_slug) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
+  });
+}
+
+/** The domains an own Resend API key can create inboxes on. A mutation: it runs when the user enters a key. */
+export function useListEmailDomains() {
+  return useMutation({
+    mutationFn: ({ projectId, apiKey }: { projectId: string; apiKey: string }) =>
+      listEmailDomains(projectId, { apiKey }),
+  });
+}
+
+export function useAddEmailDomain() {
+  return useMutation({
+    mutationFn: ({ projectId, apiKey, domain }: { projectId: string; apiKey: string; domain: string }) =>
+      addEmailDomain(projectId, { apiKey, domain }),
+  });
+}
+
+export function useVerifyEmailDomain() {
+  return useMutation({
+    mutationFn: ({ projectId, apiKey, domainId }: { projectId: string; apiKey: string; domainId: string }) =>
+      verifyEmailDomain(projectId, { apiKey, domainId }),
   });
 }
 
@@ -187,7 +225,7 @@ export function useUpdateEmailPolicy() {
 const telegramKey = (projectId: string | null) =>
   ['channels', 'telegram-install', projectId ?? 'none'] as const;
 
-/** The project's Telegram bot (connectors_v2). Pass null to keep the query off. */
+/** The project's Telegram bot. Pass null to keep the query off. */
 export function useTelegramInstall(projectId: string | null) {
   return useQuery({
     queryKey: telegramKey(projectId),

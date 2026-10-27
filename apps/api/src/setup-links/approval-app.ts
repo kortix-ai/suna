@@ -71,6 +71,9 @@ const ApprovalLinkSchema = z.object({
   /** `unavailable` when that read failed or timed out. */
   resolved_error: z.string().nullable(),
   policy_source: z.string().nullable(),
+  /** The agent policy set that held this call (`policy_source: policy_set`), and its agent. */
+  policy_set: z.string().nullable().optional(),
+  agent: z.string().nullable().optional(),
   requested_at: z.string(),
   resolved_at: z.string().nullable(),
   expires_at: z.string(),
@@ -217,6 +220,8 @@ approvalLinksApp.openapi(createRoute({
     resolved_preview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
     resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
+    policy_set: summary.policy_source === 'policy_set' && typeof summary.policy_set === 'string' ? summary.policy_set : null,
+    agent: summary.policy_source === 'policy_set' && typeof summary.agent === 'string' ? summary.agent : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,
     // The earlier of the link token's expiry and the approval's own window.

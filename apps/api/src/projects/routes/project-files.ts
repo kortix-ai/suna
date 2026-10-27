@@ -5,7 +5,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { commitFileToBranch, GitFileRevisionConflictError } from '../git/commit-writer';
 import { assertAgentSessionWorkspaceAllowsRepository } from '../lib/access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, queryText } from '../../openapi';
 import {
   archiveRepoSubtree,
   getBranchDiff,
@@ -40,6 +40,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { projectReadView } from '../lib/project-read-view';
 import { withSessionLabels } from '../lib/session-branch-labels';
 import { normalizeString } from '../lib/serializers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -48,10 +49,6 @@ function isMissingGitPathError(error: unknown): boolean {
 
 /** Entry cap of the recursive `GET /files` list (no `depth`). */
 const RECURSIVE_LIST_LIMIT = 1000;
-
-/** An optional text query field. A repeated key reads as its first value, as `c.req.query()` reads it. */
-const queryText = (description: string) =>
-  z.preprocess((value) => (Array.isArray(value) ? value[0] : value), z.string().optional()).openapi({ description });
 
 /** A folder page size from `?limit=`: a decimal integer from 1 to the ceiling, else null. */
 function pageLimit(raw: string): number | null {
@@ -86,7 +83,7 @@ export function registerProjectFilesRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: z.object({
+        body: { required: true, content: { 'application/json': { schema: z.object({
           path: z.string().min(1), ref: z.string().regex(/^[A-Za-z0-9._\-/]+$/).refine((ref) => !ref.startsWith('-') && !ref.includes('..')),
           content: z.string().max(2_000_000),
           expected_revision: z.string().regex(/^[0-9a-f]{40}$/),
@@ -302,6 +299,7 @@ export function registerProjectFilesRoutes(): void {
         },
       });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to archive directory';
       return c.json({ error: message }, 400);
     }
@@ -393,10 +391,10 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
     // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -464,9 +462,9 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // same answer as files/content.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -527,10 +525,10 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute and traversal paths can never resolve inside the repo tree —
+    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
     // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
     // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..')) {
+    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -557,6 +555,7 @@ export function registerProjectFilesRoutes(): void {
       const result = await getFileHistory(await withProjectGitAuth(loaded.row), path, { ref, limit, skip });
       return c.json({ path, ref, ...result });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load history';
       return c.json({ error: message }, 400);
     }
@@ -609,14 +608,13 @@ export function registerProjectFilesRoutes(): void {
       const listed = await listBranches(await withProjectGitAuth(loaded.row), {
         allowRecent: !includeSessionBranches,
       });
-      // A non-manager sees only the session branches of sessions they may open.
+      // Only the session branches of sessions whose work the caller reads: a
+      // non-manager's they may open, a manager's outside hidden private channels.
       const view = await projectReadView(c, loaded);
-      const visibleSessions = includeSessionBranches && !view.full
+      const visibleSessions = includeSessionBranches
         ? await view.visibleSessionIds(listed.filter((b) => isSessionBranchName(b.name)).map((b) => b.name))
         : new Set<string>();
-      const allBranches = view.full
-        ? listed
-        : listed.filter((b) => b.is_default || !isSessionBranchName(b.name) || visibleSessions.has(b.name));
+      const allBranches = listed.filter((b) => b.is_default || !isSessionBranchName(b.name) || visibleSessions.has(b.name));
       const branches = filterBranchesForResponse(allBranches, {
         q: query.q,
         limit: query.limit,
@@ -674,6 +672,7 @@ export function registerProjectFilesRoutes(): void {
       const result = await listCommits(await withProjectGitAuth(loaded.row), { ref, path, limit, skip });
       return c.json({ ref, path: path ?? null, ...result });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load commits';
       return c.json({ error: message }, 400);
     }
@@ -711,6 +710,7 @@ export function registerProjectFilesRoutes(): void {
       if (!commit) return c.json({ error: 'Commit not found' }, 404);
       return c.json(commit);
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load commit';
       return c.json({ error: message }, 400);
     }
@@ -748,6 +748,7 @@ export function registerProjectFilesRoutes(): void {
       const diff = await getCommitDiff(await withProjectGitAuth(loaded.row), sha, { path });
       return c.json({ path: path ?? null, ...diff });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load diff';
       return c.json({ error: message }, 400);
     }
@@ -820,6 +821,7 @@ export function registerProjectFilesRoutes(): void {
         is_same_ref: false,
       });
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json({
         error: error instanceof Error ? error.message : 'Failed to compute diff preview',
       }, 400);

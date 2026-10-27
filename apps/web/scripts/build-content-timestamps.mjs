@@ -50,33 +50,19 @@ const MARKETING_SOURCES = {
   enterprise: 'apps/web/src/app/[locale]/(public)/(marketing)/enterprise/page.tsx',
   pricing: 'apps/web/src/app/[locale]/(public)/(marketing)/pricing/page.tsx',
   marketplace: 'apps/web/src/app/[locale]/(public)/(marketing)/marketplace/page.tsx',
-  support: 'apps/web/src/app/[locale]/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
-  'agent-computer': 'apps/web/src/app/[locale]/(public)/(marketing)/agent-computer/page.tsx',
-  'agents-and-skills': 'apps/web/src/app/[locale]/(public)/(marketing)/agents-and-skills/page.tsx',
-  automations: 'apps/web/src/app/[locale]/(public)/(marketing)/automations/page.tsx',
-  channels: 'apps/web/src/app/[locale]/(public)/(marketing)/channels/page.tsx',
-  'company-as-code': 'apps/web/src/app/[locale]/(public)/(marketing)/company-as-code/page.tsx',
-  connectors: 'apps/web/src/app/[locale]/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
   'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
-  // Solutions: the hub, then one entry per role. The eight role pages share a
-  // single dynamic route, so the meaningful source of each one is its own
-  // content file — that is the file whose last commit dates the page.
-  solutions: 'apps/web/src/features/marketing/solutions/hub-page.tsx',
-  'solutions/sales': 'apps/web/src/features/marketing/solutions/roles/sales.ts',
-  'solutions/marketing': 'apps/web/src/features/marketing/solutions/roles/marketing.ts',
-  'solutions/product': 'apps/web/src/features/marketing/solutions/roles/product.ts',
-  'solutions/engineering': 'apps/web/src/features/marketing/solutions/roles/engineering.ts',
-  'solutions/finance': 'apps/web/src/features/marketing/solutions/roles/finance.ts',
-  'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
-  'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
-  'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
+  desktop: 'apps/web/src/app/[locale]/(public)/(marketing)/desktop/page.tsx',
+  mobile: 'apps/web/src/app/[locale]/(public)/(marketing)/mobile/page.tsx',
+  cli: 'apps/web/src/app/[locale]/(public)/(marketing)/cli/page.tsx',
+  slack: 'apps/web/src/app/[locale]/(public)/(marketing)/slack/page.tsx',
+  teams: 'apps/web/src/app/[locale]/(public)/(marketing)/teams/page.tsx',
 };
 
 function gitAvailable() {

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 894,
+  "count": 960,
   "routes": [
     {
       "method": "GET",
@@ -896,6 +896,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/artifacts/meta/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/p/:artifactId/*"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/s/:token/*"
+    },
+    {
+      "method": "GET",
       "path": "/v1/auth/client-config"
     },
     {
@@ -1227,14 +1247,6 @@
       "path": "/v1/clients/mobile"
     },
     {
-      "method": "GET",
-      "path": "/v1/connectors/app-form/:token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/connectors/app-form/:token"
-    },
-    {
       "method": "POST",
       "path": "/v1/connectors/attachments"
     },
@@ -1295,6 +1307,10 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/accounts"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/agents"
+    },
+    {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
     },
@@ -1327,12 +1343,32 @@
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/name"
     },
     {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/oauth2/connection"
+    },
+    {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
     },
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policy-sets/:name/name"
     },
     {
       "method": "PUT",
@@ -1364,6 +1400,14 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/discover/connectors/tools"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/projects/:projectId/discover/install"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/discover/sections"
     },
     {
@@ -1381,6 +1425,10 @@
     {
       "method": "PUT",
       "path": "/v1/connectors/projects/:projectId/policies"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/rules-matrix"
     },
     {
       "method": "GET",
@@ -1912,6 +1960,14 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/events/credentials"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/exec"
     },
     {
@@ -1937,6 +1993,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/runs"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/runs/:runId"
     },
     {
       "method": "PUT",
@@ -1993,6 +2057,58 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/content"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/pin"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/:artifactId/versions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/artifacts/share"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/artifacts/types"
     },
     {
       "method": "POST",
@@ -2069,6 +2185,34 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/add"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/domains/verify"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/inboxes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/inboxes/:connectionId"
     },
     {
       "method": "DELETE",
@@ -2516,6 +2660,42 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/memory/layers/:layerKey/pages"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/pages/:pageId/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/memory/search"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/model-access"
     },
     {
@@ -2543,10 +2723,6 @@
       "path": "/v1/projects/:projectId/model-picker"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/monitors/ingest"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -2565,6 +2741,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/onboarding/channels"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/onboarding/channels/marks"
     },
     {
       "method": "GET",
@@ -2740,6 +2924,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/session-groups"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/session-groups"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/session-groups/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/session-groups/:groupId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/session-groups/order"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions"
     },
     {
@@ -2843,6 +3047,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/group"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
     },
@@ -2873,6 +3081,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log/switch-preflight"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/memory-usage"
     },
     {
       "method": "GET",
@@ -3097,6 +3309,62 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/join"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/members/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/dm"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/private"
     },
     {
       "method": "POST",
@@ -3512,7 +3780,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/email/agentmail"
+      "path": "/v1/webhooks/email/resend"
     },
     {
       "method": "POST",
@@ -3525,10 +3793,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/sandbox/daytona"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/sandbox/platinum"
     },
     {
       "method": "POST",

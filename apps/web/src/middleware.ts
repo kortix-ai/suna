@@ -42,14 +42,9 @@ const NEXT_INTL_LOCALE_HEADER = 'X-NEXT-INTL-LOCALE';
 const MARKETING_ROUTES = [
   '/',
   '/about',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
+  '/blog',
   '/careers',
-  '/channels',
   '/changelog',
-  '/company-as-code',
-  '/connectors',
   '/contact',
   '/design-system',
   '/developers',
@@ -60,26 +55,40 @@ const MARKETING_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
-  '/solutions',
-  '/support',
   '/use-cases',
   '/white-label',
+  // Surface pages: where Kortix runs. /cli, /slack and /teams are also app
+  // prefixes (auth flows under them), so they are EXACT_MARKETING_ROUTES.
+  '/desktop',
+  '/mobile',
 ];
+
+// Marketing pages whose slug is ALSO an app prefix: /cli/authorize,
+// /slack/install, /slack/login/<token>, /teams/install and /teams/login/<token>
+// are signed-in flows (PROTECTED_APP_PREFIXES). Every other list here matches
+// by prefix, which would make those flows public. These match the exact path
+// only, with or without a locale prefix, and nothing under it.
+const EXACT_MARKETING_ROUTES = ['/cli', '/slack', '/teams'];
+
+function isExactMarketingPath(pathname: string): boolean {
+  if (EXACT_MARKETING_ROUTES.includes(pathname)) return true;
+  const [, first = '', ...rest] = pathname.split('/');
+  return (
+    rest.length === 1 &&
+    (locales as readonly string[]).includes(first) &&
+    EXACT_MARKETING_ROUTES.includes(`/${rest[0]}`)
+  );
+}
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /legal, /support,
+// app. Functional public routes (/auth, /docs, /legal,
 // /marketplace, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
   '/launch',
-  '/agent-computer',
-  '/agents-and-skills',
-  '/automations',
-  '/channels',
   '/self-hosted',
-  '/company-as-code',
   '/careers',
   '/changelog',
   '/contact',
@@ -87,10 +96,10 @@ const SELF_HOST_MARKETING_ONLY = [
   '/enterprise',
   '/pricing',
   '/use-cases',
-  '/solutions',
-  '/connectors',
   '/security',
   '/white-label',
+  '/desktop',
+  '/mobile',
 ];
 
 // Top-level segments that render the signed-in app. Anonymous traffic to one
@@ -150,16 +159,12 @@ const PUBLIC_ROUTES = [
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
-  '/agent-computer', // Agent computer marketing page should be public
-  '/agents-and-skills', // marketing page should be public
-  '/automations', // marketing page should be public
-  '/channels', // marketing page should be public
   '/self-hosted', // marketing page should be public
   '/white-label', // marketing page should be public
-  '/company-as-code', // marketing page should be public
+  '/desktop', // surface page: the desktop app
+  '/mobile', // surface page: the mobile app
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
   '/install',
@@ -178,8 +183,7 @@ const PUBLIC_ROUTES = [
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
-  '/solutions', // Solutions / persona landing pages should be public
-  '/connectors', // Connector directory + per-tool pages should be public
+  '/blog', // Blog index and posts should be public
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
@@ -373,10 +377,12 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // /blog is proxied to a separate deployment (the blog app, next.config.ts
-  // rewrites). It serves public pages only, so a kortix.com session never
-  // crosses to it: the Supabase cookie and any Authorization header stay here.
-  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+  // /blog and its posts are pages here; the blog's FILES (rss.xml, feed.xml,
+  // llms.txt, sitemap.xml, <slug>.md) are still proxied to the blog app
+  // (next.config.ts rewrites). That deployment serves public files only, so a
+  // kortix.com session never crosses to it: the Supabase cookie and any
+  // Authorization header stay here.
+  if (pathname.startsWith('/blog/') && pathname.includes('.')) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.delete('cookie');
     requestHeaders.delete('authorization');
@@ -444,7 +450,11 @@ export async function middleware(request: NextRequest) {
   // /Pricing, /DOCS, /DE/Pricing: a public page in another letter case was a
   // 200 "Page not found" page (KRTX-3312). /pricing/ was a 200 duplicate of
   // /pricing (KRTX-3234).
-  const canonicalPath = canonicalPublicPath(pathname, [...MARKETING_ROUTES, '/docs'], locales);
+  const canonicalPath = canonicalPublicPath(
+    pathname,
+    [...MARKETING_ROUTES, ...EXACT_MARKETING_ROUTES, '/docs'],
+    locales,
+  );
   if (canonicalPath) {
     // A plain URL: a NextURL clone re-adds the request's trailing slash, and
     // /pricing/ would redirect to itself.
@@ -457,9 +467,11 @@ export async function middleware(request: NextRequest) {
   const pathSegments = pathname.split('/').filter(Boolean);
   const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
   const remainingPath = '/' + pathSegments.slice(1).join('/');
-  const isRemainingPathMarketing = MARKETING_ROUTES.some(
-    (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
-  );
+  const isRemainingPathMarketing =
+    EXACT_MARKETING_ROUTES.includes(remainingPath) ||
+    MARKETING_ROUTES.some(
+      (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
+    );
   if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -472,9 +484,9 @@ export async function middleware(request: NextRequest) {
   // (so admins can disable the lockdown). Everything else — /projects,
   // /accounts, /invites and the other authed product routes — still gets the
   // maintenance takeover.
-  const isPublicMaintenanceRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicMaintenanceRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
   const isAdminMaintenanceRoute = pathname === '/admin' || pathname.startsWith('/admin/');
   const bypassesMaintenance = isPublicMaintenanceRoute || isAdminMaintenanceRoute;
 
@@ -608,7 +620,7 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /legal, /support,
+  // else to /auth. Functional public routes (/docs, /legal,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env
@@ -619,12 +631,13 @@ export async function middleware(request: NextRequest) {
       process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   const isMarketingContent =
     pathname === '/' ||
+    isExactMarketingPath(pathname) ||
     SELF_HOST_MARKETING_ONLY.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`),
     );
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const isPublicRoute =
+    isExactMarketingPath(pathname) ||
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
 
   // Identity only where it changes the response: protected routes, `/` (a
   // signed-in visitor goes to a project), and marketing pages a self-host has

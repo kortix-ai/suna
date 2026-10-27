@@ -165,8 +165,8 @@ describe('host boundary transport', () => {
   test('own-app connect form reads and submits anonymously', async () => {
     responseFactory = () =>
       Response.json({
-        app: 'shopify',
-        name: 'Shopify',
+        app: 'example',
+        name: 'Example',
         connector: 'Store',
         connected: false,
         connected_as: null,
@@ -175,15 +175,15 @@ describe('host boundary transport', () => {
     const info = await boundary.getConnectorAppForm('kaf_token', {
       backendUrl: 'https://api.example.test/v1',
     });
-    expect(info.name).toBe('Shopify');
+    expect(info.name).toBe('Example');
 
-    responseFactory = () => Response.json({ connected: true, connected_as: 'acme.myshopify.com' });
+    responseFactory = () => Response.json({ connected: true, connected_as: 'acme.example.test' });
     const result = await boundary.submitConnectorAppForm(
       'kaf_token',
       { store: 'acme', clientId: 'client-id', clientSecret: 'client-secret' },
       { backendUrl: 'https://api.example.test/v1' },
     );
-    expect(result.connected_as).toBe('acme.myshopify.com');
+    expect(result.connected_as).toBe('acme.example.test');
     expect(requests.map((request) => request.url)).toEqual([
       'https://api.example.test/v1/connectors/app-form/kaf_token',
       'https://api.example.test/v1/connectors/app-form/kaf_token',
@@ -200,7 +200,7 @@ describe('host boundary transport', () => {
   test("own-app connect form submit surfaces the provider's refusal", async () => {
     responseFactory = () =>
       Response.json(
-        { error: true, message: 'Shopify has no app with this Client ID.', code: 'shopify_refused' },
+        { error: true, message: 'The app has no client with this Client ID.', code: 'app_refused' },
         { status: 422 },
       );
     await expect(
@@ -209,7 +209,7 @@ describe('host boundary transport', () => {
         { store: 'acme', clientId: 'wrong', clientSecret: 'wrong' },
         { backendUrl: 'https://api.example.test/v1' },
       ),
-    ).rejects.toMatchObject({ status: 422, message: 'Shopify has no app with this Client ID.' });
+    ).rejects.toMatchObject({ status: 422, message: 'The app has no client with this Client ID.' });
   });
 
   test('connector setup-link finalize returns who the account was authorized as', async () => {

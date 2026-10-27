@@ -1232,7 +1232,7 @@ export function ReviewCenter({
           return (
             <li key={i.id} className="flex min-w-0 items-center gap-3 px-3 py-2.5" title={details?.action}>
               {/* md tile (32px) spans the two text lines beside it. */}
-              {who ? <ConnectorAppMark name={who.connector ?? i.title} iconUrl={who.iconUrl} size="md" /> : null}
+              {who ? <ConnectorAppMark name={who.connector ?? i.title} slug={who.slug} iconUrl={who.iconUrl} size="md" /> : null}
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="text-foreground truncate text-sm leading-5">
                   {who?.connector && who.action ? `${who.connector} · ${who.action}` : i.title}

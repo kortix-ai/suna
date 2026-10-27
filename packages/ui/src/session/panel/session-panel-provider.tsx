@@ -1,5 +1,6 @@
 'use client';
 
+import { ArtifactPanelPreview } from '../../artifacts/artifact-session';
 import { useTranslations } from '../../i18n';
 /**
  * `SessionPanelProvider` — the single owner of everything a session's panel
@@ -456,6 +457,20 @@ export function SessionPanelProvider({
               onSendToAgent={() => sendAppToAgent(output)}
             />
           ),
+        });
+        setPanelSplit(split);
+        return;
+      }
+
+      if (output.kind === 'artifact') {
+        track('deliverable_opened', { kind: output.kind, source });
+        openDetail({
+          key: `artifact:${output.url}`,
+          title: displayName,
+          hideHeader: true,
+          padded: false,
+          nav,
+          body: <ArtifactPanelPreview url={output.url} onClose={closeDetail} />,
         });
         setPanelSplit(split);
         return;

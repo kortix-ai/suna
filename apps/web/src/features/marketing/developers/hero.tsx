@@ -72,7 +72,7 @@ function InstallRow({ audience }: { audience: Audience }) {
           onClick={() => copy(text)}
           className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer transition-colors"
         >
-          {copied ? <SolidCheckIcon className="size-4" /> : <Copy className="size-4" />}
+          {copied ? <SolidCheckIcon className="text-ring size-4" /> : <Copy className="size-4" />}
         </button>
       </div>
       <Button asChild size="lg" className={cn(ARROW_RIGHT_GROUP_CLASS, 'h-11 w-full shrink-0 px-5 sm:h-12 sm:w-auto')}>

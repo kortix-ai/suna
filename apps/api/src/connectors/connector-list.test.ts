@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type AdminConnectorCandidate,
   buildAdminConnectorViews,
+  signedInComposioSlugs,
   safeConnectorLastError,
 } from './connector-list';
 
@@ -140,5 +141,47 @@ describe('safeConnectorLastError', () => {
     const long = safeConnectorLastError('x'.repeat(5_000));
     expect(long).toHaveLength(300);
     expect(long?.endsWith('…')).toBe(true);
+  });
+});
+
+describe('buildAdminConnectorViews state', () => {
+  test('one derived state: disabled, error, needs_account or connected, with auth_needed', () => {
+    const views = buildAdminConnectorViews(
+      [
+        candidate({ slug: 'off', status: 'disabled' }),
+        candidate({ slug: 'broken', status: 'error', lastError: 'MCP tools/list failed: HTTP 500' }),
+        candidate({ slug: 'gmail', status: 'needs_auth', requiresAuth: true }),
+        candidate({ slug: 'linear', status: 'active', requiresAuth: true }),
+        candidate({ slug: 'wiki', status: 'active', requiresAuth: false }),
+        candidate({ slug: 'mcp-oauth', status: 'error', lastError: 'HTTP 401', requiresAuth: true }),
+      ],
+      new Set(['linear']),
+    );
+    expect(views.map((v) => [v.slug, v.state, v.state_reason, v.auth_needed])).toEqual([
+      ['off', 'disabled', 'disabled in kortix.yaml', false],
+      ['broken', 'error', 'MCP tools/list failed: HTTP 500', false],
+      ['gmail', 'needs_account', 'no account connected', true],
+      ['linear', 'connected', null, true],
+      ['wiki', 'connected', null, false],
+      // No tools without a sign-in: the fix is an account, not a repair.
+      ['mcp-oauth', 'needs_account', 'no account connected', true],
+    ]);
+  });
+});
+
+describe('signedInComposioSlugs', () => {
+  test('a Composio connector counts as connected only with a signed-in account, as the gateway decides', () => {
+    const rows = [
+      { slug: 'gmail', connectorId: 'c-gmail' }, // the sync-created default row, never authorized
+      { slug: 'github', connectorId: 'c-github' },
+      { slug: 'hackernews', connectorId: 'c-hn' },
+      { slug: 'slack', connectorId: 'c-none' },
+    ];
+    const entitled = new Map([
+      ['c-gmail', [{ metadata: { provider: 'composio', toolkit: 'gmail' } }]],
+      ['c-github', [{ metadata: { provider: 'composio', connected_account_id: 'ca_1' } }]],
+      ['c-hn', [{ metadata: { provider: 'composio', is_no_auth: true } }]],
+    ]);
+    expect([...signedInComposioSlugs(rows, entitled)]).toEqual(['github', 'hackernews']);
   });
 });

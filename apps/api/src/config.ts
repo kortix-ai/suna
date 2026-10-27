@@ -450,15 +450,21 @@ const envSchema = z.object({
   // Slack messages should run as the bound project owner.
   SLACK_REQUIRE_USER_IDENTITY: optBoolTrue,
 
-  // ── Channels — AgentMail email adapter (optional) ────────────────────────
-  AGENTMAIL_API_URL: optUrl('https://api.agentmail.to/v0'),
-  AGENTMAIL_API_KEY: optStr,
-  AGENTMAIL_WEBHOOK_SECRET: optStr,
+  // ── Channels — email (Resend Inboxes) ─────────────────────────────────────
+  // The managed team key is RESEND_API_KEY (also the transactional sender).
+  RESEND_API_URL: optUrl('https://api.resend.com'),
+  // Domain for inboxes made with the managed key (verified and receiving on
+  // Kortix's Resend team). Unset: no managed inbox can be created.
+  RESEND_MANAGED_DOMAIN: optStr,
+  // Operator switch for managed inboxes on RESEND_MANAGED_DOMAIN. Each one
+  // costs Kortix a paid Resend inbox, so a project cannot turn this on: off,
+  // every connect needs the project's own Resend key.
+  RESEND_MANAGED_EMAIL_ENABLED: optBoolFalse,
 
-  // ── Channels — Telegram Bot API (connectors_v2). Overridable for tests. ──
+  // ── Channels — Telegram Bot API. Overridable for tests. ──
   TELEGRAM_API_URL: optUrl('https://api.telegram.org'),
 
-  // ── MCP apps (connectors_v2) — Kortix-owned OAuth clients ───────────────
+  // ── MCP apps — Kortix-owned OAuth clients ───────────────
   // JSON: {"google":{"client_id":"…","client_secret":"…"},"github":{…}}. One
   // client per vendor whose MCP server has no dynamic client registration
   // (connectors/mcp-apps.ts). An app whose client is absent is not listed.
@@ -502,6 +508,12 @@ const envSchema = z.object({
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
+  // Private channels (`project_spaces.visibility = 'private'`). Off: creating
+  // or converting one answers 409. Turn it on only once every deployed API
+  // build enforces private channels: an older build shows a private channel to
+  // every project member. The rollout checklist:
+  // .agents/skills/kortix-release/references/private-channels-rollout.md.
+  KORTIX_PRIVATE_CHANNELS_ENABLED: optBoolFalse,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,
@@ -724,6 +736,10 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
+  // Optional origin that serves artifact pages (another site than the app, e.g.
+  // https://kortixusercontent.com). Pages on it get their own origin, so embedded
+  // players (YouTube, Vimeo) work. Unset: pages are served from KORTIX_URL, opaque.
+  ARTIFACT_CONTENT_URL: optStr,
   // Comma-separated. The first entry is the default for new sessions.
   // Platinum is the reference; `daytona` is a legacy opt-in fallback.
   ALLOWED_SANDBOX_PROVIDERS: optStrDefault('platinum'),
@@ -1350,10 +1366,10 @@ export const config = {
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
 
-  // ─── Channels (AgentMail email) ──────────────────────────────────────────
-  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
-  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
-  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+  // ─── Channels (email, Resend Inboxes) ────────────────────────────────────
+  RESEND_API_URL: env.RESEND_API_URL,
+  RESEND_MANAGED_DOMAIN: env.RESEND_MANAGED_DOMAIN,
+  RESEND_MANAGED_EMAIL_ENABLED: env.RESEND_MANAGED_EMAIL_ENABLED,
   TELEGRAM_API_URL: env.TELEGRAM_API_URL,
   KORTIX_OAUTH_CLIENTS: env.KORTIX_OAUTH_CLIENTS,
 
@@ -1372,6 +1388,7 @@ export const config = {
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
     env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_PRIVATE_CHANNELS_ENABLED: env.KORTIX_PRIVATE_CHANNELS_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
@@ -1459,6 +1476,7 @@ export const config = {
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
+  ARTIFACT_CONTENT_URL: env.ARTIFACT_CONTENT_URL.replace(/\/+$/, ''),
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
 
   /**

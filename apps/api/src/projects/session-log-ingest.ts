@@ -90,7 +90,7 @@ import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
-import { jsonbSafeValue } from './lib/jsonb-safe';
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
 import { toolInputOrderOf } from './session-log-input-order';
 
@@ -163,7 +163,7 @@ export const sessionLogContentHash = (message: unknown): string =>
  * then re-sent forever (243 5xx in a day, one 730 kB batch retried 171 times,
  * KRTX-211; the same shape with NULs, KRTX-2178). Replace every bad code unit
  * with U+FFFD before anything is hashed or written, the way a terminal renders
- * it. `jsonbSafeValue` (`lib/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
+ * it. `jsonbSafeValue` (`shared/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
  * the transcript mirror shares; unlike `toWellFormed`, it also strips NUL,
  * which is a well-formed string Postgres still refuses.
  */

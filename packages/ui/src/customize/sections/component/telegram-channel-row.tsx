@@ -1,7 +1,9 @@
 'use client';
 
+import { TelegramChatMock } from './channel-mocks';
+
 /**
- * Telegram as a channel row (the `connectors_v2` feature flag): connect a bot
+ * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
  * to the API once and never comes back to the browser.
  */
@@ -30,7 +32,6 @@ import {
   useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
-import { TelegramLogoIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 /** "1, 2 3" → ["1","2","3"]; null when any entry is not a number. */
@@ -41,6 +42,7 @@ export function parseTelegramUserIds(raw: string): string[] | null {
 
 export function TelegramChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const { data: install } = useTelegramInstall(projectId);
   const disconnect = useDisconnectTelegram();
   const [dialog, setDialog] = useState<'connect' | 'users' | null>(null);
@@ -48,10 +50,16 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
   return (
     <>
       <ChannelRow
-        icon={<TelegramLogoIcon className="text-muted-foreground size-5 shrink-0" />}
+        app="telegram"
         name="Telegram"
         connected={Boolean(install)}
         detail={install?.username ? `@${install.username}` : null}
+        hero={{
+          title: tPages('telegramHeroTitle'),
+          connectedTitle: tPages('channelConnectedTitle', { name: 'Telegram' }),
+          ...(install ? {} : { lede: tPages('telegramHeroLede') }),
+          preview: <TelegramChatMock />,
+        }}
         pitch={t.raw('text51e6bc656528')}
         actions={
           !canWrite ? null : install ? (
@@ -73,7 +81,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
               />
             </>
           ) : (
-            <Button size="sm" variant="secondary" onClick={() => setDialog('connect')}>
+            <Button className="transition-transform active:scale-96" onClick={() => setDialog('connect')}>
               {t.raw('text1a2303ede074')}
             </Button>
           )

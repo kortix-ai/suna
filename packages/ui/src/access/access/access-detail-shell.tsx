@@ -84,14 +84,21 @@ export function AccessDetailShell({
           </button>
         )}
 
-        <div className="flex min-w-0 items-start gap-3.5">
+        {/* Centred: the avatar sits on the middle of the title and meta
+            block, not on its top edge. */}
+        <div className="flex min-w-0 items-center gap-3.5">
           {loading ? <Skeleton className="size-10 rounded-md" /> : avatar}
           <div className="min-w-0 flex-1 space-y-0.5">
             {loading ? (
               <Skeleton className="h-6 w-44" />
             ) : (
               <div className="flex min-w-0 items-center gap-2">
-                <h2 className="text-foreground truncate text-xl font-medium">{title}</h2>
+                {/* `text-base`: an email is long, and at `text-xl` it outweighed the
+                    badges and meta. The title and meta lines (24px + 20px) now
+                    match the 40px avatar beside them. */}
+                <h2 className="text-foreground truncate text-base leading-6 font-medium">
+                  {title}
+                </h2>
                 {badges}
               </div>
             )}

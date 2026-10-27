@@ -4,7 +4,6 @@ import {
   connectionIsReachable,
   connectionNeedsPrivateSession,
   connectionRowIsReachable,
-  isTrustedManagedChannelAuthorization,
 } from './connection-access';
 
 const human = {
@@ -140,44 +139,24 @@ describe('connection reachability', () => {
     }
   });
 
-  test('trusted managed email authorizations are the one external exception', () => {
-    const managedSystem = isTrustedManagedChannelAuthorization({
-      providerType: 'channel',
-      platform: 'email',
-      ownerType: 'external',
-      ownerId: 'agentmail:inbox-1',
+  test('email inboxes have no exception: a pre-account external email row reaches nobody', () => {
+    // 2026-10-24: inboxes are member- or project-owned accounts; the old
+    // `external` rows (owner `email:<inbox>`) are dead, whatever they claim.
+    const row = {
+      ownerType: 'external' as const,
+      ownerId: 'email:inbox-1',
       metadata: { channel_connection: true, inbox_id: 'inbox-1' },
-    });
-    expect(managedSystem).toBe(true);
-    expect(
-      connectionIsReachable({
-        ownerType: 'external',
-        ownerId: 'agentmail:inbox-1',
-        trustedManagedSystem: managedSystem,
-        ...human,
-      }),
-    ).toBe(true);
+      providerType: 'channel',
+      connectorConfig: { platform: 'email' },
+    };
+    expect(connectionRowIsReachable(row, { userId: 'user-1', isServiceAccount: false, agentPrincipal: null }, 'open')).toBe(false);
+    expect(connectionRowIsReachable(row, { userId: '', isServiceAccount: true, agentPrincipal: null }, 'open')).toBe(false);
   });
 
-  test('generic external metadata cannot activate the managed exception', () => {
-    expect(
-      isTrustedManagedChannelAuthorization({
-        providerType: 'http',
-        platform: null,
-        ownerType: 'external',
-        ownerId: 'agentmail:inbox-1',
-        metadata: { channel_connection: true, inbox_id: 'inbox-1' },
-      }),
-    ).toBe(false);
-    expect(
-      isTrustedManagedChannelAuthorization({
-        providerType: 'channel',
-        platform: 'email',
-        ownerType: 'external',
-        ownerId: 'managed-1',
-        metadata: { channel_connection: true, inbox_id: 'inbox-1' },
-      }),
-    ).toBe(false);
+  test('a shared inbox account is reachable like any shared account; a private one only by its owner', () => {
+    expect(connectionIsReachable({ ownerType: 'project', ownerId: null, ...serviceAccount })).toBe(true);
+    expect(connectionIsReachable({ ownerType: 'member', ownerId: 'user-1', ...human })).toBe(true);
+    expect(connectionIsReachable({ ownerType: 'member', ownerId: 'user-1', ...serviceAccount })).toBe(false);
   });
 });
 
@@ -260,7 +239,7 @@ describe('connection row reachability', () => {
     overrides: Partial<ConnectionReachabilityRow> = {},
   ): ConnectionReachabilityRow => ({
     ownerType: 'external',
-    ownerId: 'agentmail:inbox-1',
+    ownerId: 'email:inbox-1',
     metadata: { channel_connection: true, inbox_id: 'inbox-1' },
     providerType: 'channel',
     connectorConfig: { platform: 'email' },
@@ -284,9 +263,10 @@ describe('connection row reachability', () => {
     expect(connectionRowIsReachable(memberRow(''), serviceActor, 'open')).toBe(false);
   });
 
-  test('the managed-channel exception comes from the row and its connector config', () => {
-    expect(connectionRowIsReachable(managedChannelRow(), humanActor('user-1'), 'open')).toBe(true);
-    expect(connectionRowIsReachable(managedChannelRow(), serviceActor, 'open')).toBe(true);
+  test('a pre-account managed email row is reachable by nobody, whatever its config says', () => {
+    // The trusted-managed-channel exception is gone (2026-10-24): inboxes are accounts.
+    expect(connectionRowIsReachable(managedChannelRow(), humanActor('user-1'), 'open')).toBe(false);
+    expect(connectionRowIsReachable(managedChannelRow(), serviceActor, 'open')).toBe(false);
     // A non-string platform is no platform.
     expect(
       connectionRowIsReachable(
@@ -302,7 +282,7 @@ describe('connection row reachability', () => {
     ).toBe(false);
     expect(
       connectionRowIsReachable(
-        managedChannelRow({ ownerId: 'agentmail:another-inbox' }),
+        managedChannelRow({ ownerId: 'email:another-inbox' }),
         humanActor('user-1'), 'open'
       ),
     ).toBe(false);

@@ -189,3 +189,7 @@ core.[0-9]*
 
 # Kortix Capture (apps/capture): Cargo build output
 apps/capture/target/
+
+# Local planning notes at the repo root: never committed (specs go in a skill reference or the PR body)
+/plan.md
+/memory-plan.md

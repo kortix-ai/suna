@@ -113,6 +113,9 @@ export interface FileContentRendererProps {
   filePath: string;
   /** Whether to show the compact header bar with file name, toggles, save/download buttons */
   showHeader?: boolean;
+  /** Render the header's edit controls into this host toolbar instead of a
+   *  row of their own (`FilePreviewModal`). The host owns the path and Download. */
+  headerSlot?: HTMLElement | null;
   /** Additional header actions (rendered after built-in buttons) */
   headerActions?: React.ReactNode;
   /** Callback when unsaved state changes */
@@ -158,6 +161,7 @@ export interface FileContentRendererProps {
 export function FileContentRenderer({
   filePath,
   showHeader = true,
+  headerSlot,
   headerActions,
   onUnsavedChange,
   onSaved,
@@ -238,7 +242,7 @@ export function FileContentRenderer({
 
   return (
     <div className={cn('flex h-full flex-col', className)}>
-      <FileHeader {...{ showHeader, Breadcrumbs, filePath, readOnly, hasUnsavedChanges, saveFlash, fileDiagErrorCount, fileDiagWarningCount, fileContent, isSaving, handleSave, latestContentRef, discardLabel, handleDiscard, isHtmlFile, isHtmlPreview, setIsHtmlPreview, isJsonFile, isJsonTreeView, setIsJsonTreeView, hasPreviewToggle, isMarkdownPreview, setIsMarkdownPreview, headerActions, handleDownload, blobUrl, rawBlob, tI18nHardcoded, tHardcodedUi }} />
+      <FileHeader {...{ showHeader, headerSlot, Breadcrumbs, filePath, readOnly, hasUnsavedChanges, saveFlash, fileDiagErrorCount, fileDiagWarningCount, fileContent, isSaving, handleSave, latestContentRef, discardLabel, handleDiscard, isHtmlFile, isHtmlPreview, setIsHtmlPreview, isJsonFile, isJsonTreeView, setIsJsonTreeView, hasPreviewToggle, isMarkdownPreview, setIsMarkdownPreview, headerActions, handleDownload, blobUrl, rawBlob, tI18nHardcoded, tHardcodedUi }} />
 
       {/* Content area — readOnly uses overflow-auto so the read-only editor
           (which renders at auto height) can scroll within the fixed-size parent. */}
@@ -563,7 +567,7 @@ export function FileContentRenderer({
                   />
                 ) : isMarkdownPreview && isMarkdownFile ? (
                   // Markdown is prose, so it gets a measure. The markdown root
-                  // renders at text-[15px]; full-bleed on a wide viewport that
+                  // renders at text-base (16px); full-bleed on a wide viewport that
                   // is ~190 characters per line, well past the comfortable
                   // 65-90. `max-w-2xl` is the same reading column the customize
                   // sections use, and it is a no-op in panels already narrower

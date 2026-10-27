@@ -114,14 +114,23 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
   });
 
-  test('agentmail_email is explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: true } }, 'agentmail_email'),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag({ experimental: { agentmail_email: false } }, 'agentmail_email'),
-    ).toBe(false);
+  test('email_channel is an explicit opt-in', () => {
+    // The Resend inbox channel ships behind its own flag; the retired
+    // `agentmail_email` key stays graduated and inert.
+    expect(resolveFeatureFlag({}, 'email_channel')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { email_channel: true } }, 'email_channel')).toBe(true);
+    expect(findCatalogFlag('email_channel')).toMatchObject({ stability: 'experimental', enabled: false });
+  });
+
+  test('agentmail_email graduated: every project can connect email and a stored override is inert', () => {
+    // 2026-10-24: the email channel is on for every project. Turning it on
+    // never created an inbox (only an explicit connect does), so graduating
+    // provisions nothing. A stored `experimental.agentmail_email` stays in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('agentmail_email')).toBe(false);
+    const metadata = { experimental: { agentmail_email: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agentmail_email');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agentmail_email');
   });
 
   test('apps graduated: Apps is generally available and a stored override is inert', () => {
@@ -145,24 +154,9 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
-  test('monitors is explicit opt-in and gated on Platinum availability', () => {
-    const available = Boolean(config.PLATINUM_API_KEY);
-    expect(findCatalogFlag('monitors')).toMatchObject({
-      name: 'Monitors',
-      stability: 'experimental',
-      available,
-      enabled: false,
-    });
-    // Off by default everywhere; a project's explicit opt-in wins only where
-    // the platform can actually run a persistent box (Platinum configured).
-    expect(resolveFeatureFlag({}, 'monitors')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { monitors: true } }, 'monitors')).toBe(available);
-    expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
-  });
-
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
-      name: 'App event triggers',
+      name: 'Composio event triggers',
       stability: 'beta',
       enabled: false,
       operator_only: false,
@@ -176,14 +170,26 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });
 
-  test('connectors_v2 is an experimental, explicit opt-in flag offered everywhere', () => {
-    expect(findCatalogFlag('connectors_v2')).toMatchObject({
+  test('connectors_v2 and connectors_api_discover graduated: one catalog for every project, a stored override is inert', () => {
+    // 2026-10-24: the Kortix catalog (MCP apps, integrations.sh, Composio) is the
+    // only connectors path. Projects that stored either key keep the value in
+    // metadata; it must not resurface as a key, a catalog row, or a gate.
+    for (const key of ['connectors_v2', 'connectors_api_discover']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      const metadata = { experimental: { [key]: false } };
+      expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain(key);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(key);
+    }
+  });
+
+  test('project_channels is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('project_channels')).toMatchObject({
       stability: 'experimental',
       enabled: false,
       operator_only: false,
     });
-    expect(resolveFeatureFlag({}, 'connectors_v2')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { connectors_v2: true } }, 'connectors_v2')).toBe(true);
+    expect(resolveFeatureFlag({}, 'project_channels')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { project_channels: true } }, 'project_channels')).toBe(true);
   });
 
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
@@ -223,21 +229,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('config_releases');
   });
 
-  test('connectors_api_discover requires explicit opt-in', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: true } },
-        'connectors_api_discover',
-      ),
-    ).toBe(true);
-    expect(
-      resolveFeatureFlag(
-        { experimental: { connectors_api_discover: false } },
-        'connectors_api_discover',
-      ),
-    ).toBe(false);
-  });
 
   test('session_log_restore follows the deployment default while a stored project value wins', () => {
     const previous = config.SESSION_LOG_RESTORE_DEFAULT_ENABLED;
@@ -256,9 +247,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
   test('non-boolean stored values are treated as "no override"', () => {
     for (const garbage of ['true', 1, 0, null, [], {}, 'yes']) {
-      expect(resolveFeatureFlag({ experimental: { monitors: garbage } }, 'monitors')).toBe(
-        resolveFeatureFlag({}, 'monitors'),
-      );
       expect(resolveFeatureFlag({ experimental: { marketplace: garbage } }, 'marketplace')).toBe(
         resolveFeatureFlag({}, 'marketplace'),
       );
@@ -269,7 +257,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
@@ -307,13 +294,6 @@ describe('buildFeatureFlagCatalog', () => {
     expect(metaAgent.enabled).toBe(true);
     expect(metaAgent.overridden).toBe(true);
     expect(typeof metaAgent.available).toBe('boolean');
-
-    const email = catalog.find((f) => f.key === 'agentmail_email');
-    if (!email) throw new Error('Missing AgentMail Email flag');
-    expect(email.name).toBe('AgentMail Email');
-    expect(email.stability).toBe('experimental');
-    expect(email.enabled).toBe(false);
-    expect(email.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {

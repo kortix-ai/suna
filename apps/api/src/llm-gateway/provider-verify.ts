@@ -86,6 +86,26 @@ function upstreamErrorHint(body: string | undefined): string | undefined {
   }
 }
 
+function httpVerdict(status: number, body: string | undefined): ProviderVerifyResult {
+  if (status === 401 || status === 403) {
+    return {
+      status: 'invalid',
+      message: upstreamErrorHint(body) ?? `The provider rejected the key (HTTP ${status}).`,
+    };
+  }
+  if (status === 429) {
+    return {
+      status: 'unknown',
+      message: "Rate limited while verifying — couldn't confirm the key.",
+    };
+  }
+  return {
+    status: 'unknown',
+    message:
+      upstreamErrorHint(body) ?? `The provider returned HTTP ${status} — couldn't confirm.`,
+  };
+}
+
 /**
  * Attempt to verify that the credential connected for `providerId` on this
  * project actually works, via one cheap live completion. Never throws — any
@@ -154,49 +174,13 @@ export async function verifyProviderConnection(
     );
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      if (response.status === 401 || response.status === 403) {
-        return {
-          status: 'invalid',
-          message:
-            upstreamErrorHint(body) ?? `The provider rejected the key (HTTP ${response.status}).`,
-        };
-      }
-      if (response.status === 429) {
-        return {
-          status: 'unknown',
-          message: "Rate limited while verifying — couldn't confirm the key.",
-        };
-      }
-      return {
-        status: 'unknown',
-        message:
-          upstreamErrorHint(body) ??
-          `The provider returned HTTP ${response.status} — couldn't confirm.`,
-      };
+      return httpVerdict(response.status, body);
     }
     return { status: 'verified', message: 'The provider accepted the key.' };
   } catch (err) {
     const status = (err as { status?: number } | undefined)?.status;
     const body = (err as { body?: string } | undefined)?.body;
-    if (status === 401 || status === 403) {
-      return {
-        status: 'invalid',
-        message: upstreamErrorHint(body) ?? `The provider rejected the key (HTTP ${status}).`,
-      };
-    }
-    if (status === 429) {
-      return {
-        status: 'unknown',
-        message: "Rate limited while verifying — couldn't confirm the key.",
-      };
-    }
-    if (typeof status === 'number') {
-      return {
-        status: 'unknown',
-        message:
-          upstreamErrorHint(body) ?? `The provider returned HTTP ${status} — couldn't confirm.`,
-      };
-    }
+    if (typeof status === 'number') return httpVerdict(status, body);
     // The direct transport rejects with the timeout signal's `TimeoutError`;
     // the AI SDK transport reports the fired signal as a client abort.
     if (timeout.aborted || (err as { name?: string } | undefined)?.name === 'TimeoutError') {

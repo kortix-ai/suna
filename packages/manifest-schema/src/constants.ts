@@ -89,25 +89,17 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
 
-/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+/** What a `type: monitor` entry answers since the monitor box was removed. */
+export const MONITOR_REMOVED_MESSAGE =
+  'monitor triggers were removed. Run the watcher in an App (a process that POSTs to $KORTIX_APP_EVENTS_URL) and fire with a `type: app` trigger, or poll with a cron trigger whose `target` is the App.';
+
+/** Cron/webhook-only keys: hard-rejected on a `type: event` or `type: app` trigger. */
 export const EVENT_FORBIDDEN_KEYS = [
   'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
-  'run', 'mode', 'interval', 'expect_event_within',
 ] as const;
 
-/**
- * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
- * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
- * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
- */
-export const MONITOR_MODES = ['poll', 'stream'] as const;
-
-/** Floor for `interval` on a `mode: poll` monitor — the platform bound. */
-export const MONITOR_MIN_INTERVAL_SECONDS = 30;
-/** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
-export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /**
@@ -116,8 +108,6 @@ export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
  * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
  */
 export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
-/** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
-export const MONITOR_RUN_MAX_LENGTH = 1024;
 
 /**
  * Duration literal accepted by `interval` / `expect_event_within`: a positive
@@ -287,6 +277,12 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Rooms: read = list rooms and read messages; write = post, join, leave.
   'project.room.read',
   'project.room.write',
+  // Artifacts: read = gallery and viewer; write = publish and edit; manage =
+  // anyone's sharing; public = public links.
+  'project.artifact.read',
+  'project.artifact.write',
+  'project.artifact.manage',
+  'project.artifact.public',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -472,6 +468,8 @@ export const REGISTRY_NAME_MAX = 64;
 export const KORTIX_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-artifacts',
+  'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
   'kortix-drives',

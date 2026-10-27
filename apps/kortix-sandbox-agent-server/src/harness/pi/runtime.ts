@@ -637,7 +637,7 @@ export class PiRuntime {
         prebuilt: project.prebuilt,
         baseTools: this.baseTools,
         // The nested-call gate is first: pi runs `tool_call` handlers in load order and stops at the first block.
-        extensions: [this.nestedCallGate(), this.turnExtension(), subagents(this.kortixHost()), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
+        extensions: [this.nestedCallGate(), this.presentationExtension(), this.turnExtension(), subagents(this.kortixHost()), ...codemodeExtensions(this.codemodeMode, coding.createCodemodeExtension), ...local, ...project.extensions],
         systemPrompt: () => this.systemPrompt(),
         skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
@@ -846,7 +846,9 @@ export class PiRuntime {
       }
       this.steered.push({ messageId, input, message })
       this.agent.steer(message)
-      this.dismissOpenQuestions()
+      // Harness context (a connector that just connected) is not the user's
+      // answer: the question stays open and the turn reads the steer after it.
+      if (!input.synthetic) this.dismissOpenQuestions()
       return 'steered' as const
     })
     this.steerChain = steered.catch(() => {})
@@ -1385,6 +1387,18 @@ export class PiRuntime {
     }
   }
 
+  /** Presentation needs a native transcript part, not codemode's bounded call metadata. */
+  private presentationExtension(): InlineExtension {
+    return {
+      name: 'kortix-presentation',
+      hidden: true,
+      factory: (pi) => {
+        const show = this.baseTools.find((tool) => tool.name === 'show')
+        if (this.codemodeMode === 'only' && show) pi.registerTool({ ...show, exposure: 'model-only' })
+      },
+    }
+  }
+
   /** Extension `tool_call` handlers for a child agent, which has no AgentSession of its own. */
   private childExtensionGate(): Agent['beforeToolCall'] {
     return async (context) => {
@@ -1837,7 +1851,7 @@ export class PiRuntime {
         // pi's own codemode guideline; Kortix builds the prompt itself, so pi's prompt builder never adds it.
         ...(!child && this.agent?.state.tools.some((t) => t.name === CODEMODE_TOOL)
           ? [this.codemodeMode === 'only'
-              ? 'Every tool runs from a codemode script: `await tools.<name>(args)`.'
+              ? 'Call show directly to present outputs. Every other tool runs from a codemode script: `await tools.<name>(args)`.'
               : 'Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.']
           : []),
         ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),

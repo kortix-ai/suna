@@ -158,25 +158,6 @@ export const MONITOR_LINE_MAX_BYTES = 8 * 1024;
 export const MONITOR_EVENT_KINDS = ['event', 'lifecycle'] as const;
 export type MonitorEventKind = (typeof MONITOR_EVENT_KINDS)[number];
 
-/** One monitor output line in an ingest batch. `seq` restarts per `box_epoch`. */
-export const MonitorWireEventSchema = z.object({
-  slug: z.string(),
-  seq: z.number().int().nonnegative(),
-  kind: z.enum(MONITOR_EVENT_KINDS),
-  /** The parsed JSON line, or `{ raw: "<line>" }` when it does not parse. */
-  line: z.record(z.string(), z.unknown()),
-  emitted_at: z.string(),
-});
-export type MonitorWireEvent = z.infer<typeof MonitorWireEventSchema>;
-
-/** `POST /v1/projects/:projectId/monitors/ingest`, from the project's monitor box. */
-export const MonitorIngestRelayBodySchema = z.object({
-  /** This boot of the monitor runner. A superseded epoch answers 409. */
-  box_epoch: z.string(),
-  events: z.array(MonitorWireEventSchema).max(MONITOR_INGEST_MAX_EVENTS),
-});
-export type MonitorIngestRelayBody = z.infer<typeof MonitorIngestRelayBodySchema>;
-
 /** The daemon's 404 body for a `/kortix/*` route it does not serve. apps/api maps it to 501 on share links. */
 export const UNKNOWN_DAEMON_ROUTE_ERROR = 'unknown kortix route';
 

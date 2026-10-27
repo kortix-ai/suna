@@ -1,13 +1,10 @@
-import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
+import type { AdminConnector, DiscoverConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { testUiTranslator } from '../../../test-utils/intl';
 import {
   catalogEntryConnectors,
   catalogEntryFromDiscover,
-  catalogEntryFromEasyConnect,
   catalogEntryKindLabel,
-  computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
   type CatalogEntry,
@@ -29,19 +26,6 @@ const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
     ...over,
   }) as DiscoverConnector;
 
-const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
-  slug: 'google_sheets',
-  name: 'Google Sheets',
-  description: 'Spreadsheets',
-  imgSrc: null,
-  authType: 'oauth',
-  categories: ['productivity'],
-  hasActions: true,
-  hasTriggers: false,
-  featuredWeight: 0,
-  ...over,
-});
-
 const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
   ({
     slug: 'linear',
@@ -57,17 +41,7 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
     ...over,
   }) as AdminConnector;
 
-describe('normalising the two catalogues', () => {
-  test('Computer is a native connector catalogue entry', () => {
-    const entry = computersCatalogEntry(testUiTranslator);
-    expect(entry).toMatchObject({
-      source: 'computer',
-      slug: 'computers',
-      name: 'Computer',
-      categories: ['developer-tools'],
-    });
-  });
-
+describe('a catalogue entry', () => {
   test('a Discover entry keeps its rank and its raw connector', () => {
     const entry = catalogEntryFromDiscover(connector({ popularity: 42 }));
     expect(entry.source).toBe('discover');
@@ -91,23 +65,6 @@ describe('normalising the two catalogues', () => {
     expect(entry.icon).toBe('https://www.google.com/s2/favicons?domain=linear.app&sz=128');
   });
 
-  // Pipedream publishes no ranking. `null` keeps these out of the Popular
-  // section entirely rather than sorting them to the bottom of it.
-  test('an Easy Connect entry is unranked and maps imgSrc to icon', () => {
-    const entry = catalogEntryFromEasyConnect(app({ imgSrc: 'https://x/i.png' }));
-    expect(entry.source).toBe('easy-connect');
-    expect(entry.popularity).toBeNull();
-    expect(entry.icon).toBe('https://x/i.png');
-  });
-
-  // Both catalogues publish a `slack`. Un-prefixed keys would collide into one
-  // React key the moment anything renders them in the same list.
-  test('keys are namespaced by source so the two catalogues cannot collide', () => {
-    expect(catalogEntryFromDiscover(connector({ id: 'slack', slug: 'slack' })).key).toBe(
-      'discover:slack',
-    );
-    expect(catalogEntryFromEasyConnect(app({ slug: 'slack' })).key).toBe('easy-connect:slack');
-  });
 });
 
 describe('connected join', () => {
@@ -116,7 +73,8 @@ describe('connected join', () => {
   // `google-sheets`. Folding both sides is what makes that card show ✓.
   test('matches across slug spellings', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'google-sheets', name: 'Google Sheets' })]);
-    expect(isCatalogEntryConnected(catalogEntryFromEasyConnect(app()), keys)).toBe(true);
+    const sheets = catalogEntryFromDiscover(connector({ slug: 'google_sheets', name: 'Google Sheets' }));
+    expect(isCatalogEntryConnected(sheets, keys)).toBe(true);
   });
 
   test('matches on the connector display name when the slug diverges', () => {
@@ -134,13 +92,6 @@ describe('connected join', () => {
   test('a fully renamed connector falls back to + rather than matching wrongly', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'tracker', name: 'Tracker' })]);
     expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
-  });
-
-  test('Computer stays connected when the connector has a custom name and slug', () => {
-    const keys = connectedCatalogKeys([
-      conn({ provider: 'computer', slug: 'studio-machines', name: 'Studio' }),
-    ]);
-    expect(isCatalogEntryConnected(computersCatalogEntry(testUiTranslator), keys)).toBe(true);
   });
 
   // A connector with a blank name must not index the empty string, or every
@@ -207,12 +158,6 @@ describe('catalogEntryConnectors', () => {
     expect(catalogEntryConnectors(connectors, entry('git', 'Git'))).toEqual([]);
   });
 
-  test('the computer entry lists the computer connector', () => {
-    const connectors = [connector('computer', 'Computer', { provider: 'computer' })];
-    expect(
-      catalogEntryConnectors(connectors, { source: 'computer' } as unknown as CatalogEntry),
-    ).toHaveLength(1);
-  });
 });
 
 describe('catalogEntryKindLabel', () => {
@@ -223,26 +168,25 @@ describe('catalogEntryKindLabel', () => {
     expect(catalogEntryKindLabel(discover('mcp'))).toBe('MCP');
     expect(catalogEntryKindLabel(discover('openapi'))).toBe('API');
     expect(catalogEntryKindLabel(discover('graphql'))).toBe('GraphQL');
-    expect(catalogEntryKindLabel(discover('cli'))).toBe('CLI');
-    expect(catalogEntryKindLabel({ source: 'easy-connect' } as unknown as CatalogEntry)).toBe(
-      'App',
-    );
-    expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Native');
+    expect(catalogEntryKindLabel(discover('composio'))).toBe('Composio');
+    expect(catalogEntryKindLabel(discover('kortix'))).toBe('Kortix');
   });
 
-  test('an app with both ways to connect names both', () => {
-    expect(
-      catalogEntryKindLabel({
-        source: 'easy-connect',
-        app: { directId: 'mcp/linear' },
-      } as unknown as CatalogEntry),
-    ).toBe('App · MCP');
-    expect(
-      catalogEntryKindLabel({
-        source: 'discover',
-        connector: { kind: 'mcp' },
-        alsoApp: true,
-      } as unknown as CatalogEntry),
-    ).toBe('MCP · App');
+});
+
+describe('a Composio app in the catalogue', () => {
+  test('is a catalogue card named Composio; its app page lists every way to connect it', () => {
+    const entry = catalogEntryFromDiscover(
+      connector({
+        id: 'composio:gmail',
+        kind: 'composio',
+        slug: 'gmail',
+        name: 'Gmail',
+        icon: 'https://logo/gmail.svg',
+        oneClick: true,
+      }),
+    );
+    expect(entry).toMatchObject({ source: 'discover', key: 'discover:composio:gmail', slug: 'gmail', icon: 'https://logo/gmail.svg' });
+    expect(catalogEntryKindLabel(entry)).toBe('Composio');
   });
 });

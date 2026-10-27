@@ -201,7 +201,10 @@ describe('what the merge writes', () => {
     expect(await pass()).toMatchObject({ sessions: 1, missing: child.length, merged: child.length, threads_created: 1, failed: 0 });
     const p = await page(session, CHILD);
     expect(ids(p.messages)).toEqual(child.map((m) => String(m.info.id)));
-    expect(p.threads.find((t) => t.thread_id === CHILD)).toMatchObject({ parent_thread_id: ROOT, ext: expect.objectContaining({ [MIRROR_MERGE_EXT]: { version: 'kortix.mirror-merge.v1' } }) });
+    // The thread row is the whole conversion's: its spawner, agent and time come from rows the merge did not read in full.
+    const { messages: _m, ext: wext, ...head } = fromV1({ session_id: session, root_id: ROOT, rows: [...root, ...child].map((r) => ({ runtime_session_id: String(r.info.sessionID), ...r })) as unknown as V1Row[] }).threads.find((t) => t.thread_id === CHILD)!;
+    expect([head.parent_thread_id, head.spawned_by?.call_id.startsWith('call_task_')]).toEqual([ROOT, true]);
+    expect(p.threads.find((t) => t.thread_id === CHILD)).toEqual({ ...head, ext: { ...wext, [MIRROR_MERGE_EXT]: { version: 'kortix.mirror-merge.v1' } } });
     // The pass found work, so the merge is not done; the next pass finds none and is.
     expect(await stateRow()).toMatchObject({ mergedMissing: false, mergePasses: 1 });
     const before = await rows(session);
@@ -211,29 +214,133 @@ describe('what the merge writes', () => {
   });
 });
 
-describe('the merge respects the backfill guards', () => {
-  test('a session over the cap without memory room is deferred, not lost: the merge stays pending until its thread merges it', async () => {
-    const incompressible = Buffer.from(crypto.getRandomValues(new Uint8Array(3_000))).toString('hex');
-    const session = await mirrored([plain(0), plain(1, incompressible), plain(2), plain(3)]);
-    await journaled(session, [plain(0), plain(1, incompressible), plain(2)]);
-    await drained();
+describe('the merge reads only the rows it writes', () => {
+  /** Random hex: pglz cannot shrink it, so the mirror's stored size is close to its JSON length. */
+  const incompressible = (chars: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(chars / 2))).toString('hex');
+  /** Run `fn` with the capture cap and the memory limit set, then restore both. */
+  async function limited<T>(limits: { capBytes: number; memoryMb: number }, fn: () => Promise<T>): Promise<T> {
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
     const memory = config.SESSION_LOG_BACKFILL_MEMORY_MB;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes
+    config.SESSION_LOG_RESTORE_MAX_BYTES = limits.capBytes;
+    config.SESSION_LOG_BACKFILL_MEMORY_MB = limits.memoryMb;
     try {
-      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
-      expect(await pass()).toMatchObject({ missing: 1, too_large: 1, deferred: 1, merged: 0 });
-      expect(await stateRow()).toMatchObject({ mergedMissing: false });
-      config.SESSION_LOG_BACKFILL_MEMORY_MB = memory;
-      expect(await pass()).toMatchObject({ missing: 1, too_large: 1, deferred: 0, merged: 1 });
-      expect(ids((await page(session)).messages)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
-      expect(await pass()).toMatchObject({ missing: 0, merged: 0 });
-      expect(await stateRow()).toMatchObject({ mergedMissing: true, threadStarted: null, threadCrashes: {} });
+      return await fn();
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
       config.SESSION_LOG_BACKFILL_MEMORY_MB = memory;
     }
+  }
+
+  test('a session over the cap, with no memory room for a whole-session thread: its missing root, compaction and child-thread messages merge in place, exactly as the whole conversion gives them; the next pass sets mergedMissing', async () => {
+    const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 3 });
+    const big = plain(1000, incompressible(6_000));
+    const mirror = [...root, ...child, big];
+    const session = await mirrored(mirror);
+    const reply = root.find((r) => r.info.role === 'assistant' && r.info.summary !== true)!;
+    const marker = root.find((r) => r.parts.some((p) => p.type === 'compaction'))!;
+    const summary = root.find((r) => r.info.summary === true)!;
+    const childReply = child.find((r) => r.info.role === 'assistant')!;
+    const lost = new Set([reply, marker, summary, childReply]);
+    const whole = fromV1({ session_id: session, root_id: ROOT, rows: mirror.map((r) => ({ runtime_session_id: String(r.info.sessionID), ...r })) as unknown as V1Row[] });
+    const wanted = new Map(whole.threads.flatMap((t) => t.messages).map((m) => [m.message_id, m]));
+    // The journal lost a root reply, a compaction (marker and summary) and a sub-agent reply; the child thread row exists.
+    // Every other message keeps the seq the whole conversion gives it, so the lost ones have a free seq in their place.
+    await journaled(session, mirror.filter((r) => !lost.has(r)), { seqs: Object.fromEntries([...wanted].map(([id, m]) => [id, m.seq])) });
+    const missing = await db.execute<{ message_id: string; content: string }>(sql`select message_id, content from kortix.mirror_messages_missing_from_log(${`{${session}}`}::text[]) order by 1`);
+    expect(missing.map((r) => [r.message_id, r.content]).sort()).toEqual(
+      [[String(reply.info.id), 'missing'], [String(marker.info.id), 'empty'], [String(summary.info.id), 'missing'], [String(childReply.info.id), 'missing']].sort(),
+    );
+    await drained();
+    // mirrorStoredCap() = 2,000 stored bytes: the mirror is over it. 1 MB: no whole-session thread would ever fit.
+    await limited({ capBytes: 4_000, memoryMb: 1 }, async () => {
+      expect(await pass()).toMatchObject({ sessions: 1, missing: 3, merged: 3, too_large: 0, deferred: 0, oversize: 0, unplaced: 0, failed: 0 });
+      expect(await stateRow()).toMatchObject({ mergedMissing: false });
+    });
+    // Every merged record is the whole-mirror conversion's message, seq included, marked and out of context.
+    const rootPage = await page(session);
+    const childPage = await page(session, CHILD);
+    expect(ids(rootPage.messages)).toEqual(ids(whole.threads.find((t) => t.thread_id === ROOT)!.messages));
+    expect(ids(childPage.messages)).toEqual(ids(whole.threads.find((t) => t.thread_id === CHILD)!.messages));
+    for (const id of [reply.info.id, marker.info.id, childReply.info.id].map(String)) {
+      const merged = [...rootPage.messages, ...childPage.messages].find((m) => m.message_id === id)!;
+      const { in_context, ext, ...record } = merged;
+      const { in_context: _wi, ext: wext, ...expected } = wanted.get(id)!;
+      expect(record).toEqual(expected);
+      expect(ext).toEqual({ ...wext, [MIRROR_MERGE_EXT]: { version: 'kortix.mirror-merge.v1' } });
+      expect(in_context).toBe(false);
+    }
+    expect(rootPage.messages.find((m) => m.message_id === marker.info.id)!.blocks).toContainEqual(expect.objectContaining({ type: 'compaction', summary: 'SUMMARY up to turn 1.' }));
+    await limited({ capBytes: 4_000, memoryMb: 1 }, async () => {
+      expect(await pass()).toMatchObject({ sessions: 1, missing: 0, merged: 0 });
+    });
+    expect(await stateRow()).toMatchObject({ mergedMissing: true, mergePasses: 2, threadStarted: null, threadCrashes: {} });
+    expect(await mirrorDrained()).toBe(true);
   });
+
+  test('a sub-agent named only in a call’s output (no metadata.sessionId) still gets its own thread: its missing reply merges exactly as the whole conversion gives it', async () => {
+    const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 3 });
+    // Drop the exact link: the child is named only by the task output (`task_id: <child>`).
+    for (const row of root) {
+      for (const p of row.parts as { type?: string; state?: { metadata?: Record<string, unknown> } }[]) {
+        if (p.type === 'tool' && p.state?.metadata) delete p.state.metadata.sessionId;
+      }
+    }
+    const mirror = [...root, ...child, plain(1000, incompressible(6_000))];
+    const session = await mirrored(mirror);
+    const childReply = child.find((r) => r.info.role === 'assistant')!;
+    const whole = fromV1({ session_id: session, root_id: ROOT, rows: mirror.map((r) => ({ runtime_session_id: String(r.info.sessionID), ...r })) as unknown as V1Row[] });
+    const wanted = new Map(whole.threads.flatMap((t) => t.messages).map((m) => [m.message_id, m]));
+    expect(whole.threads.map((t) => t.thread_id)).toContain(CHILD);
+    await journaled(session, mirror.filter((r) => r !== childReply), { seqs: Object.fromEntries([...wanted].map(([id, m]) => [id, m.seq])) });
+    await drained();
+    await limited({ capBytes: 4_000, memoryMb: 1 }, async () => {
+      expect(await pass()).toMatchObject({ sessions: 1, missing: 1, merged: 1, unplaced: 0, failed: 0 });
+    });
+    const childPage = await page(session, CHILD);
+    expect(ids(childPage.messages)).toEqual(ids(whole.threads.find((t) => t.thread_id === CHILD)!.messages));
+    const { in_context: _i, ext: _e, ...record } = childPage.messages.find((m) => m.message_id === String(childReply.info.id))!;
+    const { in_context: _wi, ext: _we, ...expected } = wanted.get(String(childReply.info.id))!;
+    expect(record).toEqual(expected);
+  });
+
+  test('a message too large for the process is counted oversize and warned with its session and size, and keeps the merge pending; what does not fit the cap this pass is deferred to the next', async () => {
+    const huge = plain(1, incompressible(70_000)); // 12 x its ~70 kB is over 75 % of 1 MB: never fits
+    const first = plain(3, incompressible(2_800));
+    const second = plain(5, incompressible(2_800)); // with `first`, over the 4,000-byte cap of one merge
+    const session = await mirrored([plain(0), huge, plain(2), first, plain(4), second]);
+    await journaled(session, [plain(0), plain(2), plain(4)]);
+    await drained();
+    const warn = spyOn(logger, 'warn');
+    const info = spyOn(logger, 'info');
+    try {
+      await limited({ capBytes: 4_000, memoryMb: 1 }, async () => {
+        expect(await pass()).toMatchObject({ missing: 3, merged: 1, oversize: 1, deferred: 1, unplaced: 0, failed: 0 });
+        const oversize = warn.mock.calls.filter(([m]) => String(m).includes('too large for this process'));
+        expect(oversize).toHaveLength(1);
+        const meta = oversize[0]![1] as { sessionId: string; messages: number; bytes: number };
+        expect([meta.sessionId, meta.messages, meta.bytes > 70_000]).toEqual([session, 1, true]);
+        expect(warn.mock.calls.filter(([m]) => String(m).includes('mirror merge deferred'))).toHaveLength(1);
+        expect(info.mock.calls.find(([m]) => String(m).includes('merge pass complete'))![1]).toMatchObject({ oversize: 1, mergedMissing: false });
+        // The oversize message blocks the merge: a person decides.
+        expect(await pass()).toMatchObject({ missing: 2, merged: 1, oversize: 1, deferred: 0 });
+        expect(await pass()).toMatchObject({ missing: 1, merged: 0, oversize: 1 });
+        expect(await stateRow()).toMatchObject({ mergedMissing: false });
+      });
+      // With room, the one large message merges alone, over the cap.
+      await limited({ capBytes: 4_000, memoryMb: 4096 }, async () => {
+        expect(await pass()).toMatchObject({ missing: 1, merged: 1, oversize: 0 });
+        expect(await pass()).toMatchObject({ missing: 0 });
+      });
+      expect(await stateRow()).toMatchObject({ mergedMissing: true });
+      expect(ids((await page(session)).messages)).toEqual(['msg_000000', 'msg_000002', 'msg_000004', 'msg_000003', 'msg_000005', 'msg_000001']);
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+    }
+  });
+});
+
+describe('the merge respects the backfill guards', () => {
 
   test('a session whose merge fails is retried by the next pass; the merge is done only after a pass that finds nothing', async () => {
     const session = await mirrored([0, 1, 2, 3].map((n) => plain(n)));

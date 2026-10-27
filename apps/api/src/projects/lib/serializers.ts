@@ -95,6 +95,9 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'session_start_timeline',
   'audit_v2',
   'remote_branch',
+  // A channel thread's top message: the list already serves it as the
+  // top-level `first_prompt` field, so the metadata copy is a duplicate.
+  'first_prompt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -116,6 +119,8 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** Model selected by the durable conversation log, not the creation pin. */
     conversationModel?: string | null;
+    /** `reply_count`: set by a channel or DM thread list only. */
+    replyCount?: number | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -227,6 +232,10 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
+    space_id: row.spaceId ?? null,
+    group_id: row.groupId ?? null,
+    first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
+    reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,
@@ -332,8 +341,18 @@ export function serializeProject(
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
     // and mobile builds read false as "serve the v1 transcript". `pi_harness`
-    // graduated on 2026-10-23: every new session runs pi.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true, pi_harness: true },
+    // graduated on 2026-10-23: every new session runs pi. `connectors_v2` and
+    // `connectors_api_discover` graduated on 2026-10-24: older SDKs and hosts
+    // read false as "show the legacy catalog".
+    experimental: {
+      ...resolveFeatureFlags(row.metadata),
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      pi_harness: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+    },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);

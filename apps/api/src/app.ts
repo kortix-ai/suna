@@ -1,7 +1,7 @@
 import { wellKnownResponse } from '@kortix/shared/well-known';
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { createRoute, z } from '@hono/zod-openapi';
 import { config } from './config';
-import { auth, errors, json } from './openapi';
+import { auth, errors, json, makeOpenApiApp } from './openapi';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { getPlatformRole } from './shared/platform-roles';
 
@@ -65,7 +65,7 @@ import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new OpenAPIHono();
+const app = makeOpenApiApp();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -188,6 +188,10 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 // supabaseAuth would otherwise 401 an anonymous verifier.
 import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
+// App events: authenticated by the App's own token, so also before projectsApp.
+import { appEventsApp, registerAppEventRoutes } from './apps/event-routes';
+registerAppEventRoutes();
+app.route('/v1/projects', appEventsApp); // POST /v1/projects/:projectId/apps/:appId/events
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 registerSessionLookupRoutes();
@@ -250,7 +254,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 registerEmailWebhookRoutes();
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
@@ -298,6 +302,13 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicResponsesApp, registerPublicResponseRoutes } from './public-responses';
 registerPublicResponseRoutes();
 app.route('/v1/public/responses', publicResponsesApp); // GET /v1/public/responses/:token
+
+// Artifact content — PUBLIC, capability-gated. A signed view token (minted by
+// /v1/projects/:id/artifacts*) or a public artifact's id is the capability;
+// every page is served as a CSP sandbox. See artifacts/content-routes.ts.
+import { artifactContentApp, registerArtifactContentRoutes } from './artifacts/content-routes';
+registerArtifactContentRoutes();
+app.route('/v1/artifacts', artifactContentApp); // GET /v1/artifacts/{s/:token,p/:artifactId}/*
 
 
 

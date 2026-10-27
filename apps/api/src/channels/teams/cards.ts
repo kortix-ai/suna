@@ -162,13 +162,28 @@ export const TEAMS_STOP_VERB = 'teams_stop';
  * conversation (dev 2026-09-19). The button carries the session id because the
  * invoke that comes back names no turn of its own.
  */
+/**
+ * The Kortix agent that wrote a card, as its first line. Teams fixes a bot's
+ * name per app, so the card says which agent answered; Slack sets the author
+ * name instead (slack/persona.ts).
+ */
+export function withAgentLine(elements: CardElement[], agent?: string | null): CardElement[] {
+  if (!agent) return elements;
+  const [first, ...rest] = elements;
+  return [
+    text(agent, { weight: 'bolder', size: 'small', spacing: 'none' }),
+    ...(first ? [{ ...first, spacing: 'small' }, ...rest] : []),
+  ];
+}
+
 export function buildPlanCard(
   title: string,
   steps: StreamTaskChunk[],
   sessionId?: string,
+  agent?: string | null,
 ): Record<string, unknown> {
   return card(
-    planContainer(title, steps),
+    withAgentLine(planContainer(title, steps), agent),
     sessionId ? [executeAction('Stop', TEAMS_STOP_VERB, { sessionId })] : undefined,
   );
 }
@@ -178,6 +193,7 @@ export function buildFinalCard(opts: {
   steps: StreamTaskChunk[];
   body?: string;
   sessionUrl?: string;
+  agent?: string | null;
 }): Record<string, unknown> {
   const elements: CardElement[] = planContainer(opts.title, opts.steps);
   if (opts.body) {
@@ -194,7 +210,7 @@ export function buildFinalCard(opts: {
       spacing: 'medium',
     });
   }
-  return card(elements);
+  return card(withAgentLine(elements, opts.agent));
 }
 
 /** Buttons that post back to Kortix. Only cards Kortix builds may carry them. */
@@ -235,6 +251,7 @@ export function buildAnswerCard(
   customCard?: Record<string, unknown>,
   /** The live card's steps. A custom card replaced them outright; Slack keeps its plan above the blocks. */
   plan?: { title?: string; steps: StreamTaskChunk[] },
+  agent?: string | null,
 ): Record<string, unknown> {
   // The agent handed us a full Adaptive Card (`teams send --card-file`): use
   // it verbatim, with the run's steps above it and the session link below.
@@ -257,6 +274,7 @@ export function buildAnswerCard(
       });
       out.body = bodyEls;
     }
+    out.body = withAgentLine(Array.isArray(out.body) ? (out.body as CardElement[]) : [], agent);
     return out;
   }
   const elements: CardElement[] = markdownToCardElements(body);
@@ -271,7 +289,7 @@ export function buildAnswerCard(
       spacing: 'medium',
     });
   }
-  return card(elements);
+  return card(withAgentLine(elements, agent));
 }
 
 function headerBlock(emoji: string, title: string, subtitle?: string): CardElement[] {

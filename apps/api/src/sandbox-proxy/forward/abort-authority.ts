@@ -55,3 +55,21 @@ export async function decideClientAbort(
   });
   return manages ? { allowed: true, by } : { allowed: false };
 }
+
+/**
+ * May a client rewind this session through the proxy? A person only when they
+ * sent `messageId` and nobody else sent a message after it
+ * (`rewind-authority.ts`). An agent credential bound to a session keeps the
+ * access the session gate gave it, as for an abort. A share: refused.
+ */
+export async function decideClientRewind(
+  access: PreviewProxyAccess,
+  sessionId: string,
+  messageId: string,
+  mayRewind: (sessionId: string, userId: string, messageId: string) => Promise<boolean> = async (...args) =>
+    (await authority()).mayRewindSession(...args),
+): Promise<boolean> {
+  if (access.kind !== 'principal') return false;
+  if (access.boundCredentialSessionId !== null) return true;
+  return messageId !== '' && (await mayRewind(sessionId, access.userId, messageId));
+}

@@ -5,7 +5,7 @@ import { unstable_cache } from 'next/cache';
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 
 import { CHANGELOG_PAGE_SIZE, changelogPageHref, paginateReleases } from './paging';
-import { renderReleaseMarkdown } from './render';
+import { CHANGELOG_REPO, renderReleaseMarkdown } from './render';
 import type {
   ChangelogPage,
   ChangelogRelease,
@@ -24,8 +24,9 @@ import {
   type ReleaseSections,
   type WeekWindow,
 } from './weekly';
+import { readWeeklyBriefs, type WeeklyBriefs } from './weekly-briefs';
 
-export const CHANGELOG_REPO = 'kortix-ai/suna';
+export { CHANGELOG_REPO };
 
 /** Seconds a rendered changelog page is served before it is rebuilt. */
 export const CHANGELOG_REVALIDATE_SECONDS = 3600;
@@ -116,7 +117,7 @@ export async function getChangelogPage(page: number): Promise<ChangelogPage | nu
     // shapes an entry: bump `v1` when ChangelogPage changes shape.
     return await unstable_cache(
       () => buildChangelogPage(page),
-      ['changelog-page', 'v1', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
+      ['changelog-page', 'v2', `size-${CHANGELOG_PAGE_SIZE}`, String(page)],
       { revalidate: CHANGELOG_REVALIDATE_SECONDS, tags: ['changelog'] },
     )();
   } catch (error) {
@@ -169,6 +170,7 @@ async function weekSummary(
   source: WeekSource,
   tagPages: Record<string, number>,
   currentWeek: string,
+  briefs: WeeklyBriefs,
 ): Promise<ChangelogWeek> {
   const { window, releases, lead, slug } = source;
   const count = (key: keyof ReleaseSections) =>
@@ -193,6 +195,7 @@ async function weekSummary(
       href: `${changelogPageHref(tagPages[release.tag_name] ?? 1)}#${release.tag_name}`,
     })),
     highlights,
+    summary: briefs[window.id] ?? null,
     counts: { new: count('new'), improved: count('improved'), fixed: count('fixed') },
   };
 }
@@ -204,23 +207,23 @@ function renderBullets(bullets: string[]): Promise<string | null> {
 }
 
 async function buildWeeklyChangelog(): Promise<ChangelogWeekly> {
-  const all = await fetchReleases();
+  const [all, briefs] = await Promise.all([fetchReleases(), readWeeklyBriefs()]);
   const { tagPages } = paginateReleases(all, 1);
   const currentWeek = isoWeekId(new Date());
   const weeks = await Promise.all(
-    weekSources(all).map((source) => weekSummary(source, tagPages, currentWeek)),
+    weekSources(all).map((source) => weekSummary(source, tagPages, currentWeek, briefs)),
   );
   return { weeks, tagPages };
 }
 
 async function buildWeekDetail(slug: string): Promise<ChangelogWeekDetail | null> {
-  const all = await fetchReleases();
+  const [all, briefs] = await Promise.all([fetchReleases(), readWeeklyBriefs()]);
   const source = weekSources(all).find((w) => w.slug === slug);
   if (!source) return null;
   const { tagPages } = paginateReleases(all, 1);
   const merged = (key: keyof ReleaseSections) => source.releases.flatMap((r) => r.sections[key]);
   const [week, newHtml, improvedHtml, fixedHtml] = await Promise.all([
-    weekSummary(source, tagPages, isoWeekId(new Date())),
+    weekSummary(source, tagPages, isoWeekId(new Date()), briefs),
     renderBullets(merged('new')),
     renderBullets(merged('improved')),
     renderBullets(merged('fixed')),
@@ -237,7 +240,7 @@ async function buildWeekDetail(slug: string): Promise<ChangelogWeekDetail | null
 export async function getWeeklyChangelog(): Promise<ChangelogWeekly> {
   try {
     // Bump the version when ChangelogWeekly changes shape: the data cache outlives deploys.
-    return await unstable_cache(buildWeeklyChangelog, ['changelog-weekly', 'v5'], {
+    return await unstable_cache(buildWeeklyChangelog, ['changelog-weekly', 'v7'], {
       revalidate: CHANGELOG_REVALIDATE_SECONDS,
       tags: ['changelog'],
     })();
@@ -259,7 +262,7 @@ export async function getWeeklyChangelog(): Promise<ChangelogWeekly> {
 export async function getChangelogWeek(slug: string): Promise<ChangelogWeekDetail | null> {
   const { weeks } = await getWeeklyChangelog();
   if (!weeks.some((w) => w.slug === slug)) return null;
-  return unstable_cache(() => buildWeekDetail(slug), ['changelog-week', 'v3', slug], {
+  return unstable_cache(() => buildWeekDetail(slug), ['changelog-week', 'v5', slug], {
     revalidate: CHANGELOG_REVALIDATE_SECONDS,
     tags: ['changelog'],
   })();

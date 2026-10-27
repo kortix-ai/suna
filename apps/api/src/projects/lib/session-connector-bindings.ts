@@ -18,7 +18,7 @@ import {
   publicConnectorAlias,
 } from '../../shared/connector-alias';
 import {
-  loadAgentMailInstall,
+  loadEmailInboxAccountForInbox,
   loadSlackInstall,
   loadTeamsInstall,
   loadTelegramInstall,
@@ -119,10 +119,6 @@ export async function connectorConnectionIsConnected(input: {
     // batch the install store if projects gain many distinct inboxes.
     const connected = (async () => {
       const platform = connectorPlatform(connector.config);
-      const connectionSlug =
-        typeof connection.metadata.connector_slug === 'string'
-          ? connection.metadata.connector_slug
-          : connector.slug;
       if (platform === 'slack') {
         return (await loadSlackInstall(connector.projectId).catch(() => null)) !== null;
       }
@@ -133,14 +129,13 @@ export async function connectorConnectionIsConnected(input: {
         return (await loadTelegramInstall(connector.projectId).catch(() => null)) !== null;
       }
       if (platform === 'email') {
-        const install = await loadAgentMailInstall(connector.projectId, connectionSlug).catch(
-          () => null,
-        );
-        if (!install) return false;
-        return (
-          typeof connection.metadata.inbox_id !== 'string' ||
-          install.inboxId === connection.metadata.inbox_id
-        );
+        // An email account is connected while it is its inbox's active account.
+        if (typeof connection.metadata.inbox_id !== 'string') return false;
+        const account = await loadEmailInboxAccountForInbox(
+          connector.projectId,
+          connection.metadata.inbox_id,
+        ).catch(() => null);
+        return account?.connectionId === connection.connectionId;
       }
       return false;
     })();
@@ -254,13 +249,19 @@ export async function loadEmailInstallConnectionId(
   );
 }
 
+/**
+ * Bind a session to its inbox's account, once. `bound`: the session uses the
+ * inbox's active account. `stale`: it is bound to an account of the inbox that
+ * was revoked (the inbox was removed and added again), so it can never answer.
+ * `refused`: anything else (no account, another account, another session).
+ */
 export async function ensureEmailSessionBinding(input: {
   projectId: string;
   sessionId: string;
   inboxId: string;
-}): Promise<boolean> {
+}): Promise<'bound' | 'stale' | 'refused'> {
   const connectionId = await loadEmailInstallConnectionId(input.projectId, input.inboxId);
-  if (!connectionId) return false;
+  if (!connectionId) return 'refused';
   const [connection] = await db
     .select({
       accountId: connectorConnections.accountId,
@@ -279,7 +280,7 @@ export async function ensureEmailSessionBinding(input: {
       ),
     )
     .limit(1);
-  if (!connection || !session || connection.accountId !== session.accountId) return false;
+  if (!connection || !session || connection.accountId !== session.accountId) return 'refused';
   try {
     await db.insert(projectSessionConnectorBindings).values({
       sessionId: input.sessionId,
@@ -304,7 +305,14 @@ export async function ensureEmailSessionBinding(input: {
       ),
     )
     .limit(1);
-  return binding?.connectionId === connectionId;
+  if (!binding) return 'refused';
+  if (binding.connectionId === connectionId) return 'bound';
+  const [bound] = await db
+    .select({ status: connectorConnections.status, inboxId: sql<unknown>`${connectorConnections.metadata}->>'inbox_id'` })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, binding.connectionId))
+    .limit(1);
+  return bound?.status === 'revoked' && bound.inboxId === input.inboxId ? 'stale' : 'refused';
 }
 
 export function parseSessionConnectorBindings(
@@ -905,11 +913,25 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
           agentId: input.agentPrincipal?.agentId ?? null,
         }, input.preloaded)
       )(connection.connectionId);
+      // A private inbox's mail starts a private session as the inbox's owner
+      // with no `on_behalf_of` (an email sender is no Kortix identity), so the
+      // owner's personal accounts stay out of reach. The one exception is the
+      // inbox itself: a private session its creator owns may use the email
+      // inbox account it is bound to, and nothing else of that person's.
+      const ownBoundInbox =
+        visibility === 'private' &&
+        !actingPrincipalIsServiceAccount &&
+        actingUserId !== '' &&
+        connection.ownerType === 'member' &&
+        connection.ownerId === actingUserId &&
+        connectorPlatform(connector.config) === 'email' &&
+        typeof connection.metadata?.inbox_id === 'string';
       if (
         !connector.enabled ||
         connector.status !== 'active' ||
         connection.status !== 'active' ||
         (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') ||
+        (!ownBoundInbox &&
         !sessionConnectionIsReachable(
           connector,
           connection,
@@ -921,7 +943,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
               : null,
           },
           audience,
-        ) ||
+        )) ||
         !(await connectorConnectionIsConnected({ connector, connection, preloaded: input.preloaded }))
       ) {
         return { kind: 'none' };

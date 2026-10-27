@@ -42,6 +42,7 @@ import {
   triggerFilterMatches,
   type TriggerFireSource,
   upsertTriggerInManifest,
+  validateAppTriggerTarget,
 } from '../lib/triggers';
 import { clearTriggerAutoPause } from '../lib/trigger-run-caps';
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
@@ -57,7 +58,7 @@ import {
   triggerRunApiStatus,
   loadTriggerRunForReplay,
 } from '../trigger-runs';
-import { MONITOR_PROMPT_PREAMBLE } from '../lib/monitor-events';
+import { APP_EVENT_PROMPT_PREAMBLE } from '../lib/monitor-events';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
@@ -71,12 +72,13 @@ import { connectorInfo, eventPayload, eventPromptPreamble } from '../trigger-eve
 import { unknownSourceMessage } from '../trigger-events/registry';
 import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
 import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
+import { setTriggerSessionAccess } from '../trigger-session-access';
 import {
-  PRIVATE_TRIGGER_SESSION_ACCESS,
-  parseTriggerSessionAccess,
-  setTriggerSessionAccess,
-  validateTriggerSessionAccessPrincipals,
-} from '../trigger-session-access';
+  dmAgentMismatch,
+  resolveTriggerSpaceCreate,
+  resolveTriggerSpacePatch,
+  setTriggerSpace,
+} from '../lib/trigger-space';
 import {
   type GitTriggerSpec,
   type ParsedManifest,
@@ -113,14 +115,16 @@ const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 
 
 /** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
 const TYPE_SPECIFIC_BODY_KEYS = [
-  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
-  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config',
+  'cron', 'run_at', 'every', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config', 'app',
 ] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
 // and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
+  'app',
+  'target',
   'name',
   'type',
   'agent',
@@ -129,6 +133,7 @@ const TRIGGER_MANIFEST_KEYS = [
   'prompt_template',
   'promptTemplate',
   'cron',
+  'every',
   'schedule',
   'run_at',
   'runAt',
@@ -191,7 +196,7 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 
@@ -205,7 +210,7 @@ export function registerTriggersRoutes(): void {
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
       description:
-        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp` (projects with connectors_v2): every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp`: every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
@@ -283,7 +288,7 @@ export function registerTriggersRoutes(): void {
       method: 'get',
       path: '/{projectId}/triggers/event-types',
       tags: ['triggers'],
-      summary: 'List the app events a connector or an app can trigger on',
+      summary: 'List the connector events a connector or an app can trigger on',
       description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {
@@ -332,12 +337,11 @@ export function registerTriggersRoutes(): void {
       const app = c.req.query('app')?.trim();
       if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
       const source = c.req.query('source')?.trim() || 'composio';
-      const metadata = loaded.row.metadata;
-      const unknownSource = app ? unknownSourceMessage(source, metadata) : null;
+      const unknownSource = app ? unknownSourceMessage(source) : null;
       if (unknownSource) return c.json({ error: unknownSource }, 400);
       const catalog = app
-        ? await listAppEventTypes(source, app, { projectId, metadata })
-        : await listConnectorEventTypes(projectId, slug as string, null, metadata);
+        ? await listAppEventTypes(source, app, { projectId })
+        : await listConnectorEventTypes(projectId, slug as string, null);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
       if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
@@ -364,7 +368,7 @@ export function registerTriggersRoutes(): void {
       method: 'post',
       path: '/{projectId}/triggers',
       tags: ['triggers'],
-      summary: 'Create a project trigger (cron, webhook or event)',
+      summary: 'Create a project trigger (cron, webhook, event or app)',
       description:
         'Create a trigger. It is committed to kortix.yaml. Send name, type and prompt_template, plus cron, secret_env or run by type.',
       ...auth,
@@ -372,7 +376,7 @@ export function registerTriggersRoutes(): void {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-            type: z.enum(['cron', 'webhook', 'monitor', 'event']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector.' }),
+            type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector, app runs when an App of this project emits an event.' }),
             prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
             slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
             agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -380,6 +384,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Default true.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression. Required for a cron trigger unless run_at is set.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
@@ -391,6 +396,8 @@ export function registerTriggersRoutes(): void {
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
             expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
+            app: z.string().optional().openapi({ description: 'Slug of the App whose events fire the trigger. Required for an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
@@ -398,7 +405,8 @@ export function registerTriggersRoutes(): void {
             max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
-            session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
+            session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private; project when space_id is a channel.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
           }) } } },
       },
       responses: {
@@ -432,6 +440,14 @@ export function registerTriggersRoutes(): void {
         const problem = await validateEventTrigger(projectId, draft.event);
         if (problem) return c.json({ error: problem }, 400);
       }
+      if (draft.type === 'app' && draft.app) {
+        const problem = await validateAppTriggerTarget(projectId, draft.app);
+        if (problem) return c.json({ error: problem }, 400);
+      }
+      if (draft.target) {
+        const problem = await validateAppTriggerTarget(projectId, draft.target.app);
+        if (problem) return c.json({ error: problem }, 400);
+      }
       if (draft.type === 'webhook' && draft.secretEnv) {
         const configurationError = await validateWebhookSecretConfiguration({
           projectId,
@@ -439,16 +455,10 @@ export function registerTriggersRoutes(): void {
         });
         if (configurationError) return c.json(configurationError, 409);
       }
-      const parsedAccess =
-        body.session_access === undefined
-          ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
-          : parseTriggerSessionAccess(body.session_access);
-      if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
-      const accessValidationError = await validateTriggerSessionAccessPrincipals(
-        loaded.row.accountId,
-        parsedAccess.access,
-      );
-      if (accessValidationError) return c.json({ error: accessValidationError }, 400);
+      // The channel or DM its runs post to, and who sees its threads.
+      const placed = await resolveTriggerSpaceCreate(projectId, { ...loaded, bound: callerKortixSessionId(c) }, body, draft.agent);
+      if ('error' in placed) return c.json(placed.error.body, placed.error.status);
+      const { space, access } = placed;
 
       // A `pinned` trigger may only target a session of THIS project that the
       // author may see — never a nonexistent, another project's, or another
@@ -488,16 +498,17 @@ export function registerTriggersRoutes(): void {
       const createdSpecs = extractTriggers(committedManifest).specs;
       await reconcileProjectTriggerRuntime(projectId, createdSpecs);
       await reconcileEventSubscriptions(projectId, loaded.row.accountId, createdSpecs);
+      if (space) await setTriggerSpace(projectId, draft.slug, space.spaceId);
       await setTriggerSessionAccess({
         projectId,
         accountId: loaded.row.accountId,
         slug: draft.slug,
-        access: parsedAccess.access,
+        access,
         pinnedSessionId: draft.pinnedSessionId,
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }), 201);
     },
   );
 
@@ -562,7 +573,7 @@ export function registerTriggersRoutes(): void {
         .where(eq(projects.projectId, projectId))
         .returning();
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-      return c.json(await loadTriggersForResponse(projectId, row));
+      return c.json(await loadTriggersForResponse(projectId, row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 
@@ -587,6 +598,7 @@ export function registerTriggersRoutes(): void {
             enabled: z.boolean().optional().openapi({ description: 'Turn the trigger on or off.' }),
             cron: z.string().optional().openapi({ description: 'Cron expression.' }),
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
+            every: z.string().nullish().openapi({ description: 'A fixed period such as 5m, 1h or 1d (at least 1m), instead of cron or run_at. Cron triggers only.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
@@ -594,6 +606,8 @@ export function registerTriggersRoutes(): void {
             event_source: z.string().nullish().openapi({ description: 'Event source adapter id of an event trigger; null clears it to the connector provider.' }),
             event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
+            app: z.string().optional().openapi({ description: 'App slug of an app trigger.' }),
+            target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). null clears it.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
@@ -602,6 +616,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
           }) } } },
       },
       responses: {
@@ -626,16 +641,10 @@ export function registerTriggersRoutes(): void {
       // Only commit the repo manifest when a manifest field actually changed; a
       // PATCH that touches none is a no-op that skips git entirely.
       const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-      const parsedAccess =
-        body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
-      if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
-      if (parsedAccess?.ok) {
-        const accessValidationError = await validateTriggerSessionAccessPrincipals(
-          loaded.row.accountId,
-          parsedAccess.access,
-        );
-        if (accessValidationError) return c.json({ error: accessValidationError }, 400);
-      }
+      // `space_id`: undefined leaves the space, null clears it. Flag off: ignored.
+      const spacePatch = await resolveTriggerSpacePatch(projectId, slug, { ...loaded, bound: callerKortixSessionId(c) }, body);
+      if ('error' in spacePatch) return c.json(spacePatch.error.body, spacePatch.error.status);
+      const { nextSpace, access, propagate, agentSpace } = spacePatch;
       let committedManifest: ParsedManifest | undefined;
       let effectivePinnedSessionId: string | null = null;
       const result = await mutateManifestWithRetry(
@@ -645,6 +654,8 @@ export function registerTriggersRoutes(): void {
           const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
           if (!current) return { ok: false, error: 'Not found', status: 404 };
           if (!touchesManifest) {
+            const mismatch = dmAgentMismatch(agentSpace, current.agent);
+            if (mismatch) return { ok: false, status: 400, ...mismatch };
             effectivePinnedSessionId = current.pinnedSessionId;
             return { ok: true, commitMessage: null };
           }
@@ -669,11 +680,21 @@ export function registerTriggersRoutes(): void {
           if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          const mismatch = dmAgentMismatch(agentSpace, draft.agent);
+          if (mismatch) return { ok: false, status: 400, ...mismatch };
           if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
             return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
           }
           if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
             const problem = await validateEventTrigger(projectId, draft.event);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
+          if (draft.type === 'app' && draft.app && (body.type === 'app' || 'app' in body)) {
+            const problem = await validateAppTriggerTarget(projectId, draft.app);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
+          if (draft.target && 'target' in body) {
+            const problem = await validateAppTriggerTarget(projectId, draft.target.app);
             if (problem) return { ok: false, error: problem, status: 400 };
           }
           if (draft.type === 'webhook' && draft.secretEnv) {
@@ -723,13 +744,15 @@ export function registerTriggersRoutes(): void {
         await reconcileProjectTriggerRuntime(projectId, updatedSpecs);
         await reconcileEventSubscriptions(projectId, loaded.row.accountId, updatedSpecs);
       }
-      if (parsedAccess?.ok) {
+      if (nextSpace !== undefined) await setTriggerSpace(projectId, slug, nextSpace?.spaceId ?? null);
+      if (access) {
         await setTriggerSessionAccess({
           projectId,
           accountId: loaded.row.accountId,
           slug,
-          access: parsedAccess.access,
+          access,
           pinnedSessionId: effectivePinnedSessionId,
+          propagate,
         });
       }
       // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
@@ -737,7 +760,7 @@ export function registerTriggersRoutes(): void {
       if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
   );
 
@@ -964,8 +987,8 @@ export function registerTriggersRoutes(): void {
       const source = run.source as TriggerFireSource;
       const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
       const renderedPrompt =
-        source === 'event' ? `${eventPromptPreamble(target.spec)}${template}`
-          : source === 'monitor' ? `${MONITOR_PROMPT_PREAMBLE}${template}`
+        source === 'event' ? `${eventPromptPreamble(target.spec, ((run.payload as { event?: { provider?: string } } | null)?.event?.provider) ?? null)}${template}`
+          : source === 'app' ? `${APP_EVENT_PROMPT_PREAMBLE}${template}`
             : template;
       return fireAndAnswer(c, target, {
         payload: run.payload,
@@ -1033,7 +1056,7 @@ async function authorizeTriggerFire(c: Context<AppEnv>, projectId: string, slug:
 
 /** The synthetic payload of a manual fire. An event trigger fires with an empty event, so the user can test the prompt. */
 async function manualFirePayload({ projectId, loaded, spec }: FireTarget, now: Date) {
-  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector, loaded.row.metadata) : null;
+  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
   const eventRoot = spec.event && eventConnector
     ? eventPayload({
         spec,

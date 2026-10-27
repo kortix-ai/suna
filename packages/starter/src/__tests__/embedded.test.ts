@@ -33,14 +33,14 @@ describe('embedded starter snapshot', () => {
     }
   });
 
-  test('teaches managed agents to use Composio instead of selecting Pipedream', () => {
+  test('teaches managed agents to install from the catalog instead of selecting Pipedream', () => {
     const managed = (embeddedStarter as Record<string, { files: { path: string; content: string }[] }>)[
       'managed'
     ];
     const connectorSkill = managed.files.find((file) =>
       file.path.endsWith('/kortix-connectors/SKILL.md'),
     );
-    expect(connectorSkill?.content).toContain('--provider composio');
+    expect(connectorSkill?.content).toContain('kortix connectors catalog install');
     expect(connectorSkill?.content).toContain('Pipedream exists only for rollback compatibility');
     for (const file of managed.files) {
       expect(file.content).not.toContain('--provider pipedream --app');

@@ -1,6 +1,7 @@
 // The storage behind a drive: one Platinum volume in drive sync mode. Every
 // call here speaks the Platinum volumes API; nothing above this file does.
 
+import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
@@ -126,14 +127,16 @@ export async function listVolumeFiles(
   path: string,
   recursive: boolean,
   signal?: AbortSignal,
+  at?: string,
 ): Promise<VolumeEntry[]> {
-  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000' });
+  const q = new URLSearchParams({ path, recursive: String(recursive), limit: '10000', ...(at ? { at } : {}) });
   const r = await callJson<{ entries: VolumeEntry[] }>(`${v(volume)}/files?${q}`, signal ? { signal } : {});
   return r.entries ?? [];
 }
 
-export async function readVolumeFile(volume: string, path: string, range?: string): Promise<Response> {
-  const q = new URLSearchParams({ path });
+/** A file's bytes; `at` reads it as it was at that commit. */
+export async function readVolumeFile(volume: string, path: string, range?: string, at?: string): Promise<Response> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   return call(`${v(volume)}/files/content?${q}`, {
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     headers: range ? { Range: range } : {},
@@ -177,8 +180,9 @@ export interface VolumeFileStat extends VolumeEntry {
   version: string | null;
 }
 
-export async function statVolumeFile(volume: string, path: string): Promise<VolumeFileStat> {
-  const q = new URLSearchParams({ path });
+/** A file's metadata; `at` stats it as it was at that commit. */
+export async function statVolumeFile(volume: string, path: string, at?: string): Promise<VolumeFileStat> {
+  const q = new URLSearchParams({ path, ...(at ? { at } : {}) });
   const r = await callJson<VolumeFileStat>(`${v(volume)}/files/stat?${q}`, { signal: AbortSignal.timeout(30_000) });
   return { path: r.path, type: r.type, size: Number(r.size ?? 0), mtime: Number(r.mtime ?? 0), version: r.version ?? null };
 }
@@ -209,6 +213,39 @@ export async function commitVolumeUpload(volume: string, uploadId: string): Prom
     method: 'POST',
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
   });
+}
+
+const BLOCK_BYTES = 1024 * 1024;
+const BLOCK_CONCURRENCY = 8;
+
+/**
+ * Write many files as ONE commit, through the block protocol: the store
+ * answers which 1 MiB blocks it lacks, only those travel (8 at a time), and the
+ * commit lands every file at once. A reader never sees half a folder.
+ */
+export async function writeVolumeFiles(
+  volume: string,
+  files: Array<{ path: string; bytes: Uint8Array<ArrayBuffer> }>,
+  opts: { overwrite: boolean },
+): Promise<void> {
+  if (!files.length) return;
+  const blocks = new Map<string, Uint8Array<ArrayBuffer>>();
+  const planned = files.map((f) => {
+    const shas: string[] = [];
+    for (let off = 0; off < f.bytes.byteLength; off += BLOCK_BYTES) {
+      const block = f.bytes.subarray(off, Math.min(f.bytes.byteLength, off + BLOCK_BYTES));
+      const sha = createHash('sha256').update(block).digest('hex');
+      blocks.set(sha, block);
+      shas.push(sha);
+    }
+    return { path: f.path, size: f.bytes.byteLength, blocks: shas };
+  });
+  const plan = (await planVolumeUpload(volume, { files: planned, overwrite: opts.overwrite })) as { upload_id: string; missing?: string[] };
+  const missing = [...new Set(plan.missing ?? [])];
+  for (let i = 0; i < missing.length; i += BLOCK_CONCURRENCY) {
+    await Promise.all(missing.slice(i, i + BLOCK_CONCURRENCY).map((sha) => putVolumeUploadBlock(volume, plan.upload_id, sha, blocks.get(sha)!)));
+  }
+  await commitVolumeUpload(volume, plan.upload_id);
 }
 
 export async function moveVolumeFile(volume: string, src: string, dst: string): Promise<void> {

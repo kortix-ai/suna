@@ -1,6 +1,6 @@
 /**
  * Move a Pipedream or Composio connector to the Kortix MCP app for the same
- * service (`connectors_v2`).
+ * service.
  *
  * Kortix retires Pipedream and Composio. Their OAuth grants belong to their own
  * clients, so each owner signs in once more. A move keeps the connector's slug
@@ -23,13 +23,12 @@ import {
   connectionCredentials,
   connectorConnections,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectors,
   projectTriggerRuntime,
-  projects,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
 import { db } from '../shared/db';
@@ -254,12 +253,10 @@ interface MoveConnectionRow {
   providerType: string;
   config: Record<string, unknown> | null;
   connectionMetadata: Record<string, unknown> | null;
-  projectMetadata: unknown;
 }
 
-/** The app a connection moves its connector to: a sealed mark, in a `connectors_v2` project. */
+/** The app a connection moves its connector to: a sealed mark. */
 function markedMoveApp(row: MoveConnectionRow): McpApp | null {
-  if (!resolveFeatureFlag(row.projectMetadata, 'connectors_v2')) return null;
   const app = moveTargetApp(row.providerType, row.config);
   return app && isMoveMark(row.projectId, row.connectionId, app.slug, row.connectionMetadata?.move_to) ? app : null;
 }
@@ -277,11 +274,9 @@ async function loadMoveConnection(connectionId: string) {
       config: connectors.config,
       connectionMetadata: connectorConnections.metadata,
       kind: connectionCredentials.kind,
-      projectMetadata: projects.metadata,
     })
     .from(connectorConnections)
     .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
-    .innerJoin(projects, eq(projects.projectId, connectors.projectId))
     .leftJoin(connectionCredentials, eq(connectionCredentials.connectionId, connectorConnections.connectionId))
     .where(eq(connectorConnections.connectionId, connectionId))
     .limit(1);
@@ -300,13 +295,22 @@ export async function moveTargetUrlForConnection(connectionId: string): Promise<
  * differently, so after a move a `block` rule would match nothing.
  */
 async function oldToolRules(projectId: string, connectorId: string, slug: string): Promise<string[]> {
-  const [own, project] = await Promise.all([
+  const [own, sets, project] = await Promise.all([
     db.select({ match: connectorPolicies.match }).from(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId)),
+    // A set's rule on an old tool name would stop matching too.
+    db.select({ name: connectorPolicySets.name, policies: connectorPolicySets.policies }).from(connectorPolicySets).where(eq(connectorPolicySets.connectorId, connectorId)),
     db.select({ match: connectorProjectPolicies.match }).from(connectorProjectPolicies).where(eq(connectorProjectPolicies.projectId, projectId)),
   ]);
   const prefix = `${slug.toLowerCase()}.`;
+  const setMatches = sets.flatMap((set) =>
+    (Array.isArray(set.policies) ? set.policies : [])
+      .map((rule) => (rule && typeof rule.match === 'string' ? rule.match : null))
+      .filter((match): match is string => match !== null && match !== '*')
+      .map((match) => `${match} (policy set ${set.name})`),
+  );
   return [
     ...own.map((row) => row.match).filter((match) => match !== '*'),
+    ...setMatches,
     ...project
       .map((row) => row.match)
       .filter((match) => match.toLowerCase().startsWith(prefix) && match.toLowerCase() !== `${prefix}*`),

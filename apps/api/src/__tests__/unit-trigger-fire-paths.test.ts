@@ -544,6 +544,8 @@ const triggerDbMock: any = {
               parentSessionId: values.parentSessionId ?? null,
               initiatorType: values.initiatorType ?? null,
               initiatorId: values.initiatorId ?? null,
+              spaceId: values.spaceId ?? null,
+              groupId: values.groupId ?? null,
               secretsAllowlist: values.secretsAllowlist ?? null,
               requiredConnectors: null,
               connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -711,6 +713,10 @@ mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: triggerDbMock,
 }));
+
+// The fake db has no joins: no trigger in these tests posts to a channel or DM.
+const realTriggerSpace = await import('../projects/lib/trigger-space');
+mock.module('../projects/lib/trigger-space', () => ({ ...realTriggerSpace, loadTriggerSpace: async () => null }));
 
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
@@ -1154,6 +1160,8 @@ describe('git-backed triggers — runtime fire paths', () => {
       parentSessionId: null,
       initiatorType: null,
       initiatorId: null,
+      spaceId: null,
+      groupId: null,
       secretsAllowlist: null,
       requiredConnectors: null,
       connectorBindingsInheritUnbound: false,
@@ -1726,6 +1734,8 @@ function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,

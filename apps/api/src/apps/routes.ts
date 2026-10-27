@@ -12,11 +12,11 @@ import {
   apps,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
-import { auth, errors, json } from '../openapi';
+import { auth, boundedIssues, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { inspectDatabaseError } from '../shared/database-errors';
+import { inspectDatabaseError, rethrowDatabaseError } from '../shared/database-errors';
 import {
   AppArtifactStorageRefusedError,
   AppArtifactStorageUnavailableError,
@@ -45,15 +45,15 @@ import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
-  appsOpenableByUser,
   appAccessSessionUrl,
-  filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { accessibleApps } from './space-apps';
+import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manifest';
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
@@ -309,10 +309,8 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       // Only the Apps the caller may see AND open: no card that is listed and
       // then refuses to open. An App left out answers 404 on GET, never 403.
-      const visible = await filterAppsVisibleToUser(rows, loaded.userId);
-      const openable = await appsOpenableByUser(visible, loaded.userId);
-      const accessible = visible.filter((row) => openable.has(row.appId));
-      return c.json({ apps: await appsJson(accessible, loaded.userId, openable) });
+      const accessible = await accessibleApps(rows, loaded.userId);
+      return c.json({ apps: await appsJson(accessible.rows, loaded.userId, accessible.openable) });
     },
   );
 
@@ -422,6 +420,7 @@ export function registerAppsRoutes(): void {
         }, row.slug);
         return c.json({ agents });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
       }
     },
@@ -510,6 +509,30 @@ export function registerAppsRoutes(): void {
         }
       }
       const externalFrameable = externalUrl ? await probeFrameable(externalUrl, config.FRONTEND_URL) : false;
+      // kortix.yaml owns the declarable fields: what the request sets explicitly
+      // is committed to apps.<slug> before the row exists. An external App is
+      // declared listed, so the file says it is on the Apps page.
+      // Nothing reaches kortix.yaml before the request is known to be allowed:
+      // a slug another App holds is a 409 here (or the commit would rewrite that
+      // App's declared settings), and every `uses` link passes the visibility
+      // check first (or the next sync would apply a link the caller may not make).
+      const [taken] = await db.select({ appId: apps.appId }).from(apps)
+        .where(and(eq(apps.projectId, projectId), eq(apps.slug, slug), isNull(apps.deletedAt))).limit(1);
+      if (taken) return c.json({ error: 'An App with this slug already exists' }, 409);
+      if (body.uses.length) {
+        try {
+          await resolveAppLinks({ projectId, slug }, body.uses, loaded.userId);
+        } catch (error) {
+          if (!(error instanceof UnknownLinkedAppError)) throw error;
+          return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+        }
+      }
+      const declared = await commitAppFields(projectId, slug, {
+        ...manifestFieldsOf({ cpu: body.cpu, memory_gb: body.memory_gb, disk_gb: body.disk_gb, always_on: body.always_on }),
+        ...(body.uses.length ? { uses: body.uses } : {}),
+        ...(externalUrl ? { display: { listed: true } } : {}),
+      });
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
@@ -521,6 +544,8 @@ export function registerAppsRoutes(): void {
           alwaysOn,
           externalUrl,
           externalFrameable,
+          // An external App exists to be shown: it is on the Apps page from the start.
+          ...(externalUrl ? { display: { listed: true } } : {}),
         }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
@@ -687,6 +712,10 @@ export function registerAppsRoutes(): void {
       // links and the row, so a refused PATCH changes nothing.
       const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
       if (links instanceof Response) return links;
+      // kortix.yaml owns these fields: commit them to apps.<slug> first; a
+      // refused commit writes nothing, so the row never disagrees with the file.
+      const declared = await commitAppFields(projectId, current.slug, manifestFieldsOf(body));
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
@@ -733,6 +762,10 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
+      // kortix.yaml owns the App's block: remove it (and references to it) first,
+      // or the next `kortix apps deploy` would recreate the App from it.
+      const undeclared = await commitAppRemoval(projectId, row.slug);
+      if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
@@ -834,7 +867,7 @@ export function registerAppsRoutes(): void {
       if (source.kind !== 'static') {
         const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
         if ('issues' in resolved) {
-          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
+          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', ...boundedIssues(resolved.issues) }, 400);
         }
         releaseConfig = resolved.config;
         const [latest] = await db.select({ provider: appDeployments.hostingProvider }).from(appDeployments)
@@ -1126,6 +1159,7 @@ export function registerAppsRoutes(): void {
             }
             const refusal = appLimitResponse(c, error);
             if (refusal) return refusal;
+            rethrowDatabaseError(error);
             return c.json({
               error: 'App start failed',
               detail: error instanceof Error ? error.message : String(error),

@@ -40,6 +40,7 @@
     "./alert": "./src/primitives/alert.tsx",
     "./alert-dialog": "./src/primitives/alert-dialog.tsx",
     "./apps": "./src/apps/index.ts",
+    "./artifacts": "./src/artifacts/index.ts",
     "./avatar": "./src/primitives/avatar.tsx",
     "./back-pill": "./src/primitives/back-pill.tsx",
     "./badge": "./src/primitives/badge.tsx",
@@ -66,7 +67,6 @@
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
     "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
-    "./customize/connectors/catalog/use-catalog": "./src/customize/connectors/catalog/use-catalog.ts",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
     "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
@@ -77,17 +77,16 @@
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
+    "./customize/sections/component/email-connect-form": "./src/customize/sections/component/email-connect-form.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
     "./customize/sections/component/slack-connect-card": "./src/customize/sections/component/slack-connect-card.tsx",
     "./customize/sections/component/teams-byo-wizard": "./src/customize/sections/component/teams-byo-wizard.tsx",
     "./customize/sections/component/teams-connect-card": "./src/customize/sections/component/teams-connect-card.tsx",
     "./customize/sections/component/telegram-channel-row": "./src/customize/sections/component/telegram-channel-row.tsx",
-    "./customize/sections/connector-connection-form": "./src/customize/sections/connector-connection-form.ts",
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
     "./customize/sections/connector-oauth2-fields": "./src/customize/sections/connector-oauth2-fields.tsx",
-    "./customize/sections/connectors-view": "./src/customize/sections/connectors-view.tsx",
     "./customize/sections/gateway-view": "./src/customize/sections/gateway-view.tsx",
     "./customize/sections/llm-provider/llm-provider-modal": "./src/customize/sections/llm-provider/llm-provider-modal.tsx",
     "./customize/sections/llm-provider/model-capability-icons": "./src/customize/sections/llm-provider/model-capability-icons.tsx",
@@ -190,6 +189,7 @@
     "./emoji-picker": "./src/primitives/emoji-picker.tsx",
     "./emoji-tint": "./src/primitives/emoji-tint.ts",
     "./empty": "./src/primitives/empty.tsx",
+    "./empty-art": "./src/primitives/empty-art.tsx",
     "./empty-state": "./src/primitives/empty-state.tsx",
     "./entity-avatar": "./src/primitives/entity-avatar.tsx",
     "./error-boundary": "./src/primitives/error-boundary.tsx",
@@ -259,6 +259,7 @@
     "./internal/hooks/account/use-my-invites": "./src/internal/hooks/account/use-my-invites.ts",
     "./internal/hooks/admin/use-admin-role": "./src/internal/hooks/admin/use-admin-role.ts",
     "./internal/hooks/channels/use-channels-installations": "./src/internal/hooks/channels/use-channels-installations.ts",
+    "./internal/hooks/channels/use-email-inboxes": "./src/internal/hooks/channels/use-email-inboxes.ts",
     "./internal/hooks/connectors/use-add-managed-account": "./src/internal/hooks/connectors/use-add-managed-account.ts",
     "./internal/hooks/connectors/use-pipedream-connect-member": "./src/internal/hooks/connectors/use-pipedream-connect-member.ts",
     "./internal/hooks/connectors/use-pipedream-connect-project": "./src/internal/hooks/connectors/use-pipedream-connect-project.ts",
@@ -277,7 +278,6 @@
     "./internal/icons/download": "./src/internal/icons/download.tsx",
     "./internal/icons/github": "./src/internal/icons/github.tsx",
     "./internal/icons/home": "./src/internal/icons/home.tsx",
-    "./internal/icons/kortix": "./src/internal/icons/kortix.tsx",
     "./internal/icons/microsoft-teams": "./src/internal/icons/microsoft-teams.tsx",
     "./internal/icons/open-ai": "./src/internal/icons/open-ai.tsx",
     "./internal/icons/plus": "./src/internal/icons/plus.tsx",
@@ -387,7 +387,6 @@
     "./markdown": "./src/markdown/index.tsx",
     "./markdown/copy-button": "./src/markdown/copy-button.tsx",
     "./markdown/setup-links/api-base": "./src/markdown/setup-links/api-base.ts",
-    "./markdown/setup-links/app-credentials-form": "./src/markdown/setup-links/app-credentials-form.tsx",
     "./markdown/setup-links/approval-decision": "./src/markdown/setup-links/approval-decision.tsx",
     "./markdown/setup-links/connector-handshake": "./src/markdown/setup-links/connector-handshake.tsx",
     "./markdown/setup-links/connector-link-info": "./src/markdown/setup-links/connector-link-info.ts",
@@ -416,6 +415,7 @@
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/primitives/radio-group.tsx",
     "./resizable": "./src/primitives/resizable.tsx",
+    "./resize-seam": "./src/primitives/resize-seam.ts",
     "./scroll-area": "./src/primitives/scroll-area.tsx",
     "./section": "./src/primitives/section.tsx",
     "./section-card": "./src/primitives/section-card.tsx",
@@ -531,8 +531,6 @@
     "./workspace/new/workspace-name": "./src/workspace/new/workspace-name.ts",
     "./workspace/project-selector/project-selector-model": "./src/workspace/project-selector/project-selector-model.ts",
     "./workspace/projects/modal/project-icon-field": "./src/workspace/projects/modal/project-icon-field.tsx",
-    "./workspace/projects/onboarding/app-logo": "./src/workspace/projects/onboarding/app-logo.tsx",
-    "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
     "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
@@ -627,6 +625,10 @@
       "./apps": {
         "types": "./dist/apps/index.d.ts",
         "import": "./dist/apps/index.js"
+      },
+      "./artifacts": {
+        "types": "./dist/artifacts/index.d.ts",
+        "import": "./dist/artifacts/index.js"
       },
       "./avatar": {
         "types": "./dist/primitives/avatar.d.ts",
@@ -729,10 +731,6 @@
         "types": "./dist/customize/agents/agents-page.d.ts",
         "import": "./dist/customize/agents/agents-page.js"
       },
-      "./customize/connectors/catalog/use-catalog": {
-        "types": "./dist/customize/connectors/catalog/use-catalog.d.ts",
-        "import": "./dist/customize/connectors/catalog/use-catalog.js"
-      },
       "./customize/connectors/connector-routes": {
         "types": "./dist/customize/connectors/connector-routes.d.ts",
         "import": "./dist/customize/connectors/connector-routes.js"
@@ -773,6 +771,10 @@
         "types": "./dist/customize/sections/add-account-fields.d.ts",
         "import": "./dist/customize/sections/add-account-fields.js"
       },
+      "./customize/sections/component/email-connect-form": {
+        "types": "./dist/customize/sections/component/email-connect-form.d.ts",
+        "import": "./dist/customize/sections/component/email-connect-form.js"
+      },
       "./customize/sections/component/manifest-copy-block": {
         "types": "./dist/customize/sections/component/manifest-copy-block.d.ts",
         "import": "./dist/customize/sections/component/manifest-copy-block.js"
@@ -797,10 +799,6 @@
         "types": "./dist/customize/sections/component/telegram-channel-row.d.ts",
         "import": "./dist/customize/sections/component/telegram-channel-row.js"
       },
-      "./customize/sections/connector-connection-form": {
-        "types": "./dist/customize/sections/connector-connection-form.d.ts",
-        "import": "./dist/customize/sections/connector-connection-form.js"
-      },
       "./customize/sections/connector-oauth2": {
         "types": "./dist/customize/sections/connector-oauth2.d.ts",
         "import": "./dist/customize/sections/connector-oauth2.js"
@@ -812,10 +810,6 @@
       "./customize/sections/connector-oauth2-fields": {
         "types": "./dist/customize/sections/connector-oauth2-fields.d.ts",
         "import": "./dist/customize/sections/connector-oauth2-fields.js"
-      },
-      "./customize/sections/connectors-view": {
-        "types": "./dist/customize/sections/connectors-view.d.ts",
-        "import": "./dist/customize/sections/connectors-view.js"
       },
       "./customize/sections/gateway-view": {
         "types": "./dist/customize/sections/gateway-view.d.ts",
@@ -1222,6 +1216,10 @@
         "types": "./dist/primitives/empty.d.ts",
         "import": "./dist/primitives/empty.js"
       },
+      "./empty-art": {
+        "types": "./dist/primitives/empty-art.d.ts",
+        "import": "./dist/primitives/empty-art.js"
+      },
       "./empty-state": {
         "types": "./dist/primitives/empty-state.d.ts",
         "import": "./dist/primitives/empty-state.js"
@@ -1495,6 +1493,10 @@
         "types": "./dist/internal/hooks/channels/use-channels-installations.d.ts",
         "import": "./dist/internal/hooks/channels/use-channels-installations.js"
       },
+      "./internal/hooks/channels/use-email-inboxes": {
+        "types": "./dist/internal/hooks/channels/use-email-inboxes.d.ts",
+        "import": "./dist/internal/hooks/channels/use-email-inboxes.js"
+      },
       "./internal/hooks/connectors/use-add-managed-account": {
         "types": "./dist/internal/hooks/connectors/use-add-managed-account.d.ts",
         "import": "./dist/internal/hooks/connectors/use-add-managed-account.js"
@@ -1566,10 +1568,6 @@
       "./internal/icons/home": {
         "types": "./dist/internal/icons/home.d.ts",
         "import": "./dist/internal/icons/home.js"
-      },
-      "./internal/icons/kortix": {
-        "types": "./dist/internal/icons/kortix.d.ts",
-        "import": "./dist/internal/icons/kortix.js"
       },
       "./internal/icons/microsoft-teams": {
         "types": "./dist/internal/icons/microsoft-teams.d.ts",
@@ -2007,10 +2005,6 @@
         "types": "./dist/markdown/setup-links/api-base.d.ts",
         "import": "./dist/markdown/setup-links/api-base.js"
       },
-      "./markdown/setup-links/app-credentials-form": {
-        "types": "./dist/markdown/setup-links/app-credentials-form.d.ts",
-        "import": "./dist/markdown/setup-links/app-credentials-form.js"
-      },
       "./markdown/setup-links/approval-decision": {
         "types": "./dist/markdown/setup-links/approval-decision.d.ts",
         "import": "./dist/markdown/setup-links/approval-decision.js"
@@ -2116,6 +2110,10 @@
       "./resizable": {
         "types": "./dist/primitives/resizable.d.ts",
         "import": "./dist/primitives/resizable.js"
+      },
+      "./resize-seam": {
+        "types": "./dist/primitives/resize-seam.d.ts",
+        "import": "./dist/primitives/resize-seam.js"
       },
       "./scroll-area": {
         "types": "./dist/primitives/scroll-area.d.ts",
@@ -2565,14 +2563,6 @@
         "types": "./dist/workspace/projects/modal/project-icon-field.d.ts",
         "import": "./dist/workspace/projects/modal/project-icon-field.js"
       },
-      "./workspace/projects/onboarding/app-logo": {
-        "types": "./dist/workspace/projects/onboarding/app-logo.d.ts",
-        "import": "./dist/workspace/projects/onboarding/app-logo.js"
-      },
-      "./workspace/projects/onboarding/connect-app": {
-        "types": "./dist/workspace/projects/onboarding/connect-app.d.ts",
-        "import": "./dist/workspace/projects/onboarding/connect-app.js"
-      },
       "./workspace/projects/policies-panel": {
         "types": "./dist/workspace/projects/policies-panel.d.ts",
         "import": "./dist/workspace/projects/policies-panel.js"
@@ -2740,12 +2730,15 @@
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
+    "@tiptap/extension-list": "3.30.5",
     "@tiptap/extension-paragraph": "3.30.5",
     "@tiptap/extension-placeholder": "3.30.5",
+    "@tiptap/extension-table": "3.30.5",
     "@tiptap/extension-text": "3.30.5",
     "@tiptap/extensions": "3.30.5",
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
     "@uiw/codemirror-themes": "4.23.10",
