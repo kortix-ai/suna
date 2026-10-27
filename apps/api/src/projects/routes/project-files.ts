@@ -1,6 +1,6 @@
 /** A project's repository contents: files, archive, search, history, branches, commits, and diffs. */
 import { createHash } from 'node:crypto';
-import { normalizeTreePath } from '../git/mirror';
+import { canonicalTreePath, normalizeTreePath } from '../git/mirror';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { commitFileToBranch, GitFileRevisionConflictError } from '../git/commit-writer';
 import { assertAgentSessionWorkspaceAllowsRepository } from '../lib/access';
@@ -45,6 +45,18 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
+}
+
+/**
+ * The repo file a single-file read names, or null when it can name none: an
+ * absolute, traversal or NUL-containing path (the platform meta agent's
+ * /workspace/AGENTS.md lives in the sandbox image, not the repo), or the root
+ * (`.`, `./`). The visibility check and the git read both take this value, so
+ * a respelled path (`.//x`, `x/`) is checked as the file git reads.
+ */
+function repoFilePath(path: string): string | null {
+  if (path.startsWith('/') || path.includes('..') || path.includes('\0')) return null;
+  return normalizeTreePath(path);
 }
 
 /** Entry cap of the recursive `GET /files` list (no `depth`). */
@@ -289,7 +301,7 @@ export function registerProjectFilesRoutes(): void {
 
     try {
       const stream = await archiveRepoSubtree(await withProjectGitAuth(loaded.row), ref, path);
-      const fileName = (path?.split('/').filter(Boolean).pop() || 'workspace') + '.zip';
+      const fileName = (canonicalTreePath(path ?? '').split('/').pop() || 'workspace') + '.zip';
       return new Response(stream, {
         status: 200,
         headers: {
@@ -383,7 +395,15 @@ export function registerProjectFilesRoutes(): void {
           query: z.object({}).passthrough(),
         },
       responses: {
-          200: { description: 'OK', content: { 'application/octet-stream': { schema: z.any() } } },
+          200: json(
+            z.object({
+              path: z.string().openapi({ description: 'The `path` as sent.' }),
+              ref: z.string(),
+              content: z.string().openapi({ description: 'The file as UTF-8 text. Read `files/raw` for exact bytes.' }),
+              revision: z.string().openapi({ description: 'The blob SHA-1. Send as `expected_revision` to commit an edit.' }),
+            }),
+            'The file as text',
+          ),
           ...errors(400, 404),
       },
     }),
@@ -397,7 +417,8 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = normalizeTreePath(path);
+    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -412,11 +433,11 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
-    if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+    if (denier?.isDenied(treePath)) return c.json({ error: 'File not found' }, 404);
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     try {
-      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
+      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), treePath, ref, { freshOnMiss: true });
       const revision = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
       return c.json({ path, ref, content: bytes.toString('utf8'), revision });
     } catch (error) {
@@ -468,7 +489,8 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = normalizeTreePath(path);
+    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -483,11 +505,11 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
-    if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+    if (denier?.isDenied(treePath)) return c.json({ error: 'File not found' }, 404);
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     try {
-      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
+      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), treePath, ref, { freshOnMiss: true });
       return new Response(new Uint8Array(bytes), {
         status: 200,
         headers: {
@@ -533,7 +555,8 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
       return c.json({ error: 'File not found' }, 404);
     }
-    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = normalizeTreePath(path);
+    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -541,7 +564,8 @@ export function registerProjectFilesRoutes(): void {
     // Visibility isolation: a scoped-out member can't read the commit history of
     // an agent/skill they aren't granted — return the same 404 as a missing file
     // so the path isn't confirmed to exist. Mirrors files/content (above).
-    // See F-5 (weekly pentest run #4).
+    // See F-5 (weekly pentest run #4). `git log -- <folder>` lists every commit
+    // under the folder, so a folder that holds a hidden file is refused too.
     const denier = await resourceDenierForRequest({
       userId: loaded.userId,
       accountId: loaded.row.accountId,
@@ -549,13 +573,13 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
-    if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+    if (denier?.containsDenied(treePath)) return c.json({ error: 'File not found' }, 404);
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     const limit = Number(c.req.query('limit') || '50');
     const skip = Number(c.req.query('skip') || '0');
     try {
-      const result = await getFileHistory(await withProjectGitAuth(loaded.row), path, { ref, limit, skip });
+      const result = await getFileHistory(await withProjectGitAuth(loaded.row), treePath, { ref, limit, skip });
       return c.json({ path, ref, ...result });
     } catch (error) {
       rethrowDatabaseError(error);
