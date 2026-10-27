@@ -14,7 +14,7 @@
  * background reconnect loop dials a box nothing will ever wake. `useSession`
  * now returns `runtimeUrl` (the resolved `/p/<external_id>/8000` origin), so
  * after a drop this panel asks `GET /kortix/pty` against THAT origin, exactly
- * as `apps/web/src/features/session/pty-connection.ts` does. A readiness 503
+ * as `packages/ui/src/terminal/pty-connection.ts` does. A readiness 503
  * parks the panel (`asleep`) instead of retrying; `Alt+Enter` is the
  * user-initiated attach that carries `wake=1` and is the only thing allowed to
  * resume the box.

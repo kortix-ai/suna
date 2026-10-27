@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import * as realShare from '../../connectors/share';
 import type { SecretGrant, ShareSubject } from '../../connectors/share';
 import * as realAuthorize from '../../iam/authorize';
+import * as realSpaceAccess from '../../shared/space-access';
 import * as realReadModels from '../../iam/read-models';
 
 /**
@@ -78,6 +79,10 @@ mock.module('../../iam/authorize', () => ({
   ...realAuthorize,
   authorize: async () => ({ allowed: false, reason: 'role_missing' }),
 }));
+
+// No private channel in this project: the FIFO db mock above serves only the
+// reads these cases pin.
+mock.module('../../shared/space-access', () => ({ ...realSpaceAccess, hiddenSpaceIds: async () => new Set<string>() }));
 
 const { loadProjectForUser, loadVisibleSession } = await import('./access');
 

@@ -60,10 +60,11 @@ mock.module('@/lib/files/hooks', () => ({
 }));
 
 let FilePreview: typeof import('./FilePreviewRenderers').FilePreview;
-let FilePreviewType: typeof import('./FilePreviewRenderers').FilePreviewType;
+let FilePreviewType: typeof import('@/lib/files/preview-type').FilePreviewType;
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  ({ FilePreview, FilePreviewType } = await import('./FilePreviewRenderers'));
+  ({ FilePreview } = await import('./FilePreviewRenderers'));
+  ({ FilePreviewType } = await import('@/lib/files/preview-type'));
 });
 
 let tree: ReactTestRenderer | undefined;

@@ -10,6 +10,8 @@
 // The rule the help text states everywhere: people, groups and service accounts
 // get ROLES; agents get Kortix PERMISSIONS in kortix.yaml. A session can only do
 // what both allow.
+import { createHash } from 'node:crypto';
+
 import type { ApiClient } from './api/client.ts';
 import { status } from './style.ts';
 
@@ -145,6 +147,50 @@ export async function resolveUserId(
     return null;
   }
   return hit.user_id;
+}
+
+/**
+ * Resolve a group reference to a group id. A uuid passes through; anything else
+ * is matched against the account's groups by name, ignoring case.
+ */
+export async function resolveGroupId(
+  client: ApiClient,
+  accountId: string,
+  ref: string,
+): Promise<string | null> {
+  if (UUID_RE.test(ref)) return ref;
+  const { groups } = await client.get<{ groups: GroupRow[] }>(`${iamBase(accountId)}/groups`);
+  const needle = ref.trim().toLowerCase();
+  const hit = groups.find((g) => g.name.toLowerCase() === needle);
+  if (!hit) {
+    process.stderr.write(
+      `${status.err(`No group named "${ref}" in this account.`)} ` +
+        `List them with \`kortix groups ls\`, or pass a group id.\n`,
+    );
+    return null;
+  }
+  return hit.group_id;
+}
+
+/** uuid5 namespace of a `pending` principal. MUST match
+ *  KORTIX_PENDING_PRINCIPAL_NAMESPACE in apps/api/src/iam/actor.ts. */
+const PENDING_PRINCIPAL_NAMESPACE = 'b8d1f9c6-0a7e-4a2f-9d3b-5e6c7a8b9c01';
+
+/**
+ * The principal id of a `pending` principal — an invitee with no user yet. The
+ * API stores it as uuid5(lower(trim(email))) (apps/api/src/iam/actor.ts
+ * `pendingPrincipalId`), so the id is computed from the address alone.
+ */
+export function pendingPrincipalId(email: string): string {
+  const hash = createHash('sha1')
+    .update(Buffer.from(PENDING_PRINCIPAL_NAMESPACE.replace(/-/g, ''), 'hex'))
+    .update(Buffer.from(email.trim().toLowerCase(), 'utf8'))
+    .digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /** user-id → email and group-id → name, for readable listings. Best effort:

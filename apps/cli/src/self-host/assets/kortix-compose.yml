@@ -65,7 +65,7 @@ services:
       DAYTONA_API_KEY: ${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: ${DAYTONA_TARGET}
-      # The PUBLIC origin cloud (Daytona) sandboxes call back to — never the
+      # The PUBLIC origin cloud sandboxes call back to — never the
       # internal Docker hostname, which a remote cloud VM can never resolve or
       # reach. Set per reachability mode by the CLI (see reachabilityMode() in
       # self-host/tunnel.ts): the https://api.<domain> origin in domain mode,
@@ -123,7 +123,6 @@ services:
       KORTIX_CAPTURE_STS_ENDPOINT: http://capture-store:9000
       # No bucket events without SQS: the index reader finds new items by polling.
       KORTIX_CAPTURE_INDEX_POLL_SECONDS: "30"
-      LLM_GATEWAY_ENABLED: "true"
       LLM_GATEWAY_PROXY_TARGET: http://llm-gateway:8090
       # KORTIX_LLM_BASE_URL must use the public Caddy route. The proxy target
       # above is internal control-plane wiring. Without this explicit override,

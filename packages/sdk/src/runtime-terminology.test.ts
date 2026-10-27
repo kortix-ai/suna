@@ -18,8 +18,8 @@ import ts from 'typescript';
 const PRE_W4_NAMES: Record<string, string | null> = {
   CanonicalOpenCodeSession: 'CanonicalRuntimeSession',
   ExecuteOpenCodeCommandInput: 'ExecuteRuntimeCommandInput',
-  OpenCodeConfigInvalidError: 'RuntimeConfigInvalidError',
-  OpenCodeConfigIssue: 'RuntimeConfigIssue',
+  OpenCodeConfigInvalidError: null, // RuntimeConfigInvalidError is OpenCode-only too (sunset 2026-10-23)
+  OpenCodeConfigIssue: null, // RuntimeConfigIssue is OpenCode-only too (sunset 2026-10-23)
   OpenCodeEvent: 'RuntimeEvent',
   OpenCodeEventStreamProvider: 'RuntimeEventStreamProvider',
   OpenCodeLocal: 'RuntimeLocal',
@@ -42,8 +42,8 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   findOpenCodeFiles: 'findRuntimeFiles',
   formatOpenCodeRuntimeError: 'formatRuntimeError',
   getActiveOpenCodeUrl: 'getActiveRuntimeUrl',
-  getOpenCodeConfigInvalidError: 'getRuntimeConfigInvalidError',
-  isOpenCodeConfigInvalidError: 'isRuntimeConfigInvalidError',
+  getOpenCodeConfigInvalidError: null, // getRuntimeConfigInvalidError is OpenCode-only too (sunset 2026-10-23)
+  isOpenCodeConfigInvalidError: null, // isRuntimeConfigInvalidError is OpenCode-only too (sunset 2026-10-23)
   isOpenCodeNotReadyError: 'isRuntimeNotReadyError',
   opencodeKeys: 'runtimeKeys',
   parseOpenCodeErrorPayload: 'parseRuntimeErrorPayload',
@@ -58,7 +58,7 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   useOpenCodeAgent: null,
   useOpenCodeAgents: 'useRuntimeAgents',
   useOpenCodeCommands: 'useRuntimeCommands',
-  useOpenCodeConfig: 'useRuntimeConfig',
+  useOpenCodeConfig: null, // useRuntimeConfig is OpenCode-only too (sunset 2026-10-23)
   useOpenCodeCurrentProject: 'useRuntimeCurrentProject',
   useOpenCodeEventStream: 'useRuntimeEventStream',
   useOpenCodeLocal: 'useRuntimeLocal',
@@ -72,7 +72,7 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   useOpenCodeRuntimeReady: 'useRuntimeReady',
   useOpenCodeSession: 'useRuntimeSession',
   useOpenCodeSessionDiff: null,
-  useOpenCodeSessionTodo: 'useRuntimeSessionTodo',
+  useOpenCodeSessionTodo: null, // useRuntimeSessionTodo is OpenCode-only too (sunset 2026-10-23)
   useOpenCodeSessions: 'useRuntimeSessions',
   useOpenCodeSkills: null,
   useOpenCodeToolIds: null,
@@ -80,7 +80,7 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   useOpenCodeVcsDiff: 'useRuntimeVcsDiff',
   useSendOpenCodeMessage: null,
   useSummarizeOpenCodeSession: 'useSummarizeRuntimeSession',
-  useUpdateOpenCodeConfig: 'useUpdateRuntimeConfig',
+  useUpdateOpenCodeConfig: null, // useUpdateRuntimeConfig is OpenCode-only too (sunset 2026-10-23)
   useUpdateOpenCodeSession: null,
 };
 

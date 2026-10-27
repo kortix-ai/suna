@@ -3,9 +3,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const reactQuery = await import('@tanstack/react-query');
-const billingHooks = await import('@/hooks/billing');
+const billingHooks = await import('@kortix/ui/internal/billing/index');
 let total = 2;
 let billingEnabled = true;
+let memberCount: number | undefined = 3;
+let memberCountError = false;
+let memberCountLoading = false;
 // The account-state the Plan pane renders. The free-account cases below never
 // touch it; the subscription cases set it directly.
 let accountStateData: Record<string, unknown> | null = null;
@@ -14,13 +17,20 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@tanstack/react-query', () => ({
   ...reactQuery,
-  useQuery: () => ({
-    data: accountStateData ?? { credits: { total }, subscription: { status: 'none' } },
-    isLoading: false,
-  }),
+  useQuery: (options: { queryKey: string[] }) =>
+    options.queryKey[0] === 'account'
+      ? {
+          data: memberCount === undefined ? undefined : { member_count: memberCount },
+          isLoading: memberCountLoading,
+          isError: memberCountError,
+        }
+      : {
+          data: accountStateData ?? { credits: { total }, subscription: { status: 'none' } },
+          isLoading: false,
+        },
   useQueryClient: () => ({}),
 }));
-mock.module('@/hooks/billing', () => ({
+mock.module('@kortix/ui/internal/billing/index', () => ({
   ...billingHooks,
   accountStateKeys: { state: () => ['billing'] },
   accountStateSelectors: { totalCredits: () => total },
@@ -37,7 +47,7 @@ mock.module('@/features/billing/use-enterprise-sales', () => ({
   useTalkToSales: () => ({ talk: () => {}, isPending: false }),
   useEnterpriseDemo: () => ({ set: () => {}, isPending: false }),
 }));
-mock.module('@/stores/billing-account-context', () => ({
+mock.module('@kortix/ui/internal/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
   useBillingAccountResolved: () => true,
 }));
@@ -46,7 +56,7 @@ const { BillingTab } = await import('./billing-tab');
 
 /**
  * The Plan pane of an account with no paid subscription: the plan card names
- * Free, shows its 200 credits, and offers the tier select with a Subscribe
+ * Free, shows its 500 credits, and offers the tier select with a Subscribe
  * action. The wallet (balance, spend) belongs to the Credits pane and the
  * wallet-first view, so the Plan pane must not print it.
  */
@@ -67,13 +77,37 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     );
   }
 
+  test('shows account membership with an unlimited allowance, not paid seats', () => {
+    accountStateData = freeState();
+    expect(renderPlan()).toContain('Unlimited members');
+    expect(renderPlan()).toContain('3 members');
+    memberCount = 1;
+    expect(renderPlan()).toContain('1 member');
+    memberCount = 0;
+    expect(renderPlan()).toContain('0 members');
+    memberCount = 3;
+  });
+
+  test('does not invent a zero while membership is loading or unavailable', () => {
+    accountStateData = freeState();
+    memberCount = undefined;
+    memberCountLoading = true;
+    expect(renderPlan()).toContain('Loading members');
+    expect(renderPlan()).not.toContain('0 members');
+    memberCountLoading = false;
+    memberCountError = true;
+    expect(renderPlan()).toContain('Member count unavailable');
+    memberCountError = false;
+    memberCount = 3;
+  });
+
   test('shows the Free plan with its monthly credits and the tier select on the $200 tier', () => {
     billingEnabled = true;
     accountStateData = freeState();
     const html = renderPlan();
     expect(html).toContain('Current plan');
     expect(html).toContain('>Free</p>');
-    expect(html).toContain('200 credits / month');
+    expect(html).toContain('500 credits / month');
     expect(html).toContain('Monthly credits');
     expect(html).toContain('Subscribe for $200 / month');
     expect(html).toContain('20,000 credits / month');
@@ -119,18 +153,56 @@ describe('BillingTab — plan pane without a paid subscription', () => {
 
   test('no trial line renders, even from a leftover trial block', () => {
     accountStateData = freeState({
-      trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+      trial: {
+        plan: 'enterprise',
+        started_at: null,
+        ends_at: '2026-11-14T00:00:00.000Z',
+        days_left: 9,
+      },
     });
     expect(renderPlan().toLowerCase()).not.toContain('trial');
   });
 
-  test('wallet-first view keeps the balance and adds the plan changer under it', () => {
+  // KRTX-2376 (dogfood): the hub's wallet-first view on Free showed
+  // "Available balance" with no way to fund it — the only top-up control in
+  // the product lives behind the subscribe dialog. The wallet blocks are for
+  // a wallet the plan can FUND, so on a plan that cannot purchase credits
+  // the pane leads with the plan card (which carries the monthly grant), and
+  // the balance returns the moment the plan allows purchases.
+  test('the hub wallet-first view on Free leads with the plan card, not a fundless wallet', () => {
     total = 2;
     accountStateData = freeState();
     const html = renderToStaticMarkup(
       createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
     );
-    expect(html).toContain('Subscribe for');
+    expect(html).not.toContain('Available balance');
+    expect(html).toContain('Current plan');
+    expect(html).toContain('>Free</p>');
+    expect(html).toContain('Subscribe for $200 / month');
+  });
+
+  test('the hub wallet-first view on a plan that can purchase credits keeps the balance and top-up', () => {
+    total = 100;
+    accountStateData = {
+      ...freeState(),
+      plan: {
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        monthly_usd: 100,
+      },
+      subscription: {
+        status: 'active',
+        subscription_id: 'sub_synthetic',
+        can_purchase_credits: true,
+      },
+    };
+    const html = renderToStaticMarkup(
+      createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
+    );
+    expect(html).toContain('Available balance');
+    expect(html).toContain('Add credits');
   });
 });
 
@@ -149,7 +221,13 @@ describe('BillingTab — cancel control on a subscribed account', () => {
     return {
       credits: { total: 100 },
       can_manage_billing: true,
-      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
+      plan: {
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        monthly_usd: 100,
+      },
       subscription: {
         status: 'active',
         subscription_id: 'sub_synthetic',
@@ -162,9 +240,13 @@ describe('BillingTab — cancel control on a subscribed account', () => {
   }
 
   function renderPlan() {
-    return renderToStaticMarkup(createElement(BillingTab, {
-      returnUrl: '/settings/plan', isActive: true, showWallet: false,
-    }));
+    return renderToStaticMarkup(
+      createElement(BillingTab, {
+        returnUrl: '/settings/plan',
+        isActive: true,
+        showWallet: false,
+      }),
+    );
   }
 
   test('an active subscription shows its monthly amount and offers Update beside Cancel', () => {

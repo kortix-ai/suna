@@ -3,6 +3,7 @@ import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
 import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Flattened opencode error (from session.error / AssistantMessage.error), passed
 // to onSessionError so the turn-end relay can tell apps/api *why* a run failed
 // (out of credits, rate limit, provider auth, …) instead of a blank "no reply".
@@ -19,6 +20,7 @@ export interface OpencodeTurnError {
   providerID?: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type OpencodeEventHandlers = {
   /** Every parsed OpenCode event, before specialized dispatch. */
   onEvent?: (event: { type?: string; properties?: unknown }) => void
@@ -49,11 +51,13 @@ export type OpencodeEventHandlers = {
   onReconcile?: () => void
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeEventSubscription {
   stop(): void
   connected: Promise<void>
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeEventLoopOptions {
   reconcileIntervalMs?: number
   /**
@@ -92,6 +96,7 @@ async function waitForListeningOrTimeout(opencode: Opencode, maxMs: number): Pro
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Subscribe to opencode's SSE event stream and dispatch known event types.
 // Auto-reconnects on close — when the underlying opencode lifecycle restarts,
 // we'll loop reconnecting until /event is reachable again.
@@ -254,6 +259,7 @@ export function startOpencodeEventLoop(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Flatten opencode's nested error ({ name, data: { message, statusCode,
 // isRetryable, providerID } }) into the wire shape apps/api classifies. Shared
 // by the session.error dispatch and the idle-time last-message read so both
@@ -271,6 +277,7 @@ export function flattenOpencodeError(e: {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
 export function dispatch(

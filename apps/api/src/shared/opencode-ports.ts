@@ -25,19 +25,31 @@
  * overrides, but nothing in this repo sets them.
  */
 
-/** Live half by default — the port opencode boots on. */
+/**
+ * Live half by default — the port opencode boots on.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_PRIMARY_PORT = 4096;
 
-/** Idle half — becomes live after a verified reload swaps onto it. */
+/**
+ * Idle half — becomes live after a verified reload swaps onto it.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_STANDBY_PORT = 4097;
 
-/** Every port opencode may be serving the session API on. */
+/**
+ * Every port opencode may be serving the session API on.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_PORTS: ReadonlySet<number> = new Set([
   OPENCODE_PRIMARY_PORT,
   OPENCODE_STANDBY_PORT,
 ]);
 
-/** True when this port carries opencode's session API, on either half. */
+/**
+ * True when this port carries opencode's session API, on either half.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export function isOpencodePort(port: number): boolean {
   return OPENCODE_PORTS.has(port);
 }

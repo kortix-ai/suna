@@ -2,7 +2,7 @@ import { type Catalog, type CatalogModel, autoSeedDefaultModel } from '@kortix/l
 import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { RUNTIME_MANAGED_MODELS } from './managed-models';
+import { getRuntimeManagedModel } from './managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
@@ -67,23 +67,32 @@ export function isProviderConnected(providerId: string, connectedEnvVars: Set<st
   return !!upstream && connectedEnvVars.has(upstream.envVar.toUpperCase());
 }
 
+/** A configured model the caller cannot run until a login or provider key is connected. */
+export interface UnavailableModelMark {
+  available: false;
+  /** What to connect: a ChatGPT login (`codex/…`) or the model's provider key. */
+  availability: 'login' | 'provider';
+}
+
 /**
  * Reduce the gateway's runtime catalog to the models a project can actually
  * choose without downloading the complete models.dev registry. Managed models
  * are always retained (the caller has already applied free-tier filtering),
  * connected BYOK/Codex providers retain their served models, and configured
  * models are kept so existing defaults and fallback policies remain editable
- * after a provider is disconnected.
+ * after a provider is disconnected. A model kept only for that reason is
+ * marked `available: false`: clients must not preselect or send it, because
+ * the gateway refuses it ("Connect Codex to use this model.", KRTX-3011).
  */
-export function projectPickerCatalog<T>(
+export function projectPickerCatalog<T extends object>(
   fullCatalog: Record<string, T>,
   connectedEnvVars: Set<string>,
   requiredModels: string[],
-): Record<string, T> {
+): Record<string, T | (T & UnavailableModelMark)> {
   const required = new Set(requiredModels.filter(Boolean).map(toWireModel));
   const codexConnected =
     connectedEnvVars.has('CODEX_AUTH_JSON') || connectedEnvVars.has('OPENCODE_AUTH_JSON');
-  const compact: Record<string, T> = {};
+  const compact: Record<string, T | (T & UnavailableModelMark)> = {};
 
   for (const [model, entry] of Object.entries(fullCatalog)) {
     if (model === 'auto' || model === 'kortix/auto') continue;
@@ -96,7 +105,10 @@ export function projectPickerCatalog<T>(
         : provider
           ? isProviderConnected(provider, connectedEnvVars)
           : false;
-    if (managed || connected || required.has(model)) compact[model] = entry;
+    if (managed || connected) compact[model] = entry;
+    else if (required.has(model)) {
+      compact[model] = { ...entry, available: false, availability: provider === 'codex' ? 'login' : 'provider' };
+    }
   }
 
   return compact;
@@ -124,7 +136,7 @@ export function flagshipRefForEnvVar(envVar: string): string | null {
 export function labelForModelRef(ref: string): string {
   const modelById = catalogState().modelById;
   const wire = toWireModel(ref);
-  const managed = RUNTIME_MANAGED_MODELS.find((m) => m.id === wire);
+  const managed = getRuntimeManagedModel(wire);
   if (managed) return managed.name;
   if (wire.startsWith('codex/')) {
     const inner = wire.slice('codex/'.length);
@@ -146,4 +158,19 @@ export function connectedByokPickerModels(connectedEnvVars: Set<string>): Picker
     models.push({ id, label: labelForModelRef(id), provider: provider.id, managed: false, hint: provider.name });
   }
   return models;
+}
+
+/** Discovery metadata only; entries stay outside the runnable picker. */
+export function unavailableCatalog(
+  full: Record<string, { provider?: string }>,
+  served: Record<string, unknown>,
+): Record<string, { provider?: string; availability: 'plan' | 'login' | 'provider' }> {
+  return Object.fromEntries(
+    Object.entries(full)
+      .filter(([id]) => id !== 'auto' && !(id in served))
+      .map(([id, model]) => [id, {
+        provider: model.provider,
+        availability: !id.includes('/') ? 'plan' : id.startsWith('codex/') ? 'login' : 'provider',
+      }]),
+  );
 }

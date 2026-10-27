@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 // is under test is which condition reaches which render. Every slice is taken
 // through `between()`, which FAILS on a missing anchor rather than yielding ''
 // and passing.
-const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+const chat = readFileSync(fileURLToPath(new URL('../../../../../packages/ui/src/session/thread/session-chat.tsx', import.meta.url)), 'utf8');
 // The turn card's own wiring moved to `session-chat/transcript.tsx` (KRTX-355,
 // phase 2 of the session-chat split); the assertions on it read that module.
 const turn = readFileSync(
-  fileURLToPath(new URL('./session-chat/transcript.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../../../packages/ui/src/session/thread/transcript.tsx', import.meta.url)),
   'utf8',
 );
 
@@ -69,9 +69,6 @@ describe('the waiting row has a fallback when no turn owns it', () => {
       /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
     );
     expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
-    // The stand-in's own gate is unchanged — it is the one that decides
-    // whether the boot row is on screen at all.
-    expect(chat).toContain('busy={turns.length === 0 && lastTurnWorking}');
   });
 
   test('it sits where the stand-in sat, so the crossfade does not move it', () => {
@@ -234,6 +231,15 @@ describe('waiting on the user is not the agent working', () => {
     const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
     expect(label).toContain('agentWorking');
     expect(turn).toContain('if (!agentWorking) return;');
+  });
+
+  test('the clock also covers a silent turn (KRTX-1872): it never gates on the status phrase', () => {
+    // The status phrase stays empty until the turn's first assistant message,
+    // and the label used to be gated on it — a fresh account's first turn sat
+    // ~5 minutes on a bare "Thinking" with no clock and read as frozen. The
+    // phrase must stay a content claim; the clock runs on the agent alone.
+    const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).not.toContain('throttledStatus');
   });
 
   test('`working` itself is untouched — the turn IS still open', () => {

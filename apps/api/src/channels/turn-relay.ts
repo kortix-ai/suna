@@ -22,9 +22,10 @@ type Platform = 'slack' | 'teams';
 
 /**
  * Anything unrecognised still falls back to Slack, which is the historical
- * default — so a future platform renders as Slack blocks until it is added here.
+ * default. A Telegram or Email session is null: it has no live turn to render
+ * into, because its agent answers through its own connector.
  */
-async function platformFor(sessionId: string): Promise<Platform> {
+async function platformFor(sessionId: string, fallback: Platform | null = 'slack'): Promise<Platform | null> {
   const [row] = await db
     .select({ channelRef: chatTurnStreams.channelRef })
     .from(chatTurnStreams)
@@ -43,7 +44,12 @@ async function platformFor(sessionId: string): Promise<Platform> {
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return channelOfSessionMetadata(session?.metadata) === 'teams' ? 'teams' : 'slack';
+  const channel = channelOfSessionMetadata(session?.metadata);
+  if (channel === 'slack' || channel === 'teams') return channel;
+  // A live Slack row renders in Slack whatever channel started the session: a
+  // Telegram session that bound a Slack thread (`slack send --channel`) streams there.
+  if (row) return 'slack';
+  return channel ? null : fallback;
 }
 
 /** Teams relays answer a bare boolean; carry a stable reason for the sandbox. */
@@ -57,6 +63,7 @@ export async function relayTurnStepDetailed(
   opts: StepOpts = {},
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, reason: 'not_relayed' };
   return platform === 'teams'
     ? fromBoolean(await teams.relayTurnStep(sessionId, title, opts))
     : slack.relayTurnStepDetailed(sessionId, title, opts);
@@ -69,6 +76,7 @@ export async function relayTurnAnswerDetailed(
   card?: Record<string, unknown>,
 ): Promise<slack.TurnRelayResult> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, reason: 'not_relayed' };
   return platform === 'teams'
     ? fromBoolean(await teams.relayTurnAnswer(sessionId, text, card))
     : slack.relayTurnAnswerDetailed(sessionId, text, blocks);
@@ -79,7 +87,10 @@ export async function relayTurnEnd(
   status: 'idle' | 'error' = 'idle',
   errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
-  const platform = await platformFor(sessionId);
+  // Runtime ends arrive for every session, not only chat-channel sessions.
+  // Keep late channel errors observable, but do not invent a Slack recipient.
+  const platform = await platformFor(sessionId, null);
+  if (!platform) return false;
   return platform === 'teams'
     ? teams.relayTurnEnd(sessionId, status, errorInfo)
     : slack.relayTurnEnd(sessionId, status, errorInfo);
@@ -90,6 +101,7 @@ export async function relayTurnQuestion(
   questions: QuestionInfo[],
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, error: 'not_relayed' };
   return platform === 'teams'
     ? teamsQuestions.postTeamsQuestion(sessionId, questions)
     : slackQuestions.postQuestion(sessionId, questions);
@@ -100,6 +112,7 @@ export async function relayReviewCard(
   item: ReviewCardItem,
 ): Promise<{ ok: boolean; error?: string }> {
   const platform = await platformFor(sessionId);
+  if (!platform) return { ok: false, error: 'not_relayed' };
   return platform === 'teams'
     ? teamsReview.postTeamsReviewCard(sessionId, item)
     : slackReview.postReviewCard(sessionId, item);

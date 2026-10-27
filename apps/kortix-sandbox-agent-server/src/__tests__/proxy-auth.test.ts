@@ -409,11 +409,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('the web proxy also refuses the daemon itself and the egress shim', async () => {
-    // proxy.ts wires blockedSelfPorts to cfg.servicePort + egressShimPort() +
-    // harness.proxy.blockedPorts(cfg) (proxy.ts:178-182). The row above proves
-    // only the harness half (the two OpenCode ports); this proves the other
-    // two — the daemon's own port and the egress shim — are in the same Set
-    // as actually constructed by buildDaemonApp, not a hand-picked constant.
+    // The composed web proxy rejects private destinations on every port.
     const cfg = baseConfig()
     const app = buildOpenCodeTestApp(cfg, fakeOpencode('ok'), Date.now())
     const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)

@@ -152,8 +152,8 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'sandbox image, triggers, channels, connectors, secrets': 'text84a8a60f0a66',
   Schedule: 'textf4830a1dae29',
   'Session strategy': 'text1747233af590',
-  'Sessions never share a filesystem, a process table, or a network namespace. On Kortix’s own Platinum compute the boundary is a Cloud Hypervisor microVM; Daytona and E2B are also supported, and we will tell you which one you are on.':
-    'text05e646f156e2',
+  'Sessions never share a filesystem, a process table, or a network namespace. On Platinum, Kortix’s own compute and the reference provider, the boundary is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and we will tell you which one you are on.':
+    'text888237b5222c',
   'Signature and token both missing or wrong. Nothing runs.': 'textf83d7ceb0541',
   'Signature valid. The session fired, queued behind the concurrency limit, or deduped against a delivery Kortix already saw.':
     'texte2a5b5794be9',

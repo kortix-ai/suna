@@ -65,10 +65,30 @@ jobs:
         run: python3 infra/terraform/scripts/test_web_waf_associations.py
       - name: ALB log bucket versioning regression test
         run: python3 infra/terraform/scripts/test_alb_log_bucket_versioning.py
+      # ubuntu-24.04 marks the system Python externally managed (PEP 668), so
+      # pip refuses a system install. A venv first on PATH serves every later
+      # `python3` step.
+      - name: Install pinned HCL parser for inventory boundary tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tf-ci-venv"
+          echo "$RUNNER_TEMP/tf-ci-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/tf-ci-venv/bin/python" -m pip install python-hcl2==7.3.1
+      - name: internal security group tag parser boundary (Drata 8028)
+        run: python3 infra/terraform/scripts/test_internal_tag_boundary.py
+      - name: internal security group inventory tag plan test (Drata 8028)
+        run: |
+          terraform -chdir=infra/terraform/environments/dev-us-east-2 init -backend=false -input=false -no-color
+          terraform -chdir=infra/terraform/environments/dev-us-east-2 test -filter=tests/internal_tags.tftest.hcl -no-color
       - name: audit archive tag readability regression test (Drata 8028)
         run: python3 infra/terraform/scripts/test_audit_archive_tag_readability.py
       - name: ALB TargetResponseTime alarm regression test
         run: python3 infra/terraform/scripts/test_alb_target_response_time_alarms.py
+      - name: SQS message-age alarm regression test (Drata test 115)
+        run: python3 infra/terraform/scripts/test_sqs_message_age_alarms.py
+      - name: SQS eu-west-2 message-age plan regression test (Drata test 115)
+        run: |
+          terraform -chdir=infra/terraform/compliance-monitoring init -backend=false -input=false -no-color
+          terraform -chdir=infra/terraform/compliance-monitoring test -filter=tests/sqs_message_age.tftest.hcl -no-color
       - name: reconciler Lambda IAM coverage test
         run: python3 infra/terraform/scripts/test_reconciler_iam_coverage.py
       - name: API region / database region colocation test
@@ -120,17 +140,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkov
-        uses: bridgecrewio/checkov-action@cc0e17d456ef1713bbfd963ebac19dc776775cb2 # v12.3128.0
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895 # v12.3134.0
         with:
           directory: infra/terraform
           framework: terraform
           output_format: sarif
           output_file_path: checkov.sarif
           soft_fail: true
+      # checkov writes every #checkov:skip into the SARIF as a result with a
+      # `suppressions` entry, and code scanning opens an alert for it anyway
+      # (122 such alerts were open on 2026-10-22). The reviewed skip comment is
+      # the decision record, so upload unsuppressed failures only.
+      - name: Drop in-source suppressed results
+        run: >-
+          jq '.runs[].results |= map(select((.suppressions // []) | length == 0))'
+          checkov.sarif/results_sarif.sarif > checkov-findings.sarif
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
-          sarif_file: checkov.sarif/results_sarif.sarif
+          sarif_file: checkov-findings.sarif
           category: checkov-terraform
 
   nacl-audit:

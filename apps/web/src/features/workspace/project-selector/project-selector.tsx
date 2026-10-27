@@ -17,24 +17,24 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Input } from '@/components/ui/input';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Input } from '@kortix/ui/input';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isModifiedClick } from '@/lib/navigation/modified-click';
-import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { isModifiedClick } from '@kortix/ui/internal/lib/navigation/modified-click';
+import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
 import {
   COLLAPSED_PROJECT_LIMIT,
@@ -43,7 +43,7 @@ import {
   filterSections,
   inviteLandingPath,
   type AccountSection,
-} from './project-selector-model';
+} from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { useProjectSelectorData } from './use-project-selector-data';
 
 /**
@@ -55,6 +55,7 @@ import { useProjectSelectorData } from './use-project-selector-data';
  * pushed into the create form when they have something to open.
  */
 export interface ProjectSelectorViewProps {
+  connectComputer?: boolean;
   email: string | null;
   name?: string | null;
   loading: boolean;
@@ -75,7 +76,10 @@ export interface ProjectSelectorViewProps {
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const t = useTranslations('projectSelector');
-  const { email, loading, loadFailed, sections, invites, createHref } = props;
+  const { email, loading, loadFailed, sections, invites } = props;
+  const createHref = props.createHref && props.connectComputer
+    ? `${props.createHref}&connect=computer`
+    : props.createHref;
   const [query, setQuery] = useState('');
 
   const total = countProjects(sections);
@@ -87,7 +91,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
     (section) =>
       !(
         section.state === 'empty-creatable' &&
-        newWorkspacePathForAccount(section.accountId) === createHref
+        newWorkspacePathForAccount(section.accountId) === props.createHref
       ),
   );
   const noAccess = !loading && !loadFailed && !createHref && !hasAnything;
@@ -182,6 +186,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
                 <AccountBlock
                   key={section.accountId}
                   section={section}
+                  connectComputer={props.connectComputer}
                   expandedByQuery={query.trim().length > 0}
                   openingProjectId={props.openingProjectId}
                   onOpenProject={props.onOpenProject}
@@ -275,12 +280,14 @@ function InviteRow({
 
 function AccountBlock({
   section,
+  connectComputer,
   expandedByQuery,
   openingProjectId,
   onOpenProject,
   onRetry,
 }: {
   section: AccountSection;
+  connectComputer?: boolean;
   expandedByQuery: boolean;
   openingProjectId: string | null;
   onOpenProject: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
@@ -313,6 +320,7 @@ function AccountBlock({
             <ProjectRow
               key={project.project_id}
               project={project}
+              connectComputer={connectComputer}
               opening={openingProjectId === project.project_id}
               onOpen={onOpenProject}
             />
@@ -333,7 +341,7 @@ function AccountBlock({
         </ul>
       ) : section.state === 'empty-creatable' ? (
         <Link
-          href={newWorkspacePathForAccount(section.accountId)}
+          href={`${newWorkspacePathForAccount(section.accountId)}${connectComputer ? '&connect=computer' : ''}`}
           className="group hover:bg-hover focus-visible:ring-ring flex items-center gap-3 rounded-md border border-dashed px-4 py-3 transition-colors outline-none focus-visible:ring-2"
         >
           <span className="text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed">
@@ -365,10 +373,12 @@ function AccountBlock({
 
 function ProjectRow({
   project,
+  connectComputer,
   opening,
   onOpen,
 }: {
   project: KortixProject;
+  connectComputer?: boolean;
   opening: boolean;
   onOpen: (event: MouseEvent<HTMLAnchorElement>, project: KortixProject) => void;
 }) {
@@ -378,7 +388,7 @@ function ProjectRow({
   return (
     <li>
       <Link
-        href={`/projects/${project.project_id}`}
+        href={`/projects/${project.project_id}${connectComputer ? '/settings/computer' : ''}`}
         onClick={(event) => onOpen(event, project)}
         data-testid="selector-project"
         className="group bg-popover hover:bg-hover focus-visible:ring-ring duration-fast flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors outline-none focus-visible:ring-2"
@@ -411,7 +421,7 @@ function ProjectRow({
 }
 
 /** The stateful half: reads, Join, open-project bookkeeping, sign-out. */
-export function ProjectSelector() {
+export function ProjectSelector({ connectComputer }: { connectComputer?: boolean } = {}) {
   const t = useTranslations('projectSelector');
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -446,6 +456,7 @@ export function ProjectSelector() {
 
   return (
     <ProjectSelectorView
+      connectComputer={connectComputer}
       email={user?.email ?? null}
       name={user?.user_metadata?.name}
       loading={data.listsLoading || data.invitesQuery.isLoading}

@@ -112,7 +112,7 @@ Examples:
   kortix self-host update --channel latest
   kortix self-host init --version 0.10.1
   kortix self-host init --version dev-a1b2c3d --local-images
-  kortix self-host env set DAYTONA_API_KEY=dtn_...
+  kortix self-host env set PLATINUM_API_KEY=<key>
   kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@company.com   # grant platform admin later
   kortix self-host uninstall
   kortix hosts ls
@@ -154,7 +154,7 @@ interface SelfHostEnv {
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
-  // Reachability: how cloud (Daytona) sandboxes and other external callers
+  // Reachability: how cloud sandboxes and other external callers
   // reach this instance's API — see reachabilityMode() in self-host/tunnel.ts.
   // KORTIX_DOMAIN set always means "domain" mode regardless of this value;
   // otherwise it's the persisted tunnel-vs-local preference (default local,
@@ -410,7 +410,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     await promptUpdatePolicyCompact(env, flags);
   }
 
-  // Required secrets — just the agent sandbox runtime (Daytona) now; see
+  // Required secrets — just the agent sandbox runtime (Platinum) now; see
   // missingRequiredSecrets(). Managed git and the LLM key are configured in
   // the dashboard after `start`, not gated here. Interactively this drives the
   // guided flow until satisfied; either way (interactive decline or
@@ -484,8 +484,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   if (!sandboxProviderConfigured(env)) {
-    const provider = sandboxProviders(env)[0] ?? 'daytona';
-    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
+    const provider = sandboxProviders(env)[0] ?? 'platinum';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'PLATINUM_API_KEY';
     process.stdout.write(
       `${C.yellow}  warning${C.reset}  ${C.dim}sandbox runtime not configured — agent sessions will fail to start.${C.reset}\n`,
     );
@@ -1801,7 +1801,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   // Same ordering as `init`: reachability first (the decision that determines
   // whether agent sandboxes can work at all), then admin email, then feature
-  // flags, then connections (Daytona) — see selfHostInit() for the full
+  // flags, then connections (sandbox provider) — see selfHostInit() for the full
   // rationale. Admin email is asked here on EVERY `configure` (not only on a
   // fresh init the way selfHostInit gates it): an operator who skipped it at
   // init and later runs `configure` to fix that would otherwise find that
@@ -1901,7 +1901,9 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b'] as const;
+// Platinum is the reference provider. Daytona is a legacy fallback: its
+// removal is scheduled. E2B support is discontinued.
+const SANDBOX_PROVIDER_CHOICES = ['platinum', 'daytona'] as const;
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
@@ -1922,41 +1924,31 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
   const currentProvider = sandboxProviders(env)[0];
   const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
     ? (currentProvider as SandboxProviderChoice)
-    : 'daytona';
+    : 'platinum';
   let provider: SandboxProviderChoice = defaultProvider;
   if (shouldPrompt(flags)) {
     // Every choice, printed up front — a bare `selectFrom` prompt with no
-    // visible options left `daytona`/`e2b`/`platinum` undiscoverable unless
-    // the operator already knew the exact names to type (a real reported
+    // visible options left the non-default provider undiscoverable unless
+    // the operator already knew the exact name to type (a real reported
     // bug: the prompt rendered as a bare `Sandbox provider [daytona]:`).
     // Same one-provider-only shape as before (selectFrom, not selectMany) —
     // an instance runs on exactly one sandbox provider.
     process.stdout.write(
-      `  ${C.cyan}daytona${C.reset}      ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
-        `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (recommended) — Kortix's own microVM sandbox provider${C.reset}\n` +
-        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n`,
+      `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (default, reference) — Kortix's own microVM sandbox provider; needs PLATINUM_API_KEY${C.reset}\n` +
+        `  ${C.cyan}daytona${C.reset}      ${C.dim}Daytona (legacy fallback, removal scheduled) — no new features, no support guarantee${C.reset}\n`,
     );
     provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
   }
   env.ALLOWED_SANDBOX_PROVIDERS = provider;
 
-  if (provider === 'daytona') {
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-  } else if (provider === 'e2b') {
-    env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
-    // The cluster this instance talks to. E2B Cloud is e2b.dev; a self-hosted
-    // E2B cluster has its own base domain. Both the template builds and the
-    // sandbox creates use this one value (apps/api platform/providers/e2b-domain).
-    env.E2B_DOMAIN = await prompt(
-      'E2B base domain (E2B Cloud: e2b.dev — a self-hosted E2B cluster uses its own)',
-      env.E2B_DOMAIN || 'e2b.dev',
-    );
-  } else if (provider === 'platinum') {
+  if (provider === 'platinum') {
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
+  } else if (provider === 'daytona') {
+    env.DAYTONA_API_KEY = await promptSecret('Daytona API key (legacy fallback)', env.DAYTONA_API_KEY);
+    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   }
   // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
   // this instance serves. When configured, the bundled Caddy proxy adds a
@@ -2083,9 +2075,8 @@ export function sandboxProviders(env: Record<string, string>): string[] {
 
 /** The key each sandbox provider needs to be considered ready. */
 const SANDBOX_PROVIDER_KEY: Record<string, string> = {
-  daytona: 'DAYTONA_API_KEY',
-  e2b: 'E2B_API_KEY',
   platinum: 'PLATINUM_API_KEY',
+  daytona: 'DAYTONA_API_KEY',
 };
 
 /** A configured sandbox provider is selected and has its required key. */
@@ -2114,6 +2105,7 @@ export function gitProviderConfigured(env: Record<string, string>): boolean {
 // fields is set". Skip them in the scalar pass; the composite checks report
 // the one accurate item instead.
 const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
+  'PLATINUM_API_KEY',
   'DAYTONA_API_KEY',
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
@@ -2149,7 +2141,7 @@ export interface MissingSecretItem {
 
 /**
  * Every required secret this instance is still missing. The CLI's init-time
- * gate is deliberately narrow now: ONLY the agent sandbox runtime (Daytona) is
+ * gate is deliberately narrow now: ONLY the agent sandbox runtime (Platinum) is
  * a "cannot proceed without it" secret — it's the one thing that genuinely
  * can't be set any other way (it's an env-only credential the API reads at
  * boot, there is no in-app settings surface for it). Managed git (GitHub) and
@@ -2158,7 +2150,7 @@ export interface MissingSecretItem {
  * as BYOK via the model picker — so neither blocks `init`/`start` here
  * anymore; see gitProviderConfigured()/renderConnectionSummary() for the
  * (non-blocking) status display. Reconciled against sandboxProviderConfigured
- * so a Daytona key configured via any accepted shape reports as satisfied.
+ * so a sandbox key configured via any accepted shape reports as satisfied.
  * Pure function of `env` — no filesystem/process access — so it's safe to
  * call from `init`/`start` before anything is written and to unit-test
  * directly.
@@ -2168,10 +2160,10 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 
   if (!sandboxProviderConfigured(env)) {
     // Name whichever provider is actually configured (ALLOWED_SANDBOX_PROVIDERS),
-    // defaulting to Daytona's hint when nothing has been chosen yet (a bare
+    // defaulting to Platinum's hint when nothing has been chosen yet (a bare
     // `init --yes` with no prior .env) — matches the guided flow's own default.
-    const provider = sandboxProviders(env)[0] ?? 'daytona';
-    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
+    const provider = sandboxProviders(env)[0] ?? 'platinum';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'PLATINUM_API_KEY';
     missing.push({
       label: `Agent sandbox runtime (${provider} API key)`,
       hint: `kortix self-host env set ${key}=<key>`,
@@ -2237,7 +2229,7 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
 }
 
 function connectionReviewNeeded(env: SelfHostEnv): boolean {
-  // The sandbox runtime (Daytona) is the only CLI-required connection left —
+  // The sandbox runtime (Platinum) is the only CLI-required connection left —
   // the API won't boot agent sessions without it, and there is no in-app
   // settings surface for it (unlike managed git/LLM, both configured in the
   // dashboard after `start`). A missing key always warrants the wizard, even
@@ -2262,7 +2254,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
     {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
-      hint: `${SANDBOX_PROVIDER_KEY[provider ?? 'daytona'] ?? 'DAYTONA_API_KEY'} (via kortix self-host configure)`,
+      hint: `${SANDBOX_PROVIDER_KEY[provider ?? 'platinum'] ?? 'PLATINUM_API_KEY'} (via kortix self-host configure)`,
     },
   ];
 
@@ -2528,14 +2520,11 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    // Sandboxes run on a real provider, just like Kortix Cloud — Daytona,
-    // E2B, or Kortix's own Platinum (SandboxProviderName in
-    // apps/api/src/config.ts); `kortix self-host configure` asks which one
-    // and collects only that provider's key(s).
+    // Sandboxes run on a real provider, just like Kortix Cloud — Kortix's own
+    // Platinum (the reference) or the legacy Daytona fallback
+    // (SandboxProviderName in apps/api/src/config.ts); `kortix self-host
+    // configure` asks which one and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
-    E2B_API_KEY: '',
-    // E2B Cloud by default; a self-hosted E2B cluster sets its own base domain.
-    E2B_DOMAIN: 'e2b.dev',
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',
@@ -2584,9 +2573,14 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   // site block to the Caddyfile. Gated on KORTIX_APPS_BASE_DOMAIN, the single
   // signal that turns it on; Caddy itself only runs in domain mode, so the
   // block is inert without a domain.
+  // Kortix Capture object store: the bundled on-box MinIO (default) or an
+  // operator-owned external S3-compatible store. A durable .env switch that
+  // survives `update` (which only moves image tags).
+  const captureStoreExternal = env.KORTIX_CAPTURE_STORE?.trim() === 'external';
   writeKortixRuntimeAssets(root, {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
     previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
+    captureStoreExternal,
   });
   writeFileSync(
     composePath(instance),
@@ -2594,6 +2588,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
+      captureStoreExternal,
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2644,6 +2639,16 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // write so `env set` changes stay synchronized.
   env.KORTIX_PUBLIC_CONNECTORS_ENABLED = connectorAuthConfigured(env) ? 'true' : 'false';
 
+  // External Capture object store: the bundled on-box MinIO is not rendered, so
+  // its generated root pair is dead weight. Drop it so it never persists in an
+  // external instance's .env — defaultEnv() generates the pair for every fresh
+  // instance (bundled is the default), and this is where an external instance
+  // sheds it, on init and on every later `env set`/`configure`/`update`.
+  if (env.KORTIX_CAPTURE_STORE?.trim() === 'external') {
+    delete env.CAPTURE_STORE_ROOT_USER;
+    delete env.CAPTURE_STORE_ROOT_PASSWORD;
+  }
+
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real
   // domain instead of a loopback port. api.<domain> is the default API host;
@@ -2664,7 +2669,7 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // renderFullDockerCompose() uses to decide the Compose-side topology.
   env.KORTIX_APP_REPLICAS = String(env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS);
 
-  // KORTIX_URL — the PUBLIC origin cloud (Daytona) sandboxes and other
+  // KORTIX_URL — the PUBLIC origin cloud sandboxes and other
   // external callers (webhooks, Slack/Teams OAuth, git-proxy clone) reach this
   // instance on. Computed per reachability mode (see reachabilityMode() in
   // self-host/tunnel.ts):

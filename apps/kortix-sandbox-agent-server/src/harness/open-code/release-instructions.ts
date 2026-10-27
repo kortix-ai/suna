@@ -18,6 +18,7 @@ import { dirname } from 'node:path'
  * link), read at hook time: off a release (the working tree, the image default)
  * the hook changes nothing. URLs, `~/`, absolute paths and globs in a directory
  * part keep OpenCode's own resolution.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const RELEASE_INSTRUCTIONS_PLUGIN_SOURCE = `// Written by kortixd (harness/open-code/release-instructions.ts). Do not edit.
 import { realpathSync } from 'node:fs'
@@ -25,6 +26,7 @@ import { isAbsolute, resolve } from 'node:path'
 
 const RELEASE_ROOT = /^(.*\\/[0-9a-f]{64})(?:\\/|$)/
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const KortixReleaseInstructions = async () => ({
   config: async (config) => {
     let served
@@ -45,7 +47,10 @@ export const KortixReleaseInstructions = async () => ({
 })
 `
 
-/** Write the plugin beside the composed config, and return its `file://` spec. */
+/**
+ * Write the plugin beside the composed config, and return its `file://` spec.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function writeReleaseInstructionsPlugin(path: string): string {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, RELEASE_INSTRUCTIONS_PLUGIN_SOURCE, { mode: 0o644 })

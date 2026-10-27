@@ -1,32 +1,31 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { RadioGroup } from '@/components/ui/radio-group';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { RadioGroup } from '@kortix/ui/radio-group';
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { successToast } from '@/components/ui/toast';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { successToast } from '@kortix/ui/toast';
 
-import { ErrorState } from '@/features/layout/section/error-state';
+import { ErrorState } from '@kortix/ui/error-state';
 
-import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
+import { ShareOption, SubjectPicker } from '@kortix/ui/access/sharing-picker';
 
 import { useTranslations } from '@/i18n/use-translations';
 
 import { listAppAgents, type App, type AppAccessConfig, type AppAccessMode, type AppViewerTokenScope } from '@kortix/sdk';
 import { useAppAccess } from '@kortix/sdk/react';
-import { RobotIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useState } from 'react';
 
-import { localizedAppCopy, ANONYMOUS_MODES } from './app-shared';
+import { localizedAppCopy, ANONYMOUS_MODES } from '@kortix/ui/apps';
 
 export function AppAccessModal({
   projectId,
@@ -271,7 +270,7 @@ function AppAgentsWithAccess({ projectId, appId }: { projectId: string; appId: s
               key={agent.agent_name}
               className="bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2"
             >
-              <EntityAvatar icon={RobotIcon} label={agent.agent_name} size="sm" />
+              <AgentMark slug={agent.agent_name} />
               <div className="min-w-0 flex-1">
                 <p className="text-foreground truncate text-sm font-medium">{agent.agent_name}</p>
                 <p className="text-muted-foreground truncate text-xs">

@@ -59,6 +59,7 @@ function sameReplacement(
   return value.endsWith('"') && url.length > 0 && !/["<>]/.test(url);
 }
 
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export async function repairLegacyInlineAttachments(input: {
   sessionId: string;
   externalId: string;

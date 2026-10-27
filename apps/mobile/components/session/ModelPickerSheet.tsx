@@ -62,14 +62,14 @@ const TABS: FloatingTabItem[] = [
 const AGENT_TAB = 0;
 const MODEL_TAB = 1;
 
-export interface ModelThinking {
+interface ModelThinking {
   /** The active model's levels. Empty hides the control. */
   levels: string[];
   selected: string | null;
   onSelect: (level: string | null) => void;
 }
 
-export interface AgentChoice {
+interface AgentChoice {
   /** The roster (`@kortix/sdk`); the tab lists its `isSelectableAgent` agents. */
   agents: Agent[];
   /** The agent the next message runs on; its row carries the check. */
@@ -79,7 +79,7 @@ export interface AgentChoice {
   onCreate?: () => void;
 }
 
-export interface ModelAutoContinue {
+interface ModelAutoContinue {
   /** The current mode's name, or "Off". */
   value: string;
   /** Opens the AutoContinue sheet. */
@@ -127,69 +127,78 @@ export const ModelPickerSheet = React.memo(React.forwardRef<SheetRef, ModelPicke
       [hasAgentTab, tab],
     );
 
-    if (onAgentTab && agent) {
-      return (
-        <PickerSheet
-          ref={pickerRef}
-          title="Agent"
-          options={agentOptions}
-          activeKey={agent.activeName}
-          onSelect={(name) => {
-            agent.onSelect(name);
-            // An agent is picked on the way to a model: go straight there.
-            setTab(MODEL_TAB);
-          }}
-          searchLabel="Search agents"
-          emptyLabel="No matching agents"
-          closeOnSelect={false}
-          tabs={tabs}
-          titleTrailing={
-            agent.onCreate ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded-full"
-                onPress={() => {
-                  haptics.tap();
-                  pickerRef.current?.close();
-                  agent.onCreate?.();
-                }}
-                accessibilityLabel="New agent"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Icon as={PlusIcon} size={20} className="text-foreground" />
-              </Button>
-            ) : undefined
-          }
-        />
-      );
-    }
+    const onAgent = onAgentTab && !!agent;
+    const pickerProps = onAgent
+      ? {
+          title: 'Agent',
+          options: agentOptions,
+          activeKey: agent?.activeName,
+          searchLabel: 'Search agents',
+          emptyLabel: 'No matching agents',
+          // Web's copy (model-selector.tsx, the truly-empty state) is the
+          // Model tab's alone.
+          empty: undefined as { title: string; actionLabel: string; onAction: () => void } | undefined,
+        }
+      : {
+          title: 'Model',
+          options,
+          activeKey,
+          searchLabel: 'Search models',
+          emptyLabel: 'No matching models',
+          empty: onConnect
+            ? { title: 'No models available', actionLabel: 'Connect provider', onAction: onConnect }
+            : undefined,
+        };
 
     return (
       <PickerSheet
         ref={pickerRef}
-        title="Model"
-        options={options}
-        activeKey={activeKey}
-        onSelect={onSelect}
-        searchLabel="Search models"
-        emptyLabel="No matching models"
+        {...pickerProps}
+        onSelect={
+          onAgent
+            ? (name) => {
+                // An agent is picked on the way to a model: go straight there.
+                agent?.onSelect(name);
+                setTab(MODEL_TAB);
+              }
+            : onSelect
+        }
         // Stays open after a pick (Jay, 2026-09-21): the check moves, the
         // Thinking slider switches to the new model's levels, and the user
         // closes the sheet with a swipe or a tap outside when done.
         closeOnSelect={false}
-        // Web's copy (model-selector.tsx, the truly-empty state).
-        empty={onConnect ? { title: 'No models available', actionLabel: 'Connect provider', onAction: onConnect } : undefined}
-        tabs={tabs}>
-        {thinking && thinking.levels.length > 0 ? <ThinkingControl {...thinking} /> : null}
-        {autoContinue ? (
-          <SettingsGroup>
-            <SettingsRow
-              icon={InfinityIcon}
-              label="AutoContinue"
-              value={autoContinue.value}
-              onPress={autoContinue.onPress}
-            />
-          </SettingsGroup>
+        tabs={tabs}
+        titleTrailing={
+          onAgent && agent?.onCreate ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              onPress={() => {
+                haptics.tap();
+                pickerRef.current?.close();
+                agent.onCreate?.();
+              }}
+              accessibilityLabel="New agent"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Icon as={PlusIcon} size={20} className="text-foreground" />
+            </Button>
+          ) : undefined
+        }>
+        {!onAgent ? (
+          <>
+            {thinking && thinking.levels.length > 0 ? <ThinkingControl {...thinking} /> : null}
+            {autoContinue ? (
+              <SettingsGroup>
+                <SettingsRow
+                  icon={InfinityIcon}
+                  label="AutoContinue"
+                  value={autoContinue.value}
+                  onPress={autoContinue.onPress}
+                />
+              </SettingsGroup>
+            ) : null}
+          </>
         ) : null}
       </PickerSheet>
     );

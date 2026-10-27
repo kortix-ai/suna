@@ -16,17 +16,18 @@ import { join, resolve } from 'node:path';
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 const ORIGINAL_ENV = { ...process.env };
-const PROJECT = 'monitors_project';
+const PROJECT = 'triggers_project';
 
 let tmp: string;
 let config: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 
-const MONITOR_TRIGGER = {
+const APP_TRIGGER = {
   slug: 'checkout-errors',
   path: 'kortix.yaml#triggers.checkout-errors',
   name: 'Checkout errors',
-  type: 'monitor',
+  type: 'app',
+  app: 'checkout-watcher',
   agent: 'oncall',
   model: null,
   enabled: true,
@@ -34,11 +35,11 @@ const MONITOR_TRIGGER = {
   run_at: null,
   timezone: 'UTC',
   secret_env: null,
-  run: './monitors/checkout-errors.ts',
-  mode: 'poll',
-  interval_seconds: 60,
-  expect_event_within_seconds: 86400,
-  prompt_template: 'Checkout monitor emitted: {{ line }}',
+  run: null,
+  mode: null,
+  interval_seconds: null,
+  expect_event_within_seconds: null,
+  prompt_template: 'Checkout watcher emitted: {{ event.name }}',
   session_mode: 'reuse',
   session_id: null,
   session_key: null,
@@ -49,7 +50,7 @@ const MONITOR_TRIGGER = {
 };
 
 const WEBHOOK_TRIGGER = {
-  ...MONITOR_TRIGGER,
+  ...APP_TRIGGER,
   slug: 'release-hook',
   path: 'kortix.yaml#triggers.release-hook',
   name: 'Release hook',
@@ -76,15 +77,6 @@ const CRON_TRIGGER = {
   webhook_url: null,
 };
 
-const STREAM_TRIGGER = {
-  ...MONITOR_TRIGGER,
-  slug: 'log-tail',
-  name: 'Log tail',
-  run: './monitors/log-tail.ts',
-  mode: 'stream',
-  interval_seconds: null,
-  expect_event_within_seconds: null,
-};
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -109,7 +101,7 @@ function writeConfig(apiBase: string): string {
 }
 
 const EVENT_TRIGGER = {
-  ...MONITOR_TRIGGER,
+  ...APP_TRIGGER,
   slug: 'new-pr',
   path: 'kortix.yaml#triggers.new-pr',
   name: 'New pull request',
@@ -242,399 +234,32 @@ async function runCli(args: string[], configFile: string = config) {
   return { code, stdout, stderr };
 }
 
-describe('kortix triggers — monitors', () => {
+describe('kortix triggers — monitors (removed)', () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
     process.env = { ...ORIGINAL_ENV };
     writeManifest();
-    // Local-only subcommands (`add`) never call the API, but the CLI still
-    // resolves a host for its banner — point it at a dead port.
     config = writeConfig('http://127.0.0.1:1');
   });
 
   afterEach(() => {
-    server?.stop(true);
-    server = null;
     rmSync(tmp, { recursive: true, force: true });
     process.env = { ...ORIGINAL_ENV };
   });
 
-  test('help documents the monitor type and its flags', async () => {
-    const result = await runCli(['triggers', '--help']);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('monitor');
-    expect(result.stdout).toContain('--run <cmd>');
-    expect(result.stdout).toContain('--mode <poll|stream>');
-    expect(result.stdout).toContain('--interval');
-    expect(result.stdout).toContain('--expect-event-within');
-  });
-
-  test('add writes a poll monitor block to kortix.yaml', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'checkout-errors',
-      '--type',
-      'monitor',
-      '--run',
-      './monitors/checkout-errors.ts',
-      '--mode',
-      'poll',
-      '--interval',
-      '60s',
-      '--expect-event-within',
-      '24h',
-      '--agent',
-      'oncall',
-      '--prompt',
-      'Checkout monitor emitted: {{ line }}',
-    ]);
-    expect(result.stderr).not.toMatch(/must be|is required|not valid/);
-    expect(result.code).toBe(0);
-
-    const text = manifestText();
-    expect(text).toContain('slug: checkout-errors');
-    expect(text).toContain('type: monitor');
-    expect(text).toContain('run: ./monitors/checkout-errors.ts');
-    expect(text).toContain('mode: poll');
-    // Durations are re-emitted in canonical form, exactly like the API's own
-    // write path (`formatDurationSeconds`): 60s -> 1m, 24h -> 1d.
-    expect(text).toContain('interval: 1m');
-    expect(text).toContain('expect_event_within: 1d');
-    expect(text).toContain('agent: oncall');
-    // cron/webhook wiring must never appear on a monitor.
-    expect(text).not.toContain('cron:');
-    expect(text).not.toContain('timezone:');
-    expect(text).not.toContain('secret_env:');
-    expect(result.stdout).toContain('kortix ship');
-  });
-
-  test('add writes a stream monitor with no interval', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'log-tail',
-      '--type',
-      'monitor',
-      '--run',
-      './monitors/log-tail.ts',
-      '--mode',
-      'stream',
-      '--prompt',
-      'Log line: {{ line }}',
-    ]);
-    expect(result.code).toBe(0);
-    const text = manifestText();
-    expect(text).toContain('mode: stream');
-    expect(text).not.toContain('interval:');
-  });
-
-  test('add rejects a monitor with no --run', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'no-run',
-      '--type',
-      'monitor',
-      '--mode',
-      'poll',
-      '--interval',
-      '60s',
-      '--prompt',
-      'x',
-    ]);
+  test('add --type monitor answers the removal message naming the App replacement and writes nothing', async () => {
+    const result = await runCli(['triggers', 'add', 'checkout-errors', '--type', 'monitor', '--prompt', 'x']);
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('--run');
-    expect(manifestText()).not.toContain('no-run');
-  });
-
-  test('add rejects a monitor with an unknown --mode', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'bad-mode',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'tail',
-      '--prompt',
-      'x',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('poll');
-    expect(result.stderr).toContain('stream');
-  });
-
-  test('add rejects a poll monitor with no --interval', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'no-interval',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'poll',
-      '--prompt',
-      'x',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('interval');
-  });
-
-  test('add rejects --interval on a stream monitor', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'stream-interval',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'stream',
-      '--interval',
-      '60s',
-      '--prompt',
-      'x',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('poll');
-  });
-
-  test('add enforces the platform duration floors', async () => {
-    const shortInterval = await runCli([
-      'triggers',
-      'add',
-      'fast-poll',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'poll',
-      '--interval',
-      '10s',
-      '--prompt',
-      'x',
-    ]);
-    expect(shortInterval.code).toBe(2);
-    expect(shortInterval.stderr).toContain('30s');
-
-    const shortWatchdog = await runCli([
-      'triggers',
-      'add',
-      'twitchy',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'poll',
-      '--interval',
-      '60s',
-      '--expect-event-within',
-      '1m',
-      '--prompt',
-      'x',
-    ]);
-    expect(shortWatchdog.code).toBe(2);
-    expect(shortWatchdog.stderr).toContain('5m');
-  });
-
-  test('add rejects a bare number where a duration literal is required', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'bare-number',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'poll',
-      '--interval',
-      '60',
-      '--prompt',
-      'x',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('30s');
-  });
-
-  test('add rejects cron/webhook flags on a monitor', async () => {
-    const withCron = await runCli([
-      'triggers',
-      'add',
-      'cron-monitor',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'stream',
-      '--cron',
-      '0 0 9 * * 1-5',
-      '--prompt',
-      'x',
-    ]);
-    expect(withCron.code).toBe(2);
-    expect(withCron.stderr).toContain('monitor');
-
-    const withSecret = await runCli([
-      'triggers',
-      'add',
-      'secret-monitor',
-      '--type',
-      'monitor',
-      '--run',
-      './m.ts',
-      '--mode',
-      'stream',
-      '--secret-env',
-      'HOOK',
-      '--prompt',
-      'x',
-    ]);
-    expect(withSecret.code).toBe(2);
-    expect(withSecret.stderr).toContain('monitor');
-  });
-
-  test('add rejects monitor flags on a cron trigger', async () => {
-    const result = await runCli([
-      'triggers',
-      'add',
-      'cron-with-run',
-      '--type',
-      'cron',
-      '--cron',
-      '0 0 9 * * 1-5',
-      '--run',
-      './m.ts',
-      '--prompt',
-      'x',
-    ]);
-    expect(result.code).toBe(2);
-    expect(result.stderr).toContain('monitor');
-  });
-
-  test('ls renders a monitor row with its mode and interval, not a schedule', async () => {
-    const apiConfig = writeConfig(startServer([MONITOR_TRIGGER, STREAM_TRIGGER]));
-    const result = await runCli(['triggers', 'ls', '--project', PROJECT], apiConfig);
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('checkout-errors');
-    expect(result.stdout).toContain('monitor');
-    expect(result.stdout).toContain('poll 1m');
-    expect(result.stdout).toContain('stream');
-    expect(result.stdout).not.toContain('secret_env=');
-  });
-
-  test('info shows the monitor fields', async () => {
-    const apiConfig = writeConfig(startServer([MONITOR_TRIGGER]));
-    const result = await runCli(
-      ['triggers', 'info', 'checkout-errors', '--project', PROJECT],
-      apiConfig,
-    );
-    expect(result.code).toBe(0);
-    expect(result.stdout).toContain('monitor');
-    expect(result.stdout).toContain('./monitors/checkout-errors.ts');
-    expect(result.stdout).toContain('poll');
-    expect(result.stdout).toContain('1m');
-    expect(result.stdout).toContain('1d');
-    // A monitor has no schedule and no webhook secret to show.
-    expect(result.stdout).not.toContain('timezone');
-    expect(result.stdout).not.toContain('secret_env');
-  });
-
-  test('info --json emits the monitor fields verbatim', async () => {
-    const apiConfig = writeConfig(startServer([MONITOR_TRIGGER]));
-    const result = await runCli(
-      ['triggers', 'info', 'checkout-errors', '--project', PROJECT, '--json'],
-      apiConfig,
-    );
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      type: 'monitor',
-      run: './monitors/checkout-errors.ts',
-      mode: 'poll',
-      interval_seconds: 60,
-      expect_event_within_seconds: 86400,
-    });
-  });
-
-  test('subcommand --help prints usage and exits 0 (splitHelp)', async () => {
-    for (const args of [['--help'], ['ls', '--help'], ['add', 'x', '-h'], ['rm', 'x', '--help']]) {
-      const result = await runCli(['triggers', ...args]);
-      expect(result.code).toBe(0);
-      expect(result.stdout).toContain('Usage: kortix triggers');
-      expect(result.stderr).not.toContain('unknown subcommand');
-    }
-  });
-
-  test('a missing slug is the shared arg error: exit 2, no HTTP call', async () => {
-    for (const args of [['add'], ['rm'], ['fire'], ['enable'], ['disable'], ['info']]) {
-      const result = await runCli(['triggers', ...args]);
-      expect(result.code).toBe(2);
-      expect(result.stderr).toContain('Pass a trigger slug.');
-    }
-    expect(manifestText()).not.toContain('slug:');
-  });
-
-  test('rm of an unknown local slug exits 1 with the manifest error', async () => {
-    const result = await runCli(['triggers', 'rm', 'nope']);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('No [[triggers]] "nope" in kortix.yaml.');
-  });
-
-  test('cron and webhook adds are unchanged', async () => {
-    const cron = await runCli([
-      'triggers',
-      'add',
-      'daily-digest',
-      '--type',
-      'cron',
-      '--cron',
-      '0 0 9 * * 1-5',
-      '--timezone',
-      'America/Los_Angeles',
-      '--prompt',
-      'Summarize yesterday.',
-    ]);
-    expect(cron.code).toBe(0);
-    const hook = await runCli([
-      'triggers',
-      'add',
-      'new-lead',
-      '--type',
-      'webhook',
-      '--secret-env',
-      'WEBHOOK_SECRET',
-      '--prompt',
-      'A new lead arrived.',
-    ]);
-    expect(hook.code).toBe(0);
-
-    const text = manifestText();
-    expect(text).toContain('cron: 0 0 9 * * 1-5');
-    expect(text).toContain('timezone: America/Los_Angeles');
-    expect(text).toContain('secret_env: WEBHOOK_SECRET');
-    expect(text).not.toContain('mode:');
-    expect(text).not.toContain('run:');
+    expect(result.stderr).toContain('monitor triggers were removed');
+    expect(result.stderr).toContain('--type app');
+    expect(manifestText()).not.toContain('checkout-errors');
   });
 });
 
-/**
- * `kortix triggers fire` reports the RUN's outcome, not just the fire's.
- * A fire that the API accepts can still end in a failed run; the runtime row
- * (`last_status`/`last_error`) records that outcome, so fire waits for it and
- * exits non-zero with the real error.
- */
 describe('kortix triggers fire — reports the run outcome', () => {
   const SESSION_ID = 'b3f0c2a1-0000-4000-8000-000000000001';
   const FAILURE_TEXT = 'Payment Required: Insufficient credits. Balance: $-0.06';
+  const FIRE_RUN_ID = 'b3f0c2a1-0000-4000-8000-0000000000aa';
 
   interface FireState {
     triggers: Record<string, unknown>[];
@@ -716,6 +341,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
               session_id: state.fireStatus === 'fired' ? SESSION_ID : null,
               command_id: null,
               deduped: false,
+              run_id: FIRE_RUN_ID,
             },
             { status: 202 },
           );
@@ -768,7 +394,9 @@ describe('kortix triggers fire — reports the run outcome', () => {
   });
 
   test('a failed run exits non-zero with the real error and cleans up the session', async () => {
-    state.failAfterMs = 300;
+    // Fails after the CLI reads its anchor, even on a loaded runner: a failure
+    // before that read is a known gap (it reads as the previous run's).
+    state.failAfterMs = 1500;
     const apiConfig = writeConfig(startFireServer());
     const result = await runCli(
       ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
@@ -788,7 +416,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
       apiConfig,
     );
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain(SESSION_ID);
+    expect(result.stdout).toContain(`Fired dogfood-cron → run ${FIRE_RUN_ID} → session ${SESSION_ID}`);
     expect(result.stdout).toContain('no failure');
     expect(state.deletedSessions).toEqual([]);
   });
@@ -831,7 +459,9 @@ describe('kortix triggers fire — reports the run outcome', () => {
 
   test('a queued fire whose run later fails exits non-zero with the error', async () => {
     state.fireStatus = 'queued';
-    state.failAfterMs = 300;
+    // Fails after the CLI reads its anchor, even on a loaded runner: a failure
+    // before that read is a known gap (it reads as the previous run's).
+    state.failAfterMs = 1500;
     const apiConfig = writeConfig(startFireServer());
     const result = await runCli(
       ['triggers', 'fire', 'dogfood-cron', '--wait', '8s', '--project', PROJECT],
@@ -872,6 +502,26 @@ describe('kortix triggers info — webhook signing', () => {
     // The scheme is signed with the caller's own secret (the $SECRET
     // placeholder), like the dashboard panel — never a secret value.
     expect(result.stdout).toContain('$SECRET is the signing key you saved for this webhook');
+  });
+
+  test('info on a Kortix-polled trigger prints when the app was checked and is checked next', async () => {
+    const polled = {
+      ...EVENT_TRIGGER,
+      slug: 'inbox-watch',
+      event: {
+        ...EVENT_TRIGGER.event,
+        connector: 'inbox', type: 'new_item.list_items', config: { interval: 5 }, source: 'mcp', provider: 'mcp', app: 'inbox',
+        status: 'active', error: null, checked_at: '2026-10-19T04:00:00.000Z', next_check_at: '2026-10-19T04:05:00.000Z',
+      },
+    };
+    const cfg = writeConfig(startServer([polled, EVENT_TRIGGER]));
+    const result = await runCli(['triggers', 'info', 'inbox-watch', '--project', PROJECT], cfg);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/checked\s+2026-10-19T04:00:00.000Z/);
+    expect(result.stdout).toMatch(/next_check\s+2026-10-19T04:05:00.000Z/);
+    // A Composio trigger is checked by nobody: no such rows.
+    const composio = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(composio.stdout).not.toContain('next_check');
   });
 
   test('info --json carries the signing scheme a caller can act on', async () => {
@@ -924,7 +574,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['connector events, and App events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });
@@ -936,7 +586,9 @@ describe('kortix triggers — events', () => {
     );
     expect(result.code).toBe(0);
     const text = manifestText();
-    expect(text).toContain('type: event');
+    // Written in the on/run shape: on carries the event, run the prompt.
+    expect(text).toContain('on:');
+    expect(text).not.toContain('type:');
     expect(text).toContain('connector: github');
     expect(text).toContain('event: GITHUB_PULL_REQUEST_EVENT');
     expect(text).toContain('owner: acme');
@@ -984,8 +636,8 @@ describe('kortix triggers — events', () => {
     expect(manifestText()).not.toContain('new-pr');
   });
 
-  test('add rejects schedule, webhook, and monitor flags on an event', async () => {
-    for (const flag of [['--cron', '0 0 9 * * *'], ['--timezone', 'UTC'], ['--secret-env', 'S'], ['--run', './m.ts'], ['--interval', '60s']]) {
+  test('add rejects schedule and webhook flags on an event', async () => {
+    for (const flag of [['--cron', '0 0 9 * * *'], ['--timezone', 'UTC'], ['--secret-env', 'S']]) {
       const result = await add('--connector', 'github', '--event', 'X', ...flag);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain(`${flag[0]} is not valid on an event trigger`);
@@ -1010,7 +662,7 @@ describe('kortix triggers — events', () => {
   test('unknown --type names all four types', async () => {
     const result = await runCli(['triggers', 'add', 'x', '--type', 'bogus', '--prompt', 'x']);
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('cron, webhook, monitor, or event');
+    expect(result.stderr).toContain('cron, webhook, event, or app');
   });
 
   test('events prints the table and config fields; --json prints the raw response', async () => {
@@ -1040,7 +692,8 @@ describe('kortix triggers — events', () => {
     expect(one.stdout).toContain('kortix connectors add <slug> --provider composio --app github');
     const raw = await runCli(['triggers', 'events', '--app', 'github', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
-    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github', '?app=github']);
+    // Without --source, the source comes from the app listing, where github is a composio app.
+    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github&source=composio', '?app=github&source=composio']);
     const both = await runCli(['triggers', 'events', '--app', 'github', '--connector', 'github', '--project', PROJECT], cfg);
     expect(both.code).toBe(2);
   });
@@ -1068,7 +721,9 @@ describe('kortix triggers — events', () => {
     expect(r.stdout).toMatch(/acme-bot\s+as acme-bot-user\s+default/);
     expect(r.stdout).toMatch(/acme-ci\s+/);
     expect(r.stdout).toMatch(/github-work\s+no shared account/);
-        expect(r.stdout).toMatch(/No connector yet \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toMatch(/No connector yet, source composio \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toContain('Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply');
+    expect(r.stdout).not.toContain('--provider mcp');
     expect(r.stdout).toContain('kortix triggers ls --type event');
     expect(r.stdout).toContain('kortix triggers ls --connector <slug>');
     const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
@@ -1095,7 +750,7 @@ describe('kortix triggers — events', () => {
       },
     });
     const cfg = writeConfig(`http://127.0.0.1:${server.port}`);
-    const line = 'App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
+    const line = 'Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
     for (const args of [
       ['triggers', 'events', '--apps'],
       ['triggers', 'events', '--connector', 'github'],
@@ -1179,6 +834,170 @@ describe('kortix triggers — events', () => {
     expect(info.stdout).toContain('labelled "acme-bot" on github');
   });
 
+  describe('source mcp (Kortix-polled app events)', () => {
+    const LINEAR_URL = 'https://mcp.linear.example.test/mcp';
+    const NOTES_URL = 'https://mcp.notes.example.test/mcp';
+    const INTERVAL = {
+      type: 'integer',
+      title: 'Check every (minutes)',
+      description: 'How often Kortix checks the app. A new item fires within this many minutes.',
+      enum: [1, 5, 15, 30, 60, 360, 1440],
+      default: 5,
+    };
+    const NEW_EMAIL = {
+      type: 'gmail.message.received',
+      name: 'New email',
+      description: 'An email arrives that matches your search.',
+      app: 'gmail',
+      delivery: 'poll',
+      config_schema: { type: 'object', properties: { query: { type: 'string', description: 'A Gmail search.' }, interval: INTERVAL } },
+      payload_schema: { type: 'object', properties: { subject: { type: 'string', description: 'Subject line' } } },
+    };
+    const NEW_ITEM = {
+      ...NEW_EMAIL,
+      type: 'new_item.search',
+      name: 'New item from search',
+      app: 'docs-search',
+      config_schema: { type: 'object', properties: { interval: INTERVAL } },
+      payload_schema: null,
+    };
+    const mcpApp = (over: Record<string, unknown>) => ({
+      source: 'mcp', provider: 'mcp', logo: null, connector: null, connected: false, connectors: [], mcp_url: null, ...over,
+    });
+    // Composio only where the project has a connector; every MCP catalogue app.
+    const MCP_APPS = {
+      apps: [
+        { ...EVENT_APPS.apps[0], source: 'composio', mcp_url: null },
+        mcpApp({
+          app: 'gmail', name: 'Gmail', event_count: 1, connector: 'gmail', new_connector_slug: 'gmail-events', mcp_url: 'https://mcp.gmail.example.test/mcp',
+          connectors: [{ slug: 'gmail', name: 'Gmail', accounts: [{ label: 'support', connected_as: null, is_default: true, connected: false }] }],
+        }),
+        mcpApp({
+          app: 'docs-search', name: 'Docs search', event_count: 1, connector: 'docs-search', connected: true, new_connector_slug: 'docs-search-events',
+          connectors: [{ slug: 'docs-search', name: 'Docs search', accounts: [{ label: 'Docs search', connected_as: null, is_default: true, connected: true }] }],
+        }),
+        mcpApp({ app: 'linear', name: 'Linear', event_count: 0, new_connector_slug: 'linear', mcp_url: LINEAR_URL }),
+        mcpApp({ app: 'notes', name: 'Notes', event_count: 1, new_connector_slug: 'notes-events', mcp_url: NOTES_URL }),
+      ],
+    };
+    let requests: string[];
+
+    function startMcpServer(): string {
+      requests = [];
+      server = Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const { pathname, search } = new URL(req.url);
+          if (pathname.includes('/triggers/')) requests.push(`${pathname.replace(/^.*\/triggers\//, '/triggers/')}${search}`);
+          if (pathname.endsWith('/triggers/event-apps')) return Response.json(MCP_APPS);
+          if (pathname.endsWith('/triggers/event-types')) {
+            const q = new URLSearchParams(search);
+            const app = q.get('app') ?? q.get('connector') ?? '';
+            const types = app === 'gmail' || app === 'notes' ? [{ ...NEW_EMAIL, app }] : app === 'docs-search' ? [NEW_ITEM] : [];
+            return Response.json({ source: 'mcp', provider: 'mcp', app, event_types: types });
+          }
+          return Response.json({ triggers: [], errors: [], triggers_paused: false });
+        },
+      });
+      return `http://127.0.0.1:${server.port}`;
+    }
+
+    test('--apps tells mcp and composio apps apart and prints the MCP add path', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toMatch(/source: composio\n\s+github\s+12 events\s+connected/);
+      expect(r.stdout).toMatch(/source: mcp\n\s+gmail\s+1 event\s+needs account/);
+      expect(r.stdout).toMatch(/docs-search\s+1 event\s+connected/);
+      expect(r.stdout).toContain('No connector yet, source mcp (2): linear (0), notes (1, add as notes-events)');
+      expect(r.stdout).toContain(
+        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>.',
+      );
+      // Apps come from the MCP catalogue: no Composio add line.
+      expect(r.stdout).not.toContain('--provider composio');
+      const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
+      expect(JSON.parse(raw.stdout).apps.map((a: { mcp_url: string | null }) => a.mcp_url)).toEqual([
+        null, 'https://mcp.gmail.example.test/mcp', null, LINEAR_URL, NOTES_URL,
+      ]);
+    });
+
+    test('--app on a catalogue app with no connector prints its add, sign-in, and trigger commands', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const one = await runCli(['triggers', 'events', '--app', 'notes', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(one.code).toBe(0);
+      expect(one.stdout).toContain(`1. kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
+      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the project)');
+      expect(one.stdout).toContain('3. kortix triggers add <slug> --type event --connector notes-events --event gmail.message.received --prompt "…" --apply');
+      expect(one.stdout).not.toContain('--provider composio');
+      const list = await runCli(['triggers', 'events', '--app', 'notes', '--project', PROJECT], cfg);
+      expect(list.stdout).toContain('1 event type on notes (mcp). Details: kortix triggers events --app notes --event <TYPE>');
+      expect(list.stdout).toContain('Set it up first:');
+      expect(list.stdout).toContain(`kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
+      const empty = await runCli(['triggers', 'events', '--app', 'linear', '--project', PROJECT], cfg);
+      expect(empty.code).toBe(0);
+      expect(empty.stdout).toContain('linear has no event types yet. Its read-only list tools become events after these steps:');
+      expect(empty.stdout).toContain(`1. kortix connectors add linear --provider mcp --url ${LINEAR_URL} --apply`);
+      expect(empty.stdout).toContain('2. kortix connectors authorize linear');
+      // No --source: the app is listed under mcp only, so the CLI asks for mcp (the API defaults to composio).
+      expect(requests).toContain('/triggers/event-types?app=linear&source=mcp');
+      await runCli(['triggers', 'events', '--app', 'linear', '--source', 'composio', '--project', PROJECT], cfg);
+      expect(requests).toContain('/triggers/event-types?app=linear&source=composio');
+    });
+
+    test('--app on an app with a connector: sign in when needed, never add it again', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const gmail = await runCli(['triggers', 'events', '--app', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(gmail.code).toBe(0);
+      expect(gmail.stdout).toContain('1. kortix connectors authorize gmail');
+      expect(gmail.stdout).toContain('2. kortix triggers add <slug> --type event --connector gmail --event gmail.message.received');
+      expect(gmail.stdout).not.toContain('connectors add');
+      // A project MCP server (no mcp_url) is its own connector, already signed in: only the trigger line.
+      const custom = await runCli(['triggers', 'events', '--app', 'docs-search', '--event', 'new_item.search', '--project', PROJECT], cfg);
+      expect(custom.code).toBe(0);
+      expect(custom.stdout).toContain('Add it: kortix triggers add <slug> --type event --connector docs-search --event new_item.search --prompt "…" --apply');
+      expect(custom.stdout).not.toContain('connectors add');
+      expect(custom.stdout).not.toContain('authorize');
+    });
+
+    test('--connector needs no app listing; --json stays the raw catalog', async () => {
+      const cfg = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--connector', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
+      expect(r.stdout).toContain('Add it: kortix triggers add <slug> --type event --connector gmail --event gmail.message.received');
+      const raw = await runCli(['triggers', 'events', '--app', 'gmail', '--json', '--project', PROJECT], cfg);
+      expect(JSON.parse(raw.stdout).event_types[0].type).toBe('gmail.message.received');
+      expect(requests).toEqual(['/triggers/event-types?connector=gmail', '/triggers/event-apps', '/triggers/event-types?app=gmail&source=mcp']);
+    });
+
+    test('--event prints the interval enum readably; add coerces and checks it', async () => {
+      config = writeConfig(startMcpServer());
+      const r = await runCli(['triggers', 'events', '--connector', 'gmail', '--event', 'gmail.message.received', '--project', PROJECT]);
+      expect(r.stdout).toContain(
+        'interval (integer, optional, default 5, one of 1, 5, 15, 30, 60, 360, 1440) — How often Kortix checks the app. A new item fires within this many minutes.',
+      );
+      expect(r.stdout).toContain('query (string, optional) — A Gmail search.');
+      expect(r.stdout).toContain('delivery poll');
+      const ok = await add('--connector', 'gmail', '--event', 'gmail.message.received', '--config', 'interval=15', '--project', PROJECT);
+      expect(ok.code).toBe(0);
+      expect(manifestText()).toContain('interval: 15');
+      const bad = await runCli(['triggers', 'add', 'odd', '--type', 'event', '--prompt', 'p', '--connector', 'gmail', '--event', 'gmail.message.received', '--config', 'interval=7', '--project', PROJECT]);
+      expect(bad.code).not.toBe(0);
+      expect(bad.stderr).toContain('interval must be one of 1, 5, 15, 30, 60, 360, 1440 (got "7")');
+      expect(manifestText()).not.toContain('slug: odd');
+    });
+
+    test('needs_connection on an mcp connector points at authorize, not a connect link', async () => {
+      const t = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, connector: 'gmail', app: 'gmail', type: 'gmail.message.received', source: 'mcp', provider: 'mcp', config: {} } };
+      const cfg = writeConfig(startServer([t]));
+      const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+      expect(info.code).toBe(0);
+      expect(info.stdout).toContain('A person must sign it in: kortix connectors authorize gmail');
+      expect(info.stdout).not.toContain('connectors connect');
+      const labelled = eventNextStep({ ...t, event: { ...t.event, account: 'support' } } as unknown as ProjectTrigger);
+      expect(labelled.lines[0]).toContain('kortix connectors authorize gmail');
+      expect(labelled.lines[0]).toContain('kortix connectors connections default <id>');
+    });
+  });
+
   describe('ls filters', () => {
     const second = {
       ...EVENT_TRIGGER,
@@ -1192,7 +1011,7 @@ describe('kortix triggers — events', () => {
       name: 'New mail',
       event: { ...EVENT_TRIGGER.event, connector: 'gmail', app: 'gmail', type: 'GMAIL_NEW_MESSAGE' },
     };
-    const all = [MONITOR_TRIGGER, EVENT_TRIGGER, second, mail];
+    const all = [APP_TRIGGER, EVENT_TRIGGER, second, mail];
     const slugs = (json: string) =>
       (JSON.parse(json).triggers as { slug: string }[]).map((t) => t.slug);
 
@@ -1224,17 +1043,17 @@ describe('kortix triggers — events', () => {
       );
       expect(slugs(both.stdout)).toEqual(['new-mail']);
       const none = await runCli(
-        ['triggers', 'ls', '--type', 'monitor', '--connector', 'gmail', '--project', PROJECT],
+        ['triggers', 'ls', '--type', 'app', '--connector', 'gmail', '--project', PROJECT],
         cfg,
       );
       expect(none.code).toBe(0);
       expect(none.stdout).toContain('No trigger matches that filter');
     });
 
-    test('--type monitor keeps the monitor; an unknown type exits 2', async () => {
+    test('--type app keeps the app trigger; an unknown type exits 2', async () => {
       const cfg = writeConfig(startServer(all));
       const ok = await runCli(
-        ['triggers', 'ls', '--type', 'monitor', '--json', '--project', PROJECT],
+        ['triggers', 'ls', '--type', 'app', '--json', '--project', PROJECT],
         cfg,
       );
       expect(slugs(ok.stdout)).toEqual(['checkout-errors']);
@@ -1277,5 +1096,381 @@ describe('eventNextStep on an error', () => {
   test('a provider rejection still points at the config', () => {
     const { lines } = eventNextStep(errored({ source: 'composio', provider: 'composio', error: 'repo is required' }));
     expect(lines.join('\n')).toContain('kortix triggers set pr-review --config <key>=<value>');
+  });
+});
+
+/**
+ * Run history (KRTX-1743): `runs`, `fire --payload/--dry-run`, `replay`, as a
+ * real process against a served API. Each case asserts the exit code, the
+ * output, and the HTTP request the CLI sent.
+ */
+describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
+  const base = `/v1/projects/${PROJECT}/triggers`;
+  const RUN_ID = '11111111-0000-4000-8000-000000000001';
+  const NEW_RUN_ID = '11111111-0000-4000-8000-000000000002';
+  const SESSION_ID = '22222222-0000-4000-8000-000000000001';
+  let requests: Array<{ method: string; path: string; search: string; body: unknown }>;
+  let replayAnswer: { status: number; body: unknown };
+  let emptyPage: boolean;
+
+  const run = (over: Record<string, unknown> = {}) => ({
+    run_id: RUN_ID,
+    slug: 'tickets',
+    source: 'webhook',
+    status: 'fired',
+    run_status: 'succeeded',
+    error: null,
+    run_error: null,
+    session_id: SESSION_ID,
+    command_id: null,
+    replay_of: null,
+    payload_verified: true,
+    payload: { body: { ticket: 'T-9' } },
+    scheduled_for: null,
+    created_at: '2026-10-16T18:03:54.382Z',
+    started_at: '2026-10-16T18:03:54.382Z',
+    ended_at: '2026-10-16T18:08:54.382Z',
+    duration_ms: 300_000,
+    cost_usd: 0.25,
+    ...over,
+  });
+
+  function startRunsServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        const text = await req.text();
+        requests.push({
+          method: req.method,
+          path: url.pathname,
+          search: url.search,
+          body: text ? JSON.parse(text) : null,
+        });
+        if (url.pathname === `${base}/tickets/runs` && req.method === 'GET') {
+          if (emptyPage) return Response.json({ runs: [], next_cursor: 'c-older' });
+          return Response.json({
+            runs: [run(), run({ run_id: NEW_RUN_ID, status: 'failed', run_status: null, error: 'Insufficient credits', session_id: null, duration_ms: null, cost_usd: null, replay_of: RUN_ID })],
+            next_cursor: 'c-next',
+          });
+        }
+        if (url.pathname === `${base}/tickets/fire` && req.method === 'POST') {
+          const body = text ? JSON.parse(text) : {};
+          if (body.dry_run) {
+            return Response.json({ dry_run: true, rendered_prompt: 'Ticket T-1 from manual', filter_matches: false, session_key: 'T-1', payload: body.payload ?? {} });
+          }
+          return Response.json({ status: 'queued', reason: 'busy', session_id: null, command_id: null, deduped: false, run_id: NEW_RUN_ID }, { status: 202 });
+        }
+        if (url.pathname === `${base}/tickets/runs/${RUN_ID}/replay` && req.method === 'POST') {
+          return Response.json(replayAnswer.body, { status: replayAnswer.status });
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}`;
+  }
+
+  const sent = (method: string, suffix: string) =>
+    requests.filter((r) => r.method === method && r.path === `${base}${suffix}`);
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-runs-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    requests = [];
+    emptyPage = false;
+    replayAnswer = { status: 202, body: { status: 'fired', session_id: SESSION_ID, command_id: null, deduped: false, run_id: NEW_RUN_ID } };
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('runs prints the table, newest first, and the next-page hint; --limit and --status reach the query', async () => {
+    const result = await runCli(
+      ['triggers', 'runs', 'tickets', '--limit', '2', '--status', 'fired', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const lines = result.stdout.split('\n');
+    const header = lines.find((l) => l.includes('STARTED'))!;
+    expect(header.trim().startsWith('RUN ')).toBe(true);
+    for (const col of ['SOURCE', 'STATUS', 'RUN STATUS', 'DURATION', 'COST', 'SESSION']) expect(header).toContain(col);
+    const first = lines.findIndex((l) => l.includes(SESSION_ID));
+    const second = lines.findIndex((l) => l.includes('webhook (replay)'));
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(lines[first]).toContain('5m 0s');
+    expect(lines[first]!.trim().startsWith(RUN_ID)).toBe(true);
+    expect(lines[second]!.trim().startsWith(NEW_RUN_ID)).toBe(true);
+    expect(lines[first]).toContain('$0.25');
+    // Local time of the CLI process (bun test pins its own TZ to UTC, the child keeps the machine's).
+    expect(lines[first]).toMatch(/2026/);
+    expect(result.stdout).toContain('Insufficient credits');
+    expect(result.stdout).toContain('--cursor c-next');
+    const [get] = sent('GET', '/tickets/runs');
+    expect(new URLSearchParams(get!.search).get('limit')).toBe('2');
+    expect(new URLSearchParams(get!.search).get('status')).toBe('fired');
+  });
+
+  test('runs --json prints the raw list; --cursor is passed through', async () => {
+    const result = await runCli(
+      ['triggers', 'runs', 'tickets', '--cursor', 'c-next', '--json', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const list = JSON.parse(result.stdout);
+    expect(list.runs.map((r: { run_id: string }) => r.run_id)).toEqual([RUN_ID, NEW_RUN_ID]);
+    expect(list.next_cursor).toBe('c-next');
+    expect(new URLSearchParams(sent('GET', '/tickets/runs')[0]!.search).get('cursor')).toBe('c-next');
+  });
+
+  test('runs rejects an unknown --status and a bad --limit before any HTTP call', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const bad = await runCli(['triggers', 'runs', 'tickets', '--status', 'succeeded', '--project', PROJECT], apiConfig);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('--status');
+    const limit = await runCli(['triggers', 'runs', 'tickets', '--limit', '101', '--project', PROJECT], apiConfig);
+    expect(limit.code).toBe(2);
+    expect(limit.stderr).toContain('--limit must be an integer from 1 to 100');
+    expect(sent('GET', '/tickets/runs')).toEqual([]);
+  });
+
+  test('runs: an empty page with a next_cursor still prints the --cursor hint', async () => {
+    emptyPage = true;
+    const result = await runCli(['triggers', 'runs', 'tickets', '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('No runs of tickets on this page');
+    expect(result.stdout).toContain('--cursor c-older');
+  });
+
+  test('fire --dry-run sends {dry_run, payload} and prints the prompt, the filter verdict and the session key', async () => {
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-1","kind":"bug"}}', '--dry-run', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Ticket T-1 from manual');
+    expect(result.stdout).toContain('does not match');
+    expect(result.stdout).toContain('T-1');
+    expect(sent('POST', '/tickets/fire').map((r) => r.body)).toEqual([
+      { dry_run: true, payload: { body: { ticket: 'T-1', kind: 'bug' } } },
+    ]);
+  });
+
+  test('fire --dry-run --json prints the raw response; @file reads the payload from disk', async () => {
+    writeFileSync(join(tmp, 'event.json'), JSON.stringify({ body: { ticket: 'T-7' } }));
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '@event.json', '--dry-run', '--json', '--project', PROJECT],
+      writeConfig(startRunsServer()),
+    );
+    expect(result.code).toBe(0);
+    const out = JSON.parse(result.stdout);
+    expect(out).toMatchObject({ dry_run: true, rendered_prompt: 'Ticket T-1 from manual', filter_matches: false, session_key: 'T-1' });
+    expect(sent('POST', '/tickets/fire')[0]!.body).toEqual({ dry_run: true, payload: { body: { ticket: 'T-7' } } });
+  });
+
+  test('fire --payload without --dry-run sends {payload}; a non-object payload exits 2 with no HTTP call', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'tickets', '--payload', '{"body":{"ticket":"T-3"}}', '--wait', '0', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(`Queued tickets → run ${NEW_RUN_ID}`);
+    expect(sent('POST', '/tickets/fire').map((r) => r.body)).toEqual([{ payload: { body: { ticket: 'T-3' } } }]);
+    for (const bad of ['[1]', 'not json', '@missing.json']) {
+      const r = await runCli(['triggers', 'fire', 'tickets', '--payload', bad, '--dry-run', '--project', PROJECT], apiConfig);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain('--payload');
+    }
+    expect(sent('POST', '/tickets/fire')).toHaveLength(1);
+  });
+
+  test('replay posts {} and prints the new run; --confirm-unverified posts confirm_unverified', async () => {
+    const apiConfig = writeConfig(startRunsServer());
+    const plain = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], apiConfig);
+    expect(plain.code).toBe(0);
+    expect(plain.stdout).toContain(`run ${RUN_ID} → run ${NEW_RUN_ID}`);
+    const confirmed = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--confirm-unverified', '--project', PROJECT], apiConfig);
+    expect(confirmed.code).toBe(0);
+    expect(sent('POST', `/tickets/runs/${RUN_ID}/replay`).map((r) => r.body)).toEqual([{}, { confirm_unverified: true }]);
+  });
+
+  test('replay of an unverified run → 409: exit 1 with a message that names --confirm-unverified', async () => {
+    replayAnswer = { status: 409, body: { error: 'payload is unverified', code: 'payload_unverified' } };
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('--confirm-unverified');
+  });
+
+  test('replay of a run still in progress → 409 run_in_progress: exit 1 with its own message', async () => {
+    replayAnswer = { status: 409, body: { error: 'run in progress', code: 'run_in_progress' } };
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], writeConfig(startRunsServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('is still in progress');
+    expect(result.stderr).not.toContain('--confirm-unverified');
+  });
+
+  test('replay of a truncated payload → 422: exit 1 with the reason; a missing run id exits 2', async () => {
+    replayAnswer = { status: 422, body: { error: 'payload truncated', code: 'payload_truncated' } };
+    const apiConfig = writeConfig(startRunsServer());
+    const result = await runCli(['triggers', 'replay', 'tickets', RUN_ID, '--project', PROJECT], apiConfig);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('64 KiB');
+    const noId = await runCli(['triggers', 'replay', 'tickets', '--project', PROJECT], apiConfig);
+    expect(noId.code).toBe(2);
+  });
+});
+
+describe('kortix triggers add --apply — the webhook-secret 409 and the signing pointer', () => {
+  const base = `/v1/projects/${PROJECT}/triggers`;
+  const WEBHOOK_SECRET_409 = {
+    error: 'Webhook secret is not available to the connector consumer',
+    code: 'webhook_secret_delivery_mismatch',
+    remediation:
+      'Secret DOGFOOD_SECRET is stored with runtime scope; the webhook fires only with connector scope. Re-store it: kortix secrets set DOGFOOD_SECRET=<value> --scope connector.',
+  };
+  const WEBHOOK_URL = 'https://api.kortix.test/v1/webhooks/projects/proj_hook/dogfood-hook';
+  const CREATED_WEBHOOK: typeof WEBHOOK_TRIGGER = {
+    ...WEBHOOK_TRIGGER,
+    slug: 'dogfood-hook',
+    secret_env: 'DOGFOOD_SECRET',
+    webhook_url: WEBHOOK_URL,
+  };
+  let addAnswer: { status: number; body: unknown };
+
+  function startAddServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url);
+        if (url.pathname === base && req.method === 'POST') {
+          return Response.json(addAnswer.body, { status: addAnswer.status });
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}`;
+  }
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-add-live-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    addAnswer = { status: 409, body: WEBHOOK_SECRET_409 };
+  });
+
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  const addHook = (apiConfig: string) =>
+    runCli(
+      [
+        'triggers',
+        'add',
+        'dogfood-hook',
+        '--type',
+        'webhook',
+        '--secret-env',
+        'DOGFOOD_SECRET',
+        '--prompt',
+        'A webhook arrived: {{ body.run }}',
+        '--apply',
+        '--project',
+        PROJECT,
+      ],
+      apiConfig,
+    );
+
+  test('a webhook-secret 409 surfaces the server remediation naming the scope fix', async () => {
+    // The API's 409 body carries a remediation field naming the exact
+    // re-store command. The CLI used to print only "HTTP 409: <error>" and
+    // dropped it — an opaque 409 that sent the reader into `secrets --help`
+    // to find the fix.
+    const result = await addHook(writeConfig(startAddServer()));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(`HTTP 409: ${WEBHOOK_SECRET_409.error}`);
+    expect(result.stderr).toContain('kortix secrets set DOGFOOD_SECRET=<value> --scope connector');
+  });
+
+  test('a created webhook trigger prints the signing scheme next to the URL, not the bare URL', async () => {
+    // A bare URL is unsigned and unusable; the add output must name the
+    // signing header and where the signed sample lives (`triggers info`).
+    addAnswer = { status: 201, body: { triggers: [CREATED_WEBHOOK] } };
+    const result = await addHook(writeConfig(startAddServer()));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(WEBHOOK_URL);
+    expect(result.stdout).toContain('X-Kortix-Signature');
+    expect(result.stdout).toContain('triggers info dogfood-hook');
+  });
+});
+
+describe('kortix triggers — app triggers', () => {
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'kortix-triggers-'));
+    process.env = { ...ORIGINAL_ENV };
+    writeManifest();
+    config = writeConfig('http://127.0.0.1:1');
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  test('help documents the app type and --app', async () => {
+    const result = await runCli(['triggers', '--help']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('App options (--type app)');
+    expect(result.stdout).toContain('$KORTIX_APP_EVENTS_URL');
+  });
+
+  test('add writes an app trigger block to kortix.yaml', async () => {
+    const result = await runCli(['triggers', 'add', 'bank-reply', '--type', 'app', '--app', 'bank-replies', '--prompt', 'Reply: {{ event.data.subject }}']);
+    expect(result.code).toBe(0);
+    const text = manifestText();
+    expect(text).toMatch(/event: ["']?\*["']?/);
+    expect(text).toContain('app: bank-replies');
+    expect(text).toContain('prompt: "Reply: {{ event.data.subject }}"');
+    expect(text).not.toContain('cron:');
+    expect(text).not.toContain('timezone:');
+  });
+
+  test('add writes an every schedule that calls an App, with no prompt', async () => {
+    const result = await runCli(['triggers', 'add', 'poll-bank', '--type', 'cron', '--every', '5m', '--target-app', 'bank-watcher', '--target-path', '/tick']);
+    expect(result.code).toBe(0);
+    const text = manifestText();
+    expect(text).toContain('every: 5m');
+    expect(text).toContain('app: bank-watcher');
+    expect(text).toContain('path: /tick');
+    expect(text).not.toContain('cron:');
+    expect(text).not.toContain('prompt:');
+  });
+
+  test('add refuses --every with --cron, --every on a webhook, and --target-path alone', async () => {
+    const both = await runCli(['triggers', 'add', 'a', '--type', 'cron', '--every', '5m', '--cron', '0 0 9 * * *', '--prompt', 'x']);
+    expect([both.code, both.stderr.includes('--every, --cron and --run-at are exclusive')]).toEqual([2, true]);
+    const webhook = await runCli(['triggers', 'add', 'b', '--type', 'webhook', '--secret-env', 'S', '--every', '5m', '--prompt', 'x']);
+    expect([webhook.code, webhook.stderr.includes('--every is only valid on a cron trigger')]).toEqual([2, true]);
+    const path = await runCli(['triggers', 'add', 'c', '--type', 'cron', '--cron', '0 0 9 * * *', '--target-path', '/x', '--prompt', 'x']);
+    expect([path.code, path.stderr.includes('--target-path needs --target-app')]).toEqual([2, true]);
+  });
+
+  test('add refuses an app trigger without --app, with --cron, and --app on a cron trigger', async () => {
+    const noApp = await runCli(['triggers', 'add', 'a', '--type', 'app', '--prompt', 'x']);
+    expect([noApp.code, noApp.stderr.includes('app triggers need --app <slug>')]).toEqual([2, true]);
+    const withCron = await runCli(['triggers', 'add', 'b', '--type', 'app', '--app', 'w', '--cron', '0 0 9 * * *', '--prompt', 'x']);
+    expect([withCron.code, withCron.stderr.includes('--cron is not valid on an app trigger')]).toEqual([2, true]);
+    const cronWithApp = await runCli(['triggers', 'add', 'c', '--type', 'cron', '--cron', '0 0 9 * * *', '--app', 'w', '--prompt', 'x']);
+    expect([cronWithApp.code, cronWithApp.stderr.includes('--app is only valid on an app trigger')]).toEqual([2, true]);
+    expect(manifestText()).not.toContain('slug: a');
   });
 });

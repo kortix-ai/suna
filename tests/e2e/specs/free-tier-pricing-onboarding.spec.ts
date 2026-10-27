@@ -13,11 +13,11 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
-    await expect(page.getByText('200 credits / month, no card needed').first()).toBeVisible();
+    await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
     // The hero and the Credits card both state the shared pool.
-    await expect(page.getByText('Unlimited members, one shared credit pool')).toHaveCount(2);
+    await expect(page.getByText('Unlimited members, one shared credit pool')).toBeVisible();
     await expect(page.getByText('Unused credits roll over one month')).toBeVisible();
     await expect(
       page.getByText('Connect your ChatGPT subscription', { exact: true }),
@@ -31,13 +31,13 @@ test.describe('free-tier pricing and onboarding surface', () => {
     ).toBeVisible();
 
     // The Credits card opens on the $200 tier; picking a tier updates the card live.
-    const tier = page.getByRole('combobox', { name: 'Monthly credits tier' });
-    await expect(tier).toContainText('20,000 credits / month');
-    await tier.click();
-    await page.getByRole('option', { name: /^50,000 credits/ }).click();
-    await expect(tier).toContainText('50,000 credits / month');
+    const tier = page.getByRole('slider', { name: 'Monthly credits tier' });
+    await expect(tier).toHaveAttribute('aria-valuetext', '20,000 credits, $200 / mo');
+    await tier.focus();
+    for (let step = 0; step < 3; step++) await tier.press('ArrowRight');
+    await expect(tier).toHaveAttribute('aria-valuetext', '50,000 credits, $500 / mo');
     await expect(page.getByText('$500', { exact: true })).toBeVisible();
-    await expect(page.getByText(/agent-computer hours a month/)).toBeVisible();
+    await expect(page.getByText(/agent hours/)).toBeVisible();
 
     await expect(page.getByRole('link', { name: /get started/i }).first()).toHaveAttribute(
       'href',

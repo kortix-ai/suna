@@ -37,12 +37,15 @@ kortix apps rollback <slug> <deployment-id>
 
 A server App runs in one of two modes. Choose the mode on the first deploy:
 
-- **On demand** (`--on-demand`): stops after the idle timeout (default 300
-  seconds) and wakes on the next authorized request. That request waits for
+- **On demand** (`--on-demand`): stops after `idle_timeout_seconds`
+  (120–86400, default 300; the disk stays, memory is lost) and wakes on the
+  next authorized request or a trigger that calls it. That request waits for
   the cold start. Use it for every App that only answers requests.
 - **Always on** (the default for a new App): runs 24/7, and keep-alive
   restarts it within 5 minutes if it stops. Use it only for an App that holds
-  websockets open or runs its own background loop. Scheduled jobs and queues
+  websockets open or runs its own background loop. A poller does not need
+  always on: deploy it `--on-demand` and let a schedule trigger call it
+  (`run: { app, path }`, SKILL.md "Start an agent from an App"). Scheduled jobs and queues
   of an App that uses a Convex backend App belong in the backend App.
 
 Apps have no monthly budget. Both modes stop when the account can no longer
@@ -61,16 +64,17 @@ kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
 ```
 
 Change the mode later without a redeploy:
-`kortix apps set <slug> --on-demand|--always-on`. Keep-alive applies the change within 5 minutes. `always_on` in `kortix.yaml`
-does the same on the next
-`kortix apps deploy --manifest-app <name>`.
+`kortix apps set <slug> --on-demand|--always-on`. Keep-alive applies the change within 5 minutes. `kortix apps set` writes
+`always_on` to the App's `kortix.yaml` block; editing `always_on` or
+`idle_timeout_seconds` in `kortix.yaml` applies on the next sync, with no deploy.
 
-On Daytona and E2B (self-host), an always-on App can be unreachable for up to
+On the legacy Daytona fallback (self-host), an always-on App can be unreachable for up to
 5 minutes when the provider stops its VM. On Kortix Cloud the VM is
 persistent.
 
 `stop` suspends compute immediately, and keep-alive leaves it stopped. The
-next authorized request, or `kortix apps start`, wakes it. A rollback starts
+next authorized request, a trigger or scheduled run that calls the App, or
+`kortix apps start`, wakes it. A rollback starts
 the target runtime first.
 
 When a Kortix release changes the App supervisor image, Kortix rebuilds a

@@ -20,12 +20,16 @@ import { createOpencodeLifecycle, type Opencode, type OpencodeLifecycleOptions }
 import { createInstanceGuard, type InstanceGuard } from './instance-guard'
 import { stopSessionLogJournal } from '../shared/session-log-journal'
 
-/** Native reload semantics remain explicit; these are not universal promises. */
+/**
+ * Native reload semantics remain explicit; these are not universal promises.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export type OpenCodeConfigurationService = Pick<
   Opencode,
   'reloadConfig' | 'reloadVerified' | 'reloadForWorkspace' | 'reconfigure'
 >
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpenCodeEventService {
   /**
    * Preserve native events, dispatch order, readiness and reconnect behavior.
@@ -39,6 +43,7 @@ export interface OpenCodeEventService {
   ): OpencodeEventSubscription
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpenCodeHarnessService extends HarnessService {
   readonly id: 'opencode'
   readonly configuration: OpenCodeConfigurationService
@@ -52,7 +57,10 @@ export interface OpenCodeHarnessService extends HarnessService {
   readonly instanceGuard: InstanceGuard
 }
 
-/** Create the OpenCode lifecycle and compose every service over it. */
+/**
+ * Create the OpenCode lifecycle and compose every service over it.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeHarnessService(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
@@ -65,6 +73,7 @@ export function createOpenCodeHarnessService(
  * Compose services over ONE lifecycle without changing startup behavior. The
  * daemon HTTP tests call this with a fake lifecycle, so a wiring change here
  * reaches every one of them.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode): OpenCodeHarnessService {
   // One interrupt per service: control arms it, background delivers events to it.
@@ -115,6 +124,7 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const openCodeDefinition: HarnessDefinition = {
   id: 'opencode',
   assets: createOpenCodeAssetsService(),

@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { getTranslations } from '@/i18n/get-translations';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
@@ -23,8 +23,13 @@ import { NotFoundTitleSync } from './not-found-title-sync';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi');
   // A plain string, so the root layout's `title.template` composes the full
-  // document title exactly as it does for every other page.
-  return { title: t.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161') };
+  // document title exactly as it does for every other page. `robots` replaces
+  // the root layout's `index, follow`, which disagreed with the `noindex` tag
+  // that notFound() adds (KRTX-3253).
+  return {
+    title: t.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161'),
+    robots: { index: false, follow: true },
+  };
 }
 
 const NotFound = () => {

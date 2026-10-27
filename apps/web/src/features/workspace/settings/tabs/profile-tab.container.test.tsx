@@ -1,8 +1,9 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, jest, mock, test } from 'bun:test';
 import { createElement, type ReactNode } from 'react';
 import type { ReactTestInstance } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, create } from 'react-test-renderer';
+import * as realModal from '@kortix/ui/modal';
 
 /**
  * The Delete-account dialog's own state contract (KRTX-1403): the
@@ -16,14 +17,29 @@ import { act, create } from 'react-test-renderer';
  * by `profile-tab.test.tsx`.
  */
 
+const uploadAvatar = mock(
+  async (_path: string, _file: File, _options: { cacheControl: string; upsert: boolean }) => ({
+    error: null,
+  }),
+);
 const getUser = async () => ({
-  data: { user: { user_metadata: {}, email: 'demo@example.test' } },
+  data: { user: { id: 'synthetic-user', user_metadata: {} } },
   error: null,
 });
 
 mock.module('@/lib/supabase/client', () => ({
-  createClient: () => ({ auth: { getUser, updateUser: async () => ({ error: null }) } }),
+  createClient: () => ({
+    auth: { getUser, updateUser: async () => ({ error: null }) },
+    storage: {
+      from: () => ({
+        list: async () => ({ data: [], error: null }),
+        upload: uploadAvatar,
+        getPublicUrl: () => ({ data: { publicUrl: 'https://storage.example.test/avatar.png' } }),
+      }),
+    },
+  }),
 }));
+mock.module('@kortix/ui/toast', () => ({ successToast: () => {}, errorToast: () => {} }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => true }));
 /** The deletion-status hook's answer, mutable per test. The dialog test
  *  mounts with the supported answer; the fail-closed test swaps in the error
@@ -54,7 +70,10 @@ mock.module('./account-memberships', () => ({
   useAccountMemberships: () => ({ accounts: [], isLoading: false }),
   AccountMembershipsSection: () => null,
 }));
-mock.module('@/components/ui/modal', () => ({
+// The real exports, so a new one (ModalClose, ModalContentInner, …) never breaks the mock;
+// only the portal-based parts are replaced.
+const uiModalMock = () => ({
+  ...realModal,
   Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
   ModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -62,11 +81,13 @@ mock.module('@/components/ui/modal', () => ({
   ModalFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-mock.module('@/components/ui/radio-group', () => ({
+});
+mock.module('@kortix/ui/modal', uiModalMock);
+const uiRadioGroupMock = () => ({
   RadioGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   RadioGroupItem: () => <div />,
-}));
+});
+mock.module('@kortix/ui/radio-group', uiRadioGroupMock);
 
 // The container reads `t('key')` and `t.raw('key')`. Returning the key's last
 // segment keeps the trigger findable by its label without loading the
@@ -260,4 +281,70 @@ describe('ProfileTab — a failed deletion-status check fails closed', () => {
       client.clear();
     }
   });
+});
+
+describe('ProfileTab — deletion date before consent', () => {
+  test('shows the date fourteen days after opening, including a month boundary', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-25T12:00:00Z'));
+    const { renderer, client } = await mountTab();
+    try {
+      const root = renderer.root;
+      const trigger = root.findAll(
+        (n) =>
+          n.props.className?.includes?.('text-destructive') &&
+          n.children.length === 1 &&
+          n.children[0] === 'deleteAccount',
+      )[0];
+      await act(async () => trigger.props.onClick());
+      const { ProfileTabView } = await import('./profile-tab');
+      const view = root.findByType(ProfileTabView);
+      const { renderToStaticMarkup } = await import('react-dom/server');
+      const out = renderToStaticMarkup(<ProfileTabView {...view.props} />);
+      expect(out).toContain('February 8, 2026');
+      expect(confirmInput(root).props.value).toBe('');
+      const immediate = renderToStaticMarkup(
+        <ProfileTabView {...view.props} deletionType="immediate" />,
+      );
+      expect(immediate).not.toContain('February 8, 2026');
+      await act(async () => view.props.onCloseDeleteDialog());
+      jest.setSystemTime(new Date('2026-02-01T12:00:00Z'));
+      await act(async () => trigger.props.onClick());
+      const reopened = renderToStaticMarkup(
+        <ProfileTabView {...root.findByType(ProfileTabView).props} />,
+      );
+      expect(reopened).toContain('February 15, 2026');
+      expect(reopened).not.toContain('February 8, 2026');
+    } finally {
+      await act(async () => renderer.unmount());
+      client.clear();
+      jest.useRealTimers();
+    }
+  });
+});
+
+test('avatar upload requires revalidation so deletion cannot leave an hour-long fresh response', async () => {
+  const { renderer, client } = await mountTab();
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = () => 'blob:synthetic-avatar';
+  URL.revokeObjectURL = () => {};
+  uploadAvatar.mockClear();
+  try {
+    const { ProfileTabView } = await import('./profile-tab');
+    const file = new File(['synthetic-image'], 'avatar.png', { type: 'image/png' });
+    await act(async () => {
+      renderer.root
+        .findByType(ProfileTabView)
+        .props.onAvatarFileChange({ target: { files: [file], value: '' } });
+    });
+    expect(uploadAvatar).toHaveBeenCalledTimes(1);
+    expect(uploadAvatar.mock.calls[0]?.[1]).toBe(file);
+    expect(uploadAvatar.mock.calls[0]?.[2]).toEqual({ cacheControl: '0', upsert: true });
+  } finally {
+    await act(async () => renderer.unmount());
+    client.clear();
+    URL.createObjectURL = originalCreate;
+    URL.revokeObjectURL = originalRevoke;
+  }
 });

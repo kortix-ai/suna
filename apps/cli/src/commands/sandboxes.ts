@@ -141,6 +141,12 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
+  // A leading flag is never a subcommand name (KRTX-2620): with no subcommand
+  // the error says so instead of reporting the flag as `unknown subcommand`.
+  if (sub?.startsWith('-')) {
+    process.stderr.write(`${status.err('missing subcommand')}\n\n${HELP}`);
+    return 2;
+  }
   const rest = argv.slice(1);
   let f: Flags;
   try {

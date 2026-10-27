@@ -44,6 +44,8 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
 mock.module('../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'glm-5.3-flash',
   isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 
 // The gateway's own personal-key rule for a live session.
@@ -83,10 +85,10 @@ mock.module('../secrets/account-resource', () => ({
 
 mock.module('../channels/slack/model-gate', () => ({
   channelModelContext: async () => ({
-    projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true,
+    projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false,
   }),
   projectModelContext: async (project: { projectId: string; accountId: string }) => ({
-    projectId: project.projectId, accountId: project.accountId, ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true,
+    projectId: project.projectId, accountId: project.accountId, ownerUserId: 'owner', freeManagedOnly: false,
   }),
 }));
 
@@ -115,7 +117,7 @@ const access = await import('../channels/model-access');
 
 const scope = (over: Partial<ReturnType<typeof access.channelModelScope>> = {}) => ({
   projectId: 'proj', accountId: 'acct', memberUserId: 'ivan', linkedUserId: 'ivan', personalUserId: 'ivan',
-  freeManagedOnly: false, llmGatewayEnabled: true, pooledEnabled: true, ...over,
+  freeManagedOnly: false, pooledEnabled: true, ...over,
 });
 
 beforeEach(() => {
@@ -138,7 +140,7 @@ beforeEach(() => {
 });
 
 describe('channelModelScope — whose resources a conversation may use', () => {
-  const base = { projectId: 'p', accountId: 'a', ownerUserId: 'owner', freeManagedOnly: false, llmGatewayEnabled: true, pooledEnabled: true };
+  const base = { projectId: 'p', accountId: 'a', ownerUserId: 'owner', freeManagedOnly: false, pooledEnabled: true };
 
   test('a one-to-one chat with a linked person: their own keys and ChatGPT count', () => {
     expect(access.channelModelScope({ ...base, linkedUserId: 'ivan', oneToOne: true })).toMatchObject({
@@ -211,10 +213,9 @@ describe('channelKeySelection — every usable key, so they rotate', () => {
     expect(keyQueries[0]).toMatchObject({ userId: 'ivan', grantUserId: null });
   });
 
-  test('nothing to select: flag off, gateway off, a Kortix model, or no pooled key', async () => {
+  test('nothing to select: flag off, a Kortix model, or no pooled key', async () => {
     usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'x', accessMode: 'project' }];
     expect(await access.channelKeySelection(scope({ pooledEnabled: false }), 'codex/gpt-6-astra')).toBeNull();
-    expect(await access.channelKeySelection(scope({ llmGatewayEnabled: false }), 'codex/gpt-6-astra')).toBeNull();
     expect(await access.channelKeySelection(scope(), 'glm-5.3-flash')).toBeNull();
     usableKeys = [];
     expect(await access.channelKeySelection(scope(), 'codex/gpt-6-astra')).toBeNull();
@@ -454,11 +455,6 @@ describe('planChannelFollowUp — the model a follow-up carries', () => {
     usableKeys = [{ secretId: 'k1', providerId: 'anthropic', name: 'ANTHROPIC_API_KEY', label: 'Claude', accessMode: 'project' }];
     await followUp({ chosenModel: 'anthropic/claude-opus-4-8' });
     expect(writes).toEqual([{ op: 'insert-if-absent', values: expect.objectContaining({ sessionId: 's1', providerId: 'anthropic', secretIds: ['k1'] }) }]);
-  });
-
-  test('off the gateway a choice waits for the next session: it cannot travel per prompt', async () => {
-    await followUp({ scope: scope({ llmGatewayEnabled: false }), chosenModel: 'anthropic/claude-sonnet-4-6', session: { ...session, pinnedModel: null } });
-    expect(turnCalls[0]).toMatchObject({ currentModel: null });
   });
 
   test('no scope: the pin, checked the legacy way', async () => {

@@ -1,5 +1,6 @@
 import { providerEvents } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 
 export type BootTimelineMark = { label: string; atMs: number };
 
@@ -33,6 +34,12 @@ export type BootTimelineInput = {
  */
 export function recordBootTimeline(input: BootTimelineInput): void {
   const totalMs = input.timeline.length > 0 ? input.timeline[input.timeline.length - 1]!.atMs : null;
+  // Charted in Better Stack (in-guest boot p50/p90); the row below is for SQL.
+  logger.info(`[boot-timeline] ${input.provider} total=${totalMs}ms`, {
+    provider: input.provider,
+    boot_ms: totalMs,
+    marks: Object.fromEntries(input.timeline.map((m) => [m.label, m.atMs])),
+  });
   void db
     .insert(providerEvents)
     .values({

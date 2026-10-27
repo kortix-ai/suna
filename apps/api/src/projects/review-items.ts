@@ -8,13 +8,21 @@
  * core module (./change-requests.ts).
  */
 
-import { changeRequests, connectorCalls, projectSessions, reviewItems } from '@kortix/db';
+import { changeRequests, connectorCalls, connectors, projectSessions, reviewItems } from '@kortix/db';
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
+import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import type { ProjectReadView } from './lib/project-read-view';
 import {
+  type ApprovalDecision,
+  type PendingApprovalRow,
+  resolveApprovalAs,
+} from './lib/connector-approval-decision';
+import {
+  CALL_ID_PREFIX,
   CR_REVIEW_STATUS,
   adapterSourceForId,
   changeRequestToReviewItem,
@@ -230,6 +238,8 @@ type Sortable<T> = T & { sortAt?: string };
 export type PendingConnectorCall = Sortable<ConnectorCallRow> & {
   sessionCreatedBy?: string | null;
   sessionOrigin?: string | null;
+  /** The connector's display name ("GitHub"). */
+  connectorName?: string | null;
 };
 
 /**
@@ -367,6 +377,8 @@ async function pendingConnectorCalls(
   projectId: string,
   view: ReadView,
   sessionId?: string,
+  /** One call by id, expired or not: the by-id read reports `expired`. */
+  executionId?: string,
 ): Promise<PendingConnectorCall[]> {
   const rows = await db
     .select({
@@ -374,8 +386,10 @@ async function pendingConnectorCalls(
       sortAt: microIso(connectorCalls.createdAt),
       sessionCreatedBy: projectSessions.createdBy,
       sessionOrigin: projectSessions.origin,
+      connectorName: connectors.name,
     })
     .from(connectorCalls)
+    .leftJoin(connectors, eq(connectors.connectorId, connectorCalls.connectorId))
     .leftJoin(
       projectSessions,
       and(
@@ -386,7 +400,12 @@ async function pendingConnectorCalls(
     .where(
       and(
         eq(connectorCalls.projectId, projectId),
-        eq(connectorCalls.status, 'pending_approval'),
+        executionId
+          ? and(
+              eq(connectorCalls.executionId, executionId),
+              inArray(connectorCalls.status, ['pending_approval', 'expired']),
+            )
+          : and(eq(connectorCalls.status, 'pending_approval'), approvalNotExpired),
         sessionId ? sql`${connectorCalls.sessionId}::text = ${sessionId}` : undefined,
         view.where(sql`${connectorCalls.sessionId}::text`, connectorCalls.actingUserId),
       ),
@@ -396,6 +415,7 @@ async function pendingConnectorCalls(
     sortAt: row.sortAt,
     sessionCreatedBy: row.sessionCreatedBy,
     sessionOrigin: row.sessionOrigin,
+    connectorName: row.connectorName,
   }));
 }
 
@@ -505,15 +525,15 @@ export async function listInboxItems(
  * it: a native id, `cr:<cr_id>` or `call:<execution_id>`. The list is
  * bounded, so a link to an item (a change request's `?id=cr:…`) must not
  * depend on that item being on a loaded page. A connector call is in the
- * inbox only while it is pending; null for anything else, and for an id that
- * is not a uuid.
+ * inbox while it is pending, and reads `expired` once its window closed; null
+ * for anything else, and for an id that is not a uuid.
  */
 export async function getInboxItem(
   projectId: string,
   id: string,
   resolveCaller: () => Promise<ApprovalCaller>,
   view: ReadView,
-): Promise<InboxItem | null> {
+): Promise<InboxItem | (Omit<InboxItem, 'status'> & { status: 'expired' }) | null> {
   const source = adapterSourceForId(id);
   const rawId = source ? id.slice(id.indexOf(':') + 1) : id;
   if (!isUuid(rawId)) return null;
@@ -527,10 +547,16 @@ export async function getInboxItem(
     return changeRequestToReviewItem(row);
   }
   if (source === 'call') {
-    const call = (await pendingConnectorCalls(projectId, view)).find((row) => row.executionId === rawId);
+    const [call] = await pendingConnectorCalls(projectId, view, undefined, rawId);
     if (!call) return null;
     const verdict = await connectorCallVerdicts([call], resolveCaller);
-    return connectorCallToReviewItem(call, verdict(call));
+    const options = verdict(call);
+    // A row held before its action had an enricher reads its content once,
+    // here, for a viewer who may see it (approval-enrich-pending.ts).
+    if (options?.canResolve) call.resultSummary = await enrichPendingCallOnce(call);
+    const item = connectorCallToReviewItem(call, options);
+    // Past its window: nobody can decide it any more (connectors/approval-expiry.ts).
+    return isApprovalExpired(call) ? { ...item, status: 'expired', can_resolve: false } : item;
   }
   const row = await getReviewItemById(rawId, projectId);
   if (!row || !(await view.allows({ sessionId: row.originSessionId, createdBy: row.createdBy }))) return null;
@@ -672,4 +698,79 @@ export async function bulkApplyVerdict(
       and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
     )
     .returning();
+}
+
+export const BULK_MAX_IDS = 50;
+
+/** Why one bulk id was refused. The route's OpenAPI enum reads this list. */
+export const BULK_RESULT_CODES = [
+  'expired',
+  'already_resolved',
+  'preview_unavailable',
+  'forbidden',
+  'not_found',
+  'not_bulk_actionable',
+] as const;
+
+export type BulkResultCode = (typeof BULK_RESULT_CODES)[number];
+
+export interface BulkResult {
+  id: string;
+  ok: boolean;
+  code?: BulkResultCode;
+}
+
+/**
+ * Bulk act across sources. Native ids update in one statement; each `call:` id
+ * goes through `resolveApprovalAs`, one at a time, so one refusal never stops
+ * the rest. `cr:` ids, and a call under a verdict other than approve/reject,
+ * are `not_bulk_actionable`. One result per requested id, in request order.
+ */
+export async function bulkActReview(
+  ids: string[],
+  projectId: string,
+  opts: {
+    verdict: ReviewVerdict;
+    accountId: string;
+    caller: ApprovalCaller;
+    auditSource: string;
+    updateStaleCard?: (row: PendingApprovalRow, decision: ApprovalDecision) => Promise<void>;
+  },
+): Promise<{ rows: ReviewItemRow[]; results: BulkResult[] }> {
+  const nativeIds = ids.filter((id) => adapterSourceForId(id) === null);
+  const rows = nativeIds.length
+    ? await bulkApplyVerdict(nativeIds, projectId, { verdict: opts.verdict, actingUserId: opts.caller.callerUserId })
+    : [];
+  const updated = new Set(rows.map((row) => row.reviewItemId));
+  const decision: ApprovalDecision | null =
+    opts.verdict === 'approve' ? 'approve' : opts.verdict === 'reject' ? 'deny' : null;
+  const results: BulkResult[] = [];
+  for (const id of ids) {
+    const source = adapterSourceForId(id);
+    if (source === null) {
+      results.push(updated.has(id) ? { id, ok: true } : { id, ok: false, code: 'not_found' });
+      continue;
+    }
+    if (source === 'cr' || !decision) {
+      results.push({ id, ok: false, code: 'not_bulk_actionable' });
+      continue;
+    }
+    const executionId = id.slice(CALL_ID_PREFIX.length);
+    if (!isUuid(executionId)) {
+      results.push({ id, ok: false, code: 'not_found' });
+      continue;
+    }
+    const { outcome } = await resolveApprovalAs({
+      projectId,
+      accountId: opts.accountId,
+      executionId,
+      decision,
+      note: '',
+      caller: opts.caller,
+      auditSource: opts.auditSource,
+      updateStaleCard: opts.updateStaleCard && ((row) => opts.updateStaleCard!(row, decision)),
+    });
+    results.push(outcome === 'resolved' ? { id, ok: true } : { id, ok: false, code: outcome });
+  }
+  return { rows, results };
 }

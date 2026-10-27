@@ -25,6 +25,7 @@ import {
   UnknownTranscriptCursorError,
 } from './session-transcript-mirror';
 import { readStoredTranscriptWindow } from '../session-log-read';
+import { SessionLogConvertingError } from '../session-log-backfill';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
@@ -227,7 +228,7 @@ export async function buildSessionTranscriptDigest(
 }
 
 /**
- * The sync-store envelope. Always the mirror: a client whose sandbox is up
+ * The sync-store envelope. Always the stored copy (the session log): a client whose sandbox is up
  * reads the runtime directly, so re-proxying it here would only duplicate the
  * body this endpoint exists to avoid.
  */
@@ -291,10 +292,9 @@ export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
   return mirror.head_complete && mirror.messages.length >= mirror.total;
 }
 
-/** A mirror read must never be able to fail a transcript request: the mirror is
- *  an enrichment, and its absence is already an expressible answer. With the
- *  project flag `session_log` on, the session log answers in the mirror's shape
- *  (`readStoredTranscriptWindow`). */
+/** A stored read must never be able to fail a transcript request: its absence
+ *  is already an expressible answer. The session log answers in the v1 window
+ *  shape (`readStoredTranscriptWindow`). */
 async function readMirrorSafely(
   sessionId: string,
   limit: number,
@@ -308,6 +308,8 @@ async function readMirrorSafely(
     // failure, and swallowing it here would answer "nothing was captured" for
     // a session that holds a full history.
     if (err instanceof UnknownTranscriptCursorError) throw err;
+    // A history the backfill converts (over the size cap): nothing to serve yet, and expected.
+    if (err instanceof SessionLogConvertingError) return null;
     console.warn(
       `[transcript-mirror] read failed for session ${sessionId}:`,
       err instanceof Error ? err.message : err,

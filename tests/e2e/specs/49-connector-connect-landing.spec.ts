@@ -365,7 +365,7 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await page.getByRole("button", { name: "Remove connector", exact: true }).click();
     expect((await removed).ok()).toBe(true);
 
-    await expect(page).toHaveURL(/\/customize\/connectors\?scope=connected$/, { timeout: 60_000 });
+    await expect(page).toHaveURL(/\/customize\/connectors$/, { timeout: 60_000 });
     await expect(page.getByText("connector not found")).toHaveCount(0);
     expect(notFound).toEqual([]);
     expect(await accountsOf(slug)).toEqual([]);

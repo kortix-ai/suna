@@ -22,14 +22,14 @@ kortix apps unlink crm --uses backend   # remove the link
 `--uses <slugs>` on `kortix apps create` sets the list at create, and on
 `kortix apps set` replaces it (`--uses=` clears it).
 
-In `kortix.yaml`, `uses` in the App's block replaces its list on every
-`kortix apps deploy`:
+In `kortix.yaml`, `uses` in the App's block is the source of truth: a push
+applies it on sync, and `kortix apps link` / `set --uses` write it there first:
 
 ```yaml
 apps:
   backend:               # the Convex template (convex.md), abridged: launch writes the full block
     type: oci_image
-    image: ghcr.io/get-convex/convex-backend@sha256:…
+    image: ghcr.io/convex/convex-backend@sha256:…
     command: ["sh", "-c", "cd /convex && exec ./run_backend.sh"]
     http_service: { internal_port: 3210, access: public }
   crm:
@@ -39,7 +39,8 @@ apps:
     uses: [backend]
 ```
 
-`kortix apps deploy` with no arguments deploys every block, used Apps first.
+`kortix apps deploy` with no arguments deploys every block that has a `path`
+or `image`, used Apps first; a block with neither is skipped.
 A slug that names no App of the project answers `400 app_not_found`.
 
 ## Use a binding in code

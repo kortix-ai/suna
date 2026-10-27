@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -31,6 +32,13 @@ import {
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
   SessionUpdateInputSchema,
+  SessionGroupAssignInputSchema,
+  SessionGroupCreateInputSchema,
+  SessionGroupListSchema,
+  SessionGroupOrderInputSchema,
+  SessionGroupSchema,
+  SessionGroupUpdateInputSchema,
+  SESSION_GROUP_NAME_MAX,
   SessionScopeInputSchema,
   SessionScopeSchema,
   SessionRuntimeContextSchema,
@@ -133,27 +141,30 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       marketplace: false,
-      connectors_api_discover: false,
-      agentmail_email: false,
-      llm_gateway: true,
       meta_agent: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
-      pi_harness: false,
       genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
       volumes: false,
       drives: false,
-      session_log: false,
       session_log_restore: false,
+      project_channels: false,
+      agent_rooms: false,
+      goals: false,
+      workspace_volume: false,
+      artifacts: false,
+      email_channel: false,
+      session_groups: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
+    default_reasoning_effort: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
   };
@@ -184,6 +195,10 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     owner_email: null,
     visibility: 'private',
     origin: 'user',
+    space_id: null,
+    group_id: null,
+    first_prompt: null,
+    reply_count: null,
     secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,
@@ -290,12 +305,12 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
-  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+  test('accepts Platinum and Daytona and rejects retired sandbox providers in project pin fields', () => {
     expect(() =>
       ProjectSchema.parse(
         projectFixture({
-          default_sandbox_provider: 'e2b',
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          default_sandbox_provider: 'platinum',
+          available_sandbox_providers: ['platinum', 'daytona'],
         }),
       ),
     ).not.toThrow();
@@ -306,7 +321,8 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    const retiredProviders = [['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
+    // E2B support is discontinued: `e2b` is a retired provider too.
+    const retiredProviders = ['e2b', ['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
     for (const retiredProvider of retiredProviders) {
       expect(() =>
         ProjectSchema.parse(
@@ -324,11 +340,40 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { llm_gateway: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('experimental carries the graduated llm_gateway key only as a constant true', () => {
+    // Wire compat: the API still sends `llm_gateway: true` for older SDK and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: true } })).experimental.llm_gateway).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated session_log key only as a constant true', () => {
+    // Wire compat: the API still sends `session_log: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: true } })).experimental.session_log).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated pi_harness key only as a constant true', () => {
+    // Wire compat: the API still sends `pi_harness: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: true } })).experimental.pi_harness).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, pi_harness: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated connectors_v2 and connectors_api_discover keys only as a constant true', () => {
+    // Wire compat: the API still sends both as `true` for older SDK and hosts.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: true } })).experimental.connectors_v2).toBe(true);
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_api_discover: true } })).experimental.connectors_api_discover).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, connectors_v2: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -361,6 +406,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -383,6 +437,52 @@ describe('ProjectSessionSchema', () => {
     expect(() =>
       ProjectSessionSchema.parse(sessionFixture({ created_at: new Date(NOW) })),
     ).toThrow();
+  });
+});
+
+describe('session group contracts', () => {
+  const GROUP = {
+    group_id: '22222222-3333-4444-8555-666666666666',
+    name: 'Store A',
+    position: 0,
+    created_by: '99999999-8888-4777-8666-555555555555',
+    created_at: NOW,
+    updated_at: NOW,
+  };
+
+  test('a session carries the group it is filed in, or null', () => {
+    expect(ProjectSessionSchema.parse(sessionFixture()).group_id).toBeNull();
+    expect(ProjectSessionSchema.parse(sessionFixture({ group_id: GROUP.group_id })).group_id).toBe(GROUP.group_id);
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ group_id: 'store-a' })).success).toBe(false);
+  });
+
+  test('a group and the list parse strictly', () => {
+    expect(SessionGroupSchema.parse(GROUP)).toEqual(GROUP);
+    expect(SessionGroupListSchema.parse({ groups: [GROUP] }).groups).toHaveLength(1);
+    expect(SessionGroupSchema.safeParse({ ...GROUP, color: 'red' }).success).toBe(false);
+  });
+
+  test('a name is trimmed and 1..SESSION_GROUP_NAME_MAX characters', () => {
+    expect(SessionGroupCreateInputSchema.parse({ name: '  Store A  ' })).toEqual({ name: 'Store A' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: '   ' }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX + 1) }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX) }).success).toBe(true);
+    expect(SessionGroupUpdateInputSchema.parse({ name: ' Store B ' })).toEqual({ name: 'Store B' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'Store A', position: 3 }).success).toBe(false);
+  });
+
+  test('an order names each group once, by id', () => {
+    const ids = ['22222222-3333-4444-8555-666666666666', '22222222-3333-4444-8555-777777777777'];
+    expect(SessionGroupOrderInputSchema.parse({ group_ids: ids }).group_ids).toEqual(ids);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: [ids[0], ids[0]] }).success).toBe(false);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: ['store-a'] }).success).toBe(false);
+  });
+
+  test('filing takes a group id, or null for no group', () => {
+    expect(SessionGroupAssignInputSchema.parse({ group_id: GROUP.group_id })).toEqual({ group_id: GROUP.group_id });
+    expect(SessionGroupAssignInputSchema.parse({ group_id: null })).toEqual({ group_id: null });
+    expect(SessionGroupAssignInputSchema.safeParse({}).success).toBe(false);
+    expect(SessionGroupAssignInputSchema.safeParse({ group_id: 'store-a' }).success).toBe(false);
   });
 });
 
@@ -511,7 +611,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -520,6 +620,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>
@@ -532,6 +640,20 @@ describe('TriggerSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('filter: a value or exactly one operator per path (KRTX-1721)', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened'] },
+      'body.pull_request': { exists: true },
+      'body.base': { prefix: ['release/'] },
+      'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    };
+    expect(() => TriggerSchema.strict().parse(triggerFixture({ filter }))).not.toThrow();
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { in: ['a'], not: ['b'] } } })).success).toBe(false);
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { nott: ['a'] } } })).success).toBe(false);
   });
 
   test('accepts an event trigger with its subscription state', () => {
@@ -760,24 +882,25 @@ describe('envelopes', () => {
     // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
     expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
-      'connectors_api_discover',
-      'agentmail_email',
-      'llm_gateway',
       'meta_agent',
-      'monitors',
       'reminders',
       'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
-      'pi_harness',
       'genui',
       'us_region',
       'event_triggers',
       'notification_center',
       'volumes',
       'drives',
-      'session_log',
       'session_log_restore',
+      'project_channels',
+      'agent_rooms',
+      'goals',
+      'workspace_volume',
+      'artifacts',
+      'email_channel',
+      'session_groups',
     ]);
   });
 

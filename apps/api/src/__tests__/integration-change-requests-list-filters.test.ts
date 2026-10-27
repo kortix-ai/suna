@@ -16,11 +16,13 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, changeRequests, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 import {
   CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
   decodeChangeRequestCursor,
+  getCrById,
   listChangeRequestsForProject,
+  supersededByFor,
 } from '../projects/change-requests';
 import { db } from '../shared/db';
 
@@ -32,6 +34,11 @@ const BIG_COUNT = 120;
 const USER = crypto.randomUUID();
 const SESSION_A = crypto.randomUUID();
 const SESSION_B = crypto.randomUUID();
+/** KRTX-3031: a project where an agent replaced change requests. */
+const SUPERSEDE_PROJECT = crypto.randomUUID();
+const HEAD_REVISED = crypto.randomUUID();
+const HEAD_DROPPED = crypto.randomUUID();
+const HEAD_TWICE = crypto.randomUUID();
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'cr-list-filters-test' });
@@ -147,8 +154,36 @@ beforeAll(async () => {
   );
 });
 
+beforeAll(async () => {
+  await db.insert(projects).values({
+    projectId: SUPERSEDE_PROJECT,
+    accountId: ACCOUNT,
+    name: 'cr-superseded-test',
+    repoUrl: 'https://example.test/cr-superseded.git',
+  });
+  const cr = (number: number, headRef: string, status: 'open' | 'merged' | 'closed') => ({
+    accountId: ACCOUNT,
+    projectId: SUPERSEDE_PROJECT,
+    number,
+    title: `S-${number}`,
+    baseRef: 'main',
+    headRef,
+    status,
+    createdBy: USER,
+  });
+  await db.insert(changeRequests).values([
+    cr(1, HEAD_REVISED, 'closed'), // replaced by #2
+    cr(2, HEAD_REVISED, 'open'),
+    cr(3, HEAD_DROPPED, 'closed'), // closed, nothing followed
+    cr(4, HEAD_TWICE, 'closed'), // replaced by #5, which was replaced by #7
+    cr(5, HEAD_TWICE, 'closed'),
+    cr(6, HEAD_REVISED, 'merged'), // merged: never "superseded"
+    cr(7, HEAD_TWICE, 'open'),
+  ]);
+});
+
 afterAll(async () => {
-  for (const projectId of [PROJECT, BIG_PROJECT]) {
+  for (const projectId of [PROJECT, BIG_PROJECT, SUPERSEDE_PROJECT]) {
     await db.delete(changeRequests).where(eq(changeRequests.projectId, projectId));
     await db.delete(projectSessions).where(eq(projectSessions.projectId, projectId));
     await db.delete(projects).where(eq(projects.projectId, projectId));
@@ -240,5 +275,50 @@ describe('listChangeRequestsForProject pages (KRTX-2316)', () => {
     for (const raw of ['0', '-1', '1.5', 'abc', '99999999999', "1' or 1=1"]) {
       expect(decodeChangeRequestCursor(raw)).toBeNull();
     }
+  });
+});
+
+describe('a closed change request names the one that replaced it (KRTX-3031)', () => {
+  const supersededOf = async (visibleTo?: ReturnType<typeof ne>) => {
+    const page = await listChangeRequestsForProject(SUPERSEDE_PROJECT, { status: 'all', visibleTo });
+    return Object.fromEntries(
+      page.change_requests.map((cr) => [cr.number, cr.superseded_by?.number ?? null]),
+    );
+  };
+
+  test('a closed request reads the next request opened for the same branch', async () => {
+    const byNumber = await supersededOf();
+    expect(byNumber[1]).toBe(2);
+    expect(byNumber[4]).toBe(5);
+    expect(byNumber[5]).toBe(7);
+  });
+
+  test('a request closed with no follow-up, an open one and a merged one name nothing', async () => {
+    const byNumber = await supersededOf();
+    expect(byNumber[3]).toBeNull();
+    expect(byNumber[2]).toBeNull();
+    expect(byNumber[6]).toBeNull();
+    expect(byNumber[7]).toBeNull();
+  });
+
+  test('the replacement carries its id, so a card can open it', async () => {
+    const page = await listChangeRequestsForProject(SUPERSEDE_PROJECT, { status: 'all' });
+    const second = page.change_requests.find((cr) => cr.number === 2);
+    const first = page.change_requests.find((cr) => cr.number === 1);
+    expect(first?.superseded_by).toEqual({ cr_id: second!.cr_id, number: 2 });
+  });
+
+  test('a replacement the caller may not read is never named', async () => {
+    // #2 hidden: #1 names the next request on its branch the caller may read.
+    const byNumber = await supersededOf(ne(changeRequests.number, 2));
+    expect(byNumber[1]).toBe(6);
+    // #7 hidden: nothing readable follows #5 on its branch, so nothing is named.
+    expect((await supersededOf(ne(changeRequests.number, 7)))[5]).toBeNull();
+  });
+
+  test('the single read names the replacement too', async () => {
+    const row = await getCrById('1', SUPERSEDE_PROJECT);
+    const replaced = await supersededByFor(SUPERSEDE_PROJECT, [row!]);
+    expect(replaced.get(row!.crId)?.number).toBe(2);
   });
 });

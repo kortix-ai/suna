@@ -55,7 +55,7 @@ Open the project menu → **Switch Project** → **Account settings**.
 
 | Sidebar group | Section | What it holds |
 | --- | --- | --- |
-| — | **Settings** | The account name. The **Security** group: Require MFA, session lifetime and idle timeout, live member sessions, and **Admins can open every session**. |
+| — | **Settings** | The account name. The **Security** group: Require MFA, session lifetime and idle timeout, live member sessions, and **Admins can open every session**. The **Automations** group: **Pause all automations**; see [Pause and limits](/docs/connect/triggers#pause-and-limits). |
 | — | **Branding** | Logo, icon, favicon and product name. See [Branding](#branding). |
 | — | **Git** | GitHub App installations. See [Git](/docs/git). |
 | — | **API keys** | Service-account keys and key rules. See [Sign-in, SSO & API keys](/docs/accounts/identity). |
@@ -462,6 +462,26 @@ The API route is `GET /v1/accounts/:accountId/audit` with the same filters as qu
 
 - **Project log:** `GET /v1/projects/:projectId/audit` needs `project.members.manage` and the entitlement.
 - **Session timeline:** `GET /v1/projects/:projectId/sessions/:sessionId/audit` needs `project.session.read`. Without the entitlement it returns only the unresolved pending approvals.
+
+### Who was active, and how often
+
+The audit log names an identity, not a person. A sandbox, the CLI, or a script that holds a person's token writes rows as that person, and those rows can outnumber the rows of what the person did in a browser by 100 to 1 or more. To ask "who used this project, and on which days", read the activity rollup instead of counting log rows.
+
+```bash
+kortix audit activity --project <project_id> --since 6w
+kortix audit activity --project <project_id> --since 6w --client browser
+kortix audit activity --actor <user_id> --since 2026-09-01 --until 2026-09-30 --json
+```
+
+Each user gets one line: the days with activity, the distinct UTC hours with activity, the number of events, the last day, and one character per day (taller means more active hours).
+
+| Flag | Filters on |
+| --- | --- |
+| `--since`, `--until` | UTC days, inclusive. A date, an ISO-8601 instant, or a span such as `6w`. Default: the last 28 days. At most 400 days. |
+| `--client <c>` | `browser`: a person in a web page (a `Mozilla/` user agent). `program`: the CLI, the SDK, a sandbox, or a script acting as the user. |
+| `--project`, `--actor`, `--actor-type`, `--credential-kind` | As for `kortix audit ls` |
+
+The API route is `GET /v1/accounts/:accountId/audit/activity`, with `since`, `until`, `project_id`, `actor`, `client`, `actor_type` and `credential_kind`. It needs the same `audit.read` permission and entitlement as the log. A background job adds each closed 15-minute window of the log to the rollup about 2 hours after it closes. `rolled_through` in the response is the instant the counts reach. The rollup covers the last 90 days of the log.
 
 ### Retention and export
 

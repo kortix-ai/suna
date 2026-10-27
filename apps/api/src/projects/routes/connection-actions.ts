@@ -14,7 +14,7 @@ import {
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
-import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { oauth2ConnectionStatus, revokeConnectionOAuth2, startConnectionSignIn } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
@@ -34,7 +34,9 @@ import {
   finalizeComposioConnect,
   startPipedreamConnect,
   finalizePipedreamConnect,
+  parseRedirects,
 } from '../lib/connection-hosted-connect';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const ShareConnectionInput = z
   .object({
@@ -327,7 +329,7 @@ export function registerConnectionActionsRoutes(): void {
         },
         responses: {
           200: json(z.object({ ok: z.literal(true) }), 'Updated'),
-          ...errors(400, 403, 404),
+          ...errors(400, 403, 404, 409),
         },
       }),
       async (c: any) => {
@@ -336,6 +338,22 @@ export function registerConnectionActionsRoutes(): void {
         const mutable = await loadMutableConnection(c, projectId, connectionId);
         if (!mutable) return c.json({ error: 'Not found' }, 404);
         const { loaded, connection } = mutable;
+        // An email account is a Resend inbox: its credential is the inbox's
+        // key and webhook secret, and removing it must delete the inbox.
+        // Only the default switch applies here; the rest is the inbox routes'.
+        if (
+          operation !== 'default' &&
+          connection.providerType === 'channel' &&
+          (connection.connectorConfig as Record<string, unknown> | null)?.platform === 'email'
+        ) {
+          return c.json(
+            {
+              error: 'This account is an email inbox. Manage it with /channels/email/inboxes.',
+              code: 'email_inbox_account',
+            },
+            409,
+          );
+        }
         if (operation === 'credential') {
           const body = await readJsonObject(c);
           const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
@@ -370,6 +388,7 @@ export function registerConnectionActionsRoutes(): void {
               });
             }
           } catch (error) {
+            rethrowDatabaseError(error);
             return c.json(
               { error: (error as Error).message || 'credential validation failed' },
               400,
@@ -512,6 +531,20 @@ export function registerConnectionActionsRoutes(): void {
             { error: 'Use the shared connector connect endpoint for the default connection' },
             409,
           );
+        }
+        // An MCP server signs in through Kortix's own OAuth flow, with no hosted
+        // provider: the link is the provider's consent page.
+        if (connection.providerType === 'mcp') {
+          if (operation === 'connect') {
+            const connectUrl = await startConnectionSignIn({
+              identity: { accountId: loaded.row.accountId, projectId, connectorId: connection.connectorId, connectionId },
+              initiatedBy: loaded.userId,
+              redirects: parseRedirects(await readJsonObject(c)),
+            });
+            if (!connectUrl) return c.json({ error: 'This MCP server has no one-click sign-in' }, 409);
+            return c.json({ app: connection.connectorAlias, connectUrl });
+          }
+          return c.json({ connected: (await oauth2ConnectionStatus(connectionId)).status === 'active' });
         }
         // Provider-neutral, like the connector-scoped route and the connect-link
         // intake. This was Pipedream-only, so a Composio connector's labelled

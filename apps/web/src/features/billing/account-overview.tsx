@@ -37,10 +37,11 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  * words to nobody who did not already know them.
  */
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
-import { useAccountState } from '@/hooks/billing/use-account-state';
-import { cn } from '@/lib/utils';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
+import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
+import { cn } from '@kortix/ui';
+import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { resolvedPlan, type AccountState } from '@kortix/sdk';
 import { formatUsdAsCredits } from '@kortix/shared';
 
@@ -128,6 +129,7 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
               ≈ {formatUsd(Math.abs(wallet), locale)}
               {isNegative ? ` ${tI18nComplete.raw('text4fef65587333')}` : ''}
             </p>
+            {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
           </div>
           <PlanSummary state={state} />
         </div>

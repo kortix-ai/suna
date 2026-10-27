@@ -3,15 +3,17 @@
  * account-deletion.ts so its unit test can stub this step and keep testing the
  * sandbox reclaim; integration-account-erasure-stores.test.ts runs it for real.
  */
-import { sessionSandboxes, projects } from '@kortix/db';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { projectSessions, sessionSandboxes, projects } from '@kortix/db';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { tryGetProvider } from '../../platform/providers';
+import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../../platform/services/workspace-volume';
 import {
   deleteManagedProjectRepo,
   isAlreadyNotRunning,
   sessionAttachmentStore,
 } from '../../projects/surface';
+import { markKortixRemovalIntent } from '../../projects/surface';
 import { db } from '../../shared/db';
 
 /** Provider calls in flight at once, the same bound as the sandbox reclaim. */
@@ -23,8 +25,9 @@ const PARKED_SANDBOX_STATUSES = ['stopped', 'archived'] as const;
 /**
  * The account's data outside our database that the row delete cannot reach
  * (KRTX-1734). A parked box keeps its disk at the provider (the reclaim pass
- * takes only running boxes), a project's session files stay in object storage,
- * and its Kortix-managed repo stays on the git host. Once the rows that name
+ * takes only running boxes), a session's /workspace volume stays at Platinum,
+ * a project's session files stay in object storage, and its Kortix-managed
+ * repo stays on the git host. Once the rows that name
  * them are gone nothing can find them again, so this runs while the rows exist
  * and throws on any failure: the request stays retryable instead of completed.
  * A repo the user connected is never touched (`deleteManagedProjectRepo`).
@@ -64,6 +67,21 @@ export async function deleteAccountExternalStores(
           );
           return;
         }
+        // Stamp the intent BEFORE the provider call: its `removed` webhook can
+        // land while this step is still running (the reported occurrence: 931 ms
+        // after the reclaim summary, whose select never sees a parked row) and
+        // must not read as a lost runtime. A parked box is inert — it cannot run
+        // or bill — so a stamp failure skips this box's removal and the retry
+        // stamps it again; the deletion stays retryable.
+        try {
+          await markKortixRemovalIntent(row.sandboxId);
+        } catch (err) {
+          failed++;
+          logger.error(`[AccountDeletion] Failed to stamp removal intent for parked sandbox ${row.sandboxId}:`, {
+            error: err instanceof Error ? err.message : err,
+          });
+          return;
+        }
         try {
           await provider.remove(row.externalId as string);
         } catch (err) {
@@ -77,6 +95,17 @@ export async function deleteAccountExternalStores(
     );
   }
   if (failed > 0) throw new Error(`${failed} parked sandbox(es) of account ${accountId} could not be removed`);
+
+  // Session /workspace volumes, after the boxes that mount them.
+  const volumeSessions = await db
+    .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.accountId, accountId), sql`${projectSessions.metadata} ? ${WORKSPACE_VOLUME_SESSION_KEY}::text`));
+  for (let i = 0; i < volumeSessions.length; i += REMOVE_CONCURRENCY) {
+    await Promise.all(
+      volumeSessions.slice(i, i + REMOVE_CONCURRENCY).map((s) => deleteSessionWorkspaceVolume(s.sessionId, s.metadata)),
+    );
+  }
 
   const accountProjects = await db.select().from(projects).where(eq(projects.accountId, accountId));
   for (let i = 0; i < accountProjects.length; i += REMOVE_CONCURRENCY) {

@@ -109,7 +109,14 @@ beforeAll(async () => {
     { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' },
     { accountId: legacy.account_id, projectId: legacy.project_id, userId: MEMBER, projectRole: 'member' },
   ]);
-  await db.insert(pushDeviceTokens).values(users.map((userId) => ({ token: token(userId), userId, platform: 'ios' })));
+  // A push goes only to a token bound to a live app sign-in (KRTX-2242). Each
+  // user's sign-in id is their user id: unique, and deleted with the user.
+  await db.execute(sql`
+    INSERT INTO auth.sessions (id, user_id)
+    VALUES ${sql.join(users.map((id) => sql`(${id}::uuid, ${id}::uuid)`), sql`, `)}`);
+  await db.insert(pushDeviceTokens).values(
+    users.map((userId) => ({ token: token(userId), userId, platform: 'ios', authSessionId: userId })),
+  );
   privateSession = await seedSession(project, MEMBER);
   legacySession = await seedSession(legacy, MEMBER);
 }, 20_000);

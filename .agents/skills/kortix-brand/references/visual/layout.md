@@ -58,7 +58,7 @@ Values live in `visual-system.json` (keys `spacing.*`, `radius.*`). This file co
 
 ### Split modal
 
-**Rule.** A split modal pairs art with content: `lg:max-w-3xl`, a 5-column grid with art in 2 columns and content in 3, `p-5 lg:p-8`, `gap-5`. On a phone the art becomes an `h-48` banner. The art rounds its own outer corners. — *Why:* the modal clip does not reach a WebGL canvas (`features/tunnel/computer-connect.tsx`, #8491). — *Where:* app. — *When silent:* copy `computer-connect.tsx`. Art rules are in `graphic-elements.md`.
+**Rule.** A split modal pairs art with content: `lg:max-w-3xl`, a 5-column grid with art in 2 columns and content in 3, `p-5 lg:p-8`, `gap-5`. On a phone the art becomes an `h-48` banner. The art rounds its own outer corners. — *Why:* the modal clip does not reach a WebGL canvas (`packages/ui/src/internal/tunnel/computer-connect.tsx`, #8491). — *Where:* app. — *When silent:* copy `computer-connect.tsx`. Art rules are in `graphic-elements.md`.
 
 **Rule.** Inside a modal, a list has no bordered panel of its own. The modal is the container, and rows divide with `divide-y divide-border`. — *Why:* a box inside a box causes nested rounding (#8491, #8421). — *Where:* app. — *When silent:* drop the inner border.
 
@@ -72,7 +72,7 @@ Values live in `visual-system.json` (keys `spacing.*`, `radius.*`). This file co
 
 ## States
 
-**Rule.** An empty state has no icon tile and no card. A first-run list may lead with the pixel Kortix mark (`aria-hidden`, `currentColor`) and a one-time 300ms opacity fade. The mark takes its tone from its wrapper: put `text-muted-foreground` on the wrapper and pass the mark no color class (Q49). Loading and empty share the same padding (`py-8`) so the panel does not jump. "First-run" means zero unfiltered items on a successful load of a list this kit names first-run (triggers, agents, secrets). The page cannot see deletion history. A search or filter with no result shows one muted line and no mark (Q4, Q23). Compose `EmptyState size="sm"` unmodified and place the mark above it as a sibling. Do not fork the primitive, add a prop, or restyle its title or padding. Its title weight and ink are OPEN for the primitive owner (Q4): list the mismatch under Guesses. — *Why:* nine icon-tile empties became one muted line (#7675). The pixel mark leads a first-run empty (#7337, D4g). Mobile has the same rule: no card, border, fill, icon or description. — *Where:* app, mobile. — *When silent:* one muted line, `py-8`, no mark. Copy: see [voice-and-tone.md](../verbal/voice-and-tone.md) section 4.
+**Rule.** The empty state of a tab, a folder or a list is `EmptyState` with `media={<EmptyArt icon={…} />}` (`packages/ui/src/primitives/empty-art.tsx`): the stacked-card illustration with one Phosphor glyph on the front card. An empty folder passes no glyph and gets the document card. Then one title, one sentence, and outline buttons with a leading icon (`Button variant="outline" size="sm" className="gap-1.5"`, glyph `size-3.5 shrink-0`). A search or filter with no result in that tab uses the same composition with `MagnifyingGlassIcon` (`space-links.tsx`). Draw no other decorative tile, illustration or card, and do not fork or restyle `EmptyArt` or `EmptyState`. — *Why:* every empty channel tab and Files folder draws one picture, so "nothing here yet" reads the same everywhere (D14, 2026-10-25). It supersedes the one-muted-line rule and the first-run pixel mark for these surfaces (D4g, Q4). Mobile keeps its own rule: no card, border, fill, icon or description. — *Where:* app. — *When silent:* `EmptyState` + `EmptyArt` with the glyph of the tab's noun (the glyph its tab or header uses). Copy: see [voice-and-tone.md](../verbal/voice-and-tone.md) section 4.
 
 **Rule.** The call to action in an empty state is the page's header primary action: the same control, with the same menu and the same leading icon or none. Show it once: when the header already shows that action, the empty state carries the line and no second copy. A person who cannot perform the action sees the line and no button, and no explanation. — *Why:* two entry points to one action offer the same choices, and a hidden action needs no apology (Q4). Two live copies of one primary action on one screen are duplicate chrome (Q48). — *Where:* app. — *When silent:* header only while the header shows it. Reuse the header control in the empty state only where the header hides it. Hide it when the viewer lacks the grant.
 
@@ -186,7 +186,7 @@ The shell renders `apps/web`. Keep components, tokens and data behavior shared. 
 | "Tailwind's default spacing is fine here" | This app overrode it. Stock intuition is wrong by 8% everywhere. |
 | "I will add `mt-2` to this child" | The parent owns the gap. Two owners break the rhythm. |
 | "A skeleton is safer than a blank" | A skeleton of a layout you do not know is a guess. Show the mark. |
-| "An icon makes the empty state friendlier" | One muted line. The pixel mark may lead a first run. |
+| "An icon tile makes the empty state friendlier" | `EmptyArt` is the one empty-state art: stacked cards, one glyph (D14). No other tile. |
 | "It is just a one-off marketing-ish section" | Name the column, then follow it. |
 | "A 3-up card grid is the safe layout" | It is the generic layout. Use one idea per row. |
 

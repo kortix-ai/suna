@@ -22,10 +22,8 @@ describe('setAdminBypass / isAdminBypassEnabled', () => {
     expect(isAdminBypassEnabled()).toBe(false);
   });
 
-  test('toggles on and off', () => {
+  test('is a retired no-op: turning it on leaves it off', () => {
     setAdminBypass(true);
-    expect(isAdminBypassEnabled()).toBe(true);
-    setAdminBypass(false);
     expect(isAdminBypassEnabled()).toBe(false);
   });
 });
@@ -49,7 +47,7 @@ describe('makeRequest admin-bypass header', () => {
     };
   }
 
-  test('attaches x-kortix-admin-bypass when enabled', async () => {
+  test('sends no x-kortix-admin-bypass even when set (the header is retired)', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -58,7 +56,7 @@ describe('makeRequest admin-bypass header', () => {
     try {
       setAdminBypass(true);
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBe('1');
+      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
     } finally {
       stub.restore();
     }

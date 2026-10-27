@@ -1,8 +1,5 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-/* Cmd+P — the session transcript as a document. Kept in its own file because
-   it is one self-contained media block and reads as a unit. */
-@import './print.css';
 /* Kortix themes (generated from terminalcolors.com palettes by
    scripts/kortix-themes; see lib/interface-themes.ts). One block per theme,
    all 39 tokens. */
@@ -12,451 +9,8 @@
 
 @source "../node_modules/streamdown/dist/*.js";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-pane: var(--pane);
-  --color-surface: var(--surface);
-  --color-foreground: var(--foreground);
-  --color-foreground-strong: var(--foreground-strong);
-  --color-foreground-weak: var(--foreground-weak);
-  --font-sans: var(--font-roobert);
-  --font-mono: var(--font-roobert-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-row: var(--sidebar-row);
-  --color-sidebar-row-control: var(--sidebar-row-control);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  /* Interaction overlays — translucent ink, not solid surfaces, so a hover or
-     selection tint blends over whatever substrate is behind it (canvas,
-     surface-1, an image). Used by Card's proximity highlight + selected fill. */
-  --color-hover: var(--hover);
-  --color-active: var(--active);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-kortix-base: var(--kortix-base);
-  --color-kortix-blue: var(--kortix-blue);
-  --color-kortix-yellow: var(--kortix-yellow);
-  --color-kortix-orange: var(--kortix-orange);
-  --color-kortix-green: var(--kortix-green);
-  --color-kortix-purple: var(--kortix-purple);
-  --color-kortix-red: var(--kortix-red);
-  --color-liquid-glass: var(--liquid-glass-bg);
-  --color-liquid-glass-hover: var(--liquid-glass-bg-hover);
-  --shadow-liquid-glass: var(--liquid-glass-shadow);
-  /* Terminal surface. Only the PTY pane itself is always dark, in every app
-     theme, because it mirrors a real shell — so these are literals, not
-     light/dark pairs. Chrome around it (the connect bar, the panel shell, the
-     connection status) is app UI and paints Kortix tokens. `terminalTheme` in
-     features/session/pty-terminal.tsx must keep `background` equal to
-     --terminal-surface and `foreground` equal to --terminal-fg: xterm's ITheme
-     needs concrete colors, not CSS vars. */
-  --color-terminal-surface: var(--terminal-surface);
-  --color-terminal-fg: var(--terminal-fg);
-  --color-terminal-border: var(--terminal-border);
-  /* @generated kortix-brand:start theme — edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts */
-  /* Type scale. Roles and surfaces are in references/visual/typography.md. */
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: calc(1 / 0.8125);
-  --text-sm: 0.875rem;
-  --text-sm--line-height: calc(1.25 / 0.875);
-  --text-md: 0.9rem;
-  --text-md--line-height: calc(1.375 / 0.9375);
-  --text-base: 1rem;
-  --text-base--line-height: calc(1.5 / 1);
-  --text-lg: 1.125rem;
-  --text-lg--line-height: calc(1.75 / 1.125);
-  --text-xl: 1.25rem;
-  --text-xl--line-height: calc(1.75 / 1.25);
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: calc(2 / 1.5);
-  --text-3xl: 1.875rem;
-  --text-3xl--line-height: calc(2.25 / 1.875);
-  --text-4xl: 2.25rem;
-  --text-4xl--line-height: calc(2.5 / 2.25);
-  --text-5xl: 3rem;
-  --text-5xl--line-height: 1;
-  --text-6xl: 3.75rem;
-  --text-6xl--line-height: 1;
-  --text-7xl: 4.5rem;
-  --text-7xl--line-height: 1;
-  --text-8xl: 6rem;
-  --text-8xl--line-height: 1;
-  /* Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme. */
-  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
-  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
-  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
-  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
-  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
-  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
-  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
-  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
-  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
-  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
-  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
-  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
-  /* Project glyph icon palette, CHOSEN by the user. Separate from emoji on purpose. The ring token paints both the inset ring and the glyph, tuned (L only) to clear 3:1 against the fill and --popover/--card in both themes. */
-  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
-  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
-  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
-  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
-  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
-  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
-  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
-  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
-  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
-  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
-  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
-  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
-  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
-  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
-  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
-  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
-  /* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */
-  --transition-duration-fast: 100ms;
-  --transition-duration-normal: 150ms;
-  --transition-duration-moderate: 200ms;
-  --transition-duration-slow: 300ms;
-  --transition-duration-slower: 500ms;
-  --ease-default: cubic-bezier(0.2, 0, 0, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
-  /* @generated kortix-brand:end */
-  /* App typography scale. Keep html at 100% so browser and OS zoom
-  /* Standard border radius values */
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  /* Standard radius for all main form elements and UI components */
-  --radius-2xl: 1rem;
-  --border-width: 1.5px;
-  --spacing-sidebar: 1.5rem;
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-  --animate-collapsible-down: collapsible-down 0.2s ease-out;
-  --animate-collapsible-up: collapsible-up 0.15s ease-out;
-  --animate-marquee: marquee var(--duration) infinite linear;
-  --animate-marquee-reverse: marquee-reverse var(--duration) infinite linear;
-  --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
-  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
-  --animate-slide-down: slide-down 300ms cubic-bezier(0.87, 0, 0.13, 1);
-  --animate-slide-up: slide-up 300ms cubic-bezier(0.87, 0, 0.13, 1);
-  --scaleIn: scaleIn 200ms ease;
-  --scaleOut: scaleOut 200ms ease;
-  --fadeIn: fadeIn 200ms ease;
-  --fadeOut: fadeOut 200ms ease;
-  --enterFromLeft: enterFromLeft 250ms ease;
-  --enterFromRight: enterFromRight 250ms ease;
-  --exitToLeft: exitToLeft 250ms ease;
-  --exitToRight: exitToRight 250ms ease;
-  --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
-  --animate-shiny-text: shiny-text 5s infinite;
-  --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
-  /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
-  --animate-shake: shake 400ms var(--ease-in-out) both;
-
-  /* Marketing chips: ±6px vertical float */
-  --animate-chip-drift: chip-drift 6s ease-in-out infinite;
-
-  @keyframes chip-drift {
-    0%,
-    100% {
-      transform: translateY(-6px);
-    }
-    50% {
-      transform: translateY(6px);
-    }
-  }
-
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    10% {
-      transform: translateX(-6px);
-    }
-    30% {
-      transform: translateX(5px);
-    }
-    50% {
-      transform: translateX(-3px);
-    }
-    70% {
-      transform: translateX(2px);
-    }
-    90% {
-      transform: translateX(-1px);
-    }
-  }
-
-  @keyframes kortix-bullet-flow {
-    0%,
-    100% {
-      background-position: 0% 0%;
-    }
-    50% {
-      background-position: 0% 100%;
-    }
-  }
-
-  @keyframes orbit {
-    0% {
-      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px))
-        rotate(calc(var(--angle) * -1deg));
-    }
-    100% {
-      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px))
-        rotate(calc((var(--angle) * -1deg) - 360deg));
-    }
-  }
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
-
-  @keyframes collapsible-down {
-    from {
-      height: 0;
-      opacity: 0;
-    }
-    to {
-      height: var(--radix-collapsible-content-height);
-      opacity: 1;
-    }
-  }
-
-  @keyframes collapsible-up {
-    from {
-      height: var(--radix-collapsible-content-height);
-      opacity: 1;
-    }
-    to {
-      height: 0;
-      opacity: 0;
-    }
-  }
-
-  @keyframes marquee {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(calc(-100% - var(--gap)));
-    }
-  }
-
-  @keyframes marquee-reverse {
-    from {
-      transform: translateX(calc(-100% - var(--gap)));
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes marquee-vertical {
-    from {
-      transform: translateY(0);
-    }
-    to {
-      transform: translateY(calc(-100% - var(--gap)));
-    }
-  }
-  @keyframes slide-down {
-    from {
-      height: 0px;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-
-  @keyframes slide-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0px;
-    }
-  }
-
-  /* Add this to your globals.css */
-  @keyframes enterFromRight {
-    from {
-      opacity: 0;
-      transform: translateX(200px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes enterFromLeft {
-    from {
-      opacity: 0;
-      transform: translateX(-200px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes exitToRight {
-    from {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(200px);
-    }
-  }
-
-  @keyframes exitToLeft {
-    from {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(-200px);
-    }
-  }
-
-  @keyframes scaleIn {
-    from {
-      opacity: 0;
-      transform: rotateX(-30deg) scale(0.9);
-    }
-    to {
-      opacity: 1;
-      transform: rotateX(0deg) scale(1);
-    }
-  }
-
-  @keyframes scaleOut {
-    from {
-      opacity: 1;
-      transform: rotateX(0deg) scale(1);
-    }
-    to {
-      opacity: 0;
-      transform: rotateX(-10deg) scale(0.95);
-    }
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes fadeOut {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
-    }
-  }
-
-  @keyframes elliptical-orbit {
-    from {
-      transform: rotate(var(--angle, 0) deg) translate(var(--h-radius, 160px), 0)
-        rotate(calc(var(--angle, 0) deg * -1));
-    }
-    to {
-      transform: rotate(calc(var(--angle, 0) deg + 360deg)) translate(var(--h-radius, 160px), 0)
-        rotate(calc((var(--angle, 0) deg + 360deg) * -1));
-    }
-  }
-
-  @keyframes shiny-text {
-    0%,
-    90%,
-    100% {
-      background-position: calc(-100% - var(--shiny-width)) 0;
-    }
-    30%,
-    60% {
-      background-position: calc(100% + var(--shiny-width)) 0;
-    }
-  }
-
-  @keyframes meteor {
-    0% {
-      transform: rotate(var(--angle)) translateX(0);
-      opacity: 1;
-    }
-    70% {
-      opacity: 1;
-    }
-    100% {
-      transform: rotate(var(--angle)) translateX(-500px);
-      opacity: 0;
-    }
-  }
-
-  --animate-blink-cursor: blink-cursor 1.2s step-end infinite;
-  @keyframes blink-cursor {
-    0%,
-    49% {
-      opacity: 1;
-    }
-    50%,
-    100% {
-      opacity: 0;
-    }
-  }
-}
+/* @kortix/ui component layer: dark variant, @theme keys, utilities, keyframes. */
+@import '@kortix/ui/theme.css';
 
 /*
  * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
@@ -510,14 +64,14 @@
   --focus-ring: var(--ring);
   --sidebar: oklch(0.9672 0 0); /* surface-1 #f4f4f4 */
   --sidebar-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
-  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff */
+  --sidebar-primary: var(--ring);
   --sidebar-primary-foreground: oklch(1 0 0); /* #ffffff */
   --sidebar-accent: oklch(0.9461 0 0); /* surface-2 #ededed */
   --sidebar-accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --sidebar-row: var(--card);
   --sidebar-row-control: var(--sidebar-accent);
   --sidebar-border: oklch(0.9128 0 0); /* hairline / hairline-soft #e2e2e2 */
-  --sidebar-ring: oklch(0.669 0.1837 248.8066); /* #0099ff */
+  --sidebar-ring: var(--ring);
   --kortix-base: var(--color-ring); /* #0099ff */
   --kortix-green: oklch(0.581 0.165 146.619); /* #199338 */
   --kortix-red: oklch(0.648 0.202 24.745); /* #f14b4c */
@@ -545,6 +99,32 @@
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
+  --text-sm: 0.875rem;
+  --text-sm--line-height: calc(1.25 / 0.875);
+  --text-md: 0.9rem;
+  --text-md--line-height: calc(1.375 / 0.9375);
+  --text-base: 1rem;
+  --text-base--line-height: calc(1.5 / 1);
+  --text-lg: 1.125rem;
+  --text-lg--line-height: calc(1.75 / 1.125);
+  --text-xl: 1.25rem;
+  --text-xl--line-height: calc(1.75 / 1.25);
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: calc(2 / 1.5);
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: calc(2.25 / 1.875);
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: calc(2.5 / 2.25);
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 1;
+  --text-8xl: 6rem;
+  --text-8xl--line-height: 1;
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 45%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 62%, transparent);
   --liquid-glass-blur: 20px;
@@ -580,11 +160,13 @@
   --focus-ring: var(--ring);
   --sidebar: oklch(0.1913 0 0); /* surface-1 #141414 */
   --sidebar-foreground: oklch(1 0 0); /* ink #ffffff */
+  --sidebar-primary: var(--ring);
   --sidebar-accent: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
   --sidebar-accent-foreground: oklch(1 0 0); /* ink #ffffff */
   --sidebar-row: var(--sidebar-accent);
   --sidebar-row-control: oklch(0.2686 0 0); /* #262626 */
   --sidebar-border: oklch(0.2178 0 0); /* hairline / hairline-soft #1a1a1a */
+  --sidebar-ring: var(--ring);
   --kortix-base: var(--color-ring); /* #0099ff */
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
@@ -799,53 +381,9 @@
   --kortix-purple: #ab80d6;
 }
 @layer base {
-  /* Themed routes set --selection per palette; unthemed pages keep the
-     original inverted selection. */
-  ::selection {
-    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
-    color: var(--selection-foreground, var(--primary-foreground));
-  }
-
-  ::-moz-selection {
-    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
-    color: var(--selection-foreground, var(--primary-foreground));
-  }
-
-  * {
-    /* stylelint-disable-next-line at-rule-no-unknown */
-    @apply border-border outline-ring/50;
-  }
-
-  /* Tailwind v4 makes <button> default to `cursor: default`; restore the
-     pointer on every genuinely interactive element: buttons, links, native
-     checkboxes/radios/file inputs, labels bound to a control, selects,
-     summaries, and the ARIA roles a non-button control renders with.
-     Disabled elements keep the default cursor: :disabled, aria-disabled,
-     data-disabled. */
-  :is(
-      a[href],
-      button,
-      input[type='checkbox'],
-      input[type='file'],
-      input[type='radio'],
-      label[for],
-      select,
-      summary,
-      [role='button'],
-      [role='checkbox'],
-      [role='link'],
-      [role='menuitem'],
-      [role='menuitemcheckbox'],
-      [role='menuitemradio'],
-      [role='option'],
-      [role='radio'],
-      [role='switch'],
-      [role='tab'],
-      [role='treeitem']
-    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
-    cursor: pointer;
-  }
-
+  /* ::selection, `* { border-border outline-ring/50 }`, the pointer cursor,
+     color-scheme and the body colors live in @kortix/ui/theme.css (one base
+     for every host). Themed routes still set --selection per palette. */
   html {
     scroll-behavior: smooth;
     text-rendering: optimizeLegibility;
@@ -859,17 +397,7 @@
       'ss14' on,
       'palt';
   }
-  :root {
-    color-scheme: light;
-  }
-
-  .dark {
-    color-scheme: dark;
-  }
-
   body {
-    /* stylelint-disable-next-line at-rule-no-unknown */
-    @apply bg-background text-foreground;
     font-feature-settings:
       'ss10' on,
       'ss09' on,
@@ -877,7 +405,6 @@
       'ss04' on,
       'ss14' on,
       'palt';
-    min-height: 100dvh;
   }
 
   /* Add font fallbacks for CJK characters */
@@ -910,42 +437,6 @@
     line-height: 1.2;
     letter-spacing: -0.025em; /* tracking-tight — mono glyphs read cleaner when pulled in */
   }
-}
-
-.kortix-markdown pre .line,
-.kortix-markdown pre code span {
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-.scrollbar-minimal {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.scrollbar-minimal::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.scrollbar-minimal::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-minimal::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 2px;
-  transition: background 0.2s ease;
-}
-
-.scrollbar-minimal:hover::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 0.2);
-}
-
-.scrollbar-minimal.dark:hover::-webkit-scrollbar-thumb,
-.dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
-  background: oklch(0.7 0 0 / 0.3);
 }
 
 /* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
@@ -1089,6 +580,140 @@
   }
 }
 
+/* Marketing button (the Buio "dimensional" button): `kx-button`, rendered by
+   `features/marketing/kit/marketing-button.tsx` and nowhere else. The one
+   sanctioned gradient outside an art module: Jay asked for Buio's lit button
+   (2026-10-25), so it lives here as a single component class built from the
+   theme tokens with color-mix, never as utilities on a page.
+
+   - Two stops, light from the top. Hover swaps them, so the light edge moves
+     to the bottom. The stops are registered as <color> so the swap cross-fades
+     instead of snapping (an unregistered custom property cannot interpolate).
+   - The edge is the inset highlight ring plus a 1px outer ring, not a border.
+   - Light theme mirrors dark: secondary is a paper button with a hairline,
+     primary is an ink button, because grey with white ink fails contrast there.
+   - In @layer components so a utility on the same element (w-full, a size)
+     still wins. */
+@property --kx-btn-top {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --kx-btn-bottom {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+
+@layer components {
+  .kx-button {
+    --kx-btn-hi: color-mix(in oklch, var(--background) 14%, transparent);
+    --kx-btn-ring: color-mix(in oklch, var(--foreground) 12%, transparent);
+    --kx-btn-shade: var(--foreground);
+    --kx-btn-top: var(--kx-btn-light);
+    --kx-btn-bottom: var(--kx-btn-deep);
+    background-image: linear-gradient(to top, var(--kx-btn-bottom), var(--kx-btn-top));
+    box-shadow:
+      inset 0 0 0.5px 1px var(--kx-btn-hi),
+      0 0 0 1px var(--kx-btn-ring),
+      0 0.5px 1px color-mix(in oklch, var(--kx-btn-shade) 6%, transparent),
+      0 1px 2px color-mix(in oklch, var(--kx-btn-shade) 5%, transparent);
+    transition-property: --kx-btn-top, --kx-btn-bottom, scale;
+    transition-duration: var(--duration-slow), var(--duration-slow), var(--duration-normal);
+    transition-timing-function: var(--ease-in-out), var(--ease-in-out), var(--ease-out);
+  }
+
+  .kx-button[data-variant='primary'] {
+    --kx-btn-deep: var(--foreground);
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 80%, var(--background));
+    color: var(--background);
+  }
+
+  .kx-button[data-variant='secondary'] {
+    --kx-btn-deep: color-mix(in oklch, var(--foreground) 6%, var(--background));
+    --kx-btn-light: var(--background);
+    color: var(--foreground);
+  }
+
+  .dark .kx-button {
+    --kx-btn-hi: color-mix(in oklch, var(--foreground) 10%, transparent);
+    --kx-btn-ring: color-mix(in oklch, var(--background) 8%, transparent);
+    --kx-btn-shade: var(--background);
+  }
+
+  .dark .kx-button[data-variant='primary'] {
+    --kx-btn-deep: color-mix(in oklch, var(--foreground) 24%, var(--background));
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 49%, var(--background));
+    color: var(--foreground);
+  }
+
+  .dark .kx-button[data-variant='secondary'] {
+    --kx-btn-deep: var(--background);
+    --kx-btn-light: color-mix(in oklch, var(--foreground) 8%, var(--background));
+    color: var(--foreground);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .kx-button:hover {
+      --kx-btn-top: var(--kx-btn-deep);
+      --kx-btn-bottom: var(--kx-btn-light);
+    }
+  }
+
+  .kx-button:active {
+    scale: 0.96;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kx-button:active {
+      scale: none;
+    }
+  }
+}
+
+/* Landing band rows (`kx-rail-fade`): their top and bottom hairlines cross the
+   page past the two rails. Outside the rails the line fades out to the page
+   edge instead of stopping hard. The mask only touches the gutter outside the
+   rails, where a row has nothing but its border; --rail matches the rails'
+   inset (left-4 / lg:left-17 in the home page). */
+.kx-rail-fade {
+  --rail: calc(var(--spacing) * 4);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    white var(--rail),
+    white calc(100% - var(--rail)),
+    transparent
+  );
+}
+
+@media (min-width: 64rem) {
+  .kx-rail-fade {
+    --rail: calc(var(--spacing) * 17);
+  }
+}
+
+/* A highlighted column behind a band's table (/pricing compare plans): its
+   fill fades out at the left and right edges, the way kx-rail-fade fades a
+   band's hairlines past the rails. */
+.kx-column-fade {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    white calc(var(--spacing) * 2),
+    white calc(100% - var(--spacing) * 2),
+    transparent
+  );
+}
+
+/* Lenis (features/marketing/kit/smooth-scroll.tsx) drives the page scroll on
+   marketing routes. The base `scroll-behavior: smooth` above would animate
+   every scrollTo it issues a second time, so it steps aside while Lenis runs. */
+html.lenis {
+  scroll-behavior: auto;
+}
+
 /* Catalogue card reveal — the cards a "View all" uncovers in a category grid.
 
    Deliberately NOT `.kx-fade-up`. That is page-enter motion for a handful of
@@ -1103,24 +728,6 @@
    survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
    but the staged reveal did not. */
 
-/* No `display` rule belongs under `.streaming-active`: a streaming message
-   must lay out exactly like the settled one. See
-   components/markdown/streaming-layout.test.ts. */
-.kortix-markdown.streaming-active {
-  position: relative;
-}
-
-/* KaTeX — block/display math scrolls horizontally; keep inline math in flow */
-.kortix-markdown .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  max-width: 100%;
-}
-
-.kortix-markdown .katex {
-  font-size: 1.05em;
-}
-
 @keyframes text-shimmer {
   0% {
     background-position: -200% center;
@@ -1128,40 +735,6 @@
   100% {
     background-position: 200% center;
   }
-}
-
-/* Streamed words fade in as they mount (see components/markdown/stream-words.ts).
- *
- * Opacity only. This used to run `blur-fade-in` (blur 8px -> 3px -> 0) on the
- * last child of a streaming block: `filter: blur()` re-rasterises glyphs every
- * frame, and the last child changed on every token, so the animation restarted
- * continuously over live text. Here each word is its own node that React keeps
- * once mounted, so a word fades exactly once and nothing already on screen is
- * touched. No filter, no transform, no layout. It is a comprehension fade, not
- * movement, so it stays under reduced motion. */
-@keyframes kx-stream-word-in {
-  from {
-    opacity: 0;
-  }
-}
-
-/* In-out, not out: an ease-out fade reaches ~60% opacity in its first quarter,
- * so each word still lands as a pop. A symmetric ramp lets it emerge, and
- * with ~3 words starting per 40 ms the trailing edge of the reply is a soft
- * gradient rather than a hard line. `backwards` holds a word at opacity 0
- * through its stagger delay (see `StreamWord`); without it the word would
- * flash at full opacity first. */
-.kortix-markdown .kx-stream-word {
-  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out) backwards;
-}
-
-/* A block's chrome (a bullet, a code card, a table's frame, a rule) has no
- * words of its own to fade, so it would pop in under words that fade. While
- * the message streams it fades in once, on mount, with the same curve. Only
- * elements that mount mid-stream run it: the class leaving at the end of the
- * turn replays nothing. */
-.kortix-markdown.streaming-active :is(li, figure, hr, blockquote, .kx-md-table) {
-  animation: kx-stream-word-in var(--duration-slow) var(--ease-in-out);
 }
 
 /* Pulse heartbeat animation for reasoning section Kortix icon */
@@ -1179,23 +752,6 @@
 
 .animate-pulse-heartbeat {
   animation: pulse-heartbeat 1.2s ease-in-out infinite;
-}
-
-/* Shake is pure positional motion; the error state is already conveyed by
-   color/message, so drop it entirely under reduced motion. */
-@media (prefers-reduced-motion: reduce) {
-  .animate-shake {
-    animation: none;
-  }
-}
-
-/* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
-@utility animate-pulse-* {
-  animation-name: pulse;
-  animation-duration: 2s;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
-  animation-iteration-count: --value(integer);
-  animation-iteration-count: --value([integer]);
 }
 
 /* CookieYes consent banner (injected at runtime via Google Tag Manager) is
@@ -1243,12 +799,6 @@ html:not(.consent-enabled) #cookieyes {
  * behaviour we want: the new view simply appears. Nothing here should reach for
  * `filter` again — a full-viewport blur is the most expensive way to spend the
  * exact moment the user is waiting to read. */
-
-@keyframes kortix-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 @keyframes connect-progress-slide {
   0% {
@@ -1359,16 +909,20 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
 }
 /* The docked project sidebar shares the native-light band. The hover-peek card
    keeps its normal 8px padding and must not gain a 40px blank strip. */
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header:not([data-peek]),
 html[data-desktop-platform='macos'] .kx-project-sidebar-header:not([data-peek]) {
   padding-top: 0;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-titlebar,
 html[data-desktop-platform='macos'] .kx-project-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-project-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-project-sidebar-titlebar {
   padding-left: 0.5rem;
 }
@@ -1380,6 +934,7 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-project-
 html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
   height: 52px;
 }
+html[data-desktop-titlebar='overlay'] [data-side='right'] [data-sidebar='header'],
 html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
   height: var(--kx-titlebar-inset) !important;
 }
@@ -1392,11 +947,21 @@ html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] 
 html[data-desktop='true'] .kx-titlebar-tabs {
   height: 52px;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs,
 html[data-desktop-platform='macos'] .kx-titlebar-tabs {
   -webkit-app-region: drag;
   app-region: drag;
   height: var(--kx-titlebar-inset) !important;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header button,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header a,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header input,
+html[data-desktop-titlebar='overlay'] .kx-project-sidebar-header [role='button'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs button,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs a,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs input,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs [role='tab'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-tabs [role='button'],
 html[data-desktop-platform='macos'] .kx-project-sidebar-header button,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header a,
 html[data-desktop-platform='macos'] .kx-project-sidebar-header input,
@@ -1417,6 +982,7 @@ html[data-desktop-platform='macos'] .kx-titlebar-tabs [role='button'] {
    can grab the window from any horizontal position along its top edge —
    even areas not covered by the sidebar header or tab bar. The strip is
    thin enough not to occlude any visible UI. */
+html[data-desktop-titlebar='overlay'] .kx-desktop-chrome,
 html[data-desktop-platform='macos'] .kx-desktop-chrome {
   position: fixed;
   top: 0;
@@ -1430,6 +996,7 @@ html[data-desktop-platform='macos'] .kx-desktop-chrome {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-desktop-drag,
 html[data-desktop-platform='macos'] .kx-desktop-drag {
   -webkit-app-region: drag;
   app-region: drag;
@@ -1452,9 +1019,15 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
    `pointer-events: none` on the strip and its child fixes 2 and keeps 1:
    Chromium applies app regions at the compositor level and ignores
    `pointer-events` (see apps/desktop-electron/src/window-chrome.js). */
+html[data-desktop-titlebar='overlay'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome {
   height: max(6px, var(--kx-titlebar-inset));
 }
+html[data-desktop-titlebar='overlay'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
+html[data-desktop-titlebar='overlay']
+  body:not(:has([data-kx-titlebar-owner]))
+  .kx-desktop-chrome
+  > *,
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
 html[data-desktop-platform='macos']
   body:not(:has([data-kx-titlebar-owner]))
@@ -1534,6 +1107,61 @@ html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] {
   --kx-titlebar-content-left: 44px;
 }
 
+/* Windows band geometry. DERIVED — do not hand-edit: these mirror
+   WIN_TITLEBAR / winBandMetrics() in apps/desktop-electron/src/window-chrome.js.
+   The shell sets `data-desktop-titlebar='overlay'` (preload.js) when Windows
+   draws only its caption buttons over the page: the same band as macOS, with
+   the OS controls on the RIGHT (138 window px) and the app-menu button in the
+   left slot the traffic lights take on macOS. Every rule above that puts a row
+   in the macOS band also lists this attribute. The caption buttons are drawn
+   in window pixels, so each value cancels the shell zoom like the macOS block.
+   Asserted by desktop-titlebar.test.ts. */
+html[data-desktop-titlebar='overlay'] {
+  --kx-titlebar-control-size: calc(28px / var(--kx-desktop-zoom));
+  --kx-titlebar-inset: calc(40px / var(--kx-desktop-zoom));
+  /* The app-menu button: the left slot. */
+  --kx-titlebar-menu-left: calc(8px / var(--kx-desktop-zoom));
+  --kx-titlebar-lights-end: calc(36px / var(--kx-desktop-zoom));
+  --kx-titlebar-control-top: calc(6px / var(--kx-desktop-zoom));
+  --kx-titlebar-control-left: calc(44px / var(--kx-desktop-zoom));
+  --kx-titlebar-content-left: calc(80px / var(--kx-desktop-zoom));
+  /* minimize + maximize + close. */
+  --kx-titlebar-controls-width: calc(138px / var(--kx-desktop-zoom));
+}
+/* Full screen hides the caption buttons and the menu button (Alt still opens
+   the menu). */
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] {
+  --kx-titlebar-inset: 0px;
+  --kx-titlebar-lights-end: 0px;
+  --kx-titlebar-control-top: 6px;
+  --kx-titlebar-control-left: 8px;
+  --kx-titlebar-content-left: 44px;
+  --kx-titlebar-controls-width: 0px;
+}
+/* The app-menu button (DesktopChrome). Unlayered for the same reason as
+   `.kx-desktop-back`: the Button's `inline-flex` lives in a cascade layer. */
+.kx-desktop-app-menu {
+  display: none;
+}
+html[data-desktop-titlebar='overlay'] .kx-desktop-app-menu {
+  display: flex;
+  /* Above full-window overlays (the Settings dialog is z-index 9999), like
+     the OS controls it sits beside. */
+  z-index: 10000;
+}
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-desktop-app-menu {
+  display: none;
+}
+/* Only a row that reaches the window's right edge shares it with the caption
+   buttons. Rows in a left sidebar (the project sidebar, the Settings
+   sidebar) never do; the right sidebar's header does whenever it is open. */
+html[data-desktop-titlebar='overlay'] :is([data-side='left'] .kx-titlebar-row, .kx-overlay-sidebar-titlebar) {
+  padding-right: 0.5rem;
+}
+html[data-desktop-titlebar='overlay'] [data-side='right'] [data-sidebar='header'] {
+  padding-right: var(--kx-titlebar-controls-width);
+}
+
 /* The window's one Back (root layout, `DesktopBackButton`). The desktop shell
    has no browser toolbar, so any screen without an in-page exit is a dead end
    there. The web keeps the browser's own Back, so the control stays hidden
@@ -1571,8 +1199,8 @@ html[data-desktop='true'] .kx-below-titlebar {
    title-bar band, where the traffic lights (macOS) and Back sit. On desktop
    the row clears both the band and Back, with one spacing step of air.
 
-   Positioned rows only: `top` does nothing in flow. An in-flow header (the
-   onboarding wizard) puts `.kx-titlebar-spacer` above itself instead.
+   Positioned rows only: `top` does nothing in flow. An in-flow header puts
+   `.kx-titlebar-spacer` above itself instead.
 
    Unlayered, so it beats the row's own `top-*` utilities. */
 html[data-desktop='true'] .kx-desktop-band-row {
@@ -1641,6 +1269,28 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    `/new`) get the transparent root band below instead. Content under it is
    visible, so the shell's rule must keep every control there clickable.
    `:where()` keeps the specificity of the owner rule below unchanged. */
+html[data-desktop-titlebar='overlay']
+  :where(body:has([data-kx-titlebar-owner]))
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
+  ),
 html[data-desktop-platform='macos']
   :where(body:has([data-kx-titlebar-owner]))
   :is(
@@ -1666,6 +1316,39 @@ html[data-desktop-platform='macos']
   -webkit-app-region: initial;
   app-region: initial;
 }
+html[data-desktop-titlebar='overlay']
+  :is(
+    .kx-titlebar-row,
+    .kx-titlebar-tabs,
+    .kx-project-sidebar-header,
+    [role='dialog'],
+    [role='alertdialog'],
+    [role='menu'],
+    [role='listbox'],
+    [data-radix-popper-content-wrapper],
+    [data-sonner-toaster]
+  )
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
+  ),
+html[data-desktop-titlebar='overlay'] [class*='app-region:no-drag'],
 html[data-desktop-platform='macos']
   :is(
     .kx-titlebar-row,
@@ -1710,6 +1393,7 @@ html[data-desktop-platform='macos'] [class*='app-region:no-drag'] {
 .kx-project-shell-drag-region {
   display: none;
 }
+html[data-desktop-titlebar='overlay'] .kx-project-shell-drag-region,
 html[data-desktop-platform='macos'] .kx-project-shell-drag-region {
   position: absolute;
   z-index: 10;
@@ -1723,6 +1407,9 @@ html[data-desktop-platform='macos'] .kx-project-shell-drag-region {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay']
+  [data-kx-titlebar-owner]:has(.kx-titlebar-row)
+  > .kx-project-shell-drag-region,
 html[data-desktop-platform='macos']
   [data-kx-titlebar-owner]:has(.kx-titlebar-row)
   > .kx-project-shell-drag-region {
@@ -1754,17 +1441,25 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 /* Keep collapsed capability rows draggable. The fixed shell opener paints
    above page headers and has its own no-drag region; disabling the entire row
    removes the only usable drag area between its tabs. */
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row,
 html[data-desktop-platform='macos'] .kx-titlebar-row {
   -webkit-app-region: drag;
   app-region: drag;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-band-height,
 html[data-desktop-platform='macos'] .kx-titlebar-band-height {
   height: var(--kx-titlebar-inset);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-titlebar-band-height,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-titlebar-band-height {
   height: auto;
   min-height: 2.75rem;
 }
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row button,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row a,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row input,
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row [role='button'],
+html[data-desktop-titlebar='overlay'] .kx-titlebar-row [role='tab'],
 html[data-desktop-platform='macos'] .kx-titlebar-row button,
 html[data-desktop-platform='macos'] .kx-titlebar-row a,
 html[data-desktop-platform='macos'] .kx-titlebar-row input,
@@ -1775,27 +1470,34 @@ html[data-desktop-platform='macos'] .kx-titlebar-row [role='tab'] {
 }
 /* Overlay sidebars share the native-light row instead of adding a blank strip.
    Keep their controls out of AppKit's hit area at every renderer zoom. */
+html[data-desktop-titlebar='overlay'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
   justify-content: flex-end;
 }
 /* With the account sidebar hidden, its opener occupies the first web-control
    slot. The breadcrumb follows it, rather than starting under the lights. */
+html[data-desktop-titlebar='overlay'] .kx-account-hub-header[data-sidebar-collapsed],
 html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-control-left);
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
   padding-left: 0.5rem;
 }
+html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true']
+  .kx-account-hub-header[data-sidebar-collapsed],
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
   .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The mobile Settings headers (list and pane) share the native titlebar band:
    the close control takes the band's control size. */
+html[data-desktop-titlebar='overlay'] .kx-settings-mobile-titlebar .kx-settings-mobile-close,
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   height: var(--kx-titlebar-control-size);
 }
+html[data-desktop-titlebar='overlay'] .kx-settings-mobile-titlebar .kx-settings-mobile-close,
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-close {
   width: var(--kx-titlebar-control-size);
 }
@@ -1825,467 +1527,6 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
   margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
 }
 
-/* ─── Smooth shadow ring — five soft layers plus a 1px ring in the border token.
-   Use on a floating card instead of border + shadow-*: className="smooth-shadow-ring" */
-@utility smooth-shadow-ring {
-  box-shadow:
-    0 17.54px 23.39px oklch(0 0 0 / 0.04),
-    0 9.4px 12.5px oklch(0 0 0 / 0.03),
-    0 5.25px 7px oklch(0 0 0 / 0.02),
-    0 2.79px 3.72px -2px oklch(0 0 0 / 0.01),
-    0 1.16px 1.5px oklch(0 0 0 / 0.01),
-    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
-}
-
-/* The lighter `ring-sm` preset of the same plugin (shadow.floriankiem.com):
-   wider, fainter layers. Toasts use it. */
-@utility smooth-shadow-ring-sm {
-  box-shadow:
-    0 18px 47px oklch(0 0 0 / 0.03),
-    0 7.5px 19px oklch(0 0 0 / 0.02),
-    0 4px 10.5px oklch(0 0 0 / 0.02),
-    0 2.3px 5.8px oklch(0 0 0 / 0.01),
-    0 1.2px 3.1px oklch(0 0 0 / 0.01),
-    0 0.5px 1.3px oklch(0 0 0 / 0.01),
-    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
-}
-
-/* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────
-   Theme-aware: light drop-shadow, dark inset rim. Specular lives on
-   background-image so this does not steal ::before from hit-area.
-   Use: className="liquid-glass rounded-full" */
-@utility liquid-glass {
-  border: 1px solid var(--border);
-  background-color: var(--liquid-glass-bg);
-  background-image: var(--liquid-glass-highlight);
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
-  box-shadow: var(--liquid-glass-shadow);
-
-  &:hover {
-    background-color: var(--liquid-glass-bg-hover);
-  }
-}
-
-/* ─── Hit area — expand interactive targets without layout shift ───────────
-   https://bazza.dev/craft/2026/hit-area */
-@utility hit-area-debug {
-  position: relative;
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-    @apply border border-dashed border-blue-500 bg-blue-500/10;
-  }
-  &:hover::before {
-    @apply border border-dashed border-green-500 bg-green-500/10;
-  }
-}
-
-@utility hit-area {
-  position: relative;
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-* {
-  position: relative;
-  --hit-area-t: --spacing(--value(number) * -1);
-  --hit-area-t: calc(--value([*]) * -1);
-  --hit-area-b: --spacing(--value(number) * -1);
-  --hit-area-b: calc(--value([*]) * -1);
-  --hit-area-l: --spacing(--value(number) * -1);
-  --hit-area-l: calc(--value([*]) * -1);
-  --hit-area-r: --spacing(--value(number) * -1);
-  --hit-area-r: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-x-* {
-  position: relative;
-  --hit-area-l: --spacing(--value(number) * -1);
-  --hit-area-l: calc(--value([*]) * -1);
-  --hit-area-r: --spacing(--value(number) * -1);
-  --hit-area-r: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-y-* {
-  position: relative;
-  --hit-area-t: --spacing(--value(number) * -1);
-  --hit-area-t: calc(--value([*]) * -1);
-  --hit-area-b: --spacing(--value(number) * -1);
-  --hit-area-b: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-t-* {
-  position: relative;
-  --hit-area-t: --spacing(--value(number) * -1);
-  --hit-area-t: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-r-* {
-  position: relative;
-  --hit-area-r: --spacing(--value(number) * -1);
-  --hit-area-r: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-b-* {
-  position: relative;
-  --hit-area-b: --spacing(--value(number) * -1);
-  --hit-area-b: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility hit-area-l-* {
-  position: relative;
-  --hit-area-l: --spacing(--value(number) * -1);
-  --hit-area-l: calc(--value([*]) * -1);
-  &::before {
-    content: '';
-    position: absolute;
-    top: var(--hit-area-t, 0px);
-    right: var(--hit-area-r, 0px);
-    bottom: var(--hit-area-b, 0px);
-    left: var(--hit-area-l, 0px);
-    pointer-events: inherit;
-  }
-}
-
-@utility font-kerning-none {
-  font-kerning: none;
-}
-
-@utility font-kerning-normal {
-  font-kerning: normal;
-}
-
-@utility font-kerning-auto {
-  font-kerning: auto;
-}
-
-@keyframes typing {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.5;
-  }
-  50% {
-    transform: translateY(-2px);
-    opacity: 1;
-  }
-}
-
-@keyframes loading-dots {
-  0%,
-  100% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@keyframes wave {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.6);
-  }
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-@keyframes text-blink {
-  0%,
-  100% {
-    color: var(--primary);
-  }
-  50% {
-    color: var(--muted-foreground);
-  }
-}
-
-@keyframes bounce-dots {
-  0%,
-  100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1.2);
-    opacity: 1;
-  }
-}
-
-@keyframes thin-pulse {
-  0%,
-  100% {
-    transform: scale(0.95);
-    opacity: 0.8;
-  }
-  50% {
-    transform: scale(1.05);
-    opacity: 0.4;
-  }
-}
-
-@keyframes pulse-dot {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.8;
-  }
-  50% {
-    transform: scale(1.5);
-    opacity: 1;
-  }
-}
-
-@keyframes shimmer-text {
-  0% {
-    background-position: 150% center;
-  }
-  100% {
-    background-position: -150% center;
-  }
-}
-
-@keyframes wave-bars {
-  0%,
-  100% {
-    transform: scaleY(1);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scaleY(0.6);
-    opacity: 1;
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 200% 50%;
-  }
-  100% {
-    background-position: -200% 50%;
-  }
-}
-
-@keyframes spinner-fade {
-  0% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-/* Google/Material circular spinner. Two INDEPENDENTLY-SEAMLESS animations
-   compose into the signature "arc sweeps forward, growing then shrinking":
-     • the <svg> rotates the whole thing at a CONSTANT rate (linear) — base spin.
-     • the arc <circle> rotates a further 360° per cycle (ease-in-out, so it
-       speeds up then slows down) while its length grows then shrinks via
-       stroke-dashoffset.
-   Both loops return to their EXACT start state at 100% (offset 58→58, rotate
-   360°≡0°) AND meet at matching velocity (ease-in-out is ~0 at both ends, linear
-   is constant), so the loop boundary is invisible — no stop/restart glitch.
-   The old version jumped: its dash ended long (dasharray 37) and restarted as a
-   dot (dasharray 1) at a different offset, collapsing visibly every cycle. */
-@keyframes spinner-orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes spinner-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* r=10 → circumference ≈ 62.83. Visible arc = 62.83 − dashoffset, so it breathes
-   between ~28° (offset 58) and ~280° (offset 14). Rotate advances monotonically,
-   so the arc's head and tail only ever move forward — they never rewind. */
-@keyframes spinner-dash {
-  0% {
-    stroke-dashoffset: 58;
-    transform: rotate(0deg);
-  }
-  50% {
-    stroke-dashoffset: 14;
-    transform: rotate(180deg);
-  }
-  100% {
-    stroke-dashoffset: 58;
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spinner-orbit {
-  transform-origin: center;
-  animation: spinner-orbit 1.4s linear infinite;
-}
-
-/* Refresh icon etc. — constant rotation, so linear. (ease-in-out on an infinite
-   full turn visibly stutters at every seam: ends fast, restarts slow.) */
-.animate-spinner-spin {
-  transform-origin: center;
-  animation: spinner-spin 1s linear infinite;
-}
-
-.animate-spinner-dash {
-  transform-origin: center;
-  transform-box: fill-box;
-  stroke-dasharray: 62.83;
-  animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
-}
-
-@keyframes spinner-spokes {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* The spoke spinner TICKS rather than sweeps: steps(8) over a full turn lands
-   each frame exactly one spoke on (45°), so the opacity ramp appears to chase
-   itself around the wheel while the geometry never sits between positions. A
-   smooth rotation here would just look like a spinning asterisk. 0.8s/8 = 100ms
-   a tick — near the classic platform cadence, fast enough to read as busy. */
-.animate-spinner-spokes {
-  transform-origin: center;
-  animation: spinner-spokes 0.8s steps(8) infinite;
-}
-
-/* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
-   signal activity) but drop the arc's grow/shrink and speed modulation. */
-@media (prefers-reduced-motion: reduce) {
-  .animate-spinner-orbit,
-  .animate-spinner-spin {
-    animation: spinner-orbit 1.4s linear infinite;
-  }
-
-  .animate-spinner-dash {
-    animation: none;
-    stroke-dashoffset: 34;
-    transform: none;
-  }
-
-  /* Same bargain as above: a loader still has to signal activity, so keep the
-     rotation but drop the stepping — the 100ms strobe is the part that grates. */
-  .animate-spinner-spokes {
-    animation: spinner-spokes 1.4s linear infinite;
-  }
-}
-
-@keyframes sweep-out {
-  0% {
-    width: 0;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  60% {
-    width: 100%;
-    opacity: 1;
-  }
-  100% {
-    width: 100%;
-    opacity: 0;
-  }
-}
-
-.horizontal-sweep {
-  width: 0;
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--kortix-blue),
-    var(--kortix-blue),
-    transparent
-  );
-  animation: sweep-out 2.5s ease-out infinite;
-  /* delay so it starts ~when the vertical mask reaches bottom */
-  animation-delay: 1.25s;
-}
-
-@utility px-mobile {
-  @apply px-6 xl:px-0;
-}
-
 .border-overlay {
   outline: 1px solid rgba(0, 0, 0, 0.1);
   outline-offset: -1px;
@@ -2293,102 +1534,6 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
 
 .dark .border-overlay {
   outline-color: rgba(255, 255, 255, 0.1);
-}
-
-/* ─── Composer editor (Task 12) ────────────────────────────────────────── */
-/* Coarse-pointer (touch) targets inside the composer toolbar — added once
-   here at the shell rather than per-button, since every toolbar button is a
-   plain <button> with no shared class today. */
-/* The underbar is listed too. It holds the SAME attach control the toolbar
-   used to, so with only `.kortix-composer-toolbar` here one button was 40px on
-   project home (inline underbar, inside the toolbar) and 32px in a session
-   (row underbar, outside it). */
-@media (pointer: coarse) {
-  .kortix-composer-toolbar button,
-  .kortix-composer-underbar button {
-    min-height: 2.5rem;
-    min-width: 2.5rem;
-  }
-}
-
-/* TipTap's Placeholder extension (composer/editor/extensions.ts) marks the
-   empty paragraph with `.is-editor-empty` + a `data-placeholder` attribute
-   and otherwise renders nothing — the `::before` content + color is always
-   the consumer's job. Nothing under composer/editor/ is stylesheet-owning
-   (it is pure TipTap wiring), so this is the shell's responsibility: without
-   it the placeholder text passed to `ComposerEditor` is present in the DOM
-   but invisible. Scoped to `.kortix-composer-editor` (the wrapper class
-   `ComposerEditor`'s `EditorContent` already renders). */
-.kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  height: 0;
-  color: var(--muted-foreground);
-  pointer-events: none;
-}
-
-/* The `/` trigger's inline hint — "/Type to search". `@tiptap/suggestion`
-   decorates the active trigger range with this class, adds `is-empty` while
-   no query characters have been typed yet, and copies the configured
-   `decorationContent` onto the span as `data-decoration-content` (see
-   `menus/slash-controller.ts`). This is the only thing that paints it.
-
-   Same shape as the placeholder rule above, and for the same two reasons:
-   `content: attr(...)` keeps the string out of the document (so it can never
-   be selected, copied, or serialized into the message), and
-   `pointer-events: none` keeps a click landing on it from moving the caret
-   into text that does not exist. It disappears the instant a character is
-   typed, because the plugin drops `is-empty` at that point. */
-.kortix-composer-editor .kortix-slash-trigger.is-empty::after {
-  content: attr(data-decoration-content);
-
-  /* Pinned rather than inherited by luck. This text renders immediately
-     beside a real typed character inside a contenteditable, so any drift in
-     size, weight or baseline between the two reads as a rendering bug rather
-     than as a hint. `font: inherit` covers every font-* longhand at once
-     (family, size, weight, style, variant) so a future rule on the editor
-     cannot desync the pseudo-element from the `/` next to it. */
-  font: inherit;
-  vertical-align: baseline;
-  line-height: 1;
-
-  /* The separation the copy cannot provide: CSS collapses leading whitespace
-     in `content`, so `content: " Type to search"` renders as "Type to
-     search" and the hint ends up glued to the slash — "/Type" reads as one
-     word whose first glyph is inexplicably darker than the rest. Padding is
-     the only way to put space there.
-
-     `em`, not `px`: the composer is `text-base` below 640px and `text-sm`
-     above it, so a fixed gap would be proportionally twice as wide on
-     desktop as on mobile. */
-  padding-left: 0.3em;
-
-  color: var(--muted-foreground);
-  pointer-events: none;
-  /* Belt and braces — pseudo-element content is already unselectable, but the
-     caret sits directly before this inside an editable region and the intent
-     is worth stating. */
-  user-select: none;
-}
-
-/* Fix round 1, Minor: the paused-on-approval placeholder keeps the old
-   amber warning emphasis (session-chat-input.tsx:1233 —
-   `text-amber-600 dark:text-amber-400`) instead of the plain muted color
-   above. `composer.tsx` applies `.composer-locked-approval` to the
-   editor's own wrapper only while `lockForApproval` is true; scoped to the
-   placeholder `::before` alone so it can never affect real typed text. */
-.composer-locked-approval
-  .kortix-composer-editor
-  .ProseMirror
-  p.is-editor-empty:first-child::before {
-  color: var(--color-amber-600);
-}
-.dark
-  .composer-locked-approval
-  .kortix-composer-editor
-  .ProseMirror
-  p.is-editor-empty:first-child::before {
-  color: var(--color-amber-400);
 }
 
 /* ── Disabled controls ──────────────────────────────────────────────────────

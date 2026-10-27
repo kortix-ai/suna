@@ -3,17 +3,19 @@
  * drain executes, followed by the command's post-create actions.
  */
 
-import { projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
+import { projectSessions, projects, serviceAccounts, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { bindChatThread } from '../../channels/core/threads';
+import { adoptChatThreads, bindChatThread, releaseCreateClaims } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+import { forkSourceConflicts, providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
+import { repinSessionReminder } from '../lib/session-reminders';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -34,6 +36,29 @@ import type {
 } from './types';
 import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
+
+/**
+ * The status of the `create_session` command under this key in this project, or
+ * null when none exists. Keys are global and a client may choose one, so the
+ * project scopes the answer to this project's own create.
+ */
+export async function createCommandStatus(
+  idempotencyKey: string,
+  projectId: string,
+): Promise<SessionLifecycleCommandRow['status'] | null> {
+  const [row] = await db
+    .select({ status: sessionLifecycleCommands.status })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey),
+        eq(sessionLifecycleCommands.projectId, projectId),
+        eq(sessionLifecycleCommands.commandType, 'create_session'),
+      ),
+    )
+    .limit(1);
+  return row?.status ?? null;
+}
 
 export async function createSession(
   command: CreateSessionCommand,
@@ -91,6 +116,8 @@ export async function createSession(
         ? (existingPayload.body as Record<string, unknown>)
         : {};
     const conflicts = [
+      [() => forkSourceConflicts(existingBody.parent_session_id, command.body.parent_session_id), 'IDEMPOTENCY_PARENT_CONFLICT', 'a different parent session'],
+      [() => forkSourceConflicts(existingBody.fork_from_session_id, command.body.fork_from_session_id), 'IDEMPOTENCY_FORK_CONFLICT', 'a different fork source'],
       [() => connectorBindingPayloadConflicts(existingBody.connector_bindings, command.body.connector_bindings), 'IDEMPOTENCY_BINDING_CONFLICT', 'different connector bindings'],
       [() => providerPoolConflicts(existingBody.provider_secret_pools, command.body.provider_secret_pools), 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT', 'different provider secret pools'],
       [() => secretsAllowlistPayloadConflicts(existingBody.secrets as string[] | null | undefined, command.body.secrets as string[] | null | undefined), 'IDEMPOTENCY_SECRETS_CONFLICT', 'a different secrets allowlist'],
@@ -180,6 +207,18 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
+    // A disconnected repository is not retried: no attempt can succeed until a
+    // person reconnects GitHub, and the caller needs the cause, not a 503.
+    if (isRepositoryDisconnectedError(err)) {
+      await markCommandFailed(row, message, { retryable: false, attempts: row.attempts + 1 });
+      return {
+        status: 'failed',
+        commandId: row.commandId,
+        retryable: false,
+        requeued: false,
+        error: { status: 409, body: repositoryDisconnectedBody(err) },
+      };
+    }
     const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
@@ -329,6 +368,7 @@ export async function executeQueuedCreate(
     apiKeyType: payload.apiKeyType,
     inSession: payload.inSession,
     callerSessionId: payload.callerSessionId,
+    parentActor: payload.parentActor,
   });
 }
 
@@ -363,6 +403,7 @@ async function executeCreateSession(
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
     mayManageSystemConnections: command.mayManageSystemConnections,
   });
 
@@ -410,6 +451,8 @@ export async function applyPostCreateActions(input: {
           threadId: action.threadId,
           sessionId: input.sessionId,
         });
+        // Later messages find the thread now; the claim is spent.
+        await releaseCreateClaims([action]);
       } else if (action.type === 'deliver_prompt') {
         // One initial prompt per session: a retried create dedupes on the key.
         const outcome = await deliverThroughQueue({
@@ -428,6 +471,10 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           triggerSlug: action.triggerSlug,
         });
+      } else if (action.type === 'repin_reminder') {
+        await repinSessionReminder(input.projectId, action.reminderId, input.sessionId, new Date());
+      } else if (action.type === 'adopt_chat_threads') {
+        await adoptChatThreads(input.projectId, action.fromSessionId, input.sessionId);
       }
     }
     return { ok: true };

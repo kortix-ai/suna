@@ -2,6 +2,7 @@ import {
   connectorConnections,
   connectorActions,
   connectorPolicies,
+  connectorPolicySets,
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
@@ -19,11 +20,10 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep.
  */
-import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
-import { resolveFeatureFlag } from '../feature-flags/registry';
+import { hasEmailInboxes, loadSlackInstall, purgeLegacyEmailState } from '../channels/install-store';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
 import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
@@ -34,14 +34,17 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/surface';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { MANIFEST_PROJECT_NAME_KEY, metadataMerge, projectNameAction, withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
+import { hideSupersededSlack } from './channel-rules';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
+import { syncDeclaredApps } from '../apps/app-manifest';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
@@ -63,7 +66,7 @@ import {
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
-import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
+import { connectorConfig, toPolicyRows, toPolicySetRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeComposio,
   normalizeGraphql,
@@ -76,6 +79,7 @@ import {
 import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
+import { mcpAppForUrl } from './mcp-apps';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
@@ -331,6 +335,11 @@ export async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
+  // A catalogue app Kortix signs in to with its own OAuth client takes a
+  // bearer token, even when its server lists tools without one (Google's do).
+  if (provider === 'mcp' && mcpAppForUrl(endpoint)?.auth.kind === 'kortix_client') {
+    return discoverHttpAuthChallenge('Bearer', 'mcp endpoint');
+  }
   assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
@@ -383,21 +392,21 @@ export async function reconcileChannelConnectors(
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
 
-    const emailEnabled = resolveFeatureFlag(row.metadata, 'agentmail_email');
-    if (removed?.platform === 'email' || !emailEnabled) {
-      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
+    // Email state from before inboxes were accounts (AgentMail, per-slug
+    // secrets) is dead data: drop it here.
+    await purgeLegacyEmailState(projectId).catch(() => 0);
+    // One `kortix_email` connector while the project holds an inbox; each
+    // inbox is one of its accounts, never a connector of its own. The
+    // connector stays while inboxes exist even with `email_channel` off:
+    // removing it would cascade-delete the accounts while their Resend
+    // inboxes live on. The flag gates the routes and inbound mail instead.
+    if (removed?.platform === 'email' && removed.slug !== 'kortix_email') {
+      await removeChannelConnectorDeclared(projectId, 'email', removed.slug);
     }
-    if (emailEnabled) {
-      const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
-      for (const install of emailInstalls) {
-        await ensureChannelConnectorDeclared(
-          projectId,
-          'email',
-          install.connectionSlug,
-          install.displayName || install.email || 'Email',
-        );
-      }
-      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
+    if (await hasEmailInboxes(projectId).catch(() => false)) {
+      await ensureChannelConnectorDeclared(projectId, 'email');
+    } else {
+      await removeChannelConnectorDeclared(projectId, 'email');
     }
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
@@ -423,7 +432,15 @@ export interface SyncOptions {
    *  own connector, not the whole project, so repeated saves cannot fan out
    *  into every connector's catalog fetch. */
   onlyConnectorId?: string;
+  /** Re-fetch only these connectors (by slug): an edit to one connector
+   *  syncs that one. The rest of the reconcile (removals, triggers, Apps)
+   *  still runs: it reads the database, not the network. */
+  onlySlugs?: ReadonlySet<string>;
 }
+
+/** Connectors whose catalogs load at once: a project with many MCP servers
+ *  syncs in about a quarter of the time, without a burst at every upstream. */
+const SYNC_CONCURRENCY = 4;
 
 interface ResolvedCatalog {
   actions: NormalizedAction[];
@@ -525,11 +542,27 @@ async function syncProjectConnectorsFenced(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are created by pairing a machine, never by kortix.yaml.
-  // Every existing one stays materialized, which also keeps its native catalog
-  // current after a code change.
+  // Computer connectors are created by pairing a machine, never by kortix.yaml
+  // (the parser rejects `provider="computer"`). Every existing one stays
+  // materialized, which also keeps its native catalog current after a code change.
   const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+  // The summary must agree with `connectors ls` (KRTX-2669): the list applies
+  // two hiding predicates (`hideMachinelessComputers` and `hideSupersededSlack`,
+  // see `listConnectors`), so the summary counts a spec only when the list
+  // would show its row after the sync. A machineless computer connector is
+  // re-upserted for catalog freshness but stays out of both; a legacy `slack`
+  // connector stays hidden while the Slack channel exists.
+  const machinelessSlugs = await machinelessComputerSlugs(projectId);
+  const visibleSpecSlugs = new Set(
+    hideSupersededSlack(
+      specs.map((spec) => ({
+        slug: spec.slug,
+        providerType: spec.provider,
+        config: { app: spec.app },
+      })),
+    ).map((view) => view.slug),
+  );
 
   // A connector binding is server-side by definition. Convert legacy runtime
   // rows before catalog discovery or a concurrent sandbox start can read them.
@@ -575,13 +608,12 @@ async function syncProjectConnectorsFenced(
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
   let synced = 0;
-  for (const sourceSpec of specs) {
-    if (
-      opts.onlyConnectorId &&
-      existingBySlug.get(sourceSpec.slug)?.connectorId !== opts.onlyConnectorId
-    ) {
-      continue;
-    }
+  const selected = specs.filter(
+    (sourceSpec) =>
+      (!opts.onlyConnectorId || existingBySlug.get(sourceSpec.slug)?.connectorId === opts.onlyConnectorId) &&
+      (!opts.onlySlugs || opts.onlySlugs.has(sourceSpec.slug)),
+  );
+  await mapWithConcurrency(selected, SYNC_CONCURRENCY, async (sourceSpec) => {
     try {
       let spec = sourceSpec;
       if (sourceSpec.authAuto) {
@@ -671,13 +703,13 @@ async function syncProjectConnectorsFenced(
             };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      synced++;
+      if (!machinelessSlugs.has(spec.slug) && visibleSpecSlugs.has(spec.slug)) synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
-  }
+  });
 
-  await reconcileEmailConnections(projectId, accountId);
+  await reconcileEmailConnections(projectId).catch(() => {});
 
   // Reconcile deletions. When the manifest is readable it's the source of truth
   // for declared connectors — drop any it no longer lists (channel specs are in
@@ -714,88 +746,45 @@ async function syncProjectConnectorsFenced(
   // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
   if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
+  // kortix.yaml owns default_agent. The metadata copy (read by channel bindings
+  // and the marketplace gate) follows every push, not only PUT /default-agent.
+  const declaredDefaultAgent = typeof manifest?.raw.default_agent === 'string' ? manifest.raw.default_agent.trim() : '';
+  if (declaredDefaultAgent) {
+    await db.update(projects)
+      .set({ metadata: metadataMerge({ default_agent: declaredDefaultAgent }) })
+      .where(and(eq(projects.projectId, projectId), sql`coalesce(${projects.metadata}->>'default_agent', '') <> ${declaredDefaultAgent}`));
+  }
+
+  // kortix.yaml owns project.name: a push that changes it renames the project.
+  if (manifest) {
+    const [current] = await db.select({ name: projects.name, metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const project = manifest.raw.project as { name?: unknown } | undefined;
+    const marker = (current?.metadata as Record<string, unknown> | null)?.[MANIFEST_PROJECT_NAME_KEY];
+    const action = current ? projectNameAction(project?.name, marker, current.name) : 'none';
+    if (action !== 'none') {
+      const declaredName = String(project!.name).trim();
+      await db.update(projects)
+        .set({ ...(action === 'apply' ? { name: declaredName } : {}), metadata: metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: declaredName }) })
+        .where(eq(projects.projectId, projectId));
+    }
+  }
+
+  // kortix.yaml owns the App fields it declares: a push applies them without a deploy.
+  if (manifest) {
+    const appSync = await syncDeclaredApps(projectId, manifest.raw.apps);
+    for (const failure of appSync.errors) errors.push({ slug: failure.slug, error: failure.error });
+  }
+
   return { synced, errors };
 }
 
-export async function reconcileEmailConnections(
-  projectId: string,
-  accountId: string,
-): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId);
-  const canonicalSlug = channelDefaultSlug('email');
-  const [connector] = await db
-    .select({ connectorId: connectors.connectorId })
-    .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, canonicalSlug)))
-    .limit(1);
-  if (!connector) return;
-  await ensureDefaultConnection({
-    projectId,
-    connectorId: connector.connectorId,
-  });
-  const activeOwnerIds = new Set(installs.map((install) => `agentmail:${install.inboxId}`));
-  const existingEmailConnections = await db
-    .select({
-      connectionId: connectorConnections.connectionId,
-      ownerId: connectorConnections.ownerId,
-    })
-    .from(connectorConnections)
-    .where(
-      and(
-        eq(connectorConnections.connectorId, connector.connectorId),
-        eq(connectorConnections.ownerType, 'external'),
-      ),
-    );
-  for (const existing of existingEmailConnections) {
-    if (existing.ownerId?.startsWith('agentmail:') && !activeOwnerIds.has(existing.ownerId)) {
-      await db
-        .update(connectorConnections)
-        .set({ status: 'revoked', updatedAt: new Date() })
-        .where(eq(connectorConnections.connectionId, existing.connectionId));
-    }
-  }
-
-  for (const install of installs) {
-    const ownerId = `agentmail:${install.inboxId}`;
-    const [existing] = await db
-      .select({ connectionId: connectorConnections.connectionId })
-      .from(connectorConnections)
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connector.connectorId),
-          eq(connectorConnections.ownerType, 'external'),
-          eq(connectorConnections.ownerId, ownerId),
-        ),
-      )
-      .limit(1);
-    const values = {
-      label: install.displayName || install.email,
-      status: 'active' as const,
-      metadata: {
-        connector_slug: install.connectionSlug,
-        inbox_id: install.inboxId,
-        email: install.email,
-        channel_connection: true,
-      },
-      updatedAt: new Date(),
-    };
-    if (existing) {
-      await db
-        .update(connectorConnections)
-        .set(values)
-        .where(eq(connectorConnections.connectionId, existing.connectionId));
-    } else {
-      await db.insert(connectorConnections).values({
-        accountId,
-        projectId,
-        connectorId: connector.connectorId,
-        ownerType: 'external',
-        ownerId,
-        isDefault: false,
-        ...values,
-      });
-    }
-  }
+/**
+ * Email accounts are written by the inbox routes, not derived here: an inbox
+ * IS its account row (channels/email/installs.ts). Sync only drops the rows
+ * from before that (`external` owners, rows without an inbox).
+ */
+export async function reconcileEmailConnections(projectId: string): Promise<void> {
+  await purgeLegacyEmailState(projectId);
 }
 
 type SyncTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -908,6 +897,9 @@ async function upsertConnector(
   // Cheap fields reconciled on every sync. `config` (which folds in the
   // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
+    // kortix.yaml owns a declared auth.secret. An omitted one keeps the stored
+    // binding: bindings made before they were committed to the file live only here.
+    ...(spec.auth.secret ? { authSecret: spec.auth.secret } : {}),
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
@@ -1046,6 +1038,14 @@ async function upsertConnector(
           })),
         );
       }
+      // Each set is one row (the row is the registry; zero rules = `[]`), in
+      // the same transaction as the base rules, so a reader never sees base
+      // rules of one manifest and sets of another.
+      await tx.delete(connectorPolicySets).where(eq(connectorPolicySets.connectorId, rowId));
+      const setRows = toPolicySetRows(spec);
+      if (setRows.length > 0) {
+        await tx.insert(connectorPolicySets).values(setRows.map((set) => ({ connectorId: rowId, ...set })));
+      }
     }
     return rowId;
   });
@@ -1064,11 +1064,28 @@ async function upsertConnector(
 
   // After commit: the connection row references the connector, and
   // `ensureDefaultConnection` writes through its own connection. A computer
-  // account is always one paired machine, so a computer connector never gets
-  // a machine-less project default.
-  if (connectorId && spec.authorizationStrategy === 'project' && spec.provider !== 'computer') {
+  // account is always one paired machine, and an email account one inbox, so
+  // neither connector gets an empty project default.
+  if (
+    connectorId &&
+    spec.authorizationStrategy === 'project' &&
+    spec.provider !== 'computer' &&
+    !(spec.provider === 'channel' && spec.platform === 'email') &&
+    !skipsEmptyProjectAccount(spec)
+  ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
+}
+
+/**
+ * An account is personal unless someone shares it, so sync seeds no empty
+ * "Everyone in project" account (KRTX-2317). Two kinds keep the project
+ * account, because it is not empty: a channel connector (the install token is
+ * the project's own identity) and a server with no auth (a public MCP server
+ * such as DeepWiki: the account is the whole connection).
+ */
+export function skipsEmptyProjectAccount(spec: ConnectorSpec): boolean {
+  return !(spec.provider === 'channel' || spec.auth?.type === 'none');
 }
 
 /**
@@ -1131,6 +1148,38 @@ async function existingComputerConnectorSpecs(
         sensitive: storedSensitive(row.config),
       }),
     );
+}
+
+/**
+ * Which computer connectors have no machine — no `connector_connections` row
+ * bound to a tunnel. The same predicate `hideMachinelessComputers` applies to
+ * the admin list (KRTX-1492), so the sync summary can count exactly what the
+ * list shows (KRTX-2669). Declared computer specs cannot exist (the parser
+ * rejects `provider="computer"`), so the existing rows are the whole story.
+ */
+async function machinelessComputerSlugs(projectId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ connectorId: connectors.connectorId, slug: connectors.slug })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  if (rows.length === 0) return new Set();
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(
+              connectorConnections.connectorId,
+              rows.map((row) => row.connectorId),
+            ),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  return new Set(rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug));
 }
 
 /**
@@ -1616,6 +1665,7 @@ export async function reconcileProjectPolicies(
   parsed: {
     policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
+    approvalTtlSeconds?: number | null;
   },
   fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
@@ -1644,7 +1694,11 @@ export async function reconcileProjectPolicies(
     const updateExisting = () =>
       tx
         .update(connectorProjectSettings)
-        .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
+        .set({
+          defaultMode: parsed.settings.defaultMode,
+          approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(connectorProjectSettings.projectId, projectId))
         .returning({ projectId: connectorProjectSettings.projectId });
     if ((await updateExisting()).length > 0) return;
@@ -1653,7 +1707,11 @@ export async function reconcileProjectPolicies(
       await tx.transaction(async (savepoint) => {
         await savepoint
           .insert(connectorProjectSettings)
-          .values({ projectId, defaultMode: parsed.settings.defaultMode });
+          .values({
+            projectId,
+            defaultMode: parsed.settings.defaultMode,
+            approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          });
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;

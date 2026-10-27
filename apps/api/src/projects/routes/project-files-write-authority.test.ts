@@ -1,0 +1,90 @@
+import { expect, mock, test } from 'bun:test';
+import { HTTPException } from 'hono/http-exception';
+let denyPush = false;
+
+const sessionId = '00000000-0000-4000-a000-000000001893';
+let caller: string | null = sessionId;
+let commits = 0;
+let deniedPath: string | undefined;
+let committedPath: string | undefined;
+mock.module('../../middleware/caller-session', () => ({ callerKortixSessionId: () => caller }));
+const access = await import('../lib/access');
+mock.module('../lib/access', () => ({ ...access,
+  loadProjectForUser: async () => ({ userId: 'owner', row: { accountId: 'account', defaultBranch: 'main' } }),
+  assertAgentSessionWorkspaceAllowsRepository: async () => {}, assertProjectCapability: async (_c: unknown, _u: string, _a: string, _p: string, action: string) => {
+    if (denyPush && action === 'project.gitops.push') throw new HTTPException(403, { message: 'Push denied' });
+  },
+}));
+const view = await import('../lib/project-read-view');
+mock.module('../lib/project-read-view', () => ({ ...view, projectReadView: async () => ({ refsVisible: async () => true }) }));
+const resources = await import('../lib/project-resources');
+mock.module('../lib/project-resources', () => ({ ...resources, resourceDenierForRequest: async () => ({ isDenied: (path: string) => path === deniedPath }) }));
+const git = await import('../lib/git');
+mock.module('../lib/git', () => ({ ...git, withProjectGitAuth: async () => ({}) }));
+const branches = await import('../git/branches');
+mock.module('../git/branches', () => ({ ...branches, remoteBranchExists: async () => true }));
+const writer = await import('../git/commit-writer');
+mock.module('../git/commit-writer', () => ({ ...writer, commitFileToBranch: async (_project: unknown, options: { path: string }) => { committedPath = options.path; commits++; return { commitSha: 'a'.repeat(40) }; } }));
+const { projectsApp } = await import('../lib/app');
+(await import('./project-files')).registerProjectFilesRoutes();
+async function write(ref: string, path = 'kortix.yaml') {
+  return projectsApp.request('/project/files/content', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, ref, content: 'name: synthetic', expected_revision: 'a'.repeat(40) }) });
+}
+test('session credentials cannot commit to default or sibling branches', async () => {
+  caller = sessionId; commits = 0;
+  expect((await write('main')).status).toBe(403);
+  expect((await write('colleague')).status).toBe(403);
+  expect(commits).toBe(0);
+});
+test('session own branch and human default branch remain writable', async () => {
+  caller = sessionId; commits = 0;
+  expect((await write(sessionId)).status).toBe(200);
+  caller = null;
+  expect((await write('main')).status).toBe(200);
+  expect(commits).toBe(2);
+});
+
+test('file-write alone cannot move a branch without push authority', async () => {
+  caller = null; commits = 0; denyPush = true;
+  try {
+    expect((await write('main')).status).toBe(403);
+    expect(commits).toBe(0);
+  } finally { denyPush = false; }
+});
+
+ test('resource authorization uses the canonical committed path', async () => {
+  caller = null; commits = 0;
+  deniedPath = '.opencode/agent/private.md';
+  try {
+    expect((await write('main', './/.opencode/agent/private.md')).status).toBe(404);
+    expect(commits).toBe(0);
+    deniedPath = undefined;
+    expect((await write('main', './/README.md')).status).toBe(200);
+    expect(committedPath).toBe('README.md');
+  } finally { deniedPath = undefined; }
+});
+
+test('file writes reject absent or non-JSON bodies before committing', async () => {
+  caller = null; commits = 0;
+  for (const headers of [new Headers(), new Headers({ 'Content-Type': 'text/plain' })]) {
+    const response = await projectsApp.request('/project/files/content', {
+      method: 'PUT', headers,
+      body: JSON.stringify({ path: 'README.md', ref: 'main', content: 'synthetic', expected_revision: 'a'.repeat(40) }),
+    });
+    expect(response.status).toBe(400);
+  }
+  expect((await projectsApp.request('/project/files/content', { method: 'PUT' })).status).toBe(400);
+  expect(commits).toBe(0);
+});
+
+test('file writes reject malformed and incomplete JSON without committing', async () => {
+  caller = null; commits = 0;
+  for (const body of ['{', '{}', 'null', JSON.stringify({ path: 42 }), JSON.stringify({ path: '' })]) {
+    const response = await projectsApp.request('/project/files/content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    expect(response.status).toBe(400);
+  }
+  expect(commits).toBe(0);
+});

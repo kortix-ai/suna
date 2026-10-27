@@ -22,10 +22,11 @@ import { resolveProjectAccountId } from './project-account-lookup';
 import type { Actor } from '../iam/actor';
 import { type AgentAuditAttribution, resolveAgentAuditAttribution } from './agent-audit-attribution';
 import { isUuid } from './validate';
+import { SECRET_VALUE_RE } from './secret-value';
 
 /** `anonymous`: nothing authenticated the request (a 401, a public route). */
 export type AuditActorType = 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending';
+export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending' | 'expired';
 
 export interface AuditEventInput {
   accountId?: string | null;
@@ -162,8 +163,6 @@ function uuidOrNull(value: string | null | undefined): string | null {
   return isUuid(value) ? value : null;
 }
 
-const SECRET_VALUE_RE =
-  /(?:bearer\s+[a-z0-9._~+/=-]+|sk-[a-z0-9_-]{12,}|gh[opusr]_[a-z0-9_]{12,}|kortix_(?:pat|sbx)_[a-z0-9_-]+|(?:token|secret|password|api[_-]?key)=\S+)/i;
 const CONTENT_KEYS = new Set([
   'access_token',
   'api_key',

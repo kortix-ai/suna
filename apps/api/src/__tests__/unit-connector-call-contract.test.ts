@@ -210,6 +210,7 @@ describe('handleCall() upstream status and deadline', () => {
 describe('connectorErrorHttpStatus()', () => {
   test('upstream 429 and 503 keep their status; computer states still win; the rest is 500', () => {
     expect(connectorErrorHttpStatus('upstream_429', 429)).toBe(429);
+    expect(connectorErrorHttpStatus('credential_rejected: stripe rejected the credential', 401)).toBe(424);
     expect(connectorErrorHttpStatus('upstream_503', 503)).toBe(503);
     expect(connectorErrorHttpStatus('upstream_502', 502)).toBe(500);
     expect(connectorErrorHttpStatus('upstream_timeout: x')).toBe(500);
@@ -250,6 +251,29 @@ describe('POST /call wire contract', () => {
       data: { items: [1] },
       risk: 'read',
       binding: 'openapi',
+      upstream_status: 200,
+    });
+  });
+
+  test('a tool that reports an error inside a 2xx → HTTP 200, ok: false, status tool_error, error = its text', async () => {
+    // The call reached the tool, so the status stays 200; ok: false says the tool did not do its job.
+    const graphql = createConnectorRouter({
+      resolvePrincipal: async () => ({}) as ConnectorPrincipal,
+      resolveProjectPrincipal: async () =>
+        ({ userId: 'user-1', accountId: 'acct-1', projectId: 'proj-1', sessionId: null, subject: { userId: 'user-1', groupIds: [] } }) as ConnectorPrincipal,
+      makeGatewayDeps: () =>
+        gatewayDeps(async () => ({ status: 200, body: '{"errors":[{"message":"Entity not found"}]}' }), {
+          loadAction: async () => action({ kind: 'graphql', operation: 'query', field: 'issue' }),
+        }),
+    } as unknown as ConnectorRouterDeps);
+    const res = await post(graphql);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      ok: false,
+      status: 'tool_error',
+      error: 'Entity not found',
+      upstream_error: 'Entity not found',
+      binding: 'graphql',
       upstream_status: 200,
     });
   });

@@ -46,6 +46,11 @@ export interface DenialDetail {
 
 let denial: RecordedDenial | null = null;
 
+/** The session's workspace runs without the project repository. A workspace
+ *  policy, not a token scope: no kortix_permissions entry changes it. */
+export const SESSION_REPOSITORY_ACCESS_DENIED = 'session_repository_access_denied';
+const REPOSITORY_DENIAL_MESSAGE = 'session workspace does not allow repository access';
+
 /**
  * Note that a call was refused. Recorded rather than printed inline because
  * `surfaceApiError` is synchronous and resolving the identity may need a
@@ -72,8 +77,15 @@ export function recordPermissionDenial(
 export function denialDetailFromBody(body: unknown): DenialDetail {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
   const record = body as Record<string, unknown>;
+  // Servers before the typed code send the workspace denial as a bare message.
+  const code =
+    typeof record.code === 'string'
+      ? record.code
+      : record.message === REPOSITORY_DENIAL_MESSAGE || record.error === REPOSITORY_DENIAL_MESSAGE
+        ? SESSION_REPOSITORY_ACCESS_DENIED
+        : undefined;
   return {
-    ...(typeof record.code === 'string' ? { code: record.code } : {}),
+    ...(code ? { code } : {}),
     ...(typeof record.action === 'string' ? { action: record.action } : {}),
   };
 }
@@ -167,7 +179,12 @@ export async function printPermissionDenialIdentity(): Promise<void> {
   if (!identity) return;
 
   const lines = [`  ${C.dim}acting as ${C.reset}${C.bold}${tokenKindLabel(identity)}${C.reset}`];
-  if (identity.agent) {
+  if (pending.code === SESSION_REPOSITORY_ACCESS_DENIED) {
+    // Two layers: the token's scopes allowed the call; the workspace policy refused it.
+    if (identity.agent) lines.push(`  ${C.dim}token     ${C.reset}scopes ${formatGrantList(identity.permissions)} (not the cause)`);
+    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the project repository`);
+    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with project access to do this`);
+  } else if (identity.agent) {
     lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
     lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending)}`);
   } else if (identity.userEmail) {

@@ -14,6 +14,7 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -65,6 +66,25 @@ const confirmed: string[] = [];
 const steerLookups: string[] = [];
 let steerTargets: Record<string, string> = {};
 let confirmOutcome: 'confirmed' | 'pending_delivery' | 'no_prompt' = 'confirmed';
+let failDaemonBootWrite = false;
+
+/** True when a drizzle `SQL` fragment's literal text names `key`. */
+function sqlMentions(fragment: unknown, key: string): boolean {
+  if (!(fragment instanceof SQL)) return false;
+  return fragment.queryChunks.some((chunk) => {
+    const value = (chunk as { value?: unknown }).value;
+    return Array.isArray(value) && value.join('').includes(key);
+  });
+}
+
+/** The numbers bound into a drizzle `SQL` fragment. */
+function boundNumbers(fragment: unknown): number[] {
+  if (!(fragment instanceof SQL)) return [];
+  return fragment.queryChunks.filter((chunk): chunk is number => typeof chunk === 'number');
+}
+
+/** The `session_sandboxes.config` writes that record a daemon boot for env sync. */
+const daemonBootWrites = () => updateSets.filter((set) => sqlMentions(set.config, 'envSyncDaemonBootAtMs'));
 
 const databaseMock = {
   select: (projection: Record<string, unknown> = {}) => ({
@@ -84,6 +104,9 @@ const databaseMock = {
   update: (_table: unknown) => ({
     set: (values: Record<string, unknown>) => {
       updateSets.push(values);
+      if (failDaemonBootWrite && sqlMentions(values.config, 'envSyncDaemonBootAtMs')) {
+        return { where: () => Promise.reject(new Error('connection terminated')) };
+      }
       return {
         where: () => ({ returning: async () => updateRows }),
       };
@@ -184,7 +207,7 @@ mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
 }));
 
 mock.module('../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: () => {
+  captureJournallessSessionLog: () => {
     order.push('mirror');
   },
 }));
@@ -249,6 +272,10 @@ mock.module('../lib/notification-recipients', () => ({
     contextLookups.push({ session, turnMessageId });
     return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
   },
+  turnPromptSource: async (_sessionId: string, turnMessageId: string | null) => {
+    promptSourceLookups.push(turnMessageId);
+    return promptSource;
+  },
 }));
 
 const { projectsApp } = await import('../lib/app');
@@ -274,6 +301,16 @@ function post(body: unknown, ctx: Record<string, unknown> = {}) {
   });
 }
 
+const channelNotices: unknown[] = [];
+const promptSourceLookups: Array<string | null> = [];
+let promptSource: string | null = 'telegram';
+mock.module('../../channels/core/session-notice', () => ({
+  notifySessionChannel: async (notice: unknown) => {
+    order.push('channelNotice');
+    channelNotices.push(notice);
+  },
+}));
+
 const sandboxCtx = { sessionId: SANDBOX_ID, sandboxId: SANDBOX_ID, accountId: ACCOUNT_ID };
 const session = (metadata: Record<string, unknown> = {}, createdBy: string | null = USER_ID) => ({
   sessionId: SESSION_ID,
@@ -298,6 +335,9 @@ beforeEach(() => {
   promotedId = null;
   relayEndResult = true;
   relayEndArgs = [];
+  channelNotices.length = 0;
+  promptSourceLookups.length = 0;
+  promptSource = 'telegram';
   stepResult = { ok: true };
   answerResult = { ok: true };
   formCardResult = { type: 'AdaptiveCard' };
@@ -315,6 +355,7 @@ beforeEach(() => {
   steerLookups.length = 0;
   steerTargets = {};
   confirmOutcome = 'confirmed';
+  failDaemonBootWrite = false;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -374,6 +415,8 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'initial_turn_claim requires a sandbox token' });
+    // A PAT is not the daemon: it cannot tell the API that a daemon booted.
+    expect(daemonBootWrites()).toEqual([]);
   });
 
   test('turn_abandoned requires a sandbox token', async () => {
@@ -436,6 +479,33 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () => {
+  // Every daemon process claims once, at boot. A new process seeds its env
+  // store from the BOOT env, so every env push applied to the previous process
+  // is gone. The claim records the boot before it answers, so no API replica
+  // trusts a push the new process never received (2026-10-16, KRTX-2517).
+  test('records the daemon boot for env sync before it answers', async () => {
+    const before = Date.now();
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    const writes = daemonBootWrites();
+    expect(writes).toHaveLength(1);
+    const [bootAtMs] = boundNumbers(writes[0]!.config);
+    expect(bootAtMs).toBeGreaterThanOrEqual(before);
+    expect(bootAtMs).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('a failed boot record fails the claim with 503: the daemon retries before it serves a prompt', async () => {
+    failDaemonBootWrite = true;
+    sessionRow = session({ initial_prompt: 'build it' });
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: { activeTurns: { 'turn-token-1': { state: 'delivering', messageId: 'msg_1' } } },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'could not record the daemon boot; retry the claim' });
+  });
+
   test('answers initial_turn: null when no prompt is pending', async () => {
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
@@ -807,6 +877,61 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
     expect(contextLookups).toEqual([]);
     expect(notified).toEqual([]);
+  });
+
+  // A Telegram chat has no live turn, so a closed error end that no Slack or
+  // Teams turn carried is told to the session's chat (channels/core/session-notice.ts).
+  test('a closed error end that no channel turn carried tells the session chat, after the relay', async () => {
+    pushType = 'error';
+    relayEndResult = false;
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'turn_end',
+      status: 'error',
+      turn_message_id: 'msg_turn',
+      error_name: 'APIError',
+      error_status: 402,
+      error_message: 'Payment Required: Insufficient credits.',
+    });
+    // The notice is sent after the prompt-source read, off the ack path.
+    await Bun.sleep(0);
+    expect(promptSourceLookups).toEqual(['msg_turn']);
+    expect(channelNotices).toEqual([
+      {
+        kind: 'run_failed',
+        sessionId: SESSION_ID,
+        error: { name: 'APIError', message: 'Payment Required: Insufficient credits.', statusCode: 402 },
+        promptSource: 'telegram',
+      },
+    ]);
+    expect(order.slice(-2)).toEqual(['relayEnd', 'channelNotice']);
+    expect(await response.json()).toEqual({
+      ok: false,
+      turn_completion: { outcome: 'closed', active_turn_count: 0, closed_turn_count: 1 },
+      queue_promoted: false,
+      promoted_prompt_id: null,
+    });
+  });
+
+  test('no session-chat notice when a Slack or Teams turn carried the end, the end was no error, or it closed nothing', async () => {
+    pushType = 'error';
+    relayEndResult = true;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    await Bun.sleep(0);
+    expect(channelNotices).toEqual([]);
+    expect(promptSourceLookups).toEqual([]);
+
+    pushType = 'completion';
+    relayEndResult = false;
+    await post({ session_id: SESSION_ID, kind: 'end' });
+    expect(channelNotices).toEqual([]);
+
+    pushType = null;
+    completionResult = { outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 };
+    relayEndArgs = [];
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    expect(channelNotices).toEqual([]);
+    expect(relayEndArgs).toEqual([]);
   });
 
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {

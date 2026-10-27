@@ -48,6 +48,11 @@ flow(
   },
 );
 
+type SessionBranch = {
+  name: string;
+  session?: { title: string | null; agent_name: string | null; archived: boolean; deleted: boolean };
+};
+
 type Db = {
   query<T = Record<string, unknown>>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
   end(): Promise<void>;
@@ -281,6 +286,15 @@ flow(
       'repository_access',
       'sandbox_slug',
       'warmSandboxLocation',
+      // The gateway fallback record. The turn-end revert writes `_from` into
+      // the model pin, so a client value would pick the session's model.
+      'opencode_model_fallback_from',
+      'opencode_model_fallback_from_source',
+      'opencode_model_fallback_reason',
+      'opencode_model_fallback_at',
+      'opencode_model_fallback_until',
+      'opencode_model_picked_at',
+      'opencode_model_restored',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -471,11 +485,22 @@ flow(
         unrestricted = await seedBoundSession(ctx, db, project, 'SCOPE-9 branch', 'scope-9-branch');
       });
 
-      await ctx.step('the runtime-workspace credential reads the project → 403 naming the workspace', async () => {
+      await ctx.step('the runtime-workspace credential reads the project record → 200 with its flags, every repository field empty', async () => {
         (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId', { params: { projectId: project.id } }))
-          .status(403)
+          .status(200)
           .body()
-          .has('$.message', DENIED);
+          .has('$.project_id', project.id)
+          .has('$.repo_url', '')
+          .has('$.git_origin_url', '')
+          .has('$.default_branch', '')
+          .has('$.manifest_path', '');
+      });
+
+      await ctx.step('the branch-workspace credential reads the full project record → 200 with repo_url and git_origin_url', async () => {
+        const r = await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        r.status(200);
+        const body = r.json<{ repo_url: string; git_origin_url: string }>();
+        if (!body.repo_url || !body.git_origin_url) throw new Error(`expected repo_url and git_origin_url, got ${JSON.stringify(body)}`);
       });
 
       for (const suffix of ['diff', 'merge-preview'] as const) {
@@ -483,7 +508,8 @@ flow(
           (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))
             .status(403)
             .body()
-            .has('$.message', DENIED);
+            .has('$.message', DENIED)
+            .has('$.code', 'session_repository_access_denied');
         });
         await ctx.step(`the branch-workspace credential reaches the change request lookup for ${suffix} → 404`, async () => {
           (await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))
@@ -512,8 +538,7 @@ flow(
     requires: ['database'],
     routes: [
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
-      'GET /v1/public/session-shares/:shareId',
-      'GET /v1/public/session-shares/:shareId/messages',
+      'GET /v1/p/public-share/:token',
     ],
   },
   async (ctx) => {
@@ -531,14 +556,17 @@ flow(
       r.status(201);
       shareId = r.json<{ share: { share_id: string } }>().share.share_id;
     });
-    await ctx.step('anon reads the share metadata → never an auth error', async () => {
-      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } })).status([200, 503]);
+    await ctx.step('the removed anonymous viewing routes answer 404 — the conversation has no public reader at all (KRTX-2358)', async () => {
+      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } })).status(404);
+      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId } })).status(404);
     });
-    await ctx.step('anon reads the conversation through the preview share → 404', async () => {
-      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId } }))
-        .status(404)
-        .body()
-        .has('$.error', 'This share does not include the conversation');
+    await ctx.step('the token edge resolves the share — 200 (sandbox ready) or 503 (not yet) — never an auth error', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
+        params: { projectId: project.id, sessionId: session.id },
+      });
+      const token = r.json<{ shares: Array<{ share_id: string; public_token: string }> }>().shares
+        .find((s) => s.share_id === shareId)!.public_token;
+      (await anon.get('/v1/p/public-share/:token', { params: { token } })).status([200, 503]);
     });
   },
 );
@@ -871,10 +899,12 @@ flow(
     const asAlice = ctx.client.as(alice);
     const asBob = ctx.client.as(bob);
     const params = { projectId: project.id };
+    const aliceTitle = 'SCOPE-10 private store work';
     const aliceSession = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: team.id,
       userId: alice.userId!,
+      metadata: { custom_name: aliceTitle },
     });
     const crId = randomUUID();
     const logId = randomUUID();
@@ -884,7 +914,7 @@ flow(
     // Bob's read carries no id of Alice's private work.
     const noTrace = (r: { text(): string }, what: string) => {
       const body = r.text();
-      for (const id of [aliceSession, crId, logId, alice.userId!, reviewItemId].filter(Boolean)) {
+      for (const id of [aliceSession, aliceTitle, crId, logId, alice.userId!, reviewItemId].filter(Boolean)) {
         if (body.includes(id)) throw new Error(`${what} leaks ${id}: ${body.slice(0, 500)}`);
       }
     };
@@ -1023,15 +1053,27 @@ flow(
         }
       });
 
+      await ctx.step("Alice's branch list names her session branch by her session's title", async () => {
+        const r = await asAlice.get('/v1/projects/:projectId/branches', {
+          params,
+          query: { include_session_branches: 'true' },
+        });
+        r.status(200);
+        const label = r.json<{ branches: SessionBranch[] }>().branches.find((b) => b.name === aliceSession)?.session;
+        if (label?.title !== aliceTitle || label.archived || label.deleted) {
+          throw new Error(`Alice's branch must carry her session's title: ${r.text().slice(0, 500)}`);
+        }
+      });
+
       await ctx.step("the project owner keeps the full view: Alice's branch, change request, review item, log, spend and budget", async () => {
-        await waitFor(
+        const branches = await waitFor(
           async () => {
             const r = await owner.get('/v1/projects/:projectId/branches', {
               params,
               query: { include_session_branches: 'true' },
             });
             r.status(200);
-            return r.json<{ branches: Array<{ name: string }> }>().branches;
+            return r.json<{ branches: SessionBranch[] }>().branches;
           },
           {
             until: (branches) => branches.some((b) => b.name === aliceSession),
@@ -1040,6 +1082,12 @@ flow(
             description: "the owner's branch list carries Alice's session branch",
           },
         );
+        // The owner may not open Alice's private session, so the session list
+        // hides its title from them, and so does the branch list.
+        const label = branches.find((b) => b.name === aliceSession)?.session;
+        if (!label || label.title !== null || label.archived || label.deleted) {
+          throw new Error(`the owner's branch list must label Alice's branch without its title: ${JSON.stringify(label)}`);
+        }
         (await owner.get('/v1/projects/:projectId/change-requests/:crId', { params: { ...params, crId } })).status(200);
         (await owner.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { ...params, reviewItemId } }))
           .status(200);
@@ -1066,6 +1114,54 @@ flow(
       if (mintedTokenId) {
         await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId: mintedTokenId } }).catch(() => {});
       }
+      await db.end();
+    }
+  },
+);
+
+flow(
+  'SCOPE-11',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/sharing', 'PATCH /v1/projects/:projectId/sessions/:sessionId'],
+  },
+  async (ctx) => {
+    const db = await openDb(ctx);
+    // A team account: the owner plus an account admin who can see shared sessions.
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const admin = ctx.client.as(await team.addMember('admin'));
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let seeded: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    try {
+      seeded = await seedBoundSession(ctx, db, project, 'SCOPE-11');
+      const params = { projectId: project.id, sessionId: seeded.sessionId };
+      const patch = (as: ReturnType<typeof ctx.client.as>, metadata: Record<string, unknown>) =>
+        as.patch('/v1/projects/:projectId/sessions/:sessionId', { metadata }, { params });
+
+      await ctx.step("the owner shares the session with the project; an account admin can see and edit its free-form metadata", async () => {
+        (await owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', { mode: 'project' }, { params })).status(200);
+        (await patch(admin, { scope11_note: 'seen' })).status(200).body().has('$.metadata.scope11_note', 'seen');
+      });
+
+      await ctx.step('the admin setting metadata.unattended on a session it does not own → 403, the session stays attended', async () => {
+        (await patch(admin, { unattended: 'true' }))
+          .status(403)
+          .body()
+          .has('$.error', "metadata key unattended can be set only by the session's owner or the session itself");
+        (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200).body().has('$.metadata.unattended', undefined);
+      });
+
+      await ctx.step("the session's own token marks itself unattended → 200; the owner clears it → 200", async () => {
+        (await patch(ctx.client.withBearer(seeded!.token, 'SESSION_TOKEN'), { unattended: 'true' }))
+          .status(200)
+          .body()
+          .has('$.metadata.unattended', 'true');
+        (await patch(owner, { unattended: null })).status(200).body().has('$.metadata.unattended', undefined);
+      });
+    } finally {
+      await dropBoundSession(db, seeded);
       await db.end();
     }
   },

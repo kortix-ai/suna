@@ -1,0 +1,182 @@
+/* Kortix kit: the @kortix/ui primitives as plain CSS classes, for HTML outside apps/web
+   (Kortix Apps, internal dashboards, debug pages). Hand-written. Every value is a tokens.css variable.
+   Load order: fonts.css (Kortix-owned surfaces only), tokens.css, kit.css.
+   Class names start with `k-`. Each block names the component it mirrors.
+   Change a value in visual-system.json, never here. Change a recipe here and in the component together. */
+
+/* ── Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--foreground); color: var(--background); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+a { color: inherit; }
+.k-link { color: var(--kortix-base); text-decoration: none; }
+.k-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+.k-mono { font-family: var(--font-mono); }
+.k-num { font-variant-numeric: tabular-nums; }
+.k-muted { color: var(--muted-foreground); }
+.k-meta { font-size: var(--text-xs); line-height: var(--text-xs-line-height); color: var(--muted-foreground); }
+.k-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ── Type roles (typography.md "Roles (app)") ─────────── */
+.k-title { margin: 0; font-size: var(--text-xl); line-height: var(--text-xl-line-height); font-weight: 500; text-wrap: balance; }
+.k-detail-title { margin: 0; font-size: var(--text-2xl); line-height: var(--text-2xl-line-height); font-weight: 600; letter-spacing: var(--tracking-tight); text-wrap: balance; }
+.k-label { margin: 0; font-size: var(--text-sm); line-height: var(--text-sm-line-height); font-weight: 500; }
+.k-desc { margin: 0; font-size: var(--text-sm); color: var(--muted-foreground); text-wrap: pretty; }
+
+/* ── Page shell ───────────────────────────────────────── */
+.k-page { max-width: 80rem; margin: 0 auto; padding: calc(var(--spacing) * 6) calc(var(--spacing) * 4) calc(var(--spacing) * 12); display: grid; gap: calc(var(--spacing) * 6); }
+@media (min-width: 768px) { .k-page { padding-inline: calc(var(--spacing) * 8); } }
+.k-row { display: flex; align-items: center; gap: calc(var(--spacing) * 2); min-width: 0; }
+.k-stack { display: grid; gap: calc(var(--spacing) * 2); }
+.k-grid { display: grid; gap: calc(var(--spacing) * 4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+
+/* ── Card: an in-flow section on the page (effects.md: border, no shadow) ── */
+.k-card { background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-xl); min-width: 0; }
+.k-card-header { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 3.5) calc(var(--spacing) * 4) 0; }
+.k-card-body { padding: calc(var(--spacing) * 3.5) calc(var(--spacing) * 4); }
+.k-card-footer { padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4); border-top: 1px solid var(--border); }
+/* A tile that needs a fill: surface-2, one boundary (color.md tile rule). */
+.k-tile { background: var(--muted); border-radius: var(--radius-md); padding: calc(var(--spacing) * 3); }
+
+/* ── Popover: floats above the page (bg-popover border shadow-md) ── */
+.k-popover { background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 2.5); font-size: var(--text-xs); line-height: var(--text-xs-line-height); }
+
+/* ── Button (button.tsx: default, outline, ghost, secondary; sizes sm/default) ── */
+.k-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: calc(var(--spacing) * 2);
+  height: calc(var(--spacing) * 9); padding: 0 calc(var(--spacing) * 3.5);
+  border: 1px solid transparent; border-radius: var(--radius-md);
+  font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; text-decoration: none;
+  background: var(--foreground); color: var(--background);
+  transition: background-color var(--duration-normal) var(--ease-out), color var(--duration-normal) var(--ease-out);
+}
+.k-button:hover { background: color-mix(in oklab, var(--foreground) 90%, transparent); }
+.k-button:disabled { opacity: .5; pointer-events: none; }
+.k-button[data-variant="outline"] { background: transparent; color: var(--foreground); border-color: var(--border); }
+.k-button[data-variant="outline"]:hover, .k-button[data-variant="ghost"]:hover { background: var(--hover); }
+.k-button[data-variant="ghost"] { background: transparent; color: var(--foreground); }
+.k-button[data-variant="secondary"] { background: var(--secondary); color: var(--secondary-foreground); }
+.k-button[data-variant="secondary"]:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
+.k-button[data-size="sm"] { height: calc(var(--spacing) * 7.5); padding: 0 calc(var(--spacing) * 2.5); font-size: var(--text-xs); }
+
+/* ── Field (input.tsx: bg-popover, hairline, rounded-md; focus = ring border + 3px /15 halo) ── */
+.k-input {
+  display: block; width: 100%; min-width: 0; height: calc(var(--spacing) * 10); padding: 0 calc(var(--spacing) * 3);
+  font: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--foreground);
+  background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+textarea.k-input { height: auto; min-height: calc(var(--spacing) * 20); padding-block: calc(var(--spacing) * 2); resize: vertical; line-height: var(--text-sm-line-height); }
+.k-input::placeholder { color: var(--muted-foreground); }
+.k-input:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 15%, transparent); }
+.k-input[aria-invalid="true"] { border-color: var(--destructive); box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 15%, transparent); }
+.k-input:disabled { opacity: .5; pointer-events: none; }
+.k-field { display: grid; gap: calc(var(--spacing) * 1.5); }
+.k-field > span:first-child { font-size: var(--text-sm); font-weight: 500; }
+.k-check { display: flex; align-items: center; gap: calc(var(--spacing) * 2); font-size: var(--text-sm); cursor: pointer; }
+.k-check > input { width: calc(var(--spacing) * 4); height: calc(var(--spacing) * 4); margin: 0; accent-color: var(--foreground); }
+
+/* ── Segmented control (tabs.tsx: muted track, raised chip) ── */
+.k-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--muted); border-radius: var(--radius-md); }
+.k-segmented > button {
+  font: inherit; font-size: var(--text-xs); font-weight: 500; color: var(--muted-foreground);
+  background: transparent; border: 0; border-radius: var(--radius-sm); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 2.5); cursor: pointer;
+}
+.k-segmented > button:hover { color: var(--foreground); }
+.k-segmented > button[aria-pressed="true"], .k-segmented > button[aria-selected="true"] {
+  background: var(--popover); color: var(--foreground); box-shadow: var(--shadow-xs), 0 0 0 1px var(--border);
+}
+
+/* ── Badge (badge.tsx): mono uppercase chip, label in ink, hue on the /15 tint and the glyph ── */
+.k-badge {
+  --k-tone: var(--foreground);
+  display: inline-flex; align-items: center; gap: calc(var(--spacing) * 1); flex-shrink: 0;
+  padding: 0.1rem calc(var(--spacing) * 1.5); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--text-xs-line-height); font-weight: 500;
+  letter-spacing: var(--tracking-tight); text-transform: uppercase; white-space: nowrap;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--k-tone) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--k-tone) 10%, transparent);
+}
+.k-badge[data-tone="success"] { --k-tone: var(--kortix-green); }
+.k-badge[data-tone="warning"] { --k-tone: var(--kortix-orange); }
+.k-badge[data-tone="error"] { --k-tone: var(--kortix-red); }
+.k-badge[data-tone="pending"] { --k-tone: var(--kortix-yellow); }
+.k-badge[data-tone="info"] { --k-tone: var(--kortix-blue); }
+.k-badge[data-tone] { background: color-mix(in oklab, var(--k-tone) 15%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--k-tone) 15%, transparent); }
+.k-badge[data-tone="muted"] { --k-tone: var(--muted-foreground); color: var(--muted-foreground); text-transform: none; }
+.k-badge[data-tone="outline"] { background: transparent; box-shadow: inset 0 0 0 1px var(--border); text-transform: none; }
+.k-badge[data-size="tabular"] { min-width: calc(var(--spacing) * 5); justify-content: center; padding-inline: calc(var(--spacing) * 1); font-variant-numeric: tabular-nums; letter-spacing: normal; }
+.k-badge > .k-dot { --k-dot-size: 0.45em; }
+
+/* ── Status dot (status.tsx): the hue carries the state, the words beside it stay ink (D5) ── */
+.k-dot { --k-dot-size: calc(var(--spacing) * 2); display: inline-block; flex-shrink: 0; width: var(--k-dot-size); height: var(--k-dot-size); border-radius: 999px; background: var(--muted-foreground); }
+.k-dot[data-tone="success"] { background: var(--kortix-green); }
+.k-dot[data-tone="warning"] { background: var(--kortix-orange); }
+.k-dot[data-tone="error"] { background: var(--kortix-red); }
+.k-dot[data-tone="pending"] { background: var(--kortix-yellow); }
+.k-dot[data-tone="info"] { background: var(--kortix-blue); }
+
+/* ── Banner (info-banner.tsx): /15 tint, transparent border, ink title ── */
+.k-banner {
+  --k-tone: var(--foreground);
+  display: flex; gap: calc(var(--spacing) * 2.5); align-items: flex-start;
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 3.5); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); background: var(--background);
+}
+.k-banner[data-tone] { border-color: transparent; background: color-mix(in oklab, var(--k-tone) 15%, transparent); }
+.k-banner[data-tone="success"] { --k-tone: var(--kortix-green); }
+.k-banner[data-tone="warning"] { --k-tone: var(--kortix-orange); }
+.k-banner[data-tone="error"] { --k-tone: var(--kortix-red); }
+.k-banner[data-tone="info"] { --k-tone: var(--kortix-blue); }
+
+/* ── Stat: a label, a number, a delta ── */
+.k-stat { display: grid; gap: calc(var(--spacing) * 1); min-width: 0; }
+.k-stat-label { font-size: var(--text-xs); line-height: var(--text-xs-line-height); color: var(--muted-foreground); }
+.k-stat-value { font-size: var(--text-2xl); line-height: var(--text-2xl-line-height); font-weight: 600; letter-spacing: var(--tracking-tight); font-variant-numeric: tabular-nums; }
+
+/* ── Meter: a track well and an ink fill; a status hue only when the fill reports a state ── */
+.k-meter { height: calc(var(--spacing) * 1.5); background: var(--muted); border-radius: 999px; overflow: hidden; }
+.k-meter > span { display: block; height: 100%; background: var(--foreground); border-radius: inherit; }
+.k-meter > span[data-tone="warning"] { background: var(--kortix-orange); }
+.k-meter > span[data-tone="error"] { background: var(--kortix-red); }
+.k-meter > span[data-tone="success"] { background: var(--kortix-green); }
+
+/* ── Table: hairline rows, muted xs header, flush inside a card ── */
+.k-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.k-table th { text-align: left; font-size: var(--text-xs); font-weight: 400; color: var(--muted-foreground); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.k-table td { padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 4); border-bottom: 1px solid var(--border); vertical-align: middle; }
+.k-table tr:last-child td { border-bottom: 0; }
+.k-table tbody tr:hover { background: var(--hover); }
+.k-table .k-end { text-align: right; }
+
+/* ── List: divided rows inside a card ── */
+.k-list { list-style: none; margin: 0; padding: 0; }
+.k-list > li { display: flex; align-items: center; gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 4); border-top: 1px solid var(--border); min-width: 0; }
+.k-list > li:first-child { border-top: 0; }
+
+/* ── Disclosure (details/summary) ── */
+.k-details > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: calc(var(--spacing) * 2); }
+.k-details > summary::-webkit-details-marker { display: none; }
+.k-details > summary::before { content: ''; width: 0.4em; height: 0.4em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--duration-moderate) var(--ease-out); color: var(--muted-foreground); }
+.k-details[open] > summary::before { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .k-details > summary::before { transition: none; } }
+
+/* ── Empty state (layout.md States: no icon tile, no card) ── */
+.k-empty { padding: calc(var(--spacing) * 8) calc(var(--spacing) * 4); text-align: center; color: var(--muted-foreground); }
+
+/* ── Skeleton: a muted block inside a mounted shell (layout.md States) ── */
+.k-skeleton { background: var(--muted); border-radius: var(--radius-md); }
+
+/* ── Kbd ── */
+.k-kbd { font-family: var(--font-mono); font-size: var(--text-xs); padding: 0 calc(var(--spacing) * 1.25); border-radius: var(--radius-sm); background: var(--muted); color: var(--muted-foreground); }

@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SessionSharedIcon } from '@kortix/ui/workspace/projects/session-shared-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,8 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+} from '@kortix/ui/alert-dialog';
+import { Badge } from '@kortix/ui/badge';
 import {
   CommandDialog,
   CommandFooter,
@@ -20,53 +20,59 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from '@/components/ui/command';
+} from '@kortix/ui/command';
 import { useCommandState } from 'cmdk';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Kbd } from '@/components/ui/kbd';
-import Loading from '@/components/ui/loading';
-import { SidebarContext } from '@/components/ui/sidebar';
-import { TextShimmer } from '@/components/ui/text-shimmer';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
-import { useAccountHubAccess } from '@/features/accounts/hub/use-account-hub-access';
-import { useWorkspaceSearch } from '@/features/files';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { Kbd } from '@kortix/ui/kbd';
+import Loading from '@kortix/ui/loading';
+import { SidebarContext } from '@kortix/ui/sidebar';
+import { TextShimmer } from '@kortix/ui/text-shimmer';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { preloadAccountHub } from '@kortix/ui/internal/account-hub/account-hub-entry';
+import { useAccountHubAccess } from '@kortix/ui/internal/account-hub/use-account-hub-access';
+import {
+  useWorkspaceSearch,
+  ChangeRequestDetailDialog,
+  ProjectFilesProvider,
+  openChangeRequestListQuery,
+} from '@kortix/ui/files';
 import {
   ThemeSwatch,
   useInterfaceTheme,
   useInterfaceThemePreview,
 } from '@/features/layout/interface-theme';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
-import { openChangeRequestListQuery } from '@/features/project-files/hooks/use-change-requests';
 import { useAuth } from '@/features/providers/auth-provider';
-import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
-import { DiffDialog } from '@/features/session/diff-dialog';
-import { CompactModal } from '@/features/session/header/compact-modal';
-import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { activeCapabilityTab } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
+import { buildAgentGitReconciliationPrompt } from '@kortix/ui/session/status/agent-git-reconciliation';
+import { DiffDialog, openSessionQuickView } from '@kortix/ui/session-panel';
+import {
+  CompactModal,
+  sessionLastActivityAt,
+  sortSessionsByLastActivity,
+} from '@kortix/ui/session';
+import { pickerGroupId, pickerGroupLabel } from '@kortix/ui/session/models/model-grouping';
+import {
+  activeCapabilityTab,
+  useCapabilityAccess,
+  useProjectNavRows,
+  PROJECT_ACTIONS,
+  useProjectCan,
+  useProjectPageCans,
+} from '@kortix/ui/workspace';
 import {
   LEGACY_PALETTE_HIDDEN,
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
-import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
-import {
-  useCapabilityAccess,
-  useProjectNavRows,
-} from '@/features/workspace/project-sidebar/project-settings-nav';
-import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
+import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
+import { agentLabel, ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
+import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
   OPEN_COMMAND_PALETTE_EVENT,
   consumePendingCommandPalette,
-} from '@/features/workspace/open-command-palette';
-import {
-  sessionLastActivityAt,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+} from '@kortix/ui/internal/layout/open-command-palette';
 import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
@@ -77,7 +83,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   type SettingsTab,
   resolveSettingsOverlayHref,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import {
   type WorkspacePaletteRow,
@@ -88,13 +94,13 @@ import {
   workspacePageResults,
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
-import { copyToClipboard } from '@/lib/utils/clipboard';
-import { isDesktop } from '@/lib/desktop';
+import { copyToClipboard } from '@kortix/ui/internal/lib/utils/clipboard';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
@@ -104,23 +110,22 @@ import {
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
-import { useProjectCan, useProjectPageCans } from '@/lib/use-project-can';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { openCustomizeSidebar } from '@/stores/sidebar-nav-store';
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { useChatSendStore } from '@/stores/chat-send-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
+import { cn, uiRoutes } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
+import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
+import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useProjectSwitchStore } from '@/stores/project-switch-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { openTabAndNavigate } from '@kortix/ui/internal/stores/tab-store';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
+import { type ConversationDensity, useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   type FeatureFlagKey,
   type KortixAccount,
@@ -146,16 +151,17 @@ import {
   invalidateProject,
   modelProviderMode,
   qk,
-  refreshProjectProviderState,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useProjectMemorySearch,
   useProjectSessions,
+  useProjectSpaces,
   useRuntimeConnectionStore,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, formatRelativeTime } from '@kortix/shared';
 import {
   ArrowDownIcon as ArrowDown,
   ArrowUpIcon as ArrowUp,
@@ -171,6 +177,7 @@ import {
   ChatCircleIcon as MessageCircle,
   MinusIcon as Minus,
   MagnifyingGlassIcon as Search,
+  SunDimIcon,
   TextAlignLeftIcon as TextAlignLeft,
   UsersIcon as UsersSolid,
   XIcon as X,
@@ -178,11 +185,11 @@ import {
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy } from '@/features/icon/icons/copy';
 import {
-  SidebarToggle as PanelLeftClose,
-  SidebarToggle as PanelLeftIcon,
-} from '@/features/icon/icons/sidebar-toggle';
+  Copy,
+  SidebarGlyph as PanelLeftClose,
+  SidebarGlyph as PanelLeftIcon,
+} from '@kortix/ui/icons';
 
 type PalettePage =
   | 'root'
@@ -236,7 +243,7 @@ function sanitizeCmdkValue(value: string): string {
  * be unique — two rows sharing a `value` are both marked `aria-selected` and
  * Enter always fires the first one. cmdk 0.2.1 (the installed version, checked
  * against `node_modules/cmdk/dist/index.d.ts`) has no separate `keywords` prop
- * to move the search text onto, and `CommandDialog` in `components/ui/command`
+ * to move the search text onto, and `CommandDialog` in `packages/ui/src/primitives/command`
  * forwards neither `filter` nor `shouldFilter`, so the value is the only lever.
  * Uniqueness therefore rests on the curated text itself, which is safe because
  * a collision means two rows with the SAME label and the SAME keywords — rows
@@ -710,7 +717,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "llm_gateway" out of a changelog) — a single row pointing
+ * ("warm sessions", "us_region" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -758,9 +765,6 @@ function FeatureFlagsPage({
       );
       void invalidateProject(queryClient, projectId);
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      if (variables.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
-      }
       successToast(
         `${variables.key} ${variables.next ? tI18nComplete.raw('textfb9cf75606b4') : tI18nComplete.raw('text17eb3c0168d0')}`,
       );
@@ -780,7 +784,7 @@ function FeatureFlagsPage({
     if (!q) return withPending;
     // Matches `key` as well as `name`/`description`, for the same reason
     // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
-    // docs and changelogs that name the raw key (`llm_gateway`).
+    // docs and changelogs that name the raw key (`warm_sessions`).
     return withPending.filter(
       (f) =>
         f.name.toLowerCase().includes(q) ||
@@ -864,6 +868,15 @@ export function sessionMatchesPaletteQuery(session: ProjectSession, query: strin
     sessionName(session).toLowerCase().includes(query) ||
     session.session_id.toLowerCase().startsWith(query)
   );
+}
+
+/**
+ * The welcome chat (KRTX-2476). The sidebar lists "Your first chat with
+ * Kortix" under Sessions while it is pending, but it is not a session yet, so
+ * the server search never returns it. Search finds it by its title instead.
+ */
+export function firstChatMatchesPaletteQuery(pending: boolean, title: string, query: string): boolean {
+  return pending && query.length > 0 && title.toLowerCase().includes(query);
 }
 
 export function CommandPalette() {
@@ -1031,15 +1044,40 @@ export function CommandPalette() {
   // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
   // never survive a flag its rail item does not. Fail-closed: unresolved detail
   // ⇒ every flag reads false.
-  //
-  // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
-  // panel rendered nothing unless it was ENABLED — a palette entry that opened
-  // a blank pane. It now follows enablement like every other flag.
   // `projectFlags`, not `featureFlags` — the SDK's `featureFlags` is the
   // DEPLOYMENT flag set (build-time capabilities like `enableProjects`), a
   // different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
+
+  // Memory pages (`project_channels`): the server's search, at 2 characters
+  // or more. Hits of an older query stay in the hook while the next loads, so
+  // a query cut below 2 characters shows none.
+  const tMemory = useTranslations('spaces.memory');
+  const memoryOn = open && !!projectId && projectFlags.project_channels === true && page === 'root';
+  const memorySearch = useProjectMemorySearch(
+    projectId ?? '',
+    { q: serverSessionQuery, limit: 5 },
+    { enabled: memoryOn },
+  );
+  const memoryHref = useMemoryPageHref(projectId, memoryOn);
+  const memoryQueryLongEnough = query.trim().length >= 2 && serverSessionQuery.length >= 2;
+  const rootMemoryResults = useMemo(
+    () =>
+      memoryOn && memoryQueryLongEnough
+        ? (memorySearch.data?.hits ?? []).flatMap((hit) => {
+            const href = memoryHref({ scope: hit.scope, key: hit.layer_key }, hit.page_id);
+            const place =
+              hit.scope === 'company'
+                ? tMemory('used.company')
+                : hit.scope === 'dm'
+                  ? capitalizeWords(hit.layer_name)
+                  : hit.layer_name;
+            return href ? [{ hit, href, place }] : [];
+          })
+        : [],
+    [memoryOn, memoryQueryLongEnough, memorySearch.data, memoryHref, tMemory],
+  );
 
   const allModels = useMemo(
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
@@ -1124,12 +1162,14 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setQuery('');
       setPage('root');
     }
-  }, [open]);
+  }
 
   useEffect(() => {
     const openFileSearch = () => {
@@ -1211,8 +1251,12 @@ export function CommandPalette() {
         // Open change requests are the Review tab's business: only a caller
         // who can act on reviews gets the list.
         'review-changes': customizeTabs.split(' ').includes('review'),
+        // Customize tabs with their own row: shown exactly when the tab is.
+        'proj-reminders': customizeTabs.split(' ').includes('reminders'),
+        'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };
+    const customizeTabSet = new Set(customizeTabs.split(' '));
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
@@ -1223,6 +1267,8 @@ export function CommandPalette() {
       if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
+      // Channels replace New session: a thread starts from a channel's composer.
+      if (item.id === 'new-session' && projectFlags.project_channels) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
       // this is dropped, not offered: navigating to a literal
       // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
@@ -1242,7 +1288,7 @@ export function CommandPalette() {
         // A Customize tab is offered only when `capabilityAccess()` lists it:
         // the same rule the sidebar row and the tab bar follow.
         const tab = activeCapabilityTab(href.split('?')[0]);
-        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
+        if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1419,7 +1465,7 @@ export function CommandPalette() {
       .then((session) => {
         // LEGACY, unreachable in the product: this branch runs only when
         // there is NO projectId, and every authed route is `/projects/[id]/*`.
-        // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
+        // `/sessions/<id>` is not a route — see `packages/ui/src/internal/lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: tHardcodedUi.raw('i18nComplete.textcffdba22adf2'),
@@ -1433,7 +1479,7 @@ export function CommandPalette() {
       })
       .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
+  }, [isCreating, projectId, newSession, createSession, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1576,6 +1622,30 @@ export function CommandPalette() {
     if (!hasQuery || !projectId) return [];
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
+
+  // Channels (`project_channels`): sessions are threads, and channels and DMs
+  // are found by name, as the sidebar lists them (its DMs are the visible agents).
+  const channelsOn = projectFlags.project_channels === true;
+  const tSidebar = useTranslations('sidebar');
+  const projectSpaces = useProjectSpaces(projectId, { enabled: open && channelsOn });
+  const rootSpaceResults = useMemo(() => {
+    const q = query.trim().toLowerCase().replace(/^#/, '');
+    if (!q || !projectId || !channelsOn) return { channels: [], dms: [] };
+    const channels = (projectSpaces.data ?? [])
+      .filter((space) => space.kind === 'channel' && !space.archived_at && space.slug)
+      .filter((space) => `${space.slug} ${space.name}`.toLowerCase().includes(q))
+      .slice(0, 5);
+    const dms = agents.filter((agent) => `${agentLabel(agent.name)} ${agent.name}`.toLowerCase().includes(q)).slice(0, 5);
+    return { channels, dms };
+  }, [query, projectId, channelsOn, projectSpaces.data, agents]);
+  const sessionsHeading = channelsOn ? tPalette('threads') : 'Sessions';
+
+  const tFirstChat = useTranslations('firstChat');
+  const firstChatPending = useFirstChatPending(projectId ?? '');
+  const firstChatTitle = tFirstChat('title');
+  const firstChatResult =
+    !!projectId &&
+    firstChatMatchesPaletteQuery(firstChatPending, firstChatTitle, query.trim().toLowerCase());
 
   /**
    * Workspaces matching a ROOT query.
@@ -1782,13 +1852,17 @@ export function CommandPalette() {
     [tPalette, close],
   );
 
-  const hasSessionResults = rootSessionResults.length > 0;
+  const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
+  const hasSpaceResults = rootSpaceResults.channels.length + rootSpaceResults.dms.length > 0;
+  const hasMemoryResults = rootMemoryResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
     rootCopyResults.length > 0 ||
     hasNavResults ||
     hasSessionResults ||
+    hasSpaceResults ||
+    hasMemoryResults ||
     hasWorkspaceResults ||
     hasSessionActionResults ||
     hasSettingsResults;
@@ -1912,7 +1986,7 @@ export function CommandPalette() {
    *
    * Calling `openSettings()` where no panel is mounted did two things, both
    * bad: the click did nothing, AND `open: true` stuck in the module-level
-   * store (`stores/settings-panel-store.ts`), so the overlay sprang open
+   * store (`packages/ui/src/internal/stores/settings-panel-store.ts`), so the overlay sprang open
    * unrequested on the next client-side navigation into a project.
    */
   const openSettingsTab = useCallback(
@@ -2111,7 +2185,7 @@ export function CommandPalette() {
 
   const handleOpenProviderModal = useCallback(() => {
     close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
+    import('@kortix/ui/internal/stores/provider-modal-store').then(({ useProviderModalStore }) => {
       useProviderModalStore.getState().openProviderModal('connected');
     });
   }, [close]);
@@ -2341,6 +2415,10 @@ export function CommandPalette() {
     return (
       filteredNavItems.length +
       rootSessionResults.length +
+      (firstChatResult ? 1 : 0) +
+      rootSpaceResults.channels.length +
+      rootSpaceResults.dms.length +
+      rootMemoryResults.length +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2351,6 +2429,9 @@ export function CommandPalette() {
     hasQuery,
     filteredNavItems,
     rootSessionResults,
+    firstChatResult,
+    rootSpaceResults,
+    rootMemoryResults,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2373,8 +2454,8 @@ export function CommandPalette() {
     if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
     if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
     if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
-    return tI18nComplete.raw('text7b355872be1c');
-  }, [page, tI18nComplete]);
+    return channelsOn ? tPalette('searchChannels') : tI18nComplete.raw('text7b355872be1c');
+  }, [page, tI18nComplete, channelsOn, tPalette]);
 
   const pageTitle = useMemo(() => {
     if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
@@ -2547,7 +2628,7 @@ export function CommandPalette() {
                             value="suggestion change agent worker switch"
                             onSelect={() => goToPage('agents')}
                           >
-                            <Bot className="size-4" />
+                            {currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />}
                             <span className="flex-1">
                               {tHardcodedUi.raw(
                                 'componentsCommandPalette.line1209JsxTextChangeAgent',
@@ -2613,9 +2694,11 @@ export function CommandPalette() {
 
                     {projectId && recentProjectSessions.length > 0 && (
                       <CommandGroup
-                        heading={tHardcodedUi.raw(
-                          'componentsCommandPalette.line1260JsxAttrHeadingRecentSessions',
-                        )}
+                        heading={
+                          channelsOn
+                            ? tPalette('recentThreads')
+                            : tHardcodedUi.raw('componentsCommandPalette.line1260JsxAttrHeadingRecentSessions')
+                        }
                         forceMount
                       >
                         {recentProjectSessions.map((session) => (
@@ -2677,6 +2760,43 @@ export function CommandPalette() {
 
                 {hasQuery && (
                   <>
+                    {/* Channels and DMs lead: with Channels on they are where work lives. */}
+                    {rootSpaceResults.channels.length > 0 && projectId && (
+                      <CommandGroup heading={tSidebar('spaces.channels')} forceMount>
+                        {rootSpaceResults.channels.map((channel) => (
+                          <CommandItem
+                            key={channel.space_id}
+                            value={sanitizeCmdkValue(`channel ${channel.slug} ${channel.name}`)}
+                            onSelect={() => {
+                              router.push(uiRoutes().channel(projectId, channel.slug ?? ''));
+                              close();
+                            }}
+                          >
+                            <ChannelGlyph visibility={channel.visibility} className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{channel.slug}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
+                    {rootSpaceResults.dms.length > 0 && projectId && (
+                      <CommandGroup heading={tSidebar('spaces.directMessages')} forceMount>
+                        {rootSpaceResults.dms.map((agent) => (
+                          <CommandItem
+                            key={agent.name}
+                            value={sanitizeCmdkValue(`dm ${agentLabel(agent.name)} ${agent.name}`)}
+                            onSelect={() => {
+                              router.push(uiRoutes().dm(projectId, agent.name));
+                              close();
+                            }}
+                          >
+                            <AgentMark slug={agent.name} />
+                            <span className="flex-1 truncate">{agentLabel(agent.name)}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
                     {hasSessionActionResults && (
                       <CommandGroup heading="Session" forceMount>
                         {sessionActionItems.map((item) => (
@@ -2686,7 +2806,7 @@ export function CommandPalette() {
                             onSelect={() => goToPage(item.targetPage)}
                           >
                             {item.id === 'change-agent' ? (
-                              <Bot className="size-4" />
+                              currentAgent ? <AgentMark slug={currentAgent.name} /> : <Bot className="size-4" />
                             ) : (
                               <Cpu className="size-4" />
                             )}
@@ -2797,7 +2917,7 @@ export function CommandPalette() {
                     ))}
 
                     {hasSessionResults && (
-                      <CommandGroup heading="Sessions" forceMount>
+                      <CommandGroup heading={sessionsHeading} forceMount>
                         {rootSessionResults.map((session) => (
                           <CommandItem
                             key={session.session_id}
@@ -2817,6 +2937,42 @@ export function CommandPalette() {
                                 new Date(sessionLastActivityAt(session)).getTime(),
                               )}
                             </span>
+                          </CommandItem>
+                        ))}
+                        {firstChatResult && projectId && (
+                          <CommandItem
+                            value={sanitizeCmdkValue(`session ${firstChatTitle}`)}
+                            onSelect={() => {
+                              // nav-contract: prefetch-only — a cmdk row activated by keyboard.
+                              router.push(firstChatHref(projectId));
+                              close();
+                            }}
+                          >
+                            <MessageCircle className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{firstChatTitle}</span>
+                          </CommandItem>
+                        )}
+                      </CommandGroup>
+                    )}
+
+                    {hasMemoryResults && (
+                      <CommandGroup heading={tMemory('palette.heading')} forceMount>
+                        {rootMemoryResults.map(({ hit, href, place }) => (
+                          <CommandItem
+                            key={hit.page_id}
+                            // The server matched the body too; cmdk scores only `value`, so a
+                            // body-only hit would unmount. The value stays its selection identity.
+                            forceMount
+                            // Label plus curated keywords: the title, its layer, its summary.
+                            value={sanitizeCmdkValue(`memory ${hit.title} ${place} ${hit.summary}`)}
+                            onSelect={() => {
+                              router.push(href);
+                              close();
+                            }}
+                          >
+                            <SunDimIcon aria-hidden className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{hit.title}</span>
+                            <span className="text-muted-foreground max-w-40 shrink-0 truncate text-xs">{place}</span>
                           </CommandItem>
                         ))}
                       </CommandGroup>
@@ -2928,7 +3084,6 @@ export function CommandPalette() {
                   <CommandGroup heading="Agents" forceMount>
                     {filteredAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
-                      const chalk = chalkColors(agent.name);
                       return (
                         <CommandItem
                           key={agent.name}
@@ -2937,16 +3092,8 @@ export function CommandPalette() {
                           )}
                           onSelect={() => handleSelectAgent(agent.name)}
                         >
-                          <div
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
-                            style={{
-                              backgroundColor: chalk.background,
-                              color: chalk.foreground,
-                              borderColor: chalk.border,
-                            }}
-                          >
-                            <Bot className="size-5 shrink-0" />
-                          </div>
+                          {/* The agent's pixel mark, its face on every surface. */}
+                          <AgentMark slug={agent.name} size={21} />
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                             <span className="truncate text-sm font-medium">
                               {capitalizeWords(agent.name)}
@@ -3164,7 +3311,7 @@ export function CommandPalette() {
 
             {page === 'sessions' &&
               (filteredProjectSessionsList.length > 0 ? (
-                <CommandGroup heading="Sessions" forceMount>
+                <CommandGroup heading={sessionsHeading} forceMount>
                   {filteredProjectSessionsList.map((session) => (
                     <CommandItem
                       key={session.session_id}

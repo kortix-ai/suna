@@ -13,7 +13,10 @@
  *   above the stored message's. Every pair of the batch is acknowledged, applied
  *   or not, after commit. A higher put revives a tombstoned message.
  * - `seq` is unique per thread (`session_log_messages_thread_seq_key`). A put
- *   that collides rolls the whole batch back and answers 422 with its pair.
+ *   that collides rolls the whole batch back and answers 422 with its pair and
+ *   the thread's `seq_max` (tombstones included). The daemon then numbers that
+ *   thread above `seq_max` and sends the batch again (a box that lost its native
+ *   store with restore off numbers from 1 again: `session-log-journal.ts` in kortixd).
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
  *   client-minted user message id) is the assistant message's `reply_to`. No
@@ -87,7 +90,7 @@ import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
-import { jsonbSafeValue } from './lib/jsonb-safe';
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
 import { toolInputOrderOf } from './session-log-input-order';
 
@@ -127,7 +130,7 @@ const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as cons
 const BUSY = { status: 429, body: { error: 'Session log busy' } } as const;
 
 class SeqConflict extends Error {
-  constructor(readonly body: SessionLogJournalSeqConflict) {
+  constructor(readonly body: Omit<SessionLogJournalSeqConflict, 'seq_max'>) {
     super('seq_conflict');
   }
 }
@@ -160,7 +163,7 @@ export const sessionLogContentHash = (message: unknown): string =>
  * then re-sent forever (243 5xx in a day, one 730 kB batch retried 171 times,
  * KRTX-211; the same shape with NULs, KRTX-2178). Replace every bad code unit
  * with U+FFFD before anything is hashed or written, the way a terminal renders
- * it. `jsonbSafeValue` (`lib/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
+ * it. `jsonbSafeValue` (`shared/jsonb-safe.ts`) is the KRTX-1701-reviewed walker
  * the transcript mirror shares; unlike `toWellFormed`, it also strips NUL,
  * which is a well-formed string Postgres still refuses.
  */
@@ -238,9 +241,18 @@ async function applyBatch(
       return { status: 200 as const, body: { acked } };
     });
   } catch (err) {
-    if (err instanceof SeqConflict) return { status: 422, body: err.body };
+    if (err instanceof SeqConflict) return { status: 422, body: { ...err.body, seq_max: await threadSeqMax(scope.sessionId, err.body.thread_id) } };
     throw err;
   }
+}
+
+/** The highest seq a thread holds, tombstones included; read after the rollback. */
+async function threadSeqMax(sessionId: string, threadId: string): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`max(${sessionLogMessages.seq})` })
+    .from(sessionLogMessages)
+    .where(and(eq(sessionLogMessages.sessionId, sessionId), eq(sessionLogMessages.threadId, threadId)));
+  return Number(row?.max ?? 0);
 }
 
 /**
@@ -387,7 +399,8 @@ async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly 
 // ponytail: one INSERT per put, so a seq collision names its own pair without
 // parsing the error detail. A batch is at most 1 MB gzipped; batch the inserts
 // if a large boot reconcile (P6) makes the round trips show up.
-async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
+/** One put inside the caller's transaction. Also the mirror merge's write (`mergeMirrorIntoLog`, `session-log-capture.ts`). */
+export async function applyPut(tx: Tx, sessionId: string, generation: number, put: SessionLogPut, record: SessionLogPut['message']): Promise<void> {
   const m = put.message;
   const createdAt = Date.parse(m.created_at);
   try {

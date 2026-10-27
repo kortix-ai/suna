@@ -1,204 +1,175 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Button } from '@/components/ui/marketing/button';
-import { ArrowRightIcon } from '@/features/icon/arrow-right';
-import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { CopyRow, LinkRow } from '@/features/marketing/kit/copy-row';
+import { Disclosure } from '@/features/marketing/kit/disclosure';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, Block, Heading, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { useState, type ReactNode } from 'react';
 import { ApplyModal } from './apply-modal';
 import { getLocalizedCareersContent } from './content';
 
-/* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
-   runs its full width. */
-const MEASURE = 'max-w-[34rem]';
+type CareersContent = ReturnType<typeof getLocalizedCareersContent>;
 
 /**
- * The board. One accordion row per opening: collapsed shows the name, the two
- * locations and a single summary line; expanded adds the bullets. Nothing here
- * is a job description — the detail belongs in a conversation.
+ * The board, in a band (after Linear's and Runway's open-roles lists on
+ * Mobbin): one `Disclosure` row per opening with the role, its summary and the
+ * two cities. `name` keeps one open at a time. Open, the bullets and the Apply
+ * button sit under the summary. The role is a span, not a heading: a
+ * `summary` may hold one heading alone or phrasing content, not both.
  */
-function Board({ onApply }: { onApply: () => void }): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { LOCATIONS, apply, openings } = getLocalizedCareersContent(tI18nComplete);
+function Board({
+  hero,
+  openings,
+  apply,
+  locations,
+  onApply,
+}: Pick<CareersContent, 'hero' | 'openings' | 'apply'> & { locations: string; onApply: () => void }): ReactNode {
   return (
-    <section id="openings" className="mx-auto max-w-7xl px-6 pb-4 sm:pb-8">
-      <Reveal>
-        <Accordion type="single" collapsible className="border-border border-t">
+    <Band>
+      <div className="px-6 lg:px-11">
+        {/* Column labels on the rows' grid; the empty cell stands in for the row's "+". */}
+        <div aria-hidden className="text-muted-foreground hidden gap-6 border-b py-4 text-sm lg:flex">
+          <span className="grid flex-1 grid-cols-12">
+            <span className="col-span-4 pr-8">{hero.roleLabel}</span>
+            <span className="col-span-6">{hero.summaryLabel}</span>
+          </span>
+          <span className="size-4 shrink-0" />
+        </div>
+        <div className="divide-y">
           {openings.map((opening) => (
-            <AccordionItem
+            <Disclosure
               key={opening.id}
-              value={opening.id}
-              className="border-border border-b last:border-b-0"
-            >
-              <AccordionTrigger className="items-center gap-6 py-6 hover:no-underline sm:py-7">
-                <div className="grid w-full gap-1.5 lg:grid-cols-12 lg:items-baseline lg:gap-10">
-                  <h3 className="text-foreground text-xl font-medium tracking-tight lg:col-span-4">
+              name="openings"
+              summary={
+                <span className="grid grid-cols-1 items-baseline gap-y-2 lg:grid-cols-12">
+                  <span className="text-xl font-medium tracking-tight text-balance lg:col-span-4 lg:pr-8">
                     {opening.name}
-                  </h3>
-                  <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase lg:col-span-3">
-                    {LOCATIONS}
-                  </p>
-                  <p className="text-muted-foreground text-sm leading-relaxed font-normal lg:col-span-5">
+                  </span>
+                  <span className="text-muted-foreground max-w-xl text-sm text-pretty lg:col-span-6 lg:pr-8">
                     {opening.summary}
-                  </p>
-                </div>
-              </AccordionTrigger>
-
-              <AccordionContent className="pb-8">
-                <div className="lg:grid lg:grid-cols-12 lg:gap-10">
-                  <div className="lg:col-span-8 lg:col-start-5">
-                    <ul className={cn(MEASURE, 'space-y-2.5')}>
-                      {opening.bullets.map((bullet) => (
-                        <li
-                          key={bullet}
-                          className="text-muted-foreground flex gap-3 text-sm leading-relaxed"
-                        >
-                          <span aria-hidden className="text-muted-foreground/40 select-none">
-                            —
-                          </span>
-                          <span>{bullet}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {'note' in opening ? (
-                      <p className="text-muted-foreground/70 mt-5 max-w-[34rem] text-xs leading-relaxed">
-                        {opening.note}
-                      </p>
-                    ) : null}
-
-                    <Button size="sm" className="mt-6" onClick={onApply}>
-                      {apply.cta}
-                    </Button>
-                  </div>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      </Reveal>
-    </section>
-  );
-}
-
-/** The bar. The one prose block on the page that earns its space. */
-function Bar(): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { bar } = getLocalizedCareersContent(tI18nComplete);
-  return (
-    <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
-      <SectionHeader eyebrow={bar.eyebrow} title={bar.title} description={bar.lead} />
-      <Reveal>
-        <ul className="border-border mt-12 border-b">
-          {bar.items.map((item) => (
-            <li
-              key={item.id}
-              className="border-border grid gap-2 border-t py-5 lg:grid-cols-12 lg:items-baseline lg:gap-10"
+                  </span>
+                  <span className="text-muted-foreground text-sm lg:col-span-2 lg:text-right">{locations}</span>
+                </span>
+              }
             >
-              <h3 className="text-foreground text-base font-medium tracking-tight lg:col-span-4">
-                {item.title}
-              </h3>
-              <p className="text-muted-foreground text-base leading-relaxed lg:col-span-8">
-                {item.body}
-              </p>
-            </li>
+              <div className="pb-2 lg:grid lg:grid-cols-12 lg:pr-10">
+                <div className="max-w-xl lg:col-span-6 lg:col-start-5">
+                  <ul className="text-muted-foreground marker:text-muted-foreground list-disc space-y-2 pl-4 text-sm text-pretty">
+                    {opening.bullets.map((bullet) => (
+                      <li key={bullet}>{bullet}</li>
+                    ))}
+                  </ul>
+                  {'note' in opening ? (
+                    <p className="text-muted-foreground mt-6 text-sm text-pretty">{opening.note}</p>
+                  ) : null}
+                  <MarketingButton size="md" className="hit-area-y-1 mt-8" onClick={onApply}>
+                    {apply.cta}
+                  </MarketingButton>
+                </div>
+              </div>
+            </Disclosure>
           ))}
-        </ul>
-      </Reveal>
-    </section>
-  );
-}
-
-function Apply({ onApply }: { onApply: () => void }): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { apply } = getLocalizedCareersContent(tI18nComplete);
-  return (
-    <section id="apply" className="mx-auto max-w-7xl px-6 pb-16 sm:pb-24">
-      <div className="border-border border-t pt-12 sm:pt-16">
-        <SectionHeader eyebrow={apply.eyebrow} title={apply.title} description={apply.body} />
-        <Reveal>
-          <Button size="sm" className="mt-8" onClick={onApply}>
-            {apply.cta}
-          </Button>
-
-          <p className="text-muted-foreground mt-10 font-mono text-[10px] tracking-widest uppercase">
-            {apply.directLead}
-          </p>
-          <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
-            {apply.links.map((link) => (
-              <li key={link.id}>
-                <a
-                  href={link.href}
-                  {...(link.external ? { target: '_blank', rel: 'noreferrer' } : {})}
-                  className="text-foreground text-sm underline decoration-current/30 underline-offset-4 transition-colors hover:decoration-current"
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </Reveal>
+        </div>
       </div>
-    </section>
+    </Band>
   );
 }
+
+/** The label each direct link row carries. */
+const LINK_LABELS: Record<string, string> = { email: 'Email', x: 'X', linkedin: 'LinkedIn' };
 
 /**
- * `/careers` — a board, not an essay.
- *
- * Three things only: the openings, the bar, and how to apply. Applications go
+ * `/careers`: a board, not an essay. In the landing page's frame
+ * (`kit/page-frame.tsx`) like /security and /about: the hero, the openings in
+ * a band, the bar as hairline cells, and how to apply. Applications go
  * through `ApplyModal` into the same lead pipeline as "Book your demo". The
- * accuracy gate — locations, no invented comp, the OpenCode distinction — lives
- * in `content.ts`.
+ * accuracy gate (locations, no invented comp, the OpenCode distinction)
+ * lives in `content.ts`.
  */
 export function CareersPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { hero } = getLocalizedCareersContent(tI18nComplete);
+  const { LOCATIONS, hero, openings, bar, apply } = getLocalizedCareersContent(tI18nComplete);
   const [applyOpen, setApplyOpen] = useState(false);
   const openApply = () => setApplyOpen(true);
 
   return (
-    <main className="bg-background min-h-screen">
-      <section className="mx-auto max-w-7xl px-6 pt-32 pb-12 sm:pt-44 sm:pb-16">
-        <SectionHeader as="h1" eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
-        <Reveal delay={0.06}>
-          <div className="kx-hero-text mt-8 flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
-            <Button
-              size="lg"
-              className="flex-1 active:scale-[0.97] sm:flex-none"
-              onClick={openApply}
-            >
-              {hero.ctaPrimary}
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="group/arrow-right flex-1 gap-1.5 active:scale-[0.97] sm:flex-none"
-              asChild
-            >
-              <Link href={hero.ctaSecondaryHref}>
-                {hero.ctaSecondary}
-                <ArrowRightIcon aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </Reveal>
+    <PageFrame>
+      <section id="openings" className="scroll-mt-16">
+        <PageHero
+          title={hero.title}
+          titleMuted={hero.lead}
+          sub={hero.description}
+          actions={
+            <>
+              <MarketingButton size="md" className="hit-area-y-1" variant="secondary" asChild>
+                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
+              </MarketingButton>
+              <MarketingButton size="md" className="hit-area-y-1" onClick={openApply}>
+                {hero.ctaPrimary}
+              </MarketingButton>
+            </>
+          }
+        />
+        <Board hero={hero} openings={openings} apply={apply} locations={LOCATIONS} onApply={openApply} />
       </section>
 
-      <Board onApply={openApply} />
-      <Bar />
-      <Apply onApply={openApply} />
+      {/* The bar: seven cells, and the eighth is the way in. */}
+      <Block id="what-we-look-for">
+        <Heading title={bar.title} titleMuted={bar.titleMuted} sub={bar.lead} />
+        <Band className="mt-12">
+          <ul className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-4">
+            {bar.items.map((item, i) => (
+              <li key={item.id} className="bg-background flex flex-col gap-3 p-6 lg:p-8">
+                <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
+                <p className="text-muted-foreground text-sm text-pretty">{item.body}</p>
+              </li>
+            ))}
+            <li className="bg-card flex flex-col justify-end gap-4 p-6 lg:p-8">
+              <p className="text-foreground text-base font-medium text-pretty">{apply.titleMuted}</p>
+              <MarketingButton size="md" className="hit-area-y-1 self-start" onClick={openApply}>
+                {apply.cta}
+              </MarketingButton>
+            </li>
+          </ul>
+        </Band>
+      </Block>
+
+      {/* How to apply: the founder's note, then the direct lines as rows. */}
+      <Block id="apply">
+        <Heading
+          title={apply.title}
+          titleMuted={apply.titleMuted}
+          sub={apply.body}
+          actions={
+            <MarketingButton size="md" className="hit-area-y-1" onClick={openApply}>
+              {apply.cta}
+            </MarketingButton>
+          }
+        />
+        <Band className="mt-12">
+          <div className="px-6 py-2 lg:px-11">
+            <p className="text-muted-foreground border-b py-4 text-sm">{apply.directLead}</p>
+            <ul className="divide-y">
+              {apply.links.map((link) => (
+                <li key={link.id}>
+                  {link.external ? (
+                    <LinkRow label={LINK_LABELS[link.id] ?? link.id} value={link.label} href={link.href} />
+                  ) : (
+                    <CopyRow label={LINK_LABELS[link.id] ?? link.id} value={link.label} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Band>
+      </Block>
 
       <ApplyModal open={applyOpen} onOpenChange={setApplyOpen} />
-    </main>
+    </PageFrame>
   );
 }

@@ -27,7 +27,10 @@ interface OpenCodeQueryOptions {
   sidecarDir?: string | null
 }
 
-/** Native reads. HTTP controllers consume the returned data only. */
+/**
+ * Native reads. HTTP controllers consume the returned data only.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeQueryService(
   opencode: Opencode,
   options: OpenCodeQueryOptions = {},
@@ -218,7 +221,10 @@ function findAttachment(
   return null
 }
 
-/** Attachment lookup understands native rows and the native offload sidecar. */
+/**
+ * Attachment lookup understands native rows and the native offload sidecar.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeAttachmentService(
   opencode: Opencode,
   opts: { sidecarDir: string | null } = { sidecarDir: null },

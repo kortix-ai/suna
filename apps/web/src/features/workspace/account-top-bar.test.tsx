@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseSettingsTab, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import { parseSettingsTab, type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 
 /**
  * What is NOT covered here, and why.
@@ -84,7 +84,7 @@ describe('AccountTopBar notification bell', () => {
 
   test('the bell is a client-only chunk', async () => {
     const code = await source();
-    expect(code).toContain("import('@/features/notifications/notification-bell')");
+    expect(code).toContain("import('@kortix/ui/internal/notifications/notification-bell')");
     expect(code).toContain('{ ssr: false }');
   });
 });

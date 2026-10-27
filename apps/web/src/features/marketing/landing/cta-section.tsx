@@ -1,26 +1,30 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Button } from '@/components/ui/marketing/button';
-import { DitherShader } from '@/components/ui/wallpaper-shaders';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { DitherField } from '@/features/marketing/kit/dither-field';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
+import { footerCtaFor } from '@/features/marketing/landing/footer-cta';
 import { useAuth } from '@/features/providers/auth-provider';
-import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
-import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { ArrowRightIcon } from '@phosphor-icons/react';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 /**
  * Closing CTA above the site map. Copy lives in content.ts, not the i18n
- * bundle, matching the rest of the rebuilt landing page.
+ * bundle, matching the rest of the rebuilt landing page. A page can replace
+ * the copy and both actions through `footer-cta.ts`.
  */
 export function CtaSection() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { cta } = getLocalizedLandingContent(tI18nComplete);
   const { user } = useAuth();
   const openDemo = useRequestDemo();
+  const override = footerCtaFor(usePathname() ?? '/', tI18nComplete);
 
   // `latestProjectPath` reads document.cookie, which the server pass cannot
   // see. Seeding with `/auth` keeps both passes identical and lets the row be a
@@ -39,36 +43,79 @@ export function CtaSection() {
 
   return (
     <section id="cta" className="py-24 sm:py-30">
+      {/* Buio's hero dither, as a flat field rather than an orb. It covers
+          only the band above the heading and fades out before the title, so
+          the copy sits on the plain surface. Two mask layers, added: a
+          straight fade that ends at 150px across the full width, and a
+          centred ellipse that carries the middle down to 300px. */}
       <div
-        className="pointer-events-none absolute inset-0 -top-4 [mask-image:linear-gradient(to_bottom,#000_0%,#000_30%,transparent_90%)] md:scale-110"
+        className="pointer-events-none absolute inset-x-0 top-0 h-81.5 [mask-image:linear-gradient(to_bottom,#000,transparent_150px),radial-gradient(50%_300px_at_50%_0,#000,transparent)]"
         aria-hidden
       >
-        <DitherShader />
+        <DitherField />
       </div>
 
       <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center px-6 text-center">
-        <h2 className="text-foreground text-3xl leading-[1.15] font-medium tracking-tight text-balance sm:text-4xl lg:text-5xl">
-          {cta.title}
+        {/* Two-tone marketing title, then one line of description. */}
+        <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance md:text-3xl lg:text-4xl">
+          {override?.title ?? cta.title}
+          <span className="text-muted-foreground block">{override?.subtitle ?? cta.subtitle}</span>
         </h2>
-        <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty sm:mt-6 sm:text-lg">
-          {cta.sub}
-        </p>
+        {override && !override.sub ? null : (
+          <p className="text-muted-foreground mt-4 text-lg text-pretty">
+            {override?.sub ?? cta.sub}
+          </p>
+        )}
 
-        <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:mt-10 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
-          <Button size="lg" className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36" asChild>
-            <HoverPrefetchLink href={launchHref} prefetch onClick={trackCtaSignup}>
-              {cta.ctaPrimary}
-              <ArrowRightIcon className="size-4 shrink-0" />
-            </HoverPrefetchLink>
-          </Button>
-          <Button
-            size="lg"
-            variant="secondary"
-            className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36"
-            onClick={() => openDemo()}
-          >
-            {cta.ctaSecondary}
-          </Button>
+        <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
+          {override ? (
+            <>
+              <MarketingButton
+                size="md"
+                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+                asChild
+              >
+                <HoverPrefetchLink href={override.primary.href}>
+                  {override.primary.label}
+                  <ArrowRightIcon />
+                </HoverPrefetchLink>
+              </MarketingButton>
+              <MarketingButton
+                variant="secondary"
+                size="md"
+                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+                asChild
+              >
+                <a
+                  href={override.secondary.href}
+                  {...(override.secondary.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+                >
+                  {override.secondary.label}
+                </a>
+              </MarketingButton>
+            </>
+          ) : (
+            <>
+              <MarketingButton
+                size="md"
+                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+                asChild
+              >
+                <HoverPrefetchLink href={launchHref} prefetch onClick={trackCtaSignup}>
+                  {cta.ctaPrimary}
+                  <ArrowRightIcon />
+                </HoverPrefetchLink>
+              </MarketingButton>
+              <MarketingButton
+                variant="secondary"
+                size="md"
+                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+                onClick={() => openDemo()}
+              >
+                {cta.ctaSecondary}
+              </MarketingButton>
+            </>
+          )}
         </div>
       </div>
     </section>

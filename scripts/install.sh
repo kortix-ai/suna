@@ -110,6 +110,38 @@ resolve_version() {
   ok "Latest release: $VERSION"
 }
 
+# ─── Verify the checksum manifest's signature ────────────────────────────────
+# SHA256SUMS and the binary come over the same channel, so on its own the
+# checksum proves only that the download was not corrupted. The release
+# publishes SHA256SUMS.bundle (Sigstore keyless, built by the release workflow
+# — scripts/ci/cosign-sign-blob.sh), which binds the manifest to the workflow's
+# OIDC identity. A machine without `cosign` still installs (the installer's only
+# dependency stays curl); it just cannot see the stronger guarantee.
+verify_manifest_signature() {
+  local sums_url="$1" sums="$2" bundle
+  if ! command -v cosign >/dev/null 2>&1; then
+    ok "SHA256SUMS signature not checked (cosign not installed)"
+    return 0
+  fi
+  bundle="$(mktemp -t kortix-sums-bundle.XXXXXX)"
+  if ! curl -fsSL "${sums_url}.bundle" -o "$bundle"; then
+    rm -f "$bundle"
+    ok "No SHA256SUMS.bundle for ${VERSION} (older release); checksum only"
+    return 0
+  fi
+  info "Verifying SHA256SUMS signature…"
+  if cosign verify-blob "$sums" \
+    --bundle "$bundle" \
+    --certificate-identity-regexp "^https://github.com/${REPO}/" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" >/dev/null 2>&1; then
+    rm -f "$bundle"
+    ok "SHA256SUMS signature verified (Sigstore)"
+  else
+    rm -f "$bundle" "$sums" "$TMP_BIN"
+    fatal "SHA256SUMS signature verification failed for ${VERSION}. The manifest was not signed by github.com/${REPO} — refusing to install."
+  fi
+}
+
 # ─── Download the binary to a temp file ──────────────────────────────────────
 download_binary() {
   local url="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
@@ -131,6 +163,7 @@ download_binary() {
     rm -f "$sums" "$TMP_BIN"
     fatal "SHA256SUMS lists no checksum for ${ASSET}. Refusing to install an unverified binary."
   fi
+  verify_manifest_signature "$sums_url" "$sums"
   info "Downloading ${ASSET}…"
   printf "    ${F}from ${url}${N}\n"
   if ! curl -fsSL "$url" -o "$TMP_BIN"; then

@@ -3,13 +3,82 @@ import { accountGroupNames, groupMemberRows } from '../../iam/group-read';
 import { isAccountManager, type AccountRole, type ProjectRole } from '../access';
 import { authorize } from '../../iam/authorize';
 import { normalizeProjectRole } from '../../iam/roles';
-import { accountRoleMap, customRoleBindings, foldProjectAccess, groupProjectGrants, objectGrantRows, projectRoleGrants } from '../../iam/read-models';
+import {
+  accountRoleMap,
+  customRoleBindings,
+  foldProjectAccess,
+  groupProjectGrants,
+  objectGrantRows,
+  projectRoleGrants,
+  type AccountRoleKey,
+  type GroupSourceLabel,
+} from '../../iam/read-models';
 import { resolveUserIdentities } from './access';
 import { loadProjectForUser } from './access';
 type AwaitedProjectAccessLoad = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 type AccessRows = Awaited<ReturnType<typeof loadProjectAccessRows>>;
 type GroupMemberRow = { groupId: string; userId: string };
 type ProjectGroupRow = { groupId: string; groupName: string; role: string };
+
+export interface ProjectRoster {
+  /** Directory members whose folded project standing is set, in directory order.
+   *  A shadow (a directory row that is not a real auth user) is still included:
+   *  the caller drops it with the identity map it resolves anyway. */
+  ids: string[];
+  /** Each id's account role — the access screen's member sort key. */
+  accountRoles: Map<string, AccountRoleKey>;
+}
+
+/**
+ * WHO has standing on the project, for callers that never render the access
+ * screen: GET /sessions/:id/participants reads the roster down to user ids
+ * (KRTX-2727). The read is `buildProjectAccessView` minus everything only the
+ * screen shows — no identities, no custom-role bindings, no object grants, no
+ * group names, no manage probe — four reads in one burst plus a group-member
+ * follow-up instead of nine round trips. The effective role is the SAME
+ * `foldProjectAccess` the screen folds with, so "who counts" cannot drift
+ * between this list and the access screen.
+ */
+export async function loadProjectRosterIds(loaded: { row: { accountId: string; projectId: string } }): Promise<ProjectRoster> {
+  const [identityRows, accountRoles, grantRows, groupGrantRows] = await Promise.all([
+    accountMemberJoinRows(loaded.row.accountId),
+    accountRoleMap(loaded.row.accountId),
+    projectRoleGrants({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),
+    groupProjectGrants({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),
+  ]);
+  const grantGroupIds = groupGrantRows.map((g) => g.groupId);
+  const members = grantGroupIds.length ? await groupMemberRows(grantGroupIds) : [];
+  // A deleted group's membership is gone, so its grant contributes nobody —
+  // the screen's `groupNameById.has` filter lands in the same place.
+  const grantByGroup = new Map(
+    groupGrantRows.map((g) => [g.groupId, normalizeProjectRole(g.role) ?? 'member'] as const),
+  );
+  const groupSourcesByUser = new Map<string, GroupSourceLabel[]>();
+  for (const m of members) {
+    const role = grantByGroup.get(m.groupId);
+    if (!role) continue;
+    // The label is the screen's concern; the fold reads only the role.
+    const source: GroupSourceLabel = { group_id: m.groupId, group_name: '', role };
+    const arr = groupSourcesByUser.get(m.userId);
+    if (arr) arr.push(source);
+    else groupSourcesByUser.set(m.userId, [source]);
+  }
+  const grantsByUser = new Map(grantRows.map((r) => [r.userId, r] as const));
+  const ids: string[] = [];
+  const roles = new Map<string, AccountRoleKey>();
+  for (const member of identityRows) {
+    const accountRole = accountRoles.get(member.userId) ?? 'member';
+    const fold = foldProjectAccess({
+      accountRole,
+      directRole: normalizeProjectRole(grantsByUser.get(member.userId)?.projectRole),
+      groupSources: groupSourcesByUser.get(member.userId) ?? [],
+    });
+    if (fold.effective_project_role === null) continue;
+    ids.push(member.userId);
+    roles.set(member.userId, accountRole);
+  }
+  return { ids, accountRoles: roles };
+}
 
 type CustomRolePolicyEntry = {
   policy_id: string;

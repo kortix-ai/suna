@@ -182,9 +182,9 @@ export function registerSessionTranscriptsRoutes(): void {
       method: 'get',
       path: '/{projectId}/sessions/{sessionId}/model-usage',
       tags: ['sessions'],
-      summary: 'Read which model answered a session and what it cost',
+      summary: 'Read which model a session\'s requests were served by and what they cost',
       description:
-        'Returns `latest`, the newest answered model request: `{served_model, fallback_from, at}`. `served_model` is the route id of the model that answered. `fallback_from` is the model the request was routed to when a fallback model answered in its place, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
+        'Returns `latest`, the newest model request of any outcome: `{served_model, fallback_from, at, outcome}`. `outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a model failure. `served_model` is the route id recorded for the request — the model that answered it, or on an unanswered request the model it was being served by. `fallback_from` is the routed model when the gateway rerouted after a failed attempt, whether or not the fallback answered, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
       ...auth,
       request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Session model usage'), ...errors(400, 403, 404) },

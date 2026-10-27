@@ -233,3 +233,16 @@ describe('single-file reads reject repository-root paths (KRTX-3551)', () => {
     });
   }
 });
+
+// NUL is not representable in a Git path or process argument (KRTX-3404).
+describe('file read paths', () => {
+  for (const endpoint of ['content', 'raw', 'history']) {
+    for (const path of ['\0', '\0a', 'a\0b', 'a\0']) {
+      test(`${endpoint} rejects ${JSON.stringify(path)} without spawning git`, async () => {
+        const response = await projectsApp.request(`/${PROJECT_ID}/files/${endpoint}?${new URLSearchParams({ path })}`);
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: 'File not found' });
+      });
+    }
+  }
+});

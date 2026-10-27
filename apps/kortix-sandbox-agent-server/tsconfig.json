@@ -38,6 +38,7 @@
       // src/ use it; imports inside one stay relative (ARCHITECTURE.md, enforced
       // by the kortixd/import-style lint rule).
       "@/*": ["./src/*"],
+      "@kortix/shared/ssrf-guard": ["../../packages/shared/src/ssrf-guard.ts"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
       // pi mints message ids with the platform codec. The file imports nothing;
       // the Dockerfiles copy it to the matching relative path.

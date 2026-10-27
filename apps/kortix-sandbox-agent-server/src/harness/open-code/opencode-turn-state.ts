@@ -39,9 +39,13 @@ import { readOpenCodeSessionPin } from './runtime-state'
  * messages after it, so a window is the whole question. Twelve leaves room
  * for the step messages a busy agent turn writes after one prompt; a prompt
  * older than the window is proved by fetching that one message by id.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const TURN_PROBE_WINDOW = 12
-/** Twenty newest messages can still be ~26 MB on an image-heavy root. */
+/**
+ * Twenty newest messages can still be ~26 MB on an image-heavy root.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const TURN_PROBE_TIMEOUT_MS = 20_000
 /**
  * The budget for the orphan read a verified reload does before the kill.
@@ -52,6 +56,7 @@ export const TURN_PROBE_TIMEOUT_MS = 20_000
  * 4 GB box is how the September `/tmp`-tmpfs OOM started. A read that does not
  * answer in three seconds costs one un-repaired row; twenty seconds of an extra
  * process costs the box.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const ORPHAN_READ_TIMEOUT_MS = 3_000
 
@@ -93,6 +98,7 @@ async function opencodeMessageExists(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface RootInspection {
   /** The root has messages — a prompt was delivered. */
   hasMessages: boolean
@@ -132,6 +138,7 @@ export interface RootInspection {
   known: boolean
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function inspectOpencodeRoot(
   baseUrl: string,
   workspace: string,
@@ -229,6 +236,7 @@ export async function inspectOpencodeRoot(
  * it: afterwards nothing can answer for that row. `null` means "no open turn,
  * or could not tell" — both are "report nothing", because a repair must never
  * be invented for a turn that finished normally.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function openAssistantMessageIdOnRoot(
   baseUrl: string,
@@ -255,6 +263,7 @@ export async function openAssistantMessageIdOnRoot(
  * treats `null` as busy; `force` is there for a box that is wedged.
  *
  * No pin IS a definite `false`: nothing has ever run in this sandbox.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function opencodeTurnInFlight(
   baseUrl: string,
@@ -298,6 +307,7 @@ export async function opencodeTurnInFlight(
  * tripwire — a `type` outside the closed union means a FUTURE OpenCode added a
  * fourth execution state. Reading an unknown state as idle would be the same
  * class of bug this whole module exists to kill, so it stays unknown and logs.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function opencodeSessionInFlight(
   baseUrl: string,
@@ -331,9 +341,11 @@ export async function opencodeSessionInFlight(
  *
  * `null` is a real answer, not a gap: the messages prove the turn is over but
  * do not say what ended it. Only values this daemon can PROVE are named.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export type OpencodeTurnEnd = 'completed' | 'failed' | 'abandoned'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeDeliveryObservation {
   /** Running, over, or `null` when opencode could not be read. */
   inFlight: boolean | null
@@ -361,6 +373,7 @@ export interface OpencodeDeliveryObservation {
  * process is the only one holding the message list, so it names the ending;
  * a caller that only gets a boolean has to guess, and a guess makes
  * `end_reason` unable to name the case it exists for.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function observeOpencodeDelivery(
   baseUrl: string,
@@ -458,7 +471,10 @@ export async function observeOpencodeDelivery(
   }
 }
 
-/** The boolean half of {@link observeOpencodeDelivery}, for callers that only act on it. */
+/**
+ * The boolean half of {@link observeOpencodeDelivery}, for callers that only act on it.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function opencodeDeliveryInFlight(
   baseUrl: string,
   workspace: string,

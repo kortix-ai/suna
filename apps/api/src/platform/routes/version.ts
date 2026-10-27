@@ -2,12 +2,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json } from '../../openapi';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 
 /**
  * Sandbox version and changelog endpoints.
  *
  * Sources of truth:
- * - Running version: SANDBOX_VERSION, injected at container start.
+ * - Running version: the configured SANDBOX_VERSION image tag, or none when
+ *   sandboxes use per-project snapshots with no platform-wide image.
  * - Stable releases: GitHub Releases API.
  * - Dev builds: Docker Hub tags for kortix/kortix-sandbox.
  */
@@ -16,7 +18,10 @@ const GITHUB_REPO = 'kortix-ai/suna';
 const GITHUB_API_BASE = 'https://api.github.com';
 const DOCKERHUB_REPO = 'kortix/kortix-sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// GitHub allows 60 unauthenticated requests per hour per egress IP, shared by
+// every API task. One read per 10 minutes per task stays far below that.
+const FEED_TTL_MS = 10 * 60 * 1000;
+const FEED_RETRY_MS = 60 * 1000;
 
 type VersionChannel = 'stable' | 'dev';
 
@@ -52,118 +57,109 @@ interface GHRelease {
   prerelease: boolean;
 }
 
-interface CacheEntry<T> {
-  data: T;
-  cachedAt: number;
-}
-
-const cache: {
-  latestStable: CacheEntry<LatestVersionResult> | null;
-  latestDev: CacheEntry<LatestVersionResult> | null;
-  allVersions: CacheEntry<VersionEntry[]> | null;
-} = {
-  latestStable: null,
-  latestDev: null,
-  allVersions: null,
-};
-
-function isCacheValid<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
-  return entry !== null && Date.now() - entry.cachedAt < CACHE_TTL_MS;
-}
-
 function getRunningVersion(): string {
-  return process.env.SANDBOX_VERSION || config.SANDBOX_VERSION_OVERRIDE || 'unknown';
+  return config.SANDBOX_VERSION_OVERRIDE || 'none';
 }
 
-function getRunningChannel(): VersionChannel {
-  return detectVersionChannel(getRunningVersion());
+function getRunningChannel(): VersionChannel | 'none' {
+  const version = getRunningVersion();
+  return version === 'none' ? 'none' : detectVersionChannel(version);
 }
 
-function githubHeaders(): Record<string, string> {
+function githubRequest(path: string, token?: string): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  if (config.GITHUB_TOKEN) headers.Authorization = `Bearer ${config.GITHUB_TOKEN}`;
-  return headers;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(`${GITHUB_API_BASE}${path}`, { headers, signal: AbortSignal.timeout(8_000) });
 }
 
 async function githubFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${GITHUB_API_BASE}${path}`, {
-    headers: githubHeaders(),
-    signal: AbortSignal.timeout(8_000),
-  });
+  let res = await githubRequest(path, config.GITHUB_TOKEN);
+  // The repo is public. A token GitHub rejects (expired, revoked, or a
+  // fine-grained token the kortix-ai org forbids, KRTX-3152) reads anonymously.
+  if (config.GITHUB_TOKEN && (res.status === 401 || res.status === 403)) {
+    logger.warn(`[version] GitHub rejected GITHUB_TOKEN (${res.status}); reading ${path} anonymously`);
+    res = await githubRequest(path);
+  }
   if (!res.ok) throw new Error(`GitHub API ${path} failed: ${res.status}`);
   return res.json() as Promise<T>;
 }
 
-async function fetchStableReleases(limit = 20): Promise<GHRelease[]> {
-  try {
-    const releases = await githubFetch<GHRelease[]>(`/repos/${GITHUB_REPO}/releases?per_page=${limit}`);
-    return releases.filter((release) => !release.draft);
-  } catch (err) {
-    console.warn('[version] Failed to fetch GitHub releases:', err);
-    return [];
-  }
+/**
+ * One upstream read per FEED_TTL_MS, shared by every endpoint and request. A
+ * failed read keeps the last good copy and waits FEED_RETRY_MS before the next
+ * attempt, so callers never turn a GitHub outage into a request per poll.
+ */
+function cachedFeed<T>(name: string, load: () => Promise<T[]>): () => Promise<T[]> {
+  let data: T[] = [];
+  let nextReadAt = 0;
+  let inflight: Promise<T[]> | null = null;
+  return () => {
+    if (Date.now() < nextReadAt) return Promise.resolve(data);
+    inflight ??= load()
+      .then(
+        (fresh) => {
+          data = fresh;
+          nextReadAt = Date.now() + FEED_TTL_MS;
+        },
+        (err) => {
+          logger.warn(`[version] Failed to fetch ${name}:`, { error: err instanceof Error ? err.message : String(err) });
+          nextReadAt = Date.now() + FEED_RETRY_MS;
+        },
+      )
+      .then(() => {
+        inflight = null;
+        return data;
+      });
+    return inflight;
+  };
 }
 
-async function fetchDockerHubDevTags(limit = 20): Promise<DockerHubTag[]> {
-  try {
-    const res = await fetch(`${DOCKERHUB_TAGS_URL}/?page_size=100&ordering=last_updated`, {
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) throw new Error(`Docker Hub API returned ${res.status}`);
-    const data = await res.json() as { results: DockerHubTag[] };
-    return (data.results || [])
-      .filter((tag) => {
-        if (!tag.name.startsWith('dev-')) return false;
-        if (tag.name === 'dev-latest') return false;
-        if (tag.name.endsWith('-amd64') || tag.name.endsWith('-arm64')) return false;
-        return true;
-      })
-      .slice(0, limit);
-  } catch (err) {
-    console.warn('[version] Failed to fetch Docker Hub dev tags:', err);
-    return [];
-  }
-}
+/** Non-draft GitHub releases, newest first. Prereleases are included. */
+const githubReleases = cachedFeed('GitHub releases', async () => {
+  const releases = await githubFetch<GHRelease[]>(`/repos/${GITHUB_REPO}/releases?per_page=20`);
+  return releases.filter((release) => !release.draft);
+});
+
+const dockerHubDevTags = cachedFeed('Docker Hub dev tags', async () => {
+  const res = await fetch(`${DOCKERHUB_TAGS_URL}/?page_size=100&ordering=last_updated`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`Docker Hub API returned ${res.status}`);
+  const data = await res.json() as { results: DockerHubTag[] };
+  return (data.results || []).filter((tag) => {
+    if (!tag.name.startsWith('dev-')) return false;
+    if (tag.name === 'dev-latest') return false;
+    if (tag.name.endsWith('-amd64') || tag.name.endsWith('-arm64')) return false;
+    return true;
+  });
+});
 
 async function getLatestStable(): Promise<LatestVersionResult> {
-  if (isCacheValid(cache.latestStable)) return cache.latestStable.data;
-
-  const releases = await fetchStableReleases(1);
-  if (releases.length > 0) {
-    const release = releases[0];
-    const version = release.tag_name.replace(/^v/, '');
-    const result: LatestVersionResult = {
-      version,
-      channel: 'stable',
-      date: release.published_at?.split('T')[0],
-      title: release.name || `v${version}`,
-    };
-    cache.latestStable = { data: result, cachedAt: Date.now() };
-    return result;
-  }
-
-  return { version: 'unknown', channel: 'stable', title: 'No stable release available' };
+  const release = (await githubReleases()).find((candidate) => !candidate.prerelease);
+  if (!release) return { version: 'unknown', channel: 'stable', title: 'No stable release available' };
+  const version = release.tag_name.replace(/^v/, '');
+  return {
+    version,
+    channel: 'stable',
+    date: release.published_at?.split('T')[0],
+    title: release.name || `v${version}`,
+  };
 }
 
 async function getLatestDev(): Promise<LatestVersionResult> {
-  if (isCacheValid(cache.latestDev)) return cache.latestDev.data;
-
-  const tags = await fetchDockerHubDevTags(1);
-  if (tags.length > 0) {
-    const tag = tags[0];
+  const [tag] = await dockerHubDevTags();
+  if (tag) {
     const sha8 = tag.name.replace('dev-', '');
-    const result: LatestVersionResult = {
+    return {
       version: tag.name,
       channel: 'dev',
       date: tag.last_updated?.split('T')[0],
       title: `Dev build ${sha8}`,
       sha: sha8,
     };
-    cache.latestDev = { data: result, cachedAt: Date.now() };
-    return result;
   }
 
   const running = getRunningVersion();
@@ -175,13 +171,10 @@ async function getLatestDev(): Promise<LatestVersionResult> {
 }
 
 async function getAllVersions(): Promise<VersionEntry[]> {
-  if (isCacheValid(cache.allVersions)) return cache.allVersions.data;
-
   const runningVersion = getRunningVersion();
   const versions: VersionEntry[] = [];
 
-  const releases = await fetchStableReleases(20);
-  for (const release of releases) {
+  for (const release of await githubReleases()) {
     const version = release.tag_name.replace(/^v/, '');
     versions.push({
       version,
@@ -193,8 +186,7 @@ async function getAllVersions(): Promise<VersionEntry[]> {
     });
   }
 
-  const devTags = await fetchDockerHubDevTags(20);
-  for (const tag of devTags) {
+  for (const tag of (await dockerHubDevTags()).slice(0, 20)) {
     const sha8 = tag.name.replace('dev-', '');
     versions.push({
       version: tag.name,
@@ -207,7 +199,6 @@ async function getAllVersions(): Promise<VersionEntry[]> {
   }
 
   versions.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-  cache.allVersions = { data: versions, cachedAt: Date.now() };
   return versions;
 }
 
@@ -216,7 +207,7 @@ const ChannelSchema = z.enum(['stable', 'dev']);
 const RunningVersionSchema = z
   .object({
     version: z.string(),
-    channel: ChannelSchema,
+    channel: z.enum(['stable', 'dev', 'none']),
   })
   .openapi('SandboxRunningVersion');
 
@@ -340,8 +331,7 @@ versionRouter.openapi(
   const entries: Array<Record<string, unknown>> = [];
 
   if (channel === 'stable' || channel === 'all') {
-    const releases = await fetchStableReleases(20);
-    for (const release of releases) {
+    for (const release of await githubReleases()) {
       if (release.prerelease) continue;
       const version = release.tag_name.replace(/^v/, '');
       entries.push({
@@ -356,8 +346,7 @@ versionRouter.openapi(
   }
 
   if (channel === 'dev' || channel === 'all') {
-    const devTags = await fetchDockerHubDevTags(20);
-    for (const tag of devTags) {
+    for (const tag of (await dockerHubDevTags()).slice(0, 20)) {
       const sha8 = tag.name.replace('dev-', '');
       entries.push({
         version: tag.name,

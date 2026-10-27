@@ -1,182 +1,191 @@
 'use client';
 
-import { marketingButtonVariants } from '@/components/ui/marketing/button';
-import {
-  NavigationMenu,
-  NavigationMenuContent,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-  NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
-import { Slack } from '@/features/icon/icons/slack';
-import type { NavMenu } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
-import type { Icon } from '@phosphor-icons/react';
-import {
-  ArrowUpRightIcon,
-  BuildingsIcon,
-  ClockClockwiseIcon,
-  DesktopIcon,
-  GitBranchIcon,
-  HardDrivesIcon,
-  PlugsConnectedIcon,
-  ShieldCheckIcon,
-  UsersThreeIcon,
-} from '@phosphor-icons/react';
 import Link from '@/components/site-link';
-import { useEffect, useRef, useState } from 'react';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
+import { cn } from '@kortix/ui';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { ArrowUpRightIcon, StarIcon } from '@phosphor-icons/react';
+import { type KeyboardEvent, type Ref } from 'react';
 
-/**
- * Resolves the `icon` slugs carried by nav links in `site-config.ts`. The
- * config stays a plain data module (it is imported by server code), so the
- * client-only icon components are looked up here instead of stored there.
- */
-const LINK_ICONS: Record<string, Icon | typeof Slack> = {
-  desktop: DesktopIcon,
-  'git-branch': GitBranchIcon,
-  'hard-drives': HardDrivesIcon,
-  shield: ShieldCheckIcon,
-  buildings: BuildingsIcon,
-  plugs: PlugsConnectedIcon,
-  clock: ClockClockwiseIcon,
-  chats: Slack,
-  users: UsersThreeIcon,
+export type MegaMenuLink = { label: string; href: string; external?: boolean };
+
+/** One column of the panel: a muted heading over a plain list of links. */
+export type MegaMenuGroup = { title: string; links: MegaMenuLink[] };
+
+export type MegaMenu = {
+  id: 'product' | 'resources';
+  label: string;
+  groups: MegaMenuGroup[];
 };
 
 /**
- * Radix keys its menu state and generated ids off this value. Both the Product
- * and Company menus previously hardcoded 'product', so two independent
- * NavigationMenu roots on the same page produced colliding ids — which React
- * reported as a hydration mismatch inside the trigger on every route. Derive it
- * from the menu's own name so each root is distinct.
+ * The three menus of the bar. Every href is a live route. Plain English,
+ * localized through the site-config catalog wherever the same words already
+ * have a key.
  */
-const menuValue = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+export const MEGA_MENUS: MegaMenu[] = [
+  {
+    id: 'product',
+    label: 'Product',
+    groups: [
+      {
+        title: 'Platform',
+        links: [
+          { label: 'Security', href: '/security' },
+          // ACCURACY: never "air-gapped" (see site-config.ts).
+          { label: 'Self-hosted', href: '/self-hosted' },
+          { label: 'Enterprise', href: '/enterprise' },
+          { label: 'Pricing', href: '/pricing' },
+        ],
+      },
+      {
+        title: 'Apps',
+        links: [
+          { label: 'Desktop', href: '/desktop' },
+          { label: 'Mobile', href: '/mobile' },
+          { label: 'CLI', href: '/cli' },
+        ],
+      },
+      {
+        // ACCURACY: the channel set is Slack, Microsoft Teams and email
+        // (kortix-brand claims.md). Email has no page yet.
+        title: 'Channels',
+        links: [
+          { label: 'Slack', href: '/slack' },
+          { label: 'Microsoft Teams', href: '/teams' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'resources',
+    label: 'Resources',
+    groups: [
+      {
+        title: 'Learn',
+        links: [
+          { label: 'Documentation', href: '/docs' },
+          { label: 'Developers', href: '/developers' },
+          { label: 'Use cases', href: '/use-cases' },
+          { label: 'Blog', href: '/blog' },
+          { label: 'Changelog', href: '/changelog' },
+        ],
+      },
+      {
+        title: 'Get Kortix',
+        links: [
+          { label: 'Download', href: '/download' },
+          { label: 'Marketplace', href: '/marketplace' },
+        ],
+      },
+      {
+        title: 'Company',
+        links: [
+          { label: 'About', href: '/about' },
+          { label: 'Careers', href: '/careers' },
+          { label: 'Contact', href: '/contact' },
+          { label: 'Legal', href: '/legal/terms' },
+        ],
+      },
+    ],
+  },
+];
 
-interface ProductMenuProps {
-  name: string;
-  menu: NavMenu;
-  isNavActive: (href: string) => boolean;
+type MegaMenuPanelProps = {
+  menu: MegaMenu;
+  open: boolean;
+  ref?: Ref<HTMLDivElement>;
+  /** A link was chosen: the menu closes. */
+  onNavigate: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
+  /** The repo's star count, already formatted (the bar's own fetch); null hides it. */
+  stars?: string | null;
+};
+
+const REPO = 'kortix-ai/suna';
+const REPO_URL = `https://github.com/${REPO}`;
+
+/**
+ * The open-source tile in the Resources panel's free fourth column: an
+ * inverted block with the GitHub mark on top, and the claim, the live star
+ * count with the repo, and the way in at the bottom. The whole tile is one link.
+ */
+function OpenSourceCard({ stars, onNavigate }: { stars?: string | null; onNavigate: () => void }) {
+  return (
+    <Link
+      href={REPO_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onNavigate}
+      className="group/repo bg-foreground text-background outline-ring flex flex-col justify-between gap-8 rounded-lg p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      <Github className="size-8 shrink-0" />
+      <span className="flex flex-col">
+        <span className="text-lg font-medium">Kortix is open source</span>
+        <span className="text-background/60 mt-1 flex items-center gap-1.5 text-sm">
+          {stars ? (
+            <>
+              <StarIcon weight="fill" className="size-3.5 shrink-0" />
+              <span className="tabular-nums">{stars}</span>
+              <span aria-hidden>·</span>
+            </>
+          ) : null}
+          {REPO}
+        </span>
+        <span className="group-hover/repo:text-ring mt-4 inline-flex items-center gap-1.5 text-sm transition-colors duration-moderate">
+          View on GitHub
+          <ArrowUpRightIcon className="size-3.5 opacity-0 transition-opacity duration-moderate group-hover/repo:opacity-100 group-focus-visible/repo:opacity-100" />
+        </span>
+      </span>
+    </Link>
+  );
 }
 
 /**
- * Desktop hover menu, shared by Product and Company. Radix NavigationMenu gives
- * hover-open, Escape and focus-outside dismissal for free; the controlled
- * `value` adds open-on-focus so the menu is reachable with Tab alone.
- *
- * Panel width follows the column count, so a five-link list does not open a
- * half-viewport panel.
+ * One full-width panel: up to four columns, each a muted group heading over
+ * a plain list of links. An external link carries a small up-right arrow.
+ * Every panel sits in one grid cell, so switching menus cross-fades in place;
+ * a closed panel is inert.
  */
-export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
-  const MENU_VALUE = menuValue(name);
-  const [value, setValue] = useState('');
-  const isOpenRef = useRef(false);
-  const skipFocusOpenRef = useRef(false);
-  const hasActiveLink = menu.columns.some((column) =>
-    column.links.some((link) => isNavActive(link.href)),
-  );
-  const isWide = menu.columns.length > 1;
-
-  // Escape closes the menu and returns focus to the trigger. Without this guard
-  // the trigger's onFocus re-opens the menu the user just dismissed. Radix binds
-  // its own Escape handler on `document` in the capture phase when the content
-  // mounts; this listener is registered earlier, so it always runs first.
-  useEffect(() => {
-    const handleEscapeCapture = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || !isOpenRef.current) return;
-      skipFocusOpenRef.current = true;
-      window.setTimeout(() => {
-        skipFocusOpenRef.current = false;
-      }, 0);
-    };
-    document.addEventListener('keydown', handleEscapeCapture, { capture: true });
-    return () => document.removeEventListener('keydown', handleEscapeCapture, { capture: true });
-  }, []);
-
-  const handleValueChange = (next: string) => {
-    isOpenRef.current = next === MENU_VALUE;
-    setValue(next);
-  };
-
-  const handleTriggerFocus = () => {
-    if (skipFocusOpenRef.current) return;
-    handleValueChange(MENU_VALUE);
-  };
-
+export function MegaMenuPanel({ menu, open, ref, onNavigate, onKeyDown, stars }: MegaMenuPanelProps) {
   return (
-    <NavigationMenu
-      value={value}
-      onValueChange={handleValueChange}
-      viewport={false}
-      className="max-w-none flex-none"
+    <div
+      ref={ref}
+      id={`mega-${menu.id}`}
+      inert={!open}
+      onKeyDown={onKeyDown}
+      className={cn(
+        'col-start-1 row-start-1 transition-[opacity,visibility] duration-normal ease-out',
+        open ? 'opacity-100' : 'invisible opacity-0',
+      )}
     >
-      <NavigationMenuList>
-        <NavigationMenuItem value={MENU_VALUE}>
-          <NavigationMenuTrigger
-            onFocus={handleTriggerFocus}
-            className={cn(
-              marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-              'h-8 px-3 font-medium [&>svg]:hidden',
-              'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
-              hasActiveLink
-                ? 'bg-secondary text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {name}
-          </NavigationMenuTrigger>
-          <NavigationMenuContent className="[&>div]:bg-transparent [&>div]:p-0">
-            {/* A single-column menu is a short list, so it gets a narrow panel;
-                only the two-column product menu earns the full width. */}
-            <div className={cn('max-w-[calc(100vw-2.5rem)] rounded-xl', isWide ? 'w-2xl' : 'w-60')}>
-              <div className={cn('grid gap-x-3 p-1', isWide && 'grid-cols-2')}>
-                {menu.columns.map((column) => (
-                  <div key={column.title} className="flex flex-col gap-0.5">
-                    {column.links.map((link) => {
-                      const LinkIcon = link.icon ? LINK_ICONS[link.icon] : undefined;
-                      return (
-                        <NavigationMenuLink key={link.href} asChild active={isNavActive(link.href)}>
-                          <Link
-                            href={link.href}
-                            {...(link.external
-                              ? { target: '_blank', rel: 'noreferrer noopener' }
-                              : {})}
-                            className="flex-row items-center gap-3 rounded-sm p-2"
-                          >
-                            {/* Leading tile only when the link declares an
-                                icon; the plain Company list stays a text list. */}
-                            {LinkIcon && (
-                              <span className="bg-foreground/5 text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
-                                <LinkIcon className="size-5" aria-hidden weight="fill" />
-                              </span>
-                            )}
-                            <span className="flex min-w-0 flex-col gap-0.5">
-                              <span className="text-foreground flex items-center gap-1.5 text-sm leading-tight font-medium">
-                                {link.name}
-                                {link.external && (
-                                  <ArrowUpRightIcon
-                                    className="text-muted-foreground size-3"
-                                    aria-hidden
-                                  />
-                                )}
-                              </span>
-                              {link.description && (
-                                <span className="text-muted-foreground truncate text-xs leading-snug">
-                                  {link.description}
-                                </span>
-                              )}
-                            </span>
-                          </Link>
-                        </NavigationMenuLink>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </NavigationMenuContent>
-        </NavigationMenuItem>
-      </NavigationMenuList>
-    </NavigationMenu>
+      <div className={cn(MARKETING_CONTAINER, 'grid grid-cols-4 gap-8 pt-8 pb-12')}>
+        {menu.groups.map((group) => (
+          <div key={group.title}>
+            <p className="text-muted-foreground text-sm">{group.title}</p>
+            {/* Each link fills its column and carries the row gap as padding,
+                so the whole row is the target and the rows touch: no dead
+                strip between two links, and the hover tint shows anywhere on
+                the row. Same spacing as before (gap-3 = 2 × py-1.5). */}
+            <ul className="mt-2.5 flex flex-col">
+              {group.links.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    onClick={onNavigate}
+                    {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    className="text-foreground hover:text-ring outline-ring flex w-full items-center gap-1.5 rounded-sm py-1.5 text-base transition-colors duration-moderate focus-visible:outline-2"
+                  >
+                    {link.label}
+                    {link.external && <ArrowUpRightIcon className="size-3.5" />}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {menu.id === 'resources' && <OpenSourceCard stars={stars} onNavigate={onNavigate} />}
+      </div>
+    </div>
   );
 }

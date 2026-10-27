@@ -38,7 +38,7 @@ describe('getKortixPtyWebSocketUrl', () => {
 // ── classifyPtyClose / sanitizePtyChunk ────────────────────────────────────
 //
 // Both rules were written three times, once per host, with no SDK owner:
-//   apps/web/src/features/session/pty-connection.ts:114   classifyPtyClose
+//   packages/ui/src/terminal/pty-connection.ts:114   classifyPtyClose
 //   apps/tui/src/features/terminal/pty-session.ts:71      ptyCloseAction
 //   apps/cli/src/commands/sessions-shell.ts:28            sanitizePtyChunk
 //   apps/tui/src/features/terminal/pty-session.ts:116     sanitizePtyChunk

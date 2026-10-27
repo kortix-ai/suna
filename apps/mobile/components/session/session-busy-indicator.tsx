@@ -76,7 +76,7 @@ const rollOut: EntryExitAnimationFunction = () => {
   };
 };
 
-export interface SessionBusyIndicatorProps {
+interface SessionBusyIndicatorProps {
   /** The live status phrase. Empty → "Thinking". */
   statusText?: string;
   /** Time on the current status, e.g. "24s". Never fold it into `statusText`. */
@@ -187,8 +187,9 @@ export function useTurnBusyStatus({
   hasAssistantContent: boolean;
 }): { statusText: string | undefined; elapsedLabel: string | undefined } {
   const rawStatus = useMemo(
-    () => (hasAssistantContent ? busyStatusText(blocks) : ''),
-    [blocks, hasAssistantContent],
+    // Only a working turn shows the line: a settled turn skips the whole-turn scan.
+    () => (working && hasAssistantContent ? busyStatusText(blocks) : ''),
+    [blocks, working, hasAssistantContent],
   );
   const [mountedAt] = useState(() => Date.now());
   const lastChangeRef = useRef(mountedAt);

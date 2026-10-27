@@ -7,6 +7,7 @@ import {
   saveAuthForHost,
   sameApiBase,
 } from '../api/auth.ts';
+import { cliDeviceRequest } from '../api/sdk.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
 import {
@@ -14,6 +15,7 @@ import {
   activeHostName,
   getHost,
   setActiveAccount,
+  useHost,
   validateHostName,
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
@@ -40,6 +42,7 @@ Options:
                     instance: \`kortix login --host local --api …\`.
   --api <url>       API base URL the host points at (default: stored
                     host URL or ${DEFAULT_API_BASE}).
+  --device          Authorize from any browser, without a local callback.
   --token <pat>     Skip the browser flow and authenticate directly
                     with a token. Useful for CI or headless boxes.
   --account <slug>  Pick the active account non-interactively (skips the
@@ -63,6 +66,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     token: takeFlagValue(rest, ['--token']),
     account: takeFlagValue(rest, ['--account']),
     noProject: takeFlagBool(rest, ['--no-project']),
+    device: takeFlagBool(rest, ['--device']),
   }));
   if (typeof flags === 'number') return flags;
 
@@ -76,6 +80,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     api: flags.api,
     account: flags.account,
     noProject: flags.noProject,
+    device: flags.device,
   });
 }
 
@@ -90,6 +95,7 @@ interface PerformLoginOptions {
   account?: string;
   /** Skip the default-project binding step at the end. */
   noProject: boolean;
+  device?: boolean;
 }
 
 /**
@@ -115,12 +121,13 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   //   would go to the default API instead of the one the caller named.
   const existing = getHost(hostName);
   const envApiBase =
-    hostName === (activeHostName() ?? DEFAULT_HOST_NAME) ? process.env.KORTIX_API_URL : undefined;
+    hostName === (activeHostName() ?? DEFAULT_HOST_NAME) ? process.env.KORTIX_API_URL?.trim() || undefined : undefined;
   const apiBase = opts.api ?? envApiBase ?? existing?.url ?? DEFAULT_API_BASE;
 
   // If this host already has a working token + caller didn't pass
   // --token or --api, treat that as a no-op login.
   if (existing?.token && !opts.token && !opts.api) {
+    useHost(hostName);
     process.stdout.write(
       `${status.info(`Already logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${existing.user_email || existing.user_id}${C.reset}`)}\n`,
     );
@@ -131,12 +138,12 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   }
 
   const dashboardUrl = existing && sameApiBase(apiBase, existing.url) ? existing.dashboard_url : undefined;
-  const token = opts.token ?? (await browserLogin(apiBase, dashboardUrl));
+  const token = opts.token ?? (await (opts.device ? deviceLogin(apiBase, dashboardUrl) : browserLogin(apiBase, dashboardUrl)));
   if (!token) return 1;
 
-  if (!token.startsWith('kortix_pat_')) {
+  if (!token.startsWith('kortix_pat_') && !token.startsWith('kortix_sa_')) {
     process.stderr.write(
-      `${status.err('Invalid API key format — expected `kortix_pat_...` prefix.')}\n`,
+      `${status.err('Invalid API key format — expected `kortix_pat_...` or `kortix_sa_...` prefix.')}\n`,
     );
     return 1;
   }
@@ -173,6 +180,7 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     },
     /* makeActive */ true,
   );
+  useHost(hostName);
 
   const loginIdentity = me.token_context?.agent
     ? `agent ${C.bold}${me.token_context.agent}${C.reset} ` +
@@ -277,6 +285,7 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
     process.stderr.write(
       `${status.err(`Could not start local callback: ${(err as Error).message}`)}\n`,
     );
+    process.stderr.write("Run `kortix login --device` to authorize without a local callback.\n");
     return null;
   }
 
@@ -298,6 +307,7 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
   process.stdout.write(`  ${C.dim}Opening your browser at:${C.reset}\n`);
   process.stdout.write(`  ${C.cyan}${url}${C.reset}\n\n`);
   process.stdout.write(`  ${C.dim}Waiting for approval (Ctrl+C to cancel)…${C.reset}\n`);
+  process.stdout.write('  Remote shell? Cancel and run `kortix login --device` (no local callback).\n');
 
   openInBrowser(url);
 
@@ -313,4 +323,32 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
 function safeHostname(): string {
   const raw = hostname() || 'CLI';
   return raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
+}
+
+/** Device login never opens a listening socket. The polling secret stays in
+ * this process; the browser receives only the separate approval code. */
+async function deviceLogin(apiBase: string, dashboardUrl?: string): Promise<string | null> {
+  const deadline = Date.now() + 600_000;
+  const signal = AbortSignal.timeout(600_000);
+  try {
+    const grant = await cliDeviceRequest<{ device_code: string; user_code: string; expires_in: number; interval: number; verification_uri?: string }>(apiBase, 'start', {}, signal);
+    const dash = dashboardUrl?.trim().replace(/\/+$/, '') || deriveFrontendFromApiBase(apiBase);
+    const approvalPage = grant.verification_uri || `${dash}/cli/authorize`;
+    const url = `${approvalPage}?user_code=${encodeURIComponent(grant.user_code)}`;
+    process.stdout.write(`\nOpen ${url} in any browser.\nConfirm code: ${grant.user_code}\nWaiting for approval (Ctrl+C to cancel)…\n`);
+    openInBrowser(url);
+    let interval = Math.max(5, grant.interval) * 1000;
+    const expires = Math.min(deadline, Date.now() + Math.min(600, grant.expires_in) * 1000);
+    while (Date.now() + interval < expires) {
+      await new Promise(resolve => setTimeout(resolve, interval));
+      const result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
+      if (result.token) return result.token;
+      if (result.error === 'slow_down') interval += 5000;
+      else if (result.error !== 'authorization_pending') throw new Error(result.error || 'Invalid device login response');
+    }
+    throw new Error('Device login expired. Run kortix login --device again.');
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return null;
+  }
 }

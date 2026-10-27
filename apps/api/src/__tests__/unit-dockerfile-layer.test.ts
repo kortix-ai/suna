@@ -464,3 +464,13 @@ describe('container_runtime', () => {
     expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
   });
 });
+
+describe('sandbox.templates entrypoint', () => {
+  test('a declared entrypoint is parsed, so the sync applies it; none stays absent', () => {
+    const [withEntry, without] = extractSandboxTemplates({
+      sandbox: { templates: [{ slug: 'py', image: 'python:3.12-slim', entrypoint: ' /bin/start ' }, { slug: 'node', image: 'node:22-slim' }] },
+    });
+    expect(withEntry?.entrypoint).toBe('/bin/start');
+    expect(without?.entrypoint).toBeUndefined();
+  });
+});

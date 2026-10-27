@@ -166,7 +166,7 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/sdk/sessions#session-errors) |
 | `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
 | `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs/work/sessions#restore-a-deleted-session) |
-| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages and files are gone. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
+| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
 | `project_archived` | `404` | The project was deleted. | [Projects](/docs/project#delete-a-project) |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/git) |
@@ -258,6 +258,7 @@ take a different credential or protocol than a plain bearer call:
 | The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/sdk/sessions). |
 | SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [SCIM provisioning](/docs/accounts/identity#scim-provisioning) |
 | Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/connect/triggers#webhooks) |
+| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/connect/triggers#app-events) |
 | The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/project/models#use-the-gateway-from-your-own-tools) |
 | The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/git) |
 

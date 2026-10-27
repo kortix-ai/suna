@@ -105,6 +105,24 @@ describe.skipIf(!dockerAvailable)('local invalid-index repair — real PostgreSQ
     }
   }, 60_000);
 
+  test('a later failed drop rolls back an earlier dropped index', async () => {
+    await withClient('target', (client) => client.query(`
+      create index a_rollback_index on kortix.items (id);
+      create table kortix.constrained_items (id int primary key);
+      update pg_index set indisvalid = false
+       where indexrelid in ('kortix.a_rollback_index'::regclass, 'kortix.constrained_items_pkey'::regclass);
+    `));
+    try {
+      await expect(dropLocalInvalidIndexes(urlFor('target'))).rejects.toThrow('constraint');
+      await withClient('target', async (client) => {
+        const { rows } = await client.query("select to_regclass('kortix.a_rollback_index') is not null as retained");
+        expect(rows[0].retained).toBe(true);
+      });
+    } finally {
+      await withClient('target', (client) => client.query('drop table kortix.constrained_items; drop index kortix.a_rollback_index'));
+    }
+  });
+
   test('an index build in the same database still blocks the repair', async () => {
     const release = await holdIndexBuild('target');
     try {

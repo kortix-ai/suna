@@ -95,8 +95,21 @@ flow(
       (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, { params: { tunnelId: MISSING_UUID } })).status(404);
     });
 
+    await ctx.step("malformed machine IDs return 400 on every connection endpoint", async () => {
+      const params = { params: { tunnelId: "nope" } };
+      (await owner.get("/v1/tunnel/connections/:tunnelId", params)).status(400);
+      (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: "renamed" }, params)).status(400);
+      (await owner.del("/v1/tunnel/connections/:tunnelId", params)).status(400);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/rotate-token", {}, params)).status(400);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, params)).status(400);
+    });
+
     await ctx.step("unknown machine → 404", async () => {
-      (await owner.get("/v1/tunnel/connections/:tunnelId", { params: { tunnelId: MISSING_UUID } })).status(404);
+      const params = { params: { tunnelId: MISSING_UUID } };
+      (await owner.get("/v1/tunnel/connections/:tunnelId", params)).status(404);
+      (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: "renamed" }, params)).status(404);
+      (await owner.del("/v1/tunnel/connections/:tunnelId", params)).status(404);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/rotate-token", {}, params)).status(404);
     });
 
     await ctx.step("unpairing deletes the machine and revokes its computer account", async () => {
@@ -321,6 +334,20 @@ flow(
         .withBearer(deviceSecret)
         .get("/v1/tunnel/device-auth/:code/status", { params: { code: deviceCode } });
       r.status(200).body().has("$.status", "pending");
+    });
+
+    await ctx.step("PUBLIC: unknown code and wrong secret return identical denials", async () => {
+      const caller = ctx.client.withBearer("synthetic-invalid-device-secret");
+      const existing = await caller.get("/v1/tunnel/device-auth/:code/status", {
+        params: { code: deviceCode },
+      });
+      const missing = await caller.get("/v1/tunnel/device-auth/:code/status", {
+        params: { code: "NONE-0000" },
+      });
+      existing.status(403);
+      missing.status(existing.statusCode);
+      assert.deepEqual(existing.json<unknown>(), { error: "Invalid secret" });
+      assert.equal(missing.text(), existing.text());
     });
 
     await ctx.step("PUBLIC: poll status without secret → 400", async () => {

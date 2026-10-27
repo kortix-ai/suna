@@ -30,7 +30,8 @@ pnpm worktree create --name auth-config --full-supabase --yes
 |---|---|
 | `pnpm worktree create --name <n> [--branch b] [--from dev] [--db \| --full-supabase] [--no-start] [--yes]` | From a fresh clone: install missing deps, create the worktree, allocate a port block, `pnpm install`, build runtime artifacts, then boot the stack against the shared primary Supabase DB. Add `--db` for its own database in the primary Postgres, or `--full-supabase` to render/start/migrate a separate Supabase project. Idempotent — re-run to resume. |
 | `pnpm worktree new <n>` | Alias of `create` (positional name). |
-| `pnpm worktree start <n> [--billing] [--stripe]` | Boot an existing worktree's app stack on its ports. Add `--billing` for local billing routes without webhooks. Add `--stripe` for live test-mode webhook forwarding. Shared mode uses primary Supabase; `--db` mode migrates its own database and reconciles users; `--full-supabase` mode starts/migrates its own Supabase. Streams logs; `Ctrl+C` stops the dev servers. |
+| `pnpm worktree start <n> [--billing] [--stripe] [--no-web]` | Boot an existing worktree's app stack on its ports. Add `--billing` for local billing routes without webhooks. Add `--stripe` for live test-mode webhook forwarding. Add `--no-web` to skip `next dev` for API-only work. Shared mode uses primary Supabase; `--db` mode migrates its own database and reconciles users; `--full-supabase` mode starts/migrates its own Supabase. Streams logs; `Ctrl+C` stops the dev servers. |
+| `pnpm worktree web <n> [--billing]` | Start only the UI (`next dev`) for a stack started with `--no-web`. Fails when no API listens on the worktree's API port. `Ctrl+C` stops the UI; the API keeps running. |
 | `pnpm worktree stop <n>` | Stop the dev servers — the whole process tree, verified dead before the registry records it. Isolated mode also stops that worktree's Supabase containers. **Data is preserved.** |
 | `pnpm worktree stop --all` | Stop every worktree in one pass. The end-of-day sweep, and the way back from stacks orphaned by an OOM kill. |
 | `pnpm worktree nuke <n> [--force]` | Tear down the app worktree: stop, `git worktree remove`, delete the slot's store, free the port slot. Isolated mode also drops its Supabase containers **and volumes**. Shared mode leaves primary Supabase untouched. |
@@ -40,6 +41,7 @@ pnpm worktree create --name auth-config --full-supabase --yes
 | `pnpm worktree list [name] --json` | The same data as JSON on stdout for scripting — effective ports, both the probed and recorded status, and URLs. |
 | `pnpm worktree status [n]` | Live health (🟢/⚪) of web/api/Supabase per worktree. |
 | `pnpm worktree doctor [--yes]` | Check (or `--yes` install) the toolchain + flag worktree/registry drift. |
+| `pnpm worktree sweep [--idle 60m] [--yes]` | Delete build output (`.next`, `.turbo`, `dist`, `target`, test reports) in every idle git worktree. Skips checkouts with a process or a write within `--idle`, and dirs with tracked files. Dry run without `--yes`. |
 
 `--yes` on `create`/`doctor` auto-installs anything missing for the selected
 mode (`bun`, Node 22, `pnpm`, and when needed Supabase CLI, Docker, `psql`, or
@@ -85,10 +87,12 @@ worktrees share (allocators before 2026-10-15 could hand one out twice).
   primary Postgres (`pg_dump`/`pg_restore` inside the container, ~5 s; audit-event
   rows are skipped), then applies the branch's migrations. `start` re-applies
   pending migrations. GoTrue, Kong, Storage and Studio stay shared. GoTrue writes
-  users only to the primary, and `kortix.*` has foreign keys to `auth.users`, so
-  a trigger on the primary's `auth.users` pushes every insert/update/delete into
-  each database listed in `kortix_wt.branches` (dblink). `create` and `start` also
-  reconcile the full user list (`kortix_wt.pull_users`). A failed push only logs a
+  users and sessions only to the primary. `kortix.*` has foreign keys to
+  `auth.users`, and the API confirms every access token against `auth.sessions`.
+  Triggers on the primary's `auth.users` and `auth.sessions` push every
+  insert/update/delete into each database listed in `kortix_wt.branches`
+  (dblink). `create` and `start` also reconcile both tables
+  (`kortix_wt.pull_users`). A failed push only logs a
   `kortix_wt:` warning in the primary's Postgres log; it never fails the GoTrue
   write. `nuke` drops the database. `create --db` on an old `--full-supabase`
   worktree moves it to a branch database and deletes its containers and volumes.
@@ -155,5 +159,5 @@ registry drift in both directions; `pnpm worktree stop --all` clears the lot.
   `start` and isolated DB work require Docker running.
 - `create` is idempotent and resumable: a crash leaves the registry at the last
   good step, and re-running continues from there. `doctor` reports drift.
-- `start` opens a cloudflared quick tunnel by default for cloud Daytona sandbox
-  callbacks. Pass `--no-tunnel` for offline/local-only work.
+- `start` opens a cloudflared quick tunnel by default for cloud sandbox
+  (Platinum) callbacks. Pass `--no-tunnel` for offline/local-only work.

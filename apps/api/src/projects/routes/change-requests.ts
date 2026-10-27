@@ -1,4 +1,5 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -11,6 +12,7 @@ import {
   listChangeRequestsForProject,
   recordRequestedChange,
   serializeChangeRequest,
+  supersededByFor,
 } from '../change-requests';
 import {
   getBranchDiff,
@@ -38,6 +40,7 @@ import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -301,6 +304,8 @@ export function registerChangeRequestsRoutes(): void {
         headSha = aheadState.headSha;
         headAhead = aheadState.ahead;
       } catch (error) {
+        if (isRepositoryDisconnectedError(error)) throw error; // 409 with the fix
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to resolve branches',
@@ -443,6 +448,7 @@ export function registerChangeRequestsRoutes(): void {
       try {
         endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to reach sandbox',
@@ -460,6 +466,7 @@ export function registerChangeRequestsRoutes(): void {
             signal: AbortSignal.timeout(30_000),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Sandbox unreachable',
@@ -540,8 +547,10 @@ export function registerChangeRequestsRoutes(): void {
         project: await withProjectGitAuth(loaded.row),
       });
       cr = (await getCrById(crId, projectId))!;
+      const view = await projectReadView(c, loaded);
+      const replaced = await supersededByFor(projectId, [cr], view.where(changeRequests.originSessionId, changeRequests.createdBy));
 
-      return c.json({ change_request: serializeChangeRequest(cr) });
+      return c.json({ change_request: serializeChangeRequest(cr, replaced.get(cr.crId) ?? null) });
     },
   );
 
@@ -594,7 +603,10 @@ export function registerChangeRequestsRoutes(): void {
       const [row] = await db
         .update(changeRequests)
         .set(updates)
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route
+        // in routes/change-request-actions.ts): the raw path param may be the
+        // display number, which matched the CR above but would 22P02 here.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
@@ -744,6 +756,7 @@ export function registerChangeRequestsRoutes(): void {
           patch_truncated: diff.patch_truncated,
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to compute diff',
@@ -787,6 +800,7 @@ export function registerChangeRequestsRoutes(): void {
         );
         return c.json(preview);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to preview merge',

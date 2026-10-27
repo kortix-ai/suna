@@ -6,11 +6,8 @@
 #                               (sub = repo:kortix-ai/suna:environment:prod).
 #                               Prod ECS, prod PassRole, prod blobs. The `prod`
 #                               GitHub environment admits branch `prod` only.
-# PHASE 1 (this file): the prod role exists and every workflow on dev uses it.
-# The broad role KEEPS its prod permissions, because the workflow copies on the
-# `prod` branch (rollback-prod.yml) still assume it until the next release.
-# PHASE 2 (after that release): delete the prod ECS, prod PassRole, and
-# kortix-prod-* secret grants from the broad role. Until then the hole is open.
+# PHASE 2 (done): the broad role holds NO prod permission. Prod ECS, prod
+# PassRole, and kortix-prod-* secrets are reachable only through the prod role.
 # ════════════════════════════════════════════════════════════════════════════
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -25,13 +22,14 @@
 # (prod) resources, the staging PassRole pair, and the GATEWAY task/exec roles
 # (the prod gateway task-def that night had to be registered manually by a
 # human). This file is the system-of-record for the CORRECTED policy:
-#   - ECS resources region-wildcarded (dev = us-east-2, staging/prod = eu-west-2)
-#   - PassRole for the task+exec roles of all production release services:
-#     kortix-{dev-use2,staging-euw2,prod} (api), kortix-{…}-gateway,
+#   - ECS resources region-wildcarded (dev = us-east-2, staging = eu-west-2)
+#   - PassRole for the task+exec roles of the dev and staging services:
+#     kortix-{dev-use2,staging-euw2} (api), kortix-{…}-gateway,
 #     and kortix-{…}-web
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
-#   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
-#     wires each blob key as a container secret)
+#   - Secrets Manager read of the ci, dev, preview and staging env blobs (the
+#     task-def renderer wires each blob key as a container secret)
+#   Prod is the prod role's alone (kortix-gha-ecs-deploy-prod, below).
 # Reconciled with the live role on 2026-07-16 (the missing gateway PassRole
 # ARNs were added live the same day). Adopt with the import blocks below —
 # `terraform plan` must show an empty diff; if it doesn't, live drifted again
@@ -85,15 +83,15 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         Sid    = "UpdateKortixServices"
         Effect = "Allow"
         Action = ["ecs:UpdateService"]
-        # Region-wildcarded: dev ECS runs in us-east-2, staging and prod in eu-west-2.
+        # Region-wildcarded: dev ECS runs in us-east-2, staging in eu-west-2.
         # cluster name == service name for every kortix ECS service.
-        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-dev*/kortix-dev*", "arn:aws:ecs:*:${local.account_id}:service/kortix-staging*/kortix-staging*"]
       },
       {
         Sid      = "DescribeKortixServices"
         Effect   = "Allow"
         Action   = ["ecs:DescribeServices"]
-        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-*/kortix-*"]
+        Resource = ["arn:aws:ecs:*:${local.account_id}:service/kortix-dev*/kortix-dev*", "arn:aws:ecs:*:${local.account_id}:service/kortix-staging*/kortix-staging*"]
       },
       {
         Sid    = "DescribeKortixTasks"
@@ -102,12 +100,17 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
         # Tasks/list are scoped by cluster through the task/container-instance
         # ARN path; kortix clusters all match kortix-*.
         Resource = [
-          "arn:aws:ecs:*:${local.account_id}:task/kortix-*/*",
-          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-*/*",
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-dev*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-dev*/*",
+          "arn:aws:ecs:*:${local.account_id}:task/kortix-staging*/*",
+          "arn:aws:ecs:*:${local.account_id}:container-instance/kortix-staging*/*",
         ]
         Condition = {
           ArnLike = {
-            "ecs:cluster" = "arn:aws:ecs:*:${local.account_id}:cluster/kortix-*"
+            "ecs:cluster" = [
+              "arn:aws:ecs:*:${local.account_id}:cluster/kortix-dev*",
+              "arn:aws:ecs:*:${local.account_id}:cluster/kortix-staging*",
+            ]
           }
         }
       },
@@ -153,12 +156,6 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-gateway-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-euw2-web-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
-          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
         ]
       },
     ]
@@ -183,7 +180,12 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret",
         ]
-        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
+        Resource = [
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-ci-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-dev*-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-preview-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-staging*-env-*",
+        ]
       },
       {
         Sid    = "WriteStagingSecret"
@@ -203,7 +205,10 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
           "secretsmanager:CreateSecret",
           "secretsmanager:PutSecretValue",
         ]
-        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-web-env-*"
+        Resource = [
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-dev*-web-env-*",
+          "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-staging*-web-env-*",
+        ]
       },
     ]
   })
