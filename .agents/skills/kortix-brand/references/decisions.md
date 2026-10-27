@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D22 `/about` is the vision page: SuperIntelligence, AGI and self-improving companies run by AI
+- **Date:** 2026-10-27
+- **Decision:** `/about` is about SuperIntelligence and AGI: Kortix builds every layer (operating system, agent harness, infrastructure, governance, the 24/7 loop, then training and evals) so companies can run on AI at scale, improve as they operate, and stay their own. Its sections: the hero (D19), "The thesis." (companies will run on AI, they will improve themselves, they have to be owned), "Every layer, A to Z.", "Self-improving companies." and the mission line. On this page only, and only as direction (future tense or "we are building"), copy may say "AGI", "SuperIntelligence", "self-improving companies" and "run by AI". It still never says "self-driving company" or "autonomous company" (positioning.md, retired lines). Elsewhere the idea appears at most as one line, e.g. the home Outcomes sub: "Every run makes the next one better."
+- **Why:** founder, 2026-10-27: "THE WHOLE ABOUT PAGE SHOULD BE ABOUT SI/AGI & how we are building all the infrastructure, harness, architecture, operating system, a to z so u can run it on scale to build self improving autonomous self driving organizations, that are run by AI", and "I don't want to say that [in the home hero], but I want to add that aspect".
+- **Where:** `apps/web/src/features/marketing/about/content.ts`, `about-page.tsx`; `apps/web/src/features/marketing/landing-sections/use-cases-section.tsx` (the one home line); [positioning.md](verbal/positioning.md) AGI rule.
+- **Supersedes:** the `/about` sections "What we believe." and "Build, host, manage, monitor."
+- **Source:** the `services-page` branch.
+
 ### D21 The home hero cycles the pillars: "The sovereign / multiplayer / extensible AI Operating System"
 - **Date:** 2026-10-27
 - **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer, extensible and open (the three pillars, D16, plus "open", founder 2026-10-27: "also add open"). The muted line "for companies that own their …" is gone. Because the hero now names the pillars, the compact three-column pillar band moves down the page, right under the case studies (founder: "move that elsewhere", then "move it up under CASE STUDIES"). Screen readers read "The sovereign, multiplayer, extensible and open AI Operating System".

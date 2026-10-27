@@ -1,11 +1,19 @@
 'use client';
 
+import Link from '@/components/site-link';
 import { DitherField } from '@/features/marketing/kit/dither-field';
+import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { Band, Block, CellGrid, Heading, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
+import {
+  Band,
+  Block,
+  CellGrid,
+  Heading,
+  PageFrame,
+  PageHero,
+} from '@/features/marketing/kit/page-frame';
 import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
-import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { getLocalizedAboutContent } from './content';
 
@@ -15,13 +23,14 @@ import { getLocalizedAboutContent } from './content';
  * Layout: the landing page's frame (`kit/page-frame.tsx`), the same as
  * /security, /self-hosted and /enterprise. The hero, then the team photograph
  * in a band the way the landing hero carries the session window; the two
- * beliefs as two cells; the six verbs as numbered cells. The hiring call is the footer's
+ * beliefs as three cells; every layer as numbered cells; then where it goes
+ * (self-improving companies) and the mission. The hiring call is the footer's
  * call to action (`landing/footer-cta.ts`), so the page does not repeat it.
  * Copy and the accuracy gate live in `content.ts`.
  */
 export function AboutPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { hero, beliefs, statements, platform } = getLocalizedAboutContent(tI18nComplete);
+  const { hero, beliefs, statements, platform, future } = getLocalizedAboutContent(tI18nComplete);
 
   return (
     <PageFrame>
@@ -72,24 +81,26 @@ export function AboutPage(): ReactNode {
         </Band>
       </section>
 
-      {/* The two beliefs, side by side on hairlines. */}
+      {/* The three beliefs, side by side on hairlines. */}
       <Block id="thesis">
         <Heading title={beliefs.title} titleMuted={beliefs.titleMuted} />
         <Band className="mt-12">
-          <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
+          <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
             {statements.map((statement) => (
               <li key={statement.id} className="bg-background flex flex-col gap-4 p-6 lg:p-11">
                 <h3 className="text-foreground text-lg font-medium tracking-tight text-balance">
                   {statement.title}
                 </h3>
-                <p className="text-muted-foreground max-w-xl text-base text-pretty">{statement.body}</p>
+                <p className="text-muted-foreground max-w-xl text-base text-pretty">
+                  {statement.body}
+                </p>
               </li>
             ))}
           </ul>
         </Band>
       </Block>
 
-      {/* The six verbs, numbered: the shape of the platform, not a checklist.
+      {/* Every layer, numbered: the shape of the stack, not a checklist.
           The tense in `content.ts` says what ships today; no status marker. */}
       <Block id="platform">
         <Heading title={platform.title} titleMuted={platform.titleMuted} sub={platform.sub} />
@@ -105,6 +116,19 @@ export function AboutPage(): ReactNode {
           />
         </Band>
       </Block>
+
+      {/* Where it goes: self-improving companies, then the mission. */}
+      <FeatureSplit
+        id="future"
+        title={future.title}
+        titleMuted={future.titleMuted}
+        body={future.body}
+        after={
+          <p className="text-foreground px-8 pt-8 text-lg font-medium text-balance lg:px-28">
+            {future.mission}
+          </p>
+        }
+      />
     </PageFrame>
   );
 }

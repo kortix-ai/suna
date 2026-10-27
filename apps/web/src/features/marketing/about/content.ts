@@ -34,11 +34,12 @@
  */
 
 export const hero = {
-  // Founder vision, future tense (kortix-brand D19): "SuperIntelligence" is
-  // allowed here, in the hero of /about only, never as a product claim.
+  // Founder vision (kortix-brand D19, D22): /about is the one page that talks
+  // about SuperIntelligence, AGI and companies run by AI, always as direction
+  // ("we are building", "will"), never as a shipped capability.
   title: 'We are building the Operating System for SuperIntelligence.',
-  titleMuted: 'One you own end to end, every part of it.',
-  lead: 'Every agent, all of their data, every skill, every connector, the memory and the whole configuration.',
+  titleMuted: 'For companies run by AI, owned end to end.',
+  lead: 'The infrastructure, the agent harness, the architecture and the operating system, from A to Z, so a company can run on AI at scale, get better as it operates, and stay entirely its own.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',
   ctaSecondary: 'Read the code',
@@ -48,69 +49,84 @@ export const hero = {
 } as const;
 
 /**
- * The two claims the page rests on. One headline, one paragraph, no more.
- * "AGI" stays out of these (positioning.md: mission and manifesto only), and
- * so does any line that hands the company's autonomy to agents (claims.md).
+ * The thesis in three beliefs. Future tense for what is not here yet; "AGI"
+ * and "SuperIntelligence" are allowed on this page only (D19, D22).
  */
 export const beliefs = {
-  title: 'What we believe.',
-  titleMuted: 'And why it has to be open.',
+  title: 'The thesis.',
+  titleMuted: 'Where companies are going.',
 } as const;
 
 export const statements = [
   {
-    id: 'own',
-    title: 'You own all of it.',
-    body: 'On your own infrastructure if you want it there. Kortix does not sit beside the company as one more tool. It becomes the company — where the work, the context and the operations live.',
+    id: 'run',
+    title: 'Companies will run on AI.',
+    body: 'The next great companies will be run by agents that work around the clock and own whole outcomes, from one customer relationship to a full function. People set the direction and the rules.',
   },
   {
-    id: 'closed',
-    title: 'The closed platforms are becoming AI operating systems too.',
-    body: 'Claude Cowork, ChatGPT Work and the rest are heading for full AI operating systems an entire company runs on. That is the direction of the industry. The difference is that you will never own those.',
+    id: 'improve',
+    title: 'They will improve themselves.',
+    body: 'Agents that learn from the work, test improvements and share what works make a company better every day it operates. The organization becomes a system that compounds.',
+  },
+  {
+    id: 'own',
+    title: 'And they have to be owned.',
+    body: 'Claude Cowork, ChatGPT Work and the rest are heading the same way, and you will never own those. A company run by AI has to own its AI: the agents, the data, the memory and the infrastructure.',
   },
 ] as const;
 
 /**
- * The six-verb spine — the shape of the platform, not a feature checklist.
- * There is no status column: the first four rows are present tense because they
- * are true today, and the last two are future tense because they are not.
+ * Every layer of the stack. Present tense is true today; the last row is the
+ * future, in the future tense. No status column: the tense does the work.
  */
 export const platform = {
-  title: 'Build, host, manage, monitor.',
-  titleMuted: 'Then train and eval.',
-  sub: 'One place your agents run and all of your context connects. Six verbs, one system.',
+  title: 'Every layer, A to Z.',
+  titleMuted: 'So you can run it at scale.',
+  sub: 'We build the whole stack a company run by AI needs, and it is open source.',
   items: [
     {
-      id: 'build',
-      verb: 'Build',
+      id: 'os',
+      verb: 'Operating system',
       body: 'Agents, skills, connectors, triggers and memory are files in one git repo that is the company.',
     },
     {
-      id: 'host',
-      verb: 'Host',
-      body: 'Every session runs on its own isolated machine. Thousands run in parallel on one config.',
+      id: 'harness',
+      verb: 'Harness',
+      body: 'Every session runs an open-source agent harness on its own isolated machine. Thousands run in parallel on one config.',
     },
     {
-      id: 'manage',
-      verb: 'Manage',
+      id: 'infrastructure',
+      verb: 'Infrastructure',
+      body: 'Kortix Cloud, your VPC or your own on-prem network, with any model and your own keys.',
+    },
+    {
+      id: 'governance',
+      verb: 'Governance',
       body: 'Per-resource permissions for people and agents. Secrets encrypted at rest; connector credentials brokered server-side, never entering the machine.',
     },
     {
-      id: 'monitor',
-      verb: 'Monitor',
-      body: 'Watch a session live, diff every change to an agent or a skill, and land work through a change request.',
+      id: 'loop',
+      verb: 'The loop',
+      body: 'Agents run outcomes 24/7, land work through a change request a person approves, and propose changes to their own skills.',
     },
     {
-      id: 'train',
-      verb: 'Train',
-      body: 'The layer we are building next: your own models, trained on the work your agents already did, inside the same platform.',
-    },
-    {
-      id: 'eval',
-      verb: 'Eval',
-      body: 'Then evals and reinforcement learning, scored on your own sessions rather than a public benchmark.',
+      id: 'learn',
+      verb: 'Training and evals',
+      body: 'What we are building next: your own models, trained on the work your agents already did, scored by evals and reinforcement learning on your own sessions.',
     },
   ],
+} as const;
+
+/** Where it goes: self-improving companies, and the mission (positioning.md). */
+export const future = {
+  title: 'Self-improving companies.',
+  titleMuted: 'Run by AI, owned by the people who build them.',
+  body: [
+    'A founder starting today can build around the customer from day one: the **AI-native bank, insurer or marketplace**, where one agent owns each relationship and the whole company learns from every interaction.',
+    'An incumbent can get there one function at a time. Either way it needs the same thing underneath: **an operating system it owns, that runs at scale and improves as it runs.** That is what we are building.',
+  ],
+  mission:
+    'Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.',
 } as const;
 
 /* "AGI platform" is a retired category name (kortix-brand D1), so the close
@@ -126,11 +142,11 @@ export const closing = {
 
 export function getLocalizedAboutContent(tI18nComplete: UiTranslator) {
   return localizeUiCatalog(
-    { hero, beliefs, statements, platform, closing },
+    { hero, beliefs, statements, platform, future, closing },
     tI18nComplete,
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );
 }
-import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
+import { localizeUiCatalog } from '@kortix/ui/i18n';

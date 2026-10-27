@@ -32,7 +32,7 @@ const COPY = {
   eyebrow: 'Outcomes',
   title: 'Give it an outcome. Agents run it 24/7.',
   titleMuted: 'End to end, for every team.',
-  sub: 'Agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and through a change request you approve, then learn from it.',
+  sub: 'Agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and through a change request you approve, then learn from it. Every run makes the next one better.',
   loop: ['Outcome', 'Plan', 'Work', 'Verify', 'Learn'],
   you: 'You',
 };
