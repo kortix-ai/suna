@@ -26,9 +26,8 @@ import {
   type VirtualItem,
 } from '@embedpdf/plugin-scroll/react';
 import { SearchLayer, SearchPluginPackage, useSearch } from '@embedpdf/plugin-search/react';
+import { SelectionPluginPackage } from '@embedpdf/plugin-selection';
 import {
-  CopyToClipboard,
-  SelectionPluginPackage,
   useSelectionCapability,
   useSelectionPlugin,
 } from '@embedpdf/plugin-selection/react';
@@ -95,6 +94,7 @@ import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-do
 import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
+import { PdfClipboard } from './pdf-clipboard';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
@@ -2372,7 +2372,7 @@ function PDFViewerInner({
                 renderPage={renderPage}
               />
             </GlobalPointerProvider>
-            <CopyToClipboard />
+            <PdfClipboard />
           </PDFViewerScrollAreaViewport>
         </div>
       </div>
