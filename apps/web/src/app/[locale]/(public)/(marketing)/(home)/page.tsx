@@ -1,4 +1,5 @@
 import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
+import { AppsBand, ModelsBand } from '@/features/marketing/landing-sections/apps-and-models';
 import { HowItWorksTabs } from '@/features/marketing/landing-sections/how-it-works-tabs';
 import { TrustBand } from '@/features/marketing/landing-sections/trust-band';
 import { UseCasesBand } from '@/features/marketing/landing-sections/use-cases-band';
@@ -26,6 +27,8 @@ export default function Home() {
       {/* ProblemSolution ("Your know-how is everywhere.") is stashed: hidden
           from the home page by founder call, 2026-10-27; the component stays. */}
       <HowItWorksTabs />
+      <AppsBand />
+      <ModelsBand />
       <UseCasesBand />
       <TrustBand />
       <LandingFaqSection />

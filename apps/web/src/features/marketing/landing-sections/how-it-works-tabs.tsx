@@ -20,8 +20,7 @@ const TABS: {
   {
     id: 'source',
     title: 'Keep one source of truth',
-    description:
-      'Agents, skills, memory and triggers live in one repo you own.',
+    description: 'Agents, skills, memory and triggers live in one repo you own.',
     panel: () => <StepSourceOfTruth />,
     bare: true,
   },
@@ -36,8 +35,7 @@ const TABS: {
   {
     id: 'models',
     title: 'Run any model',
-    description:
-      'Pick the model per agent or session, with your key or ours.',
+    description: 'Pick the model per agent or session, with your key or ours.',
     panel: () => <StepModels />,
     bare: true,
   },
@@ -82,7 +80,9 @@ export function HowItWorksTabs() {
           <div className="px-4 py-12 lg:px-11 lg:py-16 lg:pr-12">
             <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
               How Kortix works.
-              <span className="text-muted-foreground block">One repo, every tool, a computer per agent.</span>
+              <span className="text-muted-foreground block">
+                One repo, every tool, a computer per agent.
+              </span>
             </h2>
 
             <div
@@ -105,10 +105,14 @@ export function HowItWorksTabs() {
                   aria-selected={i === selected}
                   tabIndex={i === selected ? 0 : -1}
                   onClick={() => setSelected(i)}
-                  className="outline-ring w-full rounded-sm text-left opacity-50 transition-opacity duration-moderate ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
+                  className="outline-ring duration-moderate w-full rounded-sm text-left opacity-50 transition-opacity ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
                 >
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
-                  <p className="text-muted-foreground mt-2 text-sm text-balance">{item.description}</p>
+                  <h3 className="text-foreground text-base font-medium text-pretty">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-2 text-sm text-balance">
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </div>

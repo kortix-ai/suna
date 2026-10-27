@@ -1,8 +1,8 @@
 'use client';
 
 import { faq } from '@/features/marketing/faq';
-import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
@@ -30,7 +30,7 @@ export function LandingFaqSection() {
             Anything else,{' '}
             <Link
               href="/contact"
-              className="text-foreground hover:text-muted-foreground outline-ring rounded-sm underline-offset-4 transition-colors duration-normal ease-out hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="text-foreground hover:text-muted-foreground outline-ring duration-normal rounded-sm underline-offset-4 transition-colors ease-out hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               write to the team
             </Link>
@@ -56,15 +56,21 @@ export function LandingFaqSection() {
 
         <div className="divide-border flex flex-col divide-y lg:col-span-2">
           {items.map((item) => (
-            <details key={item.id} id={item.id} className="group scroll-mt-16 py-6 first:pt-0 last:pb-0">
+            <details
+              key={item.id}
+              id={item.id}
+              className="group scroll-mt-16 py-6 first:pt-0 last:pb-0"
+            >
               <summary className="text-foreground outline-ring flex w-full cursor-pointer list-none items-start justify-between rounded-sm text-left text-lg select-none focus-visible:outline-2 focus-visible:outline-offset-4 [&::-webkit-details-marker]:hidden">
                 <span className="pr-8 text-pretty">{item.question}</span>
                 <PlusIcon
                   aria-hidden
-                  className="group-open:text-muted-foreground mt-1.5 size-4 shrink-0 transition-[rotate,color] duration-normal ease-out group-open:-rotate-45 motion-reduce:transition-none"
+                  className="group-open:text-muted-foreground duration-normal mt-1.5 size-4 shrink-0 transition-[rotate,color] ease-out group-open:-rotate-45 motion-reduce:transition-none"
                 />
               </summary>
-              <p className="text-muted-foreground max-w-2xl py-4 text-base text-pretty">{item.answer}</p>
+              <p className="text-muted-foreground max-w-2xl py-4 text-base text-pretty">
+                {item.answer}
+              </p>
             </details>
           ))}
         </div>

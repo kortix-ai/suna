@@ -4,7 +4,6 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { XCircleIcon } from '@phosphor-icons/react/dist/ssr';
 
-
 // Each "with" line is on /security, in How it works or in the docs.
 const WITHOUT = [
   'Prompts and rules live in a vendor’s database',
@@ -98,8 +97,18 @@ export function ProblemSolution() {
               <span className="text-muted-foreground text-sm">Before and after</span>
             </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <Panel kind="without" title="Agents that forget your company." label="Most agents today" items={WITHOUT} />
-              <Panel kind="with" title="Agents that work from your company." label="With Kortix" items={WITH} />
+              <Panel
+                kind="without"
+                title="Agents that forget your company."
+                label="Most agents today"
+                items={WITHOUT}
+              />
+              <Panel
+                kind="with"
+                title="Agents that work from your company."
+                label="With Kortix"
+                items={WITH}
+              />
             </div>
           </div>
         </div>

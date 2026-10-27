@@ -1,5 +1,10 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
-import { CheckIcon, CodeIcon, ShieldCheckIcon, UsersThreeIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+  CheckIcon,
+  CodeIcon,
+  ShieldCheckIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/dist/ssr';
 
 // The three pillars, in the founder's order and words (kortix-brand D16):
 // Multiplayer AI; Company as code (extensible); Sovereign and
@@ -52,11 +57,18 @@ const PILLARS = [
 export function PillarsBand() {
   return (
     <section id="pillars" className="scroll-mt-16 py-20 lg:py-28">
-      <Heading title="Multiplayer. Company as code. Sovereign." titleMuted="The AI OS your whole company owns." />
+      <Heading
+        title="Multiplayer. Company as code. Sovereign."
+        titleMuted="The AI OS your whole company owns."
+      />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
           {PILLARS.map(({ id, icon: Icon, name, line, body, facts }) => (
-            <li key={id} id={id} className="bg-background flex scroll-mt-16 flex-col gap-5 p-6 lg:p-11">
+            <li
+              key={id}
+              id={id}
+              className="bg-background flex scroll-mt-16 flex-col gap-5 p-6 lg:p-11"
+            >
               <Icon className="text-foreground size-6" aria-hidden />
               <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
                 {name}

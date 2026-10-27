@@ -40,8 +40,8 @@ export function ConfigAsCode() {
               One file describes your whole company.
             </h2>
             <p className="text-muted-foreground text-base leading-relaxed text-pretty">
-              Agents, their permissions, triggers and secrets live in kortix.yaml. Review a change to
-              how your company works the same way you review code.
+              Agents, their permissions, triggers and secrets live in kortix.yaml. Review a change
+              to how your company works the same way you review code.
             </p>
           </div>
 
@@ -49,7 +49,9 @@ export function ConfigAsCode() {
             {FACTS.map((fact) => (
               <li key={fact.tag} className="flex items-center justify-between border-t py-3.75">
                 <span className="text-foreground text-sm">{fact.label}</span>
-                <span className="text-muted-foreground font-mono text-xs uppercase">{fact.tag}</span>
+                <span className="text-muted-foreground font-mono text-xs uppercase">
+                  {fact.tag}
+                </span>
               </li>
             ))}
           </ul>

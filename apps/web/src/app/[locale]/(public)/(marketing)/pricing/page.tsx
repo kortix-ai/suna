@@ -1,6 +1,17 @@
 'use client';
 
 import Link from '@/components/site-link';
+import type { PricingPlan, PricingPlanId } from '@/features/billing/pricing-plans';
+import { usePricingPlans } from '@/features/billing/use-pricing-plans';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { useEnglishOnly } from '@/features/marketing/kit/english-only';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { WorksWithStrip } from '@/features/marketing/landing-sections/works-with-strip';
+import { CreditLadder } from '@/features/marketing/pricing/credit-ladder';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
+import { cn } from '@kortix/ui';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import {
   agentHoursForCredits,
   COMPUTE_RATES_USD,
@@ -16,19 +27,7 @@ import {
   PLATFORM_FEE_PERCENT,
   TOP_UP_BONUS_STEPS,
 } from '@kortix/ui/internal/billing/compute-pricing';
-import type { PricingPlan, PricingPlanId } from '@/features/billing/pricing-plans';
-import { usePricingPlans } from '@/features/billing/use-pricing-plans';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
-import { useEnglishOnly } from '@/features/marketing/kit/english-only';
-import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { splitTitle } from '@/features/marketing/kit/blocks';
-import { WorksWithStrip } from '@/features/marketing/landing-sections/works-with-strip';
-import { CreditLadder } from '@/features/marketing/pricing/credit-ladder';
-import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { cn } from '@kortix/ui';
 import { MinusIcon, PlusIcon } from '@phosphor-icons/react';
 import { Fragment, useState, type ReactNode } from 'react';
 
@@ -75,7 +74,9 @@ type Mark = boolean | string;
  * the cards and the FAQ do not. Labels are English only, like the landing
  * sections; the table renders for `en` alone until it has catalog keys.
  */
-function compareGroups(locale: string): { title: string; rows: { label: string; marks: [Mark, Mark, Mark] }[] }[] {
+function compareGroups(
+  locale: string,
+): { title: string; rows: { label: string; marks: [Mark, Mark, Mark] }[] }[] {
   const credits = (usd: number) => new Intl.NumberFormat(locale).format(monthlyCreditsForUsd(usd));
   return [
     {
@@ -137,8 +138,14 @@ function sentence(text: string): string {
 function Rails() {
   return (
     <>
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17" />
-      <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+      />
+      <div
+        aria-hidden
+        className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+      />
     </>
   );
 }
@@ -166,7 +173,10 @@ function BandHeading({
 }) {
   return (
     <div className="px-8 pb-12 lg:px-28">
-      <h2 id={id} className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
+      <h2
+        id={id}
+        className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl"
+      >
         {title}
         {titleMuted ? (
           <>
@@ -175,7 +185,9 @@ function BandHeading({
           </>
         ) : null}
       </h2>
-      {description ? <p className="text-muted-foreground mt-4 max-w-xl text-base text-pretty">{description}</p> : null}
+      {description ? (
+        <p className="text-muted-foreground mt-4 max-w-xl text-base text-pretty">{description}</p>
+      ) : null}
     </div>
   );
 }
@@ -289,7 +301,10 @@ function ComparePlans({ plans, locale }: { plans: PricingPlan[]; locale: string 
                 <th
                   key={plan.id}
                   scope="col"
-                  className={cn('text-foreground px-2 py-4 text-center font-medium', plan.highlight && 'bg-card')}
+                  className={cn(
+                    'text-foreground px-2 py-4 text-center font-medium',
+                    plan.highlight && 'bg-card',
+                  )}
                 >
                   {plan.name}
                 </th>
@@ -310,13 +325,19 @@ function ComparePlans({ plans, locale }: { plans: PricingPlan[]; locale: string 
                 </tr>
                 {group.rows.map((row) => (
                   <tr key={row.label} className="border-t">
-                    <th scope="row" className="text-muted-foreground px-4 py-4 text-left font-normal text-pretty lg:px-11">
+                    <th
+                      scope="row"
+                      className="text-muted-foreground px-4 py-4 text-left font-normal text-pretty lg:px-11"
+                    >
                       {row.label}
                     </th>
                     {row.marks.map((mark, i) => (
                       <td
                         key={plans[i]?.id ?? i}
-                        className={cn('px-2 py-4 text-center tabular-nums', plans[i]?.highlight && 'bg-card')}
+                        className={cn(
+                          'px-2 py-4 text-center tabular-nums',
+                          plans[i]?.highlight && 'bg-card',
+                        )}
                       >
                         <MarkCell mark={mark} />
                       </td>
@@ -344,7 +365,6 @@ export default function PricingPage() {
   const t = useTranslations('billing.pricing');
   const locale = useLocale();
   const plans = usePricingPlans();
-  const openDemo = useRequestDemo();
   const englishOnly = useEnglishOnly();
 
   // Every number on this page comes from compute-pricing.ts, so the page
@@ -372,7 +392,6 @@ export default function PricingPage() {
     question: t(`faq.${id}.question`),
     answer: t(`faq.${id}.answer`, facts),
   }));
-  const [heroTitle, heroTitleMuted] = splitTitle(t('hero.title'));
 
   return (
     <main className="bg-background relative mx-auto w-full max-w-[1440px]">
@@ -381,33 +400,22 @@ export default function PricingPage() {
       {/* ── Hero and plans: the free offer first, as the reader's first question ── */}
       <section id="plans" className="relative">
         <div className="flex flex-col gap-7.5 px-8 pt-40 pb-16 lg:px-28 lg:pt-48 lg:pb-20">
+          {/* English only for now: the catalog's hero title and button are retired. */}
           <h1 className="text-foreground max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-5xl lg:leading-14">
-            {heroTitle}
-            {heroTitleMuted ? (
-              <>
-                {' '}
-                <span className="text-muted-foreground block">{heroTitleMuted}</span>
-              </>
-            ) : null}
+            Put agents to work across your company.
+            <span className="text-muted-foreground block">
+              Your first agent runs in minutes. You pay for the work, not per seat.
+            </span>
           </h1>
-          <div className="flex flex-wrap gap-2.5 pt-2">
-            <MarketingButton
-              variant="secondary"
-              size="md"
-              className="hit-area-y-1"
-              onClick={() => openDemo({ source: 'pricing-hero' })}
-            >
-              Talk to sales
-            </MarketingButton>
-            <MarketingButton size="md" className="hit-area-y-1" asChild>
-              <Link href={START_URL}>{t('hero.cta')}</Link>
-            </MarketingButton>
-          </div>
         </div>
 
         <Band className="divide-border grid grid-cols-1 divide-y lg:grid-cols-3 lg:divide-x lg:divide-y-0">
           {plans.map((plan) => (
-            <PlanColumn key={plan.id} plan={plan} includedLabel={englishOnly('What’s included') ?? plan.name} />
+            <PlanColumn
+              key={plan.id}
+              plan={plan}
+              includedLabel={englishOnly('What’s included') ?? plan.name}
+            />
           ))}
         </Band>
       </section>
@@ -441,7 +449,9 @@ export default function PricingPage() {
           </dl>
           <div className="bg-card border-t px-4 py-10 lg:col-span-5 lg:border-t-0 lg:border-l lg:px-11 lg:py-12">
             <h3 className="text-foreground text-base font-medium">{t('hours.rates.title')}</h3>
-            <p className="text-muted-foreground mt-2 text-sm text-pretty">{t('hours.rates.note')}</p>
+            <p className="text-muted-foreground mt-2 text-sm text-pretty">
+              {t('hours.rates.note')}
+            </p>
             <dl className="divide-border mt-6 flex flex-col divide-y border-y">
               {RATE_ROWS.map(({ id, usd }) => (
                 <div key={id} className="flex items-baseline justify-between gap-4 py-3.5 text-sm">
@@ -471,12 +481,16 @@ export default function PricingPage() {
                 <h3 className="text-foreground mt-6 text-lg font-medium tracking-tight text-balance">
                   {t(`models.${id}.title`)}
                 </h3>
-                <p className="text-muted-foreground mt-2 text-sm text-pretty">{t(`models.${id}.body`, facts)}</p>
+                <p className="text-muted-foreground mt-2 text-sm text-pretty">
+                  {t(`models.${id}.body`, facts)}
+                </p>
               </li>
             ))}
           </ul>
           <div className="bg-card flex flex-col items-start justify-between gap-6 border-t px-4 py-8 lg:flex-row lg:items-center lg:px-11">
-            <p className="text-foreground max-w-2xl text-base font-medium text-balance">{t('models.summary')}</p>
+            <p className="text-foreground max-w-2xl text-base font-medium text-balance">
+              {t('models.summary')}
+            </p>
             <MarketingButton size="md" className="hit-area-y-1" asChild>
               <Link href={START_URL}>{t('hero.cta')}</Link>
             </MarketingButton>
@@ -489,16 +503,24 @@ export default function PricingPage() {
         <div className="grid grid-cols-1 gap-y-12 lg:grid-cols-3">
           <div className="lg:pr-8">
             <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
-              {sentence(tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextPricingQuestionsa7129c6e'))}
+              {sentence(
+                tI18nHardcoded.raw(
+                  'autoAppPublicMarketingPricingPageJsxTextPricingQuestionsa7129c6e',
+                ),
+              )}
               {englishOnly('Anything else, talk to us.') ? (
                 <>
                   {' '}
-                  <span className="text-muted-foreground block">{englishOnly('Anything else, talk to us.')}</span>
+                  <span className="text-muted-foreground block">
+                    {englishOnly('Anything else, talk to us.')}
+                  </span>
                 </>
               ) : null}
             </h2>
             <MarketingButton size="md" variant="secondary" className="hit-area-y-1 mt-8" asChild>
-              <Link href="/contact">{tI18nHardcoded.raw('appHomeTutorialsPage.line329JsxTextContactUs')}</Link>
+              <Link href="/contact">
+                {tI18nHardcoded.raw('appHomeTutorialsPage.line329JsxTextContactUs')}
+              </Link>
             </MarketingButton>
           </div>
 
@@ -520,15 +542,21 @@ export default function PricingPage() {
 
           <div className="divide-border flex flex-col divide-y lg:col-span-2">
             {faq.map((item) => (
-              <details key={item.id} id={item.id} className="group scroll-mt-16 py-6 first:pt-0 last:pb-0">
+              <details
+                key={item.id}
+                id={item.id}
+                className="group scroll-mt-16 py-6 first:pt-0 last:pb-0"
+              >
                 <summary className="text-foreground outline-ring flex w-full cursor-pointer list-none items-start justify-between rounded-sm text-left text-lg select-none focus-visible:outline-2 focus-visible:outline-offset-4 [&::-webkit-details-marker]:hidden">
                   <span className="pr-8 text-pretty">{item.question}</span>
                   <PlusIcon
                     aria-hidden
-                    className="group-open:text-muted-foreground mt-1.5 size-4 shrink-0 transition-[rotate,color] duration-normal ease-out group-open:-rotate-45 motion-reduce:transition-none"
+                    className="group-open:text-muted-foreground duration-normal mt-1.5 size-4 shrink-0 transition-[rotate,color] ease-out group-open:-rotate-45 motion-reduce:transition-none"
                   />
                 </summary>
-                <p className="text-muted-foreground max-w-2xl py-4 text-base text-pretty">{item.answer}</p>
+                <p className="text-muted-foreground max-w-2xl py-4 text-base text-pretty">
+                  {item.answer}
+                </p>
               </details>
             ))}
           </div>
