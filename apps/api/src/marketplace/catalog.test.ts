@@ -3,6 +3,7 @@ import {
   createMarketplaceFetch,
   clampMarketplaceItemsLimit,
   compareCatalogItems,
+  getCatalogEntry,
   getCatalogItemDetail,
   pageCatalogItems,
   type CatalogItem,
@@ -61,6 +62,11 @@ describe('template + agent resolution (decoupled from browse)', () => {
     const agent = await getCatalogItemDetail('kortix-starter:support-agent');
     expect(agent).not.toBeNull();
     expect(agent!.type).toBe('registry:agent');
+  });
+
+  test('a project template lists its kortix.yaml env.required as required secrets', async () => {
+    const entry = await getCatalogEntry('kortix-projects:youtube-infotainment-agency');
+    expect(entry?.capabilities.secrets).toEqual(['ELEVENLABS_API_KEY', 'OPENAI_API_KEY']);
   });
 });
 

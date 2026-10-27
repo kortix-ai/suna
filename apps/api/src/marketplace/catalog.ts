@@ -461,6 +461,14 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
         continue;
       }
     }
+    // The add-to-project modal shows `capabilities.secrets` as "This item requires".
+    let requiredSecrets: string[] = [];
+    try {
+      const env = parseYaml(files.find((f) => f.path === "kortix.yaml")?.content ?? "")?.env;
+      if (Array.isArray(env?.required)) requiredSecrets = env.required;
+    } catch {
+      // An unparseable kortix.yaml just lists no requirements.
+    }
     items.push({
       name: slug,
       type: "registry:project",
@@ -471,7 +479,12 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
       files: files
         .filter((f) => f.path !== "project.json")
         .map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content })),
-      meta: { source: "kortix", visibility: "global", ...(meta.hidden ? { hidden: true } : {}) },
+      meta: {
+        source: "kortix",
+        visibility: "global",
+        capabilities: { secrets: requiredSecrets },
+        ...(meta.hidden ? { hidden: true } : {}),
+      },
     });
   }
   return items;
