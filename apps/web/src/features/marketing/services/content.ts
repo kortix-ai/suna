@@ -99,7 +99,7 @@ export const stages = {
     {
       id: 'map',
       n: '01',
-      k: 'Map your org',
+      k: 'Map your company',
       v: 'We sit with every team and map what each person does, how they do it, which tools they use and where the work waits.',
       get: ['A map of every team, role and recurring job', 'Where the time goes and where work stalls', 'Who does what, in which tool'],
     },
