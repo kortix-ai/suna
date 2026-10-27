@@ -95,6 +95,7 @@ accessControlApp.openapi(
     path: '/request-access',
     tags: ['access'],
     summary: 'Submit an early-access / waitlist request',
+    middleware: [createCheckEmailRateLimitMiddleware()] as const,
     request: {
       body: {
         content: {
@@ -110,7 +111,7 @@ accessControlApp.openapi(
     },
     responses: {
       200: json(z.object({ success: z.boolean(), message: z.string() }), 'Request submitted'),
-      ...errors(400),
+      ...errors(400, 429),
     },
   }),
   async (c) => {

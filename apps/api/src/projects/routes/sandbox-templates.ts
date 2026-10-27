@@ -22,6 +22,8 @@ import { allowStaleMirrorReads } from '../git/mirror';
 import { serializeTemplate } from '../lib/serializers';
 import { templateProviderObservation } from '../lib/template-provider-observation';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
+import { uniqueViolationConstraint } from '../../shared/postgres-errors';
 
 export function registerSandboxTemplatesRoutes(): void {
   // ─── Template CRUD ─────────────────────────────────────────────────────────
@@ -63,6 +65,7 @@ export function registerSandboxTemplatesRoutes(): void {
         selected_provider: observation.selectedProvider,
       });
     } catch (err) {
+      rethrowDatabaseError(err);
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: `Failed to list templates: ${message}` }, 500);
     }
@@ -156,11 +159,12 @@ export function registerSandboxTemplatesRoutes(): void {
       });
       return c.json({ template_id: row.templateId, slug: row.slug }, 201);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.toLowerCase().includes('duplicate') || message.includes('idx_sandbox_templates_project_slug')) {
-        return c.json({ error: `A template with slug "${slug}" already exists.` }, 409);
+      // Drizzle's message is the INSERT itself; the constraint names the conflict.
+      if (uniqueViolationConstraint(err) === 'idx_sandbox_templates_project_slug') {
+        return c.json({ error: `A template with slug "${slug}" already exists.`, code: 'template_slug_taken' }, 409);
       }
-      return c.json({ error: message }, 400);
+      rethrowDatabaseError(err);
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
   },
   );
@@ -225,6 +229,8 @@ export function registerSandboxTemplatesRoutes(): void {
     const existing = await getTemplateById(templateId);
     if (!existing) return c.json({ error: 'Not found' }, 404);
     if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+    // kortix.yaml owns a declared template: an edit here would be reverted by the next sync.
+    if (existing.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       const updated = await updateTemplate(templateId, patch, projectId);
@@ -248,6 +254,7 @@ export function registerSandboxTemplatesRoutes(): void {
         providers: templateBuildProviders(),
       });
     } catch (err) {
+      rethrowDatabaseError(err);
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 400);
     }
@@ -285,6 +292,7 @@ export function registerSandboxTemplatesRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     if (row.isShared) return c.json({ error: 'Shared platform templates cannot be deleted.' }, 409);
+    if (row.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       // Best-effort: clear this content identity from every enabled provider.
@@ -297,6 +305,7 @@ export function registerSandboxTemplatesRoutes(): void {
       await deleteTemplate(templateId);
       return c.body(null, 204);
     } catch (err) {
+      rethrowDatabaseError(err);
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 400);
     }

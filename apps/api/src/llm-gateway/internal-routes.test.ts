@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
-import { platformDefaultModelId } from './models/served-managed-models';
 
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
@@ -17,10 +16,12 @@ mock.module('../lib/logger', () => ({
     debug: mock(() => {}),
   },
 }));
+let billingAnswer: () => Promise<{ holdUsd?: number } | undefined> = async () => undefined;
+let authorizeAnswer: unknown = { ok: true };
 const actualBillingGate = await import('../billing/services/billing-gate');
 mock.module('../billing/services/billing-gate', () => ({
   ...actualBillingGate,
-  assertBillingActive: async () => undefined,
+  assertBillingActive: async () => billingAnswer(),
 }));
 mock.module('./budgets', () => ({
   checkBudget: async () => ({ exceeded: false }),
@@ -31,7 +32,7 @@ const actualHooks = await import('./hooks');
 mock.module('./hooks', () => ({
   ...actualHooks,
   authenticatePrincipal: async () => null,
-  authorizeRequest: async () => ({ ok: true }),
+  authorizeRequest: async () => authorizeAnswer,
   persistGatewayTrace: persistGatewayTraceMock,
   recordGatewayUsage: async (event: unknown) => {
     usageEvents.push(event);
@@ -98,6 +99,10 @@ mock.module('../secrets/account-resource', () => ({
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
+// The lineup Platinum Inference would list.
+(await import('./models/managed-models')).__setManagedLineupForTest(
+  (await import('../__tests__/fixtures/managed-lineup')).TEST_MANAGED_LINEUP,
+);
 
 const TOKEN = 'test-internal-token-aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -242,13 +247,13 @@ describe('POST /models managedOnly', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(gatewayModelCatalog(undefined)).length);
   });
 
-  test('a free-tier account gets only the platform default', async () => {
+  test('a free-tier account gets no managed model, the platform default included', async () => {
     const managed = await models({
       principal: { userId: 'u', accountId: 'a', projectId: 'p', keyId: 'k', freeModelsOnly: true },
       managedOnly: true,
     });
 
-    expect(Object.keys(managed)).toEqual([platformDefaultModelId()]);
+    expect(Object.keys(managed)).toEqual([]);
   });
 });
 
@@ -345,7 +350,7 @@ describe('POST /refresh-credential', () => {
     expect(res.status).toBe(200);
     const { descriptor } = (await res.json()) as { descriptor: Record<string, unknown> };
     expect(Object.keys(descriptor).sort()).toEqual(['apiKey', 'headers']);
-    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct' } });
+    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct', session_id: expect.any(String) } });
     expect(refreshCalls).toEqual([{
       projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
     }]);
@@ -439,4 +444,79 @@ describe('the /internal edge key, enforced at the origin', () => {
   test('the gateway, which sends both, is served', async () => {
     expect((await call({ 'x-kortix-internal-edge-key': EDGE })).status).not.toBe(404);
   });
+});
+
+describe('POST /admit — authorize, route, resolve and billing in one call', () => {
+  const principal = { userId: 'u', accountId: 'a', projectId: 'p' };
+  const admit = (body: unknown) => app().request(new Request('http://test/admit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify(body),
+  }));
+  const input = { requestedModel: 'auto', requires: { imageInput: false } };
+
+  test('answers the route, the routed model\'s candidates and the wallet hold of a Kortix-billed model', async () => {
+    authorizeAnswer = { ok: true, principal };
+    billingAnswer = async () => ({ holdUsd: 0.01 });
+    const models: string[] = [];
+    resolveCandidatesMock.mockImplementationOnce(async (_p, model) => { models.push(model); return [{ provider: 'kortix', billingMode: 'credits' }]; });
+    const json = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(models).toEqual(['codex/gpt-5.6-sol']);
+    expect(json.admission).toEqual({ ok: true, principal });
+    expect((json.route as { primaryModel: string }).primaryModel).toBe('codex/gpt-5.6-sol');
+    expect(json.candidates).toEqual([{ provider: 'kortix', billingMode: 'credits' }]);
+    expect(json.billing).toEqual({ active: true, holdUsd: 0.01 });
+    expect(Object.keys(json.timing as object).sort()).toEqual(['authorize', 'billing', 'resolve', 'route', 'total']);
+  });
+
+  test('takes no wallet hold for an own-key model, and returns a resolution error in the body', async () => {
+    authorizeAnswer = { ok: true, principal };
+    let held = 0;
+    billingAnswer = async () => { held += 1; return { holdUsd: 0.01 }; };
+    resolveCandidatesMock.mockResolvedValueOnce([{ provider: 'openai', billingMode: 'none' }]);
+    const own = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(own.billing).toBeUndefined();
+    resolveCandidatesMock.mockRejectedValueOnce(new GatewayResolutionError('provider_not_connected', 'Connect it', 'Connect the provider'));
+    const unresolved = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(unresolved.resolutionError).toEqual({ code: 'provider_not_connected', message: 'Connect it', suggestion: 'Connect the provider' });
+    expect(held).toBe(0);
+  });
+
+  test('a denial answers only the admission, and an unexpected resolve failure leaves resolution to the gateway', async () => {
+    authorizeAnswer = { ok: false, status: 402, errorCode: 'budget_exceeded', principal };
+    const { timing, ...denied } = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(denied).toEqual({ admission: authorizeAnswer });
+    // Per-step milliseconds for the gateway's internal latency split.
+    expect(timing).toMatchObject({ authorize: expect.any(Number), total: expect.any(Number) });
+    authorizeAnswer = { ok: true, principal };
+    resolveCandidatesMock.mockRejectedValueOnce(new Error('db down'));
+    const res = await admit({ token: 't', input });
+    expect(res.status).toBe(200);
+    const json = await res.json() as Record<string, unknown>;
+    expect(json.route).toBeDefined();
+    expect('candidates' in json).toBe(false);
+    authorizeAnswer = { ok: true };
+    billingAnswer = async () => undefined;
+  });
+});
+
+test('full discovery labels managed plan access separately from external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: true },
+  }));
+  expect(res.status).toBe(200);
+  const { models } = await res.json();
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'plan' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
+  expect(models['codex/gpt-5.6-sol']).toMatchObject({ availability: 'login' });
+});
+
+test('paid full discovery marks managed access available without claiming external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: false },
+  }));
+  const { models } = await res.json();
+  expect(res.status).toBe(200);
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'available' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
 });

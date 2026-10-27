@@ -56,6 +56,7 @@ const counts = {
   markSandboxUsed: 0,
   markSandboxErrored: 0,
   resumeStopped: 0,
+  registerRuntimeFork: 0,
 };
 
 // The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
@@ -107,11 +108,24 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
+// A forwarded fork is recorded through projects/surface (#10421); the real
+// module loads the whole projects graph, so the record is counted here.
+mock.module('../../projects/surface', () => ({
+  registerRuntimeFork: async () => {
+    counts.registerRuntimeFork += 1;
+  },
+  // Imported at load by modules this graph pulls in (memory/layers.ts); never called here.
+  resolveUserIdentities: async () => new Map(),
+}));
+// A wake claimed by `/start` or another request leaves the row `stopped` until
+// the provider confirms the box; tests flip this to model that window.
+let wakePending = false;
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);
   },
+  stoppedSandboxWakePending: async () => wakePending,
 }));
 mock.module('../../shared/session-public-shares', () => ({
   ...realPublicShares,
@@ -238,6 +252,7 @@ function forward(overrides?: {
 }
 
 beforeEach(() => {
+  wakePending = false;
   __resetPromptDedupe();
   currentRecord = { ...ACTIVE_RECORD };
   previewAccessAllowed = true;
@@ -371,7 +386,9 @@ describe('forwardToSandbox refusal branches', () => {
 // ── the stopped-box policy at the forwarder ──────────────────────────────────
 
 describe('forwardToSandbox on a stopped sandbox', () => {
-  test('a passive read is 503 from the control plane, with no dial and no wake', async () => {
+  // KRTX-3140: a GET never wakes a stopped box, so `retry: true` kept every
+  // open tab re-reading a parked session's transcript every 15 s, forever.
+  test('a passive read is 503 from the control plane, with no dial, no wake and no retry', async () => {
     currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
     queueFetch(new Response('should never be fetched'));
     const res = await forward({ port: 8000, path: '/session' });
@@ -383,7 +400,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
       hop: 'control_plane',
       upstream_status: null,
       code: 'sandbox_not_ready',
-      retry: true,
+      retry: false,
     });
     expect(res.headers.get('x-kortix-proxy-hop')).toBe('control_plane');
     expect(res.headers.get('x-kortix-upstream-status')).toBeNull();
@@ -391,6 +408,62 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(fetchCalls).toBe(0);
     expect(counts.wakeSandbox).toBe(0);
     expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('a passive read while a wake is in flight still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    wakePending = true;
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('a passive read of a provisioning box still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'provisioning' };
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({
+      error: 'sandbox not ready (status: provisioning)',
+      code: 'sandbox_not_ready',
+      retry: true,
+    });
+  });
+
+  test.each([
+    [8000, '/session/sess-1/fork'],
+    [4096, '/session/sess-1/fork/'],
+    [4097, '/proxy/4096/session/sess-1/fork'],
+    [8000, '/session/sess-1/%66ork'],
+  ])('forking a stopped conversation on port %s at %s returns an actionable conflict', async (port, path) => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port, path, body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('forking an active conversation still forwards the runtime result', async () => {
+    queueFetch(new Response('{"id":"fork-1"}', { status: 200 }));
+    const res = await forward({ method: 'POST', port: 8000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'fork-1' });
+    expect(fetchCalls).toBe(1);
+    expect(counts.registerRuntimeFork).toBe(1);
+    expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('an app route named fork retains the normal stopped-preview response', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port: 3000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(503);
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
   });
 
   test('a browser navigation gets the 200 starting page, not the 5xx', async () => {
@@ -420,6 +493,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     queueFetch(new Response('should stay queued until the box answers'));
     const during = await forward(args);
     expect(during.status).toBe(503);
+    expect(await during.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
     expect(counts.resumeStopped).toBe(1);
     expect(counts.wakeSandbox).toBe(0);
     expect(fetchCalls).toBe(0);
@@ -589,7 +663,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);
@@ -872,6 +946,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?foo=1&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
 
     const shadowed = await resolvePreviewWsUpstream(wsArgs({ queryString: '?pv=client' }));
@@ -879,6 +954,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?pv=tok&pv=client&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
   });
 });

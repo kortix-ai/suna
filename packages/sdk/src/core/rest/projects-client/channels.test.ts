@@ -1,10 +1,21 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  addEmailDomain,
+  addEmailInbox,
+  listEmailInboxes,
+  removeEmailInbox,
+  updateEmailInbox,
   connectEmail,
+  listEmailDomains,
+  verifyEmailDomain,
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
+  connectTelegram,
+  disconnectTelegram,
+  getTelegramInstallation,
+  setTelegramAllowedUsers,
   bindSlackIdentity,
   bindTeamsIdentity,
   previewSlackIdentity,
@@ -22,6 +33,7 @@ import {
   updateEmailPolicy,
   uploadSlackChannelFile,
   type ChannelBinding,
+  type EmailInbox,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -136,7 +148,7 @@ test('getEmailInstallation forwards an optional connector_slug query param', asy
 test('getEmailMode falls back to a safe default on failure', async () => {
   nextResponse = { status: 500, body: {} };
   const result = await getEmailMode('P1');
-  expect(result).toEqual({ provider: 'agentmail', managed_available: false });
+  expect(result).toEqual({ provider: 'resend', managed_available: false });
 });
 
 test('connectEmail posts the connect payload', async () => {
@@ -407,4 +419,157 @@ test('completeTeamsInstall surfaces the refusal code when another user started t
   expect(last().body).toEqual({ code: 'c2', state: 's2' });
   expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
   expect((error as { status?: number }).status).toBe(403);
+});
+
+test('getTelegramInstallation reads the installation and returns null when there is none', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  expect(await getTelegramInstallation('P1')).toEqual({ bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'GET' });
+  expect(last().url).toContain('/projects/P1/channels/telegram/installation');
+
+  nextResponse = { status: 200, body: null };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+  nextResponse = { status: 403, body: { error: 'off', code: 'feature_disabled' } };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+});
+
+test('connectTelegram posts the bot token and allowed user ids', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  const result = await connectTelegram('P1', { bot_token: '123:abc', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'POST', body: { bot_token: '123:abc', allowed_user_ids: ['42'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/connect');
+  expect(result.bot_id).toBe('123');
+});
+
+test('connectTelegram throws the API error message', async () => {
+  nextResponse = { status: 400, body: { error: 'Telegram rejected the bot token', code: 'telegram_token_rejected' } };
+  await expect(connectTelegram('P1', { bot_token: '123:abc' })).rejects.toThrow('Telegram rejected the bot token');
+});
+
+test('setTelegramAllowedUsers replaces the allowed list', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: null, allowed_user_ids: ['1', '2'] } };
+  const result = await setTelegramAllowedUsers('P1', ['1', '2']);
+  expect(last()).toMatchObject({ method: 'PUT', body: { user_ids: ['1', '2'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/allowed-users');
+  expect(result.allowed_user_ids).toEqual(['1', '2']);
+});
+
+test('disconnectTelegram deletes the installation', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await disconnectTelegram('P1');
+  expect(last()).toMatchObject({ method: 'DELETE' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
+});
+
+test('listEmailDomains posts the key in the body, never in the URL', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      managed: false,
+      default_domain: 'kortixmail.com',
+      domains: [
+        { domain_id: null, domain: 'kortixmail.com', status: 'VERIFIED', verified: true, records: [] },
+        { domain_id: 'd1', domain: 'mail.example.com', status: 'PENDING', verified: false, records: [] },
+      ],
+    },
+  };
+  const list = await listEmailDomains('P1', { apiKey: 're_secret' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/domains$/);
+  expect(last().url).not.toContain('re_secret');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ api_key: 're_secret' });
+  expect(list.domains.map((d) => d.domain)).toEqual(['kortixmail.com', 'mail.example.com']);
+});
+
+test('listEmailDomains without a key asks for the managed domain', async () => {
+  nextResponse = {
+    status: 200,
+    body: { managed: true, default_domain: 'kortixmail.com', domains: [] },
+  };
+  const list = await listEmailDomains('P1');
+  expect(last().body).toEqual({});
+  expect(list.managed).toBe(true);
+});
+
+test('addEmailDomain and verifyEmailDomain post to their routes and return the domain with DNS records', async () => {
+  const domain = {
+    domain_id: 'd1',
+    domain: 'mail.example.com',
+    status: 'PENDING',
+    verified: false,
+    records: [{ type: 'TXT', name: '_dmarc.mail.example.com', value: 'v=DMARC1', status: 'MISSING' }],
+  };
+  nextResponse = { status: 200, body: { domain, setup: null } };
+  const added = await addEmailDomain('P1', { apiKey: 're_secret', domain: 'mail.example.com' });
+  expect(last().url).toContain('/projects/P1/channels/email/domains/add');
+  expect(last().body).toEqual({ api_key: 're_secret', domain: 'mail.example.com' });
+  expect(added.domain.records[0]?.type).toBe('TXT');
+
+  nextResponse = { status: 200, body: { domain: { ...domain, status: 'VERIFIED', verified: true }, setup: null } };
+  const checked = await verifyEmailDomain('P1', { apiKey: 're_secret', domainId: 'd1' });
+  expect(last().url).toContain('/projects/P1/channels/email/domains/verify');
+  expect(last().body).toEqual({ api_key: 're_secret', domain_id: 'd1' });
+  expect(checked.domain.verified).toBe(true);
+});
+
+test('addEmailDomain throws the server refusal', async () => {
+  nextResponse = { status: 400, body: { error: 'Resend rejected this API key.', code: 'email_key_rejected' } };
+  await expect(addEmailDomain('P1', { apiKey: 'bad', domain: 'mail.example.com' })).rejects.toThrow(
+    'Resend rejected this API key.',
+  );
+});
+
+const INBOX: EmailInbox = {
+  connection_id: 'c1',
+  inbox_id: 'inb-1',
+  email: 'support@kortixmail.com',
+  display_name: 'Support',
+  label: 'support@kortixmail.com',
+  owner_type: 'project',
+  owner_id: null,
+  is_default: true,
+  managed: true,
+  created_by_kortix: true,
+  sender_policy: { mode: 'allow_all', allowed_emails: [], allowed_domains: [], allowed_regex: null },
+  agent_name: null,
+  created_at: '2026-10-24T00:00:00.000Z',
+};
+
+test('listEmailInboxes reads the accounts of the email connector', async () => {
+  nextResponse = { status: 200, body: { inboxes: [INBOX] } };
+  const inboxes = await listEmailInboxes('P1');
+  expect(last()).toMatchObject({ method: 'GET' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(inboxes).toEqual([INBOX]);
+});
+
+test('addEmailInbox posts the inbox with who may use it; the key travels in the body', async () => {
+  nextResponse = { status: 201, body: { ...INBOX, owner_type: 'member', owner_id: 'u1' } };
+  const inbox = await addEmailInbox('P1', { username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
+  expect(last()).toMatchObject({ method: 'POST' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(last().url).not.toContain('re_secret');
+  expect(last().body).toEqual({ username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
+  expect(inbox.owner_type).toBe('member');
+});
+
+test('updateEmailInbox patches one inbox by its connection id', async () => {
+  nextResponse = { status: 200, body: { ...INBOX, agent_name: 'support' } };
+  const inbox = await updateEmailInbox('P1', 'c1', { agent_name: 'support' });
+  expect(last()).toMatchObject({ method: 'PATCH', body: { agent_name: 'support' } });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(inbox.agent_name).toBe('support');
+});
+
+test('removeEmailInbox deletes one inbox and says whether Resend deleted it too', async () => {
+  nextResponse = { status: 200, body: { status: 'deleted', inbox_deleted: true } };
+  const result = await removeEmailInbox('P1', 'c1');
+  expect(last()).toMatchObject({ method: 'DELETE' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(result).toEqual({ status: 'deleted', inbox_deleted: true });
+});
+
+test('a refused add surfaces the server error', async () => {
+  nextResponse = { status: 400, body: { error: 'Connect your own Resend API key.', code: 'email_key_required' } };
+  await expect(addEmailInbox('P1', { username: 'support' })).rejects.toThrow();
 });

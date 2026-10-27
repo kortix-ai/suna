@@ -305,3 +305,28 @@ function serializeEntries(entries: Array<Record<string, unknown>>): string[] {
   }
   return lines;
 }
+
+describe('extractProjectPolicies — approvals.ttl', () => {
+  const ttl = (value: string) => parseFrom(`approvals:\n  ttl: ${value}\n`).approvalTtlSeconds;
+
+  test('absent → null (the 24 h default)', () => {
+    expect(parseFrom('').approvalTtlSeconds).toBeNull();
+  });
+
+  test('integer + m/h/d → seconds', () => {
+    expect(ttl('30m')).toBe(30 * 60);
+    expect(ttl('4h')).toBe(4 * 3600);
+    expect(ttl('7d')).toBe(7 * 86400);
+  });
+
+  test('clamped to [5m, 30d]', () => {
+    expect(ttl('1m')).toBe(5 * 60);
+    expect(ttl('90d')).toBe(30 * 86400);
+  });
+
+  test('anything else → null, never a throw', () => {
+    for (const bad of ['4', '4w', '1.5h', 'soon', '-2h', '0x1h']) expect(ttl(bad)).toBeNull();
+    expect(parseFrom('approvals:\n  ttl: 12\n').approvalTtlSeconds).toBeNull();
+    expect(parseFrom('approvals: yes\n').approvalTtlSeconds).toBeNull();
+  });
+});

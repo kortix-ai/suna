@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import { useDevelopersCopy } from './use-developers-copy';
 import { SECTION_HEADING } from './shared';

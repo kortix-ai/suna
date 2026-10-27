@@ -8,20 +8,10 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET
   const gw = new Client(ctx.env.gatewayUrl);
   await ctx.step('gateway /health is public', async () => {
     const r = await gw.get('/health');
-    // `degraded` is a traffic metric (error-rate over the last 300s window),
-    // and the gate's own suite drives error traffic through this gateway. What
-    // this flow asserts is the health CONTRACT: the endpoint is public, the
-    // service names itself, and its API dependency is up. Same reasoning as
-    // the preflight in core/target-smoke.ts (#6582): serving-but-degraded is
-    // not an outage; `down`/`unhealthy` still fails.
-    r.status(200).body().has('$.service', 'kortix-llm-gateway');
-    const body = r.json<{ status?: string; checks?: { api?: { status?: string } } }>();
-    const status = body?.status;
-    const apiUp = body?.checks?.api?.status === 'up';
-    if (status !== 'healthy' && !(status === 'degraded' && apiUp)) {
-      throw new Error(
-        `gateway health contract failed: status=${status} api=${body?.checks?.api?.status}`,
-      );
+    r.status(200);
+    const body = r.json<{ status: string }>();
+    if (!['healthy', 'degraded'].includes(body.status) || Object.keys(body).length !== 1) {
+      throw new Error('gateway public health must expose only a serving status');
     }
   });
 });
@@ -29,12 +19,14 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET
 // GW-1b — the API's public streaming bridge to standalone gateway health.
 flow('GW-1b', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
   await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
+    // The bridge forwards to the gateway's gated /health (#10749): a caller
+    // without gateway credentials sees only the serving status, as in GW-1.
     const r = await ctx.client.get('/v1/llm/health');
-    r.status(200)
-      .body()
-      .has('$.status', 'healthy')
-      .has('$.service', 'kortix-llm-gateway')
-      .has('$.checks.api.status', 'up');
+    r.status(200);
+    const body = r.json<{ status: string }>();
+    if (!['healthy', 'degraded'].includes(body.status) || Object.keys(body).length !== 1) {
+      throw new Error(`gateway health bridge must expose only a serving status: ${JSON.stringify(body)}`);
+    }
   });
 });
 
@@ -137,13 +129,9 @@ flow(
 
 // GW-5 — project-scoped LLM catalog surfaces read by the connect modal.
 //   GET /:projectId/llm-catalog           — model-level entries (Record<
-//                                          "provider/model", GatewayModel>),
-//                                          gated by the project's llm_gateway
-//                                          flag.
+//                                          "provider/model", GatewayModel>).
 //   GET /:projectId/llm-catalog/providers  — provider-level rows (id, name,
-//                                          env, docs, models), NOT gated by
-//                                          llm_gateway (BYOK connect modal
-//                                          applies to native projects too).
+//                                          env, docs, models).
 // Both read the same 24h-refreshed runtimeModelCatalog; both enforce
 // project-read authz. Cover both in one flow so the gate can't drift between
 // the two shapes.
@@ -152,7 +140,6 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/llm-catalog',
       'GET /v1/projects/:projectId/llm-catalog/providers',
     ],
@@ -183,12 +170,7 @@ flow(
       });
     }
 
-    await ctx.step('enabled catalog retains published rates for ChatGPT picker rows', async () => {
-      (await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/experimental',
-        { feature: 'llm_gateway', enabled: true },
-        { params },
-      )).status(200);
+    await ctx.step('the catalog retains published rates for ChatGPT picker rows', async () => {
       const response = await ctx.client.as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/llm-catalog', { params });
       response.status(200);
@@ -348,15 +330,6 @@ flow(
     await ctx.step(
       'compact project model picker is available without the full runtime catalog',
       async () => {
-        const enabled = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/experimental',
-            { feature: 'llm_gateway', enabled: true },
-            { params },
-          );
-        enabled.status(200);
-
         const picker = await ctx.client
           .as(ctx.P.OWNER)
           .get('/v1/projects/:projectId/model-picker', { params });
@@ -422,6 +395,23 @@ flow(
         .has('$.route.fallbackOn', 'transient');
     });
 
+    await ctx.step('the project chain covers a model that is not the default and has no override', async () => {
+      const other = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          { requestedModel: 'anthropic/claude-sonnet-4-6', imageInput: false },
+          { params },
+        );
+      other
+        .status(200)
+        .body()
+        .has('$.route.policyId', 'project:default')
+        .has('$.route.primaryModel', 'anthropic/claude-sonnet-4-6')
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
+        .has('$.route.fallbackOn', 'any-error');
+    });
+
     await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {
       const invalid = await ctx.client.as(ctx.P.OWNER).put(
         '/v1/projects/:projectId/gateway/routing-policy',
@@ -472,9 +462,11 @@ flow(
 flow('GW-ACCESS-1', {
   domain: 'llm-gateway',
   routes: [
+    'GET /v1/projects/:projectId',
+    'PATCH /v1/projects/:projectId/features',
+    'PATCH /v1/projects/:projectId/experimental',
     'GET /v1/projects/:projectId/model-access',
     'PUT /v1/projects/:projectId/model-access',
-    'PATCH /v1/projects/:projectId/experimental',
     'PUT /v1/projects/:projectId/gateway/routing-policy',
     'POST /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/gateway/keys',
@@ -496,8 +488,21 @@ flow('GW-ACCESS-1', {
   const request = (model: string) => gateway.withBearer(key, 'PROJECT_GATEWAY_KEY')
     .post('/v1/llm/chat/completions', { model, messages: [{ role: 'user', content: 'Reply OK' }], max_tokens: 4 });
 
+  await ctx.step('the graduated llm_gateway key is unknown: /features and /experimental → 400, no catalog row, the wire reads true', async () => {
+    for (const route of ['/v1/projects/:projectId/features', '/v1/projects/:projectId/experimental'] as const) {
+      (await owner.patch(route, { feature: 'llm_gateway', enabled: false }, { params })).status(400)
+        .body().has('$.error', "Unknown feature flag 'llm_gateway'");
+    }
+    const read = await owner.get('/v1/projects/:projectId', { params });
+    // Old clients and CLIs read this value; the gateway serves every project.
+    read.status(200).body().has('$.experimental.llm_gateway', true);
+    const rows = read.json<{ experimental_features: Array<{ key: string }> }>().experimental_features;
+    if (rows.some((f) => f.key === 'llm_gateway')) {
+      throw new Error(`the catalog still lists llm_gateway: ${JSON.stringify(rows)}`);
+    }
+  });
+
   await ctx.step('new project has no explicit restrictions and uses a non-managed default', async () => {
-    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params })).status(200);
     (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
       defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
     }, { params })).status(200);
@@ -696,7 +701,6 @@ flow('GW-MANAGED-1', {
   requires: ['stripe'],
   timeoutMs: 300_000,
   routes: [
-    'PATCH /v1/projects/:projectId/experimental',
     'POST /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
@@ -710,23 +714,20 @@ flow('GW-MANAGED-1', {
   const project = await team.project();
   const params = { projectId: project.id };
   let key = '';
-  await ctx.step('the project turns on the gateway and mints a gateway key', async () => {
-    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params }))
-      .status(200);
+  await ctx.step('the project mints a gateway key', async () => {
     const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
     minted.status(200).body().exists('$.secret_key');
     key = minted.json<{ secret_key: string }>().secret_key;
   });
 
   let managed: string[] = [];
-  await ctx.step('the picker offers Kimi K3, DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, and no OpenAI or Anthropic model', async () => {
+  await ctx.step('the picker offers DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, not the retired Kimi K3, and no OpenAI or Anthropic model', async () => {
     const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
     picker.status(200);
     const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
       .models;
     managed = Object.keys(models).filter((id) => !id.includes('/'));
     for (const [id, name] of [
-      ['kimi-k3', 'Kimi K3 2.8T'],
       ['deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
       ['glm-5.3-flash', 'GLM 5.3 Flash'],
     ] as const) {
@@ -735,6 +736,9 @@ flow('GW-MANAGED-1', {
         throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
       }
     }
+    // #10286 retired Kimi K3 (2026-10-19): `kimi-k3` is an alias of the
+    // default now, never a model of its own in the picker.
+    if ('kimi-k3' in models) throw new Error(`picker still offers the retired kimi-k3: ${JSON.stringify(models['kimi-k3'])}`);
     const vendor = managed.filter((id) => /^(gpt|claude|o\d)/.test(id));
     if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
   });
@@ -770,23 +774,12 @@ flow('GW-MANAGED-1', {
       }
       return { model, status, detail };
     };
-    // Known defect, 2026-10-09: OpenRouter raised fireworks/us for kimi-k3 to
-    // $4.50/$22.50 per million, above the catalog max_price ($3.30/$16.50), so
-    // every kimi-k3 call answers 503 model_unavailable. The pricing decision is
-    // open. Remove this skip when packages/llm-catalog kimi-k3 routes again.
-    const knownUnavailable = process.env.KE2E_TARGET === 'staging' ? new Set(['kimi-k3']) : new Set<string>();
-    for (const id of managed.filter((m) => knownUnavailable.has(m))) {
-      log.warn(`GW-MANAGED-1: ${id} skipped, known upstream price-cap defect (2026-10-09)`);
-    }
-    const results = await Promise.all(managed.filter((m) => !knownUnavailable.has(m)).map(ask));
+    const results = await Promise.all(managed.map(ask));
     const answered = results.filter((r) => r.status === 200 && /\bred\b/i.test(r.detail));
     // The gateway answers a model it cannot route with the documented
-    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). `kimi-k3`
-    // does so on 6 of the last 17 gate runs: since 2026-10-09 its only route is
-    // above the catalog max_price (an open pricing decision in
-    // packages/llm-catalog), yet the picker still offers it. The gate must not
-    // depend on one upstream provider, so the answer counts beside at least one
-    // model that answered, and the run logs it. Any other status (400 for an
+    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). The
+    // gate must not depend on one upstream provider, so the answer counts
+    // beside at least one model that answered, and the run logs it. Any other status (400 for an
     // image the model refuses, 401, 404, 500) fails, and so does a gateway where
     // no model answers.
     const unavailable = (r: { status: number; detail: string }) =>

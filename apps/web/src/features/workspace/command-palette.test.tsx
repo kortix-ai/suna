@@ -10,10 +10,10 @@ import {
   SETTINGS_TABS,
   resolveSettingsOverlayHref,
   type SettingsTab,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP, sessionMatchesPaletteQuery } from './command-palette';
+import { LEGACY_SETTINGS_TAB_MAP, firstChatMatchesPaletteQuery, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -194,7 +194,7 @@ describe('search terms carried across from the removed registry entries', () => 
     ['cli', 'tokens'],
     // Everything else that used to be listed here named a tab that has left
     // this rail. The thirteen project-configuration words (secrets, env, git,
-    // github, members, collaborators, slack, agentmail, llm, openrouter,
+    // github, members, collaborators, slack, telegram, llm, openrouter,
     // marketplace, approvals, livekit, templates, danger zone, customize) are
     // answered by the `proj-customize` registry row now — pinned in the case
     // below — and the eight account words (subscription, ledger, pat, sso, …)
@@ -266,7 +266,7 @@ describe('search terms carried across from the removed registry entries', () => 
       ['members', 'proj-members'],
       ['collaborators', 'proj-members'],
       ['slack', 'proj-channels'],
-      ['agentmail', 'proj-channels'],
+      ['telegram', 'proj-channels'],
       ['llm', 'proj-models'],
       ['openrouter', 'proj-models'],
       ['approvals', 'proj-review-inbox'],
@@ -556,6 +556,26 @@ describe('palette session search', () => {
     expect(sessionMatchesPaletteQuery(session, 'ses_abc')).toBe(true);
     expect(sessionMatchesPaletteQuery(session, 'abc123')).toBe(false);
     expect(sessionMatchesPaletteQuery(session, 'quarterly')).toBe(true);
+  });
+});
+
+/**
+ * KRTX-2476: the sidebar lists "Your first chat with Kortix" under Sessions,
+ * but it is not a session yet, so the server search never returns it. The
+ * palette matches it by its title while it is pending.
+ */
+describe('palette first-chat search', () => {
+  const title = 'Your first chat with Kortix';
+
+  test('matches its title while the first chat is pending', () => {
+    expect(firstChatMatchesPaletteQuery(true, title, 'first')).toBe(true);
+    expect(firstChatMatchesPaletteQuery(true, title, 'your first chat with kortix')).toBe(true);
+    expect(firstChatMatchesPaletteQuery(true, title, 'quarterly')).toBe(false);
+  });
+
+  test('never matches once it is gone, or for an empty query', () => {
+    expect(firstChatMatchesPaletteQuery(false, title, 'first')).toBe(false);
+    expect(firstChatMatchesPaletteQuery(true, title, '')).toBe(false);
   });
 });
 

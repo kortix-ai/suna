@@ -28,6 +28,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import {
   acceptAccountInviteAndLand,
   accountInviteLanding,
@@ -73,7 +74,7 @@ export default function InviteScreen() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { t } = useLanguage();
-  const { user, isAuthenticated, mfaRequired, signOut } = useAuthContext();
+  const { user, isAuthenticated, mfaRequired } = useAuthContext();
   const signedIn = isAuthenticated && !mfaRequired;
 
   // This screen shows the remembered link, so the start screen must not open
@@ -155,21 +156,17 @@ export default function InviteScreen() {
     leave();
   }, [id, leave]);
 
-  const [signingOut, setSigningOut] = React.useState(false);
+  const { signingOut, signOutAndRoute } = useSignOutAndRoute();
   const signOutAndContinue = React.useCallback(async () => {
     if (signingOut) return;
-    setSigningOut(true);
     // Sign-in ends at `/`, which opens this invite again.
     rememberInviteLink(id);
-    const result = await signOut().catch(() => null);
-    setSigningOut(false);
-    if (result?.success) {
-      router.replace('/auth');
-      return;
+    const signedOut = await signOutAndRoute();
+    if (!signedOut) {
+      takeInviteLink();
+      toast.error(t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.'));
     }
-    takeInviteLink();
-    toast.error(t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.'));
-  }, [id, router, signOut, signingOut, t, toast]);
+  }, [id, signingOut, signOutAndRoute, t, toast]);
 
   const backToProjects = (
     <Button size="lg" variant="secondary" className="rounded-full" onPress={leave}>
@@ -196,14 +193,35 @@ export default function InviteScreen() {
         {backToProjects}
       </Message>
     );
+  } else if (!invite.email_matches_caller && invite.reason === 'email_unconfirmed') {
+    // A directory invite this instance cannot prove the address for. The web
+    // invite page signs in through the account's own IdP; the app has no
+    // provider-id sign-in yet.
+    content = (
+      <Message
+        title={t('invites.directoryTitle', 'Sign in with single sign-on')}
+        body={t(
+          'invites.directoryBody',
+          "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+        )}>
+        {backToProjects}
+      </Message>
+    );
   } else if (!invite.email_matches_caller) {
     content = (
       <Message
         title={t('invites.wrongAccountTitle', 'Switch accounts')}
-        body={t('invites.wrongAccountBody', {
-          defaultValue: "This invite is addressed to a different account. You're signed in as {{email}}.",
-          email: user?.email ?? '',
-        })}>
+        body={
+          invite.reason === 'sso_email_domain_unverified'
+            ? t(
+                'invites.ssoDomainUnverifiedBody',
+                "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
+              )
+            : t('invites.wrongAccountBody', {
+                defaultValue: "This invite is addressed to a different account. You're signed in as {{email}}.",
+                email: user?.email ?? '',
+              })
+        }>
         <Button size="lg" className="rounded-full" disabled={signingOut} onPress={signOutAndContinue}>
           <Text>{t('invites.signOutAndContinue', 'Sign out and continue')}</Text>
         </Button>

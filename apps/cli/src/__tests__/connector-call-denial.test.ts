@@ -176,6 +176,57 @@ describe('a denied connector call carries its remedy', () => {
     });
   });
 
+  test('CLI: a gated call prints token-free decision commands', async () => {
+    const approvalUrl = `https://app.kortix.test/approve/${'synthetic-token'.repeat(40)}`;
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          execution_id: 'exec-pending',
+          retryable: false,
+          approval_url: approvalUrl,
+          approval_summary: 'one synthetic write',
+          approval_instructions: 'Share approval_url with a human.',
+        },
+        202,
+      );
+
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(0);
+    expect(result.payload.status).toBe('pending_approval');
+    expect(result.payload.execution_id).toBe('exec-pending');
+    expect(result.payload.approval_summary).toBe('one synthetic write');
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending approve --project ${PROJECT_ID}`,
+    );
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending reject --project ${PROJECT_ID}`,
+    );
+    expect(result.stdout).not.toContain(approvalUrl);
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.payload).not.toHaveProperty('approval_url');
+    expect(captured).toHaveLength(1);
+  });
+
+  test('CLI: an older gated response without an execution id has no broken command', async () => {
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          approval_url: 'https://app.kortix.test/approve/synthetic-token',
+        },
+        202,
+      );
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+    expect(result.code).toBe(0);
+    expect(result.payload.approval_instructions).toContain('Review Center');
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.stdout).not.toContain('call:undefined');
+  });
+
   test('CLI: a valueless --account/--reason is a flag typo, never sent as a name', async () => {
     respondWith = () =>
       jsonResponse({ ok: true, status: 'ok', data: {}, account: { label: 'Work' } });
@@ -206,5 +257,49 @@ describe('a denied connector call carries its remedy', () => {
     // `kortix mcp` itself was removed in #7881; never point people at it.
     expect(String(result.payload.error)).not.toContain('`kortix mcp`');
     expect(captured).toEqual([]);
+  });
+});
+
+describe('a call that did not do its job exits 1', () => {
+  test('CLI: a tool_error prints the tool error and exits 1', async () => {
+    respondWith = () =>
+      jsonResponse({ ok: false, status: 'tool_error', error: 'issue LIN-9 not found', result: { isError: true } });
+
+    const result = await runCli(['connectors', 'call', 'crm', 'get_issue', '{"id":"LIN-9"}', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(1);
+    expect(result.payload).toMatchObject({ ok: false, status: 'tool_error', error: 'issue LIN-9 not found' });
+  });
+
+  test('CLI: an upstream error inside a 2xx (older API) also exits 1', async () => {
+    respondWith = () => jsonResponse({ ok: true, status: 'ok', data: {}, upstream_error: 'GraphQL errors' });
+
+    const result = await runCli(['connectors', 'call', 'crm', 'query', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(1);
+    expect(result.payload).toMatchObject({ ok: false, status: 'tool_error', error: 'GraphQL errors' });
+  });
+
+  test('CLI: a rejected token says so in a sentence; --json keeps the payload', async () => {
+    respondWith = () => jsonResponse({ error: 'session token expired' }, 401);
+    const proc = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, 'connectors', 'call', 'crm', 'whoami', '--project', PROJECT_ID],
+      cwd: CLI_ROOT,
+      env: cliEnv(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Token rejected — session token expired. Run `kortix login`');
+
+    const json = await runCli(['connectors', 'call', 'crm', 'whoami', '--json', '--project', PROJECT_ID]);
+    expect(json.code).toBe(1);
+    expect(json.payload).toMatchObject({ ok: false, code: 'unauthorized' });
   });
 });

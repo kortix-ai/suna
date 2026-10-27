@@ -2,81 +2,67 @@
 
 import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
 
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Case-study MDX kit. Presentational blocks authors compose inside a use-case
- * `.mdx` to tell an enterprise-grade story: problem → build → proof. Built to
- * the marketing design language — `rounded-sm`, the `bg-border … gap-px`
- * divider grid, `Badge`-style mono eyebrows — so a case study reads as the same
- * surface as the landing page. Each root resets the inherited <BlogProse>
- * paragraph spacing it owns.
+ * `.mdx` to tell the story: problem → build → proof. Built to the Buio
+ * marketing language: no boxes, no radius, no fills. Structure comes from
+ * hairlines in `border-border`, and every block uses the two text colours
+ * only. Each root resets the inherited <BlogProse> spacing it owns.
  */
 
-// Neutralize BlogProse's `[&_p]:my-5` inside our own boxes and control spacing.
+// Neutralize BlogProse's `[&_p]:my-5` inside our own blocks and control spacing.
 const proseReset = '[&_p]:!my-0 [&_p+p]:!mt-3 [&_ul]:!my-3 [&_ol]:!my-3 [&_li]:!pl-1';
 
-/** "At a glance" fact sheet — the signature divider grid. Compose with
- * <Fact label="…">value</Fact>. */
+/** "At a glance" fact sheet: a row of label / value pairs between two
+ * hairlines. Compose with <Fact label="…">value</Fact>. */
 export function KeyFacts({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-border border-border my-8 grid grid-cols-2 gap-px overflow-hidden rounded-sm border sm:grid-cols-4">
-      {children}
-    </div>
+    <dl className="border-border my-10 grid grid-cols-2 border-y sm:grid-cols-4">{children}</dl>
   );
 }
 
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="bg-card flex flex-col gap-2 p-5 md:p-6">
-      <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-        {label}
-      </span>
-      <span className="text-foreground text-sm leading-snug font-medium">{children}</span>
+    <div className="py-6 pr-6">
+      <dt className="text-muted-foreground text-sm">{label}</dt>
+      <dd className={cn('text-foreground mt-1 text-base font-medium text-pretty', proseReset)}>
+        {children}
+      </dd>
     </div>
   );
 }
 
-/** Emphasis box for a key point or aside. */
+/** Emphasis for a key point or aside: a 1px ink rule on the left. `tone` is
+ * kept for existing content and no longer changes the look. */
 export function Callout({
   title,
   children,
-  tone = 'neutral',
 }: {
   title?: string;
   children: ReactNode;
   tone?: 'neutral' | 'accent';
 }) {
   return (
-    <div
-      className={cn(
-        'border-border my-8 flex gap-4 rounded-sm border p-6 md:p-7',
-        tone === 'accent' ? 'bg-kortix-base/[0.06]' : 'bg-card',
-      )}
-    >
-      <KortixAsterisk index={0} parentClass="mt-0.5 size-5 shrink-0" />
-      <div className={cn('min-w-0', proseReset)}>
-        {title && (
-          <p className="text-foreground !mb-2 text-base font-medium tracking-tight">{title}</p>
-        )}
-        <div className="text-muted-foreground text-sm leading-relaxed">{children}</div>
-      </div>
-    </div>
+    <aside className={cn('border-foreground my-10 border-l pl-6', proseReset)}>
+      {title ? <p className="text-foreground !mb-2 text-base font-medium">{title}</p> : null}
+      <div className="text-muted-foreground">{children}</div>
+    </aside>
   );
 }
 
-/** Numbered step-by-step, connected as one divider grid. Wrap <Step title="…">
- * items; numbering is automatic. */
+/** Numbered step-by-step as one hairline list. Wrap <Step title="…"> items;
+ * numbering is automatic. */
 export function Steps({ children }: { children: ReactNode }) {
   const steps = Children.toArray(children).filter(isValidElement);
   return (
-    <div className="bg-border border-border my-8 grid gap-px overflow-hidden rounded-sm border">
+    <ol className="border-border my-10 !list-none border-b !pl-0">
       {steps.map((child, i) =>
         cloneElement(child as any, { number: i + 1, key: (child as any).key ?? i }),
       )}
-    </div>
+    </ol>
   );
 }
 
@@ -90,24 +76,15 @@ export function Step({
   number?: number;
 }) {
   return (
-    <div className="bg-card p-6">
-      <div className="flex items-baseline gap-4">
-        <span className="text-foreground/25 font-mono text-lg font-medium tabular-nums">
-          {String(number ?? 0).padStart(2, '0')}
-        </span>
-        <h3 className="text-foreground !m-0 text-lg font-medium tracking-tight sm:text-xl">
-          {title}
-        </h3>
+    <li className="border-border flex gap-6 border-t py-6 !pl-0">
+      <span className="text-muted-foreground w-6 shrink-0 text-base tabular-nums">
+        {number ?? 0}
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-foreground !m-0 !text-base font-medium">{title}</h3>
+        <div className={cn('text-muted-foreground mt-2', proseReset)}>{children}</div>
       </div>
-      <div
-        className={cn(
-          'text-muted-foreground mt-4 pl-10 text-[0.95rem] leading-relaxed',
-          proseReset,
-        )}
-      >
-        {children}
-      </div>
-    </div>
+    </li>
   );
 }
 
@@ -127,53 +104,46 @@ export function Figure({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <figure className="my-8">
+    <figure className="my-10">
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={alt ?? caption ?? ''}
           loading="lazy"
-          className="border-border !my-0 w-full rounded-sm border"
+          className="border-border !my-0 w-full !rounded-none border"
         />
       ) : (
         <div
-          className="border-border bg-muted/40 text-muted-foreground/70 flex items-center justify-center rounded-sm border border-dashed"
+          className="bg-muted text-muted-foreground flex items-center justify-center text-sm"
           style={{ aspectRatio: aspect }}
         >
-          <span className="flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-            <KortixAsterisk index={0} parentClass="size-3.5" variant="solid" />
-            {caption
-              ? tI18nComplete('text9b1a9ce91460', { value0: caption })
-              : tI18nComplete.raw('text907c7115cf85')}
-          </span>
+          {caption
+            ? tI18nComplete('text9b1a9ce91460', { value0: caption })
+            : tI18nComplete.raw('text907c7115cf85')}
         </div>
       )}
-      {caption && (
-        <figcaption className="text-muted-foreground mt-3 font-mono text-xs tracking-wide">
-          {caption}
-        </figcaption>
-      )}
+      {caption ? (
+        <figcaption className="text-muted-foreground mt-3 text-sm">{caption}</figcaption>
+      ) : null}
     </figure>
   );
 }
 
-/** Outcome tiles — divider grid. Compose with <Stat value="…" label="…" />. */
+/** Outcome figures in a hairline row. Compose with <Stat value="…" label="…" />. */
 export function StatGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-border border-border my-8 grid grid-cols-1 gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
-      {children}
-    </div>
+    <dl className="border-border my-10 grid grid-cols-1 border-t sm:grid-cols-3">{children}</dl>
   );
 }
 
 export function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <div className="bg-card flex flex-col p-6 md:p-8">
-      <span className="text-foreground text-xl leading-none font-medium tracking-tight sm:text-2xl">
+    <div className="flex flex-col py-6 pr-6">
+      <dt className="text-muted-foreground mt-2 text-sm text-pretty">{label}</dt>
+      <dd className="text-foreground order-first text-2xl font-medium tracking-tight">
         {value}
-      </span>
-      <span className="text-muted-foreground mt-3 text-sm leading-relaxed">{label}</span>
+      </dd>
     </div>
   );
 }
@@ -181,9 +151,8 @@ export function Stat({ value, label }: { value: string; label: string }) {
 /** Large pull quote to break up the read and land the key line. */
 export function PullQuote({ children }: { children: ReactNode }) {
   return (
-    <blockquote className="my-12 !border-l-0 !pl-0 text-center">
-      <KortixAsterisk index={0} parentClass="mx-auto mb-5 size-6" />
-      <p className="text-foreground mx-auto max-w-2xl text-xl leading-snug font-medium tracking-tight text-balance !not-italic sm:text-2xl">
+    <blockquote className="my-12 !border-l-0 !pl-0">
+      <p className="text-foreground text-xl font-medium tracking-tight text-balance !not-italic md:text-2xl">
         {children}
       </p>
     </blockquote>

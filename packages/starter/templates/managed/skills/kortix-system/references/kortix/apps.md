@@ -82,7 +82,7 @@ builds once more; a second refusal fails the deployment with
 | Mode | Behavior | Use it for |
 | --- | --- | --- |
 | Always on (`always_on: true`, `--always-on`) | Runs 24/7. Keep-alive restarts it within 5 minutes if it stops. | An App that holds websockets open or runs its own background loop. |
-| On demand (`always_on: false`, `--on-demand`) | Stops after `idle_timeout_seconds` without requests. The next authorized request wakes it. | Every App that only answers requests. |
+| On demand (`always_on: false`, `--on-demand`) | Stops after `idle_timeout_seconds` (120–86400) without requests. The next authorized request, or a trigger that calls the App, wakes it. A stop keeps the disk and loses memory. | Every App that only answers requests, and a poller a schedule calls (`run: { app, path }`). |
 
 A new App is always on unless `--on-demand` or `always_on: false` says
 otherwise (operator default `KORTIX_APPS_DEFAULT_ALWAYS_ON`).
@@ -115,7 +115,7 @@ minutes, without a redeploy. A machine size change applies to the next
 release: a new release with a new `vm` resizes without an image rebuild.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
-On Daytona and E2B (self-host), the VM keeps the provider's idle backstop and
+On the legacy Daytona fallback (self-host), the VM keeps the provider's idle backstop and
 keep-alive renews it. When the provider stops the VM anyway, keep-alive
 restarts it within 5 minutes, so the App can be unreachable for up to 5
 minutes.
@@ -127,7 +127,7 @@ then deploy its output directory:
 
 ```sh
 npm --prefix apps/storefront run build
-kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa --listed
 ```
 
 The command performs these operations:
@@ -141,6 +141,8 @@ The command performs these operations:
 6. Prints the stable App URL.
 
 The new App uses `private` access unless `--access` selects another mode.
+It sits in the **Background** list unless `--listed` makes it a card on the
+Apps page (see Listed and background Apps).
 
 Use `--no-wait` only when another process will poll deployment state. The
 default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
@@ -148,7 +150,12 @@ default wait limit is 1,200 seconds. Change it with `--wait-seconds`.
 ## Repeatable v2 manifest
 
 The `apps:` map is available only in `kortix_version: 2` YAML manifests.
-It contains deployment defaults. It does not auto-deploy on merge.
+kortix.yaml is the source of truth for each App's `resources`,
+`idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
+from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
+applies them on sync without a deploy. Deleting an App removes its block.
+The release config (`env`, `secrets`, `processes`, `http_service`,
+`services`, `mounts`, `vm`, `deploy`) applies at the next deploy.
 
 ```yaml
 apps:
@@ -156,6 +163,7 @@ apps:
     path: apps/storefront/dist
     type: static
     spa: true
+    display: { listed: true }   # people open it: a card on the Apps page
   api:
     path: apps/api
     type: dockerfile
@@ -195,8 +203,9 @@ kortix apps deploy --manifest-app storefront
 ```
 
 When the manifest declares exactly one App, bare `kortix apps deploy` selects
-it. CLI flags override manifest fields. A deploy with `--manifest-app` writes
-the block's `resources`, `idle_timeout_seconds`, `always_on`, `labels` and `display` to
+it. With several, bare `deploy` deploys every block that has a `path` or
+`image` and skips the rest. CLI flags override manifest fields. A deploy with
+`--manifest-app` (and every sync of the file) writes the block's `resources`, `idle_timeout_seconds`, `always_on`, `labels` and `display` to
 the App and sends the release config (`processes`, `http_service`,
 `services`, `mounts`, `vm`, `deploy`). `kortix validate` refuses the same
 config the API refuses.
@@ -233,7 +242,7 @@ apps:
 
 | Field | Meaning |
 | --- | --- |
-| `uses` | Apps of the project, by slug, this App uses: it may bind to them and mint their sign-in tokens. Replaces the App's list on every deploy. |
+| `uses` | Apps of the project, by slug, this App uses: it may bind to them and mint their sign-in tokens. Replaces the App's list on every deploy and every sync of the file. |
 | `path` | Source path relative to the manifest. Default `.`. |
 | `type` | `static`, `bundle`, `dockerfile`, or `oci_image`. |
 | `image` | Public OCI image reference. Required for `oci_image`. |
@@ -247,12 +256,12 @@ apps:
 | `spa` | Serve `index.html` for a page navigation to a path that does not exist. |
 | `readiness_path` | Server Apps: HTTP path polled before activation. Default `/`. |
 | `always_on` | Server Apps: `true` runs 24/7, `false` runs on demand. Default `true` for a new App. |
-| `idle_timeout_seconds` | On-demand server Apps: stop after no traffic. Minimum `120`; default `300`. |
+| `idle_timeout_seconds` | On-demand server Apps: stop after no traffic. `120`–`86400`; default `300`. |
 | `resources` | Server Apps: `cpu`, `memory_gb`, and `disk_gb`. Defaults `1`, `2`, and `10`. |
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |
 | `labels` | Free-form tags (for example `backend`). They group and filter Apps; no behavior depends on them. |
-| `display` | Where Kortix shows the App; presentation only. `listed` (default `true`: a card in the Apps grid), `preview` (`live`, the default, frames the App on its card; `none` shows an icon), `parent` (another App of the file: this App is a tab in its detail, not a card). Absent = the defaults. |
+| `display` | Where Kortix shows the App; presentation only. `listed` (default `false`: the App sits in the **Background** list; `true` makes it a card on the Apps page), `preview` (`live`, the default, frames the App on its card; `none` shows an icon), `parent` (another App of the file: this App is a tab in its detail, not a card). Absent = the defaults. |
 | `processes` | Process group name → shell command (`""` runs the image's own command). Default: one group, `app`. |
 | `http_service` | The primary service: `internal_port`, `access` (`public`, `app`, `admins`), `auto_stop_machines` (`off`, `stop`, `suspend`), `auto_start_machines`, `min_machines_running`, `processes`, `checks`. `port` is the shorthand for `internal_port`. |
 | `services` | More HTTP services, each `{ name, internal_port, access, processes }`, on `<App host>--<name>`. |
@@ -401,10 +410,33 @@ streaming responses, and WebSockets.
 The user process never receives the runtime control token. Provider credentials
 never enter the App environment.
 
+## Listed and background Apps
+
+An App is a card on the Apps page only with `display.listed: true`
+(`--listed`, or Settings → "Show on Apps page"). Every other App sits in the
+**Background** list: status, kind, run mode, what calls it and its last
+activity. Opening a background App shows its overview (how it runs, what
+calls it, which agents it starts, size, URL, version); **Open** shows its page.
+An external App (`kortix apps create <slug> --url <https-url>`) is listed on
+create. Deploy an App people open (a site, a UI, a dashboard) with
+`--listed`; leave backends, workers and pollers unlisted.
+
+## App events, App targets and scheduled runs
+
+A server App reports what it sees by posting **App events** to
+`$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`
+(`$KORTIX_APP_ID` is its id). A trigger (`on: { event, app }`) decides which
+agent runs; the App never starts an agent itself. A trigger with
+`run: { app, path }` calls the App on a schedule or an event, waking an
+on-demand App. The App can also schedule its own later call with
+`POST …/apps/<app_id>/runs`. Formats, limits and the order of preference:
+`references/scheduling.md` → App events, Call an App, App-scheduled runs.
+
 ## Cold start and stop (server Apps)
 
-An on-demand App's idle stop preserves the runtime. The next request starts the sandbox, waits
-for readiness, and then proxies the request. Concurrent wake requests share one
+An on-demand App's idle stop keeps the disk and loses memory. The next
+request, or a trigger that calls the App, starts the machine, waits for
+readiness, and then sends the request. Concurrent wake requests share one
 database lease.
 
 `kortix apps stop <app>` suspends compute immediately, in either mode, and

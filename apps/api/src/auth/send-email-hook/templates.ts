@@ -126,9 +126,11 @@ export function renderAuthEmail(input: {
   if (input.actionType === 'reauthentication') return renderCode(input.token);
 
   const copy = COPY[input.actionType];
+  const code = input.actionType === 'signup' || input.actionType === 'magiclink' ? input.token : undefined;
   const body = `
     <p style="${S.p}">${escapeHtml(copy.lead)}</p>
     ${actionButton(input.actionUrl, copy.cta)}
+    ${code ? `<p style="${S.p}">Or enter this code on the sign-in screen:</p><div style="${S.chipWrap}"><span style="${S.code}">${escapeHtml(code)}</span></div>` : ''}
     <p style="${S.smallNote}">${escapeHtml(copy.note)}</p>
   `;
   return {
@@ -138,6 +140,7 @@ export function renderAuthEmail(input: {
       title: copy.title,
       paragraphs: [copy.lead],
       cta: { url: input.actionUrl, label: copy.cta },
+      code,
       note: copy.note,
     }),
     category: `auth-${input.actionType.replace(/_/g, '-')}`,

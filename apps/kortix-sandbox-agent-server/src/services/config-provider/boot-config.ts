@@ -113,6 +113,7 @@ export function releaseDir(root: string, releaseId: string): string {
 /**
  * The release root `path` is in (a release is a checkout of the repository at
  * one commit), or null when `path` is not inside a release in the store.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function releaseRootOf(path: string, root: string = bootConfigRoot()): string | null {
   const rel = relative(resolve(root), resolve(path))
@@ -121,7 +122,10 @@ export function releaseRootOf(path: string, root: string = bootConfigRoot()): st
   return isReleaseId(first) ? join(resolve(root), first) : null
 }
 
-/** The release's files under its OpenCode config dir, relative to that dir. */
+/**
+ * The release's files under its OpenCode config dir, relative to that dir.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function configDirFiles(files: readonly ConfigReleaseFile[], configDir: string | null): ConfigReleaseFile[] {
   if (!configDir) return []
   const prefix = `${configDir}/`
@@ -148,7 +152,10 @@ async function managedSkillNames(dir: string | undefined): Promise<Set<string>> 
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
 }
 
-/** Is `dir` a release in the store (the platform's own copy)? */
+/**
+ * Is `dir` a release in the store (the platform's own copy)?
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): boolean {
   return insideRoot(root, dir)
 }
@@ -298,11 +305,15 @@ export async function extractConfigArchive(
   for (const [target, linkText] of symlinks) await symlink(linkText.toString('utf8'), target)
 }
 
-export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+async function writeStoreJson(root: string, name: string, value: unknown, destination = () => join(root, name)): Promise<void> {
   await mkdir(root, { recursive: true })
-  const staged = join(root, `${manifest.release_id}.json.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(manifest)}\n`, { mode: 0o644 })
-  await rename(staged, manifestPath(root, manifest.release_id))
+  const staged = join(root, `${name}.${randomUUID()}.tmp`)
+  await writeFile(staged, `${JSON.stringify(value)}\n`, { mode: 0o644 })
+  await rename(staged, destination())
+}
+
+export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+  await writeStoreJson(root, `${manifest.release_id}.json`, manifest, () => manifestPath(root, manifest.release_id))
 }
 
 /** The manifest of a release in the store, or null when it is missing or malformed. */
@@ -670,6 +681,7 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
  * the link is repointed to the chosen config before the workspace gate opens.
  * OpenCode reads the directory at Instance init, on the first
  * directory-scoped request, so the repointed target is what it loads.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function bootLinkPath(root: string = bootConfigRoot()): string {
   return join(root, 'boot')
@@ -681,6 +693,7 @@ export function bootLinkPath(root: string = bootConfigRoot()): string {
  * `OPENCODE_CONFIG_DIR` is the link and only the link, so this is how anything
  * asks "which config dir does OpenCode read?" without keeping a second copy of
  * the answer in memory.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function readBootLinkTarget(root: string = bootConfigRoot()): Promise<string | null> {
   try {
@@ -695,12 +708,16 @@ export async function readBootLinkTarget(root: string = bootConfigRoot()): Promi
  * where project tools load from. Absent when no release is served. A release
  * with no OpenCode config dir serves the image default, so the boot link
  * alone cannot name it.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
   return join(root, 'boot-release')
 }
 
-/** The release root the boot link serves from, or null. */
+/**
+ * The release root the boot link serves from, or null.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
   try {
     return resolve(await readlink(bootReleaseLinkPath(root)))
@@ -709,7 +726,10 @@ export async function readBootReleaseRoot(root: string = bootConfigRoot()): Prom
   }
 }
 
-/** Point the boot link at `target` with one atomic rename. Returns the link path. */
+/**
+ * Point the boot link at `target` with one atomic rename. Returns the link path.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
   await mkdir(root, { recursive: true })
   const staged = `${link}.${randomUUID()}.tmp`
@@ -726,10 +746,7 @@ export async function pointBootLink(target: string, root: string = bootConfigRoo
 
 /** Written only after a proven promotion. */
 export async function activateBootConfig(root: string, pointer: BootConfigPointer): Promise<void> {
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${POINTER_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(pointer)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, POINTER_FILE))
+  await writeStoreJson(root, POINTER_FILE, pointer)
 }
 
 export async function deactivateBootConfig(root: string = bootConfigRoot()): Promise<void> {
@@ -758,10 +775,7 @@ export async function quarantineRelease(root: string, releaseId: string, reason:
   if (!isReleaseId(releaseId)) return
   const entries = await readQuarantine(root)
   entries[releaseId] = { reason: reason.slice(0, 500), at: new Date().toISOString() }
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${QUARANTINE_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(entries)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, QUARANTINE_FILE))
+  await writeStoreJson(root, QUARANTINE_FILE, entries)
 }
 
 async function removeTree(dir: string): Promise<void> {

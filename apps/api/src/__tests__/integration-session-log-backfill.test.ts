@@ -16,6 +16,8 @@ import { fromV1, SessionLogSchema, toV1, type SessionLog, type V1Row } from '@ko
 import { ZodError } from 'zod';
 import {
   projectSessions,
+  projects,
+  sessionContentPurges,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
@@ -26,14 +28,18 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
-import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+import { removeSeeded, seedAccount, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
 
 const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, roundTripMismatches, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, convertMirrorOnRead, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { SESSION_DELETE_ROWS_DAYS, purgeSessionContent } = await import('../projects/session-log-purge');
+const { transferProjectOwnership } = await import('../projects/lib/project-transfer');
+const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
+const { readSessionLogPage, readStoredTranscriptWindow } = await import('../projects/session-log-read');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -122,6 +128,8 @@ async function deleteLog(sessionId: string) {
 const hasLog = async (sessionId: string) => (await db.select({ id: sessionLogs.sessionId }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId))).length > 0;
 const logCount = async () => (await db.execute<{ n: number }>(sql`select count(*)::int as n from kortix.session_logs`))[0]!.n;
 
+const stateRow = async () => (await db.execute<{ state: Record<string, unknown>; rev: number }>(sql`select state, rev from kortix.session_log_backfill_state`))[0];
+
 /** The sum of one count over the ticks of a pass. */
 const total = (ticks: Array<{ counts: Record<string, number> }>, key: string) => ticks.reduce((n, t) => n + t.counts[key]!, 0);
 
@@ -189,14 +197,71 @@ describe('write: a mirror-only session gets the log the capture would write', ()
   });
 });
 
+describe('a tool call the old mirror stripped (before 2026-09-28) converts as the v1 read serves it', () => {
+  /** `plain(n)` plus one settled call without `state.input`, as the old mirror stored it. */
+  const withStrippedCall = (n: number, tool: string, title: string) => {
+    const m = plain(n);
+    const t = 1_790_000_000_000 + n * 1000;
+    m.parts.push({
+      id: `prt_${n}_call`, sessionID: ROOT, messageID: m.info.id, type: 'tool', callID: `call_${n}`, tool,
+      state: { status: 'completed', title, metadata: { exit: 0, output: `out ${n}\n` }, time: { start: t, end: t + 5 } },
+    });
+    return m;
+  };
+  type Call = { type: string; input: unknown; result?: { content: Array<{ type: string; text?: string }> } };
+  const callOf = async (sessionId: string, messageId: string) =>
+    ((await snapshot(sessionId)).messages.find((m) => m.id === messageId)!.record.blocks as Call[]).find((b) => b.type === 'tool_call')!;
+
+  test('a stripped bash call gets input.command = title and its output; every call recoverable: grade converted, dry round trip exact', async () => {
+    const session = await oldSession([plain(0), withStrippedCall(1, 'bash', 'ls -la /workspace')]);
+    const [dry] = await pass('dry');
+    expect(dry!.counts).toMatchObject({ logs: 1, converted: 1, partial: 0, tool_input: 0, roundtrip_mismatch_sessions: 0 });
+    const [write] = await pass('write');
+    expect(write!.counts).toMatchObject({ logs: 1, converted: 1, partial: 0, tool_input: 0 });
+    const call = await callOf(session, 'msg_000001');
+    expect(call.input).toEqual({ command: 'ls -la /workspace' });
+    expect(call.result?.content).toContainEqual({ type: 'text', text: 'out 1\n' });
+    expect((await snapshot(session)).log).toMatchObject({ grade: 'converted', counts: { tool_input: 0, cut_point: 0, attachment: 0 } });
+  });
+
+  test('a stripped call whose title proves no input stays as stored: grade partial, tool_input 1', async () => {
+    const session = await oldSession([plain(0), withStrippedCall(1, 'bash', 'ls'), withStrippedCall(3, 'execute_command', 'ls')]);
+    const [write] = await pass('write');
+    expect(write!.counts).toMatchObject({ logs: 1, converted: 0, partial: 1, tool_input: 1 });
+    expect((await callOf(session, 'msg_000003')).input).toBeNull();
+    expect((await snapshot(session)).log).toMatchObject({ grade: 'partial', counts: { tool_input: 1 } });
+  });
+});
+
+const DAY_MS = 86_400_000;
+/** Soft-delete `sessionId` as `deleteSession` stamps it, `msAgo` before now. */
+const markDeleted = (sessionId: string, msAgo: number) =>
+  db.update(projectSessions).set({ metadata: { deletedAt: new Date(Date.now() - msAgo).toISOString() } }).where(eq(projectSessions.sessionId, sessionId));
+
 describe('selection', () => {
-  test('a soft-deleted session is skipped: no log, not counted', async () => {
-    const deleted = await oldSession([plain(0), plain(1)]);
-    await db.update(projectSessions).set({ metadata: { deletedAt: new Date().toISOString() } }).where(eq(projectSessions.sessionId, deleted));
-    const [tick] = await pass('write');
-    expect(tick!.counts.sessions).toBe(0);
-    expect(await hasLog(deleted)).toBe(false);
-    await db.delete(projectSessions).where(eq(projectSessions.sessionId, deleted));
+  test('a deleted session inside the restore window converts (counted deleted); past the window, or purged, it is not selected', async () => {
+    const window = SESSION_DELETE_ROWS_DAYS * DAY_MS;
+    const recent = await oldSession([plain(0), plain(1)]);
+    await markDeleted(recent, DAY_MS);
+    // One minute on either side of the purge's due time: the SQL window is the purge's 30 days.
+    const lastMinute = await oldSession([plain(0), plain(1)]);
+    await markDeleted(lastMinute, window - 60_000);
+    const expired = await oldSession([plain(0), plain(1)]);
+    await markDeleted(expired, window + 60_000);
+    const purged = await oldSession([plain(0), plain(1)]);
+    await markDeleted(purged, DAY_MS);
+    await db.insert(sessionContentPurges).values({ sessionId: purged, projectId: project.project_id, accountId: project.account_id, reason: 'session_deleted', rowsPurgedAt: new Date() });
+    const live = await oldSession([plain(0), plain(1)]);
+    const info = spyOn(logger, 'info');
+    const ticks = await pass('write');
+    const infoLines = info.mock.calls.map((c) => [...c]);
+    info.mockRestore();
+    expect({ sessions: total(ticks, 'sessions'), deleted: total(ticks, 'deleted'), logs: total(ticks, 'logs') }).toEqual({ sessions: 3, deleted: 2, logs: 3 });
+    expect({ recent: await hasLog(recent), lastMinute: await hasLog(lastMinute), expired: await hasLog(expired), purged: await hasLog(purged), live: await hasLog(live) })
+      .toEqual({ recent: true, lastMinute: true, expired: false, purged: false, live: true });
+    // The pass summary carries the count: what an operator reads in the logs.
+    expect(infoLines.find((c) => c[0] === '[session-log] backfill pass complete')?.[1]).toMatchObject({ mode: 'write', sessions: 3, deleted: 2, logs: 3 });
+    for (const id of [recent, lastMinute, expired, purged, live]) await db.delete(projectSessions).where(eq(projectSessions.sessionId, id));
   });
 
   test('a session with a journal is not selected; its rows stay the journal rows', async () => {
@@ -343,28 +408,123 @@ describe('dry runs once per build', () => {
   });
 });
 
-describe('size cap: a mirror over the capture cap is counted, never converted', () => {
+describe('size cap: a mirror over the capture cap is converted by the backfill in a thread, never by the capture', () => {
   // Random hex: pglz cannot shrink it, so `pg_column_size` is close to the JSON length.
   const incompressible = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n / 2))).toString('hex');
 
-  test('too_large in dry and in write, from the capture; the smaller session is converted; the large one keeps no log', async () => {
-    const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
+  test('the capture answers too_large; the backfill counts it and converts it in a Worker, dry and write; the log equals the uncapped conversion', async () => {
+    const large = await oldSession([...synthetic(), plain(1000, incompressible(6_000)), plain(1001)], { createdAt: new Date(T0 + 1000) });
     const small = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes; the thread's own config keeps the default
     try {
       expect(await writeSessionLogFromMirror(large, { dry: true })).toEqual({ outcome: 'too_large' });
+      expect(await writeSessionLogFromMirror(large)).toEqual({ outcome: 'too_large' });
       const dry = await pass('dry');
-      expect([total(dry, 'sessions'), total(dry, 'too_large'), total(dry, 'logs')]).toEqual([2, 1, 1]);
+      const keys = ['sessions', 'too_large', 'logs', 'failed', 'roundtrip_mismatch_sessions'];
+      expect(keys.map((k) => total(dry, k))).toEqual([2, 1, 2, 0, 0]);
+      const expected = await fromMirror(large);
+      expect(total(dry, 'messages')).toBe(expected.threads.flatMap((t) => t.messages).length + 2);
+      expect([await hasLog(large), await hasLog(small)]).toEqual([false, false]);
       const write = await pass('write');
-      expect([total(write, 'sessions'), total(write, 'too_large'), total(write, 'logs')]).toEqual([2, 1, 1]);
-      expect([await hasLog(large), await hasLog(small)]).toEqual([false, true]);
+      expect(keys.map((k) => total(write, k))).toEqual([2, 1, 2, 0, 0]);
+      expect([await hasLog(large), await hasLog(small)]).toEqual([true, true]);
+      // A thread that answered leaves no session in progress and no crash behind.
+      expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: {} });
+      const viaThread = await snapshot(large);
+      expect(viaThread.log).toMatchObject({ grade: expected.restore_grade, counts: expected.grade_counts });
+      await deleteLog(large);
+      expect(await writeSessionLogFromMirror(large, { uncapped: true })).toMatchObject({ outcome: 'written' });
+      expect(await snapshot(large)).toEqual(viaThread);
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
   });
 
-  test('a session that already has a log keeps its captures past the cap: its log never goes stale', async () => {
+  describe('the conversion thread can never take the leader down twice', () => {
+    const withCap = async (f: () => Promise<void>) => {
+      const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+      config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
+      try {
+        await f();
+      } finally {
+        config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+      }
+    };
+    const createdAtOf = async (id: string) =>
+      (await db.execute<{ c: string }>(sql`select created_at::text as c from kortix.project_sessions where session_id = ${id}`))[0]!.c;
+    /** The row a write tick saves right before it starts `sessionId`'s thread (its cursor on that session). */
+    const savedBeforeThread = async (sessionId: string | null, threadCrashes: Record<string, number>, after: string | null) => {
+      const state = { ...newBackfillState('write'), after: after ? { createdAt: await createdAtOf(after), sessionId: after } : null, threadStarted: sessionId, threadCrashes };
+      await db.execute(sql`insert into kortix.session_log_backfill_state (id, state, rev) values ('pass', ${JSON.stringify(state)}::jsonb, 1)`);
+    };
+
+    test('a thread whose process died: its session counts failed once (warn, no id), the cursor is past it; the next pass tries it once more', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
+      const next = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
+      await savedBeforeThread(large, {}, large);
+      const warn = spyOn(logger, 'warn');
+      await withCap(async () => {
+        try {
+          const crashed = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(crashed, k))).toEqual([1, 1, 1, 0]);
+          expect([await hasLog(large), await hasLog(next)]).toEqual([false, true]);
+          const lines = warn.mock.calls.filter(([msg]) => String(msg).includes('conversion thread'));
+          expect(lines).toHaveLength(1);
+          expect(JSON.stringify(lines)).not.toContain(large);
+          expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: { [large]: 1 } });
+          // Attempt 2, in the next pass: it answers.
+          const retry = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(retry, k))).toEqual([1, 1, 0, 1]);
+          expect(await hasLog(large)).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
+
+    test('a session whose thread died twice is never started again: failed, no log', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))]);
+      await savedBeforeThread(null, { [large]: 2 }, null);
+      await withCap(async () => {
+        const write = await pass('write');
+        expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(write, k))).toEqual([1, 0, 1, 1]);
+        expect(await hasLog(large)).toBe(false);
+        expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: { [large]: 2 } });
+      });
+    });
+
+    test('the memory guard: no room for the thread under 75 % of the memory limit defers the session (too_large, deferred), not converted, not failed; a WARN names it and its size', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))]);
+      const limit = config.SESSION_LOG_BACKFILL_MEMORY_MB;
+      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
+      const warn = spyOn(logger, 'warn');
+      try {
+        await withCap(async () => {
+          const dry = await pass('dry');
+          expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(dry, k))).toEqual([1, 0, 0, 1, 1]);
+          const deferred = warn.mock.calls.filter(([m]) => String(m).includes('deferred: no memory for its thread'));
+          expect(deferred).toHaveLength(1);
+          const meta = deferred[0]![1] as { sessionId: string; bytes: number };
+          expect([meta.sessionId, meta.bytes > 6_000]).toEqual([large, true]);
+          const write = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(write, k))).toEqual([1, 0, 0, 1, 1]);
+          expect(await hasLog(large)).toBe(false);
+          expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: {} });
+        });
+      } finally {
+        config.SESSION_LOG_BACKFILL_MEMORY_MB = limit;
+        warn.mockRestore();
+      }
+      // With room again, the next pass converts it.
+      await withCap(async () => {
+        expect(total(await pass('write'), 'logs')).toBe(1);
+      });
+      expect(await hasLog(large)).toBe(true);
+    });
+  });
+
+  test('a session whose log holds a message: a mirror never converts into it, however it grew', async () => {
     const session = await oldSession([plain(0), plain(1)]);
     expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
     const grown = plain(2, incompressible(6_000));
@@ -372,14 +532,8 @@ describe('size cap: a mirror over the capture cap is counted, never converted', 
       sessionId: session, messageId: String(grown.info.id), runtimeSessionId: ROOT, role: String(grown.info.role), info: grown.info, parts: grown.parts,
       messageCreatedAt: new Date((grown.info.time as { created: number }).created),
     });
-    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
-    try {
-      expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
-      expect((await snapshot(session)).messages.map((m) => m.id)).toContain('msg_000002');
-    } finally {
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-    }
+    expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
+    expect((await snapshot(session)).messages.map((m) => m.id)).not.toContain('msg_000002');
   });
 });
 
@@ -488,10 +642,12 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
       expect(summary).toEqual({
         mode: 'dry',
         sessions: 2,
+        deleted: 0,
         logs: 2,
         skipped: 0,
         failed: 0,
         too_large: 0,
+        deferred: 0,
         messages: messages.length,
         ...grades,
         tool_input: sum('tool_input'),
@@ -507,6 +663,15 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         roundtrip_mismatch_messages: 0,
         max_session_messages: Math.max(...logs.map(sizeOf)),
         max_session_record_bytes: Math.max(...logs.map(bytesOf)),
+        // The merge pass's counts (`integration-session-log-merge.test.ts`).
+        missing: 0,
+        present: 0,
+        empty: 0,
+        merged: 0,
+        threads_created: 0,
+        misplaced: 0,
+        unplaced: 0,
+        oversize: 0,
       });
       expect(grades.partial).toBeGreaterThan(0);
       // The tick line carries the same counts.
@@ -614,5 +779,123 @@ describe('display round trip: toV1(fromV1(rows)) against the stored rows', () =>
       roundtrip_mismatch_messages: 0,
     });
     expect(total(dry, 'messages')).toBeGreaterThan(0);
+  });
+});
+
+/** Run `fn` with both v1 mirror tables renamed away: any read of them throws. */
+async function withMirrorHidden<T>(fn: () => Promise<T>): Promise<T> {
+  await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
+  await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
+  try {
+    return await fn();
+  } finally {
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
+  }
+}
+
+/**
+ * After the pass that drained: the merge passes (`integration-session-log-merge.test.ts`) until one
+ * finds nothing to merge (an earlier test here leaves a mirror that grew after its log); then the
+ * mirror is never read again.
+ */
+async function merged() {
+  for (let i = 0; i < 2 && !(await stateRow())!.state.mergedMissing; i++) expect(total(await pass('write'), 'failed')).toBe(0);
+  expect((await stateRow())!.state.mergedMissing).toBe(true);
+}
+
+describe('drained (P8.2): once a pass selects nothing and the merge pass finds nothing, the mirror is never read again', () => {
+  test('a restorable deleted mirror-only session keeps the backfill undrained until it converts; then no tick reads a mirror table, and its restore reads the history from the log', async () => {
+    const deleted = await oldSession([plain(0), plain(1), plain(2), plain(3)]);
+    await markDeleted(deleted, DAY_MS);
+    const failing: typeof writeSessionLogFromMirror = async () => ({ outcome: 'failed' });
+    // Its conversion fails twice: each pass selected it, so neither drains.
+    for (let i = 0; i < 2; i++) {
+      const ticks = await pass('write', { convert: failing });
+      expect({ sessions: total(ticks, 'sessions'), deleted: total(ticks, 'deleted'), failed: total(ticks, 'failed') }).toEqual({ sessions: 1, deleted: 1, failed: 1 });
+      expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
+    }
+    const ticks = await pass('write');
+    expect({ deleted: total(ticks, 'deleted'), logs: total(ticks, 'logs') }).toEqual({ deleted: 1, logs: 1 });
+    // The pass found work, so it is not drained; the next one finds none and is.
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(false);
+    expect(total(await pass('write'), 'sessions')).toBe(0);
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
+
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await pass('write')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+        expect(await pass('dry')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+        // Release B: both v1 tables gone, the restore still brings the history back.
+        expect(await restoreSession({ projectId: project.project_id, sessionId: deleted, accountId: project.account_id })).toEqual({ ok: true });
+        const window = await readStoredTranscriptWindow({ sessionId: deleted, limit: 50 });
+        expect(window?.messages.map((m) => m.info.id)).toEqual(['msg_000000', 'msg_000001', 'msg_000002', 'msg_000003']);
+      });
+      // A read of a hidden table would fail inside the converter, which logs it.
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    await db.delete(projectSessions).where(eq(projectSessions.sessionId, deleted));
+  });
+
+  test('a read of a session without a log converts its mirror while not drained, and touches no mirror table once drained', async () => {
+    const old = await oldSession([plain(0), plain(1)]);
+    expect(await convertMirrorOnRead(old)).toBe(true);
+    expect(await hasLog(old)).toBe(true);
+    // Already a log: the conversion is skipped.
+    expect(await convertMirrorOnRead(old)).toBe(false);
+    await db.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, old));
+
+    await pass('write');
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
+    const fresh = await seedSession(project, OWNER);
+    // Not drained, the conversion reads the mirror (and fails without it); drained, it never does.
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await convertMirrorOnRead(fresh)).toBe(false);
+      });
+      // A read of a hidden table would fail inside the converter, which logs it and answers false.
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('Release B1: once drained, the conversion (fork, restore, recovery), the /log read, the retention purge and the project transfer run with both mirror tables gone', async () => {
+    const old = await oldSession([plain(0), plain(1)]);
+    const transferred = await seedProject('session-log-backfill-transfer');
+    const target = await seedAccount('session-log-backfill-transfer-target');
+    await db.insert(sessionTranscriptMirrors).values({ sessionId: await seedSession(transferred, OWNER), projectId: transferred.project_id, accountId: transferred.account_id, runtimeSessionId: ROOT });
+    // The first pass converts `old`; the second selects nothing and drains.
+    await pass('write');
+    expect(await hasLog(old)).toBe(true);
+    await pass('write');
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    await merged();
+    const fresh = await seedSession(project, OWNER);
+    const expired = await seedSession(project, OWNER);
+    await markDeleted(expired, (SESSION_DELETE_ROWS_DAYS + 1) * DAY_MS);
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await writeSessionLogFromMirror(fresh)).toEqual({ outcome: 'skipped' });
+        expect(await readSessionLogPage({ sessionId: fresh, threadId: null, beforeSeq: null, limit: 50 })).toBeNull();
+        expect(await purgeSessionContent({ store: { removeSession: async () => {} } })).toMatchObject({ failed: 0 });
+        await transferProjectOwnership({ projectId: transferred.project_id, fromAccountId: transferred.account_id, toAccountId: target });
+      });
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await db.select({ id: sessionContentPurges.sessionId }).from(sessionContentPurges).where(eq(sessionContentPurges.sessionId, expired))).toHaveLength(1);
+    expect((await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, transferred.project_id)))[0]!.accountId).toBe(target);
+    // The mirror rows stay as they were: the Release B2 migration drops them.
+    expect(await db.select({ accountId: sessionTranscriptMirrors.accountId }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.projectId, transferred.project_id))).toEqual([{ accountId: transferred.account_id }]);
+    await removeSeeded([{ account_id: target, project_id: transferred.project_id }, transferred]);
   });
 });

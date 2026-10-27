@@ -11,7 +11,8 @@ mock.module('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(), usePathname: () => '/auth/forgot-password',
   useRouter: () => ({ push() {}, replace() {} }), useParams: () => ({}),
 }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
+const uiToastMock = () => ({ errorToast: () => {} });
+mock.module('@kortix/ui/toast', uiToastMock);
 const submits: { path: string; body: FormData }[] = [];
 let succeed = false;
 mock.module('@/lib/auth/submit-auth', () => ({

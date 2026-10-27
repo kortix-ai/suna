@@ -22,10 +22,6 @@ function schedule(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     runAt: null,
     timezone: 'America/Los_Angeles',
     secretEnv: null,
-    run: null,
-    monitorMode: null,
-    intervalSeconds: null,
-    expectEventWithinSeconds: null,
     sessionMode: 'fresh',
     pinnedSessionId: null,
     sessionKey: null,
@@ -113,50 +109,16 @@ describe('schedule revision', () => {
       triggerScheduleRevision(schedule({ filter: { 'body.z': 'last', 'body.a': 'first' } })),
     ).toBe(triggerScheduleRevision(schedule({ filter: { 'body.a': 'first', 'body.z': 'last' } })));
   });
-});
 
-// A monitor is cataloged like any other trigger, but it has no schedule: the
-// observer drains its event log instead. `next_fire_at` must stay NULL so the
-// cron sweep — which claims on `trigger_type = 'cron'` — can never see it.
-describe('type = "monitor" never schedules', () => {
-  const monitor = (overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec =>
-    schedule({
-      type: 'monitor',
-      cron: null,
-      runAt: null,
-      timezone: 'UTC',
-      run: './monitors/checkout.ts',
-      monitorMode: 'stream',
-      intervalSeconds: null,
-      expectEventWithinSeconds: null,
-      sessionMode: 'reuse',
-      ...overrides,
-    });
-
-  test('claims no initial or next slot', () => {
-    expect(initialTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
-    expect(nextTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
-  });
-
-  test('its revision tracks the monitor fields', () => {
-    const original = triggerScheduleRevision(monitor());
-    expect(triggerScheduleRevision(monitor())).toBe(original);
-    expect(triggerScheduleRevision(monitor({ run: './monitors/other.ts' }))).not.toBe(original);
-    expect(triggerScheduleRevision(monitor({ monitorMode: 'poll', intervalSeconds: 60 }))).not.toBe(
-      original,
-    );
-    expect(triggerScheduleRevision(monitor({ expectEventWithinSeconds: 86_400 }))).not.toBe(
-      original,
-    );
-  });
-
-  // Adding the monitor fields to the hash unconditionally would rewrite every
-  // cron/webhook revision on deploy, which re-upserts the catalog row and
-  // re-arms already-fired one-off `run_at` triggers fleet-wide.
-  test('a cron revision is unchanged by the monitor fields', () => {
-    expect(triggerScheduleRevision(schedule({ run: './x.ts', monitorMode: 'poll' }))).toBe(
-      triggerScheduleRevision(schedule()),
-    );
+  // KRTX-1721: cron, event and monitor fires read the stored spec, which is
+  // rewritten only on a revision change. A cap must move the revision; an
+  // unset cap must not, so every existing revision stays put.
+  test('a run cap moves the revision, and an unset one leaves it put', () => {
+    const original = triggerScheduleRevision(schedule());
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: undefined, maxRunsPerDay: undefined }))).toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: 5 }))).not.toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerDay: 5 }))).not.toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: 5 }))).not.toBe(triggerScheduleRevision(schedule({ maxRunsPerHour: 6 })));
   });
 });
 
@@ -242,5 +204,23 @@ describe('type = "event" revision', () => {
     expect(triggerScheduleRevision(event({ connector: base.connector, account: base.account, source: 'composio', type: base.type, config: base.config }))).not.toBe(
       triggerScheduleRevision(event(base)),
     );
+  });
+});
+
+test('KRTX-2058 exact display occurrence for a six-field daily UTC cron excludes jitter', () => {
+  const spec = schedule({ cron: '0 0 9 * * *', timezone: 'UTC' });
+  const after = new Date('2026-10-10T08:59:59.000Z');
+  expect(nextTriggerScheduleSlot(spec, after)?.toISOString()).toBe('2026-10-10T09:00:00.000Z');
+  expect(nextTriggerScheduleSlot(spec, after, { jitterKey: 'synthetic-project:daily' })?.getTime())
+    .toBeGreaterThan(new Date('2026-10-10T09:00:00.000Z').getTime());
+});
+
+describe('every', () => {
+  test('an every schedule fires one period after the claim and joins the revision only when set', () => {
+    const after = new Date('2026-10-24T10:00:07Z');
+    const every = schedule({ cron: null, everySeconds: 300 });
+    expect(nextTriggerScheduleSlot(every, after)?.toISOString()).toBe('2026-10-24T10:05:07.000Z');
+    expect(triggerScheduleRevision(every)).not.toBe(triggerScheduleRevision(schedule({ cron: null })));
+    expect(triggerScheduleRevision(schedule())).toBe(triggerScheduleRevision({ ...schedule(), everySeconds: undefined }));
   });
 });

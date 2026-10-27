@@ -1,8 +1,9 @@
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
+import { privateSpaceMemberIds } from '../../shared/space-access';
+import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionCommand, resolveProjectAutomationActor } from '../session-lifecycle';
@@ -15,7 +16,9 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
-import { clearTriggerAlert } from './trigger-alerts';
+import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
+import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
+import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -38,6 +41,51 @@ import { clearTriggerAlert } from './trigger-alerts';
  */
 export async function resolveTriggerActor(project: ProjectRow): Promise<string | null> {
   return resolveProjectAutomationActor(project.accountId);
+}
+
+/**
+ * A trigger from the project's config (kortix.yaml) never posts into a private
+ * channel: whoever may change the config, inside the channel or not, would
+ * decide what runs there and where its output goes.
+ */
+export const PRIVATE_CHANNEL_TRIGGER = {
+  error:
+    'A trigger from the project config cannot post into a private channel: anyone who edits the config would decide what runs there. ' +
+    'Move the trigger to a public channel, or set a reminder in the private thread.',
+  errorCode: 'private_channel_trigger',
+} as const;
+
+/** A reminder into a private channel whose author is no longer in it. */
+export const REMINDER_AUTHOR_NOT_IN_CHANNEL = {
+  error: 'This reminder posts into a private channel, and the person who set it is no longer a member of that channel.',
+  errorCode: 'reminder_author_not_in_channel',
+} as const;
+
+/**
+ * Who a reminder acts as when its session is in `spaceId` (a reminder is set
+ * through the API by someone who can open the session, so its prompt is that
+ * person's, not the project config's). A public channel, a DM or no space:
+ * `actor`, unchanged. A private channel: `actor` when they are a member, else
+ * the reminder's owner (`owner_user_id`, who set it) while they are a member
+ * of the channel and the account, else null: the fire fails with
+ * {@link REMINDER_AUTHOR_NOT_IN_CHANNEL}. Never anyone else.
+ */
+export async function privateChannelRunActor(
+  project: Pick<ProjectRow, 'projectId' | 'accountId'>,
+  slug: string,
+  spaceId: string | null,
+  actor: string,
+): Promise<string | null> {
+  const members = await privateSpaceMemberIds(spaceId);
+  if (!members || members.has(actor)) return actor;
+  const [runtime] = await db
+    .select({ ownerUserId: projectTriggerRuntime.ownerUserId })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, project.projectId), eq(projectTriggerRuntime.slug, slug)))
+    .limit(1);
+  const owner = runtime?.ownerUserId;
+  if (!owner || !members.has(owner)) return null;
+  return (await accountMemberRow(project.accountId, owner))[0] ? owner : null;
 }
 
 export async function markGitTriggerFired(
@@ -207,16 +255,12 @@ export async function findKeyedTriggerSession(
  * session pinned to a managed model the account can no longer use.
  *
  * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
- * with the LLM gateway every model is the `kortix` provider's; without it the
- * ref is the native `provider/model`, and a managed id has no provider.
+ * every model is the `kortix` provider's.
  */
-export function triggerModelOverride(
-  model: string | null | undefined,
-  gatewayEnabled = true,
-): PromptOverridesWire | undefined {
+export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
+  const ref = toOpencodeModelRef(trimmed);
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -234,12 +278,12 @@ async function enqueueTriggerPrompt(input: {
   model?: string | null;
   /** `actor` is a person whose deferred prompt this is: the turn acts as them. */
   bindTurnIdentity?: boolean;
-}): Promise<'queued' | 'deduped' | 'no-session' | 'failed'> {
+}): Promise<'queued' | 'deduped' | 'no-session' | 'failed' | 'not-in-channel' | 'private-channel'> {
   // Scoped to the trigger's own project and account. A pinned `session_id` is
   // manifest text, so a session of any other project is "no session" here and
   // the fire falls through to the trigger's own reuse/create path.
   const [session] = await db
-    .select({ status: projectSessions.status, metadata: projectSessions.metadata })
+    .select({ status: projectSessions.status, metadata: projectSessions.metadata, spaceId: projectSessions.spaceId })
     .from(projectSessions)
     .where(
       and(
@@ -253,19 +297,29 @@ async function enqueueTriggerPrompt(input: {
   if (session.status === 'failed') return 'failed';
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
+  // The session's own channel decides, not the trigger's (a moved trigger
+  // re-prompts an older run). A config trigger never prompts a private
+  // channel's thread; a reminder does, as a member of it.
+  let actor = input.actor;
+  if (await privateSpaceMemberIds(session.spaceId)) {
+    if (input.source !== 'reminder') return 'private-channel';
+    const member = await privateChannelRunActor(input.project, input.triggerSlug, session.spaceId, input.actor);
+    if (!member) return 'not-in-channel';
+    actor = member;
+  }
 
   const { deduped } = await enqueueContinueSessionCommand({
     source: `trigger:${input.source}`,
     projectId: input.project.projectId,
     accountId: input.project.accountId,
     sessionId: input.sessionId,
-    actorUserId: input.actor,
+    actorUserId: actor,
     text: input.text,
     triggerSlug: input.triggerSlug,
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
+    overrides: triggerModelOverride(input.model),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
   // The same delivery again: its prompt is already queued or delivered (KRTX-1735).
@@ -292,8 +346,11 @@ export async function fireGitTrigger(input: {
   source: TriggerFireSource;
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
+  /** A person fired it (manual fire, replay): the run caps do not apply. */
+  deliberate?: boolean;
 }): Promise<{
-  status: 'fired' | 'queued' | 'failed';
+  /** `skipped`: a run cap or an auto-pause (KRTX-1721) held it; `reason` says which. */
+  status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
   error?: string;
@@ -309,13 +366,45 @@ export async function fireGitTrigger(input: {
   retryable?: boolean;
 }> {
   const { spec, project, payload } = input;
+  // Run caps (KRTX-1721) bound what automation starts, before any session or
+  // prompt work. A person's fire is never held, but it counts toward the cap.
+  if (!input.deliberate) {
+    const now = new Date();
+    const { pausedReason, resumedAt } = await readTriggerAutoPause(project.projectId, spec.slug);
+    if (pausedReason) return { status: 'skipped', reason: pausedReason };
+    const held = await triggerRunCapVerdict({ projectId: project.projectId, slug: spec.slug, caps: spec, now, resumedAt });
+    if (held?.sustained) {
+      const reason = triggerAutoPauseReason(spec);
+      if (await autoPauseTrigger(project.projectId, spec.slug, reason, now)) {
+        alertTriggerAutoPaused({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason, pausedAt: now });
+        return { status: 'skipped', reason };
+      }
+    }
+    if (held) {
+      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: held.reason, now });
+      return { status: 'skipped', reason: held.reason };
+    }
+    // Overlap (KRTX-1721): a fresh run waits for the previous one to finish.
+    if (triggerChecksOverlap(spec)) {
+      const overlap = await triggerOverlapReason({ projectId: project.projectId, slug: spec.slug, now });
+      if (overlap) return { status: 'skipped', reason: overlap };
+    }
+  }
+  // An App target is a call to the App, not a session: no actor, model or prompt.
+  if (spec.target?.app) return fireAppTarget(input, spec.target);
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().
-  const actor = await resolveTriggerActor(project);
-  if (!actor) {
+  const automation = await resolveTriggerActor(project);
+  if (!automation) {
     return { status: 'failed', error: 'No account owner available to own the session', retryable: false };
   }
+  // A config trigger never runs into a private channel (PRIVATE_CHANNEL_TRIGGER).
+  const runSpace = spec.reminder ? null : triggerRunSpace(await liveTriggerSpace(project.projectId, spec.slug), spec.agent);
+  if (runSpace?.kind === 'channel' && runSpace.visibility === 'private') {
+    return { status: 'failed', ...PRIVATE_CHANNEL_TRIGGER, retryable: false };
+  }
+  const actor = automation;
 
   if (spec.reminder) return fireSessionReminder(input, actor);
 
@@ -355,14 +444,56 @@ export async function fireGitTrigger(input: {
   }
 }
 
+/**
+ * Who an agent's reminder (no `promptAuthorUserId`) runs as, for its prompt
+ * and for a successor session: the session's creator while they are a member.
+ * The account owner was the fallback, and the proxy refuses the owner on a
+ * member's private session, so every fire of such a reminder dead-lettered. A
+ * creator who is not a member (left the account, or a service account) falls
+ * back to the owner.
+ */
+async function memberSessionCreator(project: ProjectRow, sessionId: string): Promise<string | null> {
+  const [session] = await db
+    .select({ createdBy: projectSessions.createdBy })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.accountId, project.accountId)))
+    .limit(1);
+  const createdBy = session?.createdBy;
+  return createdBy && (await accountMemberRow(project.accountId, createdBy))[0] ? createdBy : null;
+}
+
 const CREATE_WAIT_ATTEMPTS = 15;
 const CREATE_WAIT_POLL_MS = 1_000;
 
 /**
- * A session reminder re-prompts its own session and nothing else. Unlike a pinned
- * trigger it never falls back to a fresh session: a check-in without the
- * session's context is noise. A gone session switches the reminder off instead.
+ * A session reminder re-prompts its own session. A deleted session switches
+ * the reminder off. A failed session hands the reminder to a successor session
+ * (fireReminderSuccessor), which picks up the work its predecessor kept in Files.
  */
+/** `target: { app }`: wake the App and send the payload to its path (apps/app-call.ts). */
+async function fireAppTarget(
+  input: Parameters<typeof fireGitTrigger>[0],
+  target: NonNullable<GitTriggerSpec['target']>,
+): ReturnType<typeof fireGitTrigger> {
+  const { callAppTarget } = await import('../../apps/app-call');
+  const result = await callAppTarget({
+    projectId: input.project.projectId,
+    app: target.app,
+    method: target.method,
+    path: target.path,
+    // A target's own payload (fixed arguments, a one-off run's body) replaces the fire's.
+    payload: target.payload ?? input.payload,
+    headers: {
+      'x-kortix-trigger': input.spec.slug,
+      'x-kortix-trigger-source': input.source,
+      ...(input.idempotencyKey ? { 'x-kortix-delivery-id': input.idempotencyKey } : {}),
+    },
+  });
+  return result.ok
+    ? { status: 'fired' }
+    : { status: 'failed', error: result.error ?? 'App call failed', retryable: result.retryable };
+}
+
 async function fireSessionReminder(
   input: Parameters<typeof fireGitTrigger>[0],
   actor: string,
@@ -382,9 +513,10 @@ async function fireSessionReminder(
       retryable: false,
     };
   }
+  const runAs = author ?? (sessionId ? await memberSessionCreator(project, sessionId) : null) ?? actor;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: runAs, text: reminderPromptText(spec), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
         bindTurnIdentity: !!author,
@@ -393,6 +525,10 @@ async function fireSessionReminder(
   if (outcome === 'queued' || outcome === 'deduped') {
     return { status: 'queued', sessionId: sessionId!, deduped: outcome === 'deduped', reason: 'prompt queued for delivery' };
   }
+  if (outcome === 'not-in-channel') return { status: 'failed', ...REMINDER_AUTHOR_NOT_IN_CHANNEL, retryable: false };
+  // A failed box is not a decision to stop; a deleted session is. The reminder
+  // carries on in a successor session, so work kept in Files outlives a box.
+  if (outcome === 'failed' && sessionId) return fireReminderSuccessor(input, runAs, sessionId);
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
@@ -400,6 +536,55 @@ async function fireSessionReminder(
     errorCode: 'reminder_session_gone',
     retryable: false,
   };
+}
+
+/**
+ * The reminder's session failed: start a successor that inherits its sharing
+ * (as its child), hand it the reminder text, pin the reminder to it, and move
+ * the failed session's chat threads to it so replies there reach it.
+ */
+async function fireReminderSuccessor(
+  input: Parameters<typeof fireGitTrigger>[0],
+  actor: string,
+  failedSessionId: string,
+): ReturnType<typeof fireGitTrigger> {
+  const { spec, project } = input;
+  const result = await createSession({
+    source: 'trigger:reminder',
+    project,
+    userId: actor,
+    requestingPrincipalType: 'human',
+    callerSessionId: failedSessionId,
+    request: input.request,
+    queuePolicy: 'on_backpressure',
+    idempotencyKey: input.idempotencyKey ?? null,
+    body: {
+      agent_name: spec.agent,
+      initial_prompt:
+        `${reminderPromptText(spec)}\n\n` +
+        `This reminder belonged to session ${failedSessionId}, which failed. You continue its work: ` +
+        'read what it kept in Files (/drives) before you act.',
+      metadata: { reminder_successor_of: failedSessionId },
+    },
+    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
+    postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
+  });
+  const successorId = result.sessionId ?? result.row?.sessionId;
+  if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {
+    return {
+      status: 'failed',
+      error: String(result.error?.body.error ?? 'The reminder session failed and no successor session could start'),
+      errorCode: 'reminder_successor_failed',
+      retryable: result.retryable === true,
+    };
+  }
+  if (result.status === 'queued' || result.status === 'pending') {
+    // Paused until the queued create runs and its repin re-arms it: a fire in
+    // between would find the failed session again and start a second successor.
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return { status: 'queued', sessionId: successorId, commandId: result.commandId, reason: result.reason };
+  }
+  return { status: 'fired', sessionId: successorId, commandId: result.commandId };
 }
 
 async function queueExistingTriggerSession(
@@ -478,24 +663,21 @@ async function createGitTriggerSession(
   // ("requires a paid plan") while the caller keeps a 202 + a session id that
   // points at nothing (dogfood journey trig-webhook). Gate on the same catalog
   // the chat composer gates on: zero enabled models = nothing to run. Only
-  // gateway projects gate (native mode resolves models outside the gateway),
-  // and only the fresh-create path — reminders and re-prompts of an existing
+  // the fresh-create path gates — reminders and re-prompts of an existing
   // session keep their semantics.
-  if (projectLlmGatewayEnabled(project.metadata)) {
-    const catalog = await servableProjectCatalog({
-      projectId: project.projectId,
-      accountId: project.accountId,
-      // The run executes as this actor (the account owner), so its personal
-      // keys count exactly as the gateway will count them for the session.
-      principalUserId: actor,
-    });
-    if (!Object.values(catalog.models).some((model) => model.enabled)) {
-      return {
-        status: 'failed',
-        error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
-        errorCode: 'no_usable_model',
-      };
-    }
+  const catalog = await servableProjectCatalog({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    // The run executes as this actor (the account owner), so its personal
+    // keys count exactly as the gateway will count them for the session.
+    principalUserId: actor,
+  });
+  if (!Object.values(catalog.models).some((model) => model.enabled)) {
+    return {
+      status: 'failed',
+      error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+      errorCode: 'no_usable_model',
+    };
   }
   const sessionResult = await createSession({
     source: `trigger:${source}`,
@@ -519,6 +701,8 @@ async function createGitTriggerSession(
         trigger_source: source,
         trigger_kind: 'git',
         trigger_slug: spec.slug,
+        // The trigger's name at fire time: a channel thread shows it as the author.
+        trigger_name: spec.name,
         trigger_type: spec.type,
         // Stamped so findKeyedTriggerSession can route the NEXT delivery for
         // this key back into this session.
@@ -529,6 +713,7 @@ async function createGitTriggerSession(
       trigger_source: source,
       trigger_kind: 'git',
       trigger_slug: spec.slug,
+      trigger_name: spec.name,
       trigger_type: spec.type,
       ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),
@@ -563,6 +748,8 @@ async function createGitTriggerSession(
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
       errorCode: code,
+      // A requeued create may still start a session; its run links to it by command.
+      commandId: sessionResult.commandId,
       requeued: sessionResult.requeued === true,
       retryable: sessionResult.retryable === true,
     };

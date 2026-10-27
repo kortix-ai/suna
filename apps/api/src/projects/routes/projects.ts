@@ -18,6 +18,7 @@ import type { Context } from 'hono';
 import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
+import { projectQuotaState } from '../lib/project-quota';
 import { ProjectSchema, projectsApp } from '../lib/app';
 import {
   GitHubInstallationRequiredError,
@@ -32,6 +33,7 @@ import {
   serializeProject,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -191,6 +193,7 @@ export function registerProjectsRoutes(): void {
           install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
         }, 409);
       }
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
 
@@ -245,6 +248,40 @@ export function registerProjectsRoutes(): void {
       const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
       const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
       return c.json({ configured, provider });
+    },
+  );
+
+  // GET /v1/projects/quota
+  // Lets the frontend pre-check the account's project cap BEFORE the user hits
+  // the 403 a denied create answers, so the /new page can show the cap reason
+  // on load and keep Create disabled instead of teaching the cap through a
+  // failed submit (KRTX-2495). Same computation as the create gate's
+  // `enforceProjectQuota` — `projectQuotaState` — so the two can never
+  // disagree. Account-scoped like POST /provision: `account_id` resolves
+  // through `resolveProjectAccount`, and omitting it resolves the same default
+  // account an omitted `account_id` create would target.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/quota',
+      tags: ['projects'],
+      summary: 'Get the project quota state for an account',
+      ...auth,
+      responses: {
+        200: json(
+          z.object({
+            capped: z.boolean(),
+            limit: z.number(),
+            count: z.number().nullable(),
+            message: z.string().nullable(),
+          }),
+          'Whether another project can be created in this account, and why not',
+        ),
+      },
+    }),
+    async (c) => {
+      const scope = await resolveProjectAccount(c);
+      return c.json(await projectQuotaState(scope.accountId));
     },
   );
 

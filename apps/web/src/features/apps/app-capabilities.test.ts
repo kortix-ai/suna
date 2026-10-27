@@ -2,8 +2,9 @@ import { readFileSync } from '@/i18n/test-source';
 import type { App } from '@kortix/sdk';
 import { expect, test } from 'bun:test';
 import { resolve } from 'node:path';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { appCan } from './app-shared';
+import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
+import { appCan } from '@kortix/ui/apps';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const root = resolve(import.meta.dir, '../..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -25,10 +26,10 @@ test('the UI branches on capabilities', () => {
 });
 
 test('one Apps page: no Backends tab, page, palette entry or flag remains in the web app', () => {
-  const tabs = read('features/workspace/capabilities/shared/capability-tabs.tsx');
-  const routes = read('features/workspace/capabilities/shared/capability-tab-routes.ts');
+  const tabs = readFileSync(uiSourcePath('customize/shared/capability-tabs.tsx'), 'utf8');
+  const routes = readFileSync(uiSourcePath('internal/lib/capability-tab-routes.ts'), 'utf8');
   const menu = read('lib/menu-registry.ts');
-  const flags = read('lib/use-project-feature-flags.ts');
+  const flags = readFileSync(uiSourcePath('internal/lib/use-project-feature-flags.ts'), 'utf8');
   for (const source of [tabs, routes, menu, flags]) expect(source).not.toContain("'backends'");
   expect(Object.keys(PROJECT_ACTIONS).filter((key) => key.includes('BACKEND'))).toEqual([]);
   // The retired routes redirect to the Apps page; an id opens that App.
@@ -53,7 +54,11 @@ test('the detail modal takes its body and its capability items from app.capabili
 });
 
 test('no App kind, instance tile, snapshot, credential or dashboard control remains in the Apps UI', () => {
-  for (const file of ['app-detail.tsx', 'apps-view.tsx', 'app-shared.tsx', 'app-connect.tsx']) {
-    expect(read(`features/apps/${file}`)).not.toMatch(/convex|appKindLabel|InstanceTile|snapshots|rotateCredentials|getAppCredentials|admin_credentials|app\.instance/i);
+  const sources = [
+    ...['app-detail.tsx', 'apps-view.tsx', 'app-connect.tsx'].map((file) => read(`features/apps/${file}`)),
+    readFileSync(uiSourcePath('apps/app-shared.tsx'), 'utf8'),
+  ];
+  for (const source of sources) {
+    expect(source).not.toMatch(/convex|appKindLabel|InstanceTile|snapshots|rotateCredentials|getAppCredentials|admin_credentials|app\.instance/i);
   }
 });

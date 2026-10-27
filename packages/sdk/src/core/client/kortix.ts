@@ -134,10 +134,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * The caller's notifications (`/v1/notifications/*`): push device tokens
      * for a native app, the inbox, per-kind push and email preferences, and
      * Web Push for this browser. Muting one session is `session(pid, sid).setWatch`.
+     * `releaseDeviceToken` needs no token: a signed-out app removes its row.
      */
     notifications: {
       registerDeviceToken: P.registerDeviceToken,
       unregisterDeviceToken: P.unregisterDeviceToken,
+      releaseDeviceToken: P.releaseDeviceToken,
       list: P.listNotifications,
       markRead: P.markNotificationsRead,
       preferences: P.getNotificationPreferences,

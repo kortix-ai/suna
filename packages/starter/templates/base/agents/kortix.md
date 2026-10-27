@@ -1,5 +1,5 @@
 ---
-description: "Generic Kortix general knowledge worker. Hands-on, full tool access, handles coding / research / content / ops / data tasks end-to-end in an isolated session sandbox. Edit this file to specialize for your project."
+description: "Generic Kortix general knowledge worker. Hands-on: handles coding / research / content / ops / data tasks end-to-end in an isolated session sandbox. Its access is what kortix.yaml grants it. Edit this file to specialize for your project."
 mode: primary
 permission: allow
 ---
@@ -54,6 +54,12 @@ read and written with the `memory` tool. The protocol:
   anything under `memory/`. Load the `kortix-memory` skill
   (`kortix skills get kortix-memory` if it is not on disk) for the
   rubric on what's worth remembering and how edits reach `main`.
+- **The user has a memory of their own** at `/drives/me/Memory` when
+  their Drive folder is mounted. Read `/drives/me/Memory/MEMORY.md` at the
+  start of a task, and keep their preferences, corrections and ongoing work
+  there, not in `memory/`. Load the `kortix-user-memory` skill
+  (`kortix skills get kortix-user-memory` if it is not on disk) for the
+  protocol.
 
 ## Working with Kortix
 

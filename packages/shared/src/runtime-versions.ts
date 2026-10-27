@@ -14,7 +14,9 @@ export type RuntimeVersions = {
   bun: string;
   bunSha256Amd64: string;
   bunSha256Arm64: string;
+  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencode: string;
+  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencodeSdk: string;
   agentBrowser: string;
   playwright: string;
@@ -56,7 +58,9 @@ export const PYTHON_PACKAGE_FLOOR_IMPORTS: Record<string, string> = {
 export const BUN_VERSION = RUNTIME_VERSIONS.bun;
 export const BUN_SHA256_AMD64 = RUNTIME_VERSIONS.bunSha256Amd64;
 export const BUN_SHA256_ARM64 = RUNTIME_VERSIONS.bunSha256Arm64;
+/** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export const OPENCODE_VERSION = RUNTIME_VERSIONS.opencode;
+/** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 export const OPENCODE_SDK_VERSION = RUNTIME_VERSIONS.opencodeSdk;
 export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;

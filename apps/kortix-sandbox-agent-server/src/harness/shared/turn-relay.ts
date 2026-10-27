@@ -23,6 +23,7 @@ import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-cont
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
 import { flushSessionLogJournal } from './session-log-journal'
+import { runOnIdleHook } from './on-idle-hook'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -45,7 +46,10 @@ let claimedInitialTurn: InitialTurnClaim | null = null
 let claimedRootPin: string | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
-/** The first turn this process claimed, once `claimInitialTurn` resolved one. */
+/**
+ * The first turn this process claimed, once `claimInitialTurn` resolved one.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function initialTurnClaim(): InitialTurnClaim | null {
   return claimedInitialTurn
 }
@@ -54,6 +58,7 @@ export function initialTurnClaim(): InitialTurnClaim | null {
  * The runtime root the control plane has pinned for this session, as the
  * initial-turn claim reported it. Null before the claim, when no root is
  * pinned, or from an API that predates the field.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function claimedRuntimeSessionPin(): string | null {
   return claimedRootPin
@@ -136,7 +141,10 @@ export async function relayTurnAccepted(runtimeSessionId: string, messageId: str
   return ((await response.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
 
-/** Remove only a pre-created initial-turn record the runtime never accepted. */
+/**
+ * Remove only a pre-created initial-turn record the runtime never accepted.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function relayTurnAbandoned(turnToken: string): Promise<boolean> {
   const response = await postTurnStream({ kind: 'turn_abandoned', turn_token: turnToken })
   if (!response) throw new Error('initial turn abandonment relay context is unavailable')
@@ -344,6 +352,8 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          runOnIdleHook(current)
           return true
         }
         logger.warn('[turn-relay] turn-end relay was not settled', {

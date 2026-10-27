@@ -13,6 +13,7 @@
  * changes phase, so the failure it was meant to catch is still caught.
  *
  * The label is opaque to the API: equality is the only operation on it.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export interface BootPhaseInput {
   timeline: ReadonlyArray<{ label: string }>;
@@ -21,6 +22,7 @@ export interface BootPhaseInput {
   notReadyReason?: string;
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function bootPhaseLabel(input: BootPhaseInput): string {
   const lastMark = input.timeline.at(-1)?.label ?? 'boot';
   const parts = [lastMark, `opencode=${input.opencodeState}`];
@@ -29,4 +31,5 @@ export function bootPhaseLabel(input: BootPhaseInput): string {
   return parts.join('|');
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const BOOT_PHASE_HEADER = 'X-Kortix-Boot-Phase';

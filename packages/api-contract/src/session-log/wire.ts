@@ -10,10 +10,13 @@
  * - 503: the operator switch is off. The daemon keeps its dirty set and retries later.
  * - 404: the API predates the route. The daemon stops journaling for this boot.
  *
- * The body above 2 MB gzipped or 16 MB raw answers 413. A batch that reuses a `seq` another
- * message of the same thread holds answers 422 `SessionLogJournalSeqConflict` and writes nothing:
- * `seq` is never reused in a thread, and a tombstone keeps its seq. The daemon drops the batch.
- * One exception: a row the API's transcript capture wrote for a box without a journal (P2.7,
+ * The body above 2 MB gzipped or 16 MB raw answers 413: the daemon sends smaller batches, and cuts the
+ * longest strings of a single message over the cap. A body the schema rejects answers 400 with the zod
+ * `issues`: the daemon drops the puts, tombstones and threads they name and sends the rest. A batch that
+ * reuses a `seq` another message of the same thread holds answers 422 `SessionLogJournalSeqConflict` and
+ * writes nothing: `seq` is never reused in a thread, and a tombstone keeps its seq. `seq_max` is the
+ * thread's highest stored seq, tombstones included. The daemon numbers that thread above it from then on
+ * and sends the batch again; no batch is dropped. One exception: a row the API's transcript capture wrote for a box without a journal (P2.7,
  * rev below 2^31) is provisional. A put that claims its seq replaces it and answers 200.
  *
  * Manifest: `GET /v1/projects/:p/sessions/:s/log/manifest`, sandbox token, answers
@@ -26,9 +29,12 @@
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission, the transcript route's gate (a session-bound token included).
- * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
- * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
- * `thread` is not one of its threads.
+ * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 `{ error,
+ * code: 'session_log_missing' }` when the session has no stored log yet (a client stays on the log;
+ * an API without this route answers 404 with no code), and 404 when `thread` is not one of its threads. A session whose history is
+ * only in the old v1 mirror is converted to the log first (P8.2); 503 `{ error, code:
+ * 'session_log_converting' }` with `Retry-After: 60` when that history is over the conversion size
+ * cap and the backfill has not converted it yet.
  *
  * Restore (P6.1): `POST /v1/projects/:p/sessions/:s/log/restore`, sandbox token only, no body.
  * The daemon of a fresh box calls it once, before its harness starts. It claims the session:
@@ -97,6 +103,7 @@ export const SessionLogJournalSeqConflictSchema = z.object({
   rev,
   thread_id: z.string().min(1),
   seq: z.number().int(),
+  seq_max: z.number().int(),
 });
 
 export const SessionLogManifestSchema = z.object({
@@ -175,8 +182,8 @@ export const SessionLogSwitchPreflightSchema = z.object({
   to: SessionLogHarnessSchema,
   /** False when the switch cannot happen; `reason` says why. */
   available: z.boolean(),
-  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
-  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
+  /** `same_harness`: the log already runs on `to`. */
+  reason: z.enum(['same_harness']).nullable(),
   /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */

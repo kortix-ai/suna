@@ -10,4 +10,4 @@ incident_date: 2026-10-27
 
 **Incident:** On 2026-10-27, one production Firefox event reported an unhandled `NotAllowedError`. The upstream React selection package installs a utility that discards the clipboard promise. The viewer also mounted that utility explicitly, creating two subscribers.
 
-**Enforcement:** `apps/web/src/features/file-renderers/pdf/pdf-clipboard.test.tsx` exercises denied and successful writes and subscription cleanup. The denied case fails with the upstream utility.
+**Enforcement:** `packages/ui/src/files/renderers/pdf/pdf-clipboard.test.tsx` exercises denied and successful writes and subscription cleanup. The denied case fails with the upstream utility.

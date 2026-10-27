@@ -67,6 +67,16 @@ describe('directSubsessions', () => {
     expect(directSubsessions(s).map((c) => c.id)).toEqual(['a']);
   });
 
+  test('keeps explicitly registered parentless forks reachable after a fresh inventory read', () => {
+    const s = session({ runtime_session_id: 'root', runtime_sessions: [
+      conv('root'), conv('fork', { fork_source_id: 'root' }),
+      conv('nested-fork', { fork_source_id: 'fork' }),
+      conv('unrelated'), conv('archived-fork', { fork_source_id: 'root', archived_at: 1 }),
+    ] });
+    expect(directSubsessions(s).map((item) => item.id)).toEqual(['fork', 'nested-fork']);
+    expect(rootRuntimeSession(s)?.id).toBe('root');
+  });
+
   test('no root, no children', () => {
     expect(directSubsessions(session({}))).toEqual([]);
   });

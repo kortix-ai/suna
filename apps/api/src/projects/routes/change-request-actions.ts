@@ -10,7 +10,7 @@ import { refusesSelfMerge } from '../change-request-policy';
 // barrel wholesale with `mock.module`.
 import { manifestChange } from '../change-request-governance';
 import { assertNoGrantEscalation } from '../../iam/agent-grant-ceiling';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, boundedIssues, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
@@ -28,6 +28,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
@@ -123,7 +124,8 @@ export function registerChangeRequestActionsRoutes(): void {
             cr: cr.number,
             error: err instanceof Error ? err.message : String(err),
           });
-          c.header('Retry-After', '5');
+          // Header inline, never `c.header(...)` first — same race as the
+          // journal 429 (KRTX-2737): the deadline may have answered already.
           return c.json(
             {
               error:
@@ -133,6 +135,7 @@ export function registerChangeRequestActionsRoutes(): void {
               action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
             },
             503,
+            { 'Retry-After': '5' },
           );
         }
         for (const action of change.required) {
@@ -168,7 +171,7 @@ export function registerChangeRequestActionsRoutes(): void {
             {
               error: 'Manifest validation failed — merge blocked.',
               code: 'MANIFEST_INVALID',
-              issues: [{ path: 'imports', message: found.importError, severity: 'error' }],
+              ...boundedIssues([{ path: 'imports', message: found.importError, severity: 'error' }]),
             },
             422,
           );
@@ -180,7 +183,7 @@ export function registerChangeRequestActionsRoutes(): void {
               {
                 error: 'Manifest validation failed — merge blocked.',
                 code: 'MANIFEST_INVALID',
-                issues: verdict.issues,
+                ...boundedIssues(verdict.issues),
               },
               422,
             );
@@ -213,6 +216,7 @@ export function registerChangeRequestActionsRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Merge failed',
@@ -252,7 +256,11 @@ export function registerChangeRequestActionsRoutes(): void {
           baseCommitSha: result.base_sha_before,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // crId here is whatever the caller sent (a UUID, a number, "#233"):
+        // bind the write to the RESOLVED row's canonical id, never the raw path
+        // param — a numeric id that matched above must not 22P02 this update
+        // after the merge has already landed.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
 
       invalidateProjectMirror(projectId);
@@ -347,7 +355,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: loaded.userId,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
@@ -394,7 +403,8 @@ export function registerChangeRequestActionsRoutes(): void {
           closedBy: null,
           updatedAt: new Date(),
         })
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route).
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },

@@ -17,6 +17,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  statSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -39,6 +41,7 @@ import {
   readReleaseManifest,
   releaseDir,
   verifyRelease,
+  writeReleaseManifest,
   type ReleaseManifest,
 } from '@/services/config-provider/boot-config'
 import { buildRelease, commitAll, git, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
@@ -373,5 +376,39 @@ describe('the boot link', () => {
     expect(spawnSync('ls', [store]).stdout.toString().split('\n').filter((name) => name.includes('.tmp'))).toEqual([])
     await pruneBootConfigs(store, [])
     expect(readlinkSync(link)).toBe(second)
+  })
+})
+
+
+describe('JSON store publication characterization', () => {
+  test('all three records publish newline JSON at mode 0644 with no staged siblings', async () => {
+    const built = release('publication')
+    const manifest = manifestOf(built)
+    const pointer = { release_id: manifest.release_id, source_commit: manifest.source_commit, config_dir: REL, dir: join(store, manifest.release_id), proven: true }
+    await writeReleaseManifest(store, manifest)
+    await activateBootConfig(store, pointer)
+    await quarantineRelease(store, manifest.release_id, 'synthetic failure')
+    const records = [
+      [`${manifest.release_id}.json`, manifest],
+      ['current.json', pointer],
+      ['quarantine.json', await readQuarantine(store)],
+    ] as const
+    for (const [name, record] of records) {
+      expect(readFileSync(join(store, name), 'utf8')).toBe(`${JSON.stringify(record)}\n`)
+      expect(statSync(join(store, name)).mode & 0o777).toBe(0o644)
+    }
+    expect(readdirSync(store).sort()).toEqual(records.map(([name]) => name).sort())
+  })
+
+  test('invalid manifest IDs stage bytes before validation, but filesystem errors win', async () => {
+    const manifest = { ...manifestOf(release('invalid')), release_id: 'invalid' }
+    await expect(writeReleaseManifest(store, manifest)).rejects.toThrow()
+    const staged = readdirSync(store)
+    expect(staged).toHaveLength(1)
+    expect(staged[0]).toMatch(/^invalid\.json\.[0-9a-f-]+\.tmp$/)
+    expect(readFileSync(join(store, staged[0] ?? ''), 'utf8')).toBe(`${JSON.stringify(manifest)}\n`)
+    const file = join(root, 'not-directory')
+    writeFileSync(file, 'occupied')
+    await expect(writeReleaseManifest(file, manifest)).rejects.toMatchObject({ code: 'EEXIST' })
   })
 })

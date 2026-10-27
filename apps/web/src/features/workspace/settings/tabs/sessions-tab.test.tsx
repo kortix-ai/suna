@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import type { ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionsTabView, type SessionsTabCopy } from './sessions-tab';
+import { SessionsTabView } from './sessions-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<(h[23])[^>]*>([^<]*)<\/\1>/g)].map((m) => `${m[1]}:${m[2]}`);
@@ -33,7 +33,7 @@ function switchState(out: string, label: string): string | null {
 
 const switchCount = (out: string) => [...out.matchAll(/role="switch"/g)].length;
 
-const SERBIAN_COPY: SessionsTabCopy = {
+const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> = {
   notifications: 'Обавештења',
   notificationsDescription: 'Обавештења прегледача.',
   unsupported: 'Прегледач не подржава обавештења.',
@@ -64,6 +64,7 @@ const SERBIAN_COPY: SessionsTabCopy = {
     automation_recovered: { label: 'Обавештење о опоравку', description: 'Окидач ради.' },
     capture_device_down: { label: 'Рачунар је стао', description: 'Рачунар не снима.' },
     capture_device_recovered: { label: 'Рачунар поново снима', description: 'Рачунар снима.' },
+    message: { label: 'Порука', description: 'Неко вам пише у разговору.' },
   },
   push: 'Push',
   email: 'Имејл',
@@ -103,6 +104,20 @@ const SERBIAN_COPY: SessionsTabCopy = {
  * These are the pre-KRTX-1742 tests, unchanged.
  */
 describe('SessionsTabView', () => {
+  test('all sound pack and event choices retain their injected copy and order', () => {
+    const out = renderToStaticMarkup(<SessionsTabView copy={SERBIAN_COPY} soundPack="kortix" />);
+    const labels = [
+      ...Object.values(SERBIAN_COPY.soundPacks),
+      ...Object.values(SERBIAN_COPY.soundEvents),
+    ];
+    for (const { label, description } of labels) {
+      expect(out).toContain(label);
+      expect(out).toContain(description);
+    }
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
+  });
+
   test('renders injected locale body copy instead of fixed English body labels', () => {
     const out = renderToStaticMarkup(<SessionsTabView copy={SERBIAN_COPY} />);
     expect(out).toContain('Обавештења');
@@ -127,7 +142,9 @@ describe('SessionsTabView', () => {
   });
 
   test('enabling notifications reveals the type and behaviour toggles', () => {
-    const out = renderToStaticMarkup(<SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />);
+    const out = renderToStaticMarkup(
+      <SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />,
+    );
     expect(out).toContain('Notification types');
     expect(out).toContain('Behavior');
     expect(out).toContain('Send test notification');
@@ -229,7 +246,7 @@ describe('SessionsTabView with the notification center', () => {
 
   test('notification types: one Push switch per kind, and Email for every kind but permission', () => {
     const out = center();
-    expect(switchCount(out)).toBe(1 + 9 + 8);
+    expect(switchCount(out)).toBe(1 + 10 + 9);
     expect(out).toContain('>Push<');
     expect(out).toContain('>Email<');
     expect(switchState(out, 'Turn finished: Push')).toBe('true');
@@ -255,7 +272,7 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ emailAvailable: false });
     expect(out).not.toContain('>Email<');
     expect(out).not.toContain(': Email"');
-    expect(switchCount(out)).toBe(1 + 9);
+    expect(switchCount(out)).toBe(1 + 10);
   });
 
   test('while the record loads the rows show, without switches', () => {
@@ -270,5 +287,21 @@ describe('SessionsTabView with the notification center', () => {
     expect(out).toContain('Could not load your notification settings');
     expect(out).toContain('Try again');
     expect(out).not.toContain('A turn ends.');
+  });
+});
+
+describe('blocked notification recovery', () => {
+  test('denied permission offers browser-specific instructions and an inline sound fallback', () => {
+    const out = renderToStaticMarkup(<SessionsTabView notificationPermission="denied" />);
+    for (const browser of ['Chrome', 'Edge', 'Firefox', 'Safari']) expect(out).toContain(browser);
+    expect(out).toContain('Enable completion sound');
+    expect(out).toContain('While a Kortix tab is open');
+  });
+
+  test('recovery is not shown when permission can still be requested or is already granted', () => {
+    for (const permission of ['default', 'granted'] as const) {
+      const out = renderToStaticMarkup(<SessionsTabView notificationPermission={permission} />);
+      expect(out).not.toContain('Enable completion sound');
+    }
   });
 });

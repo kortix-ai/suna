@@ -164,6 +164,27 @@ export const PROJECT_ACTIONS = {
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',
 
+  // Rooms (`agent_rooms` flag): named message logs that sessions and people
+  // talk in. `read` = list rooms, read messages. `write` = create a room,
+  // post, put a session in or take it out, set the topic. A post wakes every
+  // other member session, so `write` sits with project.session.start in the
+  // built-in roles; joining a session ALSO asserts project.session.start on
+  // that session's project. An agent's `kortix_permissions` grants these to
+  // decide whether that agent may use rooms at all.
+  PROJECT_ROOM_READ: 'project.room.read',
+  PROJECT_ROOM_WRITE: 'project.room.write',
+
+  // Artifacts (`artifacts` flag): Files folders shared as docs and pages.
+  // `read` = the gallery, open an artifact, its versions and files. `write` =
+  // publish, share a folder, save, restore, and rename / share / unshare your
+  // own. `manage` = change how anyone's artifact is shared. `public` = give an
+  // artifact a public link: the one outward step, so a custom role or an
+  // agent's `kortix_permissions` can withhold it on its own.
+  PROJECT_ARTIFACT_READ: 'project.artifact.read',
+  PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
+  PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
+  PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
+
   // Issuing a project credential — a project CLI token (`POST|DELETE
   // /projects/:id/cli-token`) or a project-scoped PAT (`POST /accounts/tokens`
   // with a project_id). Its own leaf because a credential OUTLIVES the request

@@ -25,12 +25,8 @@
  *                               here — ported
  *   ToolActivateContext / BoundActivateContext
  *                               here — ported (no mobile provider yet)
- *   ToolSurfaceContext / TOOL_INDENT / useToolIndent / useToolCardFrame /
- *   useToolCardPad              `./surface` — adapted: indent/pad are points,
- *                               the frame is a style object (null on 'panel')
  *   ToolNavigationContext / useToolNavigation / useProxyUrl /
- *   useServicePreview / ServicePreviewActions / ServicePreviewViewport /
- *   ServicePreviewUrlFallback / InlineServicePreview
+ *   useServicePreview / ServicePreviewActions / InlineServicePreview
  *                               `./navigation` — adapted: `useToolNavigation()`
  *                               adds `openFile(path, line?)`, `openSession(id)`
  *                               and `openPreview(url, label?)`; a sandbox
@@ -93,7 +89,6 @@ import { CheckIcon, MagnifyingGlassIcon, WarningCircleIcon, WarningIcon } from '
 import { useDisclosureState } from '@/lib/session/disclosure-store';
 import {
   cleanErrorMessage,
-  formatJsonFailureOutput,
   formatRawOutput,
   looksLikeError,
   looksLikeJsonPayload,
@@ -140,20 +135,17 @@ export {
   ToolIconSlot,
   ToolRowVariantContext,
   ToolScroll,
-  ToolSurfaceContext,
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
   useToolRowVariant,
   type ToolDetailLevel,
   type ToolIcon,
-  type ToolSurface,
 } from './surface';
 export {
   InlineServicePreview,
   ServicePreviewActions,
-  ServicePreviewUrlFallback,
-  ServicePreviewViewport,
+  ServicePreviewRow,
   ToolFilePreviewHost,
   ToolNavigationContext,
   useProxyUrl,
@@ -658,9 +650,9 @@ export function RawOutputBlock({ output, maxChars = RAW_OUTPUT_MAX_CHARS }: { ou
 /**
  * The body of a tool with nothing better to show. Same branch order as web:
  * the `{success:false}` contract → `JsonFailureOutputCard` in a
- * `ToolResultCard`; a JSON failure or an error-looking string → `ToolError`;
- * JSON or anything over 4000 characters → `RawOutputBlock`; short prose →
- * markdown in the output card.
+ * `ToolResultCard`; an error-looking string → `ToolError`; JSON or anything
+ * over 4000 characters → `RawOutputBlock`; short prose → markdown in the
+ * output card.
  */
 export function ToolOutputFallback({
   output,
@@ -679,9 +671,6 @@ export function ToolOutputFallback({
       </ToolResultCard>
     );
   }
-
-  const jsonFailure = !isStreaming ? formatJsonFailureOutput(output) : null;
-  if (jsonFailure) return <ToolError error={jsonFailure} toolName={toolName} />;
 
   if (!isStreaming && looksLikeError(output)) return <ToolError error={output} toolName={toolName} />;
 

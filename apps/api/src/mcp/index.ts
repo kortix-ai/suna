@@ -22,6 +22,8 @@ import { mcpResourceMetadataUrl, oauthIssuer } from '../oauth/discovery';
 import { OAUTH_SCOPE_KORTIX } from '../oauth/access-token';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import { databaseErrorSummary, isDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
 import {
   JOB_CANCEL,
   JOB_DEFAULT_TIMEOUT_SECONDS,
@@ -1116,7 +1118,7 @@ function instructions(): string {
     'Sessions: start_session delegates a task to a Kortix agent in its own cloud sandbox; read_session (with wait_seconds) follows it; send_message continues it; list_sessions finds existing ones.',
     "Sandboxes: run_command runs bash in a session's sandbox, and read_file / write_file / list_files reach its live /workspace. With a project_id instead of a session_id, read_file and list_files read the project's git repository.",
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
-    'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',
+    'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps finds an app (every MCP server, API and Composio app), get_connector_app lists its ways to connect and their tools, and add_connector installs one.',
     'The kortix CLI itself: the `kortix` tool runs any CLI command as you, e.g. args ["secrets","ls","--json"] (discover with ["--help"] and ["<group>","--help"]; project_id and session_id set the context). Login, hosts, ship, tui and other machine-local commands are refused with the alternative. read_skill with project_id also lists the project\'s own skills.',
     'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
   ].join('\n');
@@ -1212,6 +1214,11 @@ export function createMcpApp(dispatch: Dispatch) {
       const result = await handleRpc(ctx, message.method, message.params ?? {});
       return c.json({ jsonrpc: '2.0', id: message.id, result });
     } catch (err) {
+      // A database error's message is its statement: JSON-RPC's internal error instead, logged here.
+      if (isDatabaseError(err)) {
+        logger.error('[mcp] tool call failed on a database error', { method: message.method, error: databaseErrorSummary(err) });
+        return c.json({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Internal error' } });
+      }
       const e = err as Error & { rpcCode?: number };
       return c.json({ jsonrpc: '2.0', id: message.id, error: { code: e.rpcCode ?? -32603, message: e.message } });
     }

@@ -9,7 +9,9 @@
 //     owners/admins on every project, SSO-only enforcement. It skips the MFA
 //     step-up on purpose; the inbox READ applies that gate itself.
 //   - session: `isProjectSessionVisibleTo` — owner, project-visible, named or
-//     group grants, the trigger-run manager override, account oversight.
+//     group grants, the trigger-run manager override, account oversight, and
+//     the session's private channel (`hiddenSpaceIds`): a person not in it is
+//     never told, and one removed from it stops seeing earlier notifications.
 //   - a soft-deleted session (`metadata.deletedAt`) is never visible.
 // A recipient is also always a person: a member of the account
 // (`personsAmong`). A service account or any other non-person id that the IAM
@@ -26,6 +28,7 @@ import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { isUuid } from '../shared/validate';
+import { hiddenSpaceIds, spaceVisibleFor } from '../shared/space-access';
 
 /** Recipient checks in flight at once: one check is up to ~7 queries on a 5-connection pool. */
 const RECIPIENT_CHECK_CONCURRENCY = 4;
@@ -39,6 +42,8 @@ export interface SessionAccessRow {
   metadata: unknown;
   origin: string | null;
   initiatorType: string | null;
+  /** The session's channel: a private one the person is not in hides the session. */
+  spaceId: string | null;
 }
 
 function allows(accessible: Accessible, projectId: string): boolean {
@@ -72,6 +77,7 @@ export async function loadSessionAccessRows(sessionIds: readonly string[]): Prom
       metadata: projectSessions.metadata,
       origin: projectSessions.origin,
       initiatorType: projectSessions.initiatorType,
+      spaceId: projectSessions.spaceId,
     })
     .from(projectSessions)
     .where(inArray(projectSessions.sessionId, ids));
@@ -83,7 +89,12 @@ export async function loadSessionAccessRows(sessionIds: readonly string[]): Prom
  * The ids of the sessions in `rows` that `userId` may open now. One project
  * listing per account, one group read, one grants read for the batch.
  */
-export async function maySeeSessions(userId: string, rows: readonly SessionAccessRow[]): Promise<Set<string>> {
+export async function maySeeSessions(
+  userId: string,
+  rows: readonly SessionAccessRow[],
+  /** `prompt`: account oversight reads a hidden private channel's thread, it never posts to one. */
+  purpose: 'read' | 'prompt' = 'read',
+): Promise<Set<string>> {
   const visible = new Set<string>();
   if (!userId || rows.length === 0) return visible;
   try {
@@ -105,9 +116,13 @@ export async function maySeeSessions(userId: string, rows: readonly SessionAcces
     }));
     const inProject = live.filter((row) => allows(read.get(row.accountId)!, row.projectId));
     if (inProject.length === 0) return visible;
-    const [groupRows, grants] = await Promise.all([
+    const projectIds = [...new Set(inProject.map((row) => row.projectId))];
+    const [groupRows, grants, hiddenByProject] = await Promise.all([
       groupIdsOfUser(userId),
       loadSessionGrants(inProject.map((row) => row.sessionId)),
+      Promise.all(projectIds.map((projectId) => hiddenSpaceIds(projectId, userId, null))).then(
+        (sets) => new Map(projectIds.map((projectId, i) => [projectId, sets[i]!])),
+      ),
     ]);
     const subject = { userId, groupIds: groupRows.map((g) => g.groupId) };
     for (const row of inProject) {
@@ -121,7 +136,10 @@ export async function maySeeSessions(userId: string, rows: readonly SessionAcces
           metadata: row.metadata,
           initiatorType: row.initiatorType,
           canManageProject: allows(manage.get(row.accountId)!, row.projectId),
-          accountSessionOversight: oversight.get(row.accountId) === true,
+          spaceVisible: spaceVisibleFor(hiddenByProject.get(row.projectId)!, row.spaceId),
+          accountSessionOversight:
+            oversight.get(row.accountId) === true &&
+            (purpose === 'read' || spaceVisibleFor(hiddenByProject.get(row.projectId)!, row.spaceId)),
         },
       );
       if (ok) visible.add(row.sessionId);
@@ -179,4 +197,51 @@ export async function filterTriggerRecipients(
   const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
     (await mayReadProjectTriggers(userId, accountId, [projectId])).has(projectId));
   return people.filter((_, i) => results[i]);
+}
+
+/** The projects among `projectIds` in `accountId` whose rooms `userId` may read now. */
+export async function mayReadProjectRooms(
+  userId: string,
+  accountId: string,
+  projectIds: readonly string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userId || projectIds.length === 0) return out;
+  const accessible = await projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_ROOM_READ);
+  for (const projectId of projectIds) if (allows(accessible, projectId)) out.add(projectId);
+  return out;
+}
+
+/**
+ * The people among `userIds` who may take part in a project's conversations
+ * now: members of the account with `project.room.read` on the project. The
+ * one rule for adding a person to a room and delivering a message to them.
+ */
+export async function filterRoomRecipients(
+  accountId: string,
+  projectId: string,
+  userIds: readonly string[],
+): Promise<string[]> {
+  const people = await personsAmong(accountId, userIds);
+  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await mayReadProjectRooms(userId, accountId, [projectId])).has(projectId));
+  return people.filter((_, i) => results[i]);
+}
+
+/**
+ * The sessions among `sessionIds` that `userId` may send a prompt to now:
+ * `project.session.start` on the session's project and the session visible to
+ * them. A conversation message reaches a member session only when the
+ * person vouching for the sender passes this, so a room never lets anyone
+ * prompt a session they could not prompt themselves.
+ */
+export async function mayPromptSessions(
+  userId: string,
+  accountId: string,
+  sessionIds: readonly string[],
+): Promise<Set<string>> {
+  if (!userId || sessionIds.length === 0) return new Set();
+  const accessible = await projectAccess(userId, accountId, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  const rows = [...(await loadSessionAccessRows(sessionIds)).values()].filter((row) => allows(accessible, row.projectId));
+  return maySeeSessions(userId, rows, 'prompt');
 }

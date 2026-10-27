@@ -21,6 +21,7 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
       ...(input.model ? { model: input.model } : {}),
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.noReply ? { noReply: true } : {}),
+      ...(input.system ? { system: input.system } : {}),
     })
   } catch (err) {
     return answer(400, { error: err instanceof Error ? err.message : String(err) })

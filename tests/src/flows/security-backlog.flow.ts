@@ -298,6 +298,10 @@ flow(
       const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
       r.status(200);
     });
+    await ctx.step('current alias returns the bound project → 200', async () => {
+      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: 'current' } });
+      r.status(200).body().has('$.project_id', projA.id);
+    });
     await ctx.step('allowed: self-identity probe GET /accounts/me → 200', async () => {
       const r = await pat().get('/v1/accounts/me');
       r.status(200);
@@ -446,10 +450,14 @@ flow(
   'SEC-G',
   {
     domain: 'security',
-    routes: ['POST /v1/p/auth', 'GET /v1/p/share', 'POST /v1/p/share'],
+    routes: ['POST /v1/p/auth', 'POST /v1/p/ticket', 'GET /v1/p/share', 'POST /v1/p/share'],
   },
   async (ctx) => {
     const bogusSandbox = `ke2e-no-such-sandbox-${Date.now()}`;
+    await ctx.step('POST /p/ticket without authorization refuses a navigation grant', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/p/ticket', { preview_url: 'http://p3000-synthetic.localhost:8008/' });
+      r.status(401);
+    });
     await ctx.step('POST /p/auth with no Authorization → 400/401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/p/auth', {});
       r.status([400, 401]);
@@ -585,6 +593,9 @@ flow(
       'POST /v1/access/check-email',
       'POST /v1/access/request-access',
       'GET /v1/accounts/me',
+      'POST /v1/projects/:projectId/turn-permission',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/apps/:appId/events',
     ],
   },
   async (ctx) => {
@@ -698,6 +709,40 @@ flow(
           response.status(400).body().has('$.error', true).has('$.message', 'Validation failed').has('$.status', 400);
         }
       }
+    });
+
+    await ctx.step('5,000 invalid array elements → 400 with the first 20 issues and issue_count, never one issue each (KRTX-3419)', async () => {
+      const project = await ctx.fixtures.project();
+      const response = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/turn-permission',
+        { session_id: NIL_UUID, request_id: 'perm_bounded', permission: 'bash', patterns: Array(5000).fill(1) },
+        { params: { projectId: project.id } },
+      );
+      response.status(400).body().has('$.message', 'Validation failed').has('$.issue_count', 5000);
+      const issues = response.json<{ issues: unknown[] }>().issues;
+      if (issues.length !== 20) throw new Error(`expected 20 issues, got ${issues.length}`);
+      if (response.text().length > 10_000) throw new Error(`validation body is ${response.text().length} bytes`);
+    });
+
+    await ctx.step('an anonymous App-events body with 20,000 bad elements under a union → 400 under 20 KB, not one error per element', async () => {
+      // Zod nests a union branch's whole issue list in ONE issue (`unionErrors`); a count cap alone kept it.
+      const response = await ctx.client.post(
+        '/v1/projects/:projectId/apps/:appId/events',
+        { events: Array(20000).fill({}) },
+        { params: { projectId: NIL_UUID, appId: NIL_UUID } },
+      );
+      response.status(400).body().has('$.issue_count', 1).has('$.issues[0].code', 'invalid_union');
+      if (response.text().length > 20_000) throw new Error(`validation body is ${response.text().length} bytes`);
+    });
+
+    await ctx.step("a session create with a wrong-typed field → the shared 400 envelope, not zod's raw result", async () => {
+      const project = await ctx.fixtures.project();
+      const response = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/sessions',
+        { fork_from_session_id: 123 },
+        { params: { projectId: project.id } },
+      );
+      response.status(400).body().has('$.error', true).has('$.message', 'Validation failed').has('$.issue_count', 1);
     });
 
     await ctx.step('HTTP method fuzzing never bypasses account authentication', async () => {

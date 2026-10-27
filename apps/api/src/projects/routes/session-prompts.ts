@@ -6,6 +6,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
+import { clearRestoredModelPin } from '../lib/session-model-fallback-revert';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -25,6 +26,7 @@ import { notificationsEnabled } from '../../notifications/enabled';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -295,7 +297,7 @@ export function registerSessionPromptsRoutes(): void {
       // at create would let a member send the first message as their granted
       // agent and every one after it as any other agent in the manifest. Falls
       // back to the session's own agent when the prompt names none.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName, undefined, visible.row.spaceId);
 
       // "Stop and send" ends the running turn, so it asks what Stop asks
       // (`turn-stop-authority.ts`). With no running turn it is a plain send.
@@ -398,6 +400,10 @@ export function registerSessionPromptsRoutes(): void {
         undefined,
         sendState.then((state) => state.held),
       );
+      // This prompt runs on the pin the revert restored: drop the marker.
+      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+        void clearRestoredModelPin(sessionId);
+      }
 
       // KRTX-1742: a person who prompts a session follows its notifications
       // from now on. Never un-mutes; the creator follows without a row. Only
@@ -407,6 +413,19 @@ export function registerSessionPromptsRoutes(): void {
         void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
           logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
         );
+      }
+
+      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      if (!enqueued.deduped) {
+        collectMessageLinksInBackground({
+          projectId,
+          sessionId,
+          spaceId: visible.row.spaceId,
+          visibility: visible.row.visibility,
+          userId: personUserId(c, loaded),
+          text,
+          projectMetadata: loaded.row.metadata,
+        });
       }
 
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;

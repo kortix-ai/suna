@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, sta
 import { platform } from 'os';
 import { isAbsolute, join } from 'path';
 
+import { isAlive } from './process-liveness';
 import { agentTunnelHome } from './service-paths';
 
 /**
@@ -108,6 +109,23 @@ function writePrivateJson(file: string, home: string, value: unknown): void {
 
 export function writeAccess(state: AccessState, home = agentTunnelHome()): void {
   writePrivateJson(accessFilePath(home), home, state);
+}
+
+/**
+ * A1: the access a pairing starts with. The owner's mode (and keep awake) is
+ * a machine setting: a re-pair (`--reauth`, a rejected token, a stale
+ * connection) keeps it. A grant or denial belongs to the old pairing and does
+ * not carry over. Only a first pairing (no access.json, e.g. after `logout`)
+ * picks a default: `ask` when the desktop app can answer a prompt, else `always`.
+ */
+export function accessAfterPairing(home: string, desktopApp: boolean): AccessState {
+  const kept = existsSync(accessFilePath(home)) ? readAccess(home) : null;
+  return {
+    mode: kept?.mode ?? (desktopApp ? 'ask' : 'always'),
+    grantedUntil: null,
+    deniedUntil: null,
+    keepAwake: kept?.keepAwake ?? false,
+  };
 }
 
 export type AccessDecision = 'run' | 'off' | 'denied' | 'ask';
@@ -252,16 +270,6 @@ export function readAccessRequest(home = agentTunnelHome()): AccessRequest | nul
 
 export function clearAccessRequest(id: string, home = agentTunnelHome()): void {
   if (readAccessRequest(home)?.id === id) rmSync(accessRequestPath(home), { force: true });
-}
-
-function isAlive(pid: unknown): boolean {
-  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 /**

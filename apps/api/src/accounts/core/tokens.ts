@@ -5,11 +5,13 @@ import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   listPersonalAccountTokens,
   getAccountTokenOwner,
   revokeAccountToken,
+  deleteRevokedPersonalAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
@@ -19,7 +21,6 @@ import {
   accountsRouter,
   accountDisplayName,
   AccountTokenSchema,
-  OkSchema,
   MeSchema,
   autoClaimPendingInvites,
   resolveAccountForUser,
@@ -27,6 +28,7 @@ import {
   lookupEmailsByUserIds,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -131,6 +133,10 @@ accountsRouter.openapi(
     email: userEmail,
     token_context: {
       auth_type: authType,
+      // The account token this request authenticated with (null for a web
+      // session), so a client can tell its own credential from the rest:
+      // `kortix tokens rm` refuses to revoke it by accident (KRTX-1842).
+      token_id: (c.get('iamTokenBinding') as { tokenId?: string } | undefined)?.tokenId ?? null,
       project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
@@ -187,6 +193,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -264,6 +271,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, accountOverride);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -283,6 +291,13 @@ accountsRouter.openapi(
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) {
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+  }
+  const expiryRefusal = await checkTokenMintExpiry(
+    expiresAt,
+    c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+  );
+  if (expiryRefusal) {
+    return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
   }
 
   // Optional project scope. A project-scoped key only ever works on that one
@@ -330,14 +345,14 @@ accountsRouter.openapi(
     method: 'delete',
     path: '/tokens/{tokenId}',
     tags: ['accounts'],
-    summary: 'Revoke a PAT',
+    summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
     ...auth,
     request: {
       params: z.object({ tokenId: z.string() }),
-      query: z.object({ account_id: z.string() }).partial(),
+      query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
     },
     responses: {
-      200: json(OkSchema, 'Revocation result'),
+      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
       ...errors(400, 401, 403, 404),
     },
   }),
@@ -356,6 +371,7 @@ accountsRouter.openapi(
   try {
     accountId = await resolveAccountForUser(userId, queryAccount);
   } catch (err) {
+    rethrowDatabaseError(err);
     return c.json({ error: (err as Error).message }, 403);
   }
 
@@ -373,6 +389,12 @@ accountsRouter.openapi(
     actor,
     ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
   );
+
+  if (c.req.query('delete_revoked') === 'true') {
+    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
+    if (deleted) return c.json({ ok: true, deleted: true });
+    return c.json({ error: 'revoked personal token not found' }, 404);
+  }
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

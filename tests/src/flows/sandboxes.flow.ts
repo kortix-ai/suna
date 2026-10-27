@@ -14,7 +14,7 @@
  *   SBX-3   GET  /sandboxes  + GET /sandbox-health  + GET /sandbox-templates
  *   SBX-4   sandbox-templates CRUD (POST / PATCH / DELETE / build)
  * All build triggers are asserted at the TRIGGER response only — we never wait
- * on a real Daytona build to finish. rebuild/build are fire-and-forget → 202.
+ * on a real provider build to finish. rebuild/build are fire-and-forget → 202.
  */
 import { flow } from "../core/flow";
 
@@ -61,7 +61,7 @@ flow(
     domain: "sandboxes",
     // This deletes the content-addressed default image shared by other projects.
     global: true,
-    requires: ["daytona"],
+    requires: ["sandbox"],
     routes: ["POST /v1/projects/:projectId/snapshots/rebuild"],
   },
   async (ctx) => {
@@ -75,7 +75,7 @@ flow(
         // 202: every enabled provider dropped the image and a rebuild started.
         // 409 SNAPSHOT_IN_USE: the provider refuses to delete an image that
         // running sandboxes still use. Platinum does this (`template_in_use`);
-        // Daytona does not. The shared default image is in use whenever
+        // the legacy Daytona provider does not. The shared default image is in use whenever
         // another flow's session is alive, so both answers are the product
         // contract. A generic 503/502 is a provider failure and fails here.
         // Never wait on the build.
@@ -195,7 +195,7 @@ flow(
   "SBX-4",
   {
     domain: "sandboxes",
-    requires: ["daytona"],
+    requires: ["sandbox"],
     routes: [
       "POST /v1/projects/:projectId/sandbox-templates",
       "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
@@ -224,6 +224,21 @@ flow(
           templateId = body.template_id;
           ctx.track("sandbox-template", body.template_id, { projectId: p.id });
         }
+      }
+    });
+
+    await ctx.step("POST the same slug again → 409 template_slug_taken, the body names the slug and carries no SQL", async () => {
+      if (!templateId) return;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/sandbox-templates",
+          { slug, name: "e2e template", image: "ubuntu:22.04" },
+          { params: { projectId: p.id } },
+        );
+      r.status(409).body().has("$.code", "template_slug_taken").matches("$.error", new RegExp(`"${slug}"`));
+      if (/Failed query|sandbox_templates|params:/.test(r.text())) {
+        throw new Error(`409 body leaks the database error: ${r.text()}`);
       }
     });
 
@@ -281,7 +296,7 @@ flow(
     });
 
     // Template creation and PATCH both start provider builds. The flow carries
-    // the `daytona` capability so the local profile excludes the whole action.
+    // the `sandbox` capability so the local profile excludes the whole action.
     if (templateId) {
       const createdTemplateId = templateId;
       await ctx.step("PATCH and build the created template on a provider-backed target", async () => {

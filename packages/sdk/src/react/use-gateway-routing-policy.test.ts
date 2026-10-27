@@ -2,20 +2,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { qk } from "./query-keys";
 
 let invalidated: (readonly unknown[])[] = [];
-// The project-detail read (useProjectLlmGatewayEnabled) resolves the
-// llm_gateway flag ON for these cases — routing policy is a gateway-only
-// surface and its query must stay disabled for a native project.
-let projectGatewayFlag = true;
+// Every query key the hook asks for: the gateway is the only model path, so
+// the policy read waits on no project-detail flag read.
+let queried: unknown[] = [];
 mock.module("@tanstack/react-query", () => ({
   useQuery: (config: Record<string, unknown>) => {
-    const key = config.queryKey as unknown[] | undefined;
-    if (Array.isArray(key) && key.includes("detail")) {
-      return {
-        ...config,
-        data: { project: { experimental: { llm_gateway: projectGatewayFlag } } },
-        isSuccess: true,
-      };
-    }
+    queried.push(config.queryKey);
     return config;
   },
   useMutation: (config: Record<string, unknown>) => config,
@@ -30,7 +22,7 @@ const { gatewayRoutingPolicyKey, useGatewayRoutingPolicy } =
 
 beforeEach(() => {
   invalidated = [];
-  projectGatewayFlag = true;
+  queried = [];
 });
 
 describe("useGatewayRoutingPolicy", () => {
@@ -42,19 +34,13 @@ describe("useGatewayRoutingPolicy", () => {
     expect((useGatewayRoutingPolicy(null) as any).enabled).toBe(false);
   });
 
-  test("stays disabled for a native project (llm_gateway off) — the route 404s and writes are no-ops", () => {
-    projectGatewayFlag = false;
-    expect((useGatewayRoutingPolicy("P1") as any).enabled).toBe(false);
+  test("reads the policy without a project-detail read", () => {
+    expect((useGatewayRoutingPolicy("P1") as any).enabled).toBe(true);
+    expect(queried).toEqual([gatewayRoutingPolicyKey("P1")]);
   });
 
-  // A disabled query still serves whatever the cache holds from before the
-  // flag flipped. Consumers (the composer's reasoning-effort chip) must be
-  // able to ask "does this policy apply at all?" without reasoning about
-  // cache residue — so the hook states the flag alongside `data`.
-  test("exposes llmGatewayEnabled so consumers hide gateway-only controls off-gateway", () => {
+  test("llmGatewayEnabled (deprecated) is true for every project", () => {
     expect((useGatewayRoutingPolicy("P1") as any).llmGatewayEnabled).toBe(true);
-    projectGatewayFlag = false;
-    expect((useGatewayRoutingPolicy("P1") as any).llmGatewayEnabled).toBe(false);
     expect((useGatewayRoutingPolicy(null) as any).llmGatewayEnabled).toBe(false);
   });
 

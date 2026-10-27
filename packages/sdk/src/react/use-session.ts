@@ -41,7 +41,7 @@ import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
-import { onSessionStopped } from '../core/http/session-stopped';
+import { onSessionDeleted, onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
@@ -96,7 +96,8 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
-import { useSessionLogSync } from './use-session-log';
+import { useSessionLogOlder, useSessionLogSync } from './use-session-log';
+import { sessionLogRoot } from '../core/session-log/v1-view';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
@@ -1181,9 +1182,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
+    // A deleted session has no lease left to renew or end: every PUT would 404.
+    let deleted = false;
+    const offDeleted = onSessionDeleted((id) => {
+      if (id === sessionId) deleted = true;
+    });
     // Without page exit, an absent PUT goes without `keepalive`, as before
     // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
+      if (deleted) return;
       // A human coming back to a stopped session is a fresh visit: release the
       // stop hold and re-open (`presenceReturnReopensSession`). Presence-gated
       // on purpose — a background tab never reports a return, so it never
@@ -1230,6 +1237,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       window.clearInterval(refresh);
       presenceReporterRef.current = null;
       stop();
+      offDeleted();
     };
   }, [browserPresence, presenceTabId, projectId, sessionId, queryClient]);
   useEffect(() => {
@@ -1240,8 +1248,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     presencePageExitRef.current = presencePageExit;
   }, [presencePageExit]);
 
+  // A deleted session answers 404 to every read and to `/start`: once this tab
+  // deletes it, the hook goes quiet while the host navigates away.
+  const [deletedSessionId, setDeletedSessionId] = useState<string | null>(null);
+  useEffect(
+    () => onSessionDeleted((id) => (id === sessionId ? setDeletedSessionId(id) : undefined)),
+    [sessionId],
+  );
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
-  const startEnabled = enabled && !!projectId && !!sessionId;
+  const startEnabled = enabled && !!projectId && !!sessionId && deletedSessionId !== sessionId;
   // Read by `/start`'s refetch interval, which runs outside render.
   const streamConnectedRef = useRef(false);
   // The session a Stop in THIS tab stopped. Until something else brings the
@@ -1365,6 +1380,31 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
+  // 1a'. The session log (v2), read first on every open (`use-session-log.ts`). Also without
+  // the chat engine: a host that reads its own transcript renders the log's threads
+  // (`useSessionLogThread`). With the chat engine, the log OWNS the history from the first
+  // render: the open asks the snapshot for no transcript window, no saved copy is read
+  // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
+  // read. A session the log refuses (404: a server older than the log, or no stored log yet)
+  // reads v1 as before.
+  const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
+  // `'missing'`: v2, and the API holds no log for this session yet (a new session). Nothing saved
+  // is on its way, and no v1 copy is read.
+  const logOwned = chatEngine && logDialect !== 'v1';
+  const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
+  // On v2 the session log is the saved copy: its page, or the device's saved v2 copy.
+  const logHistory = useSyncStore((state): 'loading' | 'present' | 'absent' => {
+    const log = logOwned ? state.sessionLogs[sessionId] : undefined;
+    if (!log) return logDialect === 'missing' ? 'absent' : 'loading';
+    return sessionLogRoot(log)?.hasMessages ? 'present' : 'absent';
+  });
+  // The log's page proves the conversation empty (as the v1 saved copy's `total: 0` did).
+  const logEmptyRoot = useSyncStore((state) => {
+    const root = logOwned ? sessionLogRoot(state.sessionLogs[sessionId]) : null;
+    return root?.empty ? root.runtimeSessionId : null;
+  });
+  const logOlder = useSessionLogOlder({ projectId, sessionId }, undefined, { enabled: logOwned });
+
   // 1b. ONE read for the rest of the open.
   //
   // The session row, `/turn`, `/prompts`, `/transcript?shape=sync` and
@@ -1387,6 +1427,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // into a second cadence.
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
+    // The pointer only: the open reads the session log first, never the snapshot's v1 window.
     openSessionBundle(projectId, sessionId);
     seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1466,7 +1507,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox?.external_id && switchedBoxId === sandbox.external_id;
+  const switched =
+    deletedSessionId !== sessionId &&
+    startReady &&
+    !!sandbox?.external_id &&
+    switchedBoxId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -1512,17 +1557,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
-  // 5a. The session log (v2) when negotiated; until then a no-op and the
-  // transcript below stays the only source (`use-session-log.ts`). Also without
-  // the chat engine: a host that reads its own transcript renders the log's
-  // threads (`useSessionLogThread`).
-  useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
-  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
+  const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled && !logOwned);
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? initialRuntimeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? logRootRuntimeId ?? initialRuntimeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
@@ -1551,9 +1591,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     runtimeSessionId: ocSessionId,
   });
   const canStop = useSessionCanStop(projectId, sessionId);
-  // A turn keeps the computer on and moves presence's cap (2 h after the
-  // latest turn), so the window from before it is wrong after it (KRTX-1729):
-  // a turn that starts clears it, and a turn that ends reads it again.
+  // A turn keeps the computer on and moves presence's cap (the idle window
+  // after the latest turn), so the window from before it is wrong after it
+  // (KRTX-1729): a turn that starts clears it, and a turn that ends reads it
+  // again.
   const turnRunning = working.state === 'working';
   const turnRanRef = useRef(turnRunning);
   useEffect(() => {
@@ -1586,6 +1627,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // copy, or `null` while it runs and when it found none. Never `undefined`,
     // which would make the sync layer read the same window again (KRTX-189).
     mirror: transcriptHistory.envelope,
+    sessionLog: logOwned,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1656,22 +1698,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     openTurnToken: working.serverOpenTurnToken,
     lastEndedToken,
   });
-  const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
+  const savedEmptyRoot = !transcriptHistoryEnabled ? null : logOwned ? logEmptyRoot : transcriptHistory.emptyRootSessionId;
   const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and
   // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
   const savedTranscript = resolveSavedTranscript({
     enabled: startEnabled && chatEngine,
-    hasMessages: sync.messages.length > 0,
+    hasMessages: sync.messages.length > 0 || (logOwned && logHistory === 'present'),
     history: !transcriptHistoryEnabled
       ? 'off'
-      : transcriptHistory.isLoading
-        ? 'loading'
-        : transcriptHistory.envelope
-          ? 'present'
-          : 'absent',
-    mirror: sync.mirrorState,
+      : logOwned
+        ? logHistory
+        : transcriptHistory.isLoading
+          ? 'loading'
+          : transcriptHistory.envelope
+            ? 'present'
+            : 'absent',
+    mirror: logOwned ? (logHistory === 'present' ? 'painted' : logHistory) : sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
     emptyAwaitingTurnRead: emptyProvenForRoot && !turnRead,
   });
@@ -2042,7 +2086,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // NOTHING: apps/web's producers now deliver the first prompt as a durable
     // inbox row (server-side at create, or `startSessionWithPrompt`), and the
     // stash carries only the model/agent hand-off. A full stash — the
-    // whitelabel-demo producer — still replays here exactly as before.
+    // white-label/lumen producer — still replays here exactly as before.
     if (!stash.prompt.trim()) return;
     send(stash.prompt, {
       model: stash.model,
@@ -2061,6 +2105,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     opencodeSessionId: rootSessionId ?? null,
     runtimeTransport: 'rest' as const,
     runtimeSessions: canonicalSession.sessions,
+    /** The runtime session list has not answered yet (fetching, or not enabled
+     *  before this session owns the runtime). Empty `runtimeSessions` then means
+     *  "not asked", not "no child sessions". */
     runtimeSessionsLoading: canonicalSession.isLoading,
     runtimeSessionsListed: canonicalSession.listed,
     runtimeError: runtimeSessionError,
@@ -2077,9 +2124,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
-    hasOlder: sync.hasOlder,
-    isLoadingOlder: sync.isLoadingOlder,
-    loadOlder: sync.loadOlder,
+    // On v2 older history is the session log's (`GET …/log?before_seq=`).
+    hasOlder: logOwned ? logOlder.hasOlder : sync.hasOlder,
+    isLoadingOlder: logOwned ? logOlder.isLoadingOlder : sync.isLoadingOlder,
+    loadOlder: logOwned ? logOlder.loadOlder : sync.loadOlder,
 
     // lifecycle
     phase,
@@ -2135,8 +2183,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     /**
      * Until when this person's presence keeps the session's computer on
      * (KRTX-1729): `until` is the computer's stop time after the latest
-     * renewal, `capAt` the time presence cannot keep it on past (2 h after the
-     * latest turn). Set from the presence lease's responses, so it needs
+     * renewal, `capAt` the time presence cannot keep it on past (the idle
+     * window after the latest turn). Set from the presence lease's responses,
+     * so it needs
      * `browserPresence`. Null while the person is absent (hidden tab, or no
      * input for 10 min), for a viewer who may not start the session, after a
      * renewal that found the computer not running, from a turn's start until

@@ -175,35 +175,43 @@ triggers:
       components with observed failures, and open a single CR titled
       `harness: …`. Exit silently if nothing is worth changing.
 
-  # Cron trigger — fires on a 6-field croner expression
-  # (second minute hour day month weekday).
+  # A trigger is `on:` (what fires it) + `run:` (what runs). `kortix triggers
+  # add` writes this shape; the flat form (`type: cron`, `prompt:` …) stays valid.
+  #
+  # Schedule — `cron` (6 fields: second minute hour day month weekday),
+  # `every: 5m` (at least 60s) or `at: <ISO-8601>` (once).
   #
   # - slug: daily-digest
-  #   name: Daily digest
-  #   type: cron
-  #   agent: kortix                  # must name a declared agent above
-  #   enabled: true
-  #   cron: "0 0 9 * * 1-5"          # 09:00 Mon–Fri
-  #   timezone: America/Los_Angeles
-  #   prompt: |
-  #     Summarize yesterday's commits across the repo. Save the result to
-  #     notes/digest-{{ fired_at }}.md and open a PR against main.
+  #   on:  { cron: "0 0 9 * * 1-5", timezone: America/Los_Angeles }   # 09:00 Mon–Fri
+  #   run:
+  #     agent: kortix                # must name a declared agent above
+  #     prompt: |
+  #       Summarize yesterday's commits across the repo. Save the result to
+  #       notes/digest-{{ cron.scheduled_date }}.md and open a PR against main.
   #
-  # Webhook trigger — fires on signed POSTs to
-  #   /v1/webhooks/projects/<project_id>/<slug>
-  # Signature header: `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 over
-  # the raw body using the secret named by `secret_env`).
-  # GitHub's `X-Hub-Signature-256` is also accepted.
+  # Webhook — fires on signed POSTs to /v1/webhooks/projects/<project_id>/<slug>
+  # (`X-Kortix-Signature: sha256=<hmac>`, HMAC-SHA256 over the raw body with
+  # the secret; GitHub's `X-Hub-Signature-256` is also accepted).
   #
   # - slug: slack-hook
-  #   name: Slack handler
-  #   type: webhook
-  #   agent: kortix
-  #   enabled: true
-  #   secret_env: WEBHOOK_SLACK_SECRET  # add the value via Secrets Manager
-  #   prompt: |
-  #     Slack event from {{ headers.user_agent }}.
-  #     User said: {{ body.text }}
+  #   on:  { webhook: { secret: WEBHOOK_SLACK_SECRET } }   # add the value via Secrets Manager
+  #   run:
+  #     prompt: |
+  #       Slack event from {{ headers.user_agent }}.
+  #       User said: {{ body.text }}
+  #
+  # App event — one of your Apps posts `reply.received` to $KORTIX_APP_EVENTS_URL.
+  # Use it last: a connector event, a webhook or a schedule fits first.
+  #
+  # - slug: handle-reply
+  #   on:  { event: reply.received, app: inbox-poller }
+  #   run: { prompt: "Answer {{ event.data.subject }}" }
+  #
+  # Call an App instead of an agent — no session, no model.
+  #
+  # - slug: poll-inbox
+  #   on:  { every: 5m }
+  #   run: { app: inbox-poller, path: /tick }
 
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack

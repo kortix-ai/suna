@@ -9,7 +9,7 @@ The inverse of **kortix-release**. A release moves prod FORWARD onto new code; a
 rollback re-points prod at an OLDER already-released `vX.Y.Z`, reusing that
 release's prebuilt artifacts (zero rebuild). Use it when a shipped version is
 breaking and the move is "go back now, fix forward later." The next forward
-release still comes from `staging`, not directly from dev/`main`.
+release still comes from `staging`, not directly from `dev`.
 
 > A rollback is **temporary, never sticky.** It only flips image tags + re-promotes
 > an old frontend build; it never touches `VERSION` or the trunk. The next promote
@@ -19,7 +19,7 @@ release still comes from `staging`, not directly from dev/`main`.
 ## 1. The one command
 
 ```bash
-gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref prod \
   -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
 ```
 
@@ -123,6 +123,27 @@ Two Apps changes ship in one release and survive a code rollback:
 
    To defer it, set `KORTIX_APPS_RETAINED_DEPLOYMENTS` high on prod for that
    release and lower it on the next one.
+
+### Email: received mail waits for the roll-forward
+
+From the release that stores each received email before the ack (KRTX-2235
+step 3), the api puts Email on the `integration.events.email` job queue. An
+older api never claims that queue, so emails stored before the rollback stay
+`queued` until a later promote runs them; Resend got its 200 and does not
+resend. Nothing is lost, only late. List what waits:
+
+```sql
+select job_key, created_at from kortix.job_queue
+where queue = 'integration.events.email' and status = 'queued' order by created_at;
+```
+
+If a sender must not wait and the rollback target has the Resend route
+(`POST /v1/webhooks/email/resend`, first shipped after v0.14.8), replay that
+email from the Resend dashboard: the older api handles it, and the stored copy
+is a no-op at the roll-forward (its session create already started, or its
+follow-up key exists). A target without that route receives no Resend mail at
+all; Resend's own retries (8 over about 31 h) then decide what arrives after
+the roll-forward. Delete nothing.
 
 ## 5. Per-surface availability (the engine handles this)
 

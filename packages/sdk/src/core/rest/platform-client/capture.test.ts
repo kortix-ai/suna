@@ -15,6 +15,10 @@ import {
   getCaptureDeviceGrant,
   getCaptureFrame,
   getCapturePolicy,
+  getCaptureStorage,
+  setCaptureStorage,
+  type CaptureStorageInput,
+  type CaptureStorageView,
   getCaptureTimeline,
   type CaptureDisplay,
   type CaptureFocusSpan,
@@ -113,6 +117,38 @@ test('policy: read and write the account policy', async () => {
   });
 });
 
+test('storage: read the destination and set a bring-your-own bucket; the secret never comes back', async () => {
+  nextBody = { mode: 'kortix' };
+  expect((await getCaptureStorage('a1')).mode).toBe('kortix');
+  expect(last()).toMatchObject({ method: 'GET', url: `${P}/storage` });
+  const input: CaptureStorageInput = {
+    mode: 's3',
+    endpoint: 'https://s3.example.com',
+    region: 'us-east-1',
+    bucket: 'my-bucket',
+    force_path_style: true,
+    access_key_id: 'AKIAEXAMPLE',
+    secret_access_key: 'synthetic-secret',
+  };
+  const view: CaptureStorageView = {
+    mode: 's3',
+    endpoint: 'https://s3.example.com',
+    region: 'us-east-1',
+    bucket: 'my-bucket',
+    force_path_style: true,
+    role_arn: '',
+    access_key_id: 'AKIAEXAMPLE',
+    has_secret: true,
+    per_device_scoped: false,
+  };
+  nextBody = view;
+  const got = await setCaptureStorage('a1', input);
+  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/storage`, body: input });
+  expect(got).toMatchObject({ mode: 's3', has_secret: true, per_device_scoped: false });
+  // The write input carries the plaintext secret; the returned view never does.
+  expect((got as Record<string, unknown>).secret_access_key).toBeUndefined();
+});
+
 test('timeline: a day, a window, and its items; the query names the subject and device', async () => {
   nextBody = { user_id: 'u1', runs: [], chunks: [], ranges: [] };
   await getCaptureTimeline('a1', { day: '2026-10-03' });
@@ -172,6 +208,11 @@ test('media: a frame with its video URL, an item’s media, an asset URL', async
   expect(last().url).toBe(`${P}/frames/f1?user_id=u2`);
   await getCaptureChunkMedia('a1', 'c1');
   expect(last().url).toBe(`${P}/chunks/c1/media`);
+  // A computer linked to no one is read as itself: the media and frame reads name the device.
+  await getCaptureChunkMedia('a1', 'c1', { deviceId: 'd1' });
+  expect(last().url).toBe(`${P}/chunks/c1/media?device_id=d1`);
+  await getCaptureFrame('a1', 'f1', { deviceId: 'd1' });
+  expect(last().url).toBe(`${P}/frames/f1?device_id=d1`);
   await getCaptureAssetUrl('a1', 'd1', `sha256-${'a'.repeat(64)}.png`);
   expect(last().url).toBe(`${P}/devices/d1/assets/sha256-${'a'.repeat(64)}.png`);
 });
@@ -200,6 +241,13 @@ test('device sign-in approval: read with the accounts it can sign into, approve 
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/capture/device/grants/ABCD-1234/deny' });
 });
 
+// KRTX-2983: search keeps to one UTC day with `day`, as the timeline does.
+test('search: day is sent, so a search can keep to one UTC day', async () => {
+  nextBody = { hits: [] };
+  await searchMyCapture({ q: 'invoice', day: '2026-10-20' });
+  expect(last().url).toBe('http://test.local/capture/me/search?q=invoice&day=2026-10-20');
+});
+
 test('the agent tool reads the person it acts for under /capture/me, account from the token', async () => {
   nextBody = { hits: [] };
   await searchMyCapture({ q: 'invoice', kinds: ['audio'] });
@@ -226,8 +274,9 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   expect(last().url).toBe(`${P}/days?tz=UTC`);
   await capture.workspace.setEnabled(true);
   expect(last()).toMatchObject({ method: 'PATCH', url: P });
-  // Raw capture only: the account handle has nothing else.
-  expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
+  // Raw capture only: the account handle has nothing else (storage = the
+  // account's own S3 destination, #10664/#10666).
+  expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'storage', 'timeline', 'workspace']);
   expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'link', 'list', 'revoke']);
   await kortix.capture.approveDevice('ABCD-1234', 'a1');
   expect(last().url).toBe('http://test.local/capture/device/grants/ABCD-1234/approve');

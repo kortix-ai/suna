@@ -10,12 +10,18 @@
 // long after both sides of the cycle have finished evaluating.
 import { chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { encryptProjectSecret, getProjectSecretValueForConsumer } from '../projects/secrets';
+import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValueForConsumer } from '../projects/secrets';
+
+// The email inbox accounts encrypt their credential with the project key
+// (channels/email/installs.ts); they reach it here, the channels' one door
+// into project secrets.
+export { decryptProjectSecret as decryptChannelSecret, encryptProjectSecret as encryptChannelSecret };
 import { db } from '../shared/db';
 
 export * from './slack/installs';
 export * from './email/installs';
 export * from './teams/installs';
+export * from './telegram/installs';
 
 export async function deleteProjectSecrets(
   projectId: string,

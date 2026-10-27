@@ -53,9 +53,11 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
@@ -67,6 +69,7 @@ RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 # and the runner copies it to the path the snapshot builder reads
 # (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /cli
 
@@ -152,10 +155,16 @@ RUN corepack enable pnpm && \
 # Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
 # CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
 # 33748/33747/71556) for code this image never executes. Drop it.
+# The tsgo typechecker (@typescript/native-preview, a root devDependency) is the
+# same case: a vendored Go binary that only `pnpm typecheck` runs, never this
+# image. It carried 15 high Go CVEs (Trivy, 2026-10-22: golang.org/x/text and
+# Go stdlib, e.g. CVE-2026-56851/111943) and has no newer build.
 RUN rm -rf node_modules/supabase \
            node_modules/@supabase/cli-* \
            node_modules/.pnpm/supabase@* \
-           node_modules/.pnpm/@supabase+cli-*
+           node_modules/.pnpm/@supabase+cli-* \
+           node_modules/@typescript/native-preview* \
+           node_modules/.pnpm/@typescript+native-preview*
 
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm
@@ -331,7 +340,7 @@ LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["bun", "-e", "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

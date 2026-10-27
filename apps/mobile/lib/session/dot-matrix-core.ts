@@ -1,7 +1,7 @@
 /**
- * Dot-matrix engine — a React-free port of apps/web
+ * Dot-matrix engine — a React-free port of @kortix/ui (packages/ui/src)
  * `lib/dotmatrix-core.tsx`, `lib/dotmatrix-hooks.ts`, and
- * `components/dotmatrix-loader.css`.
+ * `styles/dotmatrix-loader.css`.
  *
  * Web draws each dot as a `<span>` whose opacity comes from one of two places:
  * an inline style computed by a resolver (JS phase from `useCyclePhase` /

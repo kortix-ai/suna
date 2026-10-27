@@ -20,7 +20,7 @@ const projectRow = row({ ownerType: 'project', ownerId: null });
 
 const managedChannelRow = row({
   ownerType: 'external',
-  ownerId: `agentmail:${INBOX}`,
+  ownerId: `email:${INBOX}`,
   providerType: 'channel',
   connectorConfig: { platform: 'email' },
   metadata: { channel_connection: true, inbox_id: INBOX },
@@ -68,11 +68,9 @@ describe('mayMutateConnection', () => {
     expect(mayMutateConnection(row({ ownerId: '' }), serviceAccount(true))).toBe(false);
   });
 
-  test('a trusted managed-channel row is reachable and still needs the manage capability', () => {
-    expect(mayMutateConnection(managedChannelRow, human(OWNER, true))).toBe(true);
+  test('a pre-account managed email row is mutable by nobody (inboxes are ordinary accounts now)', () => {
+    expect(mayMutateConnection(managedChannelRow, human(OWNER, true))).toBe(false);
     expect(mayMutateConnection(managedChannelRow, human(OWNER, false))).toBe(false);
-    const untrusted = { ...managedChannelRow, ownerId: 'agentmail:another-inbox' };
-    expect(mayMutateConnection(untrusted, human(OWNER, true))).toBe(false);
   });
 
   test('an agent principal reaches only the private row of the human it acts for, in a private session', () => {

@@ -1,4 +1,4 @@
-import { clientAbortTarget } from '../client-abort';
+import { clientAbortTarget, clientRevertMessage } from '../client-abort';
 import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -14,6 +14,7 @@ import {
 } from '../pre-prompt-env-sync';
 import { isNonIdempotentSessionWrite } from '../prompt-dedupe';
 import { canonicalProxyPath } from '../proxy-path';
+import { stripInBoxProxyPrefix } from '../runtime-request';
 import { carriesSessionData } from '../session-data-ports';
 import {
   agentSwitchRefusal,
@@ -23,7 +24,7 @@ import {
   refuseSessionOrControlAccess,
   type PreviewProxyAccess,
 } from './access';
-import { decideClientAbort } from './abort-authority';
+import { decideClientAbort, decideClientRewind } from './abort-authority';
 import { forwardWithRetry } from './retry';
 import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle } from './turn-start';
 import { wakeOrRefuseInactiveSandbox } from './wake';
@@ -191,6 +192,17 @@ export async function forwardToSandbox(
     );
   }
 
+  // A rewind deletes the message and every one after it: only its sender may,
+  // and only when nobody else wrote after it (`rewind-authority.ts`).
+  const revertMessageId = sandboxAuthored ? null : clientRevertMessage(upstreamPort, method, remainingPath, requestBody);
+  if (revertMessageId !== null && !(await decideClientRewind(access, record.sessionId, revertMessageId))) {
+    return jsonProxyError(
+      { error: 'Only the person who sent this message can edit it, and only while nobody has replied after it.', code: 'not_message_author' },
+      403,
+      origin,
+    );
+  }
+
   if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
     const guardProjectId = record.projectId;
     const checked = await dropUndeclaredPromptAgent({
@@ -225,6 +237,19 @@ export async function forwardToSandbox(
     // `SessionScopeInputSchema` in @kortix/api-contract: a turn is never refused
     // for an unconnected connector, because the refusal was unclearable from the
     // product. The connector call denies and hands back a connect link instead.
+  }
+  if (
+    record.status === 'stopped' &&
+    carriesSessionData(upstreamPort) &&
+    method === 'POST' &&
+    /^\/session\/[^/?#]+\/fork\/?(?:$|[?#])/.test(stripInBoxProxyPrefix(remainingPath))
+  ) {
+    // Fork cannot wait for the asynchronous wake. Return a non-retryable
+    // conflict so the caller displays the recovery action instead of a 503.
+    return jsonProxyError({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    }, 409, origin);
   }
   if (record.status !== 'active') {
     const woken = await wakeOrRefuseInactiveSandbox({
@@ -298,7 +323,7 @@ export async function forwardToSandbox(
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
 
-  return forwardWithRetry(
+  const response = await forwardWithRetry(
     {
       sandboxId,
       port,
@@ -327,4 +352,15 @@ export async function forwardToSandbox(
     },
     requestBody,
   );
+  const forkSource = carriesSessionData(upstreamPort) && method.toUpperCase() === 'POST'
+    ? /^\/?session\/([^/]+)\/fork$/.exec(remainingPath)?.[1]
+    : undefined;
+  if (forkSource && response.ok) {
+    const { registerRuntimeFork } = await import('../../projects/surface');
+    await registerRuntimeFork({
+      sessionId: record.sessionId, projectId: record.projectId, accountId: record.accountId,
+      sourceId: forkSource, fork: await response.clone().json(),
+    });
+  }
+  return response;
 }

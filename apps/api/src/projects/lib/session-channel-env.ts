@@ -30,3 +30,16 @@ export function sessionChannelEnvFromMetadata(metadata: unknown): Record<string,
 
   return env;
 }
+
+/**
+ * The channel or DM a thread belongs to (`project_channels`), for the agent:
+ * `KORTIX_SPACE_SLUG` is the channel's slug, or the agent's name in a DM.
+ * Its folders are named in /drives/README.md.
+ */
+export function sessionSpaceEnv(
+  space: { spaceId: string; kind: 'channel' | 'dm'; slug: string | null; dmAgentName: string | null } | null,
+): Record<string, string> {
+  const name = space?.kind === 'channel' ? space.slug : space?.dmAgentName;
+  if (!space || !name) return {};
+  return { KORTIX_SPACE_ID: space.spaceId, KORTIX_SPACE_KIND: space.kind, KORTIX_SPACE_SLUG: name };
+}

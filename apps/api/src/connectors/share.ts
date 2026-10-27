@@ -304,9 +304,23 @@ export function isProjectSessionVisibleTo(
      * admin role. See `hasAccountSessionOversight` (iam/authorize.ts).
      */
     accountSessionOversight?: boolean;
+    /**
+     * The caller may see the session's channel (`canSeeSpace`,
+     * projects/lib/space-access.ts): true for a session in no space or a
+     * public one. REQUIRED so a new caller cannot omit it and fail open. False
+     * (a private channel the caller is not in) refuses everyone but an
+     * overseeing human admin: no own credential, ownership, grant, project
+     * visibility or manager override opens it.
+     */
+    spaceVisible: boolean;
   },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // A hidden private channel refuses even the session's own credential: its
+  // reach follows the launcher's current membership.
+  if (!context.spaceVisible) {
+    return ownership.boundCredentialSessionId === null && context.accountSessionOversight === true;
+  }
   // The session's own credential, mint-time fact — before the overrides:
   // neither oversight nor the manager override is needed to open yourself,
   // and both are powers the bind must never widen into sibling reach.
@@ -458,6 +472,50 @@ export function mayManageSessionSharing(input: {
   if (input.isOwner) return true;
   return input.canManageProject && input.ownerIsMachine;
 }
+
+/**
+ * Who may publish ONE assistant response (a turn) through a public link
+ * (`PUT .../turns/:turnId/share`). Founder decision, 2026-10-23. In order:
+ *
+ *  1. `not_found` when the caller cannot READ the session under normal session
+ *     visibility. A public link must never become a way to read what the
+ *     visibility gate refused, and the answer does not reveal that it exists.
+ *  2. `not_human` for any credential `isHumanCaller` refuses (an agent or
+ *     sandbox token, a service account), even on its own session: a
+ *     prompt-injected agent must not be able to publish its own answers. A
+ *     human's PAT or API key acts as that human.
+ *  3. `allow` for the session owner or a project manager
+ *     (`project.members.manage`); any other reader gets `not_owner_or_manager`.
+ *
+ * Narrower than the preview/file rule (`mayManageSessionSharing`): a manager
+ * qualifies on any session they can read, because the link publishes only text
+ * they already read, never sandbox access.
+ */
+export function mayPublishTurn(input: {
+  isHuman: boolean;
+  canRead: boolean;
+  isOwner: boolean;
+  isManager: boolean;
+}): 'allow' | 'not_found' | 'not_human' | 'not_owner_or_manager' {
+  if (!input.canRead) return 'not_found';
+  if (!input.isHuman) return 'not_human';
+  return input.isOwner || input.isManager ? 'allow' : 'not_owner_or_manager';
+}
+
+/**
+ * "Human" for `mayPublishTurn`: a browser login (`jwt`) or a person's PAT/API
+ * key, with no Kortix session binding. Everything else is a machine: a service
+ * account bearer, any agent-session token (bound or not, governed or not), a
+ * sandbox token, a session-bound PAT, or no actor at all (fail closed).
+ */
+export function isHumanCaller(input: { credentialKind: string | undefined; boundSessionId: string | null }): boolean {
+  return input.boundSessionId === null && (input.credentialKind === 'jwt' || input.credentialKind === 'pat');
+}
+
+export const TURN_SHARE_AGENT_ERROR = 'An agent cannot share a response publicly';
+export const TURN_SHARE_AGENT_REVOKE_ERROR = 'An agent cannot turn off a public response link';
+export const TURN_SHARE_OWNER_OR_MANAGER_ERROR =
+  'Only the session owner or a project manager can share a response publicly';
 
 /**
  * The denial wording for the two owner-governed sharing writes. Exported so the

@@ -62,11 +62,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import {
-  useSheetBackground,
-  type SheetRef,
-  KortixBottomSheetModal,
-} from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useCloseThen, useSheetBackground, type SheetRef } from '@/components/kortix/sheet';
 import { SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
 import { ReviewFileDiff } from '@/components/review/ReviewFileDiff';
@@ -114,16 +110,166 @@ interface ReviewDetailSheetProps {
   onOpenSession?: (sessionId: string) => void;
 }
 
-/** `Button size="lg"` is 44pt. 12pt above the pinned verdict row. */
-const PILL = 44;
-const FOOTER_TOP = 12;
-
 interface PendingVerdict {
   item: ReviewItem;
   verdict: ReviewVerdict;
 }
 
-export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetProps>(
+/** `Button size="lg"` is 44pt. 12pt above the pinned verdict row. */
+const PILL = 44;
+const FOOTER_TOP = 12;
+
+/** The sheet's content clears this much bottom so the footer never covers it. */
+const verdictFooterHeight = (showFooter: boolean, count: number, bottomPadding: number) =>
+  showFooter ? FOOTER_TOP + (count > 2 ? count * (PILL + 12) - 12 : PILL) + bottomPadding : 0;
+
+/** The pinned verdict row: two verdicts share one row, 50/50, the primary on
+ * the right (Request changes · Merge); three stack, primary first. */
+function VerdictFooter({
+  footerProps,
+  item,
+  verdicts,
+  background,
+  bottomPadding,
+  onVerdict,
+  conflicted,
+  originSessionId,
+  resolveConflicts,
+}: {
+  footerProps: BottomSheetFooterProps;
+  item: ReviewItem;
+  verdicts: ReviewVerdict[];
+  background: string;
+  bottomPadding: number;
+  onVerdict: (verdict: ReviewVerdict) => void;
+  conflicted: boolean;
+  originSessionId: string | null | undefined;
+  resolveConflicts: () => void;
+}) {
+  return (
+    <BottomSheetFooter {...footerProps}>
+      <View
+        className={verdicts.length > 2 ? 'gap-3 px-4' : 'flex-row-reverse gap-3 px-4'}
+        style={{ backgroundColor: background, paddingTop: FOOTER_TOP, paddingBottom: bottomPadding }}>
+        {verdicts.map((verdict, index) => {
+          // A conflicted change cannot merge: its primary resolves instead.
+          const resolves = conflicted && verdict === 'approve';
+          return (
+            <Button
+              key={verdict}
+              variant={verdict === 'dismiss' ? 'ghost' : index === 0 ? 'default' : 'secondary'}
+              size="lg"
+              className={verdicts.length > 2 ? 'rounded-full' : 'flex-1 rounded-full'}
+              disabled={resolves && !originSessionId}
+              onPress={() => (resolves ? resolveConflicts() : onVerdict(verdict))}>
+              <Text numberOfLines={1}>
+                {resolves ? 'Resolve conflicts' : reviewVerdictLabel(item.kind, verdict)}
+              </Text>
+            </Button>
+          );
+        })}
+      </View>
+    </BottomSheetFooter>
+  );
+}
+
+/** The verdict's confirm dialog: it opens from `onDismiss`, after the sheet
+ * has closed, and Cancel sends nothing. */
+function ConfirmVerdictDialog({
+  confirming,
+  onSend,
+  onOpenChange,
+}: {
+  confirming: PendingVerdict | null;
+  onSend: (target: ReviewItem, verdict: ReviewVerdict) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <AlertDialog open={!!confirming} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="rounded-3xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {confirming ? reviewVerdictLabel(confirming.item.kind, confirming.verdict) : ''}
+          </AlertDialogTitle>
+          <AlertDialogDescription>{confirming?.item.title ?? ''}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel asChild>
+            <Button variant="secondary" size="lg" className="rounded-full">
+              <Text>Cancel</Text>
+            </Button>
+          </AlertDialogCancel>
+          <Button
+            variant={confirming?.verdict === 'approve' ? 'default' : 'destructive'}
+            size="lg"
+            className="rounded-full"
+            onPress={() => confirming && onSend(confirming.item, confirming.verdict)}>
+            <Text>{confirming ? reviewVerdictLabel(confirming.item.kind, confirming.verdict) : ''}</Text>
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** The aligned label · value rows: agent, risk, or a change's number, branch,
+ * size and merge state. */
+function DetailRows({ rows }: { rows: ReturnType<typeof reviewDetailRows> }) {
+  if (rows.length === 0) return null;
+  return (
+    <SettingsGroup title="Details">
+      {rows.map((row) => (
+        <SettingsRow
+          key={row.label}
+          label={row.label}
+          value={row.value}
+          // A warning (conflicts) colours its value, not the label.
+          valueDestructive={row.warn}
+          right={null}
+          dense
+        />
+      ))}
+    </SettingsGroup>
+  );
+}
+
+/** The "what should change?" composer a Request changes verdict opens in
+ * place of the footer. */
+function RequestChangesComposer({
+  feedback,
+  onFeedback,
+  onCancel,
+  onSend,
+}: {
+  feedback: string;
+  onFeedback: (text: string) => void;
+  onCancel: () => void;
+  onSend: (text: string) => void;
+}) {
+  return (
+    <View className="gap-3">
+      <SheetTextInput
+        value={feedback}
+        onChangeText={onFeedback}
+        placeholder="What should change?"
+        accessibilityLabel="Requested changes"
+        autoFocus
+        multiline
+      />
+      <View className="flex-row gap-3">
+        <Button variant="secondary" size="lg" className="flex-1 rounded-full" onPress={onCancel}>
+          <Text>Cancel</Text>
+        </Button>
+        <Button size="lg" className="flex-1 rounded-full" disabled={!feedback.trim()} onPress={() => onSend(feedback.trim())}>
+          <Text>Send</Text>
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+export const ReviewDetailSheet = React.forwardRef<
+SheetRef, ReviewDetailSheetProps>(
   ({ projectId, item, onDismiss, onOpenSession }, ref) => {
     const modalRef = React.useRef<BottomSheetModal>(null);
     const { height } = useWindowDimensions();
@@ -149,13 +295,14 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
     // The file whose diff is pushed over the details (a change's Files row).
     const [openFile, setOpenFile] = React.useState<string | null>(null);
     const [askingFeedback, setAskingFeedback] = React.useState(false);
-    // The verdict waiting for its confirm dialog. Set while the sheet is open;
-    // the dialog opens from `onDismiss`, after the sheet has closed. A ref, not
-    // state: `dismiss()` runs in the same tick as the tap, and gorhom's close
-    // animation calls the `onDismiss` it captured then — one that would still
-    // read the old, empty state. That stale read dropped every Merge: the
-    // confirm never opened and no request went out (Jay, 2026-09-27).
-    const queuedRef = React.useRef<PendingVerdict | null>(null);
+    // The verdict waiting for its confirm dialog, deferred past the close:
+    // the dialog opens from `onDismiss`, after the sheet has closed. The
+    // shared close-then slot (a ref, not state: `dismiss()` runs in the same
+    // tick as the tap, and gorhom's close animation calls the `onDismiss` it
+    // captured then — one that would still read the old, empty state. That
+    // stale read dropped every Merge: the confirm never opened and no request
+    // went out (Jay, 2026-09-27).
+    const { deferAfterClose, takeAfterClose } = useCloseThen<PendingVerdict>();
     const [confirming, setConfirming] = React.useState<PendingVerdict | null>(null);
 
     // True from `present()` until `onDismiss`. `dismiss()` on a sheet that
@@ -209,13 +356,13 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
           return;
         }
         if (verdictNeedsConfirm(item.kind, verdict)) {
-          queuedRef.current = { item, verdict };
+          deferAfterClose({ item, verdict });
           closeSheet();
           return;
         }
         send(item, verdict);
       },
-      [item, send, closeSheet],
+      [item, send, closeSheet, deferAfterClose],
     );
 
     const handleDismiss = React.useCallback(() => {
@@ -223,11 +370,10 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
       setFeedback('');
       setAskingFeedback(false);
       setOpenFile(null);
-      const queued = queuedRef.current;
-      queuedRef.current = null;
+      const queued = takeAfterClose();
       if (queued) setConfirming(queued);
       onDismiss?.();
-    }, [onDismiss]);
+    }, [takeAfterClose, onDismiss]);
 
     const actionable = item?.status === 'needs_you';
     // A connector call this viewer may not decide: the sheet says who does.
@@ -291,44 +437,22 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
       onOpenSession?.(originSessionId);
     }, [item, originSessionId, previewQuery.data, onOpenSession, closeSheet]);
     const footerPadding = Math.max(insets.bottom, 16) + 8;
-    const footerHeight = showFooter
-      ? FOOTER_TOP + (verdicts.length > 2 ? verdicts.length * (PILL + 12) - 12 : PILL) + footerPadding
-      : 0;
+    const footerHeight = verdictFooterHeight(showFooter, verdicts.length, footerPadding);
 
     const renderFooter = React.useCallback(
       (props: BottomSheetFooterProps) =>
         showFooter && item ? (
-          <BottomSheetFooter {...props}>
-            {/* Two verdicts share one row, 50/50, the primary on the right
-                (Request changes · Merge). Three stack, primary first. */}
-            <View
-              className={verdicts.length > 2 ? 'gap-3 px-4' : 'flex-row-reverse gap-3 px-4'}
-              style={{ backgroundColor: background, paddingTop: FOOTER_TOP, paddingBottom: footerPadding }}>
-              {verdicts.map((verdict, index) => {
-                // A conflicted change cannot merge: its primary resolves instead.
-                const resolves = conflicted && verdict === 'approve';
-                return (
-                  <Button
-                    key={verdict}
-                    variant={
-                      verdict === 'dismiss'
-                        ? 'ghost'
-                        : index === 0
-                          ? 'default'
-                          : 'secondary'
-                    }
-                    size="lg"
-                    className={verdicts.length > 2 ? 'rounded-full' : 'flex-1 rounded-full'}
-                    disabled={resolves && !originSessionId}
-                    onPress={() => (resolves ? resolveConflicts() : handleVerdict(verdict))}>
-                    <Text numberOfLines={1}>
-                      {resolves ? 'Resolve conflicts' : reviewVerdictLabel(item.kind, verdict)}
-                    </Text>
-                  </Button>
-                );
-              })}
-            </View>
-          </BottomSheetFooter>
+          <VerdictFooter
+            footerProps={props}
+            item={item}
+            verdicts={verdicts}
+            background={background}
+            bottomPadding={footerPadding}
+            onVerdict={handleVerdict}
+            conflicted={conflicted}
+            originSessionId={originSessionId}
+            resolveConflicts={resolveConflicts}
+          />
         ) : null,
       [showFooter, item, verdicts, background, footerPadding, handleVerdict, conflicted, originSessionId, resolveConflicts],
     );
@@ -378,23 +502,7 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                   </Text>
                 ) : null}
 
-                {/* Aligned label · value rows: agent, risk, or a change's
-                    number, branch, size and merge state. */}
-                {detailRows.length > 0 ? (
-                  <SettingsGroup title="Details">
-                    {detailRows.map((row) => (
-                      <SettingsRow
-                        key={row.label}
-                        label={row.label}
-                        value={row.value}
-                        // A warning (conflicts) colours its value, not the label.
-                        valueDestructive={row.warn}
-                        right={null}
-                        dense
-                      />
-                    ))}
-                  </SettingsGroup>
-                ) : null}
+                <DetailRows rows={detailRows} />
 
                 <ReviewBody
                   projectId={projectId}
@@ -435,32 +543,12 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
                 ) : null}
 
                 {actionable && askingFeedback ? (
-                  <View className="gap-3">
-                    <SheetTextInput
-                      value={feedback}
-                      onChangeText={setFeedback}
-                      placeholder="What should change?"
-                      accessibilityLabel="Requested changes"
-                      autoFocus
-                      multiline
-                    />
-                    <View className="flex-row gap-3">
-                      <Button
-                        variant="secondary"
-                        size="lg"
-                        className="flex-1 rounded-full"
-                        onPress={() => setAskingFeedback(false)}>
-                        <Text>Cancel</Text>
-                      </Button>
-                      <Button
-                        size="lg"
-                        className="flex-1 rounded-full"
-                        disabled={!feedback.trim()}
-                        onPress={() => send(item, 'changes', feedback.trim())}>
-                        <Text>Send</Text>
-                      </Button>
-                    </View>
-                  </View>
+                  <RequestChangesComposer
+                    feedback={feedback}
+                    onFeedback={setFeedback}
+                    onCancel={() => setAskingFeedback(false)}
+                    onSend={(text) => send(item, 'changes', text)}
+                  />
                 ) : null}
 
                 {/* Last in the sheet, alone and destructive (Jay, 2026-09-27):
@@ -484,34 +572,13 @@ export const ReviewDetailSheet = React.forwardRef<SheetRef, ReviewDetailSheetPro
           )}
         </KortixBottomSheetModal>
 
-        <AlertDialog
-          open={!!confirming}
+        <ConfirmVerdictDialog
+          confirming={confirming}
+          onSend={send}
           onOpenChange={(open) => {
             if (!open) setConfirming(null);
-          }}>
-          <AlertDialogContent className="rounded-3xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {confirming ? reviewVerdictLabel(confirming.item.kind, confirming.verdict) : ''}
-              </AlertDialogTitle>
-              <AlertDialogDescription>{confirming?.item.title ?? ''}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel asChild>
-                <Button variant="secondary" size="lg" className="rounded-full">
-                  <Text>Cancel</Text>
-                </Button>
-              </AlertDialogCancel>
-              <Button
-                variant={confirming?.verdict === 'approve' ? 'default' : 'destructive'}
-                size="lg"
-                className="rounded-full"
-                onPress={() => confirming && send(confirming.item, confirming.verdict)}>
-                <Text>{confirming ? reviewVerdictLabel(confirming.item.kind, confirming.verdict) : ''}</Text>
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          }}
+        />
       </>
     );
   },

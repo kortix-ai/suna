@@ -42,7 +42,6 @@ process.env.DAYTONA_API_KEY = 'test-daytona-key';
 process.env.DAYTONA_SERVER_URL = 'https://daytona.example.test';
 process.env.DAYTONA_TARGET = 'test-target';
 process.env.KORTIX_URL = 'https://api.example.test';
-process.env.LLM_GATEWAY_ENABLED = 'true';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
 // Every git read/write goes through this map so a test's "commitFile" is
@@ -261,7 +260,7 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -364,16 +363,6 @@ mock.module('../platform/services/provider-balancer', () => ({
     if (providerFailure) throw providerFailure;
     return 'daytona';
   },
-}));
-
-const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
-  (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
-    ?.llm_gateway === true;
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: mockedProjectLlmGatewayEnabled,
-  // The by-id variant (secrets delivery, title generation) resolves against
-  // the same fixture row this suite mutates per test.
-  projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
 }));
 
 // The fire's model gate (KRTX-1505) reads the servable catalog. Mocked rather
@@ -555,6 +544,8 @@ const triggerDbMock: any = {
               parentSessionId: values.parentSessionId ?? null,
               initiatorType: values.initiatorType ?? null,
               initiatorId: values.initiatorId ?? null,
+              spaceId: values.spaceId ?? null,
+              groupId: values.groupId ?? null,
               secretsAllowlist: values.secretsAllowlist ?? null,
               requiredConnectors: null,
               connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -722,6 +713,10 @@ mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: triggerDbMock,
 }));
+
+// The fake db has no joins: no trigger in these tests posts to a channel or DM.
+const realTriggerSpace = await import('../projects/lib/trigger-space');
+mock.module('../projects/lib/trigger-space', () => ({ ...realTriggerSpace, loadTriggerSpace: async () => null }));
 
 // Spread the real module: a wholesale stub drops every export another importer
 // in the graph needs (#7936 added importers), and bun reports it as an
@@ -933,6 +928,7 @@ function cronEntry(opts: {
   model?: string;
   enabled?: boolean;
   prompt: string;
+  overlap?: 'skip' | 'allow';
 }): string {
   const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
   if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
@@ -943,6 +939,7 @@ function cronEntry(opts: {
   lines.push(`    cron: ${JSON.stringify(opts.cron)}`);
   if (opts.timezone !== undefined) lines.push(`    timezone: ${JSON.stringify(opts.timezone)}`);
   lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
+  if (opts.overlap !== undefined) lines.push(`    overlap: ${opts.overlap}`);
   return lines.join('\n');
 }
 
@@ -951,6 +948,7 @@ function seedRuntimeCron(opts: {
   prompt: string;
   nextFireAt: Date;
   sessionMode?: string;
+  overlap?: 'skip' | 'allow';
 }) {
   runtimeRows.push({
     projectId: PROJECT_ID,
@@ -982,6 +980,7 @@ function seedRuntimeCron(opts: {
       model: null,
       enabled: true,
       promptTemplate: opts.prompt,
+      ...(opts.overlap ? { overlap: opts.overlap } : {}),
       cron: '* * * * * *',
       runAt: null,
       timezone: 'UTC',
@@ -1076,14 +1075,18 @@ describe('git-backed triggers — runtime fire paths', () => {
   });
 
   test('cron sweep under backpressure queues and records accepted fire', async () => {
+    // overlap: allow — this test is about backpressure. With the cron default
+    // (skip), the second slot would wait for the first slot's queued create
+    // (KRTX-1721; integration-trigger-overlap.test.ts covers that).
     seedManifest(cronEntry({
       slug: 'sweep',
       name: 'Sweep',
       cron: '* * * * * *',
       prompt: 'Sweep run',
+      overlap: 'allow',
     }));
     const firstSlot = new Date('2026-01-01T00:00:30Z');
-    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot });
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot, overlap: 'allow' });
     provisioningSessionCount = 3;
 
     const result = await runProjectTriggerSweep(firstSlot);
@@ -1157,6 +1160,8 @@ describe('git-backed triggers — runtime fire paths', () => {
       parentSessionId: null,
       initiatorType: null,
       initiatorId: null,
+      spaceId: null,
+      groupId: null,
       secretsAllowlist: null,
       requiredConnectors: null,
       connectorBindingsInheritUnbound: false,
@@ -1729,6 +1734,8 @@ function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,

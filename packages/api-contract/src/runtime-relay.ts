@@ -158,25 +158,6 @@ export const MONITOR_LINE_MAX_BYTES = 8 * 1024;
 export const MONITOR_EVENT_KINDS = ['event', 'lifecycle'] as const;
 export type MonitorEventKind = (typeof MONITOR_EVENT_KINDS)[number];
 
-/** One monitor output line in an ingest batch. `seq` restarts per `box_epoch`. */
-export const MonitorWireEventSchema = z.object({
-  slug: z.string(),
-  seq: z.number().int().nonnegative(),
-  kind: z.enum(MONITOR_EVENT_KINDS),
-  /** The parsed JSON line, or `{ raw: "<line>" }` when it does not parse. */
-  line: z.record(z.string(), z.unknown()),
-  emitted_at: z.string(),
-});
-export type MonitorWireEvent = z.infer<typeof MonitorWireEventSchema>;
-
-/** `POST /v1/projects/:projectId/monitors/ingest`, from the project's monitor box. */
-export const MonitorIngestRelayBodySchema = z.object({
-  /** This boot of the monitor runner. A superseded epoch answers 409. */
-  box_epoch: z.string(),
-  events: z.array(MonitorWireEventSchema).max(MONITOR_INGEST_MAX_EVENTS),
-});
-export type MonitorIngestRelayBody = z.infer<typeof MonitorIngestRelayBodySchema>;
-
 /** The daemon's 404 body for a `/kortix/*` route it does not serve. apps/api maps it to 501 on share links. */
 export const UNKNOWN_DAEMON_ROUTE_ERROR = 'unknown kortix route';
 
@@ -198,6 +179,7 @@ export const BLOCKING_TURN_VERBS = ['message', 'command', 'summarize'] as const;
  * Rewrite the pre-W3 names an older daemon sends to the names above: the
  * `opencode_session_id` field and the `opencode_session` turn-stream kind.
  * Returns a copy; the neutral name wins when a body carries both.
+ * @deprecated Pre-W3 OpenCode names (opencode_session_id, kind opencode_session) from older daemons; new daemons send runtime_session_id / runtime_session.
  */
 export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
   body: T,
@@ -355,7 +337,10 @@ export interface CompiledCommand {
 
 /** A kortix.yaml v3 extension: one implementation per harness. */
 export interface CompiledExtension {
-  /** Repo-relative module path, loaded as an OpenCode plugin. */
+  /**
+   * Repo-relative module path, loaded as an OpenCode plugin.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo-relative path, or pi's `{ source, extensions, skills, prompts, themes }` form. */
   pi?: string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
@@ -481,7 +466,10 @@ export function healthRuntimeState(health: Record<string, unknown> | null | unde
   return typeof health?.opencode === 'string' ? health.opencode : null;
 }
 
-/** The port the runtime listens on (OpenCode's alternates on a verified reload): `harness.details.port`, or the pre-W3 `opencode_port`. */
+/**
+ * The port the runtime listens on (OpenCode's alternates on a verified reload): `harness.details.port`, or the pre-W3 `opencode_port`.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export function healthRuntimePort(health: Record<string, unknown> | null | undefined): number | null {
   const harness = health?.harness;
   const details = harness && typeof harness === 'object' ? (harness as { details?: unknown }).details : null;

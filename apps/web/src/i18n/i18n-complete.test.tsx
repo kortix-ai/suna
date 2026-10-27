@@ -1,10 +1,11 @@
-import { localizedKindCopy } from '@/components/projects/schedule/schedule-copy';
+import { localizedKindCopy } from '@kortix/ui/customize/triggers/schedule/schedule-copy';
 import { faq } from '@/features/marketing/faq/content';
 import { openSource } from '@/features/marketing/open-source/content';
-import { localizedSlashActions } from '@/features/session/composer/menus/slash-actions';
+import { localizedSlashActions } from '@kortix/ui/session/composer/menus/slash-actions';
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { IntlMessageFormat } from 'intl-messageformat';
 import { createTranslator } from 'next-intl';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,8 +20,8 @@ import ja from '../../translations/ja.json';
 import pt from '../../translations/pt.json';
 import sr from '../../translations/sr.json';
 import zh from '../../translations/zh.json';
-import { localizeUiCatalog } from './localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from './remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 
 const srTranslator = createTranslator({
   locale: 'sr',
@@ -30,9 +31,64 @@ const srTranslator = createTranslator({
 
 const localeCatalogs = { en, de, it, zh, ja, pt, fr, es, sr } as const;
 
-function placeholders(value: string): string[] {
-  return [...value.matchAll(/\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g)].map((match) => match[1]).sort();
+// Argument names and select keys from the real ICU parse. A one-word select
+// branch body such as `model_busy {busy}` is copy, not an argument, and a
+// regex cannot tell the two apart.
+type IcuElement = {
+  type: number;
+  value?: unknown;
+  options?: Record<string, { value: IcuElement[] }>;
+  children?: IcuElement[];
+};
+// TYPE.argument .. TYPE.plural in @formatjs/icu-messageformat-parser.
+const ARGUMENT_TYPES = new Set([1, 2, 3, 4, 5, 6]);
+
+function collectArguments(elements: IcuElement[], names: string[]): string[] {
+  for (const element of elements) {
+    if (ARGUMENT_TYPES.has(element.type) && typeof element.value === 'string') {
+      names.push(element.value);
+    }
+    // Select keys are code values, never copy: a translated key never matches.
+    // Plural keys stay out, because each locale has its own plural categories.
+    if (element.type === 5) {
+      for (const key of Object.keys(element.options ?? {})) names.push(`${element.value}=${key}`);
+    }
+    for (const option of Object.values(element.options ?? {}))
+      collectArguments(option.value, names);
+    if (element.children) collectArguments(element.children, names);
+  }
+  return names;
 }
+
+function placeholders(value: string): string[] {
+  try {
+    const ast = new IntlMessageFormat(value, 'en', undefined, { ignoreTag: true }).getAst();
+    return collectArguments(ast as IcuElement[], []).sort();
+  } catch {
+    // Raw copy that is not ICU (code samples, `{{ body.* }}` templates): fall
+    // back to a brace scan that skips plural branch bodies.
+    return [
+      ...value.matchAll(
+        /(?<!(?:\b(?:zero|one|two|few|many|other)|=\d+)\s*)\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g,
+      ),
+    ]
+      .map((match) => match[1])
+      .sort();
+  }
+}
+
+
+// apps/web/src and packages/ui/src: the session UI renders from @kortix/ui.
+const SOURCE_ROOTS = [join(import.meta.dir, '..'), join(import.meta.dir, '../../../../packages/ui/src')];
+const sourceFiles = () =>
+  SOURCE_ROOTS.flatMap((root) =>
+    readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
+      .map((file) => join(root, file)),
+  );
+/** A one-line `export * from '@kortix/ui/…'` left at a moved module's old path. */
+const isShim = (file: string) => /^(?:'use client';\s*)?export \* from '@kortix\/ui\//.test(readFileSync(file, 'utf8').trim());
 
 describe('complete UI localization', () => {
   test('localizes nested display text, preserves React elements, and keeps unknown fallbacks', () => {
@@ -52,11 +108,9 @@ describe('complete UI localization', () => {
   });
 
   test('preserves an empty catalog value without requesting an empty translation key', () => {
-    const localized = localizeUiCatalog(
-      { description: '' },
-      srTranslator,
-      { '': 'texte3b0c44298fc' },
-    );
+    const localized = localizeUiCatalog({ description: '' }, srTranslator, {
+      '': 'texte3b0c44298fc',
+    });
 
     expect(localized.description).toBe('');
   });
@@ -109,13 +163,12 @@ describe('complete UI localization', () => {
 
   test('keeps every generated translation-map key in the English catalog', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
-    const generatedFiles = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('-translation-keys.generated.ts'));
+    const generatedFiles = sourceFiles().filter(
+      (file) => file.endsWith('-translation-keys.generated.ts') && !isShim(file),
+    );
 
     for (const file of generatedFiles) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+      const source = readFileSync(file, 'utf8');
       const keys = [...source.matchAll(/:\s*'(text[0-9a-f]{12})'/g)]
         .map((match) => match[1])
         .filter((key) => key !== 'texte3b0c44298fc');
@@ -139,16 +192,12 @@ describe('complete UI localization', () => {
 
   test('resolves every i18nComplete key the app reads at runtime', () => {
     const english = en.hardcodedUi.i18nComplete as Record<string, string>;
-    const sourceRoot = join(import.meta.dir, '..');
     const callSite =
       /(?:tI18nHardcoded|tHardcodedUi|tI18nComplete)(?:\.raw)?\(\s*'(?:i18nComplete\.)?(text[0-9a-f]{12})'/g;
-    const sources = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
-      .filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'));
 
     let referenced = 0;
-    for (const file of sources) {
-      const source = readFileSync(join(sourceRoot, file), 'utf8');
+    for (const file of sourceFiles()) {
+      const source = readFileSync(file, 'utf8');
       for (const match of source.matchAll(callSite)) {
         referenced += 1;
         expect(english[match[1]], `${file}:${match[1]}`).toBeDefined();

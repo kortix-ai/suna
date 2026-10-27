@@ -19,6 +19,14 @@ export class CliError extends Error {
   }
 }
 
+/** Ends a command whose output is already printed, with this exit code. */
+export class ExitAfterOutput extends Error {
+  constructor(public exitCode: number) {
+    super(`exit ${exitCode}`);
+    this.name = 'ExitAfterOutput';
+  }
+}
+
 /** Emit a value as JSON on stdout (the connector's only output channel). */
 export function out(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);

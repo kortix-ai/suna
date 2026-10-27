@@ -22,6 +22,7 @@ import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
 import { hasInternalServiceKey } from '../shared/internal-service-key';
+import { rethrowDatabaseError } from '../shared/database-errors';
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };
@@ -169,7 +170,7 @@ setupApp.openapi(
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'platinum'),
     capabilities,
   });
   },
@@ -256,6 +257,7 @@ setupApp.openapi(
 
     return c.json({ success: true, created: true, email });
   } catch (err) {
+    rethrowDatabaseError(err);
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: message }, 500);
   }
@@ -378,6 +380,7 @@ setupApp.openapi(
     return c.json({ complete, completedAt: account?.setupCompleteAt?.toISOString() ?? null });
   } catch (e) {
     console.error('[setup] setup-complete-status failed:', e);
+    rethrowDatabaseError(e);
     return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -414,6 +417,7 @@ setupApp.openapi(
     return c.json({ ok: true });
   } catch (e) {
     console.error('[setup] setup-complete failed:', e);
+    rethrowDatabaseError(e);
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -456,6 +460,7 @@ setupApp.openapi(
     return c.json({ step: account?.setupWizardStep ?? 0 });
   } catch (e) {
     console.error('[setup] setup-wizard-step (get) failed:', e);
+    rethrowDatabaseError(e);
     return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },
@@ -498,6 +503,7 @@ setupApp.openapi(
     return c.json({ ok: true });
   } catch (e) {
     console.error('[setup] setup-wizard-step (set) failed:', e);
+    rethrowDatabaseError(e);
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
   },

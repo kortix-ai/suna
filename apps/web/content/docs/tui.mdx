@@ -98,7 +98,7 @@ Press `?` for every binding. These keys work on every screen:
 | `Ctrl+P` | Open the switcher: one filter over every session and project. |
 | `Ctrl+N` | Create a session in this project and open it. |
 | `Alt+B` | Hide or show the sidebar. `Ctrl+P` still works while it is hidden. |
-| `Alt+O` | Attach the session in the OpenCode TUI. See [Attach the OpenCode TUI](#attach-the-opencode-tui). |
+| `Alt+O` | Deprecated with OpenCode. Attach a session that still runs OpenCode in the OpenCode TUI. See [Attach the OpenCode TUI](#attach-the-opencode-tui). |
 | `Alt+H` | Switch host. `Ctrl+H` also works in a terminal with the kitty keyboard protocol. |
 | `Tab` / `Shift+Tab` | Focus the next or previous region: sidebar, transcript, composer, terminal. |
 | `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
@@ -159,7 +159,7 @@ The TUI does not take the mouse by default. Your terminal's own selection, copy-
 
 ## Attach the OpenCode TUI
 
-Attach hands the session to the stock OpenCode TUI. Use one of these:
+Attach is deprecated with OpenCode: every new session runs pi, which has no attach. It works only for a session that still runs OpenCode. Attach hands that session to the stock OpenCode TUI. Use one of these:
 
 - `Alt+O` on the open session.
 - `a` on a session row in the sidebar.

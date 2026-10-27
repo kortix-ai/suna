@@ -18,12 +18,17 @@ import { resolveGitBackend } from '../../platform/services/managed-git-backend';
 import { createInstallationToken, listOwnerRepositories } from '../github';
 import { projectsApp } from '../lib/app';
 import { serializeGitHubRepo } from '../lib/serializers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const GitBackendSchema = z
   .object({
     configured: z.boolean(),
     kind: z.enum(['app', 'pat']).nullable(),
     owner: z.string().nullable(),
+    /** Whether THIS caller may list the backend owner's repositories. The
+     * listing route is operator-only; this flag lets a client keep that call
+     * off the wire instead of firing it and eating a 403 (KRTX-1892). */
+    operator: z.boolean(),
   })
   .openapi('InstanceGitBackend');
 
@@ -47,11 +52,13 @@ export function registerGitBackendRoutes(): void {
       },
     }),
     async (c: any) => {
+      const userId = c.get('userId') as string;
       const backend = resolveGitBackend();
       return c.json({
         configured: Boolean(backend),
         kind: backend?.kind ?? null,
         owner: backend?.owner ?? null,
+        operator: await isSelfHostOperator(userId),
       });
     },
   );
@@ -119,6 +126,7 @@ export function registerGitBackendRoutes(): void {
         });
         return c.json({ owner: backend.owner, repositories: repos.map(serializeGitHubRepo) });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           { error: (error as Error).message || 'Failed to list instance backend repositories' },
           502,

@@ -36,7 +36,16 @@ function writeConfig(apiBase: string): string {
 }
 
 const ACCOUNT_STATE = {
-  credits: { total: 42.5, daily: 0, monthly: 0, extra: 0, can_run: true },
+  credits: {
+    total: 42.5,
+    daily: 0,
+    monthly: 0,
+    extra: 0,
+    lifetime_granted: 7,
+    lifetime_purchased: 3,
+    lifetime_used: 1.5,
+    can_run: true,
+  },
   billing_state: 'active',
   plan: { key: 'credits', family: 'credits', label: 'Credits', monthly_usd: 20 },
   subscription: {
@@ -46,9 +55,15 @@ const ACCOUNT_STATE = {
     billing_period: 'monthly',
     cancel_at_period_end: false,
     current_period_end: 1800000000,
-    has_scheduled_change: false,
+    scheduled_change: {
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 2000, monthly_usd: 20 },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 1000, monthly_usd: 10 },
+      effective_date: '2026-11-01T00:00:00.000Z',
+    },
+    has_scheduled_change: true,
   },
-  tier: { name: 'credits', display_name: 'Credits' },
+  tier: { name: 'credits', display_name: 'Credits', monthly_credits: 20 },
   auto_topup: { enabled: true, threshold: 10, amount: 25 },
   usage_this_period: { total_usd: 0.0042 },
   can_manage_billing: true,
@@ -273,7 +288,137 @@ describe('kortix billing', () => {
     expect(r.stdout).toMatch(/this period\s+0\.42 credits\n/);
   });
 
-  test('human credit output matches web units while JSON and spend remain USD', async () => {
+  test('JSON credit balances match the wallet without converting prices or counts', async () => {
+    creditBalance = 5;
+    const config = writeConfig(startServer());
+    const result = await runCli(['billing', 'status', '--json'], config);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    const state = JSON.parse(result.stdout);
+    expect(state.credits).toEqual({
+      total: 500,
+      daily: 0,
+      monthly: 0,
+      extra: 0,
+      lifetime_granted: 700,
+      lifetime_purchased: 300,
+      lifetime_used: 150,
+      can_run: true,
+      units: {
+        total: 'credits',
+        daily: 'credits',
+        monthly: 'credits',
+        extra: 'credits',
+        lifetime_granted: 'credits',
+        lifetime_purchased: 'credits',
+        lifetime_used: 'credits',
+      },
+    });
+    expect(state.auto_topup).toEqual({
+      enabled: true,
+      threshold: 1000,
+      amount: 25,
+      units: { threshold: 'credits', amount: 'USD' },
+    });
+    expect(state.plan.monthly_usd).toBe(20);
+    expect(state.usage_this_period.total_usd).toBe(0.0042);
+    for (const flag of ['--summary', '--usage']) {
+      const summary = await runCli(['billing', 'transactions', flag, '--json'], config);
+      expect(summary.code).toBe(0);
+      expect(JSON.parse(summary.stdout)).toEqual({
+        totalCredits: 200,
+        totalDebits: 125,
+        count: 2,
+        units: { totalCredits: 'credits', totalDebits: 'credits' },
+      });
+    }
+    const ledger = await runCli(['billing', 'transactions', '--json'], config);
+    expect(ledger.code).toBe(0);
+    expect(JSON.parse(ledger.stdout).transactions[0]).toMatchObject({
+      amount: -125,
+      balance_after: 4125,
+    });
+    expect(JSON.parse(ledger.stdout).pagination).toEqual({
+      total: 1,
+      limit: 5,
+      offset: 0,
+      has_more: false,
+    });
+    const breakdown = await runCli(['billing', 'transactions', '--breakdown', '--json'], config);
+    expect(breakdown.code).toBe(0);
+    expect(JSON.parse(breakdown.stdout)).toEqual({
+      total: 4250,
+      expiring: 250,
+      non_expiring: 4000,
+      daily: 0,
+      units: {
+        total: 'credits',
+        expiring: 'credits',
+        non_expiring: 'credits',
+        daily: 'credits',
+      },
+    });
+  });
+
+  test('JSON labels API tier grants in USD and scheduled grants in credits without conversion', async () => {
+    const result = await runCli(['billing', 'status', '--json'], writeConfig(startServer()));
+    expect(result.code).toBe(0);
+    const state = JSON.parse(result.stdout);
+    expect(state.tier.monthly_credits).toBe(20);
+    expect(state.tier.units).toEqual({ monthly_credits: 'USD' });
+    expect(state.subscription.scheduled_change.current_tier.monthly_credits).toBe(2000);
+    expect(state.subscription.scheduled_change.current_tier.monthly_usd).toBe(20);
+    expect(state.subscription.scheduled_change.current_tier.units).toEqual({ monthly_credits: 'credits', monthly_usd: 'USD' });
+    expect(state.subscription.scheduled_change.target_tier.monthly_credits).toBe(1000);
+    expect(state.subscription.scheduled_change.target_tier.monthly_usd).toBe(10);
+    expect(state.subscription.scheduled_change.target_tier.units).toEqual({ monthly_credits: 'credits', monthly_usd: 'USD' });
+  });
+
+  test('JSON labels credit fields separately from USD prices and usage', async () => {
+    const config = writeConfig(startServer());
+    const status = await runCli(['billing', 'status', '--json'], config);
+    expect(status.code).toBe(0);
+    const state = JSON.parse(status.stdout);
+    expect(state.credits.units).toEqual({
+      total: 'credits',
+      daily: 'credits',
+      monthly: 'credits',
+      extra: 'credits',
+      lifetime_granted: 'credits',
+      lifetime_purchased: 'credits',
+      lifetime_used: 'credits',
+    });
+    expect(state.credits.units.can_run).toBeUndefined();
+    expect(state.auto_topup.units).toEqual({
+      threshold: 'credits',
+      amount: 'USD',
+    });
+    for (const flags of [[], ['--summary'], ['--usage'], ['--breakdown']]) {
+      const result = await runCli(['billing', 'transactions', ...flags, '--json'], config);
+      expect(result.code).toBe(0);
+      const data = JSON.parse(result.stdout);
+      if (flags.length === 0) {
+        expect(data.transactions[0].units).toEqual({
+          amount: 'credits',
+          balance_after: 'credits',
+        });
+      } else if (flags[0] === '--breakdown') {
+        expect(data.units).toEqual({
+          total: 'credits',
+          expiring: 'credits',
+          non_expiring: 'credits',
+          daily: 'credits',
+        });
+      } else {
+        expect(data.units).toEqual({
+          totalCredits: 'credits',
+          totalDebits: 'credits',
+        });
+      }
+    }
+  });
+
+  test('human and JSON credit output match web units while spend remains USD', async () => {
     const config = writeConfig(startServer());
     const status = await runCli(['billing', 'status'], config);
     expect(status.code).toBe(0);
@@ -293,12 +438,17 @@ describe('kortix billing', () => {
       expect(result.stdout).toMatch(/count\s+2\n/);
       const json = await runCli(['billing', 'transactions', flag, '--json'], config);
       expect(json.code).toBe(0);
-      expect(JSON.parse(json.stdout)).toEqual({ totalCredits: 2, totalDebits: 1.25, count: 2 });
+      expect(JSON.parse(json.stdout)).toEqual({
+        totalCredits: 200,
+        totalDebits: 125,
+        count: 2,
+        units: { totalCredits: 'credits', totalDebits: 'credits' },
+      });
     }
     const raw = await runCli(['billing', 'status', '--json'], config);
-    expect(JSON.parse(raw.stdout).credits.total).toBe(42.5);
+    expect(JSON.parse(raw.stdout).credits.total).toBe(4250);
     const rawLedger = await runCli(['billing', 'transactions', '--json'], config);
-    expect(JSON.parse(rawLedger.stdout).transactions[0].amount).toBe(-1.25);
+    expect(JSON.parse(rawLedger.stdout).transactions[0].amount).toBe(-125);
   });
 
   test.each([
@@ -317,10 +467,12 @@ describe('kortix billing', () => {
     expect(result.stdout).toMatch(new RegExp(`credits\\s+${expected}\\n`));
     const raw = await runCli(['billing', 'status', '--json'], config);
     expect(raw.code).toBe(0);
-    expect(JSON.parse(raw.stdout).credits.total).toBe(balance);
+    expect(JSON.parse(raw.stdout).credits.total).toBe(
+      balance === undefined ? undefined : balance * 100,
+    );
   });
 
-  test('status --json emits the raw account-state payload', async () => {
+  test('status --json preserves plan fields', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['billing', 'status', '--json'], config);
     expect(r.code).toBe(0);
@@ -343,7 +495,7 @@ describe('kortix billing', () => {
 
     const b = await runCli(['billing', 'transactions', '--breakdown', '--json'], config);
     expect(b.code).toBe(0);
-    expect(JSON.parse(b.stdout).non_expiring).toBe(40);
+    expect(JSON.parse(b.stdout).non_expiring).toBe(4000);
   });
 
   test('costs defaults to /usage/cost-summary and --by project rolls up', async () => {

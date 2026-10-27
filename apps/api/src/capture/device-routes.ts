@@ -27,7 +27,7 @@ import { requestClientKey } from '../middleware/client-ip';
 import { readJsonObject } from '../shared/http-body';
 import { TokenBucketRateLimiter, type RateLimitPolicy } from '../shared/rate-limit';
 import type { AppEnv } from '../types';
-import { captureCredentialIssuer } from './credentials';
+import { captureIssuerForAccount } from './account-store';
 import {
   GRANT_TTL_MS,
   POLL_INTERVAL_S,
@@ -267,7 +267,8 @@ function registerDeviceIssuerRoutes(app: OpenAPIHono<AppEnv>) {
             device_id: z.string(),
             access_key_id: z.string(),
             secret_access_key: z.string(),
-            session_token: z.string(),
+            // Omitted for a bring-your-own static-key store (no STS session token).
+            session_token: z.string().optional(),
             expires_at_ms: z.number(),
             path_style: z.boolean(),
           }),
@@ -292,7 +293,7 @@ function registerDeviceIssuerRoutes(app: OpenAPIHono<AppEnv>) {
         await linkDevice(device, null);
       }
       if (!(await captureEnabled(device.accountId))) return c.json(CAPTURE_DISABLED, 403);
-      const issuer = captureCredentialIssuer();
+      const issuer = await captureIssuerForAccount(device.accountId);
       if (!issuer) {
         return c.json(
           {

@@ -16,14 +16,19 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
  * config in place and interrupts nothing.
  */
-/** How long a candidate opencode gets to start serving, and pass the proven check, before we give up. */
+/**
+ * How long a candidate opencode gets to start serving, and pass the proven check, before we give up.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const VERIFY_READY_TIMEOUT_MS = 90_000
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ReloadConfigResult {
   how: 'disposed' | 'restarted' | 'kept-old'
   turnEnded: boolean | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type VerifiedReloadResult =
   | {
       outcome: 'swapped'
@@ -73,12 +78,14 @@ export type VerifiedReloadResult =
  * A caller-supplied check on the candidate, after it serves the session API
  * and before it is promoted. `deadline` is the end of the verify budget, in
  * epoch milliseconds.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export type CandidateProof = (
   baseUrl: string,
   deadline: number,
 ) => Promise<{ ok: true } | { ok: false; reason: string }>
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface VerifiedReloadOptions {
   forceFail?: boolean
   /** Runs on the candidate before promotion; a failure keeps the running process. */
@@ -109,6 +116,7 @@ import { access, constants, open, readdir, readFile, realpath, stat } from 'node
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
+import { variantsFromReasoningOptions } from '../shared/reasoning-variants'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -131,7 +139,7 @@ import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
+import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
 import type { ExtensionDepsOptions } from './extension-deps'
@@ -196,6 +204,7 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
  * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
  * next turn still runs on the account they replaced.
  *
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
@@ -203,7 +212,10 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
-/** Does this env delta need a full respawn rather than a dispose? */
+/**
+ * Does this env delta need a full respawn rather than a dispose?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
   return changedNames.some((name) =>
     (RESPAWN_REQUIRED_ENV_NAMES as readonly string[]).includes(name),
@@ -216,6 +228,7 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
  * `kortix_sb_` service key there — valid for the daemon and the API, unknown to
  * the gateway — and its session PAT under KORTIX_LLM_API_KEY (the variable the
  * daemon of that era used). Prefer whichever is a PAT; never invent one.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
   const token = env.KORTIX_TOKEN?.trim()
@@ -225,7 +238,10 @@ export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
   return token || legacy || undefined
 }
 
-/** True when OpenCode uses the single synthetic `kortix` LLM provider. */
+/**
+ * True when the box carries the env the `kortix` provider needs to reach the gateway.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.KORTIX_LLM_PROXY_URL ||
@@ -239,13 +255,16 @@ function bareKortixModelId(ref: string): string {
   return trimmed.startsWith('kortix/') ? trimmed.slice('kortix/'.length) : trimmed
 }
 
-/** Convert a gateway wire model into OpenCode's `provider/model` string. */
+/**
+ * Convert a gateway wire model into OpenCode's `provider/model` string.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function toKortixOpencodeModelRef(ref: string): string {
   const trimmed = ref.trim()
   return trimmed.startsWith('kortix/') ? trimmed : `kortix/${trimmed}`
 }
 
-/** Route every configured model through the only provider enabled in gateway mode. */
+/** Route every configured model through `kortix`, the only enabled provider. */
 function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
   for (const key of ['model', 'small_model'] as const) {
     if (typeof config[key] === 'string' && config[key].trim()) {
@@ -275,6 +294,7 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
  * found: codex/gpt-6-sol." (prod 2026-09-30: every Slack follow-up to one
  * project's default agent). `OPENCODE_CONFIG_CONTENT` is the one layer OpenCode
  * merges after the config dir, and it merges deeply, so only `model` changes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function gatewayAgentModelPatch(configDir: string): Promise<string | undefined> {
   const agent: Record<string, { model: string }> = {}
@@ -323,46 +343,11 @@ function frontmatterModel(text: string): string | null {
   }
 }
 
-/**
- * Native-mode counterpart of {@link normalizeGatewayModelRefs}: a `kortix/…`
- * ref left behind by a gateway→native toggle (compiled agent config, repo
- * config, model prefs) names a provider that does not exist off-gateway.
- * `kortix/<provider>/<model>` unwraps to the native ref; a bare
- * `kortix/<managed-id>` is DELETED so opencode's own default applies instead
- * of every turn dying on ModelNotFound.
- */
-function normalizeNativeModelRefs(config: Record<string, unknown>): void {
-  const nativize = (ref: string): string | undefined => {
-    if (!ref.startsWith('kortix/')) return ref
-    const inner = ref.slice('kortix/'.length)
-    const slash = inner.indexOf('/')
-    if (slash <= 0 || slash === inner.length - 1) return undefined
-    return inner
-  }
-  for (const key of ['model', 'small_model'] as const) {
-    if (typeof config[key] === 'string' && config[key].trim()) {
-      const next = nativize((config[key] as string).trim())
-      if (next === undefined) delete config[key]
-      else config[key] = next
-    }
-  }
-  const agents = config.agent
-  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return
-  for (const value of Object.values(agents)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-    const agent = value as Record<string, unknown>
-    if (typeof agent.model === 'string' && agent.model.trim()) {
-      const next = nativize(agent.model.trim())
-      if (next === undefined) delete agent.model
-      else agent.model = next
-    }
-  }
-}
-
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has three
 // independent contributors, any of which may apply:
-//   1. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
+//   1. the Kortix LLM gateway provider        (always: the only model path)
 //   2. a Slack permission override            (when this is a Slack session)
 //   3. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
 //                                               apps/api's compile-agent-config.ts)
@@ -370,8 +355,6 @@ function normalizeNativeModelRefs(config: Record<string, unknown>): void {
 // applied as an overlay — it's apps/api's compiled equivalent of "the repo's
 // own opencode config" for a v2 project, not a daemon-side session-local
 // decision like #1-2.
-// If NONE apply there's nothing to inject, so we return undefined and opencode
-// just uses the repo config as-is.
 export async function buildOpencodeConfigContent(
   env: NodeJS.ProcessEnv,
   opts: {
@@ -405,7 +388,11 @@ export async function buildOpencodeConfigContent(
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
-  const hasLlmGateway = hasKortixLlmGateway(env)
+  // The gateway is the only model path. A box without its env cannot run a
+  // model; say so loudly instead of handing OpenCode native providers.
+  if (!hasKortixLlmGateway(env)) {
+    logger.error('[opencode] no LLM gateway env (KORTIX_LLM_BASE_URL + KORTIX_TOKEN or KORTIX_LLM_PROXY_URL); the kortix provider has no upstream')
+  }
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #2 keys off it.
@@ -435,30 +422,6 @@ export async function buildOpencodeConfigContent(
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
       : null
-  // Native mode (no gateway): the session's model pin still has to reach
-  // opencode's config — without an explicit `model`, opencode's default is
-  // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
-  // file order). `kortix/<a>/<b>` strips to the native ref it wraps (a pin
-  // stored while the gateway was on); a bare `kortix/<managed-id>` has no
-  // native provider and is ignored.
-  const nativeSessionModel = (() => {
-    if (hasLlmGateway) return undefined
-    const raw = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
-    if (!raw) return undefined
-    const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-    const slash = ref.indexOf('/')
-    if (slash <= 0 || slash === ref.length - 1) return undefined
-    return ref
-  })()
-
-  // Returning undefined hands the raw OPENCODE_CONFIG_CONTENT straight to
-  // opencode — fine, unless native mode must first scrub `kortix/…` refs out
-  // of it (a config authored or baked while the gateway was on).
-  const nativeScrubNeeded =
-    !hasLlmGateway &&
-    typeof env.OPENCODE_CONFIG_CONTENT === 'string' &&
-    env.OPENCODE_CONFIG_CONTENT.includes('"kortix/')
-
   // (0) Kortix owns the OpenCode binary: the daemon converges it to the
   // manifest pin (runtime-assets.ts) with `pnpm add -g --allow-build`. OpenCode's
   // own autoupdate (`autoupdate` unset = on) runs whenever a human launches the
@@ -536,85 +499,73 @@ export async function buildOpencodeConfigContent(
   }
 
   // (1) Kortix LLM gateway provider.
-  if (hasLlmGateway) {
-    const provider =
-      out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
-        ? (out.provider as Record<string, unknown>)
-        : {}
-    // The managed lineup is DEPLOYMENT CONFIG, not image content: a managed
-    // model added to the API after this image was built is absent from the
-    // baked catalog forever (templates are not rebuilt on a catalog change).
-    // On 2026-08-19 that made OpenCode answer `ModelNotFound: kortix/grok-4.6`
-    // for two live managed models. So the sandbox LEARNS the managed set from
-    // the API it talks to — but NEVER on this path.
-    //
-    // This read is SYNCHRONOUS and non-blocking by hard rule. Waiting on the
-    // in-flight fetch here cost 1.6s of a 6.5s dev boot (config-deps 114ms →
-    // runtime-config-ready 1727ms, measured on a Platinum guest 2026-08-19):
-    // `opencode serve` cannot bind its port until this config is written, so
-    // anything awaited here is dead time on EVERY session boot. Cold boot uses
-    // whatever is already known (bundled managed table, or a cache filled by an
-    // earlier fetch on this box); a managed model that only the live set knows
-    // is picked up by the post-spawn reconcile in main.ts, off the critical
-    // path.
-    const managedOverlay = cachedManagedModels()
-    normalizeGatewayModelRefs(out)
-    const resolvedSessionModel = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
-    const kortixProvider = buildKortixProvider({
-      // In proxy mode opencode talks to the localhost proxy with a placeholder
-      // key; the proxy injects the real per-session token upstream. In direct
-      // mode (cold/Daytona) it's the real gateway base + key, as before.
-      baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
-      apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-      managedOverlay,
-      // Catalog is org-stable and ships baked into every image at
-      // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
-      // path that gates opencode's port bind. loadGatewayCatalog is local-only
-      // by construction now; a missing file degrades to the minimal set and is
-      // repaired in the background (scheduleCatalogWarm), never by blocking boot.
-      catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
-      // OpenCode answers "Model not found" for an id its provider map lacks,
-      // and the map is a snapshot of an image-baked file. The gateway decides
-      // whether a model is served, so every model this box is told to use is
-      // registered here: the ones the config and the agent files name (a prompt
-      // that names no model runs on those) and the ones a turn named.
-      requiredModelIds: [
-        ...configuredModelRefs(out),
-        ...Object.values(await agentFileModels(bootLinkPath())),
-        ...(resolvedSessionModel ? [resolvedSessionModel] : []),
-        ...requestedModelIds,
-      ].map(bareKortixModelId),
-    })
-    out.provider = {
-      ...provider,
-      kortix: kortixProvider,
-    }
-    const availableGatewayModel = Object.keys(
-      (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
-    )[0]
-    const fallbackModel = resolvedSessionModel || availableGatewayModel
-    if (!('model' in out) || typeof out.model !== 'string') {
-      if (fallbackModel) out.model = toKortixOpencodeModelRef(fallbackModel)
-    }
-    if (!('small_model' in out) || typeof out.small_model !== 'string') {
-      if (fallbackModel) out.small_model = toKortixOpencodeModelRef(fallbackModel)
-    }
-    // Gateway mode allowlists providers so leaked provider keys cannot open
-    // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
-    // and BYOK handling. Free models are managed gateway models too, so the
-    // selector has one stable catalog before the sandbox has booted.
-    out.enabled_providers = ['kortix']
-  } else {
-    // Native mode: opencode connects providers itself from the API keys in its
-    // process env (the project's model-credential secrets, delivered because
-    // the gateway is off). Scrub any `kortix/…` refs a gateway→native toggle
-    // left in the base config, then layer in the session pin; provider config,
-    // catalog, and small_model stay fully opencode-native.
-    normalizeNativeModelRefs(out)
-    if (nativeSessionModel && (!('model' in out) || typeof out.model !== 'string')) {
-      out.model = nativeSessionModel
-    }
+  const provider =
+    out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
+      ? (out.provider as Record<string, unknown>)
+      : {}
+  // The managed lineup is DEPLOYMENT CONFIG, not image content: a managed
+  // model added to the API after this image was built is absent from the
+  // baked catalog forever (templates are not rebuilt on a catalog change).
+  // On 2026-08-19 that made OpenCode answer `ModelNotFound: kortix/grok-4.6`
+  // for two live managed models. So the sandbox LEARNS the managed set from
+  // the API it talks to — but NEVER on this path.
+  //
+  // This read is SYNCHRONOUS and non-blocking by hard rule. Waiting on the
+  // in-flight fetch here cost 1.6s of a 6.5s dev boot (config-deps 114ms →
+  // runtime-config-ready 1727ms, measured on a Platinum guest 2026-08-19):
+  // `opencode serve` cannot bind its port until this config is written, so
+  // anything awaited here is dead time on EVERY session boot. Cold boot uses
+  // whatever is already known (the baked catalog, or a cache filled by an
+  // earlier fetch on this box); a managed model that only the live set knows
+  // is picked up by the post-spawn reconcile in main.ts, off the critical
+  // path.
+  const managedOverlay = cachedManagedModels()
+  normalizeGatewayModelRefs(out)
+  const resolvedSessionModel = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
+  const kortixProvider = buildKortixProvider({
+    // In proxy mode opencode talks to the localhost proxy with a placeholder
+    // key; the proxy injects the real per-session token upstream. In direct
+    // mode (cold/Daytona) it's the real gateway base + key, as before.
+    baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
+    apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+    managedOverlay,
+    // Catalog is org-stable and ships baked into every image at
+    // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
+    // path that gates opencode's port bind. loadGatewayCatalog is local-only
+    // by construction now; a missing file degrades to the minimal set and is
+    // repaired in the background (scheduleCatalogWarm), never by blocking boot.
+    catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? bakedCatalogPath(),
+    // OpenCode answers "Model not found" for an id its provider map lacks,
+    // and the map is a snapshot of an image-baked file. The gateway decides
+    // whether a model is served, so every model this box is told to use is
+    // registered here: the ones the config and the agent files name (a prompt
+    // that names no model runs on those) and the ones a turn named.
+    requiredModelIds: [
+      ...configuredModelRefs(out),
+      ...Object.values(await agentFileModels(bootLinkPath())),
+      ...(resolvedSessionModel ? [resolvedSessionModel] : []),
+      ...requestedModelIds,
+    ].map(bareKortixModelId),
+  })
+  out.provider = {
+    ...provider,
+    kortix: kortixProvider,
   }
+  const availableGatewayModel = Object.keys(
+    (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
+  )[0]
+  const fallbackModel = resolvedSessionModel || availableGatewayModel
+  if (!('model' in out) || typeof out.model !== 'string') {
+    if (fallbackModel) out.model = toKortixOpencodeModelRef(fallbackModel)
+  }
+  if (!('small_model' in out) || typeof out.small_model !== 'string') {
+    if (fallbackModel) out.small_model = toKortixOpencodeModelRef(fallbackModel)
+  }
+  // The allowlist keeps leaked provider keys from opening
+  // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
+  // and BYOK handling. Free models are managed gateway models too, so the
+  // selector has one stable catalog before the sandbox has booted.
+  out.enabled_providers = ['kortix']
 
   // (2) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
   // is async — there's no live form to answer a synchronous question, so the
@@ -680,6 +631,7 @@ const CAPABILITY_TOOLS: Record<string, readonly string[]> = {
  * allowed only when the capability is exactly `allow`; an `ask` or a pattern
  * map denies it, which hides it (fail closed). A rule the config sets for the
  * tool itself wins. A bare action already covers every tool.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function capabilityToolRules(permission: unknown): unknown {
   if (!permission || typeof permission !== 'object' || Array.isArray(permission)) return permission
@@ -708,6 +660,7 @@ const DENIED_BUILTIN_SKILLS = ['customize-opencode']
  * rule, so it stays last once the block is ordered (`orderPermissionRules`).
  * A bare action becomes its `*` form, which OpenCode reads the same way. A
  * block that already denies every skill is left alone.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function denyBuiltinSkills(permission: unknown): unknown {
   if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
@@ -730,43 +683,17 @@ type KortixProviderOpts = {
    *  deliberately NO fetch fallback here; see loadGatewayCatalog. */
   catalogFile?: string
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
-   *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
+   *  null when it was unavailable (then the baked catalog stands). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
   /** Ids registered even when no catalog carries them. Limits come from
    *  `withModelLimits`; a catalog record always wins. */
   requiredModelIds?: string[]
 }
 
-// The composer's Thinking control lists `Object.keys(model.variants)` and sends
-// the pick as `variant` on the prompt; OpenCode resolves that id against THIS
-// provider map. On-gateway the web derives the ids from the API's
-// `reasoning_options` (packages/sdk provider-selection.ts, via
-// @kortix/llm-catalog's generationControlCapabilities), so the provider must
-// publish the SAME ids or a picked tier silently does nothing. Mirror of that
-// derivation (this package cannot import @kortix/llm-catalog): an `effort`
-// knob → its values verbatim; a `budget_tokens` knob → the low/medium/high
-// tiers the gateway's Claude mapping accepts; anything else → no variants.
-// Each variant carries `reasoningEffort`, which `@ai-sdk/openai-compatible`
-// serializes as the `reasoning_effort` the gateway reads. OpenCode keeps an
-// explicit config `variants` map verbatim (its own derivation for an
-// openai-compatible package would keep only low/medium/high — verified on
-// 1.18.21 via /config/providers).
-const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const
-
-export function variantsFromReasoningOptions(
-  model: Pick<KortixGatewayModel, 'reasoning_options'>,
-): Record<string, Record<string, unknown>> | undefined {
-  const options = Array.isArray(model.reasoning_options) ? model.reasoning_options : []
-  const effort = options.find((o) => o && o.type === 'effort')
-  const ids: string[] = effort?.values?.length
-    ? effort.values.filter((v): v is string => typeof v === 'string' && v.length > 0)
-    : options.some((o) => o && o.type === 'budget_tokens')
-      ? [...BUDGET_TOKENS_EFFORT_TIERS]
-      : []
-  if (ids.length === 0) return undefined
-  return Object.fromEntries(ids.map((id) => [id, { reasoningEffort: id }]))
-}
-
+// OpenCode keeps an explicit config `variants` map verbatim (its own derivation
+// for an openai-compatible package would keep only low/medium/high — verified
+// on 1.18.21 via /config/providers), so the provider publishes the ids from
+// `variantsFromReasoningOptions`.
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
   const known = withManagedOverlay(loadGatewayCatalog(opts), opts.managedOverlay)
   for (const id of opts.requiredModelIds ?? []) known[id] ??= { name: id }
@@ -818,7 +745,9 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
- *  file would otherwise answer for a missing one. */
+ *  file would otherwise answer for a missing one.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
@@ -875,18 +804,17 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${bakedCatalogPath()}`)
     return baked
   }
-  // Loud: this means the image was built without its catalog layer, which is a
-  // bake regression, not a runtime condition. The session boots fast on the
-  // minimal set rather than paying a cross-region fetch to hide it.
-  logger.error(
-    `[opencode] no catalog file at ${bakedCatalogPath()} — booting on the minimal ` +
-      `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
-      `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
-  )
-  return MINIMAL_FALLBACK_MODELS
+  // Loud: the image was built without its catalog layer (build-context.ts stages
+  // kortix-llm-catalog.json unconditionally). The box boots on the live picker
+  // overlay and the models the session names; the background warm repairs the file.
+  logger.error(`[opencode] no catalog file at ${bakedCatalogPath()} — IMAGE BAKE defect; booting on the live picker catalog only`)
+  return {}
 }
 
-/** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
+/**
+ * True when boot had to fall back to the minimal set — i.e. no catalog on disk.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function catalogIsDegraded(catalogFile?: string): boolean {
   return !readCatalogFile(catalogFile ?? bakedCatalogPath()) && !readCatalogFile(bakedCatalogPath())
 }
@@ -957,11 +885,15 @@ function sanitizeCatalogForDisk(
   return kept > 0 ? out : null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function scheduleCatalogWarm(fetchBaseURL?: string, fetchApiKey?: string): void {
   scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, BAKED_LLM_CATALOG_PATH)
 }
 
-/** Test seam: same repair, to a caller-chosen path (the real one is root-owned). */
+/**
+ * Test seam: same repair, to a caller-chosen path (the real one is root-owned).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function scheduleCatalogWarmToPathForTests(
   fetchBaseURL: string,
   fetchApiKey: string,
@@ -1021,6 +953,7 @@ const TOOL_BRIDGE_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-tools.js'
  * past Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN). Inlining it via
  * OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and OpenCode never
  * spawns ("runtime not ready"), so it is always handed over as a FILE.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
@@ -1131,22 +1064,21 @@ async function fetchGatewayModels(
 }
 
 // ── Managed-model overlay ────────────────────────────────────────────────────
-// The managed lineup (bare-id, provider `kortix` models) is deployment config:
-// it changes with LLM_GATEWAY_MANAGED_MODELS / the API's served catalog, NOT
-// with the sandbox image. The baked catalog therefore goes stale the moment a
+// The managed lineup (bare-id, provider `kortix` models) is what Platinum
+// Inference offers, served by the API: it changes with that list, NOT with the
+// sandbox image. The baked catalog therefore goes stale the moment a
 // managed model is added, and OpenCode — which reads provider models once, at
 // process start — then answers `ModelNotFound: kortix/<id>` for it (prod
 // incident 2026-08-19: grok-4.6, deepseek-v4-pro-0813).
 //
 // Fix, in two halves that never block each other:
 //   1. BOOT reads only what it already knows (cachedManagedModels) — the
-//      bundled managed table on a cold box. Zero network, zero wait, because
+//      baked catalog on a cold box. Zero network, zero wait, because
 //      `opencode serve` cannot bind its port until that config is written.
 //   2. AFTER the spawn, the prefetch started at proxy-up is settled and diffed
 //      against the provider map OpenCode actually booted with. Only a genuinely
 //      missing managed id costs one controlled restart (main.ts,
-//      reconcileManagedModels). The bundled table ships with every release, so
-//      the miss is rare by construction.
+//      reconcileManagedModels).
 // Same principle as the runtime-assets reconcile — the box learns the current
 // truth from the API it talks to, without paying for it on the hot path.
 const MANAGED_MODELS_TIMEOUT_MS = 2_000
@@ -1185,31 +1117,17 @@ function capabilityKey(model: KortixGatewayModel): string {
 let lastManagedFetchFailureReason: string | null = null
 
 /**
- * Compose the catalog OpenCode boots with: disk catalog first, managed set on
- * top.
- *
- * - A live managed listing is AUTHORITATIVE for the managed ids it carries
- *   (it comes from the gateway that will resolve them).
- * - With no live listing, the bundled managed set only FILLS ids the disk
- *   catalog lacks — a hand-maintained table never overwrites richer generated
- *   data for a model that is already there.
- *
- * Purely additive in both cases: nothing is removed, so a transient fetch can
- * never shrink a working picker.
+ * Compose the catalog OpenCode boots with: disk catalog first, the live
+ * servable set on top. The live listing is AUTHORITATIVE for the ids it
+ * carries (it comes from the gateway that will resolve them). Purely additive:
+ * nothing is removed, so a transient fetch can never shrink a working picker.
  */
 function withManagedOverlay(
   base: Record<string, KortixGatewayModel>,
   live: Record<string, KortixGatewayModel> | null | undefined,
 ): Record<string, KortixGatewayModel> {
-  if (live && Object.keys(live).length > 0) return { ...base, ...live }
-  const out = { ...base }
-  for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    // Fill-only, except `limit`. The builder swaps a new daemon into an older
-    // image without re-baking its catalog, so this daemon's managed limit is
-    // the newer one. A stale limit puts compaction on the context wall.
-    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
-  }
-  return out
+  // Always a fresh object: callers add to it, and `base` can be a shared table.
+  return { ...base, ...(live ?? {}) }
 }
 
 /**
@@ -1223,6 +1141,7 @@ function withManagedOverlay(
  * fetch fixed for managed models on 2026-08-19). Returns null on failure or
  * an empty set (a free-tier account with no connected provider legitimately
  * has nothing; callers then keep whatever the disk catalog holds).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function fetchManagedModels(
   baseUrl: string,
@@ -1271,15 +1190,15 @@ export async function fetchManagedModels(
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
-  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
+  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog`)
   // NO SILENT STALENESS. This box is about to run (or keep running) on the
-  // baked/bundled managed set, unconfirmed against the live lineup — the exact
+  // baked catalog, unconfirmed against the live lineup — the exact
   // condition that let a retired/renamed managed id survive on a box after the
   // control plane moved on. `managedCatalogFallbackReason()` surfaces this on
   // `/kortix/health` (`runtime.running`), the SAME channel a config fallback
   // is already visible on, so it is a fact the control plane can read per box
   // rather than a log line nobody is tailing.
-  lastManagedFetchFailureReason = `servable models unavailable at ${url}; running the baked/bundled managed lineup`
+  lastManagedFetchFailureReason = `servable models unavailable at ${url}; running the baked catalog`
   return null
 }
 
@@ -1288,6 +1207,7 @@ export async function fetchManagedModels(
  * (see main.ts, right after the proxy binds). It runs CONCURRENTLY with repo
  * materialization, so by the time the OpenCode config is built the answer is
  * already in hand and the overlay costs ~0ms of boot.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function startManagedModelsPrefetch(baseUrl?: string, apiKey?: string): void {
   if (!baseUrl || !apiKey) return
@@ -1305,7 +1225,9 @@ export function startManagedModelsPrefetch(baseUrl?: string, apiKey?: string): v
 }
 
 /** Publish a freshly fetched managed set so later config rebuilds (an OpenCode
- *  restart, a warm-fork adoption) reuse it without another fetch. */
+ *  restart, a warm-fork adoption) reuse it without another fetch.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function rememberManagedModels(models: Record<string, KortixGatewayModel>): void {
   managedCache = models
   managedCacheAt = Date.now()
@@ -1316,10 +1238,11 @@ export function rememberManagedModels(models: Record<string, KortixGatewayModel>
  *
  * Returns the cache when it is fresh (an earlier fetch on this box: a prior
  * OpenCode restart, a warm-fork adoption, or the post-spawn reconcile), else
- * null so the caller falls back to the bundled managed table. It deliberately
+ * null so the caller falls back to the baked catalog. It deliberately
  * does NOT consult the in-flight prefetch: the config build is what gates
  * OpenCode's port bind, and awaiting the fetch there measured 1.6s of dead
  * boot time on a real dev guest.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function cachedManagedModels(): Record<string, KortixGatewayModel> | null {
   if (managedCache && Date.now() - managedCacheAt < MANAGED_CACHE_TTL_MS) return managedCache
@@ -1337,6 +1260,7 @@ export function cachedManagedModels(): Record<string, KortixGatewayModel> | null
  * out. A box reporting null is exactly the case `managedCatalogFallbackReason`
  * explains — the control plane must not read null as "zero managed models
  * exist" and must not skip the box's `managed_catalog_fallback_reason` either.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function managedModelIdsSnapshot(): string[] | null {
   const cache = cachedManagedModels()
@@ -1349,11 +1273,12 @@ export function managedModelIdsSnapshot(): string[] | null {
  *
  * NO SILENT STALENESS. Before this, a failed boot fetch was a single
  * `logger.warn` line (`fetchManagedModels`'s final branch) and nothing else:
- * the box quietly kept running the baked/bundled managed set for its whole
+ * the box quietly kept running the baked catalog for its whole
  * life with no signal anywhere the control plane could read. This is that
  * signal, surfaced on `/kortix/health` next to `managed_model_ids` — the SAME
  * channel a config-release fallback is already visible on
  * (`DaemonConfigReport.fallback_reason`), not a second, unwatched place.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function managedCatalogFallbackReason(): string | null {
   return lastManagedFetchFailureReason
@@ -1365,6 +1290,7 @@ export function managedCatalogFallbackReason(): string | null {
  * Bounded by the prefetch's own ≤5s budget, which started at proxy-up — by the
  * time OpenCode is spawned it is normally already resolved, so this returns
  * immediately. Never call it from a path that gates the spawn.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function settleManagedModelsPrefetch(): Promise<Record<
   string,
@@ -1384,6 +1310,7 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
  * whose `modalities` changed: OpenCode replaces every image with "Cannot read
  * image" until it restarts (2026-09-29). An empty result means the boot config
  * was already complete and nothing has to be restarted.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
   if (!live) return []
@@ -1400,6 +1327,7 @@ export function missingManagedModelIds(live: Record<string, KortixGatewayModel> 
  * truth (the runtime-convergence contract (PR #7785), Rule 1.2): the provider map a
  * running box really serves, never a second opinion re-derived from a file it
  * only hoped to load. Null before OpenCode has built a config at all.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function configuredKortixProviderModelIds(): readonly string[] | null {
   return lastConfiguredProviderModelIds ? [...lastConfiguredProviderModelIds] : null
@@ -1410,6 +1338,7 @@ export function configuredKortixProviderModelIds(): readonly string[] | null {
  * restart, and any later restart on this box) registers it from disk, not just
  * from this process's cache. Returns the file OpenCode should read, or null
  * when nothing usable could be composed.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function writeManagedOverlayCatalogFile(opts: {
   currentCatalogFile: string
@@ -1417,14 +1346,17 @@ export function writeManagedOverlayCatalogFile(opts: {
   managed: Record<string, KortixGatewayModel>
 }): string | null {
   const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(bakedCatalogPath())
-  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
+  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? {}, opts.managed))
   if (!composed) return null
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
   writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
   return opts.targetCatalogFile
 }
 
-/** Test seam: drop prefetch/cache/config state between cases. */
+/**
+ * Test seam: drop prefetch/cache/config state between cases.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetManagedModelsStateForTests(): void {
   managedPrefetch = null
   managedCache = null
@@ -1435,6 +1367,7 @@ export function resetManagedModelsStateForTests(): void {
   requestedModelIds.clear()
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type ManagedCatalogConvergeOutcome =
   /** Nothing was missing; nothing was fetched-and-stale. */
   | 'unchanged'
@@ -1453,6 +1386,7 @@ export type ManagedCatalogConvergeOutcome =
    *  or the managed lane's listing fetch never answered. */
   | 'no-gateway'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ManagedCatalogConvergeResult {
   outcome: ManagedCatalogConvergeOutcome
   /** The ids this call set out to register — empty when `unchanged`/`no-gateway`. */
@@ -1480,6 +1414,7 @@ export interface ManagedCatalogConvergeResult {
  * Applying is one in-place config reload (`reloadConfig`: `/global/dispose`,
  * same process, measured 3 ms on OpenCode 1.18.23). A dispose aborts a running
  * turn, so the reload is idle-gated and a live turn answers `declined`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function convergeManagedModelCatalog(
   opencode: Pick<Opencode, 'getInternalUrl' | 'reloadConfig'>,
@@ -1499,7 +1434,7 @@ export async function convergeManagedModelCatalog(
   if (opts.model && lastConfiguredProviderModelIds?.has(opts.model)) {
     return { outcome: 'unchanged', missing: [], managed: 0, modelPresent: true }
   }
-  if (!hasKortixLlmGateway(process.env) || !baseUrl || !apiKey) {
+  if (!baseUrl || !apiKey) {
     return {
       outcome: 'no-gateway',
       missing: [],
@@ -1556,6 +1491,7 @@ function persistManagedOverlay(live: Record<string, KortixGatewayModel>, targetC
 /**
  * Make the running OpenCode register `missing`: persist the listing, then one
  * idle-gated config reload. Never ends a running turn, never retries.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function applyCatalogIfIdle(
   opencode: Pick<Opencode, 'getInternalUrl' | 'reloadConfig'>,
@@ -1581,6 +1517,7 @@ export async function applyCatalogIfIdle(
   return { outcome: applied.how === 'disposed' ? 'reloaded' : 'restarted', missing }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
@@ -1593,6 +1530,7 @@ export type GatewayCatalogRefreshResult = {
  * OpenCode materializes provider models at process start. Updating the file is
  * therefore not sufficient by itself: callers must restart OpenCode when
  * `changed` is true. A matching catalog preserves the warm no-restart path.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function refreshGatewayCatalogFile(opts: {
   currentCatalogFile: string
@@ -1636,39 +1574,28 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// Conservative window for a model we have no declared limit for. Better to
-// compact a little early than to never compact and get stuck at the wall.
-const DEFAULT_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
+// OpenCode compacts only when a model declares a window. The gateway serves each
+// model's real limits; a model no source can size (no live picker answer and not
+// in the baked catalog) gets this one so compaction still fires.
+const UNKNOWN_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
 
-// Known limits indexed by bare model id (the tail after the last "/"), so a
-// catalog model offered under any provider prefix (e.g.
-// "alibaba-cn/deepseek-v4-flash") still resolves to the right window.
-const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }> = (() => {
-  const out: Record<string, { context?: number; output?: number }> = {}
-  for (const [id, model] of Object.entries(MINIMAL_FALLBACK_MODELS)) {
-    if (!model.limit) continue
-    out[id.split('/').pop() ?? id] = model.limit
-  }
-  return out
-})()
-
-// Guarantee every model carries a context window. The gateway /models endpoint
-// returns NO per-model limits, so without this OpenCode sees models with no
-// context limit, can't size the conversation, and auto-compaction never fires —
-// long sessions then blow past the window and get stuck (session pinned at 100%
-// context). Backfill from the known-model table (exact id, then bare id), else a
-// conservative default. Models that already declare a usable limit are untouched.
 function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(models)) {
-    if (typeof model.limit?.context === 'number' && model.limit.context > 0) {
-      out[id] = model
+    const context = model.limit?.context
+    if (typeof context !== 'number' || context <= 0) {
+      out[id] = { ...model, limit: { ...UNKNOWN_MODEL_LIMIT } }
       continue
     }
-    const known = MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id]
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } }
+    // OpenCode's schema requires `output` beside `context`; one model without it
+    // invalidates the whole config and no session starts. The gateway leaves an
+    // unknown output unset, so give it the default, never above the window.
+    const output = model.limit?.output
+    out[id] = typeof output === 'number' && output > 0
+      ? model
+      : { ...model, limit: { ...model.limit, context, output: Math.min(UNKNOWN_MODEL_LIMIT.output, context) } }
   }
   return out
 }
@@ -1718,6 +1645,7 @@ async function which(bin: string): Promise<string | null> {
   })
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeBinaryDetectionOptions {
   currentLink?: string
   systemLink?: string
@@ -1733,6 +1661,7 @@ export interface OpencodeBinaryDetectionOptions {
  * script that `exec`s it and names it in a trailing `# cmd-shim-target=` line.
  * Conservative by construction: anything this cannot read or resolve is NOT a
  * stub, so a false positive can never take a working launcher away.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function isStubOpencodeLauncher(launcherPath: string): Promise<boolean> {
   try {
@@ -1781,6 +1710,7 @@ async function readTextIfSmall(path: string): Promise<string | null> {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function detectOpencodeBinary(
   options: OpencodeBinaryDetectionOptions = {},
 ): Promise<string | null> {
@@ -1806,6 +1736,7 @@ export async function detectOpencodeBinary(
   return null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   try {
     const project = await stat(cfg.projectTarget)
@@ -1814,8 +1745,10 @@ export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type OpencodeState = HarnessState
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface LivenessDecisionInput {
   /** The lifecycle's current opencode state. */
   state: OpencodeState
@@ -1827,6 +1760,7 @@ export interface LivenessDecisionInput {
   threshold: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface LivenessDecision {
   state: OpencodeState
   consecutiveFailures: number
@@ -1843,6 +1777,7 @@ export interface LivenessDecision {
  *   downgrades to `starting` only on the Nth consecutive failure;
  * - any other non-ready state resolves to `starting` (unchanged from the
  *   pre-hysteresis behaviour), with the counter reset.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function nextLivenessState(input: LivenessDecisionInput): LivenessDecision {
   if (input.ready) return { state: 'ok', consecutiveFailures: 0, downgraded: false }
@@ -1856,6 +1791,7 @@ export function nextLivenessState(input: LivenessDecisionInput): LivenessDecisio
   return { state: 'starting', consecutiveFailures: 0, downgraded: false }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type Opencode = HarnessLifecycleService & {
   /**
    * @param opts.mayPromote Forwarded to `reloadVerified` as the last-moment
@@ -1923,6 +1859,7 @@ export type Opencode = HarnessLifecycleService & {
   waitForCurrentListening(): Promise<void>
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeLifecycleOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
@@ -2053,6 +1990,7 @@ async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createOpencodeLifecycle(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
@@ -2077,9 +2015,6 @@ export function createOpencodeLifecycle(
   const agentModelPatches = new WeakMap<ChildProcess, string | undefined>()
   /** Whether each process was spawned for a kortix.yaml v3 set (`v3OpencodeEnv`). */
   const spawnedV3 = new WeakMap<ChildProcess, boolean>()
-  function agentModelPatchFor(baseEnv: NodeJS.ProcessEnv): Promise<string | undefined> {
-    return hasKortixLlmGateway(baseEnv) ? gatewayAgentModelPatch(bootLinkPath()) : Promise.resolve(undefined)
-  }
   let binaryPath: string | null = null
   let stopping = false
   let restartDelayMs = 500
@@ -2260,7 +2195,7 @@ export function createOpencodeLifecycle(
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
-      agentModelPatch = await agentModelPatchFor(baseEnv)
+      agentModelPatch = await gatewayAgentModelPatch(bootLinkPath())
       if (agentModelPatch) env.OPENCODE_CONFIG_CONTENT = agentModelPatch
     }
     startupMark('runtime-config-ready')
@@ -2715,7 +2650,7 @@ export function createOpencodeLifecycle(
       : process.env
     // An agent `.md` whose `model:` changed needs a new process: its patch
     // rides the env (see agentModelPatches).
-    if (child && (await agentModelPatchFor(baseEnv)) !== agentModelPatches.get(child)) {
+    if (child && (await gatewayAgentModelPatch(bootLinkPath())) !== agentModelPatches.get(child)) {
       logger.info('[opencode] an agent model ref changed; restarting instead of disposing')
       return false
     }
@@ -3180,6 +3115,7 @@ async function probeOpencodeSessionApi(
  * Tail-readiness probe used at boot to deadline-bound the first ready state.
  * Returns true if opencode reported ready before the deadline, false otherwise.
  * Non-throwing — the daemon should boot even on false so we can report `starting`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function waitForOpencodeReady(
   opencode: Opencode,

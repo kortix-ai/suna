@@ -31,7 +31,7 @@ const BUNDLE = {
   turn: { known: true, turns: [] },
   queue: { known: true, prompts: [], held: false },
   transcript: { known: true, requested: false },
-  config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+  config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
   models: { known: false, reason: 'x' },
 };
 
@@ -53,6 +53,16 @@ describe('prefetchSessionOpen', () => {
     // The row came from the snapshot's `session` leg — no second request.
     expect(urls.filter((u) => u.endsWith('/sessions/S1'))).toHaveLength(0);
     expect(client.getQueryData<unknown>(qk.project.session('P1', 'S1'))).toEqual(ROW);
+    client.clear();
+  });
+
+  test('asks the snapshot for no v1 transcript window: the open reads the session log first', async () => {
+    const urls = mockFetch();
+    const client = new QueryClient();
+    await prefetchSessionOpen(client, 'P1', 'S1');
+    const snapshots = urls.filter((u) => u.includes('/sessions/S1/snapshot'));
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toContain('transcript=0');
     client.clear();
   });
 

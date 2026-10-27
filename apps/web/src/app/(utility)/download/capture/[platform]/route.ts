@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { isMobilePlatform, normalizePlatform } from '@/features/marketing/download/detect-os';
 import {
+  deploymentChannel,
   getCaptureDevRelease,
   getLatestCaptureRelease,
   pickCaptureAsset,
@@ -17,7 +18,8 @@ import {
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ platform: string }> }) {
   const os = normalizePlatform((await params).platform);
   if (!os || isMobilePlatform(os)) return toDocs();
-  const release = isDevDeployment() ? await getCaptureDevRelease() : await getLatestCaptureRelease();
+  // Capture has no staging channel: staging serves the newest vX.Y.Z, like production.
+  const release = deploymentChannel() === 'dev' ? await getCaptureDevRelease() : await getLatestCaptureRelease();
   const asset = release ? pickCaptureAsset(release.assets, os) : undefined;
   return asset ? NextResponse.redirect(asset.url, 302) : toDocs();
 }
@@ -26,14 +28,4 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
  *  task's internal host (ip-10-…compute.internal:3000), which no browser can reach. */
 function toDocs(): Response {
   return new Response(null, { status: 302, headers: { Location: '/docs/capture#install-kortix-capture' } });
-}
-
-/** dev.kortix.com (its backend is dev-api) serves the dev channel, whose installers sync to
- *  dev-api. Production, staging and every self-hosted instance serve the newest vX.Y.Z. */
-function isDevDeployment(): boolean {
-  try {
-    return new URL(process.env.NEXT_PUBLIC_BACKEND_URL ?? '').hostname === 'dev-api.kortix.com';
-  } catch {
-    return false;
-  }
 }

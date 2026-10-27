@@ -143,7 +143,7 @@ export interface AppKeepAliveResult {
  *      start would queue, at most `KEEP_ALIVE_REFRESHES_PER_PASS` per pass.
  *   3. Keep running: the provider is asked about every always-on runtime the
  *      database records as running. Running: compute liveness is stamped, so
- *      billing continues without inbound traffic, and on Daytona and E2B the
+ *      billing continues without inbound traffic, and on Daytona the
  *      provider's idle timer is renewed. Not running: the row is corrected and
  *      the App is started through the wake gate (entitlement, concurrency),
  *      like an App whose row already said stopped.
@@ -252,8 +252,8 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
       if (status === 'unknown') return; // the provider did not answer; the next pass asks again
       if (status === 'running') {
         await markComputeSessionAlive(runtime.runtimeId, now);
-        // Platinum runs an always-on App as a persistent VM. Daytona and E2B
-        // keep their idle backstop; renewing it here keeps the VM up.
+        // Platinum runs an always-on App as a persistent VM. Daytona keeps
+        // its idle backstop; renewing it here keeps the VM up.
         if (provider !== 'platinum') {
           await hosting.renewLifecycle(provider, runtime.externalId).catch((error) =>
             logger.warn('[apps] always-on lifecycle renewal failed', { appId: app.appId, error: String(error) }));

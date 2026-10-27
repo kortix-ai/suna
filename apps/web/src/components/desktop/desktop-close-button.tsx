@@ -2,25 +2,24 @@
 
 import { XIcon } from '@phosphor-icons/react';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * Close, for a full-screen frame that the desktop shell cannot otherwise leave.
  *
- * The shell has no browser toolbar. On `/new` the only exit was Log out, and
- * the onboarding wizard had no exit before its last step. This is the missing
- * way out, drawn at the frame's top-right corner.
+ * The shell has no browser toolbar. On `/new` the only exit was Log out.
+ * This is the missing way out, drawn at the frame's top-right corner.
  *
  * Icon-only, unlike `DesktopBackControl`: it sits beside a labelled control
- * (Log out, Skip for now), and a second word there competes with it. `Hint`
+ * (Log out), and a second word there competes with it. `Hint`
  * and `aria-label` carry the name.
  *
  * Desktop only. `.kx-desktop-back` in globals.css shows it under
  * `html[data-desktop='true']`, so the web keeps the browser's own Back. The
  * host passes `onClose`, because only the host knows what closing means: `/new`
- * returns to the landing door, the wizard stamps onboarding first.
+ * returns to the landing door.
  */
 export function DesktopCloseButton({ onClose }: { onClose: () => void }) {
   const t = useTranslations('common');

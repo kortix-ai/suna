@@ -72,12 +72,15 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // server-side design refuses to allow. It has to be declared here for the
       // banner to ever be true in a browser.
       'X-Kortix-Impersonate',
-      // Same reason for the platform-admin read-only bypass the SDK already
-      // attaches (setAdminBypass → `x-kortix-admin-bypass: 1`): without it, the
-      // header never survives a cross-origin preflight.
+      // The retired read-only admin bypass. The API ignores it; it stays allowed
+      // so an older SDK that still sends it passes its preflight.
       'X-Kortix-Admin-Bypass',
     ],
     exposeHeaders: [
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset',
+      'Retry-After',
       'X-Next-Cursor',
       'X-Request-Id',
       'X-Audit-Row-Count',

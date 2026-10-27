@@ -44,6 +44,36 @@ function actorCell(event: AuditEvent): string {
   return event.actor_user_id ? event.actor_user_id.slice(0, 8) : '—';
 }
 
+/** One connector-gated call of a session (`actions` on the session audit route). */
+export interface SessionAuditAction {
+  execution_id: string;
+  action: string;
+  connector: string | null;
+  status: string;
+  at: string;
+  approval_url: string | null;
+}
+
+/** The WHEN / STATUS / ACTION / APPROVAL table of a session's gated calls. */
+export function printSessionActions(actions: SessionAuditAction[]): void {
+  if (actions.length === 0) {
+    process.stdout.write(`\n  ${C.dim}No pending approvals.${C.reset}\n\n`);
+    return;
+  }
+  const statusW = Math.max(...actions.map((a) => a.status.length), 6);
+  const actionW = Math.min(Math.max(...actions.map((a) => a.action.length), 6), ACTION_MAX);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('WHEN (UTC)', 15)}   ${pad('STATUS', statusW)}   ${pad('ACTION', actionW)}   APPROVAL${C.reset}\n`,
+  );
+  for (const a of actions) {
+    process.stdout.write(
+      `  ${pad(shortTime(a.at), 15)}   ${pad(a.status, statusW)}   ${pad(trim(a.action, ACTION_MAX), actionW)}   ${C.faded}${a.approval_url ?? '—'}${C.reset}\n`,
+    );
+  }
+  process.stdout.write('\n');
+}
+
 export function printEvents(events: AuditEvent[]): void {
   if (events.length === 0) {
     process.stdout.write(`\n  ${C.dim}No audit events match.${C.reset}\n\n`);

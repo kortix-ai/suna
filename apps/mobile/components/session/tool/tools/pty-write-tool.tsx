@@ -16,6 +16,7 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function PtyWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { ptyInput, ptyId } = ptyWriteView(partInput(call));

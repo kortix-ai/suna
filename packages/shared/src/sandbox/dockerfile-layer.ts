@@ -191,7 +191,10 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
  * builders stage it to enable the cache-only warm-up steps.
  */
 export interface KortixToolchainLayerOpts {
-  /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
+  /**
+   * Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`).
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencodeVersion: string;
   /**
    * Pinned `agent-browser` CLI version. Optional — defaults to
@@ -199,7 +202,10 @@ export interface KortixToolchainLayerOpts {
    * `AGENT_BROWSER_VERSION` so the pin is centralized and fingerprinted.
    */
   agentBrowserVersion?: string;
-  /** Build-context path to the cache-only OpenCode warm-up script. */
+  /**
+   * Build-context path to the cache-only OpenCode warm-up script.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencodeWarmupScriptPath?: string;
   /**
    * Path (in the build context) to the canonical starter `.kortix/opencode`
@@ -208,6 +214,7 @@ export interface KortixToolchainLayerOpts {
    * costly first-instance work (Bun plugin auto-install/transpile, models.dev
    * fetch, ripgrep) is cached into the image instead of paid on the session hot
    * path. Optional — omit to skip the instance warm-up.
+   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
    */
   opencodeConfigPath?: string;
   /**
@@ -896,6 +903,8 @@ export interface SandboxTemplate {
   spec: SandboxSpec;
   /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
   containerRuntime?: boolean;
+  /** kortix.yaml `entrypoint`: the command the sandbox image starts with. */
+  entrypoint?: string;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1060,6 +1069,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
     ...(row.container_runtime === true ? { containerRuntime: true } : {}),
+    ...(typeof row.entrypoint === 'string' && row.entrypoint.trim() ? { entrypoint: row.entrypoint.trim() } : {}),
   };
 }
 

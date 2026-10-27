@@ -15,10 +15,14 @@ Kortix Capture ships with Kortix. Its version is the Kortix release version.
 1. `test` (Linux, macOS, Windows): UI node tests; `cargo test --release` for the
    library, the engine protocol, enrollment and the format schemas; on Linux
    also the AppIndicator tray and the S3 sync suite against versitygw.
-2. `windows-msi`: builds the `.msi`, installs it silently with a made-up
-   enrollment token, and asserts: service running as LocalSystem, policy key
+2. `windows-msi`: builds the `.msi`, checks that no exe imports the Visual C++
+   runtime, installs it once without properties (exit 0, service running, then
+   uninstall), installs it silently with a made-up enrollment token, and asserts: service running as LocalSystem, policy key
    ACL, token absent from the MSI log, enrollment against a local stand-in
-   issuer (`scripts/ci_fake_issuer.py`), frames recorded, uploads in the local
+   issuer (`scripts/ci_fake_issuer.py`), frames recorded, the Start menu entry
+   run with a basic-user token (`runas /trustlevel:0x20000`, like a person
+   without admin rights) shows the window with a WebView and a profile in
+   `%LOCALAPPDATA%`, a second click keeps one window, uploads in the local
    S3 bucket, tray notice, recovery after a kill, in-place upgrade to the next
    patch version, clean uninstall.
 3. `macos-pkg`: builds the universal `.pkg` (arm64 + x86_64), signs and
@@ -182,19 +186,68 @@ downgrade N+1.
   with its private key: `openssl pkcs12 -export -legacy -inkey installer.key -in
   installer.pem -out installer.p12`, then store the base64 of the .p12 and its
   password in `kortix-ci-env`.
-- Windows: unsigned. No Windows code-signing certificate exists in `kortix-ci-env`.
+- Windows: Authenticode through Microsoft Artifact Signing (Trusted Signing). The
+  `windows-msi` job signs `target/release/*.exe|*.dll` before packing and both MSIs
+  after, then asserts `Get-AuthenticodeSignature` is `Valid`. It reads
+  `AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID`, `AZURE_SIGNING_CLIENT_SECRET`,
+  `AZURE_SIGNING_ENDPOINT` (e.g. `https://eus.codesigning.azure.net/`),
+  `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE` from `kortix-ci-env`. Without
+  them it builds unsigned with a warning, and SmartScreen warns whoever runs a
+  downloaded MSI ("unrecognized app"). An MSI pushed by IT (Intune, GPO) installs
+  silently either way.
 - Linux: the .deb is unsigned (no apt repository).
+
+### Windows signing setup
+
+Kortix Capture and Kortix Desktop share one setup. Configured on 2026-10-19.
+
+| Item | Value |
+|---|---|
+| Azure tenant | `markokortix.onmicrosoft.com` |
+| Resource | Artifact Signing account `kortixsigning`, resource group `kortix-code-signing`, region East US (`https://eus.codesigning.azure.net/`) |
+| Identity validation | Public, Kortix AI Corp (D-U-N-S), requester verified with Microsoft Entra Verified ID |
+| Certificate profile | `kortix-public`, Public Trust. Subject `CN=Kortix AI Corp, O=Kortix AI Corp, L=Austin, S=Texas, C=US` |
+| CI identity | App registration `kortix-ci-signing` with the "Artifact Signing Certificate Profile Signer" role on `kortixsigning` only. Client secret valid until 2028-10-19 |
+| Secrets | The six `AZURE_SIGNING_*` keys in `kortix-ci-env` (us-east-2). Read by `capture-build.yml`, `desktop.yml` and `deploy-prod.yml` |
+
+Signing turns on only when `AZURE_SIGNING_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT`
+and `AZURE_SIGNING_PROFILE` are all set. A set profile name for a profile that does
+not exist fails every Windows build.
+
+Renewal:
+
+- Client secret (before 2028-10-19): `az ad app credential reset --id <client id>
+  --years 2`, then write the new `AZURE_SIGNING_CLIENT_SECRET` to `kortix-ci-env`.
+- Identity validation: Azure shows an expiration date on the validation. Renew it in
+  the portal (Identity validations → Renew) before that date. The requester repeats
+  the Verified ID check. Its verification link works once: open it only on the
+  requester's own device, never in an automation browser.
+- Check after any change: the Windows job log of `capture-build.yml` prints
+  `Windows signing: Artifact Signing (kortixsigning/kortix-public)`, and
+  `Get-AuthenticodeSignature` on a downloaded MSI or `.exe` is `Valid` with signer
+  `CN=Kortix AI Corp`.
 
 ## Human steps
 
 1. Create the Developer ID Installer certificate and store it as
    `APPLE_INSTALLER_CERTIFICATE` + `APPLE_INSTALLER_CERTIFICATE_PASSWORD` (section
    "Signing"). Until then no stable release can attach Capture installers.
-2. Add a Windows code-signing certificate and a signing step to `windows-msi`
-   to remove the SmartScreen warning.
+2. Windows signing: done on 2026-10-19 (section "Windows signing setup" below).
 3. Create the update signing key: `apps/capture/scripts/create_update_key.sh`, then commit
    `apps/capture/update-public-key.txt` (section "Updater").
 4. Remove the old `CAPTURE_RELEASES_TOKEN` secret from `kortix-ci-env`; nothing reads it.
+
+## Sign-in against the real Kortix
+
+The CI stand-in issuer is local, so each OS job also starts a sign-in at
+`https://dev-api.kortix.com` with the installed binary ("Sign-in reaches the real Kortix
+through Cloudflare"). Cloudflare there refuses a request without a User-Agent (403); the
+check needs no secret and approves nothing.
+
+The full flow, by hand, with any build: `python3 -I apps/capture/scripts/dev_signin_e2e.py
+<kortix-capture binary>`. It signs in through Cloudflare, approves as the owner of a
+throwaway account (the Kortix CLI's `dev` host token), connects, uploads a probe object,
+checks Kortix lists the computer, and cleans up.
 
 ## When a verification fails
 
