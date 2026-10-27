@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Canali",
           "description": "Organizza il lavoro in canali. Ogni nuovo messaggio in un canale o in un messaggio diretto con un agente avvia un thread. Sostituisce l'elenco delle sessioni nella barra laterale."
+        },
+        "session_groups": {
+          "name": "Gruppi di sessioni",
+          "description": "Raggruppa le sessioni della barra laterale in cartelle con nome condivise da tutto il progetto, ad esempio una per negozio o cliente. Sposta una sessione in un gruppo dal suo menu o trascinandola; riordina e comprimi i gruppi."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {Impossibile modificare # sessione} other {Impossibile modificare # sessioni}}",
       "showArchived": "Sessioni archiviate",
       "pinnedMark": "Fissata"
+    },
+    "sessionGroups": {
+      "newGroup": "Nuovo gruppo",
+      "newGroupFromMenu": "Nuovo gruppo…",
+      "createTitle": "Nuovo gruppo",
+      "createDescription": "Tutti in questo progetto vedono il gruppo. Sposta una sessione nel gruppo dal suo menu o trascinala sul gruppo.",
+      "namePlaceholder": "Nome del gruppo",
+      "create": "Crea gruppo",
+      "created": "Gruppo creato",
+      "createFailed": "Impossibile creare il gruppo",
+      "rename": "Rinomina gruppo",
+      "save": "Salva",
+      "renamed": "Gruppo rinominato",
+      "renameFailed": "Impossibile rinominare il gruppo",
+      "nameTaken": "Un altro gruppo di questo progetto ha già questo nome.",
+      "limit": "Un progetto ha al massimo 50 gruppi.",
+      "cancel": "Annulla",
+      "delete": "Elimina gruppo",
+      "deleteTitle": "Eliminare questo gruppo?",
+      "deleteDescription": "{name} viene eliminato per tutti in questo progetto. Le sue sessioni restano, senza gruppo. L'operazione non può essere annullata.",
+      "deleted": "Gruppo eliminato",
+      "deleteFailed": "Impossibile eliminare il gruppo",
+      "moveUp": "Sposta su",
+      "moveDown": "Sposta giù",
+      "reorderFailed": "Impossibile riordinare i gruppi",
+      "moveTo": "Sposta nel gruppo",
+      "removeFromGroup": "Rimuovi dal gruppo",
+      "moved": "Sessione spostata",
+      "noGroup": "Nessun gruppo",
+      "moveFailed": "Impossibile spostare la sessione",
+      "empty": "Le sessioni che sposti qui verranno mostrate qui.",
+      "groupOptions": "Opzioni del gruppo"
     },
     "recentlyDeleted": {
       "view": "Eliminate di recente",

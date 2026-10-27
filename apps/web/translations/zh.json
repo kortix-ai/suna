@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "频道",
           "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
+        },
+        "session_groups": {
+          "name": "会话分组",
+          "description": "将侧边栏中的会话整理到全项目共享的命名文件夹中，例如每个店铺或客户一个。可通过菜单或拖动将会话移入分组，并对分组排序和折叠。"
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, other {无法更改 # 个会话}}",
       "showArchived": "已归档的会话",
       "pinnedMark": "已置顶"
+    },
+    "sessionGroups": {
+      "newGroup": "新建分组",
+      "newGroupFromMenu": "新建分组…",
+      "createTitle": "新建分组",
+      "createDescription": "此项目中的所有人都能看到该分组。可从会话菜单将会话移入分组，或将会话拖到分组上。",
+      "namePlaceholder": "分组名称",
+      "create": "创建分组",
+      "created": "分组已创建",
+      "createFailed": "无法创建分组",
+      "rename": "重命名分组",
+      "save": "保存",
+      "renamed": "分组已重命名",
+      "renameFailed": "无法重命名分组",
+      "nameTaken": "此项目中已有同名分组。",
+      "limit": "一个项目最多有 50 个分组。",
+      "cancel": "取消",
+      "delete": "删除分组",
+      "deleteTitle": "删除此分组？",
+      "deleteDescription": "{name} 将为此项目中的所有人删除。其中的会话会保留，不属于任何分组。此操作无法撤销。",
+      "deleted": "分组已删除",
+      "deleteFailed": "无法删除分组",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "reorderFailed": "无法重新排序分组",
+      "moveTo": "移至分组",
+      "removeFromGroup": "移出分组",
+      "moved": "会话已移动",
+      "noGroup": "无分组",
+      "moveFailed": "无法移动会话",
+      "empty": "你移到这里的会话将显示在这里。",
+      "groupOptions": "分组选项"
     },
     "recentlyDeleted": {
       "view": "最近删除",
