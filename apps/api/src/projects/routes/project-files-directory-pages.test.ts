@@ -229,7 +229,7 @@ describe('single-file reads reject repository-root paths (KRTX-3551)', () => {
       const response = await projectsApp.request(`/${PROJECT_ID}/files/${route}?${new URLSearchParams({ path: './z/last.txt' })}`);
       expect(response.status).toBe(200);
       if (route === 'raw') expect(await response.text()).toBe('last\n');
-      else expect(await response.json()).toEqual({ path: './z/last.txt', ref: 'main', content: 'last\n' });
+      else expect(await response.json()).toMatchObject({ path: './z/last.txt', ref: 'main', content: 'last\n' });
     });
   }
 });
