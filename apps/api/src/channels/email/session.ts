@@ -127,20 +127,42 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
   );
 }
 
-/** A readable body for an HTML-only email. */
-function stripHtml(html: string | null | undefined): string {
+/**
+ * A readable body for an HTML-only email. Linear in the input: a sender
+ * controls it, and a quadratic pattern stalled the API on crafted HTML (a run
+ * of `<script` or `<` took seconds).
+ */
+export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
-  return html
-    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+  return dropScriptsAndStyles(html)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<[^<>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Drop every `<script>` and `<style>` block; an unclosed one stays as text. */
+function dropScriptsAndStyles(html: string): string {
+  const opener = /<(script|style)\b/gi;
+  const closers = { script: /<\/script/gi, style: /<\/style/gi };
+  let out = '';
+  let pos = 0;
+  for (let open = opener.exec(html); open; open = opener.exec(html)) {
+    const closer = closers[open[1]!.toLowerCase() as keyof typeof closers];
+    closer.lastIndex = open.index;
+    const close = closer.exec(html);
+    const end = close ? html.indexOf('>', close.index) : -1;
+    if (end < 0) break;
+    out += html.slice(pos, open.index);
+    pos = end + 1;
+    opener.lastIndex = pos;
+  }
+  return out + html.slice(pos);
 }
 
 /**

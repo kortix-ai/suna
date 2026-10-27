@@ -114,6 +114,7 @@ const {
   resetEmailChannelForTest,
   setEmailSenderPolicyLoaderForTest,
   setThreadEmailLoaderForTest,
+  stripHtml,
 } = await import("../channels/email/session");
 const { resetChannelLifecycleForTest, setChannelLifecycleForTest } =
   await import("../channels/core/conversation");
@@ -780,5 +781,31 @@ describe("sender policy", () => {
 
   test("allow_all lets anyone through", () => {
     expect(isEmailSenderAllowed("anyone@anywhere.test", ALLOW_ALL)).toBe(true);
+  });
+});
+
+describe("stripHtml", () => {
+  test("an HTML-only body becomes readable text: no scripts or styles, line breaks kept", () => {
+    expect(
+      stripHtml(
+        '<html><head><style>p{color:red}</style><script>alert(1)</script></head><body>' +
+          '<p>Hi&nbsp;there</p><div>Two<br/>lines</div><SCRIPT type="x">bad</SCRIPT >end ' +
+          "<style>unclosed tail</body></html>",
+      ),
+    ).toBe("Hi there\nTwo\nlines\nend unclosed tail");
+    expect(stripHtml("İİ<style>x</style>after")).toBe("İİafter");
+  });
+
+  test("crafted HTML costs linear time (a run of `<script` or `<` took seconds)", () => {
+    for (const html of [
+      "<".repeat(262_144),
+      "<script".repeat(37_449),
+      "<style".repeat(43_690),
+      "<script" + "</script".repeat(32_768),
+    ]) {
+      const started = performance.now();
+      stripHtml(html);
+      expect(performance.now() - started).toBeLessThan(200);
+    }
   });
 });

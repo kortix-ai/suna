@@ -55,6 +55,7 @@ async function resendRequest<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), RESEND_REQUEST_TIMEOUT_MS);
   let res: Response;
+  let text: string;
   try {
     res = await fetch(`${baseUrl()}${path}`, {
       method: init.method ?? 'GET',
@@ -65,6 +66,8 @@ async function resendRequest<T>(
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: controller.signal,
     });
+    // Inside the timeout: a body that never finishes must not hold the caller.
+    text = await res.text();
   } catch (err) {
     const timedOut = controller.signal.aborted;
     throw new ResendEmailApiError({
@@ -76,7 +79,6 @@ async function resendRequest<T>(
   } finally {
     clearTimeout(timeout);
   }
-  const text = await res.text();
   let data: any = null;
   if (text) {
     try {
