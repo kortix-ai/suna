@@ -5,6 +5,7 @@ import { UseCasesBand } from '@/features/marketing/landing-sections/use-cases-ba
 import { WorksWithStrip } from '@/features/marketing/landing-sections/works-with-strip';
 import { LandingFaqSection } from '@/features/marketing/landing-sections/faq-section';
 import { PillarsBand } from '@/features/marketing/landing-sections/pillars-band';
+import { RunLoop } from '@/features/marketing/landing-sections/run-loop';
 import { ProblemSolution } from '@/features/marketing/landing-sections/problem-solution';
 import { SandBandHero } from '@/features/marketing/landing-hero/sand-band-hero';
 
@@ -23,6 +24,7 @@ export default function Home() {
       <SandBandHero />
       <WorksWithStrip />
       <PillarsBand />
+      <RunLoop />
       <CaseStudies />
       <ProblemSolution />
       <HowItWorksTabs />

@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D18 The home page adds the Promise: "Run your company 24/7 on agents"
+- **Date:** 2026-10-27
+- **Decision:** Beside the sovereign category line (D16), the home page says what Kortix does for a company: "Run your company 24/7 on agents". The hero subhead opens with it, and a section after the pillars shows the loop in five steps (Trigger, Work, Review, Learn, Repeat). The copy says "agents" and "AI-native operating system for your company", never "AI workers", "AI employees", "self-driving" or "autonomous company".
+- **Why:** founder, 2026-10-27: "not on the edge of like AI-native Company OS, OS to run your company in loops let agents run 24/7 … run company 24/7 on ai employees". "AI employees" is held back because it sits beside the retired "AI Worker" line and implies no human gate; the founder may override.
+- **Where:** [positioning.md](verbal/positioning.md) row "Promise" and its rule; `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`, `apps/web/src/features/marketing/landing-sections/run-loop.tsx`.
+- **Supersedes:** nothing; it adds a layer to D10 and D16.
+- **Source:** the `services-page` branch.
+
 ### D17 Compliance copy says "SOC 2 Type I verified" and never mentions Type II
 - **Date:** 2026-10-27
 - **Decision:** Every surface states SOC 2 as "SOC 2 Type I verified". Type II is not mentioned anywhere: no "in progress" seal, row, line or footnote. GDPR stays "a posture Kortix runs, not a certificate". No ISO, no HIPAA.

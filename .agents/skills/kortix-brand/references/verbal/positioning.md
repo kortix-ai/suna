@@ -15,6 +15,7 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 | Comparative | The leading open-source alternative to Claude Cowork and ChatGPT Work | Search, social, launch, GitHub. Anchors against the known category. |
 | Manifesto line | A company is going to be a git repository | The deep thesis. Manifesto, founder voice, vision talks. Never a page title. |
 | Mission | Take a company from human to AGI, and let it keep every byte of itself on the way there. | Founder voice, about, hiring. Never a category. |
+| Promise | Run your company 24/7 on agents | What Kortix does for a company, beside what it is (D18). Home hero subhead, the 24/7 loop section, pitches. Never a page title. |
 
 **Rule.** Use "AI Operating System" as the category and "The open-source AI Operating System" as the tagline. — *Why:* D10 (2026-10-04, founder). An operating system is the layer everything else runs on: agents, skills, memory, connectors, computers, channels and triggers. The phrase names that layer, and it scales from one person to a company. — *Where:* app | marketing | mobile | deck | email | CLI | GitHub. — *When silent:* use the tagline in titles and the category noun in sentences.
 
@@ -27,6 +28,8 @@ Rule format: **Rule.** — *Why:* — *Where:* — *When silent:*.
 **Rule.** Keep "AI Operating System" capitalized as a proper category name. Keep "open-source" hyphenated before a noun and "open source" two words as a noun. — *Why:* One spelling per term. The README and hero use this form. — *Where:* every surface. — *When silent:* "the open-source AI Operating System" (adjective); "Kortix is open source" (noun).
 
 **Rule.** Do not name a license in public copy. Write "open source" and stop. — *Why:* The license is a legal detail that changes the claim. Public copy states the fact a reader can verify: they can read, fork and audit the code. — *Where:* marketing | deck | social | email | docs | store listing. — *When silent:* "open source", "code you can read, fork, and audit", "self-host for free". Never add a license badge.
+
+**Rule.** Say what Kortix does for a company with the Promise line: "Run your company 24/7 on agents", and its mechanism, agents that work in loops (a trigger starts the work, an agent does it on its own computer, the result is reviewed through a change request, the agent learns, the loop runs again). — *Why:* D18 (2026-10-27, founder). The sovereign category line says what Kortix is; buyers also need what it does for them. — *Where:* marketing | deck | social | sales. — *When silent:* "agents" and "AI-native operating system for your company". Never "AI workers", "AI employees", "self-driving company" or "autonomous company": those are retired or imply no human gate, and every loop has approval rules a person sets.
 
 ### What-is, in one sentence
 

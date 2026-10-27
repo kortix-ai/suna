@@ -67,8 +67,8 @@ export function SandBandHero() {
             <OwnedLine />
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Multiplayer AI for your whole team. Your company as code, extensible and powered by pi.
-            Sovereign and open source, on your infrastructure or ours.
+            Run your company on agents, 24/7. Multiplayer AI for your whole team, your company as
+            code powered by pi, sovereign and open source on your infrastructure or ours.
           </p>
         </div>
 
