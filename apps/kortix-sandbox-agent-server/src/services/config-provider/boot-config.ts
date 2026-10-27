@@ -305,11 +305,15 @@ export async function extractConfigArchive(
   for (const [target, linkText] of symlinks) await symlink(linkText.toString('utf8'), target)
 }
 
-export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+async function writeStoreJson(root: string, name: string, value: unknown, destination = () => join(root, name)): Promise<void> {
   await mkdir(root, { recursive: true })
-  const staged = join(root, `${manifest.release_id}.json.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(manifest)}\n`, { mode: 0o644 })
-  await rename(staged, manifestPath(root, manifest.release_id))
+  const staged = join(root, `${name}.${randomUUID()}.tmp`)
+  await writeFile(staged, `${JSON.stringify(value)}\n`, { mode: 0o644 })
+  await rename(staged, destination())
+}
+
+export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+  await writeStoreJson(root, `${manifest.release_id}.json`, manifest, () => manifestPath(root, manifest.release_id))
 }
 
 /** The manifest of a release in the store, or null when it is missing or malformed. */
@@ -742,10 +746,7 @@ export async function pointBootLink(target: string, root: string = bootConfigRoo
 
 /** Written only after a proven promotion. */
 export async function activateBootConfig(root: string, pointer: BootConfigPointer): Promise<void> {
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${POINTER_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(pointer)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, POINTER_FILE))
+  await writeStoreJson(root, POINTER_FILE, pointer)
 }
 
 export async function deactivateBootConfig(root: string = bootConfigRoot()): Promise<void> {
@@ -774,10 +775,7 @@ export async function quarantineRelease(root: string, releaseId: string, reason:
   if (!isReleaseId(releaseId)) return
   const entries = await readQuarantine(root)
   entries[releaseId] = { reason: reason.slice(0, 500), at: new Date().toISOString() }
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${QUARANTINE_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(entries)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, QUARANTINE_FILE))
+  await writeStoreJson(root, QUARANTINE_FILE, entries)
 }
 
 async function removeTree(dir: string): Promise<void> {
