@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { Hono } from 'hono';
 
 import { TokenBucketRateLimiter } from './rate-limit';
@@ -23,6 +23,58 @@ describe('TokenBucketRateLimiter bounded buckets', () => {
     expect(limiter.check('same', policy).allowed).toBe(true);
     expect(limiter.check('same', policy).allowed).toBe(true);
     expect(limiter.check('same', policy).allowed).toBe(false);
+  });
+});
+
+// KRTX-3408: the headers said `X-RateLimit-Reset: 60` on every response,
+// whatever the bucket held. A bucket of 600 per minute gains a token every
+// 100 ms, so 599 left is full again in 100 ms, and a denied caller gets a
+// token back in 100 ms, not 60 s.
+describe('TokenBucketRateLimiter timing', () => {
+  const T0 = new Date('2026-10-27T12:00:00.000Z').getTime();
+  const at = (ms: number) => setSystemTime(new Date(T0 + ms));
+  afterEach(() => setSystemTime());
+
+  test('resetMs is the time until the bucket is full again', () => {
+    const limiter = new TokenBucketRateLimiter('timing');
+    const policy = { limit: 600, windowMs: 60_000 };
+    at(0);
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: true, remaining: 599, resetMs: 100 });
+    for (let i = 0; i < 8; i++) limiter.check('k', policy);
+    expect(limiter.check('k', policy)).toMatchObject({ remaining: 590, resetMs: 1_000 });
+    at(250);
+    // Two tokens came back (2 × 100 ms); 50 ms count toward the third.
+    expect(limiter.check('k', policy)).toMatchObject({ remaining: 591, resetMs: 850 });
+  });
+
+  test('a denied check retries after one token, and resets after all of them', () => {
+    const limiter = new TokenBucketRateLimiter('timing');
+    const policy = { limit: 2, windowMs: 60_000 };
+    at(0);
+    limiter.check('k', policy);
+    limiter.check('k', policy);
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: false, remaining: 0, retryAfterMs: 30_000, resetMs: 60_000 });
+    at(10_000);
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: false, retryAfterMs: 20_000, resetMs: 50_000 });
+    at(30_000);
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: true, remaining: 0, resetMs: 60_000 });
+  });
+
+  test('a full bucket starts counting a token only when it is first drawn', () => {
+    const limiter = new TokenBucketRateLimiter('timing');
+    const policy = { limit: 600, windowMs: 60_000 };
+    at(0);
+    limiter.check('k', policy);
+    at(10_000);
+    expect(limiter.check('k', policy)).toMatchObject({ remaining: 599, resetMs: 100 });
+  });
+
+  test('a one-token bucket keeps its 60 s answers', () => {
+    const limiter = new TokenBucketRateLimiter('timing');
+    const policy = { limit: 1, windowMs: 60_000 };
+    at(0);
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: true, remaining: 0, resetMs: 60_000 });
+    expect(limiter.check('k', policy)).toMatchObject({ allowed: false, retryAfterMs: 60_000, resetMs: 60_000 });
   });
 });
 
