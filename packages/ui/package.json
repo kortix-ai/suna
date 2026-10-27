@@ -418,6 +418,7 @@
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/primitives/radio-group.tsx",
     "./resizable": "./src/primitives/resizable.tsx",
+    "./resize-seam": "./src/primitives/resize-seam.ts",
     "./scroll-area": "./src/primitives/scroll-area.tsx",
     "./section": "./src/primitives/section.tsx",
     "./section-card": "./src/primitives/section-card.tsx",
@@ -2126,6 +2127,10 @@
       "./resizable": {
         "types": "./dist/primitives/resizable.d.ts",
         "import": "./dist/primitives/resizable.js"
+      },
+      "./resize-seam": {
+        "types": "./dist/primitives/resize-seam.d.ts",
+        "import": "./dist/primitives/resize-seam.js"
       },
       "./scroll-area": {
         "types": "./dist/primitives/scroll-area.d.ts",

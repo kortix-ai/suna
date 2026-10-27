@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 961,
+  "count": 960,
   "routes": [
     {
       "method": "GET",
@@ -3793,10 +3793,6 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/sandbox/daytona"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/webhooks/sandbox/platinum"
     },
     {
       "method": "POST",
