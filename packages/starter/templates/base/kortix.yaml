@@ -73,7 +73,7 @@ env:
 # ─── Tools ───────────────────────────────────────────────────────────────
 # The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`,
 # `show`) and the harness tools are hosted by the runtime on every harness —
-# every agent with `tools: all` (the default) gets them automatically, so they
+# every agent with `tools: all` gets them automatically, so they
 # are NOT listed here. Register ONLY your own project tools below: a `name`
 # maps to a `.ts`/`.js` module in the repo. Enable a tool on an agent with
 # `agents.<name>.tools`.
@@ -108,7 +108,9 @@ agents:
     secrets: all
     kortix_permissions: all
     skills: all
-    # Tools this agent may use (harness, Kortix and project tools). Default: all.
+    # Tools this agent may use (harness, Kortix and project tools). Always set
+    # it: an agent without `tools` gets every tool, and validation warns.
+    tools: all
     # tools: [read, grep, web_search, lookup_order]   # only these
     # tools: { exclude: [bash] }                       # every tool but these
     # sandbox: python # Must name an available project template, or "default".
@@ -133,6 +135,7 @@ agents:
     kortix_permissions: all
     skills: all
     subagents: [session-reviewer]   # it fans out one session-reviewer per recent session
+    tools: all
     workspace: { project_repository: true }   # it edits the harness and opens a CR
 
   session-reviewer:
@@ -147,6 +150,7 @@ agents:
     # Sub-agent of the harness-reflector; it mirrors the reflector's grant.
     kortix_permissions: all
     skills: all
+    tools: all
     workspace: { project_repository: true }
 
 # ─── Triggers ────────────────────────────────────────────────────────────

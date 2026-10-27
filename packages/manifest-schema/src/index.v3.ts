@@ -56,6 +56,7 @@ import {
   type PiPackageEntryV2,
   resolveGrantSet,
   resolveProjectRepository,
+  TOOLS_UNSET_WARNING,
   validateAgentMdFrontmatter,
   validateAppGrantList,
   validateRequiredConnectorFields,
@@ -749,7 +750,11 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
 
 /** `tools`: `all` | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
 function validateToolGrantV3(value: unknown, where: string, known: Set<string>, issues: ManifestIssue[]): void {
-  if (value === undefined || value === 'all' || value === 'none') return;
+  if (value === undefined) {
+    issues.push({ path: where, message: TOOLS_UNSET_WARNING, severity: 'warning' });
+    return;
+  }
+  if (value === 'all' || value === 'none') return;
   let names: unknown = value;
   if (isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude)) {

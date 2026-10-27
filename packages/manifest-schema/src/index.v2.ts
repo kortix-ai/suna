@@ -1099,9 +1099,16 @@ function toolValueMessage(name: string): string {
   return `must be ${module}. \`kortix:<name>\` names a Kortix tool under its own name: ${KORTIX_TOOL_NAMES.map((tool) => `\`${tool}: kortix:${tool}\``).join(', ')}.`;
 }
 
+/** An agent without `tools` gets every tool, unlike every other grant (omitted = none). */
+export const TOOLS_UNSET_WARNING = 'not set: this agent gets every tool. Write `tools: all`, or list the tools it needs.';
+
 /** `agents.<name>.tools` — see `AgentToolsV2`. */
 function validateAgentToolsV2(value: unknown, where: string, issues: ManifestIssue[]): void {
-  if (value === undefined || value === 'all' || value === 'none') return;
+  if (value === undefined) {
+    issues.push({ path: where, message: TOOLS_UNSET_WARNING, severity: 'warning' });
+    return;
+  }
+  if (value === 'all' || value === 'none') return;
   const names = (list: unknown, at: string) => {
     if (!Array.isArray(list) || list.some((name) => typeof name !== 'string' || !name.trim())) {
       issues.push({ path: at, message: 'must be a list of tool names.', severity: 'error' });

@@ -34,6 +34,7 @@ agents:
   pr-bot:
     connectors: [github]
     kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
+    tools: all
 
 triggers:
   - slug: nightly-digest
@@ -816,7 +817,8 @@ agents:
   w: {}
 `);
     expect(valid).toBe(true);
-    expect(issues).toEqual([]);
+    // `tools` omitted is every tool: the one warning asks to write it.
+    expect(issues.map((i) => [i.path, i.severity])).toEqual([['agents.w.tools', 'warning']]);
   });
 
   test('an invalid agent name key is rejected', () => {
@@ -888,6 +890,7 @@ agents:
   w:
     connectors: [gmail, slack]
     connectors_required: [gmail]
+    tools: all
 `);
     expect(valid).toBe(true);
     expect(issues).toEqual([]);
@@ -1382,7 +1385,7 @@ describe('v2 agent tool access', () => {
 });
 
 describe('v2 project tools', () => {
-  const base = 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\n';
+  const base = 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: { tools: all }\n';
 
   test('maps tool names to repo-relative modules in any folder', () => {
     const result = summarize(base + 'tools:\n  lookup_order: tools/lookup_order.ts\n  crm_note: integrations/crm/note.mjs\n  ping: ping.js\n');

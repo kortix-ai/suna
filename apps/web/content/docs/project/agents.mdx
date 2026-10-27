@@ -84,7 +84,7 @@ Rules for both versions:
 - In v2, `file` names the agent file. Without it, Kortix reads `agents/<name>.md`. The API does not change `file`: to move an agent, move the file and update `file` in the same commit. The full path rules are in [the `kortix.yaml` reference](/docs/project/manifest#agents).
 
 <Callout type="info">
-Grants are deny-by-default. An agent with no `connectors`, `secrets`, `apps` or `kortix_permissions` key gets none of them. Two keys differ: an omitted `tools` grants every tool, and an omitted `skills` leaves skill access to the agent's own `permission` rules.
+Grants are deny-by-default. An agent with no `connectors`, `secrets`, `apps` or `kortix_permissions` key gets none of them. Two keys differ: an omitted `skills` leaves skill access to the agent's own `permission` rules, and an omitted `tools` grants every tool. Always write `tools`: `kortix validate` warns on an agent without it, and Customize writes `tools: all` the first time it saves such an agent.
 </Callout>
 
 An agent change takes effect when it lands on the project's default branch. New sessions start with it, and running sessions reload it. See [How a change takes effect](/docs/project#how-a-change-takes-effect).

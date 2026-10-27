@@ -23,7 +23,7 @@ function summarize(input: string, format: 'toml' | 'yaml') {
   return { valid: result.valid, errors, warnings };
 }
 
-const v2 = (block: string) => `kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`;
+const v2 = (block: string) => `kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    tools: all\n${block}`;
 const v1 = (block: string) => `kortix_version = 1\n[[agents]]\nname = "w"\n${block}`;
 
 describe('kortix_permissions — canonical key', () => {

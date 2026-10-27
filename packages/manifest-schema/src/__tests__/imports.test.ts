@@ -127,7 +127,7 @@ describe('resolveManifestImports', () => {
   });
 
   test('a tools key in any file selects the Kortix tools; with none in any file, all of them load', async () => {
-    const root = 'kortix_version: 2\ndefault_agent: a\nimports: [extra.yaml]\nagents:\n  a: {}\n';
+    const root = 'kortix_version: 2\ndefault_agent: a\nimports: [extra.yaml]\nagents:\n  a: { tools: all }\n';
     const none = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'agents:\n  b: {}\n' });
     expect(none.raw.tools).toBeUndefined();
     expect(selectedKortixTools(none.raw.tools)).toEqual([...KORTIX_TOOL_NAMES]);

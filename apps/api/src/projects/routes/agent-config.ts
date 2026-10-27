@@ -580,6 +580,9 @@ export function registerAgentConfigRoutes(): void {
       // `policy_sets: {}` clears the agent's sets: write no key at all.
       const writtenBlock = (edit.raw.agents as Record<string, Record<string, unknown>> | undefined)?.[agentName];
       if (writtenBlock) dropEmptyPolicySets(writtenBlock);
+      // `tools` omitted is every tool, the one grant that defaults open: write
+      // it so the file says what the agent holds.
+      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = 'all';
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);

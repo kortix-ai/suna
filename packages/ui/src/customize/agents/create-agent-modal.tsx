@@ -57,12 +57,13 @@ export function createAgentPrompt(input: {
   if (input.start === 'blank') {
     return (
       `Create a new agent named "${input.name}" in kortix.yaml${desc ? ` with the description "${desc}"` : ''}, ` +
-      `no grants and empty instructions. ${review}`
+      `no grants (write \`tools: none\`) and empty instructions. ${review}`
     );
   }
   return (
     `Create a new agent named "${input.name}" in kortix.yaml. What it does: ${desc || 'ask me.'} ` +
-    `Write its instructions and give it only the skills, connectors, secrets and permissions this work needs. ${review}`
+    `Write its instructions and give it only the tools, skills, connectors, secrets and permissions this work needs. ` +
+    `Always write its \`tools:\` key: a list of the tools it needs, or \`all\`. ${review}`
   );
 }
 
