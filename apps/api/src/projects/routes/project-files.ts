@@ -30,7 +30,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
-import { isGitRefNotFoundError } from '../git/mirror';
+import { isGitRefNotFoundError, normalizeTreePath } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
 import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
@@ -336,6 +336,7 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..')) {
       return c.json({ error: 'File not found' }, 404);
     }
+    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -405,6 +406,7 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..')) {
       return c.json({ error: 'File not found' }, 404);
     }
+    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -469,6 +471,7 @@ export function registerProjectFilesRoutes(): void {
     if (path.startsWith('/') || path.includes('..')) {
       return c.json({ error: 'File not found' }, 404);
     }
+    if (!normalizeTreePath(path)) return c.json({ error: 'path query param is required' }, 400);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
