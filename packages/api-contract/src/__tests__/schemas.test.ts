@@ -32,6 +32,13 @@ import {
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
   SessionUpdateInputSchema,
+  SessionGroupAssignInputSchema,
+  SessionGroupCreateInputSchema,
+  SessionGroupListSchema,
+  SessionGroupOrderInputSchema,
+  SessionGroupSchema,
+  SessionGroupUpdateInputSchema,
+  SESSION_GROUP_NAME_MAX,
   SessionScopeInputSchema,
   SessionScopeSchema,
   SessionRuntimeContextSchema,
@@ -153,6 +160,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       workspace_volume: false,
       artifacts: false,
       email_channel: false,
+      session_groups: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -188,6 +196,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     visibility: 'private',
     origin: 'user',
     space_id: null,
+    group_id: null,
     first_prompt: null,
     reply_count: null,
     secrets_allowlist: null,
@@ -428,6 +437,52 @@ describe('ProjectSessionSchema', () => {
     expect(() =>
       ProjectSessionSchema.parse(sessionFixture({ created_at: new Date(NOW) })),
     ).toThrow();
+  });
+});
+
+describe('session group contracts', () => {
+  const GROUP = {
+    group_id: '22222222-3333-4444-8555-666666666666',
+    name: 'Store A',
+    position: 0,
+    created_by: '99999999-8888-4777-8666-555555555555',
+    created_at: NOW,
+    updated_at: NOW,
+  };
+
+  test('a session carries the group it is filed in, or null', () => {
+    expect(ProjectSessionSchema.parse(sessionFixture()).group_id).toBeNull();
+    expect(ProjectSessionSchema.parse(sessionFixture({ group_id: GROUP.group_id })).group_id).toBe(GROUP.group_id);
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ group_id: 'store-a' })).success).toBe(false);
+  });
+
+  test('a group and the list parse strictly', () => {
+    expect(SessionGroupSchema.parse(GROUP)).toEqual(GROUP);
+    expect(SessionGroupListSchema.parse({ groups: [GROUP] }).groups).toHaveLength(1);
+    expect(SessionGroupSchema.safeParse({ ...GROUP, color: 'red' }).success).toBe(false);
+  });
+
+  test('a name is trimmed and 1..SESSION_GROUP_NAME_MAX characters', () => {
+    expect(SessionGroupCreateInputSchema.parse({ name: '  Store A  ' })).toEqual({ name: 'Store A' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: '   ' }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX + 1) }).success).toBe(false);
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'x'.repeat(SESSION_GROUP_NAME_MAX) }).success).toBe(true);
+    expect(SessionGroupUpdateInputSchema.parse({ name: ' Store B ' })).toEqual({ name: 'Store B' });
+    expect(SessionGroupCreateInputSchema.safeParse({ name: 'Store A', position: 3 }).success).toBe(false);
+  });
+
+  test('an order names each group once, by id', () => {
+    const ids = ['22222222-3333-4444-8555-666666666666', '22222222-3333-4444-8555-777777777777'];
+    expect(SessionGroupOrderInputSchema.parse({ group_ids: ids }).group_ids).toEqual(ids);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: [ids[0], ids[0]] }).success).toBe(false);
+    expect(SessionGroupOrderInputSchema.safeParse({ group_ids: ['store-a'] }).success).toBe(false);
+  });
+
+  test('filing takes a group id, or null for no group', () => {
+    expect(SessionGroupAssignInputSchema.parse({ group_id: GROUP.group_id })).toEqual({ group_id: GROUP.group_id });
+    expect(SessionGroupAssignInputSchema.parse({ group_id: null })).toEqual({ group_id: null });
+    expect(SessionGroupAssignInputSchema.safeParse({}).success).toBe(false);
+    expect(SessionGroupAssignInputSchema.safeParse({ group_id: 'store-a' }).success).toBe(false);
   });
 });
 
@@ -845,6 +900,7 @@ describe('envelopes', () => {
       'workspace_volume',
       'artifacts',
       'email_channel',
+      'session_groups',
     ]);
   });
 
