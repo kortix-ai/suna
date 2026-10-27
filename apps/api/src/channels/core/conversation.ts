@@ -53,14 +53,25 @@ export type ChannelNotice =
   | { kind: 'create_failed'; error: CreateError }
   /** Last attempt: the thread's session refused the message (a failed session). */
   | { kind: 'follow_up_failed' }
-  /** Session-addressed: a root turn closed in a non-abort error that no Slack or Teams turn carried. */
-  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo }
+  /**
+   * Session-addressed: a root turn closed in a non-abort error that no Slack or
+   * Teams turn carried. `promptSource`: the lifecycle source of the prompt the
+   * turn answered, when known; a turn another surface prompted (the web, a
+   * reminder) is not the chat's to hear.
+   */
+  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo; promptSource?: string | null }
   /**
    * Session-addressed: the session's sandbox failed to start for a reason a retry
    * does not clear, and the session is `failed`. `reason`: the classified
    * user-facing cause, or null when only internal text exists.
    */
-  | { kind: 'start_failed'; sessionId: string; reason: string | null };
+  | { kind: 'start_failed'; sessionId: string; reason: string | null }
+  /**
+   * Session-addressed: the sandbox failed to start for a reason the provider may
+   * clear (capacity, a rate limit); the lifecycle retries it for a few minutes.
+   * `reason`: the classified user-facing cause. Told once per session.
+   */
+  | { kind: 'start_retrying'; sessionId: string; reason: string };
 
 /** The notices a port receives with a target found from a session (session-notice.ts). */
 export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;

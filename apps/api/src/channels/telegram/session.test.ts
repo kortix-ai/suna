@@ -82,6 +82,16 @@ describe('telegram notices for a session (run errors)', () => {
     );
   });
 
+  test('a start the provider may clear says it is retrying, and when to send /new', () => {
+    const reason = 'The compute provider is at capacity right now.';
+    expect(telegramNotice(target, { kind: 'start_retrying', sessionId: 's1', reason })).toBe(
+      [
+        `Kortix could not start this chat's session yet. ${reason}`,
+        'Kortix tries again automatically for a few minutes. If the agent does not reply, send /new, then send your message again.',
+      ].join('\n'),
+    );
+  });
+
   test('the inbound notices keep their copy', () => {
     const inbound = { ...target, messageId: '7' };
     expect(telegramNotice(inbound, { kind: 'create_pending' })).toBe('Kortix is still starting a session for this chat. The agent replies here when it is ready.');

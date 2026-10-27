@@ -272,6 +272,10 @@ mock.module('../lib/notification-recipients', () => ({
     contextLookups.push({ session, turnMessageId });
     return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
   },
+  turnPromptSource: async (_sessionId: string, turnMessageId: string | null) => {
+    promptSourceLookups.push(turnMessageId);
+    return promptSource;
+  },
 }));
 
 const { projectsApp } = await import('../lib/app');
@@ -298,6 +302,8 @@ function post(body: unknown, ctx: Record<string, unknown> = {}) {
 }
 
 const channelNotices: unknown[] = [];
+const promptSourceLookups: Array<string | null> = [];
+let promptSource: string | null = 'telegram';
 mock.module('../../channels/core/session-notice', () => ({
   notifySessionChannel: async (notice: unknown) => {
     order.push('channelNotice');
@@ -330,6 +336,8 @@ beforeEach(() => {
   relayEndResult = true;
   relayEndArgs = [];
   channelNotices.length = 0;
+  promptSourceLookups.length = 0;
+  promptSource = 'telegram';
   stepResult = { ok: true };
   answerResult = { ok: true };
   formCardResult = { type: 'AdaptiveCard' };
@@ -880,15 +888,20 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
       session_id: SESSION_ID,
       kind: 'turn_end',
       status: 'error',
+      turn_message_id: 'msg_turn',
       error_name: 'APIError',
       error_status: 402,
       error_message: 'Payment Required: Insufficient credits.',
     });
+    // The notice is sent after the prompt-source read, off the ack path.
+    await Bun.sleep(0);
+    expect(promptSourceLookups).toEqual(['msg_turn']);
     expect(channelNotices).toEqual([
       {
         kind: 'run_failed',
         sessionId: SESSION_ID,
         error: { name: 'APIError', message: 'Payment Required: Insufficient credits.', statusCode: 402 },
+        promptSource: 'telegram',
       },
     ]);
     expect(order.slice(-2)).toEqual(['relayEnd', 'channelNotice']);
@@ -904,7 +917,9 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     pushType = 'error';
     relayEndResult = true;
     await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    await Bun.sleep(0);
     expect(channelNotices).toEqual([]);
+    expect(promptSourceLookups).toEqual([]);
 
     pushType = 'completion';
     relayEndResult = false;

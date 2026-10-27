@@ -9,7 +9,7 @@
  * sleep, so no sandbox and no real wait is needed.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects } from '@kortix/db';
+import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
 import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
@@ -20,6 +20,7 @@ import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForT
 import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { adoptChatThreads, bindChatThread } from '../core/threads';
+import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
 import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
@@ -159,6 +160,7 @@ afterAll(async () => {
   fake.stop(true);
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await deleteTelegramInstall(PROJECT);
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
@@ -484,14 +486,47 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
   });
 
   test('a session in two chats tells the one it talked in last', async () => {
+    // The chat bound first is the older one, so a lookup that ignored the
+    // last-message order would pick it.
     const sessionId = await bindChat(946);
     await bind(sessionId, '947');
     await db
       .update(chatThreads)
       .set({ lastMessageAt: new Date(Date.now() - 60_000) })
-      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '947')));
+      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '946')));
     await runFailed(sessionId);
-    expect(calls.map((c) => c.body.chat_id)).toEqual([946]);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([947]);
+  });
+
+  test('a run the chat did not prompt (the web, a reminder) is not told to it; an unknown source still is', async () => {
+    const sessionId = await bindChat(952);
+    const notify = (promptSource: string | null) =>
+      notifySessionChannel({ kind: 'run_failed', sessionId, error: credits, promptSource });
+    await notify('ui');
+    await notify('trigger:reminder');
+    expect(calls).toEqual([]);
+    await notify('telegram');
+    await notify(null);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([952, 952]);
+  });
+
+  test('the prompt source of a turn is the newest lifecycle prompt its message id names', async () => {
+    const sessionId = await newSession();
+    const prompt = (source: string, wireMessageId: string) =>
+      db.insert(sessionLifecycleCommands).values({
+        commandType: 'continue_session',
+        source,
+        projectId: PROJECT,
+        accountId: ACCOUNT,
+        sessionId,
+        payload: { wireMessageId },
+      });
+    await prompt('telegram', 'msg_chat');
+    await prompt('ui', 'msg_web');
+    expect(await turnPromptSource(sessionId, 'msg_chat')).toBe('telegram');
+    expect(await turnPromptSource(sessionId, 'msg_web')).toBe('ui');
+    expect(await turnPromptSource(sessionId, 'msg_unknown')).toBeNull();
+    expect(await turnPromptSource(sessionId, null)).toBeNull();
   });
 
   test('a sandbox that cannot start says so once, with its classified reason, and asks for /new', async () => {
@@ -505,12 +540,24 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     expect(text).toContain(`/projects/${PROJECT}/sessions/${sessionId}`);
   });
 
-  test('a failure the provider may clear says nothing: the session is retried', async () => {
+  test('a failure the provider may clear is told once, as retrying; a final failure still is', async () => {
     const sessionId = await bindChat(951);
-    await notifyStartFailure(sessionId, 'The compute provider is at capacity.', { transient: true });
-    expect(calls).toHaveLength(0);
-    await notifyStartFailure(sessionId, 'The compute provider is at capacity.', { transient: false });
+    const capacity = 'The compute provider is at capacity right now.';
+    await notifyStartFailure(sessionId, capacity, { transient: true });
+    await notifyStartFailure(sessionId, capacity, { transient: true });
     expect(calls).toHaveLength(1);
+    expect(String(calls[0]!.body.text)).toStartWith(`Kortix could not start this chat's session yet. ${capacity}\n`);
+    expect(String(calls[0]!.body.text)).toContain('If the agent does not reply, send /new');
+    await notifyStartFailure(sessionId, capacity, { transient: false });
+    expect(calls).toHaveLength(2);
+    expect(String(calls[1]!.body.text)).toStartWith("Kortix could not start this chat's session, so the agent did not run.");
+  });
+
+  test('a web session that fails to start writes no once-claim', async () => {
+    const webSession = await newSession();
+    await notifyStartFailure(webSession, 'at capacity', { transient: true });
+    expect(calls).toEqual([]);
+    expect(await db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `channel:start-retrying:${webSession}`))).toEqual([]);
   });
 
   test('a kick-off failure posts the generic copy, never its internal text', async () => {

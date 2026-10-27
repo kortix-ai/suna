@@ -117,6 +117,11 @@ export function telegramNotice(target: ChannelTarget, notice: ChannelNotice): st
         `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
       ].join('\n');
     }
+    case 'start_retrying':
+      return [
+        `Kortix could not start this chat's session yet. ${notice.reason}`,
+        'Kortix tries again automatically for a few minutes. If the agent does not reply, send /new, then send your message again.',
+      ].join('\n');
     case 'start_failed':
       return [
         `Kortix could not start this chat's session, so the agent did not run.${notice.reason ? ` ${notice.reason}` : ''}`,

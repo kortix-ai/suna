@@ -370,8 +370,8 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.
 - **Groups run in Telegram's privacy mode by default:** the bot receives only commands, replies to it and mentions. Send `/setprivacy` to @BotFather, or make the bot a group admin, to let it read every message.
 - **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session.
-- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When its computer fails to start, the bot says so and asks you to send `/new`; a failure the provider may clear (capacity, a rate limit) is retried automatically first and says nothing. When the session is still starting, or waits behind other sessions of the project, the bot says so; the agent replies once it runs.
-- **A run that ends in an error is answered in the chat.** The bot names the error, says what to do next and links the session in Kortix. A run you stop sends nothing.
+- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When its computer fails to start, the bot says so and asks you to send `/new`. A failure the provider may clear (capacity, a rate limit) is retried automatically for a few minutes: the bot says so once, and if the agent does not reply, send `/new`. When the session is still starting, or waits behind other sessions of the project, the bot says so; the agent replies once it runs.
+- **A run that ends in an error is answered in the chat.** The bot names the error, says what to do next and links the session in Kortix. A run you stop sends nothing, and a run started from Kortix itself shows its error there, not in the chat.
 - **A session that cannot take messages says so.** When the chat's session has failed, the bot asks you to send `/new` after about a minute of retries.
 - Connecting needs `project.connector.write`.
 
