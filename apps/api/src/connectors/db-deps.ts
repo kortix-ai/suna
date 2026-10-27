@@ -5,7 +5,7 @@
  * is the glue to Postgres + the credential store + Pipedream.
  */
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
@@ -791,6 +791,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
         .from(connectors)
         .where(eq(connectors.projectId, projectId))
+        // The oldest profile of a way is the one an install answers as `existing`.
+        .orderBy(asc(connectors.createdAt), asc(connectors.slug))
     ).map((row) => ({ slug: row.slug, identity: connectorIdentity({ provider: row.provider, ...(row.config as Record<string, string>) }) })),
   discoverConnectorTools: (variant) => catalogTools(variant),
   getDiscoverConnector: (id) => kortixMcpCatalog.detail(id),

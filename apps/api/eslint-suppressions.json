@@ -1394,7 +1394,7 @@
   },
   "src/ops/index.ts": {
     "no-console": {
-      "count": 4
+      "count": 1
     },
     "no-restricted-properties": {
       "count": 4
