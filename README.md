@@ -198,8 +198,7 @@ agents:
 
 One isolated sandbox per session. Per-resource permissions for people and agents. Roles, groups, and
 an audit trail. SAML 2.0 single sign-on and SCIM 2.0. Secrets are encrypted at rest with a key per
-project. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. SOC 2 Type I is held;
-SOC 2 Type II is in progress.
+project. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. SOC 2 Type I verified.
 
 ### An AI Operating System for your company
 

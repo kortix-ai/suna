@@ -13,9 +13,8 @@ import type { UiTranslator } from '@/i18n/translator';
  * every line below traces to shipped code, and the citation is in the comment
  * above it. This is the page an enterprise reviewer will hold us to.
  *
- *  - SOC 2 Type I is held (certified — the report has landed). SOC 2 Type II is
- *    IN PROGRESS — never "compliant", never "certified" for it until its report
- *    lands. No ISO, no HIPAA — we do not hold them. GDPR is a posture we run,
+ *  - SOC 2 Type I is verified (the report has landed). Do not mention SOC 2
+ *    Type II at all (kortix-brand D17). No ISO, no HIPAA — we do not hold them. GDPR is a posture we run,
  *    not a third-party certificate, so it carries no "in progress" state.
  *  - Never name a licence — "open source" and stop.
  *  - Say "cloud computer" / "sandbox". NEVER "container".
@@ -382,8 +381,8 @@ export const audit = {
 } as const;
 
 /* ── 7 · deployment + posture ──────────────────────────────────────────────
-   HONESTY GATE. SOC 2 Type I is held (the report has landed). SOC 2 Type II is
-   IN PROGRESS. GDPR is a posture we operate, not a pending third-party
+   HONESTY GATE. SOC 2 Type I is verified (the report has landed). SOC 2 Type II
+   is not mentioned (D17). GDPR is a posture we operate, not a pending third-party
    certificate, so it has no state string. No ISO. No HIPAA. Do not add a badge
    here without a report to point at. */
 export const posture = {
@@ -410,10 +409,9 @@ export const posture = {
   ],
   compliance: {
     label: 'Where we actually stand',
-    /** Never move an item out of "In progress" without the report in hand. */
+    /** Add an item only with its report in hand. */
     items: [
-      { k: 'SOC 2 Type I', v: 'Held' },
-      { k: 'SOC 2 Type II', v: 'In progress' },
+      { k: 'SOC 2 Type I', v: 'Verified' },
       { k: 'GDPR', v: 'Operated' },
     ],
     note: 'We do not hold ISO 27001 or HIPAA, and we do not imply that we do. When a report lands, this line changes that day and not before.',

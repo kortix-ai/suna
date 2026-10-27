@@ -35,7 +35,7 @@ import { useState } from 'react';
  *  - Isolation is "its own isolated machine". "microVM" is only true on Platinum.
  *  - Approval gates are opt-in (`default_mode` falls back to `allow_all`), so
  *    write "an Ask rule pauses the call", never "risky calls pause by default".
- *  - SOC 2: Type I is held, Type II is in progress. No ISO, no HIPAA.
+ *  - SOC 2: Type I is verified; Type II is not mentioned (D17). No ISO, no HIPAA.
  *  - Dropped from the old page because nothing measures them: "rotated
  *    instantly", "audited forever", "full observability", "hundreds of
  *    teammates". ("Thousands of agents in parallel" is allowed by claims.md;
@@ -121,8 +121,7 @@ export default function EnterprisePage() {
                 <div>
                   <h3 className="text-foreground text-base font-medium">SOC 2 and GDPR</h3>
                   <p className="text-muted-foreground mt-2 text-sm text-pretty">
-                    SOC 2 Type I is held. SOC 2 Type II is in progress. GDPR is a posture we run, with a DPA on
-                    Enterprise.
+                    SOC 2 Type I verified. GDPR is a posture we run, with a DPA on Enterprise.
                   </p>
                 </div>
                 <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
@@ -131,10 +130,7 @@ export default function EnterprisePage() {
               </div>
               <ul className="flex flex-wrap items-center gap-4 lg:col-span-7 lg:justify-end">
                 <li>
-                  <Seal name="SOC 2" detail="Type I" ornament="double" />
-                </li>
-                <li>
-                  <Seal name="SOC 2" detail="Type II" note="In progress" ornament="ticks" />
+                  <Seal name="SOC 2" detail="Type I" note="Verified" ornament="double" />
                 </li>
                 <li>
                   <Seal name="GDPR" detail="Operated" ornament="stars" />

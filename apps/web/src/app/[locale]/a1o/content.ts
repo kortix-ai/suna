@@ -15,8 +15,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * while the copy read Governance).
  *
  * HONESTY RULES (same bar as features/marketing/security-page/content.ts):
- * - SOC 2 Type II is IN PROGRESS. Never "compliant" / "certified" until the
- *   report lands.
+ * - SOC 2 Type I is verified. Never mention Type II (kortix-brand D17).
  * - Do NOT advertise multi-harness / harness-agnostic / ACP. OpenCode REST +
  *   kortix_version 2 is the only shipped path (see CLAUDE.md).
  */
@@ -82,7 +81,7 @@ export const COPY = {
   spin: 'Spin',
   throw: 'Throw',
   /** Shown when SOC 2 wording could otherwise imply certification. */
-  footnote: 'SOC 2 Type II audit in progress. Controls already live.',
+  footnote: 'SOC 2 Type I verified. Controls live.',
 } as const;
 
 export function localizedA1oContent(tI18nComplete: UiTranslator) {

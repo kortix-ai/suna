@@ -31,8 +31,8 @@
  *     by the v2 manifest validator (`rejectChannelsV2`), so `kortix.yaml` never
  *     "declares channels" — channel routing is live project state, not repo
  *     config. The manifest declares the machine image, connectors and triggers.
- *   - "Open source", never a licence name. SOC 2 Type II is in progress, never
- *     "certified" or "compliant".
+ *   - "Open source", never a licence name. SOC 2: Type I verified, Type II never
+ *     mentioned (D17).
  *   - OpenCode is the only harness that may be named.
  *
  * Three claims that read fine but do not survive the code, so they are not here:

@@ -4,12 +4,11 @@ import { ShieldCheckIcon } from '@phosphor-icons/react';
 import { Seal, type Ornament } from '@/features/marketing/kit/seal';
 import Link from 'next/link';
 
-// Claims follow kortix-brand/references/verbal/claims.md: SOC 2 Type I is held,
-// Type II is in progress (so its seal says so, never "Type II" alone), GDPR is
-// a posture we run. No ISO, no HIPAA: Kortix holds neither.
+// Claims follow kortix-brand/references/verbal/claims.md: SOC 2 Type I is
+// verified; Type II is not mentioned (D17). GDPR is a posture we run. No ISO,
+// no HIPAA: Kortix holds neither.
 const SEALS: { name: string; detail: string; note?: string; ornament: Ornament }[] = [
-  { name: 'SOC 2', detail: 'Type I', ornament: 'double' },
-  { name: 'SOC 2', detail: 'Type II', note: 'In progress', ornament: 'ticks' },
+  { name: 'SOC 2', detail: 'Type I', note: 'Verified', ornament: 'double' },
   { name: 'GDPR', detail: 'Operated', ornament: 'stars' },
 ];
 
@@ -39,8 +38,8 @@ export function TrustBand() {
         <div className="bg-card grid grid-cols-1 gap-12 px-4 py-10 lg:grid-cols-12 lg:px-11">
           <div className="lg:col-span-5">
             <p className="text-muted-foreground max-w-sm text-base text-pretty">
-              Kortix runs your company&apos;s work, so it has to pass your review. SOC 2 Type I is held
-              and Type II is in progress.
+              Kortix runs your company&apos;s work, so it has to pass your review. SOC 2 Type I is
+              verified.
             </p>
             <Link
               href="/security"

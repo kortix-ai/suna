@@ -181,10 +181,7 @@ export default function SecurityPage(): ReactNode {
           </div>
           <ul className="flex flex-wrap items-center gap-4 lg:col-span-7 lg:justify-end">
             <li>
-              <Seal name="SOC 2" detail="Type I" ornament="double" />
-            </li>
-            <li>
-              <Seal name="SOC 2" detail="Type II" note="In progress" ornament="ticks" />
+              <Seal name="SOC 2" detail="Type I" note="Verified" ornament="double" />
             </li>
             <li>
               <Seal name="GDPR" detail="Operated" ornament="stars" />

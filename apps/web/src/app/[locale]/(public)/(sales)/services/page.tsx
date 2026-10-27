@@ -6,7 +6,14 @@ import { Disclosure, DisclosureList } from '@/features/marketing/kit/disclosure'
 import { DitherGlyph } from '@/features/marketing/kit/dither-glyph';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { Band, Block, CellGrid, Heading, PageFrame, SpecGrid } from '@/features/marketing/kit/page-frame';
+import {
+  Band,
+  Block,
+  CellGrid,
+  Heading,
+  PageFrame,
+  SpecGrid,
+} from '@/features/marketing/kit/page-frame';
 import {
   benefits,
   caseCta,
@@ -19,6 +26,7 @@ import {
   hero,
   intro,
   onboarding,
+  platform,
   PRICE,
   pricing,
   proof,
@@ -27,6 +35,7 @@ import {
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import {
+  ArrowRightIcon,
   CheckIcon,
   CloudIcon,
   CpuIcon,
@@ -35,6 +44,7 @@ import {
   ReceiptIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -63,11 +73,22 @@ const BENEFIT_ICONS = {
 } as const;
 
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
-function JoinButton({ variant, className }: { variant?: 'primary' | 'secondary'; className?: string }) {
+function JoinButton({
+  variant,
+  className,
+}: {
+  variant?: 'primary' | 'secondary';
+  className?: string;
+}) {
   const openDemo = useRequestDemo();
   if (!CHECKOUT_URL) {
     return (
-      <MarketingButton size="md" variant={variant} className={className} onClick={() => openDemo({ source: 'services' })}>
+      <MarketingButton
+        size="md"
+        variant={variant}
+        className={className}
+        onClick={() => openDemo({ source: 'services' })}
+      >
         Join now
       </MarketingButton>
     );
@@ -79,10 +100,21 @@ function JoinButton({ variant, className }: { variant?: 'primary' | 'secondary';
   );
 }
 
-function IntroButton({ variant = 'secondary', className }: { variant?: 'primary' | 'secondary'; className?: string }) {
+function IntroButton({
+  variant = 'secondary',
+  className,
+}: {
+  variant?: 'primary' | 'secondary';
+  className?: string;
+}) {
   const openDemo = useRequestDemo();
   return (
-    <MarketingButton size="md" variant={variant} className={className} onClick={() => openDemo({ source: 'services' })}>
+    <MarketingButton
+      size="md"
+      variant={variant}
+      className={className}
+      onClick={() => openDemo({ source: 'services' })}
+    >
       Book an intro call
     </MarketingButton>
   );
@@ -101,13 +133,18 @@ export default function ServicesPage() {
   return (
     <PageFrame>
       {/* ── hero: the offer, the promise, the intro call ─────────────────── */}
-      <section id="hero" className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-44 lg:pb-24">
+      <section
+        id="hero"
+        className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-44 lg:pb-24"
+      >
         <div className="flex min-w-0 flex-col gap-7">
           <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl">
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">
+            {hero.sub}
+          </p>
           <ul className="flex flex-col gap-2.5 text-base">
             {hero.does.map((item) => (
               <li key={item.k} className="flex items-start gap-3">
@@ -154,12 +191,19 @@ export default function ServicesPage() {
         <Band className="mt-12">
           <ol className="divide-y">
             {stages.items.map((stage) => (
-              <li key={stage.id} className="grid grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-12 lg:gap-8 lg:px-11 lg:py-10">
+              <li
+                key={stage.id}
+                className="grid grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-12 lg:gap-8 lg:px-11 lg:py-10"
+              >
                 <div className="flex flex-col gap-3 lg:col-span-3">
-                  <span className="text-muted-foreground font-mono text-xs tabular-nums">{stage.n}</span>
+                  <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                    {stage.n}
+                  </span>
                   <h3 className="text-foreground text-xl font-medium tracking-tight">{stage.k}</h3>
                 </div>
-                <p className="text-muted-foreground text-base text-pretty lg:col-span-5">{stage.v}</p>
+                <p className="text-muted-foreground text-base text-pretty lg:col-span-5">
+                  {stage.v}
+                </p>
                 <ul className="flex flex-col gap-2 text-sm lg:col-span-4">
                   {stage.get.map((item) => (
                     <li key={item} className="text-foreground flex items-start gap-2">
@@ -173,6 +217,26 @@ export default function ServicesPage() {
           </ol>
         </Band>
       </Block>
+
+      {/* ── built on Kortix: what everything runs on ───────────────────── */}
+      <FeatureSplit
+        id="platform"
+        title={platform.title}
+        titleMuted={platform.titleMuted}
+        body={platform.body}
+        cells={platform.cells}
+        after={
+          <div className="px-8 pt-6 lg:px-28">
+            <Link
+              href="/"
+              className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {platform.link}
+              <ArrowRightIcon aria-hidden className="size-3.5" />
+            </Link>
+          </div>
+        }
+      />
 
       <CaseStudies />
       <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
@@ -221,7 +285,10 @@ export default function ServicesPage() {
                   <th
                     key={col}
                     scope="col"
-                    className={cn('w-1/4 px-4 py-4 font-medium', i === 0 ? 'bg-muted text-foreground rounded-t-md' : 'text-muted-foreground')}
+                    className={cn(
+                      'w-1/4 px-4 py-4 font-medium',
+                      i === 0 ? 'bg-muted text-foreground rounded-t-md' : 'text-muted-foreground',
+                    )}
                   >
                     {col}
                   </th>
@@ -235,7 +302,13 @@ export default function ServicesPage() {
                     {row.k}
                   </th>
                   {row.v.map((cell, i) => (
-                    <td key={cell} className={cn('px-4 py-4 text-pretty', i === 0 ? 'bg-muted text-foreground' : 'text-muted-foreground')}>
+                    <td
+                      key={cell}
+                      className={cn(
+                        'px-4 py-4 text-pretty',
+                        i === 0 ? 'bg-muted text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
                       {i === 0 ? (
                         <span className="flex items-start gap-2">
                           <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />

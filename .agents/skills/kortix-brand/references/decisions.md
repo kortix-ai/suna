@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D17 Compliance copy says "SOC 2 Type I verified" and never mentions Type II
+- **Date:** 2026-10-27
+- **Decision:** Every surface states SOC 2 as "SOC 2 Type I verified". Type II is not mentioned anywhere: no "in progress" seal, row, line or footnote. GDPR stays "a posture Kortix runs, not a certificate". No ISO, no HIPAA.
+- **Why:** founder, 2026-10-27: "no whether mention Type ii in progress, just say Soc 2 type 1 verified".
+- **Where:** [claims.md](verbal/claims.md) row "Compliance" and the SOC 2 rule; `/security`, `/enterprise`, `/contact`, `/services`, the home trust band, the a1o page, the README and the open-source blog post.
+- **Supersedes:** the "two facts" SOC 2 rule in claims.md (Type I held, Type II in progress).
+- **Source:** the `services-page` branch.
+
 ### D16 The home hero says "The sovereign AI Operating System", and the home page leads with three pillars
 - **Date:** 2026-10-27
 - **Decision:** The home page hero opens on "The sovereign AI Operating System". Right after the hero, the home page leads with three pillars, in this order and with these names: **Multiplayer AI** ("One AI for the whole team."), **Company as code** ("Extensible, powered by pi."), **Sovereign and open** ("Own your data and your infrastructure."). "Open source" stays in the pillar and in sentences. pi is named as the open-source agent harness every session runs.

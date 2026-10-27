@@ -2,7 +2,7 @@
  * The /enterprise page, condensed. Claims stay inside the accuracy gate in
  * the page header (and the /security content header behind it): connector
  * credentials never enter the machine, but a granted runtime secret does;
- * approval gates are opt-in; SOC 2 Type I is held and Type II is in progress.
+ * approval gates are opt-in; SOC 2 Type I is verified (Type II is not mentioned, D17).
  * `**phrase**` renders in ink.
  *
  * English only for now. The hero keeps its translated strings.

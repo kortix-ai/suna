@@ -119,7 +119,7 @@ export const security = {
       id: 'compliance',
       title: 'Compliance',
       description:
-        'SOC 2 Type I is held. SOC 2 Type II is in progress. GDPR is a posture Kortix runs, not a certificate.',
+        'SOC 2 Type I verified. GDPR is a posture Kortix runs, not a certificate.',
     },
   ],
 } as const;
