@@ -53,7 +53,31 @@ function isVariable(node: ts.Expression, name: string): boolean {
   return ts.isIdentifier(inner) && inner.text === name;
 }
 
-/** True when `node` reads the caught error's message, or a local derived from it. */
+/**
+ * Helpers that never return a database error's message: they read a code or a
+ * status, or (`adminErrorMessage`, `contractFailure`) say a database error through
+ * `databaseErrorSummary`, which drops the statement and its parameters.
+ */
+const DATABASE_SAFE_HELPERS = new Set([
+  'errorSqlstate',
+  'emailUpstreamStatus',
+  'isDatabaseError',
+  'databaseErrorSummary',
+  'adminErrorMessage',
+  'contractFailure',
+]);
+
+function calleeName(call: ts.CallExpression): string {
+  const callee = call.expression;
+  if (ts.isIdentifier(callee)) return callee.text;
+  return ts.isPropertyAccessExpression(callee) ? callee.name.text : '';
+}
+
+/**
+ * True when `node` reads the caught error's message, or a local derived from it.
+ * The caught error passed to any other helper counts too: `adminErrorMessage(e)`
+ * returned the whole statement while the scan stayed green.
+ */
 function readsMessage(node: ts.Node, caught: string, derived: Set<string>): boolean {
   let found = false;
   const visit = (n: ts.Node) => {
@@ -66,6 +90,12 @@ function readsMessage(node: ts.Node, caught: string, derived: Set<string>): bool
       && n.expression.text === 'String'
       && n.arguments[0]
       && isVariable(n.arguments[0], caught)
+    ) {
+      found = true;
+    } else if (
+      ts.isCallExpression(n)
+      && !DATABASE_SAFE_HELPERS.has(calleeName(n))
+      && n.arguments.some((argument) => isVariable(argument, caught))
     ) {
       found = true;
     } else if (ts.isIdentifier(n) && derived.has(n.text)) {
@@ -107,6 +137,12 @@ function throwsCaught(statement: ts.Statement, caught: string): boolean {
   return false;
 }
 
+/** True when `statement` always returns or throws. */
+function leaves(statement: ts.Statement): boolean {
+  if (ts.isReturnStatement(statement) || ts.isThrowStatement(statement)) return true;
+  return ts.isBlock(statement) && statement.statements.some(leaves);
+}
+
 /** A statement after which the rest of its block can only see a non-database error. */
 function handsOnDatabaseErrors(statement: ts.Statement, caught: string, derived: Set<string>): boolean {
   if (
@@ -114,6 +150,16 @@ function handsOnDatabaseErrors(statement: ts.Statement, caught: string, derived:
     && ts.isCallExpression(statement.expression)
     && ts.isIdentifier(statement.expression.expression)
     && statement.expression.expression.text === 'rethrowDatabaseError'
+  ) {
+    return true;
+  }
+  // `if (isDatabaseError(err)) return …` answers a database error itself.
+  if (
+    ts.isIfStatement(statement)
+    && ts.isCallExpression(unwrap(statement.expression))
+    && calleeName(unwrap(statement.expression) as ts.CallExpression) === 'isDatabaseError'
+    && (unwrap(statement.expression) as ts.CallExpression).arguments.some((argument) => isVariable(argument, caught))
+    && leaves(statement.thenStatement)
   ) {
     return true;
   }
@@ -152,7 +198,20 @@ function echoSites(file: string): string[] {
     const caught = binding.text;
     const derived = new Set<string>();
     const collect = (n: ts.Node) => {
-      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && readsMessage(n.initializer, caught, derived)) {
+      // A local holding the error itself (`const e = err as Error`, `flag ? err : other`)
+      // or anything read from it.
+      const held = (init: ts.Expression) => {
+        const inner = unwrap(init);
+        if (isVariable(inner, caught)) return true;
+        if (!ts.isConditionalExpression(inner)) return false;
+        // `err instanceof Typed ? err : generic` keeps only the typed error.
+        return (isVariable(inner.whenTrue, caught) && !narrows(inner.condition, caught, derived))
+          || isVariable(inner.whenFalse, caught);
+      };
+      if (
+        ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer
+        && (held(n.initializer) || readsMessage(n.initializer, caught, derived))
+      ) {
         derived.add(n.name.text);
       }
       ts.forEachChild(n, collect);
@@ -212,16 +271,22 @@ describe('route catch blocks never echo a database error', () => {
       async function b(c: any) { try { await x(); } catch (err) { const message = err instanceof Error ? err.message : String(err); return c.json({ error: \`failed: \${message}\` }, 502); } }
       async function d(c: any) { try { await x(); } catch (err) { if (err instanceof Error) return c.json({ error: err.message }, 400); } }
       async function e(c: any) { try { await x(); } catch (err) { if (err instanceof TypedError) throw err; return c.json({ error: (err as Error).message }, 400); } }
+      async function f(c: any) { try { await x(); } catch (err) { return c.json({ error: describe(err) }, 400); } }
+      async function g(c: any) { try { await x(); } catch (err) { const e = err as Error; return c.json({ error: e.message }, 400); } }
+      async function h(c: any) { try { await x(); } catch (err) { const e = (flag ? err : other) as Error; return c.json({ error: e.message }, 400); } }
       async function ok1(c: any) { try { await x(); } catch (err) { rethrowDatabaseError(err); return c.json({ error: (err as Error).message }, 400); } }
       async function ok2(c: any) { try { await x(); } catch (err) { if (err instanceof TypedError) return c.json({ error: err.message }, 409); throw err; } }
       async function ok3(c: any) { try { await x(); } catch (err) { if (!(err instanceof TypedError)) throw err; return c.json({ error: err.message }, 409); } }
       async function ok4(c: any) { try { await x(); } catch (err) { return c.json({ error: true, message: 'Internal server error' }, 500); } }
       function ok5(c: any) { try { parse(); } catch (err) { return c.json({ error: (err as Error).message }, 400); } }
+      async function ok6(c: any) { try { await x(); } catch (err) { return c.json({ code: errorSqlstate(err) }, 500); } }
+      async function ok8(c: any) { try { await x(); } catch (err) { const e = err instanceof TypedError ? err : new TypedError('failed'); return c.json({ error: e.message }, 502); } }
+      async function ok7(c: any) { try { await x(); } catch (err) { if (isDatabaseError(err)) return c.json({ error: 'Internal error' }, 500); return c.json({ error: (err as Error).message }, 400); } }
     `;
     writeFileSync(fixture, cases);
     try {
       const lines = echoSites(fixture).map((site) => Number(site.split(':').pop()));
-      expect(lines).toEqual([2, 3, 4, 5]);
+      expect(lines).toEqual([2, 3, 4, 5, 6, 7, 8]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
