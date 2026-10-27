@@ -25,6 +25,7 @@
  * computation, so errors are never cached.
  */
 
+import { onSessionListBustNotify, publishSessionListBust } from '../../shared/pg-broadcast';
 import { bumpBounded } from '../../shared/ttl-memo';
 
 const TTL_MS = 2_000;
@@ -45,7 +46,8 @@ interface PollEntry {
 // replica-local: each API replica memoizes only the polls it served itself; a
 // replica without the entry simply computes the page as it always did, and the
 // 2 s window keeps any replica's answer within the staleness the poll cadence
-// already tolerates. Nothing here needs cross-replica agreement.
+// already tolerates. A session write busts every replica over LISTEN/NOTIFY
+// (`forgetSessionListPollEtags`), so only an unrelated change waits for the TTL.
 const entries = new Map<string, PollEntry>();
 
 /**
@@ -63,19 +65,29 @@ export function peekSessionListPollEtag(key: string, ifNoneMatch: string): PollE
   return entry.etag === ifNoneMatch ? entry : null;
 }
 
-/**
- * Forget every memoized page of one project on this replica, after a write
- * that changes which list a session is in (filing it into a session group).
- * Without it, a list refetched within the window right after a second write
- * answers 304 and the client keeps the body from before that write. Another
- * replica's entries still expire within the 2 s window.
- */
-export function forgetSessionListPollEtags(projectId: string): void {
+function forgetLocally(projectId: string): void {
   // The key carries the project id as one `|`-separated segment (project-sessions.ts).
   const segment = `|${projectId}|`;
   for (const key of entries.keys()) {
     if (key.includes(segment)) entries.delete(key);
   }
+}
+
+// A bust announced by another replica (or echoed from this one; forgetting is idempotent).
+onSessionListBustNotify(forgetLocally);
+
+/**
+ * Forget every memoized page of one project, on this replica at once and on
+ * every other replica over LISTEN/NOTIFY (`kortix_session_list_bust`), after a
+ * session write. Without it, a list refetched within the window right after the
+ * write answers 304 and the client keeps the body from before that write. Dev
+ * runs two replicas behind round robin: the read before a pin and the
+ * revalidation after it reach one replica and the write the other, so a
+ * this-replica-only forget missed 6 of 6 times there.
+ */
+export function forgetSessionListPollEtags(projectId: string): void {
+  forgetLocally(projectId);
+  publishSessionListBust(projectId);
 }
 
 /** Record the page identity after a successful computation. */
