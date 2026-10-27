@@ -137,6 +137,17 @@ describe('buildResourceDenier — a kortix.yaml agent with its own .md file', ()
     expect(denier.isDenied('agents/kortix.md')).toBe(false);
     expect(denier.containsDenied('agents')).toBe(true);
   });
+  test('a respelled declared file path is denied as the file git reads (Strix review 2)', () => {
+    const respelled = {
+      ...declared,
+      agents: [
+        ...declared.agents,
+        { name: 'odd-bot', path: './agents//odd-bot.md/', description: null, mode: null, source: 'kortix.yaml' },
+      ],
+    } as unknown as ProjectConfigSummary;
+    const denier = buildResourceDenier(respelled, new Set(['kortix', 'hidden-bot', 'inline-bot']), new Set())!;
+    expect(denier.isDenied('agents/odd-bot.md')).toBe(true);
+  });
   test('a denied declared agent with no file of its own leaves the shared manifest readable', () => {
     expect(buildResourceDenier(declared, new Set(['kortix', 'hidden-bot']), new Set())).toBeNull();
   });

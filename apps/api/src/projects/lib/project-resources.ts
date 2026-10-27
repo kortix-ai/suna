@@ -182,7 +182,8 @@ const trimPath = canonicalTreePath;
 
 /** An agent's own behavior file. A declared agent with none is `kortix.yaml#agents.<name>`. */
 function agentFile(path: string | null | undefined): string | null {
-  return path && path.endsWith('.md') && !path.includes('#') ? trimPath(path) : null;
+  const file = path ? trimPath(path) : '';
+  return file.endsWith('.md') && !file.includes('#') ? file : null;
 }
 
 export interface ResourceDenier {
