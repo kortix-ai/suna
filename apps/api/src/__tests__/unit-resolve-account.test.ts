@@ -125,6 +125,8 @@ mock.module('@kortix/db', () => ({
   // the whole import chain at module load. Identity is enough — no stored
   // grant is read in this file.
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
+  // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
+  requiresTls: () => false,
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));

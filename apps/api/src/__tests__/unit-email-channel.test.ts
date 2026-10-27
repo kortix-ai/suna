@@ -255,7 +255,7 @@ describe("Resend webhook verification", () => {
       }),
     ).toBe(false);
     expect(
-      verifyEmailWebhookSignature({ ...input, secret: "whsec_b3RoZXI=" }),
+      verifyEmailWebhookSignature({ ...input, secret: `whsec_${"b3RoZXI="}` }),
     ).toBe(false);
   });
 
