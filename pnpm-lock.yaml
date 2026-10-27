@@ -355,6 +355,9 @@ importers:
       '@types/chrome':
         specifier: 0.3.4
         version: 0.3.4
+      playwright:
+        specifier: 1.63.0
+        version: 1.63.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

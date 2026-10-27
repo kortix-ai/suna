@@ -120,7 +120,7 @@ describe('pingExtension', () => {
 
 describe('connectExtension', () => {
   test('sends kortix.connect with the api URL and returns the browser id', async () => {
-    let sent: { type: string; apiUrl?: string } | null = null;
+    let sent = null as { type: string; apiUrl?: string } | null;
     fakeChrome((_id, message, reply) => {
       sent = message;
       reply({ ok: true, chromeId: 'b1' });

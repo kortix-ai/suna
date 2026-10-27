@@ -4,9 +4,12 @@
 import { mkdtempSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { chromium } from 'playwright';
 
 const app = join(import.meta.dir, '..');
-const CHROME = join(process.env.HOME!, 'Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+// Chrome for Testing from the repo's Playwright (`npx playwright install chromium`).
+// KORTIX_SMOKE_CHROME points at another Chrome build.
+const CHROME = process.env.KORTIX_SMOKE_CHROME || chromium.executablePath();
 const EXT_ID = 'gefbbnjgoiljpbnalgafbhbfdhikgjek';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;

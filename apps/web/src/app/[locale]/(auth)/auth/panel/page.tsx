@@ -13,8 +13,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-import Loading from '@/components/ui/loading';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { useTranslations } from '@/i18n/use-translations';
 import { createClient } from '@/lib/supabase/client';
 import { isInExtensionPanel, safePanelNext } from '@/lib/supabase/panel-cookies';

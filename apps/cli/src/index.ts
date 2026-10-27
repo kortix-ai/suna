@@ -52,7 +52,6 @@ import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runReminders } from './commands/reminders.ts';
 import { runChrome } from './commands/chrome.ts';
 import { runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';

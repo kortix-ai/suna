@@ -30,7 +30,7 @@ function setup(hasSession: boolean) {
     win,
     results,
     deliver: (hash: string) =>
-      listener?.({ origin: EXTENSION_ORIGIN, source: parent, data: { type: 'kortix.panel.session', tokenHash: hash } } as MessageEvent),
+      listener?.({ origin: EXTENSION_ORIGIN, source: parent, data: { type: 'kortix.panel.session', tokenHash: hash } } as unknown as MessageEvent),
   };
 }
 
