@@ -120,7 +120,7 @@ export function CaseStudyGrid() {
  * one card, and the row scrolls by touch, trackpad or keyboard too. Nothing
  * here links anywhere, on purpose. Copy and the naming rules: `./content.ts`.
  */
-export function CaseStudies({ id = 'case-studies' }: { id?: string }) {
+export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: string; allLink?: boolean }) {
   const row = useRef<HTMLUListElement>(null);
   const [edge, setEdge] = useState({ start: true, end: false });
 
@@ -170,9 +170,11 @@ export function CaseStudies({ id = 'case-studies' }: { id?: string }) {
             >
               <ArrowRightIcon aria-hidden />
             </MarketingButton>
-            <MarketingButton variant="secondary" size="md" asChild>
-              <Link href="/case-studies">All case studies</Link>
-            </MarketingButton>
+            {allLink ? (
+              <MarketingButton variant="secondary" size="md" asChild>
+                <Link href="/case-studies">All case studies</Link>
+              </MarketingButton>
+            ) : null}
           </>
         }
       />

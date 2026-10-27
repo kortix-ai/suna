@@ -265,7 +265,7 @@ export default function ServicesPage() {
         </Band>
       </Block>
 
-      <CaseStudies />
+      <CaseStudies allLink />
       <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
         <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
         <div className="flex flex-wrap gap-2.5">
