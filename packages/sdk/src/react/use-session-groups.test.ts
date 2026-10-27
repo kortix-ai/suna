@@ -79,8 +79,17 @@ function Probe({ enabled }: { enabled: boolean }) {
   return null;
 }
 
+/** The host's default mutation `onError` (apps/web's QueryClient toasts with it). */
+let hostErrors: unknown[] = [];
+
 async function mount(opts: { enabled?: boolean; seed?: boolean } = {}) {
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  hostErrors = [];
+  client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity },
+      mutations: { onError: (error) => void hostErrors.push(error) },
+    },
+  });
   if (opts.seed !== false) {
     client.setQueryData(groupsKey, [group('A', 0), group('B', 1), group('C', 2)]);
     client.setQueryData(listKey, { pages: [{ items: [row('S1'), row('S2')], next_cursor: null }], pageParams: [null] });
@@ -223,4 +232,31 @@ test('create, rename and delete each read the groups again; delete also marks th
   await answer(() => api.remove.mutateAsync('A'), 200, { ok: true });
   expect(requests()).toEqual(['DELETE /projects/P1/session-groups/A', 'GET /projects/P1/session-groups']);
   expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+});
+
+test('a refusal reaches the caller, never the host default mutation onError (no second, generic toast)', async () => {
+  await mount();
+  const refuse = async (start: () => Promise<unknown>) => {
+    let done!: Promise<unknown>;
+    await act(async () => {
+      done = start().catch((error: unknown) => error);
+    });
+    await settle();
+    await act(async () => {
+      held[held.length - 1]!.respond(409, { error: 'Another group in this project already has that name.', code: 'group_name_taken' });
+      await done;
+    });
+    await settle();
+    return done;
+  };
+  for (const start of [
+    () => api.create.mutateAsync({ name: 'store a' }),
+    () => api.rename.mutateAsync({ groupId: 'B', name: 'store a' }),
+    () => api.remove.mutateAsync('A'),
+    () => api.file.mutateAsync({ sessionId: 'S1', groupId: 'A' }),
+    () => api.reorder.mutateAsync(['C', 'A', 'B']),
+  ]) {
+    expect(await refuse(start)).toMatchObject({ status: 409 });
+  }
+  expect(hostErrors).toEqual([]);
 });

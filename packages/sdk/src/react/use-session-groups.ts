@@ -29,6 +29,13 @@ export function useProjectSessionGroups(projectId: string | null | undefined, op
   });
 }
 
+/**
+ * Every caller shows its own error (a dialog line, a toast). Without an
+ * `onError` here, a host's default mutation `onError` (apps/web's QueryClient)
+ * would add a second, generic toast. `mutateAsync` still rejects.
+ */
+const callerShowsError = () => {};
+
 function useInvalidateSessionGroups(projectId: string) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: qk.project.sessionGroups(projectId) });
@@ -40,6 +47,7 @@ export function useCreateProjectSessionGroup(projectId: string) {
   return useMutation({
     mutationFn: (input: CreateProjectSessionGroupInput) => createProjectSessionGroup(projectId, input),
     onSuccess: invalidate,
+    onError: callerShowsError,
   });
 }
 
@@ -49,6 +57,7 @@ export function useRenameProjectSessionGroup(projectId: string) {
   return useMutation({
     mutationFn: (args: { groupId: string; name: string }) => renameProjectSessionGroup(projectId, args.groupId, args.name),
     onSuccess: invalidate,
+    onError: callerShowsError,
   });
 }
 
@@ -62,6 +71,7 @@ export function useDeleteProjectSessionGroup(projectId: string) {
         queryClient.invalidateQueries({ queryKey: qk.project.sessionGroups(projectId) }),
         queryClient.invalidateQueries({ queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] }),
       ]),
+    onError: callerShowsError,
   });
 }
 
@@ -118,6 +128,7 @@ export function useSetProjectSessionGroup(projectId: string) {
       setProjectSessionGroup(projectId, sessionId, groupId),
     onMutate: ({ sessionId, groupId }) => write(sessionId, groupId),
     onSuccess: (assignment) => write(assignment.session_id, assignment.group_id),
+    onError: callerShowsError,
     onSettled: () => queryClient.invalidateQueries({ queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] }),
   });
 }
