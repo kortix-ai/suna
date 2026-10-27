@@ -67,13 +67,7 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 type MenuId = MegaMenu['id'];
 
 /** Links in the bar that navigate directly, beside the three menus. */
-// `wide`: shown in the bar only from xl; narrower bars reach it through the
-// Resources menu (product-menu.tsx), so Pricing and Log in never touch.
-const PLAIN_LINKS = [
-  { label: 'Use cases', href: '/use-cases', wide: true },
-  { label: 'Case studies', href: '/case-studies', wide: true },
-  { label: 'Pricing', href: '/pricing', wide: false },
-];
+const PLAIN_LINKS = [{ label: 'Pricing', href: '/pricing' }];
 
 const USE_CASES_ENABLED = process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 
@@ -530,7 +524,7 @@ export function Navbar() {
                   href={link.href}
                   onPointerEnter={closeOnEnter}
                   data-after-menus={i === 0 ? '' : undefined}
-                  className={cn(NAV_ITEM, link.wide && 'hidden xl:flex')}
+                  className={NAV_ITEM}
                 >
                   {link.label}
                 </Link>
