@@ -2832,7 +2832,7 @@
     "@types/react-test-renderer": "^19.3.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "eslint": "^9.39.4",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-test-renderer": "^19.3.0",

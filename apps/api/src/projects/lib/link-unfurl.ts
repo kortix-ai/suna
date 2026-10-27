@@ -42,6 +42,20 @@ const INVISIBLE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\
 const TAG_LIKE = /<\/?[a-z!?][^<>]*>/gi;
 
 /**
+ * Tag-shaped text removed until none is left: removing `<b>` from `<scr<b>ipt>`
+ * forms `<script>`. Past 10 passes the input is built to nest, so every angle
+ * bracket goes; the pass cap keeps a crafted page linear.
+ */
+function stripTags(text: string): string {
+  for (let pass = 0; pass < 10; pass++) {
+    const next = text.replace(TAG_LIKE, '');
+    if (next === text) return text;
+    text = next;
+  }
+  return text.replace(/[<>]/g, '');
+}
+
+/**
  * Plain text from page text: entities decoded (the common named ones and every
  * numeric one), then tag-shaped text, control, bidi and zero-width characters
  * removed, whitespace collapsed, capped. The result is untrusted outside text:
@@ -49,17 +63,15 @@ const TAG_LIKE = /<\/?[a-z!?][^<>]*>/gi;
  * prompt must frame it as outside content.
  */
 function cleanText(raw: string, max: number): string | null {
-  const text = raw
+  const decoded = raw
     .replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (whole, name: string) => {
       if (name[0] !== '#') return ENTITIES[name.toLowerCase()] ?? whole;
       const code = name[1] === 'x' || name[1] === 'X' ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1));
       return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
     })
     .replace(/\s+/g, ' ')
-    .replace(INVISIBLE, '')
-    .replace(TAG_LIKE, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(INVISIBLE, '');
+  const text = stripTags(decoded).replace(/\s+/g, ' ').trim();
   return text ? text.slice(0, max) : null;
 }
 
