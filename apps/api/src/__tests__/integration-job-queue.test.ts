@@ -10,6 +10,7 @@ import { expect, test } from 'bun:test';
 import { jobQueue } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE, registerEventConsumer } from '../integrations/event-inbox';
 import { claimJobs, completeJob, enqueueJob, failJob, pruneFinishedJobs, registerJobHandler, runJobBatch } from '../shared/job-queue';
 
 const queue = () => `test-${crypto.randomUUID()}`;
@@ -170,4 +171,27 @@ test('a job whose last claim never settled is dead, not run again, and keeps its
   expect(r.status).toBe('dead');
   expect(r.lastError).toStartWith('attempt 2 of 2 never settled');
   expect(r.lastError).toEndWith('previous: boom 1');
+});
+
+test("each integration's events ride their own queue; Telegram keeps the shared one", async () => {
+  const integration = `synthetic${crypto.randomUUID().slice(0, 8)}`;
+  const seen: Array<{ id: string; finalAttempt: boolean }> = [];
+  registerEventConsumer(`${integration}.`, async (event, run) => {
+    seen.push({ id: event.id, finalAttempt: run.finalAttempt });
+  });
+  const event = (type: string, id: string) => ({ id, source: `${type.split('.')[0]}:src`, type, time: '2026-10-27T00:00:00Z', subject: null, projectId: crypto.randomUUID(), data: {} });
+  const telegramId = crypto.randomUUID();
+  expect(await emitIntegrationEvent(event(`${integration}.thing.created`, 'e1'))).toBe(true);
+  expect(await emitIntegrationEvent(event('telegram.message.created', telegramId))).toBe(true);
+  try {
+    expect(await statuses(`${INTEGRATION_EVENTS_QUEUE}.${integration}`)).toEqual(['queued/0']);
+    const [telegram] = await db.select({ queue: jobQueue.queue }).from(jobQueue).where(eq(jobQueue.jobKey, `telegram:src:${telegramId}`));
+    expect(telegram?.queue).toBe(INTEGRATION_EVENTS_QUEUE);
+
+    await runJobBatch();
+    expect(seen).toEqual([{ id: 'e1', finalAttempt: false }]);
+    expect(await statuses(`${INTEGRATION_EVENTS_QUEUE}.${integration}`)).toEqual(['done/1']);
+  } finally {
+    await db.delete(jobQueue).where(eq(jobQueue.jobKey, `telegram:src:${telegramId}`));
+  }
 });
