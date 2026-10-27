@@ -24,6 +24,7 @@ import {
   dismissDriveConflict,
   getFolderAccess,
   listAgentMounts,
+  listProjectMounts,
   getProjectDrive,
   getSessionDrives,
   listDriveConflicts,
@@ -68,6 +69,19 @@ export function folderAccessQueryOptions(driveId: string | null, path: string, e
     queryFn: (): Promise<FolderAccessView> => getFolderAccess(driveId!, path),
     enabled: !!driveId && enabled,
   };
+}
+
+/** The folders every new session of the project mounts. Under the drive's key, so a share or unshare refreshes it. */
+export function projectMountsQueryOptions(driveId: string | null, enabled = true) {
+  return {
+    queryKey: [...qk.drives.drive(driveId ?? ''), 'project-mounts'] as const,
+    queryFn: (): Promise<AgentMountPlan> => listProjectMounts(driveId!),
+    enabled: !!driveId && enabled,
+  };
+}
+
+export function useProjectMounts(driveId: string | null, enabled = true) {
+  return useQuery(projectMountsQueryOptions(driveId, enabled));
 }
 
 /** The folders a new session of an agent mounts. Under the drive's key, so a share or unshare refreshes it. */

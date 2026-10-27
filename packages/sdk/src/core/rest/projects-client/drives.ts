@@ -180,6 +180,15 @@ export async function listAgentMounts(driveId: string, agentName: string): Promi
 }
 
 /**
+ * The Files folders every new session of the project mounts: the ones shared
+ * with everyone in the project. `grantId` is the project grant to change or
+ * remove; the folders Kortix made (Company) carry none.
+ */
+export async function listProjectMounts(driveId: string): Promise<AgentMountPlan> {
+  return unwrap(await backendApi.get<AgentMountPlan>(`${drivePath(driveId)}/mounts`), 'Failed to load mounts');
+}
+
+/**
  * Share a folder: a person (user id), a team (group id), an agent (its name)
  * or everyone in the project. Sharing again changes the level.
  */

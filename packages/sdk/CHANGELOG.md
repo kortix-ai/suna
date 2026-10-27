@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (project catalog, project mounts)
+- `getProjectCapabilities(projectId)` and the `ProjectCapabilities` type: every tool, skill and
+  extension any agent of the project can be given (`GET /projects/:id/capabilities`).
+- `listProjectMounts(driveId)`, `projectMountsQueryOptions` and `useProjectMounts`: the Files folders
+  every new session of the project mounts (`GET /drives/:driveId/mounts`).
+- `FeatureFlagView.wip`: the flag is work in progress and not recommended yet. Optional.
+
 ### Added (agent mounts)
 - `listAgentMounts(driveId, agentName)`, `agentMountsQueryOptions` and `useAgentMounts`, with the
   `AgentMount` and `AgentMountPlan` types: the Files folders a new session of an agent mounts, at

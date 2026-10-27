@@ -6,6 +6,7 @@ import {
   downloadDriveFile,
   getFolderAccess,
   listAgentMounts,
+  listProjectMounts,
   getDriveFileUrl,
   listDriveFiles,
   listDriveVersions,
@@ -136,6 +137,12 @@ test("an agent's mounts are the folders a new session of it mounts", async () =>
   expect(last().url).toBe(`http://test.local/drives/${D}/agents/research%20bot/mounts`);
   expect(plan.mounts[0]!.mountPath).toBe('/drives/Company');
   expect(plan.slots).toBe(8);
+});
+
+test('the project mounts are the folders every session mounts', async () => {
+  respond(200, { mounts: [], skipped: [], slots: 8 });
+  await listProjectMounts(D);
+  expect(last().url).toBe(`http://test.local/drives/${D}/mounts`);
 });
 
 // ── Upload progress over XHR ──

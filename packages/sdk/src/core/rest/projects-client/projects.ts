@@ -188,6 +188,8 @@ export interface FeatureFlagView {
    * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
+  /** Work in progress: not recommended yet. Absent on servers older than this field. */
+  wip?: boolean;
   /**
    * Always `project`: every flag is set per project. A server from
    * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
