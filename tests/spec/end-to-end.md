@@ -1287,7 +1287,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 `EXP-1` `PATCH /projects/:id/features {feature,enabled}` (canonical) and `PATCH /projects/:id/experimental` (deprecated alias, same handler) → 200 with `experimental`/`experimental_features` in body; unknown flag → 400, including the graduated `connectors_v2` and `connectors_api_discover`; non-bool enabled → 400; `enabled:null` clears the override → 200; archived project → 404 with metadata unchanged. Flag-gated routes reject with `403 {code:'feature_disabled', feature}` when their flag is off.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200; `PATCH /sandbox-templates/:unknown` with a scalar body and no JSON content-type → 404, never 500.
-`SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
+`SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409 (a duplicate slug: `code: template_slug_taken`, the message names the slug, no SQL in the body); `PATCH/DELETE/build /:templateId`; unknown → 404.
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
 `BILL-10` `POST /billing/plan` validates the amount before any Stripe call: `monthly_usd` that is not a whole number from 20 to 10,000 (`19`, `10001`, `25.5`, a string) → 400.

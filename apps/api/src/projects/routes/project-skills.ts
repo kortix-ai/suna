@@ -41,6 +41,7 @@ import { invalidateProjectResourceConfig } from '../lib/project-resources';
 import { planSkillRemoval } from '../lib/skill-removal';
 import { logger } from '../../lib/logger';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /** Longest name/description the route accepts. Bounds one line of YAML. */
 const SKILL_NAME_MAX = 100;
@@ -132,6 +133,7 @@ export function registerProjectSkillsRoutes(): void {
       try {
         plan = planSkillRemoval(manifest.raw, (await listRepoFiles(project, commit)).map((file) => file.path), body.data.folder);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
       }
       const validation = validateManifest(plan.raw, manifest.format);
@@ -295,6 +297,7 @@ export function registerProjectSkillsRoutes(): void {
           409,
         );
       }
+      rethrowDatabaseError(err);
       return c.json(
         { error: `Failed to commit the skill: ${(err as Error).message || String(err)}` },
         502,

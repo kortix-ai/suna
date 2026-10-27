@@ -16,7 +16,7 @@ import { auth, boundedIssues, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { inspectDatabaseError } from '../shared/database-errors';
+import { inspectDatabaseError, rethrowDatabaseError } from '../shared/database-errors';
 import {
   AppArtifactStorageRefusedError,
   AppArtifactStorageUnavailableError,
@@ -420,6 +420,7 @@ export function registerAppsRoutes(): void {
         }, row.slug);
         return c.json({ agents });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
       }
     },
@@ -1158,6 +1159,7 @@ export function registerAppsRoutes(): void {
             }
             const refusal = appLimitResponse(c, error);
             if (refusal) return refusal;
+            rethrowDatabaseError(error);
             return c.json({
               error: 'App start failed',
               detail: error instanceof Error ? error.message : String(error),

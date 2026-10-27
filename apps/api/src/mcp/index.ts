@@ -22,6 +22,8 @@ import { mcpResourceMetadataUrl, oauthIssuer } from '../oauth/discovery';
 import { OAUTH_SCOPE_KORTIX } from '../oauth/access-token';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import { databaseErrorSummary, isDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
 import {
   JOB_CANCEL,
   JOB_DEFAULT_TIMEOUT_SECONDS,
@@ -1212,6 +1214,11 @@ export function createMcpApp(dispatch: Dispatch) {
       const result = await handleRpc(ctx, message.method, message.params ?? {});
       return c.json({ jsonrpc: '2.0', id: message.id, result });
     } catch (err) {
+      // A database error's message is its statement: JSON-RPC's internal error instead, logged here.
+      if (isDatabaseError(err)) {
+        logger.error('[mcp] tool call failed on a database error', { method: message.method, error: databaseErrorSummary(err) });
+        return c.json({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Internal error' } });
+      }
       const e = err as Error & { rpcCode?: number };
       return c.json({ jsonrpc: '2.0', id: message.id, error: { code: e.rpcCode ?? -32603, message: e.message } });
     }

@@ -45,6 +45,7 @@ import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
 import { listAgentServiceAccounts } from '../../repositories/service-accounts';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -165,6 +166,7 @@ export function registerAgentScopeRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -405,6 +407,7 @@ export function registerAgentScopeRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,

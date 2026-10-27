@@ -40,6 +40,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { projectReadView } from '../lib/project-read-view';
 import { withSessionLabels } from '../lib/session-branch-labels';
 import { normalizeString } from '../lib/serializers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -302,6 +303,7 @@ export function registerProjectFilesRoutes(): void {
         },
       });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to archive directory';
       return c.json({ error: message }, 400);
     }
@@ -557,6 +559,7 @@ export function registerProjectFilesRoutes(): void {
       const result = await getFileHistory(await withProjectGitAuth(loaded.row), path, { ref, limit, skip });
       return c.json({ path, ref, ...result });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load history';
       return c.json({ error: message }, 400);
     }
@@ -673,6 +676,7 @@ export function registerProjectFilesRoutes(): void {
       const result = await listCommits(await withProjectGitAuth(loaded.row), { ref, path, limit, skip });
       return c.json({ ref, path: path ?? null, ...result });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load commits';
       return c.json({ error: message }, 400);
     }
@@ -710,6 +714,7 @@ export function registerProjectFilesRoutes(): void {
       if (!commit) return c.json({ error: 'Commit not found' }, 404);
       return c.json(commit);
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load commit';
       return c.json({ error: message }, 400);
     }
@@ -747,6 +752,7 @@ export function registerProjectFilesRoutes(): void {
       const diff = await getCommitDiff(await withProjectGitAuth(loaded.row), sha, { path });
       return c.json({ path: path ?? null, ...diff });
     } catch (error) {
+      rethrowDatabaseError(error);
       const message = error instanceof Error ? error.message : 'Failed to load diff';
       return c.json({ error: message }, 400);
     }
@@ -819,6 +825,7 @@ export function registerProjectFilesRoutes(): void {
         is_same_ref: false,
       });
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json({
         error: error instanceof Error ? error.message : 'Failed to compute diff preview',
       }, 400);

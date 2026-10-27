@@ -40,6 +40,7 @@ import {
   normalizeString,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -426,6 +427,7 @@ export function registerProviderOauthRoutes(): void {
     try {
       challenge = await cfg.start();
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json({
         error: err instanceof Error ? err.message : `Failed to start ${cfg.label} authorization`,
       }, 502);

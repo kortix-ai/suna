@@ -36,6 +36,7 @@ import {
   finalizePipedreamConnect,
   parseRedirects,
 } from '../lib/connection-hosted-connect';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const ShareConnectionInput = z
   .object({
@@ -387,6 +388,7 @@ export function registerConnectionActionsRoutes(): void {
               });
             }
           } catch (error) {
+            rethrowDatabaseError(error);
             return c.json(
               { error: (error as Error).message || 'credential validation failed' },
               400,

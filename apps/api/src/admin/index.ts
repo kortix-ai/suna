@@ -21,6 +21,7 @@ import { isUuid } from '../shared/validate';
 import { isoValue } from '../shared/cost-values';
 import { readJsonObject } from '../shared/http-body';
 import { errorSqlstate } from '../shared/error-cause';
+import { databaseErrorSummary } from '../shared/database-errors';
 import { logger } from '../lib/logger';
 import {
   deleteSessionSandbox,
@@ -51,8 +52,11 @@ export const adminApp = makeOpenApiApp<AppEnv>();
 // the real reason (undefined column, statement timeout, constraint) hides in
 // `e.cause`. Admin 500s must name that cause — a bare "Failed query" toast
 // sends an operator hunting through prod logs for what the response could
-// have carried.
+// have carried. A database error answers its SQLSTATE and driver message only:
+// never the statement or its bound parameters (KRTX-3422).
 export function adminErrorMessage(e: unknown): string {
+  const database = databaseErrorSummary(e);
+  if (database) return database;
   const err = e as { message?: string; cause?: { message?: string } } | null;
   const message = err?.message || String(e);
   const cause = err?.cause?.message;

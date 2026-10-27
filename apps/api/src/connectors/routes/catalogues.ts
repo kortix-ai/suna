@@ -8,6 +8,7 @@ import type { Context } from 'hono';
 import { auth, errors, json } from '../../openapi';
 import type { ConnectorRouterDeps } from '../router';
 import { OpaqueSchema, ProjectParam, featureNotSupportedResponse } from './shared';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 const OneClickParam = z.enum(['1', 'true', '0', 'false']).optional();
 const oneClickQuery = (c: { req: { query(name: string): string | undefined } }) =>
@@ -73,6 +74,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
         ]);
         return c.json(withInstalledItems(page, profiles));
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
     },
@@ -129,6 +131,7 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
           sections: body.sections.map((section) => withInstalledItems(section, profiles)),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message || 'catalogue unavailable' }, 502);
       }
     },
@@ -165,6 +168,7 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
         ]);
         return c.json(withInstalledDetail(detail as ConnectorCatalogDetail, profiles));
       } catch (error) {
+        rethrowDatabaseError(error);
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
       }
@@ -210,6 +214,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       try {
         detail = (await visibleDetail(deps, projectId, c.req.query('id') ?? '')) as ConnectorCatalogDetail;
       } catch (error) {
+        rethrowDatabaseError(error);
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
       }
@@ -222,6 +227,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
         const tools = await deps.discoverConnectorTools(way);
         return c.json({ way: { id: way.id, kind: way.kind, name: way.name }, ...tools });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: `could not read the tools: ${(error as Error).message}` }, 502);
       }
     },
@@ -261,6 +267,7 @@ function registerDiscoverToolsAndInstallRoutes(app: OpenAPIHono, deps: Connector
       try {
         detail = (await visibleDetail(deps, projectId, body.id)) as ConnectorCatalogDetail;
       } catch (error) {
+        rethrowDatabaseError(error);
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
       }
