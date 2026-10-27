@@ -5,9 +5,10 @@
  * ACCURACY AND NAMING (read before editing):
  *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
  *    2026-10-27: the City University of Hong Kong logo), Wring and Platinum
- *    (2026-10-27), NinjaTech AI / SuperNinja (2026-10-22). "Built from
+ *    (2026-10-27), WRITER (name 2026-10-22, logo 2026-10-27). "Built from
  *    Kortix's open-source code" is a product built from the public repo:
- *    never "customer" or "partner", never a licence claim. The CityU logo is
+ *    never "customer" or "partner", never a licence claim. WRITER's brand
+ *    terms forbid implying endorsement: no "uses Kortix", no quote. The CityU logo is
  *    CityU's trade mark (its logo/name policy): remove it on request.
  *  - SciencePal facts: CityU press release 2025-11-05. Wring: wring.co and
  *    its Kortix project. Platinum: platinum.dev and its repo's `kortix.yaml`
@@ -30,7 +31,7 @@ export type CaseStudy = {
   /** A third-party logo on a white tile, a drawn brand mark, or a Phosphor glyph. */
   logo?: { src: string; alt: string; width: number; height: number };
   mark?: 'kortix' | 'platinum';
-  icon?: 'telecom' | 'search' | 'finance' | 'agent';
+  icon?: 'telecom' | 'search' | 'finance';
   category: string;
   /** Who it is, as a name (logo cases) or a class. */
   org: string;
@@ -142,16 +143,16 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'superninja',
-      icon: 'agent',
-      category: 'Consumer AI',
-      org: 'NinjaTech AI',
-      title: 'SuperNinja: a general AI agent.',
-      body: 'NinjaTech AI built SuperNinja, its general-purpose AI agent, from Kortix’s open-source code. Anyone can do the same: read the code, fork it and ship a product on it.',
+      id: 'writer',
+      logo: { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
+      category: 'Enterprise AI',
+      org: 'WRITER',
+      title: 'An enterprise AI platform, built from open source.',
+      body: 'WRITER, the enterprise AI platform, built parts of its agent product from Kortix’s open-source code. Anyone can do the same: read the code, fork it and ship a product on it.',
       facts: [
-        'A general-purpose AI agent',
+        'An enterprise AI platform',
+        'Agents for marketing, sales and support',
         'Built from Kortix’s open-source code',
-        'Shipped as its own product',
         'Open source: read it, fork it, audit it',
       ],
     },
