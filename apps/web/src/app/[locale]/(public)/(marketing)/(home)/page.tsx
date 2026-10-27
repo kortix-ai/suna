@@ -22,10 +22,10 @@ export default function Home() {
       <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
       <SandBandHero />
       <WorksWithStrip />
-      <PillarsBand />
       <CaseStudies />
       <ProblemSolution />
       <HowItWorksTabs />
+      <PillarsBand />
       <UseCasesBand />
       <TrustBand />
       <LandingFaqSection />

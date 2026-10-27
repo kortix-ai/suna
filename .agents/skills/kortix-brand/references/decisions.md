@@ -14,7 +14,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ### D21 The home hero cycles the pillars: "The sovereign / multiplayer / extensible AI Operating System"
 - **Date:** 2026-10-27
-- **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer, extensible and open (the three pillars, D16, plus "open", founder 2026-10-27: "also add open"). The muted line "for companies that own their …" is gone. Screen readers read "The sovereign, multiplayer, extensible and open AI Operating System".
+- **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer, extensible and open (the three pillars, D16, plus "open", founder 2026-10-27: "also add open"). The muted line "for companies that own their …" is gone. Because the hero now names the pillars, the compact three-column pillar band moves down the page, after How it works (founder: "move that elsewhere"). Screen readers read "The sovereign, multiplayer, extensible and open AI Operating System".
 - **Why:** founder, 2026-10-27: "The sovereign/multiplayer/extensible AI Operating Systems, maybe these 3 instead as switcher … & then remove the for companies that own their".
 - **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
 - **Supersedes:** D16's fixed hero line "The sovereign AI Operating System" and the rotating "own their" line.

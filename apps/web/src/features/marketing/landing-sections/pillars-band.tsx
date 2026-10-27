@@ -1,69 +1,80 @@
-import { FeatureSplit } from '@/features/marketing/kit/feature-split';
-import { Heading } from '@/features/marketing/kit/page-frame';
+import { Band, Heading } from '@/features/marketing/kit/page-frame';
+import { CheckIcon, CodeIcon, ShieldCheckIcon, UsersThreeIcon } from '@phosphor-icons/react/dist/ssr';
 
 // The three pillars, in the founder's order and words (kortix-brand D16):
 // Multiplayer AI; Company as code (extensible); Sovereign and
-// open ("own your data and run on your own infra"). Each is its own section
-// so the Product menu's anchors (#multiplayer, #company-as-code, #sovereign)
-// land on it. Every fact is a claims.md row: Channels, Permissions, Path to
-// `main`, Connectors, Source, Hosting, Models, Secrets. No "pi" in this copy
-// (D20): buyers do not know the harness name.
+// open ("own your data and run on your own infra"). Every fact is a claims.md
+// row: Channels, Permissions, Path to `main`, Connectors, Source, Hosting,
+// Models, Secrets. No "pi" in this copy (D20).
 const PILLARS = [
   {
     id: 'multiplayer',
-    title: 'Multiplayer AI.',
-    titleMuted: 'One AI for the whole team.',
-    body: [
-      'Everyone works with **the same agents, skills, memory and connectors**. Start a session in the web app, in Slack or in Microsoft Teams.',
-      'Roles decide who may do what, and **a person approves what reaches main**.',
-    ],
-    cells: [
-      { k: 'Shared by the team', v: 'Every agent, skill and memory is the same for everyone.' },
-      { k: 'Slack and Microsoft Teams', v: 'Start or continue a session where your team already talks.' },
-      { k: 'Permissions', v: 'Roles, groups and per-resource permissions for people and agents.' },
-      { k: 'Approval', v: 'Work reaches main through a change request a person approves.' },
+    icon: UsersThreeIcon,
+    name: 'Multiplayer AI',
+    line: 'One AI for the whole team.',
+    body: 'Everyone works with the same agents, skills, memory and connectors. Start a session in the web app, in Slack or in Microsoft Teams.',
+    facts: [
+      'Shared agents, skills and memory',
+      'Slack and Microsoft Teams',
+      'Roles, groups and per-resource permissions',
+      'A person approves what reaches main',
     ],
   },
   {
     id: 'company-as-code',
-    title: 'Company as code.',
-    titleMuted: 'Extensible to the core.',
-    body: [
-      'We treat your whole company like code. **Every agent, skill, rule, connector and piece of context is a file in one git repo.**',
-      'The agents and the harness they run on are **open source**, so you can extend anything.',
-    ],
-    cells: [
-      { k: 'Files in git', v: 'Agents and skills you version, review and roll back.' },
-      { k: 'Open harness', v: 'The agent runtime is open source: change how agents work.' },
-      { k: 'Connectors', v: '3,000+ apps, plus MCP, OpenAPI and raw HTTP.' },
-      { k: 'CLI and SDK', v: 'Script it from the CLI, build on it with the TypeScript SDK.' },
+    icon: CodeIcon,
+    name: 'Company as code',
+    line: 'Extensible to the core.',
+    body: 'We treat your whole company like code. Every agent, skill, rule, connector and piece of context is a file in one git repo, and the agents and their harness are open source, so you can extend anything.',
+    facts: [
+      'Every agent and skill a file in git',
+      'An open-source agent harness',
+      '3,000+ apps, plus MCP, OpenAPI and raw HTTP',
+      'A CLI and a TypeScript SDK',
     ],
   },
   {
     id: 'sovereign',
-    title: 'Sovereign and open.',
-    titleMuted: 'Own your data and your infrastructure.',
-    body: [
-      'Kortix is **open source**. Run it on Kortix Cloud, **in your VPC or on your own on-prem network**.',
-      'Use **any model provider with your own keys**. Your data stays on infrastructure you choose.',
-    ],
-    cells: [
-      { k: 'Open source', v: 'Read it, fork it, audit it.' },
-      { k: 'Self-hosted', v: 'Your VPC or your own on-prem network.' },
-      { k: 'Any model', v: 'Any provider, your own keys.' },
-      { k: 'Secrets', v: 'Encrypted at rest with a key per project.' },
+    icon: ShieldCheckIcon,
+    name: 'Sovereign and open',
+    line: 'Own your data and your infrastructure.',
+    body: 'Kortix is open source. Run it on Kortix Cloud, in your VPC or on your own on-prem network, with any model and your own keys.',
+    facts: [
+      'Open source: read it, fork it, audit it',
+      'Self-host in your VPC or on-prem',
+      'Any model provider, your own keys',
+      'Secrets encrypted per project',
     ],
   },
 ] as const;
 
-/** The three pillars: a short intro, then one full section per pillar. */
+/** The three pillars: each name is the cell's headline, its meaning under it. */
 export function PillarsBand() {
   return (
-    <div id="pillars" className="scroll-mt-16 pt-20 lg:pt-28">
+    <section id="pillars" className="scroll-mt-16 py-20 lg:py-28">
       <Heading title="Multiplayer. Company as code. Sovereign." titleMuted="The AI OS your whole company owns." />
-      {PILLARS.map((pillar) => (
-        <FeatureSplit key={pillar.id} {...pillar} cols="lg:grid-cols-4" />
-      ))}
-    </div>
+      <Band className="mt-12">
+        <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
+          {PILLARS.map(({ id, icon: Icon, name, line, body, facts }) => (
+            <li key={id} id={id} className="bg-background flex scroll-mt-16 flex-col gap-5 p-6 lg:p-11">
+              <Icon className="text-foreground size-6" aria-hidden />
+              <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+                {name}
+                <span className="text-muted-foreground block text-lg">{line}</span>
+              </h3>
+              <p className="text-muted-foreground text-base text-pretty">{body}</p>
+              <ul className="mt-auto flex flex-col gap-2 text-sm">
+                {facts.map((fact) => (
+                  <li key={fact} className="text-foreground flex items-start gap-2">
+                    <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    {fact}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </Band>
+    </section>
   );
 }
