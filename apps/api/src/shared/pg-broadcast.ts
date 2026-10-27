@@ -29,6 +29,7 @@
  * throw into a caller.
  */
 
+import { requiresTls } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { PG_BROADCAST_POOL_MAX } from './database-capacity';
@@ -308,6 +309,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
   if (previous && previous !== stopConfigBaseMoveBroadcast) await previous();
   try {
     const sql = postgres(config.DATABASE_URL, {
+      ...(requiresTls(config.DATABASE_URL) ? { ssl: 'require' as const } : {}),
       max: PG_BROADCAST_POOL_MAX,
       // A subscription connection runs no statements of its own, so the
       // request pool's statement timeout would only be a way to lose it.
