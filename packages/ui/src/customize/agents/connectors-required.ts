@@ -25,10 +25,3 @@ export function pruneRequiredConnectors(
   if (kept.length === current.length) return required;
   return kept.length ? kept : undefined;
 }
-
-/** The required list with `slug` flipped. */
-export function toggleRequiredConnector(required: RequiredList, slug: string): RequiredList {
-  const current = required ?? [];
-  const next = current.includes(slug) ? current.filter((s) => s !== slug) : [...current, slug];
-  return next.length ? next : undefined;
-}

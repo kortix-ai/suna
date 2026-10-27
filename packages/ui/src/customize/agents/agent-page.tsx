@@ -96,14 +96,15 @@ import { type AgentGrant, plainGrant, useAgentGrant } from '../shared/agent-reso
 import { CapabilityShellEmbedProvider } from '../shared/capability-page-shell';
 import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
 import { toArray } from '../shared/utils';
-import { SkillsPage } from '../skills/skills-page';
+import { ExtensionsPage, SkillsPage, ToolsPage } from '../skills/skills-page';
+import { ConnectorsPage } from '../connectors/connectors-page';
+import { SecretsPage } from '../secrets/secrets-page';
 import { TriggersPage } from '../triggers/triggers-page';
 import { editConfigPrompt, useConfigureThread } from '../use-configure-thread';
 import { AgentAuthorityCard } from './agent-authority-card';
-import { AgentCapabilitiesSection } from './agent-capabilities';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AgentDrivesSection } from './agent-drives-section';
-import { AgentAppsAccess, AgentConnectorsAccess, AgentSecretsAccess } from './agent-access-views';
+import { pruneRequiredConnectors } from './connectors-required';
 import { useGrantLabel } from './agent-access-text';
 import { AgentOverview, grantOf, type OverviewFacts } from './agent-overview';
 import {
@@ -135,14 +136,22 @@ import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPolicySetsPanel } from './agent-policy-sets-section';
 import { useDefaultAgent } from './use-default-agent';
 
+/**
+ * A host's Apps screen in agent mode: the ONE Apps component (it lives in
+ * the host app) with this agent's grant. Without it Access → Apps is hidden.
+ */
+export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
+
 type Agent = ProjectConfigSummary['agents'][number];
 
 export function AgentPage({
   projectId,
   agentName,
+  renderApps,
 }: {
   projectId: string;
   agentName: string;
+  renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -262,6 +271,7 @@ export function AgentPage({
       config={config}
       initial={configQuery.data?.block ?? {}}
       schemaVersion={configQuery.data?.schema_version ?? 2}
+      renderApps={renderApps}
     />
   ) : (
     <ReadOnlyAgentPage
@@ -701,6 +711,7 @@ function EditableAgentPage({
   config,
   initial,
   schemaVersion,
+  renderApps,
 }: {
   projectId: string;
   agent: Agent;
@@ -708,6 +719,7 @@ function EditableAgentPage({
   initial: AgentConfigBlock;
   /** The manifest version: v3 adds the subagent, command and extension grants. */
   schemaVersion: number;
+  renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tCapabilities = useI18nTranslations('agentCapabilities');
@@ -753,7 +765,14 @@ function EditableAgentPage({
   const sourcePath = editor.draft.file ?? configEntitySourcePath(agent.path);
 
   const { draft, set } = editor;
-  const skillsGrant = useAgentGrant(plainGrant(draft.skills), (v) => set('skills', v));
+  const connectorsGrant = useAgentGrant(draft.connectors, (v) => {
+    set('connectors', v);
+    // `connectors_required` is no longer enforced: keep it inside the grant.
+    const kept = pruneRequiredConnectors(draft.connectors_required, v);
+    if (kept !== draft.connectors_required) set('connectors_required', kept);
+  });
+  const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
+  const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
 
   const facts = useOverviewFacts(projectId, agent.name, config, draft);
   const headerFacts = useHeaderFacts(agent, config, draft, true);
@@ -803,7 +822,7 @@ function EditableAgentPage({
       options={options}
       skillsOptions={skillsOptions}
       registryOptions={registryOptions}
-      apps={<AgentAppsAccess projectId={projectId} agentName={agent.name} editor={editor} />}
+      apps={null}
       drives={
         <AgentDrivesSection
           projectId={projectId}
@@ -852,57 +871,58 @@ function EditableAgentPage({
       case 'access':
       case 'runtime': {
         if (!view) return null;
-        if (view === 'connectors' || view === 'secrets' || view === 'apps')
+        // Every Access view is the ONE component Project admin shows for the
+        // same library, in agent mode: the agent's grant row and a switch per
+        // item over the project's catalog (Marko, 2026-10-27).
+        if (view === 'skills' || view === 'tools' || view === 'extensions') {
+          const Page = view === 'skills' ? SkillsPage : view === 'tools' ? ToolsPage : ExtensionsPage;
           return (
-            <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
-              {switcher}
-              {view === 'connectors' ? (
-                <AgentConnectorsAccess
-                  projectId={projectId}
-                  agentName={agent.name}
-                  editor={editor}
-                  policySets={<AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />}
-                />
-              ) : view === 'secrets' ? (
-                <AgentSecretsAccess projectId={projectId} agentName={agent.name} editor={editor} />
-              ) : (
-                <AgentAppsAccess projectId={projectId} agentName={agent.name} editor={editor} />
-              )}
-            </AgentTabBody>
-          );
-        // kortix_version 2 and 3: Skills, Tools and Extensions are one switch
-        // per built-in and project item (`agent-capabilities.tsx`).
-        if (schemaVersion >= 2 && (view === 'skills' || view === 'tools' || view === 'extensions'))
-          return (
-            <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
-              {switcher}
-              <EditorSectionStyleProvider value="tab">
-                <div className="space-y-8">
-                  <AgentCapabilitiesSection
-                    view={view}
-                    schemaVersion={schemaVersion}
-                    projectId={projectId}
-                    agentName={agent.name}
-                    editor={editor}
-                    flagSettingsHref={adminPath(projectId, 'feature-flags')}
-                  />
-                  {view === 'tools' ? (
-                    <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>
+            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+              <Page
+                projectId={projectId}
+                agent={{ name: agent.name, editor, schemaVersion }}
+                footer={
+                  view === 'tools' ? (
+                    <EditorSectionStyleProvider value="panel">
                       <ToolsSection
                         permission={editor.oc.permission}
                         onChange={(next) => editor.setOc('permission', next)}
                         title={tCapabilities('rulesTitle')}
                       />
-                    </CapabilityShellEmbedProvider>
-                  ) : null}
-                </div>
-              </EditorSectionStyleProvider>
-            </AgentTabBody>
+                    </EditorSectionStyleProvider>
+                  ) : undefined
+                }
+              />
+            </Embedded>
           );
-        if (view === 'skills')
+        }
+        if (view === 'connectors')
           return (
             <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
-              <SkillsPage projectId={projectId} surface={surface} grant={skillsGrant} />
+              <ConnectorsPage
+                projectId={projectId}
+                surface={surface}
+                grant={connectorsGrant}
+                agentPanel={<AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />}
+              />
+            </Embedded>
+          );
+        if (view === 'secrets')
+          return (
+            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+              <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />
+            </Embedded>
+          );
+        if (view === 'apps' && renderApps)
+          return (
+            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+              {renderApps({ agentName: agent.name, grant: appsGrant })}
+            </Embedded>
+          );
+        if (view === 'drives')
+          return (
+            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+              <AgentDrivesSection projectId={projectId} agentName={agent.name} repositoryAccess={draft.repository_access !== false} />
             </Embedded>
           );
         // Model is this agent's model only. The project-wide gateway screens

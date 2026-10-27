@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { pruneRequiredConnectors, toggleRequiredConnector } from './connectors-required';
+import { pruneRequiredConnectors } from './connectors-required';
 
 describe('pruneRequiredConnectors', () => {
   test('dropping a picked connector drops its Required flag', () => {
@@ -16,13 +16,5 @@ describe('pruneRequiredConnectors', () => {
     const required = ['github'];
     expect(pruneRequiredConnectors(required, ['github', 'slack'])).toBe(required);
     expect(pruneRequiredConnectors(undefined, 'all')).toBeUndefined();
-  });
-});
-
-describe('toggleRequiredConnector', () => {
-  test('adds, then removes, and an empty list leaves the key', () => {
-    expect(toggleRequiredConnector(undefined, 'github')).toEqual(['github']);
-    expect(toggleRequiredConnector(['github', 'slack'], 'github')).toEqual(['slack']);
-    expect(toggleRequiredConnector(['github'], 'github')).toBeUndefined();
   });
 });

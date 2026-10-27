@@ -1,7 +1,7 @@
 'use client';
 
 import type { AgentMount, DriveEntry, FolderLevel } from '@kortix/sdk';
-import { useAgentMounts } from '@kortix/sdk/react';
+import { useAgentMounts, useProjectMounts } from '@kortix/sdk/react';
 import { CaretRightIcon, FolderSimpleIcon, HardDrivesIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
@@ -21,11 +21,18 @@ import { Skeleton } from '../../primitives/skeleton';
 import { errorToast } from '../../primitives/toast';
 import { ManageButton } from '../sections/view/agent-editor-access-fields';
 import { EditorList } from '../sections/view/agent-editor-primitives';
-import { AccessLead } from './agent-access-list';
+import { CapabilityPageShell } from '../shared/capability-page-shell';
 
 /**
- * Access > Drives, as mounts (Marko, 2026-10-27: "folder mount based,
- * exactly"). Each row is one folder a new session of this agent mounts: where
+ * Drives as mounts, ONE component in two modes (Marko, 2026-10-27: "folder
+ * mount based, exactly", "one component, agent-based or project-wide"):
+ *
+ *  - **Project** (Project admin → Drives): the folders EVERY new session
+ *    mounts, the ones shared with everyone in the project.
+ *  - **Agent** (Access → Drives): what a new session of this agent mounts,
+ *    its own folders plus the project's.
+ *
+ * Each row is one folder a new session mounts: where
  * it appears (`/drives/...`), which Files folder it is, who it comes through
  * (this agent, or everyone in the project) and whether it is read-only. The
  * list is the server's own plan (`GET /drives/:id/agents/:name/mounts`, the
@@ -42,14 +49,18 @@ export function AgentDrivesSection({
   repositoryAccess = true,
 }: {
   projectId: string;
-  agentName: string;
-  /** Whether sessions of the agent get the project repository at /workspace. */
+  /** Absent: the project's mounts (Project admin). */
+  agentName?: string;
+  /** Whether sessions of the agent get the project repository at /workspace. Agent mode only. */
   repositoryAccess?: boolean;
 }) {
   const t = useTranslations('agentMounts');
   const drive = useProjectDrive(projectId);
   const driveId = drive.data?.driveId ?? null;
-  const plan = useAgentMounts(driveId, agentName);
+  const agentPlan = useAgentMounts(agentName ? driveId : null, agentName ?? '');
+  const projectPlan = useProjectMounts(agentName ? null : driveId);
+  const plan = agentName ? agentPlan : projectPlan;
+  const showRepository = !!agentName && repositoryAccess;
   const root = useFolderAccess(driveId, '/');
   // Mounting needs `manage` on the folder; someone who holds it at the top holds it below.
   const canMount = root.data?.access === 'manage';
@@ -78,7 +89,7 @@ export function AgentDrivesSection({
         }
       />
     );
-  } else if (plan.data.mounts.length === 0 && !repositoryAccess) {
+  } else if (plan.data.mounts.length === 0 && !showRepository) {
     body = (
       <EmptyState media={<EmptyArt icon={HardDrivesIcon} />} title={t('emptyTitle')} description={t('emptyDescription')} />
     );
@@ -86,7 +97,7 @@ export function AgentDrivesSection({
     body = (
       <div className="space-y-3">
         <EditorList>
-          {repositoryAccess ? (
+          {showRepository ? (
             <li className="flex min-h-12 items-center gap-3 px-4 py-2">
               <span className="min-w-0 flex-1">
                 <span className="text-foreground block truncate font-mono text-sm">/workspace</span>
@@ -109,22 +120,22 @@ export function AgentDrivesSection({
   }
 
   return (
-    <section className="space-y-6" data-testid="agent-access-drives">
-      <AccessLead
-        description={t('lead')}
-        action={
-          <>
-            {canMount && driveId ? (
-              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setPicking(true)}>
-                <PlusIcon className="size-3.5 shrink-0" />
-                {t('mount')}
-              </Button>
-            ) : null}
-            <ManageButton href={(id) => uiRoutes().drive(id)} />
-          </>
-        }
-      />
-      {body}
+    <CapabilityPageShell
+      title={t('title')}
+      description={agentName ? t('lead') : t('projectLead')}
+      action={
+        <>
+          {canMount && driveId ? (
+            <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setPicking(true)}>
+              <PlusIcon className="size-3.5 shrink-0" />
+              {t('mount')}
+            </Button>
+          ) : null}
+          <ManageButton href={(id) => uiRoutes().drive(id)} />
+        </>
+      }
+    >
+      <div data-testid="drive-mounts">{body}</div>
       {driveId ? (
         <FolderPicker
           open={picking}
@@ -134,14 +145,18 @@ export function AgentDrivesSection({
           mounted={new Set(plan.data?.mounts.map((m) => m.path))}
         />
       ) : null}
-    </section>
+    </CapabilityPageShell>
   );
 }
 
 /** The level a mount gives: read only, or read and write. `manage` mounts read and write. */
 const levelValue = (level: FolderLevel): 'read' | 'write' => (level === 'read' ? 'read' : 'write');
 
-function MountRow({ driveId, agentName, mount }: { driveId: string; agentName: string; mount: AgentMount }) {
+/** Who a mount is shared with: the agent, or everyone in the project. */
+const principalOf = (agentName: string | undefined) =>
+  agentName ? ({ principalType: 'agent', principalId: agentName } as const) : ({ principalType: 'project' } as const);
+
+function MountRow({ driveId, agentName, mount }: { driveId: string; agentName?: string; mount: AgentMount }) {
   const t = useTranslations('agentMounts');
   const share = useShareFolder();
   const unshare = useUnshareFolder();
@@ -152,7 +167,7 @@ function MountRow({ driveId, agentName, mount }: { driveId: string; agentName: s
 
   const setLevel = async (level: FolderLevel) => {
     try {
-      await share.mutateAsync({ driveId, path: mount.path, principalType: 'agent', principalId: agentName, level });
+      await share.mutateAsync({ driveId, path: mount.path, ...principalOf(agentName), level });
     } catch {
       errorToast(t('changeFailed'));
     }
@@ -199,7 +214,7 @@ function MountRow({ driveId, agentName, mount }: { driveId: string; agentName: s
             open={confirming}
             onOpenChange={setConfirming}
             title={t('unmountTitle', { path: mount.mountPath })}
-            description={t('unmountDescription', { agent: agentDisplayName(agentName) })}
+            description={agentName ? t('unmountDescription', { agent: agentDisplayName(agentName) }) : t('unmountProjectDescription')}
             confirmLabel={t('unmount')}
             confirmVariant="destructive"
             isPending={unshare.isPending}
@@ -224,7 +239,7 @@ function FolderPicker({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   driveId: string;
-  agentName: string;
+  agentName?: string;
   mounted: ReadonlySet<string>;
 }) {
   const t = useTranslations('agentMounts');
@@ -245,7 +260,7 @@ function FolderPicker({
   };
   const mount = async () => {
     try {
-      await share.mutateAsync({ driveId, path, principalType: 'agent', principalId: agentName, level });
+      await share.mutateAsync({ driveId, path, ...principalOf(agentName), level });
       close(false);
     } catch {
       errorToast(t('changeFailed'));
@@ -257,7 +272,7 @@ function FolderPicker({
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
           <ModalTitle>{t('pickerTitle')}</ModalTitle>
-          <ModalDescription>{t('pickerDescription', { agent: agentDisplayName(agentName) })}</ModalDescription>
+          <ModalDescription>{agentName ? t('pickerDescription', { agent: agentDisplayName(agentName) }) : t('pickerProjectDescription')}</ModalDescription>
         </ModalHeader>
         <ModalBody className="space-y-3">
           <nav aria-label={t('pickerPath')} className="flex min-w-0 flex-wrap items-center gap-1 text-sm">

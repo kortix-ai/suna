@@ -8,7 +8,7 @@ import {
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { CaretDownIcon, MagnifyingGlassIcon, PlugIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, MagnifyingGlassIcon, PlugsConnectedIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazyClient } from '../../lib/lazy-client';
 import {
@@ -76,12 +76,13 @@ import {
 import { ConnectorBrowse } from './catalog/connector-browse';
 import { useCatalog } from './catalog/use-catalog';
 import { type AgentGrant, GrantModeTabs, type ResourceScope } from '../shared/agent-resource-scope';
-import { RequiredConnectorToggle } from '../sections/view/agent-editor-access-fields';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
-import { CatalogCard } from '../shared/catalog/catalog-card';
+import { AccessList, type AccessItem, plainGrantSwitch } from '../shared/access-list';
+import { EditorList } from '../sections/view/agent-editor-primitives';
+import { ErrorState } from '../../primitives/error-state';
+import { EmptyArt } from '../../primitives/empty-art';
 import { catalogEmptyKind } from '../shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '../shared/catalog/catalog-empty-state';
-import { CatalogGrid } from '../shared/catalog/catalog-grid';
 import { useTunnelConnections } from '@kortix/sdk/react';
 import { useSlashFocus } from '../../internal/hooks';
 import {
@@ -277,7 +278,6 @@ export function ConnectorsPage({
   projectId,
   surface = { kind: 'global' },
   grant,
-  required,
   agentPanel,
 }: {
   projectId: string;
@@ -287,15 +287,6 @@ export function ConnectorsPage({
   /** Required in `agent` scope: the agent's `connectors` grant, driven by the
    *  page's draft. Ignored in `global` scope. */
   grant?: AgentGrant;
-  /** Agent scope only: `connectors_required`, the connectors a session needs
-   *  connected before it starts. Offered on a card the agent is granted by name
-   *  (Specific), because under All or None no single connector is picked. */
-  required?: {
-    /** The stored list, shown as one note under All (a hand-written manifest). */
-    list: readonly string[];
-    isRequired: (slug: string) => boolean;
-    toggle: (slug: string) => void;
-  };
   /** Agent scope only: agent settings that belong with its connectors (the
    *  per-connector policy sets), shown above the catalogue. */
   agentPanel?: ReactNode;
@@ -450,59 +441,21 @@ export function ConnectorsPage({
 
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
 
-  // One card shape for the project's own connectors: the Connected tab's grid
-  // and the All tab's "Your connectors" section (KRTX-2531) render it alike.
-  const ownConnectorCard = (connector: (typeof connectors)[number]) => {
-    const connected = connectorSetupStatus(connector) === 'connected';
-    const shared = {
-      variant: 'plain' as const,
-      leading: <ConnectorLogo source={installedConnectorLogoSource(connector)} size="lg" />,
+  // One row shape for the project's connectors in both modes (the shared
+  // Access row): logo, name, what it is, the exception mark, and in agent
+  // mode the switch that grants it. The name opens the connector's page.
+  const connectorRows = (list: typeof connectors): AccessItem[] => {
+    const slugs = connectors.map((connector) => connector.slug);
+    const toggle = agentScoped && grant?.set ? plainGrantSwitch(grant.value, slugs, grant.set) : null;
+    return list.map((connector) => ({
+      id: connector.slug,
       title: connectorDisplayName(connector),
-      subtitle: (
-        <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>
-      ),
-      badges: <ConnectorStatusBadge connector={connector} />,
-      trailing: connected ? <ConnectorConnectedMark /> : undefined,
-    };
-    // In agent scope the checkbox grants this connector to the agent; the body
-    // still opens the connector's detail. In global scope the whole card
-    // navigates, prefetched, as before.
-    if (agentScoped && grant) {
-      return (
-        <CatalogCard
-          key={connector.slug}
-          {...shared}
-          onClick={() => router.push(connectorHref(projectId, connector.slug))}
-          // The checkbox exists only under Specific. Under All or None the
-          // grant sentence decides every card, and a checked box nobody can
-          // uncheck read as a disabled control.
-          select={
-            grant.mode === 'specific'
-              ? {
-                  checked: grant.isGranted(connector.slug),
-                  onCheckedChange: () => grant.toggle(connector.slug),
-                  label: tI18nComplete('textd4170e74c3b0', { value0: connectorDisplayName(connector) }),
-                }
-              : undefined
-          }
-          // The connected mark stays; Required joins it on a card picked by name.
-          trailing={
-            required && grant.mode === 'specific' && grant.isGranted(connector.slug) ? (
-              <span className="flex items-center gap-2">
-                {shared.trailing}
-                <RequiredConnectorToggle
-                  active={required.isRequired(connector.slug)}
-                  onToggle={() => required.toggle(connector.slug)}
-                />
-              </span>
-            ) : (
-              shared.trailing
-            )
-          }
-        />
-      );
-    }
-    return <CatalogCard key={connector.slug} {...shared} href={connectorHref(projectId, connector.slug)} />;
+      leading: <ConnectorLogo source={installedConnectorLogoSource(connector)} size="sm" />,
+      description: describeConnector(connector),
+      status: <ConnectorStatusBadge connector={connector} />,
+      onOpen: () => router.push(connectorHref(projectId, connector.slug)),
+      ...(toggle ? toggle(connector.slug) : {}),
+    }));
   };
 
   // Quiet on purpose: a filter, not a second tab strip.
@@ -585,6 +538,45 @@ export function ConnectorsPage({
       </Tabs>
     ) : null;
 
+  // The project's connectors as rows, with the page-level states: loading,
+  // a failed load, nothing yet, nothing matching.
+  const listBody = (list: typeof connectors) => {
+    if (!settled) {
+      return (
+        <EditorList>
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="flex min-h-12 items-center gap-3 px-4 py-2">
+              <Skeleton className="size-6 rounded-sm" />
+              <Skeleton className="h-4 w-40 rounded-sm" />
+            </li>
+          ))}
+        </EditorList>
+      );
+    }
+    if (isError) {
+      return (
+        <ErrorState
+          size="sm"
+          title={tI18nComplete.raw('text51ae0a7e3783')}
+          action={
+            <Button variant="outline" size="sm" onClick={retry}>
+              {tPages('retry')}
+            </Button>
+          }
+        />
+      );
+    }
+    if (list.length > 0) return <AccessList items={connectorRows(list)} />;
+    if (query.trim()) return <CatalogNoMatch query={query} />;
+    return (
+      <EmptyState
+        media={<EmptyArt icon={PlugsConnectedIcon} />}
+        title={tI18nComplete.raw('text51ae0a7e3783')}
+        description={tI18nComplete.raw('texta3487dfc2132')}
+      />
+    );
+  };
+
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead
     // of being covered. `PoliciesPanel` is a long CRUD list whose save bar
@@ -644,37 +636,13 @@ export function ConnectorsPage({
             ) : undefined
           }
           filters={
-            agentScoped || visibleScopes.length > 1 ? (
+            agentScoped && grant ? (
+              <GrantModeTabs grant={grant} label={tAgentScope('connectorsAccess')} />
+            ) : visibleScopes.length > 1 ? (
               <>
-                {/* Agent scope's primary control: All · Specific · None for what
-                this agent may reach, on its own row. The catalogue scope strip
-                (All | Connected) moves down to the list it narrows, so the
-                row never shows two unrelated "All" controls. */}
-                {agentScoped && grant ? (
-                  <GrantModeTabs grant={grant} label={tAgentScope('connectorsAccess')} />
-                ) : (
-                  scopeTabs
-                )}
-                {/* Global rules — connector approval policy, so it belongs on this
-                page and not on the shared capability bar, which also rides over
-                Agents, Skills and Triggers.
-
-                Text, not a chip. This row already carries the tab strip's
-                filled control; a second bordered pill opposite it would read as
-                a second selector rather than a way out to a settings surface.
-                `variant="text"` is the codebase's muted-text affordance
-                (`text-muted-foreground` → `text-primary` on hover); `px-0` drops
-                the pill padding so the label sits flush with the container's
-                right edge, mirroring the tab strip flush left. It keeps the
-                full `h-8` of `size="sm"` as its hit area.
-
-                `ml-auto` rather than leaning on the shell's `justify-between`:
-                when the row wraps on a narrow viewport this lands alone on the
-                second line, and `justify-between` would drop it to the LEFT
-                there. `ml-auto` holds it right in both layouts.
-
-                Not gated on `canWrite` — anyone who can open the page can read
-                the project's approval policy. */}
+                {scopeTabs}
+                {/* Project approval policy: text, flush right, a way out to a
+                    settings surface rather than a second selector. */}
                 <Button
                   type="button"
                   variant="text"
@@ -688,8 +656,14 @@ export function ConnectorsPage({
             ) : undefined
           }
         >
-          {agentScoped && agentPanel ? <div className="mb-8">{agentPanel}</div> : null}
-          {channelsActive ? (
+          {agentScoped ? (
+            /* Agent mode: the project's connectors, one switch each, then the
+               agent's rule sets. Installing lives behind New, as in project mode. */
+            <div className="space-y-6">
+              {listBody(ownMatches)}
+              {agentPanel}
+            </div>
+          ) : channelsActive ? (
             /* The whole of what used to be `/projects/<id>/channels`, minus the
            shell it used to bring — this page's `CapabilityPageShell` is the
            one column, the one heading and the one scroll container now. */
@@ -698,33 +672,15 @@ export function ConnectorsPage({
             <>
               {ownMatches.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                    <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
-                    {agentScoped ? scopeTabs : null}
-                  </div>
-                  {/* Rendered only once the page has settled (ownMatches is
-                  non-empty), so the grid needs no loading/error/empty state:
-                  the page-level ones cover it. */}
-                  <CatalogGrid
-                    dense
-                    isLoading={false}
-                    isError={false}
-                    onRetry={retry}
-                    isEmpty={false}
-                    empty={null}
-                  >
-                    {ownMatches.map(ownConnectorCard)}
-                  </CatalogGrid>
+                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                  <AccessList items={connectorRows(ownMatches)} />
                 </div>
               ) : null}
               {/* The catalogue's own header: its filters sit with what they
                   filter, under the project's own connectors. */}
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
-                <div className="flex flex-wrap items-center gap-4">
-                  {catalogFilters}
-                  {agentScoped && ownMatches.length === 0 ? scopeTabs : null}
-                </div>
+                <div className="flex flex-wrap items-center gap-4">{catalogFilters}</div>
               </div>
               <ConnectorBrowse
                 state={catalog}
@@ -741,49 +697,7 @@ export function ConnectorsPage({
           ) : (
             <>
               <ConnectorMovesBanner projectId={projectId} />
-              {agentScoped ? (
-                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
-                  {scopeTabs}
-                </div>
-              ) : null}
-              {/* A manifest can hold `connectors: all` beside a hand-written
-                  required list. No card is picked under All to carry the
-                  toggle, so the list is one muted line here instead. */}
-              {agentScoped && grant?.mode === 'all' && required && required.list.length > 0 ? (
-                <p className="text-muted-foreground text-xs">
-                  {tAgentScope('requiredUnderAll', { list: required.list.join(', ') })}
-                </p>
-              ) : null}
-              <CatalogGrid
-                dense
-                // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-                // wording depends on `projectQuery` too. Same gate as the filter row.
-                isLoading={!settled}
-                isError={isError}
-                error={connectorsQuery.error ?? projectQuery.error}
-                onRetry={retry}
-                isEmpty={emptyKind !== null}
-                empty={
-                  emptyKind === 'no-match' ? (
-                    <CatalogNoMatch query={query} />
-                  ) : (
-                    <EmptyState
-                      icon={PlugIcon}
-                      size="sm"
-                      title={tI18nComplete.raw('text51ae0a7e3783')}
-                      description={tI18nComplete.raw('texta3487dfc2132')}
-                      action={
-                        <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
-                          {tI18nComplete.raw('text45bfe4f17af7')}
-                        </Button>
-                      }
-                    />
-                  )
-                }
-              >
-                {filtered.map(ownConnectorCard)}
-              </CatalogGrid>
+              {listBody(filtered)}
             </>
           )}
 

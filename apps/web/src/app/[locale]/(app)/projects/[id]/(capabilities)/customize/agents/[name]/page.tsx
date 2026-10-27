@@ -1,8 +1,14 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 
 import { AgentPage } from '@kortix/ui/customize/agents/agent-page';
+
+// The one Apps component, in agent mode; loaded when Access → Apps opens.
+const AppsView = dynamic(() => import('@/features/apps/apps-view').then((m) => m.AppsView), {
+  ssr: false,
+});
 
 /**
  * /projects/[id]/agent/[name] — one agent, as a page. The Agents tab opened on
@@ -24,7 +30,14 @@ export default function ProjectAgentDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <AgentPage key={agentName} projectId={projectId} agentName={agentName} />
+      <AgentPage
+        key={agentName}
+        projectId={projectId}
+        agentName={agentName}
+        renderApps={({ agentName: name, grant }) => (
+          <AppsView projectId={projectId} surface={{ kind: 'agent', agentName: name }} grant={grant} />
+        )}
+      />
     </div>
   );
 }

@@ -4,9 +4,12 @@ import {
   BookOpenTextIcon,
   CpuIcon,
   FoldersIcon,
+  HardDrivesIcon,
   KeyIcon,
   PlugsConnectedIcon,
+  PuzzlePieceIcon,
   TimerIcon,
+  WrenchIcon,
   type Icon,
 } from '@phosphor-icons/react';
 
@@ -34,11 +37,14 @@ import {
 export type ProjectAdminResourceKey =
   | 'connectors'
   | 'skills'
+  | 'tools'
+  | 'extensions'
   | 'triggers'
   | 'loops'
   | 'models'
   | 'secrets'
   | 'apps'
+  | 'drives'
   | 'repo';
 
 /**
@@ -73,11 +79,14 @@ export interface ProjectAdminResource {
 export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'connectors', icon: PlugsConnectedIcon, capability: 'connectors', host: false },
   { key: 'skills', icon: BookOpenTextIcon, capability: 'skills', host: false },
+  { key: 'tools', icon: WrenchIcon, capability: 'agent', host: false },
+  { key: 'extensions', icon: PuzzlePieceIcon, capability: 'agent', host: false },
   { key: 'triggers', icon: TimerIcon, capability: 'triggers', host: false },
   { key: 'loops', icon: AlarmIcon, capability: 'reminders', host: true },
   { key: 'models', icon: CpuIcon, capability: 'models', host: false },
   { key: 'secrets', icon: KeyIcon, capability: 'secrets', host: false },
   { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
+  { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
   { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
 

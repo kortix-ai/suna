@@ -42,6 +42,8 @@ export interface AgentGrant {
   /** Add or remove one id from the pick list (only meaningful in `specific`). */
   toggle: (id: string) => void;
   setMode: (mode: GrantMode) => void;
+  /** Write the whole grant (a row switch under All keeps the rest: `plainGrantSwitch`). */
+  set?: (next: AgentGrantSetV2) => void;
 }
 
 /**
@@ -77,6 +79,10 @@ export function useAgentGrant(
       if (next === 'all') return onChange('all');
       if (next === 'none') return onChange('none');
       onChange(Array.isArray(value) ? value : []);
+    },
+    set: (next) => {
+      setWantSpecific(Array.isArray(next) && next.length > 0);
+      onChange(next);
     },
   };
 }
@@ -159,4 +165,24 @@ export function GrantModeTabs({
  */
 export function plainGrant(value: AgentCapabilityGrant | undefined): AgentGrantSetV2 | undefined {
   return value === undefined || typeof value === 'string' || Array.isArray(value) ? value : 'all';
+}
+
+/**
+ * One switch over a plain grant (connectors, secrets, Apps): All reads every
+ * row on, and turning one off under All keeps every other id, so the grant
+ * becomes Specific instead of losing the rest. The last one off is None.
+ */
+export function plainGrantSwitch(
+  value: AgentGrantSetV2 | undefined,
+  ids: readonly string[],
+  onChange: (next: AgentGrantSetV2) => void,
+) {
+  const picked = value === 'all' ? [...ids] : Array.isArray(value) ? value : [];
+  return (id: string): { checked: boolean; onCheckedChange: (on: boolean) => void } => ({
+    checked: value === 'all' || picked.includes(id),
+    onCheckedChange: (on) => {
+      const next = on ? [...picked.filter((x) => x !== id), id] : picked.filter((x) => x !== id);
+      onChange(next.length > 0 ? next : 'none');
+    },
+  });
 }

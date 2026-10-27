@@ -106,6 +106,9 @@ function lazyPage<M>(load: () => Promise<M>, pick: (mod: M) => SectionPage) {
 const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
   connectors: lazyPage(() => import('../../customize/connectors/connectors-page'), (m) => m.ConnectorsPage),
   skills: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.SkillsPage),
+  tools: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.ToolsPage),
+  extensions: lazyPage(() => import('../../customize/skills/skills-page'), (m) => m.ExtensionsPage),
+  drives: lazyPage(() => import('../../customize/agents/agent-drives-section'), (m) => m.AgentDrivesSection),
   triggers: lazyPage(() => import('../../customize/triggers/triggers-page'), (m) => m.TriggersPage),
   models: lazyPage(() => import('../../customize/models/models-page'), (m) => m.ModelsPage),
   secrets: lazyPage(() => import('../../customize/secrets/secrets-page'), (m) => m.SecretsPage),
@@ -114,7 +117,7 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
 
 /* Rail labels, keyed by section: the `hardcodedUi.i18nComplete` strings the
    Customize bar and the sidebar already show for these libraries. */
-const RESOURCE_LABEL_KEYS = {
+const RESOURCE_LABEL_KEYS: Partial<Record<ProjectAdminResourceKey, string>> = {
   connectors: 'textc3d2e79ebdd0',
   skills: 'text66d0f523a379',
   triggers: 'texte62f2148a64d',
@@ -123,7 +126,7 @@ const RESOURCE_LABEL_KEYS = {
   secrets: 'textd8707d411d99',
   apps: 'text89dd748442c1',
   repo: 'text91dba14806eb',
-} as const satisfies Record<ProjectAdminResourceKey, string>;
+};
 
 /* A host page owns a full-viewport root (`AppsView` is `h-svh`). Inside this
    pane that box would overflow by the header's height and clip its last row,
@@ -209,6 +212,7 @@ export function ProjectAdminDashboard({
   hostSections?: ProjectAdminHostSections;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAdmin = useI18nTranslations('projectAdmin');
   const isMobile = useIsMobile();
   const searchParams = useUiSearchParams();
   const router = useUiRouter();
@@ -256,8 +260,11 @@ export function ProjectAdminDashboard({
     return PROJECT_ADMIN_RESOURCES.filter((r) => (r.host ? !!hostSections[r.key as 'loops' | 'apps'] : true))
       .filter((r) => !r.capability || allowed.has(r.capability))
       .filter((r) => r.flag !== 'drives' || drivesOn)
-      .map((r) => ({ key: r.key, label: tI18nComplete.raw(RESOURCE_LABEL_KEYS[r.key]), icon: r.icon }));
-  }, [hostSections, allowedTabs, drivesOn, tI18nComplete]);
+      .map((r) => {
+        const legacy = RESOURCE_LABEL_KEYS[r.key];
+        return { key: r.key, label: legacy ? tI18nComplete.raw(legacy) : tAdmin(r.key), icon: r.icon };
+      });
+  }, [hostSections, allowedTabs, drivesOn, tI18nComplete, tAdmin]);
 
   const settingsRows = useMemo<RailRow[]>(
     () =>

@@ -21,6 +21,8 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { Checkbox } from '../../../primitives/checkbox';
+import { Switch } from '../../../primitives/switch';
+import { plainGrantSwitch } from '../../shared/access-list';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import {
   DropdownMenu,
@@ -343,6 +345,12 @@ export function SecretsView({
     [agentGrant, allRows, query],
   );
 
+  // Agent mode: one switch per row, at the row's end, like every Access view.
+  // Turning one off under All keeps the rest (`plainGrantSwitch`).
+  const grantSwitch = agentGrant?.set
+    ? plainGrantSwitch(agentGrant.value, allRows.map((r) => r.identifier), agentGrant.set)
+    : undefined;
+
   const configure = useConfigureThread(projectId);
   const openCreate = () => {
     setDialogRow(null);
@@ -479,17 +487,11 @@ export function SecretsView({
               <Table className="overflow-hidden rounded-md">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    {/* The grant column only under Specific: under All or None the
-                        grant sentence decides every row. */}
-                    {agentGrant?.mode === 'specific' ? (
-                      <TableHead className="w-10">
-                        <span className="sr-only">{tAgentScope('grantedColumn')}</span>
-                      </TableHead>
-                    ) : null}
                     <TableHead>{tI18nComplete.raw('text9b10587f84a2')}</TableHead>
                     <TableHead>{tI18nComplete.raw('text8e37953d23da')}</TableHead>
                     <TableHead>{tI18nComplete.raw('textec5ba0abb717')}</TableHead>
                     <TableHead>{tSharing('whoCanUse')}</TableHead>
+                    {grantSwitch ? <TableHead className="w-24 text-right">{tAgentScope('thisAgent')}</TableHead> : null}
                     <TableHead className="w-[52px]">
                       <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
                     </TableHead>
@@ -500,7 +502,7 @@ export function SecretsView({
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
-                      grant={agentGrant?.mode === 'specific' ? agentGrant : undefined}
+                      grantSwitch={grantSwitch}
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
@@ -512,7 +514,7 @@ export function SecretsView({
                   ))}
                   {agentGrant
                     ? orphans.map((identifier) => (
-                        <MissingSecretRow key={identifier} identifier={identifier} grant={agentGrant} />
+                        <MissingSecretRow key={identifier} identifier={identifier} grantSwitch={grantSwitch} />
                       ))
                     : null}
                 </TableBody>
@@ -828,18 +830,17 @@ function SecretMarks({ row }: { row: SecretRow }) {
  * mark, and the grant checkbox to revoke it. It has no value, delivery or
  * audience, so those cells stay empty.
  */
-function MissingSecretRow({ identifier, grant }: { identifier: string; grant: AgentGrant }) {
+function MissingSecretRow({
+  identifier,
+  grantSwitch,
+}: {
+  identifier: string;
+  grantSwitch?: ReturnType<typeof plainGrantSwitch>;
+}) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const control = grantSwitch?.(identifier);
   return (
     <TableRow>
-      <TableCell className="w-10 align-middle">
-        <Checkbox
-          checked={grant.isGranted(identifier)}
-          disabled={grant.mode !== 'specific'}
-          onCheckedChange={() => grant.toggle(identifier)}
-          aria-label={tI18nComplete('textd4170e74c3b0', { value0: identifier })}
-        />
-      </TableCell>
       <TableCell className="max-w-[260px] align-middle">
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -853,14 +854,24 @@ function MissingSecretRow({ identifier, grant }: { identifier: string; grant: Ag
           </span>
         </div>
       </TableCell>
-      <TableCell colSpan={4} />
+      <TableCell colSpan={3} />
+      <TableCell className="text-right align-middle">
+        {control ? (
+          <Switch
+            checked={control.checked}
+            onCheckedChange={control.onCheckedChange}
+            aria-label={tI18nComplete('textd4170e74c3b0', { value0: identifier })}
+          />
+        ) : null}
+      </TableCell>
+      <TableCell />
     </TableRow>
   );
 }
 
 function SecretTableRow({
   row,
-  grant,
+  grantSwitch,
   canManage,
   viewerId,
   busy,
@@ -870,8 +881,8 @@ function SecretTableRow({
   onDeleteMine,
 }: {
   row: SecretRow;
-  /** Agent scope: the row's grant checkbox leads the row. */
-  grant?: AgentGrant;
+  /** Agent mode: the row's switch, at its end. */
+  grantSwitch?: ReturnType<typeof plainGrantSwitch>;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
@@ -892,16 +903,6 @@ function SecretTableRow({
   // state, and a status hue belongs on the mark (color.md, Accents and status).
   return (
     <TableRow>
-      {grant ? (
-        <TableCell className="w-10 align-middle">
-          <Checkbox
-            checked={grant.isGranted(row.identifier)}
-            disabled={grant.mode !== 'specific'}
-            onCheckedChange={() => grant.toggle(row.identifier)}
-            aria-label={tI18nComplete('textd4170e74c3b0', { value0: row.identifier })}
-          />
-        </TableCell>
-      ) : null}
       {/* The identifier and its marks share one line — the cell used to stack
           three blocks (identifier, → key, a badge row), so a five-row table
           read as fifteen. `→ key` still gets its own muted line, but only on
@@ -969,6 +970,14 @@ function SecretTableRow({
           </div>
         ) : null}
       </TableCell>
+      {grantSwitch ? (
+        <TableCell className="text-right align-middle">
+          <Switch
+            {...grantSwitch(row.identifier)}
+            aria-label={tI18nComplete('textd4170e74c3b0', { value0: row.identifier })}
+          />
+        </TableCell>
+      ) : null}
       <TableCell>
         {!canManageShared ? null : (
           <DropdownMenu>

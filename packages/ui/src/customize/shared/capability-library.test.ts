@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AgentCapabilityGrant } from '@kortix/sdk';
 
-import { capabilityModeGrant } from './agent-capabilities';
+import { capabilityModeGrant } from './capability-library';
 
 const IDS = ['kortix-system', 'kortix-genui', 'pdf'];
 

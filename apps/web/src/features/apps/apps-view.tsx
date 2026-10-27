@@ -2,6 +2,8 @@
 
 import { Button } from '@kortix/ui/button';
 import { Checkbox } from '@kortix/ui/checkbox';
+import { Switch } from '@kortix/ui/switch';
+import { plainGrantSwitch } from '@kortix/ui/customize/shared/agent-resource-scope';
 import { Badge } from '@kortix/ui/badge';
 // Leaf modules, never `customize/agents/agent-page`: that module is the whole
 // agent editor, and this screen is also the project-wide `/apps` route.
@@ -171,17 +173,22 @@ export function AppsView({
   // (`appGrantRows`). An App whose access mode admits agents without it is
   // still grantable, and its card says so.
   const grantNeeded = new Set(appGrantRows(apps.data).filter((r) => r.needsGrant).map((r) => r.id));
-  const selectFor = (app: App): AppSelect | undefined =>
-    // Only under Specific: under All or None the grant sentence decides.
-    agentGrant?.mode === 'specific'
-      ? {
-          checked: agentGrant.isGranted(app.slug),
-          disabled: false,
-          onToggle: () => agentGrant.toggle(app.slug),
-          label: tI18nComplete('textd4170e74c3b0', { value0: app.name }),
-          note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),
-        }
-      : undefined;
+  // One switch per App in every mode, like every Access view: turning one off
+  // under All keeps the rest (`plainGrantSwitch`).
+  const grantSwitch = agentGrant?.set
+    ? plainGrantSwitch(agentGrant.value, (apps.data ?? []).map((item) => item.slug), agentGrant.set)
+    : null;
+  const selectFor = (app: App): AppSelect | undefined => {
+    if (!grantSwitch) return undefined;
+    const control = grantSwitch(app.slug);
+    return {
+      checked: control.checked ?? false,
+      disabled: false,
+      onToggle: () => control.onCheckedChange?.(!control.checked),
+      label: tI18nComplete('textd4170e74c3b0', { value0: app.name }),
+      note: grantNeeded.has(app.slug) ? null : tAgentApps('openWithoutGrant'),
+    };
+  };
   // Mirror the open App into `?app=` so a reload or a copied link reopens it.
   // Debounced so a fast open/close writes one history entry, not two.
   // `replaceState` touches only the `app` key and does not re-run the route.
@@ -523,14 +530,8 @@ export function AppCard({
           opens the App. */}
       {select ? (
         <div className="mt-3 flex items-center gap-2">
-          <Checkbox
-            checked={select.checked}
-            disabled={select.disabled}
-            onCheckedChange={select.onToggle}
-            aria-label={select.label}
-          />
           {/* The caption opens the App as the thumbnail does: its own button,
-              a sibling of the checkbox. */}
+              a sibling of the switch. */}
           <button
             type="button"
             onClick={onOpen}
@@ -543,6 +544,12 @@ export function AppCard({
               {select.note}
             </Badge>
           ) : null}
+          <Switch
+            checked={select.checked}
+            disabled={select.disabled}
+            onCheckedChange={select.onToggle}
+            aria-label={select.label}
+          />
         </div>
       ) : null}
     </li>

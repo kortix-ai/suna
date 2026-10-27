@@ -1867,17 +1867,6 @@ const catalog = {
       "noOutput": "No output"
     }
   },
-  "agentApps": {
-    "title": "Apps",
-    "description": "Kortix Apps this agent may open when the App's access is restricted or private.",
-    "manageApps": "All Apps",
-    "allLabel": "Every App in this project, including ones added later.",
-    "needsGrant": "Grant decides",
-    "openWithoutGrant": "No grant needed",
-    "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
-    "emptyTitle": "No Apps yet",
-    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
-  },
   "agentScope": {
     "modeAll": "All",
     "modeSpecific": "Specific",
@@ -8625,7 +8614,15 @@ const catalog = {
     "builtinOn": "{on} of {total} on",
     "toolsAccess": "Tool access for this agent",
     "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
-    "loadErrorList": "Could not load this list."
+    "loadErrorList": "Could not load this list.",
+    "skillsAccess": "Skill access for this agent",
+    "noMatch": "Nothing matches your search.",
+    "skillsSearch": "Search skills",
+    "toolsSearch": "Search tools",
+    "extensionsSearch": "Search extensions",
+    "skillsProjectDescription": "Instructions agents load when a task matches. The project registers its own; Kortix ships the built-in ones.",
+    "toolsProjectDescription": "Every tool an agent of this project can call. An agent gets the ones its Access grants.",
+    "extensionsProjectDescription": "Code that runs inside sessions. The project registers its own; Kortix runs the platform ones."
   },
   "agentMounts": {
     "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",
@@ -8654,7 +8651,16 @@ const catalog = {
     "alreadyMounted": "Mounted",
     "changeFailed": "Could not change this mount.",
     "loadError": "Could not load this agent's mounts.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "title": "Drives",
+    "projectLead": "Folders from Files that every new session of this project mounts. A change applies at once.",
+    "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
+    "pickerProjectDescription": "Pick a folder in Files. Every session of this project sees it under /drives."
+  },
+  "projectAdmin": {
+    "tools": "Tools",
+    "extensions": "Extensions",
+    "drives": "Drives"
   }
 };
 
