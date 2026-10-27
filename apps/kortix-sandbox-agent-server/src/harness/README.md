@@ -1001,7 +1001,7 @@ pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
 `@earendil-works/pi-*` peers as virtual modules: a compiled probe loaded a
 TypeScript package importing both in 24 ms, and its tool ran.
 
-In-process extensions are `InlineExtension`s (`{ name, factory }`): `subagents`,
+In-process extensions are `InlineExtension`s (`{ name, factory }`): `kortix-subagents`,
 the hidden `kortix-turn`, which adds a prompt's `system` field for that turn,
 the hidden `kortix-nested-calls` gate and `codemode`.
 
@@ -1043,7 +1043,7 @@ Child sessions have no `AgentSession`; the runtime routes their tool, context an
 provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
-`subagents` is the `agent` tool (OpenCode called it `task`): input `{
+`kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
 description, prompt, subagent_type?, agent?, task_id? }`, the child id in the
 part's `metadata.sessionId` (set while the child runs), output `task_id: <id>`
 + `<task_result>`. It registers under two names with one handler — `agent` (use

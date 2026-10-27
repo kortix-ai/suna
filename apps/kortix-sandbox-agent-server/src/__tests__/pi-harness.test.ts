@@ -1775,7 +1775,7 @@ describe('pi packages', () => {
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
     expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
     const status = r.service.runtime()!.extensionStatus()
-    expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
+    expect(status.loaded).toEqual(expect.arrayContaining(['kortix-subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
     // A pre-built package still brings its skills: pi reads them from its folder.
     expect(((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name)).toContain('package-skill')
     expect(status.failed).toEqual([
@@ -2655,7 +2655,7 @@ describe('config releases on pi', () => {
     })
     expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('release')
     expect(await skillsOf(r)).toEqual([['review', 'review from the release']])
-    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'subagents')
+    const loaded = r.service.runtime()!.extensionStatus().loaded.filter((name) => name !== 'kortix-subagents')
     expect(loaded).toHaveLength(1)
     expect(loaded[0]!.startsWith(join(dir, 'store')) && loaded[0]!.endsWith('/extensions/package.ts')).toBe(true)
     const first = await ask(r, 'first question')
@@ -4290,7 +4290,7 @@ describe('kortix.yaml v3 on pi', () => {
     })
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
-    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
+    expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['kortix-subagents'], failed: [] })
     // No prompt template from a harness folder: the registered skills are the only rows.
     const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
     expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])

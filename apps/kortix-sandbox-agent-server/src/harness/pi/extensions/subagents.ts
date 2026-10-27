@@ -159,7 +159,7 @@ function describe(types: Map<string, SubagentType>): string {
 
 /** The extension, bound to the runtime that hosts it. */
 export function subagents(host: KortixHost): InlineExtension {
-  return { name: 'subagents', factory: (pi) => register(pi, host) }
+  return { name: 'kortix-subagents', factory: (pi) => register(pi, host) }
 }
 
 /** The child agent name an inline ephemeral spec runs under; labels the child's messages. */
