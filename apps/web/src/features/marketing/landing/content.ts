@@ -258,8 +258,8 @@ export type UseCase = {
  * The arithmetic is derived from the columns beside it. Edit one, re-derive it.
  */
 export const useCases = {
-  eyebrow: 'By role',
-  title: 'It picks up work from every team and runs it start to finish.',
+  eyebrow: 'Outcomes',
+  title: 'Outcomes for every team, delivered end to end.',
   sub: 'Outbound, error triage, the books, the Monday report — real jobs, on real machines, landing as changes you can read.',
   /** Micro-label in the corner of the artifact frame. */
   artifactLabel: 'Output',
@@ -268,7 +268,7 @@ export const useCases = {
       id: 'sales',
       role: 'Sales',
       tag: 'Sales',
-      headline: 'Builds the outbound campaign and runs it.',
+      headline: 'Outbound pipeline, built and worked end to end.',
       body: 'It pulls a lead list from Apollo, enriches every account, and writes a sequence per lead. Put Ask on the send step and it stops with you before anything goes out.',
       artifact: {
         kind: 'thread',
@@ -290,7 +290,7 @@ export const useCases = {
       id: 'engineering',
       role: 'Engineering',
       tag: 'Engineering',
-      headline: 'Reads the logs, ships the fix.',
+      headline: 'Production errors fixed and in review by morning.',
       body: 'Every morning it sweeps the day’s errors, groups them, reproduces the worst one on its own machine, patches it and opens a change request against main.',
       artifact: {
         kind: 'diff',
@@ -310,7 +310,7 @@ export const useCases = {
       id: 'marketing',
       role: 'Marketing',
       tag: 'Marketing',
-      headline: 'Runs the SEO program week after week.',
+      headline: 'An SEO program that ships every week.',
       body: 'It tracks the queries you care about, finds the pages losing ground, rewrites them against the brief, and opens each rewrite as a change request.',
       artifact: {
         kind: 'sheet',
@@ -333,7 +333,7 @@ export const useCases = {
       id: 'finance',
       role: 'Finance',
       tag: 'Finance',
-      headline: 'Does the books, not just the summary.',
+      headline: 'The books reconciled, not just summarized.',
       body: 'It reconciles the ledger against the bank, chases the receipts that are missing, attaches them, and closes the month with the variance explained.',
       artifact: {
         kind: 'sheet',
@@ -355,7 +355,7 @@ export const useCases = {
       id: 'people',
       role: 'People',
       tag: 'People',
-      headline: 'Sources the pipeline, not just the inbox.',
+      headline: 'A sourced candidate pipeline, every week.',
       body: 'It searches the sources you connect for people matching the brief, scores each against the written bar, and drafts the first approach for every one worth it.',
       artifact: {
         kind: 'sheet',
@@ -377,7 +377,7 @@ export const useCases = {
       id: 'product',
       role: 'Product',
       tag: 'Product',
-      headline: 'Turns what customers say into what ships.',
+      headline: 'Customer feedback turned into shipped changes.',
       body: 'It reads every piece of feedback that came in, groups it into themes you can act on, and takes the top one all the way to a change request.',
       artifact: {
         kind: 'checks',
@@ -395,7 +395,7 @@ export const useCases = {
       id: 'data-science',
       role: 'Data Science',
       tag: 'Data Science',
-      headline: 'Has Monday’s numbers before Monday.',
+      headline: 'Monday’s numbers, ready before Monday.',
       body: 'It queries the warehouse on a schedule, checks the result against last week, draws the chart and posts the whole thing to Slack while you are asleep.',
       artifact: {
         kind: 'chart',

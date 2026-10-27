@@ -104,7 +104,7 @@ export const TEAMS: Team[] = [
   {
     id: 'support',
     label: 'Support',
-    headline: 'Works the queue, stops for you on anything sensitive.',
+    headline: 'Every ticket answered, the sensitive ones held for you.',
     body: 'It triages every inbound thread, resolves what your docs and codebase can answer, routes escalations to the right team and turns repeat questions into help articles.',
     prompt: 'Triage the support queue and route anything about to breach its SLA.',
     result: 'Queue triaged, escalations routed',
@@ -114,7 +114,7 @@ export const TEAMS: Team[] = [
   {
     id: 'customer-success',
     label: 'Customer Success',
-    headline: 'Sees churn coming before the renewal call.',
+    headline: 'Churn risk flagged before the renewal call.',
     body: 'It scores every account on usage, support and billing signals, flags the ones at risk with a reason, and drafts the QBR deck and renewal packet for the owner.',
     prompt: 'Score our accounts for churn risk and draft outreach for the five most at risk.',
     result: 'At-risk list posted to #cs',
@@ -132,7 +132,7 @@ export const TEAMS: Team[] = [
   {
     id: 'operations',
     label: 'Operations',
-    headline: 'Runs the routine so nobody has to remember it.',
+    headline: 'The routine done on schedule, without reminders.',
     body: 'It onboards new hires and vendors, posts the standup, and takes any task you ask for in Slack across every tool it is connected to.',
     prompt: 'Onboard our new designer: accounts, groups and a first-week checklist.',
     result: 'Accounts ready, held for your approval',
@@ -142,7 +142,7 @@ export const TEAMS: Team[] = [
   {
     id: 'security',
     label: 'Security',
-    headline: 'Watches for drift and works the access queue.',
+    headline: 'Drift caught and the access queue cleared.',
     body: 'It sweeps resources against policy, triages reported phishing, prepares least-privilege grants and runs offboarding. Every change waits for a human.',
     prompt: 'Check today’s resources against policy and propose the fixes.',
     result: 'Findings filed, fixes in review',
@@ -152,7 +152,7 @@ export const TEAMS: Team[] = [
   {
     id: 'legal',
     label: 'Legal',
-    headline: 'Turns NDAs around in minutes, not days.',
+    headline: 'NDAs turned around in minutes, not days.',
     body: 'It reviews every inbound contract against your playbook, redlines the non-standard terms and works data-subject requests to their deadline. Counsel signs; it never does.',
     prompt: 'Review this NDA against our playbook and redline anything non-standard.',
     result: 'Redlines ready for counsel',

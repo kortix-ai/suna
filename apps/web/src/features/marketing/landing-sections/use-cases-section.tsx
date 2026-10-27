@@ -25,9 +25,9 @@ export type UseCaseItem = { slug: string; url: string; title: string; team: Team
  */
 
 const COPY = {
-  eyebrow: 'Use cases',
-  title: 'Who it’s for,',
-  titleMuted: 'and what they get.',
+  eyebrow: 'Outcomes',
+  title: 'What Kortix delivers,',
+  titleMuted: 'end to end, for every team.',
   you: 'You',
 };
 
