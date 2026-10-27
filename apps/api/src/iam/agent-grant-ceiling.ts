@@ -43,8 +43,8 @@ type Items = string[] | 'all';
 
 type ListDimension = Exclude<GrantDimension, 'policy_sets'>;
 const DIMENSIONS: ListDimension[] = ['permissions', 'connectors', 'secrets', 'apps'];
-/** The action that may change `policy_sets` (see `GrantDimension`). */
-export const POLICY_SET_WRITE_ACTION = 'project.connector.write';
+/** The IAM permission that may change `policy_sets` (see `GrantDimension`). Not an audit action. */
+export const POLICY_SET_WRITE_PERMISSION = 'project.connector.write';
 // Secret identifiers match case-insensitively (agentMayUseEnv), App slugs lowercase (agentMayOpenApp).
 const KEY: Record<ListDimension, (item: string) => string> = {
   permissions: (s) => s,
@@ -106,7 +106,7 @@ export async function findGrantEscalation(input: {
       if (missing !== undefined) return { target, dimension: d, item: missing };
     }
     const changed = changedPolicySet(input.before.get(target), grant);
-    if (changed !== null && !(await input.writerMayPerform(POLICY_SET_WRITE_ACTION))) {
+    if (changed !== null && !(await input.writerMayPerform(POLICY_SET_WRITE_PERMISSION))) {
       return { target, dimension: 'policy_sets', item: changed };
     }
   }
@@ -115,7 +115,7 @@ export async function findGrantEscalation(input: {
   for (const [target, grant] of input.before) {
     if (input.after.has(target)) continue;
     const slug = Object.keys(grant.policySets ?? {}).sort()[0];
-    if (slug !== undefined && !(await input.writerMayPerform(POLICY_SET_WRITE_ACTION))) {
+    if (slug !== undefined && !(await input.writerMayPerform(POLICY_SET_WRITE_PERMISSION))) {
       return { target, dimension: 'policy_sets', item: slug };
     }
   }
@@ -150,7 +150,7 @@ export async function holdsEveryGrant(
   // A writer bound by a policy set could push a commit that moves it off that
   // set: it never holds everything.
   if (writer.policySets && Object.keys(writer.policySets).length > 0) return false;
-  // `policySets` on the target makes the check ask for POLICY_SET_WRITE_ACTION.
+  // `policySets` on the target makes the check ask for POLICY_SET_WRITE_PERMISSION.
   const everything: AgentGrant = {
     agent: '*',
     permissions: 'all',
@@ -199,9 +199,9 @@ export async function assertNoGrantEscalationBy(
   if (!escalation) return;
   if (escalation.dimension === 'policy_sets') {
     throw buildDenialError(
-      POLICY_SET_WRITE_ACTION,
+      POLICY_SET_WRITE_PERMISSION,
       'agent_grant_escalation',
-      `Agent "${writer.agent}" cannot change the policy set of agent "${escalation.target}" on connector "${escalation.item}": changing policy_sets needs ${POLICY_SET_WRITE_ACTION}.`,
+      `Agent "${writer.agent}" cannot change the policy set of agent "${escalation.target}" on connector "${escalation.item}": changing policy_sets needs ${POLICY_SET_WRITE_PERMISSION}.`,
     );
   }
   const what = escalation.dimension === 'permissions' ? `"${escalation.item}"` : `${escalation.dimension} "${escalation.item}"`;
