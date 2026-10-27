@@ -195,3 +195,19 @@ test("each integration's events ride their own queue; Telegram keeps the shared 
     await db.delete(jobQueue).where(eq(jobQueue.jobKey, `telegram:src:${telegramId}`));
   }
 });
+
+test('one queue never takes every slot: one stays for the other queues', async () => {
+  const q = queue();
+  const gate = gated();
+  registerJobHandler(q, gate.run, 60_000);
+  for (let i = 0; i < 4; i++) await enqueueJob(q, `k${i}`);
+  const settled = settles();
+
+  expect(await runJobBatch(4, { wait: false, onSlotFree: settled.onSlotFree })).toBe(3);
+  expect(await statuses(q)).toEqual(['queued/0', 'queued/1', 'queued/1', 'queued/1']);
+
+  gate.open();
+  await settled.reached(3);
+  expect(await runJobBatch()).toBe(1);
+  expect(await statuses(q)).toEqual(['done/1', 'done/1', 'done/1', 'done/1']);
+});

@@ -152,8 +152,9 @@ export async function pruneFinishedJobs(days = 7): Promise<void> {
 
 /**
  * Claim due jobs into this replica's free slots and start them: at most `limit`
- * jobs at once, at most `batch` of one queue. A slow job holds only its own
- * slot, so no other queue waits for it. The queue claimed first rotates, so a
+ * jobs at once, at most `batch` of one queue, and never every slot for one
+ * queue (one stays for the others). A slow job holds only its own slot, so no
+ * other queue waits for it. The queue claimed first rotates, so a
  * busy queue cannot take every slot that frees. The shutdown drain waits for
  * started jobs. `wait: false` (the worker) returns once they started, and
  * `onSlotFree` runs as each one settles; otherwise the call waits for them.
@@ -167,7 +168,8 @@ export async function runJobBatch(
   const started: Promise<void>[] = [];
   for (let i = 0; i < queues.length; i++) {
     const [queue, handler] = queues[(first + i) % queues.length]!;
-    const free = Math.min((handler.batch ?? limit) - handler.running, limit - running);
+    const cap = Math.min(handler.batch ?? limit, Math.max(1, limit - 1));
+    const free = Math.min(cap - handler.running, limit - running);
     for (const job of await claimJobs([queue], free, handler.visibilityMs)) {
       handler.running += 1;
       running += 1;
