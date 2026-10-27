@@ -54,6 +54,8 @@ const QUEUE = 'integration.events.email';
 /** Resend's API as seen by the suite: every call, and GET answers to fail. */
 let calls: Array<{ url: string; method: string; auth: string | null; body: unknown }> = [];
 const failingGets = new Map<string, { status: number; times: number }>();
+/** The next body reads answer a subject and a text with U+0000 in them. */
+let nulBodies = false;
 const originalFetch = globalThis.fetch;
 
 function email(inbox: string, n: number, thread: string, opts: { type?: string; from?: string } = {}): ResendInboxEmailReceivedEvent {
@@ -136,7 +138,9 @@ beforeAll(() => {
     // Retrieve Thread Email answers the body; the reply answers its id.
     const answer =
       method === 'GET'
-        ? { id: 'eml', from: 'Sender <sender@example.test>', to: ['inbox@example.test'], subject: 'A question', text: 'Hello?' }
+        ? nulBodies
+          ? { id: 'eml', from: 'Sender <sender@example.test>', to: ['inbox@example.test'], subject: 'A\u0000 question', text: 'Hello\u0000?' }
+          : { id: 'eml', from: 'Sender <sender@example.test>', to: ['inbox@example.test'], subject: 'A question', text: 'Hello?' }
         : { id: 'reply-1' };
     return new Response(JSON.stringify(answer), { status: 200 });
   }) as typeof fetch;
@@ -145,6 +149,7 @@ beforeAll(() => {
 afterEach(() => {
   calls = [];
   failingGets.clear();
+  nulBodies = false;
 });
 
 afterAll(() => {
@@ -199,6 +204,13 @@ describe('email to a deleted workspace', () => {
   test('a new thread gets its own reply', async () => {
     await run(3, 'b');
     expect(replies().map((c) => c.url)).toEqual([expect.stringContaining(`/emails/eml-${INBOX}-3/reply`)]);
+  });
+
+  test('an email whose subject and body carry U+0000 still reaches the lifecycle (its command row is jsonb)', async () => {
+    nulBodies = true;
+    await run(5, 'nul');
+    // The real create wrote its command row and was refused for the deleted workspace: one reply.
+    expect(replies().map((c) => c.url)).toEqual([expect.stringContaining(`/emails/eml-${INBOX}-5/reply`)]);
   });
 
   test('an outbound email event is never stored or run', async () => {

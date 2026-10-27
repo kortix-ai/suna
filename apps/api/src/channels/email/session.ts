@@ -8,6 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 import { logger } from '../../lib/logger';
 import { ensureEmailSessionBinding } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
@@ -126,7 +127,9 @@ export async function handleEmailEvent(event: IntegrationEvent, run: { finalAtte
     return;
   }
   const full = await threadEmailLoader({ apiKey, inboxId, threadId, emailId });
-  const email: InboundEmail = {
+  // The sender controls every field. One U+0000 in the subject or the body
+  // fails the session's jsonb writes on every attempt, so the email dead-letters.
+  const email: InboundEmail = jsonbSafeValue({
     inboxId,
     threadId,
     emailId,
@@ -139,7 +142,7 @@ export async function handleEmailEvent(event: IntegrationEvent, run: { finalAtte
       filename: a.filename ?? null,
       size: a.size ?? null,
     })),
-  };
+  });
   await routeChannelMessage(
     emailPort,
     {
