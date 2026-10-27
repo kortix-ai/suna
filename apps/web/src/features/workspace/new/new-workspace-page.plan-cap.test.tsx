@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test';
-import type { KortixProject } from '@kortix/sdk';
-import type { NewWorkspaceFormState } from '@kortix/ui/workspace/new/new-workspace-form';
+import { configureKortix } from '@kortix/sdk';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { UiProvider, defaultUiNavigation } from '@kortix/ui/providers/ui-provider';
 import { createElement, forwardRef, type ReactNode } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -17,19 +18,34 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
  * runs) and shows the cap state up front: the cap reason, the Upgrade
  * affordance, and Create disabled — before any submit.
  *
- * The quota hook is the mocked boundary here (its fetch and caching are the
+ * The quota hook is a mocked boundary here (its fetch and caching are the
  * SDK's concern, not the page's); everything between the quota payload and
  * the DOM — the disabled submit, the cap message, the Upgrade dialog wiring —
- * is the real page.
+ * is the real page. Creation runs the real hook, orchestration and SDK transport;
+ * only the configured HTTP fetch returns synthetic provision responses.
  */
-
-const { runCreate } = await import('@kortix/ui/workspace/new/use-create-workspace');
 
 let creates = 0;
 let provisioned = false;
 let query = '';
 const destinations: string[] = [];
-let completeCreate: ((projectId: string) => void) | undefined;
+let failCreate = false;
+const payloads: string[] = [];
+configureKortix({
+  backendUrl: 'https://pairing.example.test/v1',
+  getToken: async () => 'synthetic-token',
+  fetch: async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith('/projects/provision-stream')) {
+      creates += 1;
+      payloads.push(String(init?.body));
+      if (failCreate) return Response.json({ error: 'Temporary outage' }, { status: 502 });
+      provisioned = true;
+      return new Response('data: {"type":"done","project":{"project_id":"created-project","account_id":"user-1"}}\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  },
+});
 
 /** The quota payload the mocked `useProjectQuota` returns; undefined = in flight. */
 let quotaData: { capped: boolean; message: string | null } | undefined;
@@ -72,42 +88,6 @@ mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
 // STORE stays real — the Upgrade click is asserted through it.
 mock.module('@/features/billing/global-upgrade-modal', () => ({
   GlobalUpgradeModal: () => createElement('div', { 'data-testid': 'upgrade-modal-stub' }),
-}));
-mock.module('@kortix/ui/workspace/new/use-create-workspace', () => ({
-  useCreateWorkspace: (options?: { enterProject?: (projectId: string) => void }) => {
-    completeCreate = options?.enterProject;
-    return {
-      create: async (state: NewWorkspaceFormState) => {
-        creates += 1;
-        if (!options?.enterProject) return;
-        // Real create orchestration; only its network/cache/storage boundaries
-        // are injected. The account starts with no projects.
-        await runCreate(state, [{ account_id: 'user-1', name: 'Personal', account_role: 'owner', is_primary_owner: true }], 'user-1', {
-          attemptKeyFor: () => 'synthetic-attempt',
-          clearAttemptKey: () => {},
-          runCreateAttempt: async () => {
-            provisioned = true;
-            return { project_id: 'created-project', account_id: 'user-1' } as KortixProject;
-          },
-          onPhase: () => {},
-          createGitHubRepoProject: async () => { throw new Error('unexpected GitHub create'); },
-          importGitHubRepoProject: async () => { throw new Error('unexpected GitHub import'); },
-          primeProjectCache: () => {},
-          invalidateProjects: () => {},
-          writeLastProjectId: () => {},
-          projectsCachedForAccount: () => [],
-          completeOnboarding: async () => { throw new Error('first project must remain unstamped'); },
-          enterProject: options.enterProject,
-          now: () => 0,
-        });
-      },
-      status: 'idle',
-      error: null,
-      retry: () => {},
-      canRetry: false,
-      limitReached: false,
-    };
-  },
 }));
 // The top bar and the Advanced (GitHub source) field are not what these tests
 // assert; the Advanced field also runs react-query git-account queries. Stubs
@@ -224,7 +204,14 @@ function findButtonWithText(renderer: ReactTestRenderer, text: string): ReactTes
 async function renderPage(): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
-    renderer = create(createElement(NewWorkspacePage));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    renderer = create(
+      <QueryClientProvider client={client}>
+        <UiProvider useViewerId={() => 'user-1'} navigation={{ ...defaultUiNavigation, useRouter: () => ({ push: () => {}, replace: (path: string) => { destinations.push(path); }, back: () => {}, prefetch: () => {} }) }}>
+          <NewWorkspacePage />
+        </UiProvider>
+      </QueryClientProvider>,
+    );
   });
   if (!renderer) throw new Error('page did not render');
   return renderer;
@@ -320,7 +307,6 @@ test('the first project created from the pairing entry lands on My computer', as
   await act(async () => {
     findForm(renderer).props.onSubmit({ preventDefault: () => {} });
   });
-  expect(completeCreate).toBeDefined();
   expect(provisioned).toBe(true);
   expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
   await unmount(renderer);
@@ -331,8 +317,26 @@ test('ordinary creation and hostile destinations keep the default project landin
   for (const value of ['', 'connect=https://example.test', 'connect=//example.test', 'connect=computer/../admin']) {
     query = value;
     const renderer = await renderPage();
-    expect(completeCreate).toBeUndefined();
+    await act(async () => { findForm(renderer).props.onSubmit({ preventDefault: () => {} }); });
+    expect(destinations.at(-1)).toBe('/projects/created-project');
     await unmount(renderer);
   }
+  query = '';
+});
+
+test('retry resends the failed attempt and retains the computer destination', async () => {
+  query = 'connect=computer';
+  failCreate = true;
+  const renderer = await renderPage();
+  await type(renderer, 'Original name');
+  await act(async () => { findForm(renderer).props.onSubmit({ preventDefault: () => {} }); });
+  expect(findButtonWithText(renderer, 'Try again')).not.toBeNull();
+  await type(renderer, 'Edited after failure');
+  failCreate = false;
+  await act(async () => { findButtonWithText(renderer, 'Try again')?.props.onClick(); });
+  expect(JSON.parse(payloads.at(-1) ?? '{}').name).toBe('Original name');
+  expect(JSON.parse(payloads.at(-1) ?? '{}').idempotency_key).toBe(JSON.parse(payloads.at(-2) ?? '{}').idempotency_key);
+  expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
+  await unmount(renderer);
   query = '';
 });
