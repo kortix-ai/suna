@@ -115,7 +115,7 @@ cannot satisfy the request, stop and ask the human before any explicit
 ### Choosing `owner: project` vs `owner: me` — get this right UP FRONT
 
 Every connect link creates an account whose **owner is set at authorization**.
-Its owner can later SHARE a private account (Share in Customize, or
+Its owner can later SHARE a private account (Share in Project admin → Connectors, or
 `kortix connectors connections share <id>`), which turns it into a shared
 account — right only when it was signed in with a shared identity, never a
 person's own login. A shared account never goes back to private. So decide the
@@ -282,7 +282,7 @@ You cannot set or change the audience (`403`); a person does. When a person
 gives you a credential that acts as THEM or holds sensitive data (payroll, HR,
 bank, a personal login), store it, then tell them the one-line fix:
 *"It is usable by everyone in the project right now. To keep it to you, run
-`kortix secrets share <NAME> --user me` or pick **Only you** in Customize →
+`kortix secrets share <NAME> --user me` or pick **Only you** in Project admin →
 Secrets."* Say it once; do not ask twice. When you mint a link for a personal
 value, tell them the link page can keep it to them (**Only the person who
 asked**). For a value only a trigger or schedule of one agent needs, suggest

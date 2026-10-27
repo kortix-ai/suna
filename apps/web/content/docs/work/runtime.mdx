@@ -80,9 +80,9 @@ A session's files live in four places. Pick the store by what you need.
 | Store | What it holds | Read and write it |
 | --- | --- | --- |
 | Live workspace | `/workspace` in the running sandbox, with uncommitted work and build output. | `kortix sessions files <session_id> ls`, `status`, `find`, `write`, `touch`, `mkdir`, `mv`, `rm`. `kortix sessions cp <session_id>:<path> <dst>` copies files, `-r` for a directory. Both wake a stopped sandbox. |
-| Committed repository | What a branch holds in git. | `kortix files ls`, `cat`, `search`, `history`, `diff`, `download`, with `--ref <branch>`. The project's **Files** page, not **Customize** → **Files**. No sandbox needed. |
+| Committed repository | What a branch holds in git. | `kortix files ls`, `cat`, `search`, `history`, `diff`, `download`, with `--ref <branch>`. The sidebar **Files** entry, or **Project admin** → **Repo** when shared folders are on. No sandbox needed. |
 | Session attachments | Files people attached to the session, and copies of files the agent showed. Saved at the end of every turn. | `kortix sessions attachments <session_id>`, with `--download <attachment_id>` or `--all`, and `--out <dir>`. Works while the session is stopped. |
-| Shared folders | Folders for the whole project, kept in sync with sessions. | **Customize** → **Files**. A new session mounts them under `/drives`. |
+| Shared folders | Folders for the whole project, kept in sync with sessions. | The sidebar **Files** entry (`/projects/<id>/drive`). **Project admin** → **Drives** picks the folders every session of the project mounts. A new session mounts them under `/drives`. |
 
 `kortix sessions cp` also copies between two sandboxes: `kortix sessions cp <session_a>:/workspace/out <session_b>:/workspace/in -r`. Paths in `kortix sessions files` resolve under `/workspace` unless they start with `/workspace`, `/tmp`, `/home` or `/opt`.
 
@@ -93,7 +93,7 @@ Every person has a private folder, and any folder can be shared with people, gro
 - the folders the agent or the whole project has a grant on, at `/drives/<folder name>`;
 - in a private session that the person started, also that person's own folder at `/drives/me` and every folder shared with them or their groups.
 
-Shared folders need the Files feature. It needs Platinum and the project's **Volumes** flag (**Customize** → **Settings** → **Feature flags**). With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
+Shared folders need the Files feature. It needs Platinum and the project's **Volumes** flag (**Project admin** → **Feature flags**). With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
 
 ## The image and templates
 
@@ -101,7 +101,7 @@ A sandbox image has two layers: your Dockerfile or image, and the Kortix runtime
 
 ### Declare a template
 
-Templates live under `sandbox.templates` in `kortix.yaml`. You can also create one in **Customize** → **Settings** → **Sandbox templates**. `slug`, `name`, `dockerfile` or `image`, `entrypoint`, `cpu`, `memory`, `disk` and `container_runtime` are the fields. `sandbox.default` names the template that sessions use. Full rules and the template order are in the [manifest reference](/docs/project/manifest#sandbox).
+Templates live under `sandbox.templates` in `kortix.yaml`. You can also create one in **Project admin** → **Sandbox templates**. `slug`, `name`, `dockerfile` or `image`, `entrypoint`, `cpu`, `memory`, `disk` and `container_runtime` are the fields. `sandbox.default` names the template that sessions use. Full rules and the template order are in the [manifest reference](/docs/project/manifest#sandbox).
 
 ### What the runtime layer adds
 
@@ -220,14 +220,14 @@ A new session gets its provider in this order:
 
 ### Pin a provider for a project
 
-1. Open **Customize** → **Settings** → **Sandbox templates**.
+1. Open **Project admin** → **Sandbox templates**.
 2. Under **Routing**, pick a provider, or the automatic choice to remove the pin.
 
 From a terminal, run `kortix sandboxes provider <name>`. `kortix sandboxes provider --clear` removes the pin. `kortix sandboxes provider status` shows the latest switch.
 
 - A pin needs the `project.settings.write` permission. Only a person can set it. A session token gets `403` with code `agent_session_forbidden`. A session that needs another provider passes `provider` on create instead.
 - A switch to a different provider prepares the project's images on the target, verifies them, then activates the pin. New sessions use the old provider until the switch completes. The CLI follows the switch for up to 600 seconds (`--timeout <sec>`).
-- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. After a new sandbox image, the first session can wait while Platinum copies the image to the region. If the copy fails, the session starts in the home region instead. That sandbox keeps the home region on restart. A replacement sandbox asks for the US region again. The flag shows only when the operator configured a US region.
+- The **US Region** flag (**Project admin** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. After a new sandbox image, the first session can wait while Platinum copies the image to the region. If the copy fails, the session starts in the home region instead. That sandbox keeps the home region on restart. A replacement sandbox asks for the US region again. The flag shows only when the operator configured a US region.
 
 ## Troubleshooting
 

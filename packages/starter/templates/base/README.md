@@ -10,6 +10,6 @@ below for you, with your permissions.
 | `skills/<name>/SKILL.md` | Skills an agent loads when a task matches. |
 | `memory/` | The project's memory. Agents read and add to it. |
 
-Add an agent, a skill or a trigger by asking My Kortix, in **Customize**, or by
+Add an agent, a skill or a trigger by asking My Kortix, in **Customize** and **Project admin**, or by
 editing `kortix.yaml`. Check the file with `kortix validate`. The full reference
 is at https://kortix.com/docs/project/manifest.

@@ -38,7 +38,7 @@ To create a project, open the project menu at the top of the sidebar and select 
 | Bell | Your notification inbox. Shown when the project has the `notification_center` flag on. |
 | Search | Opens the command palette. |
 | **New session** | Opens the project home with an empty composer. |
-| **Customize** | Every project setting. See [Where settings live](#where-settings-live). |
+| **Customize** | The project's agents, **Review**, **Members** and **Settings**. **Settings** opens Project admin. See [Where settings live](#where-settings-live). |
 | **Apps** | The project's Apps. Available in every project. See [Apps](/docs/apps). |
 | Session list | Your sessions, grouped and filtered. See below. |
 | **Review** | Work waiting on a person before it can continue, such as change requests. See [Git](/docs/git). |
@@ -121,32 +121,33 @@ Only the session owner or a project manager sees **Restart**, **Reload config**,
 
 Kortix has three settings surfaces. Each one has a different scope.
 
-### Customize: the project
+### Customize and Project admin: the project
 
-Select **Customize** in the sidebar. Every tab is at `/projects/<id>/customize/<tab>`.
+Select **Customize** in the sidebar. It lists My Kortix, then the project's agents. Each agent opens its own page at `/projects/<id>/customize/agents/<name>`, with that agent's Access and Runtime. Below the agents are **All agents**, **New agent**, **Review**, **Members** and **Settings**. Read [Agents & permissions](/docs/project/agents).
 
-| Tab | What it holds | Read |
+**Settings** opens Project admin. Every section is at `/projects/<id>/admin/<section>`. Project admin holds the project-wide libraries that an agent is granted from, and every project setting.
+
+| Section | What it holds | Read |
 | --- | --- | --- |
-| **Agents** | The project's agents and what each one may do | [Agents & permissions](/docs/project/agents) |
-| **Skills** | The project's skills | [Agents & permissions](/docs/project/agents) |
 | **Connectors** | Connectors and their accounts. The **Channels** scope holds Slack, Teams and email. | [Connectors](/docs/connect/connectors), [Slack, Teams & email](/docs/connect/channels) |
-| **Triggers** | Schedules, webhooks, connector events and App events | [Triggers & reminders](/docs/connect/triggers) |
-| **Models** | Models, providers and provider keys | [Models](/docs/project/models) |
 | **Secrets** | Encrypted credentials and who can use them | [Secrets](/docs/project/secrets) |
-| **Files** | Shared folders. Shown when shared folders are on for the account. | See below |
-| **Settings** | General, Git repo, Sandbox templates, Feature flags and Upgrades | See below |
+| **Skills** | The project's skills | [Agents & permissions](/docs/project/agents) |
+| **Tools**, **Extensions** | The project's tools and harness extensions | [Tools](/docs/project/tools) |
+| **Drives** | Shared folders that every new session of the project mounts. Shown when shared folders are on. | See below |
+| **Apps** | The project's Apps | [Apps](/docs/apps) |
+| **Triggers** | Schedules, webhooks, connector events and App events | [Triggers & reminders](/docs/connect/triggers) |
+| **Loops** | The project's reminders | [Triggers & reminders](/docs/connect/triggers) |
+| **Models** | Models, providers and provider keys | [Models](/docs/project/models) |
+| **Repo** | The project's git repository. Shown when shared folders are on. | [Git](/docs/git) |
+| **General** | The project name and icon, and project deletion | |
+| **Git repo** | The repository the project runs from, its base branch, and who can reach it | [Git](/docs/git) |
+| **Sandbox templates** | The recipe for the machine a session runs on, and its build history | [Sandboxes & previews](/docs/work/runtime) |
+| **Feature flags** | Features the project switches on | [Feature flags](/docs/project#feature-flags) |
+| **Upgrades** | Changes an agent makes to the project. Every run opens a change request for you to review. | |
 
-**Customize** → **Settings** has five sections:
+A section you may not open is not listed. An old `/projects/<id>/customize/<tab>` link redirects to its Project admin section.
 
-| Section | What it holds |
-| --- | --- |
-| **General** | The project name and icon, and project deletion |
-| **Git repo** | The repository the project runs from, its base branch, and who can reach it. See [Git](/docs/git). |
-| **Sandbox templates** | The recipe for the machine a session runs on, and its build history. See [Sandboxes & previews](/docs/work/runtime). |
-| **Feature flags** | Features the project switches on. See [Feature flags](/docs/project#feature-flags). |
-| **Upgrades** | Changes an agent makes to the project. Every run opens a change request for you to review. |
-
-The sidebar **Files** entry and **Customize** → **Files** are different things. The sidebar entry browses the project's git repository. **Customize** → **Files** holds shared folders: one private folder per person, plus folders you share. A new session mounts your own folder at `/drives/me` and each folder shared with you or the project at `/drives/<folder name>`.
+With shared folders off, the sidebar **Files** entry browses the project's git repository. With them on, it opens the shared folders at `/projects/<id>/drive`, and **Project admin → Repo** browses the repository. Shared folders hold one private folder per person, plus folders you share. A new session mounts your own folder at `/drives/me` and each folder shared with you or the project at `/drives/<folder name>`.
 
 ### Settings: you
 

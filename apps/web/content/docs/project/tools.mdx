@@ -295,7 +295,7 @@ kortix sessions new --wait --prompt "Call the weather_now tool once with city Be
 
 ## Tools in `harnesses/opencode/tools`
 
-OpenCode also loads tool files from the `tools/` folder of its config directory (`opencode.config_dir`, `harnesses/opencode` in a new project). pi does not read that folder.
+OpenCode also loads tool files from the `tools/` folder of its config directory (`opencode.config_dir`, `harnesses/opencode` by default). A new project has no OpenCode config directory. pi does not read that folder.
 
 - On OpenCode, a tool in that folder wins over a Kortix tool or project tool of the same name. Delete copies of Kortix tools from it, so the maintained tools run.
 - To run an OpenCode tool on both harnesses, port it to a project tool:

@@ -161,11 +161,11 @@ permission:
   webfetch: ask
 ```
 
-- The starter agents use `permission: allow`. Each session runs in its own sandbox on its own branch.
+- The starter `kortix` agent uses `permission: allow`. Each session runs in its own sandbox on its own branch.
 - `external_directory` decides a file tool call whose path is outside the workspace. Its pattern is the directory, for example `/tmp/*`.
 - A path rule governs the file tools, not the shell: `cat secrets/a` is a `bash` command. To keep a path closed, restrict `bash` too.
 - `bash: deny` also denies the terminal tools (`pty_*`), and `edit: deny` also denies `memory`, unless the agent sets a rule for those tools.
-- On OpenCode, `harnesses/opencode/opencode.jsonc` can set a project-wide `permission`. The starter sets `"permission": "allow"`.
+- On OpenCode, `harnesses/opencode/opencode.jsonc` can set a project-wide `permission`. A new project has no `opencode.jsonc`.
 
 ## Skills
 

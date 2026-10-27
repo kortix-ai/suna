@@ -47,10 +47,12 @@ under `harnesses/`:
 - **Tools** — `kortix.yaml` `tools:` lists the Kortix tools the project keeps
   (`<name>: kortix:<name>`) and its own tools, one module each
   (`tools/<name>.ts` by convention). Every harness runs them
-  (`references/kortix/tools.md`).
+  (`references/kortix/tools.md`). With no `tools:` key, all five Kortix
+  tools load; a new project has no `tools:` key.
 - **OpenCode config (deprecated)** — `harnesses/opencode/` (`opencode.config_dir`):
   `opencode.jsonc`, plugins, commands, MCP and provider settings.
   Only a session that still runs OpenCode reads it. Do not add to it.
+  A new project does not have it.
 - **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
   templates, `settings.json`. Only a pi session reads it. The starter does
   not create it.
@@ -478,7 +480,7 @@ kortix marketplace update <name> --project <project-id>
 kortix marketplace update --all --project <project-id>
 ```
 
-The web equivalent is the project's Marketplace/Customize surface. Normal
+The web equivalent is the project's Marketplace, or Project admin → Skills. Normal
 agents should not use `kortix registry build/validate/publish`; those are
 developer-authoring tools for producing registries, not for consuming skills in
 a project.
@@ -622,11 +624,12 @@ from trajectory evidence, on two loops:
    a checkpoint on long sessions). Edits apply in place — they take
    effect next turn — committed `harness: …` to the session branch, with
    one CR kept updated toward `main`.
-2. **Cross-session reflection** — the `harness-reflector` agent (daily
-   cron trigger, on by default) fans out read-only `session-reviewer`
-   sub-agents, one per recent session, to work through full session
-   histories; it aggregates their findings, refines the shared harness,
-   and opens a `harness: …` CR against `main`.
+2. **Cross-session reflection (optional)** — a new project has no
+   reflection agent and no reflection trigger. A project may add one: an
+   agent that a cron trigger runs, which reviews recent sessions (it may
+   fan out one read-only subagent per session), refines the shared
+   harness, and opens one `harness: …` CR against `main`. The
+   `kortix-harness-refinement` skill describes the protocol.
 
 Any agent may also invoke the protocol itself when a failure signature
 costs it twice — load `kortix-harness-refinement`
@@ -760,7 +763,7 @@ triggers and env round-trip through `kortix.yaml`.
 <canonical-schema>
 ## The canonical manifest schema — one URL, always correct
 
-The starter uses `kortix_version: 2`. Check the top
+The starter uses `kortix_version: 3`. Check the top
 `# yaml-language-server: $schema=...` line in `kortix.yaml`. That URL is the
 public, versioned JSON Schema, generated from `@kortix/manifest-schema` (the
 same package that backs `kortix validate` and the CR-merge gate — one source
@@ -768,6 +771,7 @@ of truth, no separate spec to keep in sync by hand):
 
 | URL | Covers |
 | --- | --- |
+| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3`: agent behavior inline (`prompt_file`, `mode`, `permission`) |
 | `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` agent governance map |
 | `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
 | `https://kortix.com/schema/kortix.schema.json` | All published versions; dispatches on `kortix_version` |
@@ -788,9 +792,10 @@ and every block is **governance only** —
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is agent
 behavior and lives in that agent's own `.md` frontmatter — the file
-`agents.<name>.file` names, default `agents/<name>.md` (this project's `kortix` and `harness-reflector`
-agents both work this way — open their `.md` files to see what they
-actually do). `default_agent` is required and must resolve to a declared,
+`agents.<name>.file` names, default `agents/<name>.md`. A new project
+is `kortix_version: 3`: its one agent, `kortix`, declares its behavior
+inline in `kortix.yaml` and names its prompt with `prompt_file:
+agents/kortix.md`. `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
 dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
 grant set (an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`

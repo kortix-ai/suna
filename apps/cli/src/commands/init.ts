@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
-import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema/layout';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   STARTER_TEMPLATE_IDS,
@@ -26,7 +25,7 @@ import { selectMultiFromList } from '../tui-select.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .opencode → harnesses/opencode, .agents/skills → skills';
+      return 'symlink .agents/skills → skills (and .opencode → its config folder, when the project has one)';
     case 'claude':
       return 'link .claude skills, agents, and commands';
     case 'codex':
@@ -313,15 +312,14 @@ function initExistingProject(flags: InitFlags): number {
   const projectName = normalizeProjectName(basename(process.cwd()));
   const cwd = resolve(process.cwd());
 
+  // The manifest is the project. A new project has no OpenCode folder (the
+  // starter ships none since 2026-10-28); an older one keeps its own.
   const hasManifest =
     existsSync(resolve(cwd, 'kortix.yaml')) || existsSync(resolve(cwd, 'kortix.toml'));
-  const hasRuntime = [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].some((dir) =>
-    existsSync(resolve(cwd, dir)),
-  );
-  if (!hasManifest || !hasRuntime) {
+  if (!hasManifest) {
     process.stderr.write(
       'kortix init --force: this directory is not a cloned Kortix project.\n' +
-        'Expected kortix.yaml (or kortix.toml) and harnesses/opencode (or .kortix/opencode).\n',
+        'Expected kortix.yaml (or kortix.toml).\n',
     );
     return 1;
   }

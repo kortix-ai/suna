@@ -95,8 +95,8 @@ it already resolves the right host.
 
 If the user asks how to configure this project's agents, tools, plugins,
 extensions, commands, MCP servers or models, load the `kortix-system`
-skill first. A session runs one of two harnesses, OpenCode or pi, and each
-reads different config files; the skill's `<harnesses>` section says
+skill first. Every new session runs pi. OpenCode is deprecated and runs
+only sessions that started on it. The skill's `<harnesses>` section says
 which one this session runs and where each setting lives.
 
 ## Defaults

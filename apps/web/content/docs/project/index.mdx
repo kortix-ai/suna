@@ -54,7 +54,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 | `skills/<name>/SKILL.md` | One skill, plus any reference files beside it. | Both harnesses |
 | `memory/` | The project memory. See [Memory](#memory). | Agents, through the `memory` tool |
 | `tools/<name>.ts` | Project tools, declared under `tools:` in `kortix.yaml`. Any folder works. See [Tools](/docs/project/tools). | Both harnesses |
-| `harnesses/opencode/` | `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. | OpenCode only |
+| `harnesses/opencode/` | `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. OpenCode is deprecated. A new project does not have this folder. | OpenCode only |
 | `harnesses/pi/` | `settings.json`, `extensions/`, `skills/`, `prompts/`. A new project does not have this folder. | pi only |
 
 - A `kortix_version: 3` project reads no harness folder. Its slash commands are declared in `kortix.yaml`; see [commands (v3)](/docs/project/manifest#commands-v3).
@@ -69,18 +69,19 @@ A new project starts from the general starter. It commits these files to the def
 
 | Item | What it is |
 | --- | --- |
-| `kortix` agent | The primary agent and the `default_agent`. It has access to all connectors, secrets, skills and Kortix permissions. Edit `agents/kortix.md` to specialize it. |
-| `harness-reflector` agent | Reviews recent sessions, then improves prompts, skills, tools and memory. It opens one change request titled `harness: …` and never merges. It has no connectors and no secrets. |
-| `session-reviewer` agent | A subagent of `harness-reflector`. It reviews one session and reports what went wrong. |
-| `harness-reflector` trigger | A cron trigger that runs `harness-reflector` daily at 03:00 UTC. It ships with `enabled: false`. |
+| `kortix` agent | The one agent of a new project and its `default_agent`. It has access to all tools, connectors, secrets, skills and Kortix permissions. My Kortix, the built-in agent you talk to, runs it. Edit `agents/kortix.md` to specialize it. |
+| `kortix.yaml` | Declares the `kortix` agent. It has no triggers and no `tools:` entries. The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) need no entry: every agent with `tools: all` gets them. |
 | Skills | `kortix-cli`, `agent-browser`, `convert-documents-to-markdown`, `design-foundations`, `docx`, `pdf`, `presentations`, `web-publishing-and-deployments`, `webapp`, `website-building`, `xlsx`. |
-| Tools | The five Kortix tools under `tools:`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. |
 | `memory/MEMORY.md` | The empty memory index. |
-| `harnesses/opencode/` | `opencode.jsonc`, `package.json` and the terminal plugin under `plugins/`. |
+| `README.md`, `.gitignore` | A short guide to the files, and the ignore rules. |
+
+A new project has no other agent, no trigger and no harness folder. Every new session runs pi.
 
 Kortix adds 12 managed `kortix-*` skills to every session when it boots, `kortix-cli` among them. They overwrite a committed copy with the same name. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
 
-To turn on the reflection loop, change `enabled: false` to `enabled: true` on the `harness-reflector` trigger in `kortix.yaml` and merge the change. Keep its `prompt:` unchanged. Each run starts a session in its own sandbox.
+### Add a reflection loop
+
+A new project does not review its own sessions. To add that loop, add an agent that reviews recent sessions and opens a change request with its improvements. Then add a cron trigger that runs it. The managed `kortix-harness-refinement` skill describes the protocol: how to find failures in a session and which harness file to change. Ask My Kortix to set it up, or write the agent and the trigger yourself. See [Triggers](/docs/connect/triggers).
 
 ### Create a project with kortix init
 
@@ -88,7 +89,7 @@ To turn on the reflection loop, change `enabled: false` to `enabled: true` on th
 kortix init my-agent && cd my-agent
 ```
 
-`kortix init [project-name]` creates a new directory from the general starter. It writes `kortix.yaml`, `agents/`, `skills/`, `memory/` and `harnesses/opencode/`, runs `git init -b main`, and asks which local coding tools to wire. It refuses a directory that exists and is not empty.
+`kortix init [project-name]` creates a new directory from the general starter. It writes `kortix.yaml`, `agents/`, `skills/`, `memory/`, `README.md` and `.gitignore`, runs `git init -b main`, and asks which local coding tools to wire. It refuses a directory that exists and is not empty.
 
 | Flag | Effect |
 | --- | --- |
@@ -107,9 +108,9 @@ kortix init my-agent && cd my-agent
 `memory/` holds what the project knows about itself: its purpose, connections, conventions and decisions. `memory/MEMORY.md` is the index, with one line per file.
 
 - **Read.** Kortix does not put memory into the prompt. The managed `kortix-memory` skill tells an agent to read `MEMORY.md` at the start of a task, then the files the index points to.
-- **Write.** The `memory` tool (`memory: kortix:memory` under `tools:`) views, creates, edits, inserts into, renames and deletes files under `memory/` only. Without that line, agents edit the files with their file tools.
+- **Write.** The `memory` tool views, creates, edits, inserts into, renames and deletes files under `memory/` only. A project with no `tools:` key gets it, as a new project does. A `tools:` key without `memory: kortix:memory` drops it: agents then edit the files with their file tools.
 - **Persist.** A memory edit is an ordinary file change on the session branch. Other sessions see it only after a change request merges it into the default branch.
-- **Curate.** `harness-reflector` cleans up memory on each run when its trigger is on.
+- **Curate.** Agents keep memory current as they work: they update a stale file and remove a wrong one. A project may add a scheduled agent that cleans up memory on a cron trigger.
 
 Do not write secrets or personal data into memory. Store credentials as [secrets](/docs/project/secrets).
 

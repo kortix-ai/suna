@@ -20,7 +20,8 @@ harness loads the skills in `skills/`. A local `opencode` run does not
 read the root `agents/` and `skills/`.
 
 Projects created before 2026-09 use `.kortix/opencode/` as the config dir,
-and it also holds their `agents/` and `skills/`. Both layouts work.
+and it also holds their `agents/` and `skills/`. Both layouts work. A new
+project has no OpenCode config directory.
 
 This folder mirrors the upstream OpenCode docs as standalone Markdown
 files so an agent can read them without a network fetch. Pages are

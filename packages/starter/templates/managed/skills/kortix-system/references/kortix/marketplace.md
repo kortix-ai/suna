@@ -58,7 +58,7 @@ pass the id the user gave you.
 
 ## Web UI
 
-The web equivalent is the project's Marketplace or Customize surface:
+The web equivalent is the project's Marketplace, or Project admin → Skills:
 
 - Explore/search lists available skills from enabled marketplace sources.
 - Installed/status views read the project's lock file.
