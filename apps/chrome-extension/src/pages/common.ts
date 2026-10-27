@@ -73,8 +73,9 @@ export const whoami = () => rpc<Identity>({ kortix: 'whoami' });
 export const accountsDiffer = (a: Identity | undefined, b: Identity | undefined) =>
   !!a?.userId && !!b?.userId && a.userId !== b.userId;
 
-type FrameMessage = { origin: string; source: unknown; data: unknown };
-const fromPanelFrame = (e: FrameMessage, webUrl: string, frame: Window | null) => {
+export type FrameMessage = { origin: string; source: unknown; data: unknown };
+/** True for a message the panel's own frame sent from the web app's origin. */
+export const fromPanelFrame = (e: FrameMessage, webUrl: string, frame: Window | null) => {
   try { return !!frame && e.source === frame && e.origin === new URL(webUrl).origin; } catch { return false; }
 };
 

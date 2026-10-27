@@ -21516,6 +21516,49 @@
       "title": "Weiterer Browser",
       "waiting": "Warte darauf, dass sich der neue Browser verbindet.",
       "description": "Öffne Kortix im anderen Browser oder Chrome-Profil und füge Kortix dort zu Chrome hinzu. Kopiere den Link, um es zu öffnen."
+    },
+    "panel": {
+      "project": "Projekt",
+      "title": "Frag zu dieser Seite",
+      "body": "Kortix liest den Tab, wenn du sendest. Vorher verlässt nichts diesen Browser.",
+      "selectionTitle": "Frag zu deiner Auswahl",
+      "selectionBody": "Kortix erhält das Zitat, den Seitentitel und die Adresse. Der Rest der Seite bleibt in diesem Browser, außer du fügst ihn hinzu.",
+      "actions": {
+        "summarize": "Diese Seite zusammenfassen",
+        "tables": "Tabellen extrahieren",
+        "compare": "Mit einem anderen Tab vergleichen",
+        "email": "Eine E-Mail dazu entwerfen"
+      },
+      "prompts": {
+        "summarize": "Fasse diese Seite zusammen.",
+        "tables": "Extrahiere die Tabellen dieser Seite als CSV.",
+        "compare": "Vergleiche diese Seiten.",
+        "email": "Entwirf eine E-Mail zu dieser Seite."
+      },
+      "recent": "Zuletzt in {project}",
+      "noProjects": "Erstelle ein Projekt, um einen Chat zu starten.",
+      "createProject": "Projekt erstellen",
+      "addTab": "Tab",
+      "addTabsTitle": "Tabs hinzufügen",
+      "addTabsHint": "Nur die markierten Tabs werden gesendet.",
+      "addTabs": "{count, plural, =0 {Tabs hinzufügen} one {# Tab hinzufügen} other {# Tabs hinzufügen}}",
+      "noTabs": "Keine anderen Tabs in diesem Fenster.",
+      "tabsFailed": "Deine Tabs konnten nicht geladen werden. Versuche es erneut.",
+      "cancel": "Abbrechen",
+      "removeTab": "{title} entfernen",
+      "removeQuote": "Zitat entfernen",
+      "wholePage": "Ganze Seite",
+      "unreadable": "Kortix kann diese Seite nicht lesen.",
+      "message": "Nachricht",
+      "placeholder": "Frag alles zu diesem Tab",
+      "placeholderNoTab": "Frag Kortix alles",
+      "modeLabel": "Wie Kortix den Tab nutzt",
+      "read": "Lesen",
+      "act": "Handeln",
+      "readHint": "Lesen sendet den Text dieser Seite. Handeln lässt Kortix in diesem Tab klicken und tippen.",
+      "actHint": "Kortix legt diesen Tab in seine Tab-Gruppe und kann dort klicken und tippen. Stoppe es über die Leiste auf der Seite.",
+      "send": "Senden",
+      "readFailed": "Kortix konnte den Tab nicht lesen. Lade die Seite neu und versuche es erneut."
     }
   },
   "computers": {

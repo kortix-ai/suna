@@ -100,7 +100,7 @@ only the caller's own browsers.
 
 ### Side panel sign-in
 
-The side panel iframes `${webUrl}/auth/panel?next=/projects`. Chrome hides `SameSite=Lax`
+The side panel iframes `${webUrl}/auth/panel?next=/panel`, the new chat (§11). Chrome hides `SameSite=Lax`
 cookies from frames inside extension pages, so the web app keeps the panel session in a
 partitioned cookie and gets it from the extension:
 
@@ -269,3 +269,42 @@ The extension derives the API URL from `sender.origin` for the Kortix hosts:
 `https://dev-api.kortix.com`, `staging` → `https://staging-api.kortix.com`.
 It accepts the message's `apiUrl` only from `http://localhost`, and only when
 that `apiUrl` is itself `http://localhost:*`.
+
+## 11. Side panel page channel (extension ↔ `/panel`)
+
+The side panel opens `/panel`, a new chat, every time. The page and the side
+panel talk through `postMessage`. Each side checks the other: the page accepts
+only `event.origin` = `chrome-extension://<extension id>` from `window.parent`.
+The panel accepts only the web origin from its own iframe
+(`apps/chrome-extension/src/pages/panel-bridge.ts`,
+`apps/web/src/features/chrome/panel/panel-channel.ts`).
+
+Page → panel:
+
+| Message | Effect |
+|---|---|
+| `{"type":"kortix.panel.hello"}` | The panel answers `kortix.panel.tab` and delivers a waiting right-click context. |
+| `{"type":"kortix.panel.tabs","requestId"}` | `kortix.panel.tabs.result` with the tabs of the panel's window. |
+| `{"type":"kortix.panel.read","requestId","tabIds":[…]}` | `kortix.panel.read.result`. 1 to 8 tabs. The panel runs a script in each tab and returns `body.innerText`, cut at 100,000 characters. |
+| `{"type":"kortix.panel.act","tabId"}` | Act: the next session the panel opens within 5 minutes gets this tab. |
+| `{"type":"kortix.panel.route","path","sessionId?"}` | Sent by the app shell on every route change in the panel. A `sessionId` takes a waiting Act tab: the worker adds the tab to that session's Kortix tab group, at attach or at once. |
+
+Panel → page:
+
+| Message | When |
+|---|---|
+| `{"type":"kortix.panel.tab","tab":PanelTab\|null}` | On hello, and when the active tab of the panel's window changes or loads. |
+| `{"type":"kortix.panel.context","tab","quote?"}` | After a right-click on "Ask Kortix about this selection" or "…this page". |
+| `{"type":"kortix.panel.tabs.result","requestId","tabs":[PanelTab]}` | |
+| `{"type":"kortix.panel.read.result","requestId","pages":[…]}` | A page is `{tabId,title,url,text,truncated}` or `{tabId,error:"unreadable"}`. |
+
+`PanelTab` = `{id,title,url,readable}`. `readable` is false for Chrome's own
+pages and the Web Store: Chrome lets no extension script run there.
+
+Send hands the prompt to the project home composer (`setPrefill(…, {submit:true})`),
+which sends it as a typed message does. Read attaches each page as a Markdown
+file (`<title>.md`: title, address, read time, text). A selection rides in the
+prompt as a quote; the page text goes only when the person adds "Whole page".
+Act appends one English line that names the tab, and posts `kortix.panel.act`.
+The extension reads a tab only on `kortix.panel.read`, and the page asks only
+when the person presses Send.

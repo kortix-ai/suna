@@ -1,10 +1,13 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 
 import { EXTENSION_ORIGIN, isExtensionPanelFrame } from '@/lib/supabase/panel-cookies';
+
+import { postPanelRoute } from './panel/panel-channel';
 
 export interface ExtensionIdentityMessage {
   type: 'kortix.identity';
@@ -30,17 +33,25 @@ export function identityMessage(user: { id: string; email?: string | null }): Ex
   return { type: 'kortix.identity', userId: user.id, email: user.email ?? '' };
 }
 
+const insideThisPanel = () =>
+  isInsideExtensionPanel(document.referrer, window.top !== window.self, window.location.ancestorOrigins);
+
 /**
  * Tells the extension which account this app is signed in to, so the panel can
- * warn when it differs from the account the extension is connected as.
- * Renders nothing. One instance, in the authenticated app shell.
+ * warn when it differs from the account the extension is connected as, and
+ * which page the panel shows, so an Act send's tab reaches the session it
+ * opens. Renders nothing. One instance, in the authenticated app shell.
  */
 export function ExtensionPanelIdentity() {
   const { user } = useAuth();
+  const pathname = usePathname();
   useEffect(() => {
-    if (!user || !isInsideExtensionPanel(document.referrer, window.top !== window.self, window.location.ancestorOrigins)) return;
+    if (!user || !insideThisPanel()) return;
     // The target origin is the extension: no other page frames the panel.
     window.parent.postMessage(identityMessage(user), EXTENSION_ORIGIN);
   }, [user]);
+  useEffect(() => {
+    if (pathname && insideThisPanel()) postPanelRoute(pathname);
+  }, [pathname]);
   return null;
 }

@@ -30,6 +30,7 @@ export type PageMessage =
   | { kortix: 'patch'; body: { name?: string; accessMode?: AccessMode; tabScope?: TabScope } }
   | { kortix: 'stop'; attachmentId: string }
   | { kortix: 'add-tab'; attachmentId: string; tabId: number }
+  | { kortix: 'act-tab'; sessionId: string; tabId: number } // a panel Act send: the session's attachment gets this tab
   | { kortix: 'consent-info'; attachmentId: string }
   | { kortix: 'consent'; attachmentId: string; decision: 'session' | 'project' | 'deny' }
   | { kortix: 'overlay-pause' } // from a tab; the worker finds the attachment

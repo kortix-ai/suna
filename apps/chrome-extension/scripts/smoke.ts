@@ -24,14 +24,36 @@ async function until<T>(what: string, fn: () => T | undefined | Promise<T | unde
 }
 
 // ─── static page ─────────────────────────────────────────────────────────────
-// /auth/panel and /projects/** stand in for the Kortix web app inside the side panel (panel sign-in contract).
+// /auth/panel, /panel and /projects/** stand in for the Kortix web app inside the side panel (panel sign-in contract).
 const handoffs: { hash: string; origin: string }[] = [];
+// Every message the fake /panel page got from the extension (protocol.md §11).
+const panelReports: any[] = [];
 const html = (body: string, headers: Record<string, string> = {}) => new Response(body, { headers: { 'content-type': 'text/html', ...headers } });
 const web = Bun.serve({
   port: 0,
   fetch(req) {
     const u = new URL(req.url);
     if (u.pathname === '/report') { handoffs.push({ hash: u.searchParams.get('hash') ?? '', origin: u.searchParams.get('origin') ?? '' }); return new Response('ok'); }
+    if (u.pathname === '/panel-report') return req.json().then((m) => { panelReports.push(m); return new Response('ok'); });
+    // The new chat: hello; on the first tab, list tabs and read it; on a right-click context, hand that tab to session s5.
+    if (u.pathname === '/panel') return html(`<script>
+      const ext = 'chrome-extension://${EXT_ID}';
+      let asked = false;
+      addEventListener('message', (e) => {
+        if (e.origin !== ext) return;
+        fetch('/panel-report', { method: 'POST', body: JSON.stringify(e.data) });
+        if (e.data?.type === 'kortix.panel.tab' && e.data.tab && !asked) {
+          asked = true;
+          parent.postMessage({ type: 'kortix.panel.tabs', requestId: 'T1' }, ext);
+          parent.postMessage({ type: 'kortix.panel.read', requestId: 'R1', tabIds: [e.data.tab.id] }, ext);
+        }
+        if (e.data?.type === 'kortix.panel.context' && e.data.tab) {
+          parent.postMessage({ type: 'kortix.panel.act', tabId: e.data.tab.id }, ext);
+          parent.postMessage({ type: 'kortix.panel.route', path: '/projects/p5/sessions/s5', sessionId: 's5' }, ext);
+        }
+      });
+      parent.postMessage({ type: 'kortix.panel.hello' }, ext);
+    </script>panel`);
     if (u.pathname === '/auth/panel') return html(`<script>
       const ext = 'chrome-extension://${EXT_ID}';
       addEventListener('message', (e) => {
@@ -357,6 +379,9 @@ try {
   control.send(JSON.stringify({ type: 'attach', attachmentId: 'a4', sessionId: 's4', sessionTitle: 'Panel test', projectId: 'p4',
     projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/chrome/bridge?ticket=T1', ticket: 'T1', consent: false }));
   await until('attached a4', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a4'));
+  // The panel's window shows a readable page: the new chat's tab chip.
+  await sw!.eval(`chrome.tabs.create({ url: '${webOrigin}/form.html?user=panel', active: true })`);
+  await until('panel page tab', async () => (await targets()).find((x) => x.type === 'page' && x.url.includes('user=panel')));
   const panel = await openTab(`chrome-extension://${EXT_ID}/sidepanel.html`, `chrome-extension://${EXT_ID}/sidepanel.html`);
   const bname = await until('panel header', async () => {
     const t = await panel.tryEval(`document.getElementById('bname')?.textContent`);
@@ -367,10 +392,30 @@ try {
   check('panel: online dot is on', true);
   await until('panel handoff', () => handoffs[0]);
   const src0 = await panel.eval(`document.getElementById('app').src`);
-  check('panel: iframe starts at /auth/panel?next=/projects', src0 === `${webOrigin}/auth/panel?next=%2Fprojects`, src0);
+  check('panel: iframe starts at /auth/panel?next=/panel (a new chat every time)', src0 === `${webOrigin}/auth/panel?next=%2Fpanel`, src0);
   check('panel sign-in: one POST /v1/chrome/panel-session with the OAuth token', panelSessionCalls.length === 1 && panelSessionCalls[0] === 'Bearer test', JSON.stringify(panelSessionCalls));
   check('panel sign-in: the page got the token hash from the extension origin', handoffs[0].hash === 'HASH-1' && handoffs[0].origin === `chrome-extension://${EXT_ID}`, JSON.stringify(handoffs));
-  await until('panel lands on /projects', async () => ((await panel.eval(`document.getElementById('app').src`)) === src0 ? true : undefined), 3000).catch(() => undefined);
+  const tabMsg = await until('panel channel: tab', () => panelReports.find((m) => m.type === 'kortix.panel.tab' && m.tab));
+  check('panel channel: hello gets the active tab of the panel window', tabMsg.tab.url.includes('user=panel') && tabMsg.tab.readable === true, JSON.stringify(tabMsg));
+  const tabsMsg = await until('panel channel: tabs', () => panelReports.find((m) => m.type === 'kortix.panel.tabs.result'));
+  check('panel channel: tabs lists the window tabs', tabsMsg.requestId === 'T1' && tabsMsg.tabs.some((t: any) => t.id === tabMsg.tab.id), JSON.stringify(tabsMsg).slice(0, 300));
+  const readMsg = await until('panel channel: read', () => panelReports.find((m) => m.type === 'kortix.panel.read.result'));
+  check('panel channel: read returns the tab text', readMsg.requestId === 'R1' && readMsg.pages[0]?.tabId === tabMsg.tab.id && /Smoke form/.test(readMsg.pages[0]?.text ?? ''), JSON.stringify(readMsg).slice(0, 300));
+  // Right-click "Ask Kortix about this selection" stores the context; the open panel hands it to the page.
+  await sw!.eval(`chrome.storage.session.set({ panelContext: { tabId: ${tabMsg.tab.id}, quote: 'Smoke quote', at: Date.now() } })`);
+  const ctxMsg = await until('panel channel: context', () => panelReports.find((m) => m.type === 'kortix.panel.context'));
+  check('panel channel: a right-click context reaches the page with its quote and tab', ctxMsg.quote === 'Smoke quote' && ctxMsg.tab?.id === tabMsg.tab.id, JSON.stringify(ctxMsg));
+  check('panel channel: the context is consumed once', (await sw!.eval(`chrome.storage.session.get('panelContext').then((v) => v.panelContext === undefined)`)) === true);
+  // Act: the page handed the tab to s5 before s5 attached; the attach puts the tab in s5's tabs.
+  await until('handed tab stored', async () => (await sw!.eval(`chrome.storage.session.get('handedTabs').then((v) => v.handedTabs?.s5 ?? 0)`)) || undefined);
+  control.send(JSON.stringify({ type: 'attach', attachmentId: 'a5', sessionId: 's5', sessionTitle: 'Act test', projectId: 'p5',
+    projectName: 'Smoke project', bridgePath: '/v1/p/x/8000/kortix/chrome/bridge?ticket=T1', ticket: 'T1', consent: false }));
+  await until('attached a5', () => frames.find((f) => f.type === 'attached' && f.attachmentId === 'a5'));
+  const a5Tabs = await sw!.eval(`chrome.storage.session.get('attachments').then((v) => JSON.stringify(v.attachments.find((a) => a.attachmentId === 'a5')?.tabIds ?? []))`);
+  check('panel Act: the handed tab joins the session that attaches', JSON.parse(a5Tabs).includes(tabMsg.tab.id), a5Tabs);
+  check('panel Act: the hand-off is used once', (await sw!.eval(`chrome.storage.session.get('handedTabs').then((v) => v.handedTabs?.s5 === undefined)`)) === true);
+  control.send(JSON.stringify({ type: 'detach', attachmentId: 'a5' }));
+  await until('detached a5', () => frames.find((f) => f.type === 'detached' && f.attachmentId === 'a5'));
   // A needSession that does not come from the web page's frame is ignored.
   await panel.eval(`postMessage({ type: 'kortix.panel.needSession' }, '*')`);
   await sleep(600);

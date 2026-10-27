@@ -130,6 +130,8 @@ const PROTECTED_APP_PREFIXES = [
   '/maintenance',
   '/new',
   '/p',
+  // The Kortix in Chrome side panel's new chat (features/chrome/panel).
+  '/panel',
   '/presentations',
   '/projects',
   '/rauch',

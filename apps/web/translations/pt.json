@@ -21516,6 +21516,49 @@
       "title": "Outro navegador",
       "waiting": "Aguardando o novo navegador se conectar.",
       "description": "Abra o Kortix no outro navegador ou perfil do Chrome e adicione lá o Kortix ao Chrome. Copie o link para abri-lo."
+    },
+    "panel": {
+      "project": "Projeto",
+      "title": "Pergunte sobre esta página",
+      "body": "O Kortix lê o separador quando envia. Antes disso, nada sai deste navegador.",
+      "selectionTitle": "Pergunte sobre a sua seleção",
+      "selectionBody": "O Kortix recebe a citação, o título da página e o endereço. O resto da página fica neste navegador, a menos que o adicione.",
+      "actions": {
+        "summarize": "Resumir esta página",
+        "tables": "Extrair as tabelas",
+        "compare": "Comparar com outro separador",
+        "email": "Redigir um e-mail sobre isto"
+      },
+      "prompts": {
+        "summarize": "Resume esta página.",
+        "tables": "Extrai as tabelas desta página em CSV.",
+        "compare": "Compara estas páginas.",
+        "email": "Redige um e-mail sobre esta página."
+      },
+      "recent": "Recentes em {project}",
+      "noProjects": "Crie um projeto para iniciar uma conversa.",
+      "createProject": "Criar um projeto",
+      "addTab": "Separador",
+      "addTabsTitle": "Adicionar separadores",
+      "addTabsHint": "Só são enviados os separadores que marcar.",
+      "addTabs": "{count, plural, =0 {Adicionar separadores} one {Adicionar # separador} other {Adicionar # separadores}}",
+      "noTabs": "Não há outros separadores nesta janela.",
+      "tabsFailed": "Não foi possível listar os separadores. Tente novamente.",
+      "cancel": "Cancelar",
+      "removeTab": "Remover {title}",
+      "removeQuote": "Remover a citação",
+      "wholePage": "Página inteira",
+      "unreadable": "O Kortix não consegue ler esta página.",
+      "message": "Mensagem",
+      "placeholder": "Pergunte o que quiser sobre este separador",
+      "placeholderNoTab": "Pergunte o que quiser ao Kortix",
+      "modeLabel": "Como o Kortix usa o separador",
+      "read": "Ler",
+      "act": "Agir",
+      "readHint": "Ler envia o texto desta página. Agir deixa o Kortix clicar e escrever neste separador.",
+      "actHint": "O Kortix coloca este separador no seu grupo de separadores e pode clicar e escrever aí. Pare-o na barra da página.",
+      "send": "Enviar",
+      "readFailed": "O Kortix não conseguiu ler o separador. Recarregue a página e tente novamente."
     }
   },
   "computers": {

@@ -21516,6 +21516,49 @@
       "title": "Otro navegador",
       "waiting": "Esperando a que se conecte el nuevo navegador.",
       "description": "Abre Kortix en el otro navegador o perfil de Chrome y añade allí Kortix a Chrome. Copia el enlace para abrirlo."
+    },
+    "panel": {
+      "project": "Proyecto",
+      "title": "Pregunta sobre esta página",
+      "body": "Kortix lee la pestaña cuando envías. Antes de eso, nada sale de este navegador.",
+      "selectionTitle": "Pregunta sobre tu selección",
+      "selectionBody": "Kortix recibe la cita, el título de la página y la dirección. El resto de la página se queda en este navegador, salvo que lo añadas.",
+      "actions": {
+        "summarize": "Resumir esta página",
+        "tables": "Extraer las tablas",
+        "compare": "Comparar con otra pestaña",
+        "email": "Redactar un correo sobre esto"
+      },
+      "prompts": {
+        "summarize": "Resume esta página.",
+        "tables": "Extrae las tablas de esta página como CSV.",
+        "compare": "Compara estas páginas.",
+        "email": "Redacta un correo sobre esta página."
+      },
+      "recent": "Recientes en {project}",
+      "noProjects": "Crea un proyecto para empezar un chat.",
+      "createProject": "Crear un proyecto",
+      "addTab": "Pestaña",
+      "addTabsTitle": "Añadir pestañas",
+      "addTabsHint": "Solo se envían las pestañas que marques.",
+      "addTabs": "{count, plural, =0 {Añadir pestañas} one {Añadir # pestaña} other {Añadir # pestañas}}",
+      "noTabs": "No hay otras pestañas en esta ventana.",
+      "tabsFailed": "No se pudieron listar tus pestañas. Inténtalo de nuevo.",
+      "cancel": "Cancelar",
+      "removeTab": "Quitar {title}",
+      "removeQuote": "Quitar la cita",
+      "wholePage": "Página completa",
+      "unreadable": "Kortix no puede leer esta página.",
+      "message": "Mensaje",
+      "placeholder": "Pregunta lo que quieras sobre esta pestaña",
+      "placeholderNoTab": "Pregunta a Kortix lo que quieras",
+      "modeLabel": "Cómo usa Kortix la pestaña",
+      "read": "Leer",
+      "act": "Actuar",
+      "readHint": "Leer envía el texto de esta página. Actuar deja que Kortix haga clic y escriba en esta pestaña.",
+      "actHint": "Kortix pone esta pestaña en su grupo de pestañas y puede hacer clic y escribir allí. Detenlo desde la barra de la página.",
+      "send": "Enviar",
+      "readFailed": "Kortix no pudo leer la pestaña. Recarga la página e inténtalo de nuevo."
     }
   },
   "computers": {

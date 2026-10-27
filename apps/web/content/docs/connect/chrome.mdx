@@ -68,6 +68,23 @@ With **Ask first**, Chrome asks before a session attaches. You answer for this s
 
 After you press **Stop** or **Deny**, that session cannot attach again unless it asks again. The next attach then shows a fresh prompt in Chrome. If nobody answers a prompt within 90 seconds, the attach fails.
 
+## Chat from the side panel
+
+Select the Kortix icon in the toolbar, or press `Alt+K`, to open the side panel. It opens on a new chat every time:
+
+1. Pick the project at the top. The panel remembers your choice.
+2. The tab you look at rides along as a chip, and the chip follows you when you switch tabs. Select **×** on the chip to leave the tab out, or **+ Tab** to add more tabs, for example to compare two pages.
+3. Type your message, or select a page action: **Summarize this page**, **Extract the tables**, **Compare with another tab** or **Draft an email about this**.
+4. Choose how Kortix uses the tab, then send:
+   - **Read** (the default) sends the text of each tab in the chips as a Markdown file with the message. Kortix reads a tab only when you send.
+   - **Act** puts the tab in the session's **Kortix** tab group, so the agent can click and type there. The usual consent, glow and **Stop** apply.
+
+The session opens in the panel and appears in your project like any other session.
+
+To ask about part of a page, select the text, right-click, and choose **Ask Kortix about this selection**. The panel opens with the text as a quote. Kortix gets only the quote, the page title and the address. Select **+ Whole page** to send the page text too. **Ask Kortix about this page** opens a new chat with that tab.
+
+Chrome lets no extension read its own pages or the Chrome Web Store. Their chips are greyed out and are not sent.
+
 ## Use it from a session
 
 A session attaches a browser with the `kortix chrome` command in its sandbox:

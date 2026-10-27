@@ -21516,6 +21516,49 @@
       "title": "Un altro browser",
       "waiting": "In attesa che il nuovo browser si colleghi.",
       "description": "Apri Kortix nell’altro browser o profilo Chrome, poi aggiungi lì Kortix a Chrome. Copia il link per aprirlo."
+    },
+    "panel": {
+      "project": "Progetto",
+      "title": "Chiedi su questa pagina",
+      "body": "Kortix legge la scheda quando invii. Prima di allora nulla lascia questo browser.",
+      "selectionTitle": "Chiedi sulla tua selezione",
+      "selectionBody": "Kortix riceve la citazione, il titolo della pagina e l'indirizzo. Il resto della pagina resta in questo browser, a meno che tu non lo aggiunga.",
+      "actions": {
+        "summarize": "Riassumi questa pagina",
+        "tables": "Estrai le tabelle",
+        "compare": "Confronta con un'altra scheda",
+        "email": "Scrivi un'email su questo"
+      },
+      "prompts": {
+        "summarize": "Riassumi questa pagina.",
+        "tables": "Estrai le tabelle di questa pagina in CSV.",
+        "compare": "Confronta queste pagine.",
+        "email": "Scrivi un'email su questa pagina."
+      },
+      "recent": "Recenti in {project}",
+      "noProjects": "Crea un progetto per iniziare una chat.",
+      "createProject": "Crea un progetto",
+      "addTab": "Scheda",
+      "addTabsTitle": "Aggiungi schede",
+      "addTabsHint": "Vengono inviate solo le schede selezionate.",
+      "addTabs": "{count, plural, =0 {Aggiungi schede} one {Aggiungi # scheda} other {Aggiungi # schede}}",
+      "noTabs": "Nessuna altra scheda in questa finestra.",
+      "tabsFailed": "Impossibile elencare le schede. Riprova.",
+      "cancel": "Annulla",
+      "removeTab": "Rimuovi {title}",
+      "removeQuote": "Rimuovi la citazione",
+      "wholePage": "Pagina intera",
+      "unreadable": "Kortix non può leggere questa pagina.",
+      "message": "Messaggio",
+      "placeholder": "Chiedi qualsiasi cosa su questa scheda",
+      "placeholderNoTab": "Chiedi qualsiasi cosa a Kortix",
+      "modeLabel": "Come Kortix usa la scheda",
+      "read": "Leggi",
+      "act": "Agisci",
+      "readHint": "Leggi invia il testo di questa pagina. Agisci permette a Kortix di cliccare e digitare in questa scheda.",
+      "actHint": "Kortix mette questa scheda nel suo gruppo di schede e può cliccare e digitare lì. Fermalo dalla barra sulla pagina.",
+      "send": "Invia",
+      "readFailed": "Kortix non è riuscito a leggere la scheda. Ricarica la pagina e riprova."
     }
   },
   "computers": {

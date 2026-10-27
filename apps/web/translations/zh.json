@@ -21516,6 +21516,49 @@
       "title": "另一个浏览器",
       "waiting": "正在等待新浏览器连接。",
       "description": "在另一个浏览器或 Chrome 配置文件中打开 Kortix，然后在那里将 Kortix 添加到 Chrome。复制链接即可打开。"
+    },
+    "panel": {
+      "project": "项目",
+      "title": "询问此页面",
+      "body": "发送时 Kortix 才会读取该标签页。在此之前，任何内容都不会离开此浏览器。",
+      "selectionTitle": "询问你选中的内容",
+      "selectionBody": "Kortix 只会收到引用内容、页面标题和地址。除非你添加，页面的其余部分都留在此浏览器中。",
+      "actions": {
+        "summarize": "总结此页面",
+        "tables": "提取表格",
+        "compare": "与另一个标签页比较",
+        "email": "就此起草一封邮件"
+      },
+      "prompts": {
+        "summarize": "总结此页面。",
+        "tables": "将此页面中的表格提取为 CSV。",
+        "compare": "比较这些页面。",
+        "email": "就此页面起草一封邮件。"
+      },
+      "recent": "{project} 中的最近会话",
+      "noProjects": "创建一个项目即可开始聊天。",
+      "createProject": "创建项目",
+      "addTab": "标签页",
+      "addTabsTitle": "添加标签页",
+      "addTabsHint": "只发送你勾选的标签页。",
+      "addTabs": "{count, plural, =0 {添加标签页} other {添加 # 个标签页}}",
+      "noTabs": "此窗口中没有其他标签页。",
+      "tabsFailed": "无法列出你的标签页。请重试。",
+      "cancel": "取消",
+      "removeTab": "移除 {title}",
+      "removeQuote": "移除引用",
+      "wholePage": "整个页面",
+      "unreadable": "Kortix 无法读取此页面。",
+      "message": "消息",
+      "placeholder": "询问关于此标签页的任何问题",
+      "placeholderNoTab": "向 Kortix 提问",
+      "modeLabel": "Kortix 如何使用该标签页",
+      "read": "读取",
+      "act": "操作",
+      "readHint": "“读取”会发送此页面的文本。“操作”让 Kortix 在此标签页中点击和输入。",
+      "actHint": "Kortix 会把此标签页放入它的标签页组，并可以在其中点击和输入。可通过页面上的栏停止它。",
+      "send": "发送",
+      "readFailed": "Kortix 无法读取该标签页。请重新加载页面后重试。"
     }
   },
   "computers": {

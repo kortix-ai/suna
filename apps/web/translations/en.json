@@ -21516,6 +21516,49 @@
       "title": "Another browser",
       "waiting": "Waiting for the new browser to connect.",
       "description": "Open Kortix in the other browser or Chrome profile, then add Kortix to Chrome there. Copy the link to open it."
+    },
+    "panel": {
+      "project": "Project",
+      "title": "Ask about this page",
+      "body": "Kortix reads the tab when you send. Nothing leaves this browser before that.",
+      "selectionTitle": "Ask about your selection",
+      "selectionBody": "Kortix gets the quote, the page title and the address. The rest of the page stays in this browser unless you add it.",
+      "actions": {
+        "summarize": "Summarize this page",
+        "tables": "Extract the tables",
+        "compare": "Compare with another tab",
+        "email": "Draft an email about this"
+      },
+      "prompts": {
+        "summarize": "Summarize this page.",
+        "tables": "Extract the tables on this page as CSV.",
+        "compare": "Compare these pages.",
+        "email": "Draft an email about this page."
+      },
+      "recent": "Recent in {project}",
+      "noProjects": "Create a project to start a chat.",
+      "createProject": "Create a project",
+      "addTab": "Tab",
+      "addTabsTitle": "Add tabs",
+      "addTabsHint": "Only the tabs you tick are sent.",
+      "addTabs": "{count, plural, =0 {Add tabs} one {Add # tab} other {Add # tabs}}",
+      "noTabs": "No other tabs in this window.",
+      "tabsFailed": "Could not list your tabs. Try again.",
+      "cancel": "Cancel",
+      "removeTab": "Remove {title}",
+      "removeQuote": "Remove the quote",
+      "wholePage": "Whole page",
+      "unreadable": "Kortix cannot read this page.",
+      "message": "Message",
+      "placeholder": "Ask anything about this tab",
+      "placeholderNoTab": "Ask Kortix anything",
+      "modeLabel": "How Kortix uses the tab",
+      "read": "Read",
+      "act": "Act",
+      "readHint": "Read sends this page's text. Act lets Kortix click and type in this tab.",
+      "actHint": "Kortix puts this tab in its tab group and can click and type there. Stop it from the bar on the page.",
+      "send": "Send",
+      "readFailed": "Kortix could not read the tab. Reload the page and try again."
     }
   },
   "computers": {

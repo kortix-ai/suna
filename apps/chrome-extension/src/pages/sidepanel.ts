@@ -1,5 +1,6 @@
 import type { Status } from '../background/types';
 import { accountsDiffer, getStatus, identityFrom, needsSession, openInTab, openWelcome, PanelHandoff, reconcile, whoami, type Identity } from './common';
+import { freshAct, MAX_PAGE_CHARS, panelRequest, readPage, toPanelTab, type PanelContext, type PanelPage, type PanelRequest } from './panel-bridge';
 import { $, rpc } from './rpc';
 
 const frame = $<HTMLIFrameElement>('app');
@@ -16,7 +17,8 @@ const handoff = new PanelHandoff(
 );
 
 const go = (url: string) => { handoff.reset(); frame.src = url; };
-const panelHome = () => `${webUrl}/auth/panel?next=${encodeURIComponent('/projects')}`;
+// A fresh chat every time the panel opens.
+const panelHome = () => `${webUrl}/auth/panel?next=${encodeURIComponent('/panel')}`;
 
 function checkAccounts() {
   const differ = accountsDiffer(mine, theirs);
@@ -77,6 +79,81 @@ addEventListener('message', (e) => {
   if (needsSession(e, webUrl, frame.contentWindow)) return void handoff.onNeedSession();
   const id = identityFrom(e, webUrl, frame.contentWindow);
   if (id) { theirs = id; checkAccounts(); }
+  const req = panelRequest(e, webUrl, frame.contentWindow);
+  if (req) void onPanelRequest(req);
+});
+
+// ─── the page channel (protocol.md §11) ──────────────────────────────────────
+
+let windowId: number | undefined;
+/** The path the panel's page shows, from its own `route` messages. */
+let framePath = '';
+/** An Act send: its tab goes to the session the page opens next. */
+let act: { tabId: number; at: number } | undefined;
+const post = (msg: Record<string, unknown>) => {
+  try { frame.contentWindow?.postMessage(msg, new URL(webUrl).origin); } catch { /* no web app yet */ }
+};
+
+async function activeTab() {
+  const [t] = await chrome.tabs.query({ active: true, ...(windowId === undefined ? { lastFocusedWindow: true } : { windowId }) });
+  return (t && toPanelTab(t)) ?? null;
+}
+const pushTab = async () => post({ type: 'kortix.panel.tab', tab: await activeTab() });
+
+/** Hand a right-click to the page. A page that is not the new chat gets the new chat first. */
+async function pushContext() {
+  const { panelContext: c } = (await chrome.storage.session.get('panelContext')) as { panelContext?: PanelContext };
+  if (!c || !webUrl) return;
+  // `/panel` or `/<locale>/panel`. Any other page gets the new chat first; its hello takes the context.
+  if (!/\/panel$/.test(framePath)) return void go(panelHome());
+  await chrome.storage.session.remove('panelContext');
+  const t = await chrome.tabs.get(c.tabId).catch(() => undefined);
+  post({ type: 'kortix.panel.context', tab: (t && toPanelTab(t)) ?? null, ...(c.quote ? { quote: c.quote } : {}) });
+}
+
+async function readTabs(tabIds: number[]): Promise<PanelPage[]> {
+  return Promise.all(tabIds.map(async (tabId): Promise<PanelPage> => {
+    try {
+      const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: readPage, args: [MAX_PAGE_CHARS] });
+      const page = r?.result as Omit<Extract<PanelPage, { text: string }>, 'tabId'> | undefined;
+      return page ? { tabId, ...page } : { tabId, error: 'unreadable' };
+    } catch {
+      return { tabId, error: 'unreadable' };
+    }
+  }));
+}
+
+async function onPanelRequest(req: PanelRequest) {
+  switch (req.type) {
+    case 'kortix.panel.hello':
+      framePath = '/panel';
+      await pushTab();
+      return pushContext();
+    case 'kortix.panel.tabs': {
+      const tabs = await chrome.tabs.query(windowId === undefined ? { lastFocusedWindow: true } : { windowId });
+      return post({ type: 'kortix.panel.tabs.result', requestId: req.requestId, tabs: tabs.map(toPanelTab).filter(Boolean) });
+    }
+    case 'kortix.panel.read':
+      return post({ type: 'kortix.panel.read.result', requestId: req.requestId, pages: await readTabs(req.tabIds) });
+    case 'kortix.panel.act':
+      act = { tabId: req.tabId, at: Date.now() };
+      return;
+    case 'kortix.panel.route': {
+      framePath = req.path;
+      const tabId = freshAct(act, Date.now());
+      if (req.sessionId && tabId !== undefined) {
+        act = undefined;
+        await rpc({ kortix: 'act-tab', sessionId: req.sessionId, tabId });
+      }
+      return;
+    }
+  }
+}
+
+void chrome.windows.getCurrent().then((w) => { windowId = w.id; });
+chrome.tabs.onActivated.addListener((info) => { if (info.windowId === windowId) void pushTab(); });
+chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+  if (tab.active && tab.windowId === windowId && (change.title || change.url || change.status === 'complete')) void pushTab();
 });
 
 const menu = $('menu');
@@ -87,11 +164,15 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setMenu(
 $('m-settings').onclick = () => void chrome.runtime.openOptionsPage();
 $('m-signout').onclick = () => rpc({ kortix: 'signout' }).then(() => { mine = undefined; go('about:blank'); webUrl = ''; return refresh(); });
 $('open').onclick = () => openInTab(webUrl);
-$('switch').onclick = () => { theirs = undefined; go(`${webUrl}/auth/panel?switch=1&next=${encodeURIComponent('/projects')}`); checkAccounts(); };
+$('switch').onclick = () => { theirs = undefined; go(`${webUrl}/auth/panel?switch=1&next=${encodeURIComponent('/panel')}`); checkAccounts(); };
+$('new').onclick = () => go(panelHome());
 $('dismiss').onclick = () => { dismissed = `${theirs?.userId}|${mine?.userId}`; checkAccounts(); };
 $('connect').onclick = () => void openWelcome();
 
 void refresh();
 // Sessions come and go through storage; the online dot lives in the worker, so it gets a slow poll.
-chrome.storage.onChanged.addListener(() => void refresh());
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area === 'session' && c.panelContext?.newValue) void pushContext();
+  void refresh();
+});
 setInterval(() => void refresh(), 5000);

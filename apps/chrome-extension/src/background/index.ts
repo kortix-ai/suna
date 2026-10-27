@@ -3,6 +3,7 @@ import { Control } from './control';
 import { Hub } from './hub';
 import { getStored, setStored } from './state';
 import { DEFAULT_API_URL, type PageMessage, type Status } from './types';
+import { MAX_QUOTE_CHARS, type PanelContext } from '../pages/panel-bridge';
 
 const hub = new Hub((f) => control.send(f));
 const control: Control = new Control({
@@ -54,6 +55,24 @@ chrome.runtime.onInstalled.addListener(async (d) => {
   const api = recent?.url ? HOST_API[new URL(recent.url).origin] : undefined;
   if (api && !(await getStored()).token) await setStored({ apiUrl: api });
   void chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+});
+
+// Right-click → "Ask Kortix": open the side panel on a new chat with this tab, and the selection as a quote.
+const ASK_SELECTION = 'kortix-ask-selection';
+const ASK_PAGE = 'kortix-ask-page';
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: ASK_SELECTION, title: 'Ask Kortix about this selection', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: ASK_PAGE, title: 'Ask Kortix about this page', contexts: ['page'] });
+  });
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (tab?.id === undefined || tab.id < 0 || !chrome.sidePanel) return;
+  // open() needs this click's user gesture: call it before anything awaits.
+  void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  const quote = info.menuItemId === ASK_SELECTION ? info.selectionText?.trim().slice(0, MAX_QUOTE_CHARS) : undefined;
+  const panelContext: PanelContext = { tabId: tab.id, ...(quote ? { quote } : {}), at: Date.now() };
+  void chrome.storage.session.set({ panelContext });
 });
 
 // Signed in somewhere else (or credentials seeded): dial without a restart.
@@ -147,6 +166,8 @@ chrome.runtime.onMessage.addListener((m: PageMessage, sender, reply) => {
       }
       case 'stop': return void (await hub.all.get(m.attachmentId)?.end('stopped'));
       case 'add-tab': return void (await hub.all.get(m.attachmentId)?.addToGroup(m.tabId));
+      // Extension pages only (the side panel): a content script sends from its page's URL.
+      case 'act-tab': return sender.url?.startsWith(chrome.runtime.getURL('')) ? void (await hub.useTab(m.sessionId, m.tabId)) : undefined;
       case 'consent-info': return hub.consentInfo(m.attachmentId);
       case 'consent': return hub.decide(m.attachmentId, m.decision);
       case 'overlay-pause': {

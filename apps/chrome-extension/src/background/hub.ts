@@ -74,7 +74,29 @@ export class Hub {
     const a = new Attachment({ ...rest, groupId: -1 }, this.env);
     this.all.set(frame.attachmentId, a);
     await this.persist();
+    const handed = await this.takeHanded(frame.sessionId);
+    if (handed !== undefined) await a.addToGroup(handed);
     await a.dial();
+  }
+
+  /**
+   * A side panel Act send names its tab before the session attaches. The tab joins the
+   * session's group when it does. Kept in session storage: the worker can restart meanwhile.
+   */
+  async useTab(sessionId: string, tabId: number) {
+    const a = [...this.all.values()].find((x) => x.rec.sessionId === sessionId && !x.isEnded);
+    if (a) return a.addToGroup(tabId);
+    const { handedTabs = {} } = (await chrome.storage.session.get('handedTabs')) as { handedTabs?: Record<string, number> };
+    await chrome.storage.session.set({ handedTabs: { ...handedTabs, [sessionId]: tabId } });
+  }
+
+  private async takeHanded(sessionId: string): Promise<number | undefined> {
+    const { handedTabs } = (await chrome.storage.session.get('handedTabs')) as { handedTabs?: Record<string, number> };
+    const tabId = handedTabs?.[sessionId];
+    if (tabId === undefined) return undefined;
+    const { [sessionId]: _taken, ...rest } = handedTabs!;
+    await chrome.storage.session.set({ handedTabs: rest });
+    return (await chrome.tabs.get(tabId).catch(() => undefined)) ? tabId : undefined;
   }
 
   async restore() {

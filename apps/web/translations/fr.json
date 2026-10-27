@@ -21516,6 +21516,49 @@
       "title": "Autre navigateur",
       "waiting": "En attente de la connexion du nouveau navigateur.",
       "description": "Ouvrez Kortix dans l’autre navigateur ou profil Chrome, puis ajoutez-y Kortix dans Chrome. Copiez le lien pour l’ouvrir."
+    },
+    "panel": {
+      "project": "Projet",
+      "title": "Posez une question sur cette page",
+      "body": "Kortix lit l'onglet quand vous envoyez. Rien ne quitte ce navigateur avant.",
+      "selectionTitle": "Posez une question sur votre sélection",
+      "selectionBody": "Kortix reçoit la citation, le titre de la page et l'adresse. Le reste de la page reste dans ce navigateur, sauf si vous l'ajoutez.",
+      "actions": {
+        "summarize": "Résumer cette page",
+        "tables": "Extraire les tableaux",
+        "compare": "Comparer avec un autre onglet",
+        "email": "Rédiger un e-mail à ce sujet"
+      },
+      "prompts": {
+        "summarize": "Résume cette page.",
+        "tables": "Extrais les tableaux de cette page en CSV.",
+        "compare": "Compare ces pages.",
+        "email": "Rédige un e-mail sur cette page."
+      },
+      "recent": "Récents dans {project}",
+      "noProjects": "Créez un projet pour démarrer une discussion.",
+      "createProject": "Créer un projet",
+      "addTab": "Onglet",
+      "addTabsTitle": "Ajouter des onglets",
+      "addTabsHint": "Seuls les onglets cochés sont envoyés.",
+      "addTabs": "{count, plural, =0 {Ajouter des onglets} one {Ajouter # onglet} other {Ajouter # onglets}}",
+      "noTabs": "Aucun autre onglet dans cette fenêtre.",
+      "tabsFailed": "Impossible de lister vos onglets. Réessayez.",
+      "cancel": "Annuler",
+      "removeTab": "Retirer {title}",
+      "removeQuote": "Retirer la citation",
+      "wholePage": "Page entière",
+      "unreadable": "Kortix ne peut pas lire cette page.",
+      "message": "Message",
+      "placeholder": "Posez n'importe quelle question sur cet onglet",
+      "placeholderNoTab": "Demandez n'importe quoi à Kortix",
+      "modeLabel": "Comment Kortix utilise l'onglet",
+      "read": "Lire",
+      "act": "Agir",
+      "readHint": "Lire envoie le texte de cette page. Agir laisse Kortix cliquer et saisir dans cet onglet.",
+      "actHint": "Kortix place cet onglet dans son groupe d'onglets et peut y cliquer et saisir. Arrêtez-le depuis la barre sur la page.",
+      "send": "Envoyer",
+      "readFailed": "Kortix n'a pas pu lire l'onglet. Rechargez la page et réessayez."
     }
   },
   "computers": {

@@ -21516,6 +21516,49 @@
       "title": "別のブラウザー",
       "waiting": "新しいブラウザーの接続を待っています。",
       "description": "別のブラウザーまたは Chrome プロファイルで Kortix を開き、そこで Chrome に Kortix を追加してください。リンクをコピーして開けます。"
+    },
+    "panel": {
+      "project": "プロジェクト",
+      "title": "このページについて質問",
+      "body": "送信したときに Kortix がタブを読み取ります。それまで何もこのブラウザの外に出ません。",
+      "selectionTitle": "選択したテキストについて質問",
+      "selectionBody": "Kortix に送られるのは引用、ページのタイトル、アドレスだけです。ページの残りは、追加しない限りこのブラウザに残ります。",
+      "actions": {
+        "summarize": "このページを要約",
+        "tables": "表を抽出",
+        "compare": "別のタブと比較",
+        "email": "これについてメールを下書き"
+      },
+      "prompts": {
+        "summarize": "このページを要約してください。",
+        "tables": "このページの表を CSV で抽出してください。",
+        "compare": "これらのページを比較してください。",
+        "email": "このページについてメールを下書きしてください。"
+      },
+      "recent": "{project} の最近のセッション",
+      "noProjects": "チャットを始めるにはプロジェクトを作成してください。",
+      "createProject": "プロジェクトを作成",
+      "addTab": "タブ",
+      "addTabsTitle": "タブを追加",
+      "addTabsHint": "チェックしたタブだけが送信されます。",
+      "addTabs": "{count, plural, =0 {タブを追加} other {# 件のタブを追加}}",
+      "noTabs": "このウィンドウにほかのタブはありません。",
+      "tabsFailed": "タブを一覧できませんでした。もう一度お試しください。",
+      "cancel": "キャンセル",
+      "removeTab": "{title} を外す",
+      "removeQuote": "引用を外す",
+      "wholePage": "ページ全体",
+      "unreadable": "Kortix はこのページを読み取れません。",
+      "message": "メッセージ",
+      "placeholder": "このタブについて何でも質問",
+      "placeholderNoTab": "Kortix に何でも質問",
+      "modeLabel": "Kortix によるタブの使い方",
+      "read": "読む",
+      "act": "操作する",
+      "readHint": "「読む」はこのページのテキストを送信します。「操作する」では Kortix がこのタブでクリックや入力をします。",
+      "actHint": "Kortix はこのタブを自分のタブグループに入れ、そこでクリックや入力ができます。ページ上のバーから停止できます。",
+      "send": "送信",
+      "readFailed": "Kortix はタブを読み取れませんでした。ページを再読み込みしてもう一度お試しください。"
     }
   },
   "computers": {
