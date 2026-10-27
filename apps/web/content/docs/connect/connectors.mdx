@@ -53,7 +53,7 @@ A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Ko
 
 ### From the web app
 
-1. Open **Customize → Connectors**.
+1. Open **Project admin → Connectors**.
 2. On the **All** tab, find the app and select **Install**.
 3. When the app has its own hosted MCP server with one-click sign-in, **Connect** *app* opens. That means OAuth with dynamic client registration, for example Linear, Notion or Sentry. Choose **Who can use it** (**Only you** by default) and select **Connect**. You sign in to the app and return to the connector's page with its tools loaded.
 4. Otherwise Kortix adds the managed app, opens its page and opens **Add account** with **Only you** selected. [Authorize an account](#authorize-an-account) there.
@@ -77,7 +77,7 @@ A connector page has up to four tabs:
 
 ### Add an MCP server from its URL
 
-1. Open **Customize → Connectors** and select **New → MCP server**.
+1. Open **Project admin → Connectors** and select **New → MCP server**.
 2. Paste the server's URL, for example `https://mcp.linear.app/mcp`. Kortix names the connector after the domain (`linear`) and shows the name under the field.
 3. Choose **Who can use it**. **Only you** is selected by default.
 4. Select **Connect**. Kortix adds the connector and the account, then opens the server's sign-in. After you approve, you return to the connector's page with its tools loaded.
@@ -219,7 +219,7 @@ Which apps move:
 
 A move needs permission to change the project's connectors.
 
-**In the web app**, open the connector in **Customize → Connectors**. The Connected tab names the connectors that can move. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
+**In the web app**, open the connector in **Project admin → Connectors**. The Connected tab names the connectors that can move. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
 
 **From the CLI:**
 

@@ -528,7 +528,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings',
+    href: '/projects/{projectId}/admin/general',
     requiresProject: true,
     keywords:
       'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
@@ -540,7 +540,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=sandbox',
+    href: '/projects/{projectId}/admin/sandbox',
     requiresProject: true,
     // Snapshots merged into this section — a snapshot is a sandbox template's
     // build history — so both vocabularies answer here.
@@ -553,7 +553,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=feature-flags',
+    href: '/projects/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
   },
@@ -564,7 +564,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/settings?section=upgrades',
+    href: '/projects/{projectId}/admin/upgrades',
     requiresProject: true,
     keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
@@ -575,7 +575,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/models',
+    href: '/projects/{projectId}/admin/models',
     requiresProject: true,
     // The reported bug's row. `llm gateway providers budgets anthropic openai
     // openrouter` came off `proj-customize`'s bag, where they pointed at
@@ -606,7 +606,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/skills',
+    href: '/projects/{projectId}/admin/skills',
     requiresProject: true,
     keywords: 'skills abilities',
   },
@@ -621,7 +621,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/connectors',
+    href: '/projects/{projectId}/admin/connectors',
     requiresProject: true,
     // 'apps' removed: it is the label of `proj-apps` (deployments), so the
     // one-word query for that page returned Connectors as well. 'connector' /
@@ -640,7 +640,7 @@ export const menuRegistry: MenuItemDef[] = [
     // "slack" and "inbox" are words people type, and the scope query lands
     // them on the inbound half rather than the outbound one.
     // 'connections' stays off this bag — it names `proj-connectors`.
-    href: '/projects/{projectId}/customize/connectors?scope=channels',
+    href: '/projects/{projectId}/admin/connectors?scope=channels',
     requiresProject: true,
     keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
@@ -656,7 +656,7 @@ export const menuRegistry: MenuItemDef[] = [
     // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
     // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
     // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/customize/connectors?rules=1',
+    href: '/projects/{projectId}/admin/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
@@ -672,7 +672,7 @@ export const menuRegistry: MenuItemDef[] = [
     // two ways to start it, not two separate rows. `/projects/{id}/settings/
     // schedules` and `/settings/webhooks` no longer resolve to a tab; both
     // redirect here via `legacySectionRedirect`.
-    href: '/projects/{projectId}/customize/triggers',
+    href: '/projects/{projectId}/admin/triggers',
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
@@ -687,7 +687,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/reminders',
+    href: '/projects/{projectId}/admin/loops',
     requiresProject: true,
     keywords: 'reminders reminder remind follow up later nudge calendar',
   },
@@ -698,7 +698,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/secrets',
+    href: '/projects/{projectId}/admin/secrets',
     requiresProject: true,
     keywords: 'secrets secret env environment variables credentials vault egress store',
   },
@@ -773,7 +773,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/repo',
+    href: '/projects/{projectId}/admin/repo',
     requiresProject: true,
     keywords: 'repo repository git files browser explorer code',
   },
@@ -798,7 +798,7 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `proj-config-feature-flags` outlived that sentence by a day. The row was
   // still here on 2026-09-03, twenty-five lines under its own obituary, with
-  // `href: '/projects/{projectId}/customize/settings?section=feature-flags'` — a route
+  // `href: '/projects/{projectId}/admin/feature-flags'` — a route
   // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
   // one, under Navigation, labelled "Settings · Feature flags" and landing on
   // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
@@ -1095,7 +1095,7 @@ export const menuRegistry: MenuItemDef[] = [
   // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
-  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not
+  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/admin/general` now, not
   // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared

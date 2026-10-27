@@ -27,7 +27,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
-import { customizePath } from '../../lib/routes';
+import { adminPath } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { InfoBanner } from '../../primitives/info-banner';
 import Loading from '../../primitives/loading';
@@ -81,7 +81,7 @@ export function ReconnectGitHubButton({ projectId, className }: { projectId: str
     try {
       const state = await getProjectGitConnectionState(projectId);
       if (state.install_url) window.open(state.install_url, '_blank', 'noopener,noreferrer');
-      else window.location.assign(customizePath(projectId, 'settings?section=git'));
+      else window.location.assign(adminPath(projectId, 'git'));
     } catch {
       errorToast(t('reconnectError'));
     } finally {

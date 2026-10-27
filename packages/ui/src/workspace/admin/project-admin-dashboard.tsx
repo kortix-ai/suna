@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/admin — Project admin.
+ * /projects/[id]/admin/<section> — Project admin.
  *
  * Customize is agent-first: an agent's page configures what that agent draws
  * on. Project admin is the project-wide view, one full page with a rail in two
@@ -9,16 +9,18 @@
  *
  *  - **Project resources**: the GLOBAL variant of every library page
  *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps, and Repo
- *    with `drives` on), each the complete screen its Customize route renders,
- *    mounted with no props beyond `projectId`.
+ *    with `drives` on), mounted with no props beyond `projectId`. This is
+ *    their only home: Customize keeps Agents and Review (Marko, 2026-10-27).
+ *    A page below a section (a connector, `/admin/connectors/<app>`) renders
+ *    in that section's pane through `content`.
  *  - **Settings**: every section of the project Settings page
  *    (`project-settings-sections.ts`), plus the Members link.
  *
- * The section lives in `?section=<key>` (`projectAdminHref`); no query opens
+ * The section is the path segment (`projectAdminHref`); `/admin` alone opens
  * the first resource the caller may open. Only the active section mounts, and
  * each one is a lazy chunk: opening Project admin loads one catalog, not all
- * of them. A `?section=` this caller cannot open is rewritten to the section
- * that opened, so the URL always names the visible pane.
+ * of them. A section this caller cannot open, or a legacy `?section=`, is
+ * rewritten to the section that opened, so the URL always names the pane.
  *
  * Gated on `project.settings.write`, the Settings page's own leaf. Each row
  * then follows the rule its own surface already applies: a resource row
@@ -195,9 +197,15 @@ const NO_HOST_SECTIONS: ProjectAdminHostSections = {};
 
 export function ProjectAdminDashboard({
   projectId,
+  section,
+  content,
   hostSections = NO_HOST_SECTIONS,
 }: {
   projectId: string;
+  /** The `/admin/<section>` segment. Absent: the first section the caller may open. */
+  section?: string;
+  /** A page below the section (`/admin/connectors/<app>`), shown in its pane. */
+  content?: ReactNode;
   hostSections?: ProjectAdminHostSections;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -275,19 +283,24 @@ export function ProjectAdminDashboard({
   const rows = [...resourceRows, ...settingsRows];
 
   // A section named in the URL but not listed for this caller falls back to
-  // the first listed row, so a stale link lands on a real pane.
-  const requested = parseProjectAdminSection(searchParams.get('section'));
+  // the first listed row, so a stale link lands on a real pane. A legacy
+  // `?section=` still names one.
+  const named = section ?? searchParams.get('section');
+  const requested = parseProjectAdminSection(named);
   const active: ProjectAdminSectionKey | undefined =
     (requested && rows.some((r) => r.key === requested) ? requested : undefined) ??
     (rows.some((r) => r.key === DEFAULT_PROJECT_ADMIN_SECTION) ? DEFAULT_PROJECT_ADMIN_SECTION : rows[0]?.key);
 
-  // The rail is final once `settled`: rewrite a fallen-back `?section=` so a
-  // copied link names the pane on screen.
-  const rawSection = searchParams.get('section');
+  // The rail is final once `settled`: move a legacy `?section=` or a fallen-
+  // back segment onto `/admin/<section>`, so a copied link names the pane on
+  // screen. A page below a section (`content`) keeps its own URL.
+  const legacyQuery = searchParams.get('section') !== null;
   useEffect(() => {
-    if (!settled || !active || rawSection === null || rawSection === active) return;
+    if (!settled || !active || content) return;
+    if (!legacyQuery && named === active) return;
+    if (!legacyQuery && named === null && section === undefined) return;
     router.replace(projectAdminHref(projectId, active));
-  }, [settled, active, rawSection, projectId, router]);
+  }, [settled, active, named, legacyQuery, section, content, projectId, router]);
 
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
@@ -404,7 +417,7 @@ export function ProjectAdminDashboard({
                     (active === 'loops' || active === 'apps') && HOST_PANE_CLASS,
                   )}
                 >
-                  <ActivePage projectId={projectId} />
+                  {content ?? <ActivePage projectId={projectId} />}
                 </div>
               ) : (
                 <div className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto px-4 py-10 pb-20 lg:py-14">

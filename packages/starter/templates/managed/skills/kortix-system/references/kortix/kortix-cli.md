@@ -119,7 +119,7 @@ the cause and who fixes it. `git fetch` and `git push` print the same message
 as `remote: …`. New sessions and scheduled triggers do not start until it is
 fixed. An agent cannot fix it: tell the user that a GitHub owner of the
 organization must reinstall the App or re-grant the repository
-(**Customize → Settings → Git repo → Reconnect GitHub**, or the link
+(**Project admin → Git repo → Reconnect GitHub**, or the link
 `kortix projects info` prints). Do not retry in a loop.
 
 #### How a command finds "the project"

@@ -42,7 +42,7 @@ describe('TriggerToolbarMenu — manager-only access gate', () => {
 
 /** The open trigger lives in the URL: open, switch, tab, close and a deep link. */
 describe('trigger sheet URL', () => {
-  const path = '/projects/p1/customize/triggers';
+  const path = '/projects/p1/admin/triggers';
 
   test('opening from a closed sheet pushes ?id on Runs, so Back closes it', () => {
     expect(triggerSheetHref(path, 'type=cron', { slug: 'nightly' }, false)).toEqual({

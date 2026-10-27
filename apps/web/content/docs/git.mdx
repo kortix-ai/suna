@@ -39,7 +39,7 @@ https://<api-host>/v1/git/<project_id>.git
 On Kortix Cloud this is `https://api.kortix.com/v1/git/<project_id>.git`. Find it in two places:
 
 - `kortix projects info <project_id> --json`, field `git_origin_url`.
-- **Customize → Settings → Git repo → Use your own Git client → Clone address**.
+- **Project admin → Git repo → Use your own Git client → Clone address**.
 
 Clone `git_origin_url`, not `repo_url`. `repo_url` is the upstream repository that Kortix forwards to.
 
@@ -61,7 +61,7 @@ Optional: run `kortix init --force` to configure your local coding agents in the
 </Step>
 </Steps>
 
-**Customize → Settings → Git repo → Work on this locally** shows the same three steps with the commands filled in.
+**Project admin → Git repo → Work on this locally** shows the same three steps with the commands filled in.
 
 The clone does three things:
 
@@ -432,7 +432,7 @@ datasets/raw export-ignore
 
 ## Manage the repository
 
-**Customize → Settings → Git repo** shows the repository and its **Status**, the **Base branch**, the **Manifest file**, **Work on this locally**, **Use your own Git client** and **People with access**. The base branch is the branch new sessions and change requests start from. From the CLI, `kortix projects set --branch <branch>` and `--manifest <path>` change the same fields. Both need `project.settings.write`.
+**Project admin → Git repo** shows the repository and its **Status**, the **Base branch**, the **Manifest file**, **Work on this locally**, **Use your own Git client** and **People with access**. The base branch is the branch new sessions and change requests start from. From the CLI, `kortix projects set --branch <branch>` and `--manifest <path>` change the same fields. Both need `project.settings.write`.
 
 ### GitHub connection
 
@@ -451,7 +451,7 @@ Kortix reaches a GitHub repository through the Kortix GitHub App installed on th
 
 | `disconnected_reason` | Cause | Fix |
 | --- | --- | --- |
-| `app_uninstalled` | The Kortix GitHub App was uninstalled from the owner, or its connection was removed from your Kortix account. | A GitHub owner of the organization reinstalls the App: **Customize → Settings → Git repo → Reconnect GitHub**. |
+| `app_uninstalled` | The Kortix GitHub App was uninstalled from the owner, or its connection was removed from your Kortix account. | A GitHub owner of the organization reinstalls the App: **Project admin → Git repo → Reconnect GitHub**. |
 | `app_suspended` | An owner suspended the App on GitHub. | A GitHub owner unsuspends it under GitHub **Settings → GitHub Apps**. |
 | `repo_not_accessible` | The repository was deleted, renamed, or removed from the App's repository access. | A GitHub owner adds the repository again under GitHub **Settings → GitHub Apps → Kortix → Repository access**, or you replace the repository. |
 

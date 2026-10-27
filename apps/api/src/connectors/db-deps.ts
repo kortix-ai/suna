@@ -783,7 +783,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     for (const key of ['provider', 'url', 'transport', 'endpoint', 'spec', 'baseUrl', 'name'] as const) {
       if (typeof draft[key] === 'string' && draft[key]) query.set(key === 'baseUrl' ? 'base_url' : key, draft[key] as string);
     }
-    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/customize/connectors?${query}`;
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/admin/connectors?${query}`;
   },
   listConnectorIdentities: async (projectId) =>
     (

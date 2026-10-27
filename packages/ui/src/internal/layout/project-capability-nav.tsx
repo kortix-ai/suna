@@ -1,5 +1,7 @@
 'use client';
 
+import { adminPath } from '../../lib/routes';
+
 import { useProjectAccountId, useProjectConfig } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 
@@ -24,7 +26,6 @@ import {
   useSidebar,
 } from '../../primitives/sidebar';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
-import { projectAdminHref } from '../../workspace/admin/project-admin-sections';
 import { useIsMobile } from '../hooks';
 import { activeCapabilityTab, agentHref, capabilityTabHref } from '../lib/capability-tab-routes';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
@@ -208,7 +209,7 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
       {hasSettings ? (
         <SidebarMenuSubItem>
           <SidebarMenuSubButton asChild isActive={onSettings}>
-            <Link href={projectAdminHref(projectId, 'general')} prefetch={false} onClick={close}>
+            <Link href={adminPath(projectId, 'general')} prefetch={false} onClick={close}>
               <RowGlyph>
                 <GearSixIcon className="size-3.5" />
               </RowGlyph>

@@ -4,7 +4,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The `/projects/[id]/customize/connectors` route's initial client chunk, walked as a
+ * The `/projects/[id]/admin/connectors` route's initial client chunk, walked as a
  * static import graph from the route entry.
  *
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import
@@ -30,7 +30,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../../../apps/web/src');
 const UI_SRC = resolve(here, '../..');
 const UI_EXPORTS: Record<string, unknown> = JSON.parse(readFileSync(resolve(UI_SRC, '../package.json'), 'utf8')).exports;
-const ROUTE_ENTRY = resolve(SRC, 'app/[locale]/(app)/projects/[id]/(capabilities)/customize/connectors/page.tsx');
+// Project admin loads the Connectors page as its own lazy chunk
+// (`project-admin-dashboard.tsx`), so that chunk's entry is the page module.
+const ROUTE_ENTRY = resolve(UI_SRC, 'customize/connectors/connectors-page.tsx');
 
 /** Modules that must not be parsed before the connectors grid paints (paths under packages/ui/src). */
 const FORBIDDEN = [

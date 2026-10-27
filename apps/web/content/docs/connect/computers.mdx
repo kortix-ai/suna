@@ -142,7 +142,7 @@ What Kortix shows comes from the computer: the access mode, an approval and its 
 
 ## Share a computer
 
-- To share your computer, open **Customize → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or everyone in the project, then select **Save**. The dialog is the same as for any [connector account](/docs/connect/connectors#share-accounts-and-give-agents-access).
+- To share your computer, open **Project admin → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or everyone in the project, then select **Save**. The dialog is the same as for any [connector account](/docs/connect/connectors#share-accounts-and-give-agents-access).
 - Only the owner shares a computer. Sharing needs permission to manage the project's connections.
 - A computer shared with everyone also serves unattended runs: triggers, schedules, and email messages. Unattended runs reach only shared computers.
 - Your access setting still applies to a shared computer. In **Ask each time**, every new approval is yours to give.
@@ -244,7 +244,7 @@ An access change sent from Kortix can fail with:
 
 - **Desktop app:** **Your computer → Disconnect…**, or **Disconnect this computer…** in the menu-bar or tray icon. Kortix removes the computer from every project and stops the service.
 - **Terminal:** `npx --yes @kortix/agent-tunnel@latest logout`. The computer removes itself from Kortix with its own token, then deletes the local credential and access setting and removes the service. `--keep-service` keeps the service installed. If Kortix is unreachable, the computer stays listed in Kortix. Remove it there too, as the next item shows.
-- **From another device**, for example for a lost computer: the project menu → **Your computer** → the computer's **⋯** menu → **Disconnect…**, or **Disconnect** on its row under **Customize → Connectors → Computers → Accounts**. A desktop app still running on that computer shows **Needs reconnect**.
+- **From another device**, for example for a lost computer: the project menu → **Your computer** → the computer's **⋯** menu → **Disconnect…**, or **Disconnect** on its row under **Project admin → Connectors → Computers → Accounts**. A desktop app still running on that computer shows **Needs reconnect**.
 - **A shared computer in one project:** a member who manages connections selects **Disconnect** on its row. That removes the shared account from this project only. The computer stays connected.
 
 To keep a computer connected but unused, set its access to **Off**.

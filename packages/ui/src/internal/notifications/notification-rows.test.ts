@@ -45,8 +45,8 @@ describe('withoutNotificationParam', () => {
     expect(withoutNotificationParam('/projects/p1?a=1&notification=n1&b=2#top')).toBe(
       '/projects/p1?a=1&b=2#top',
     );
-    expect(withoutNotificationParam('/projects/p1/customize/triggers')).toBe(
-      '/projects/p1/customize/triggers',
+    expect(withoutNotificationParam('/projects/p1/admin/triggers')).toBe(
+      '/projects/p1/admin/triggers',
     );
   });
 });
@@ -151,7 +151,7 @@ describe('tags and types', () => {
       rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
     ).toBe('reminders');
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/customize/triggers?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/admin/triggers?notification=n1' })),
     ).toBe('triggers');
   });
 

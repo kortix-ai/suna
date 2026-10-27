@@ -1,4 +1,4 @@
-import { customizePath, uiRoutes } from '../../lib/routes';
+import { adminPath, customizePath, uiRoutes } from '../../lib/routes';
 
 /**
  * The capability pages that graduated out of the Customize overlay. Commands
@@ -179,19 +179,38 @@ export function customizeHref(projectId: string): string {
   return customizePath(projectId);
 }
 
-/** The tab's URL: the host's `customize` route (`setUiRoutes`) with the tab segment. */
+/**
+ * The libraries and settings that live in Project admin (`/projects/<id>/admin/<section>`),
+ * by Customize key. Customize keeps only Agents and Review; every other tab is
+ * one place, Project admin (Marko, 2026-10-27: "no duplications").
+ */
+export const ADMIN_SECTION: Partial<Record<CapabilityTab['key'], string>> = {
+  skills: 'skills',
+  connectors: 'connectors',
+  triggers: 'triggers',
+  reminders: 'loops',
+  models: 'models',
+  secrets: 'secrets',
+  files: 'repo',
+  config: 'general',
+};
+
+/** The tab's URL: its Project admin section, else the host's `customize` route. */
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {
-  return customizePath(projectId, CAPABILITY_SEGMENT[key]);
+  const section = ADMIN_SECTION[key];
+  return section ? adminPath(projectId, section) : customizePath(projectId, CAPABILITY_SEGMENT[key]);
 }
 
 /**
  * A link to a capability tab from outside the customize pages (sidebar, session
  * header, hover cards). Null when the host serves no customize pages
- * (`setUiRoutes({ customize: () => null })`): the caller hides the link.
+ * (`setUiRoutes({ customize: () => null })`, or `admin` for a Project admin
+ * section): the caller hides the link.
  * `capabilityTabHref` is the customize pages' own tab URL and never null.
  */
 export function capabilityLinkHref(projectId: string, key: CapabilityTab['key']): string | null {
-  return uiRoutes().customize(projectId, CAPABILITY_SEGMENT[key]);
+  const section = ADMIN_SECTION[key];
+  return section ? uiRoutes().admin(projectId, section) : uiRoutes().customize(projectId, CAPABILITY_SEGMENT[key]);
 }
 
 /**
@@ -245,7 +264,7 @@ export function channelsHref(projectId: string): string {
  * shapes this group owns: `agentHref`'s `/projects/<id>/customize/agents/<name>`,
  * which lights the Agents tab (an agent's page is the Agents tab, opened on
  * one agent), and the app and connector pages under
- * `/projects/<id>/customize/connectors`, which light Connectors.
+ * `/projects/<id>/admin/connectors`, which light Connectors.
  *
  * The shape check is load-bearing, not defensive tidying. This used to match on
  * the LAST segment alone, which was harmless while every key was unique to this
@@ -265,6 +284,13 @@ export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | nu
   const start = all.indexOf('projects');
   if (start === -1) return null;
   const segments = all.slice(start);
+  // A Project admin library (`/admin/<section>`, and below Connectors an app
+  // or a connector page) is that tab.
+  if (segments[0] === 'projects' && segments[2] === 'admin' && segments.length >= 4) {
+    const key = (Object.keys(ADMIN_SECTION) as CapabilityTab['key'][]).find((k) => ADMIN_SECTION[k] === segments[3]);
+    if (!key) return null;
+    return segments.length === 4 || (key === 'connectors' && segments.length <= 6) ? key : null;
+  }
   if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
   // An app's page (`/connectors/<app>`) and a connector's page

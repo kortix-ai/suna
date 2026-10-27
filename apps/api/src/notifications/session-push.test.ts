@@ -513,7 +513,7 @@ describe('the page an automation alert opens', () => {
   test('a reminder alert opens Reminders; a kortix.yaml trigger alert opens Triggers', () => {
     for (const kind of ['automation_failed', 'automation_recovered'] as const) {
       expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/reminders?notification=n1`);
-      expect(alertUrl(kind, 'nightly-report')).toBe(`/projects/${PROJECT}/customize/triggers?notification=n1`);
+      expect(alertUrl(kind, 'nightly-report')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
     }
   });
 

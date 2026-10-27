@@ -11,6 +11,7 @@ import {
 } from '@phosphor-icons/react';
 
 import type { CapabilityTab } from '../../internal/lib/capability-tab-routes';
+import { adminPath } from '../../lib/routes';
 import {
   parseProjectSettingsSection,
   type ProjectSettingsSectionKey,
@@ -26,7 +27,7 @@ import {
  *  1. **Project resources** — the global variant of each library page.
  *  2. **Settings** — the sections of `project-settings-sections.ts`, unchanged.
  *
- * A key IS its `?section=` value, so renaming one breaks live links. The
+ * A key IS its URL segment (`/admin/<key>`), so renaming one breaks live links. The
  * settings keys are the Settings page's own keys, so `?section=git` means the
  * same section on both surfaces.
  */
@@ -80,7 +81,7 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
 
-/** No `?section=` opens the first resource. */
+/** `/projects/<id>/admin` with no section opens the first resource. */
 export const DEFAULT_PROJECT_ADMIN_SECTION: ProjectAdminSectionKey = 'connectors';
 
 export function isProjectAdminResource(key: ProjectAdminSectionKey): key is ProjectAdminResourceKey {
@@ -98,20 +99,16 @@ export function parseProjectAdminSection(
 }
 
 /**
- * The link to one section. The default section carries no query, so
- * `/projects/<id>/admin` stays a stable link. `extra` adds page params
- * (`scope=channels` for the Connectors page's Channels scope).
+ * The link to one section: `/projects/<id>/admin/<section>`. `extra` adds page
+ * params (`scope=channels` for the Connectors page's Channels scope).
  */
 export function projectAdminHref(
   projectId: string,
   key: ProjectAdminSectionKey = DEFAULT_PROJECT_ADMIN_SECTION,
   extra?: Record<string, string>,
 ): string {
-  const params = new URLSearchParams();
-  if (key !== DEFAULT_PROJECT_ADMIN_SECTION) params.set('section', key);
-  for (const [name, value] of Object.entries(extra ?? {})) params.set(name, value);
-  const query = params.toString();
-  return `/projects/${projectId}/admin${query ? `?${query}` : ''}`;
+  const query = new URLSearchParams(extra).toString();
+  return `${adminPath(projectId, key)}${query ? `?${query}` : ''}`;
 }
 
 /**

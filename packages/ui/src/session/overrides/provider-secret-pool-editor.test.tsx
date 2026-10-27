@@ -82,7 +82,7 @@ test('read-only viewers can switch providers while selection controls stay locke
 
 test('saving prevents navigation away from the pending selection', () => {
   const html = render({ resources: [key('Primary')], saving: true });
-  expect(html).not.toContain('href="/projects/project/customize/models"');
+  expect(html).not.toContain('href="/projects/project/admin/models"');
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
 });
 

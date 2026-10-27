@@ -24,7 +24,7 @@ agents:
 
 ## File and schema
 
-The project's `manifest_path` (default `kortix.yaml`) sets where Kortix looks. Change it with `kortix projects set --manifest <path>` or in **Customize → Settings**. Kortix reads the first file that exists of `kortix.yaml`, `kortix.yml` and `kortix.toml` at that path. A repository with both a YAML and a TOML file uses the YAML file.
+The project's `manifest_path` (default `kortix.yaml`) sets where Kortix looks. Change it with `kortix projects set --manifest <path>` or in **Project admin → General**. Kortix reads the first file that exists of `kortix.yaml`, `kortix.yml` and `kortix.toml` at that path. A repository with both a YAML and a TOML file uses the YAML file.
 
 Add the schema line at the top of the file. A YAML editor then validates and completes every key:
 
@@ -528,7 +528,7 @@ A write that cannot commit (the repository is unreachable, the value is invalid)
 
 ## Migrate from kortix.toml
 
-Kortix reads and runs a v1 `kortix.toml`. To move it to v2, open **Customize → Settings → Upgrades** and run **Migrate manifest to v2 (kortix.yaml)**, or run:
+Kortix reads and runs a v1 `kortix.toml`. To move it to v2, open **Project admin → Upgrades** and run **Migrate manifest to v2 (kortix.yaml)**, or run:
 
 ```bash
 kortix projects upgrade [<id>]

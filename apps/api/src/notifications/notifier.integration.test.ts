@@ -202,7 +202,7 @@ withDb('notification fan-out', () => {
     expect(row!.emailedAt).not.toBeNull();
     expect(row!.emailDueAt).toBeNull();
     expect(sent.expo[0]).toMatchObject({ body: 'Failing: Insufficient credits' });
-    expect(String(sent.expo[0]!.data.url)).toContain(`/projects/${project.project_id}/customize/triggers?notification=`);
+    expect(String(sent.expo[0]!.data.url)).toContain(`/projects/${project.project_id}/admin/triggers?notification=`);
   });
 
   test('no digest due time when the deployment cannot send email', async () => {

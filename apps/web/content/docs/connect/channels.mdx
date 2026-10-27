@@ -7,7 +7,7 @@ A channel lets people start and continue [sessions](/docs/work/sessions) from ou
 
 <Steps>
 <Step title="Connect the platform">
-Open **Customize → Connectors** and select the **Channels** scope. Connect Slack or Microsoft Teams there, or from a terminal:
+Open **Project admin → Connectors** and select the **Channels** scope. Connect Slack or Microsoft Teams there, or from a terminal:
 
 ```bash
 kortix channels connect                    # Slack
@@ -292,12 +292,12 @@ Teams bots cannot add reactions or search messages.
 
 ## Email
 
-Email is experimental and off by default. Turn on the **Email channel** project flag (`email_channel`) in **Customize → Settings → Feature flags**, or run `kortix projects features enable email_channel`. Off, Email is on no surface. The inbox is a [Resend inbox](https://resend.com/docs/dashboard/inboxes/introduction) on your own Resend account. Nothing is created until you connect.
+Email is experimental and off by default. Turn on the **Email channel** project flag (`email_channel`) in **Project admin → Feature flags**, or run `kortix projects features enable email_channel`. Off, Email is on no surface. The inbox is a [Resend inbox](https://resend.com/docs/dashboard/inboxes/introduction) on your own Resend account. Nothing is created until you connect.
 
 1. Create a [Resend](https://resend.com) account.
 2. Add your domain and turn on receiving: Resend shows one MX record to set ([receiving domains](https://resend.com/docs/dashboard/receiving/custom-domains)). Use a subdomain such as `mail.example.com` when the domain already receives mail elsewhere.
 3. Create a full-access [API key](https://resend.com/api-keys) (`re_…`).
-4. Open **Customize → Connectors → Kortix** and select **Connect** on Email. Paste the key. The domain list shows every domain on that account; one that is not verified yet shows its DNS records. **Add a domain…** adds a new one with receiving on and lists the records to set. **Check again** asks Resend to re-read them. An inbox can use a domain once it is verified and receiving.
+4. Open **Project admin → Connectors → Kortix** and select **Connect** on Email. Paste the key. The domain list shows every domain on that account; one that is not verified yet shows its DNS records. **Add a domain…** adds a new one with receiving on and lists the records to set. **Check again** asks Resend to re-read them. An inbox can use a domain once it is verified and receiving.
 
 **Kortix managed.** Where the operator offers it, the dialog also lists an inbox on the deployment's managed domain. You choose only the name before the `@`. It is a deployment setting (`RESEND_MANAGED_EMAIL_ENABLED` and `RESEND_MANAGED_DOMAIN`), never a project one. Otherwise an inbox needs your own key.
 
@@ -359,7 +359,7 @@ From code: `listEmailInboxes`, `addEmailInbox`, `updateEmailInbox` and `removeEm
 In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives you.
 </Step>
 <Step title="Connect it">
-Open **Customize → Connectors**, select the **Channels** scope, and select **Connect** on the Telegram row. Paste the token and list the Telegram user ids that may talk to the bot. Kortix registers the bot's webhook and keeps the token on the server.
+Open **Project admin → Connectors**, select the **Channels** scope, and select **Connect** on the Telegram row. Paste the token and list the Telegram user ids that may talk to the bot. Kortix registers the bot's webhook and keeps the token on the server.
 </Step>
 <Step title="Message the bot">
 A message from an allowed user starts a session. Anyone else gets a reply that shows their user id; a project manager adds it under **Allowed users**.

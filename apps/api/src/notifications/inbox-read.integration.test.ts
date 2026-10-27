@@ -264,7 +264,7 @@ withDb('notification inbox read', () => {
         title: 'Nightly report',
         trigger_slug: 'nightly',
         session_id: null,
-        url: `/projects/${project.project_id}/customize/triggers?notification=${memberRow}`,
+        url: `/projects/${project.project_id}/admin/triggers?notification=${memberRow}`,
       }),
     ]);
     expect((await listInbox(ACCOUNT_ONLY, { limit: 20 })).notifications.map((n) => n.id)).not.toContain(outsiderRow);

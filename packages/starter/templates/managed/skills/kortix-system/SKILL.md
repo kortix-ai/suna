@@ -306,7 +306,7 @@ secret-write permission: fall back to a link. If you do NOT have the value,
 **mint a setup link and surface the URL in the same turn** with
 `kortix secrets request` / `kortix connectors connect`. The human gets a
 fill-in modal (web) or a tappable link (Slack). Never tell them to "open
-Customize → Connectors". Full playbook in the **credentials-and-setup-links**
+Project admin → Connectors". Full playbook in the **credentials-and-setup-links**
 reference below.
 
 **Exception — connecting Slack itself.** Slack is a built-in channel, not a

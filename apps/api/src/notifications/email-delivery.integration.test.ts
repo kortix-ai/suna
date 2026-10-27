@@ -20,7 +20,7 @@ const alert = (over: Partial<ImmediateEmailInput> = {}): ImmediateEmailInput => 
   kind: 'automation_failed',
   title: 'Nightly report',
   body: 'Insufficient credits',
-  url: '/projects/p1/customize/triggers?notification=n1',
+  url: '/projects/p1/admin/triggers?notification=n1',
   ...over,
 });
 
@@ -51,7 +51,7 @@ describe('the immediate automation alert email', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: [email], category: IMMEDIATE_EMAIL_CATEGORY, subject: 'Automation failing: Nightly report' });
     expect(sent[0]!.text).toContain('Error: Insufficient credits');
-    expect(sent[0]!.text).toContain(`Open automations: ${absoluteAppUrl('/projects/p1/customize/triggers?notification=n1')}`);
+    expect(sent[0]!.text).toContain(`Open automations: ${absoluteAppUrl('/projects/p1/admin/triggers?notification=n1')}`);
   });
 
   test('a recovery says the automation works again', async () => {

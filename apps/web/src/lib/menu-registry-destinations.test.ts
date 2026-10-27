@@ -294,10 +294,10 @@ describe('every palette row points at a live route', () => {
     expect(ROUTES.some((r) => r.join('/') === 'projects/[id]/files')).toBe(true);
   });
 
-  test('/projects/[id]/customize/settings is live again, so its row may point at it', () => {
+  test('/projects/[id]/admin/general is live again, so its row may point at it', () => {
     // The route this test exists because of. It was deleted on 2026-09-02
     // and brought back on 2026-09-03 with the Customize bar's Settings tab.
-    expect(isLiveRoute('/projects/{projectId}/customize/settings')).toBe(true);
+    expect(isLiveRoute('/projects/{projectId}/admin/general')).toBe(true);
   });
 
   for (const row of paletteRows.filter((item) => item.kind === 'navigate' && item.href)) {
@@ -311,13 +311,13 @@ describe('every palette row points at a live route', () => {
   }
 });
 
-describe('the /config sections are reached through the Settings tab rows', () => {
-  test('exactly the four section rows point at /config', () => {
+describe('the project settings sections are reached through Project admin rows', () => {
+  test('exactly the four section rows point at Project admin settings', () => {
     // The Customize bar's Settings tab and its sections came back on
     // 2026-09-03 (Marko) when the overlay's Workspace group was removed;
     // Review stays a capability tab and has no `/config` row.
     const rows = paletteRows
-      .filter((item) => item.href?.includes('/customize/settings'))
+      .filter((item) => /\/admin\/(general|sandbox|feature-flags|upgrades)\b/.test(item.href ?? ''))
       .map((item) => item.id)
       .sort();
     expect(rows).toEqual([

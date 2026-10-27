@@ -278,7 +278,7 @@ server/LLM-gateway catalog rather than a sandbox-local provider list.
 
 An optional list of connector definitions — the external systems agents call
 as tools (Composio apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints,
-channels). Mirrors the dashboard's Customize → Connectors. Connectors are
+channels). Mirrors the dashboard's Project admin → Connectors. Connectors are
 project-wide visible; the only access gate is which agents may call one
 (`agents.<name>.connectors` above).
 

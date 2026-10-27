@@ -115,7 +115,7 @@ const TABLE_TABS: string[] = [];
  * Empty since #10547 and kept rather than deleted: the rule still holds for
  * the next tab whose outermost element is a shell that owns the column.
  * `models-tab.tsx` was the last entry: a pass-through that rendered the
- * Customize Models page (`/projects/[id]/customize/models`) inside
+ * Customize Models page (`/projects/[id]/admin/models`) inside
  * `CapabilityPageShell`. #10547 deleted it; that page's chrome is pinned in
  * `settings/tabs/models-tab.test.tsx`. `members-tab.tsx` left earlier, when
  * Members graduated a FOURTH time (see the `TABLE_TABS` comment above).
@@ -284,7 +284,7 @@ describe('settings tab content width', () => {
  *
  * `gateway-routing.tsx` was its last member and left the same way Secrets and
  * Channels did — it stopped being panel content. Routing is a tab of
- * `/projects/[id]/customize/models` now, whose column is `CapabilityPageShell`'s
+ * `/projects/[id]/admin/models` now, whose column is `CapabilityPageShell`'s
  * `max-w-5xl`, so the wrapper's `max-w-2xl` was not "the panel column" for it
  * any more but 320px narrower than the six tabs beside it, plus a second
  * scroll container inside the page's one. It writes its own section heading
@@ -326,13 +326,13 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
   // not govern it — the capability page that mounts it does.
   //
   // `secrets-view.tsx` left for the same reason and by the same route: it is
-  // the body of `/projects/[id]/customize/secrets`, it renders `CapabilityPageShell`,
+  // the body of `/projects/[id]/admin/secrets`, it renders `CapabilityPageShell`,
   // and its column is that shell's `max-w-5xl` — pinned by
   // `customize/sections/view/secrets-view.chrome.test.ts`, not here.
   //
   // `channels-view.tsx` left on 2026-08-17 by a different door. It is not a
   // pane and not a page: it is `ChannelsSection`, the body of the Channels
-  // scope of `/projects/[id]/customize/connectors`, and the shell, the heading and the
+  // scope of `/projects/[id]/admin/connectors`, and the shell, the heading and the
   // scroll container all belong to `connectors-page.tsx` one level up. Its own
   // column is pinned by `customize/sections/view/channels-view.chrome.test.ts`
   // beside the file.
@@ -347,7 +347,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * it — silently, because nothing throws.
  *
  * Secrets shipped exactly that way. It graduated onto its own top-level
- * Customize tab and left both registries, so `/projects/[id]/customize/secrets` rendered
+ * Customize tab and left both registries, so `/projects/[id]/admin/secrets` rendered
  * no title, no description and no Add button. It writes its own heading now —
  * `CapabilityPageShell`'s `title`/`description` props, the same shell its four
  * sibling tabs use — and `secrets-view.chrome.test.ts` pins that it cannot
@@ -413,7 +413,7 @@ describe('customize sections mounted in the settings panel', () => {
    * first place. This is the guard.
    *
    * These two ids resolve through the project-settings registry, not the
-   * rail: both panes moved to `/projects/[id]/customize/settings` and their copy moved
+   * rail: both panes moved to `/projects/[id]/admin/general` and their copy moved
    * with them. Secrets and Channels used to be in this list too — they
    * graduated a SECOND time, off this registry entirely and onto their own
    * top-level Customize tab, so they no longer have an entry here to pin.

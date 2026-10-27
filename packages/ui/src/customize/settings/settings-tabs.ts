@@ -32,6 +32,7 @@ import {
   capabilityTabHref,
   channelsHref,
 } from '../../internal/lib/capability-tab-routes';
+import { adminPath } from '../../lib/routes';
 
 export type SettingsTab =
   | 'profile'
@@ -202,23 +203,23 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   // — so every id that ever named one of these sections, the overlay's own
   // tab ids included, lands on the page. Review, the one section that was an
   // inbox rather than configuration, is a capability tab of its own.
-  workspace: (p) => `${capabilityTabHref(p, 'config')}`,
-  general: (p) => `${capabilityTabHref(p, 'config')}`,
-  settings: (p) => `${capabilityTabHref(p, 'config')}`,
+  workspace: (p) => capabilityTabHref(p, 'config'),
+  general: (p) => capabilityTabHref(p, 'config'),
+  settings: (p) => capabilityTabHref(p, 'config'),
   // Repositories and its pre-rename `git` are the Git repo section — its own
   // section of the Settings tab since 2026-09-03.
-  repositories: (p) => `${capabilityTabHref(p, 'config')}?section=git`,
-  git: (p) => `${capabilityTabHref(p, 'config')}?section=git`,
-  sandbox: (p) => `${capabilityTabHref(p, 'config')}?section=sandbox`,
+  repositories: (p) => adminPath(p, 'git'),
+  git: (p) => adminPath(p, 'git'),
+  sandbox: (p) => adminPath(p, 'sandbox'),
   // Snapshots merged into Sandbox templates — a snapshot is a template's
   // build history.
-  snapshots: (p) => `${capabilityTabHref(p, 'config')}?section=sandbox`,
-  'feature-flags': (p) => `${capabilityTabHref(p, 'config')}?section=feature-flags`,
+  snapshots: (p) => adminPath(p, 'sandbox'),
+  'feature-flags': (p) => adminPath(p, 'feature-flags'),
   // `experimental` was renamed Feature flags on the way.
-  experimental: (p) => `${capabilityTabHref(p, 'config')}?section=feature-flags`,
-  upgrades: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
+  experimental: (p) => adminPath(p, 'feature-flags'),
+  upgrades: (p) => adminPath(p, 'upgrades'),
   // `upgrade`, singular, is the old Customize id for the Upgrades pane.
-  upgrade: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
+  upgrade: (p) => adminPath(p, 'upgrades'),
   review: (p) => capabilityTabHref(p, 'review'),
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and

@@ -94,7 +94,7 @@ async function emailBudgetManagers(projectId: string, crossing: BudgetCrossing):
   const subject = member
     ? `${member} reached ${crossing.threshold}% of a gateway budget in ${projectName}`
     : `${projectName} reached ${crossing.threshold}% of its gateway budget`;
-  const url = `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/customize/models`;
+  const url = `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/admin/models`;
   const title = `Gateway budget at ${crossing.threshold}%`;
   const html = renderEmail({
     kicker: 'Budget',

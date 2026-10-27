@@ -332,7 +332,7 @@ describe('the registry no longer carries palette settings destinations', () => {
 
     // Nothing does any more. `nav-accounts` left this list when the account
     // surfaces moved to `/accounts/[id]`; `proj-customize` left it when
-    // project configuration moved to `/projects/[id]/customize/settings`. Every settings
+    // project configuration moved to `/projects/[id]/admin/general`. Every settings
     // destination in the palette is either a derived row (which opens the
     // overlay by tab id, not by href) or a plain navigation.
     expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
@@ -357,7 +357,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // rail.
     //
     // `proj-config-feature-flags` outlived the other two by a day. It was
-    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/customize/settings
+    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/admin/general
     // ?section=feature-flags'`, so typing "feature flag" offered it under
     // Navigation — above the derived row that works — and selecting it
     // navigated to a deleted route. `menu-registry-destinations.test.ts` now
@@ -414,7 +414,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // because it is no longer a settings destination.
     // `resolveSettingsOverlayHref` must not claim its href — that is what
     // would re-open the retired overlay tabs.
-    const href = '/projects/{projectId}/customize/triggers';
+    const href = '/projects/{projectId}/admin/triggers';
     const item = paletteItems.find((entry) => entry.id === 'proj-triggers');
     expect(item?.href).toBe(href);
     expect(item?.kind).toBe('navigate');

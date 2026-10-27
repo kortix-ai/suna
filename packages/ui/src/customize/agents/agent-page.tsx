@@ -1,5 +1,7 @@
 'use client';
 
+import { adminPath } from '../../lib/routes';
+
 /**
  * /projects/[id]/customize/agents/[name]: one agent, as a page with tabs.
  *
@@ -59,7 +61,6 @@ import { useNewProjectSession } from '../../internal/hooks/projects/use-new-proj
 import { agentHref, capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
-import { projectAdminHref } from '../../workspace/admin/project-admin-sections';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import {
@@ -681,7 +682,7 @@ function ProjectModelsLink({ projectId }: { projectId: string }) {
       {t.rich('projectModelsLink', {
         link: (chunks) => (
           <Link
-            href={projectAdminHref(projectId, 'models')}
+            href={adminPath(projectId, 'models')}
             className="text-foreground decoration-border hover:decoration-foreground underline underline-offset-4 transition-colors"
           >
             {chunks}
@@ -883,7 +884,7 @@ function EditableAgentPage({
                     projectId={projectId}
                     agentName={agent.name}
                     editor={editor}
-                    flagSettingsHref={projectAdminHref(projectId, 'feature-flags')}
+                    flagSettingsHref={adminPath(projectId, 'feature-flags')}
                   />
                   {view === 'tools' ? (
                     <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>

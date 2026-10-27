@@ -16,24 +16,24 @@ import {
 
 const PID = 'project-test-1';
 
-describe('Project admin ?section= scheme', () => {
+describe('Project admin /admin/<section> scheme', () => {
   test('every resource and every settings section is a deep link that parses back', () => {
     const keys = [...PROJECT_ADMIN_RESOURCES.map((r) => r.key), ...ALL_PROJECT_SETTINGS_SECTIONS.map((s) => s.key)];
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) {
       const href = projectAdminHref(PID, key as ProjectAdminSectionKey);
-      const section = new URL(href, 'https://x.invalid').searchParams.get('section');
-      expect(parseProjectAdminSection(section ?? DEFAULT_PROJECT_ADMIN_SECTION)).toBe(key as ProjectAdminSectionKey);
+      const section = new URL(href, 'https://x.invalid').pathname.split('/').at(-1);
+      expect(parseProjectAdminSection(section)).toBe(key as ProjectAdminSectionKey);
     }
   });
 
-  test('the default section is the first resource and carries no query', () => {
+  test('the default section is the first resource', () => {
     expect(DEFAULT_PROJECT_ADMIN_SECTION).toBe(PROJECT_ADMIN_RESOURCES[0]!.key);
-    expect(projectAdminHref(PID)).toBe(`/projects/${PID}/admin`);
-    expect(projectAdminHref(PID, 'git')).toBe(`/projects/${PID}/admin?section=git`);
-    expect(projectAdminHref(PID, 'repo')).toBe(`/projects/${PID}/admin?section=repo`);
+    expect(projectAdminHref(PID)).toBe(`/projects/${PID}/admin/connectors`);
+    expect(projectAdminHref(PID, 'git')).toBe(`/projects/${PID}/admin/git`);
+    expect(projectAdminHref(PID, 'repo')).toBe(`/projects/${PID}/admin/repo`);
     expect(projectAdminHref(PID, 'connectors', { scope: 'channels' })).toBe(
-      `/projects/${PID}/admin?scope=channels`,
+      `/projects/${PID}/admin/connectors?scope=channels`,
     );
   });
 
@@ -75,9 +75,9 @@ describe('buildProjectAdminNav', () => {
     nav.navigate('llm-providers');
     nav.navigate('experimental');
     expect(pushed).toEqual([
-      `/projects/${PID}/admin?scope=channels`,
-      `/projects/${PID}/admin?section=models`,
-      `/projects/${PID}/admin?section=feature-flags`,
+      `/projects/${PID}/admin/connectors?scope=channels`,
+      `/projects/${PID}/admin/models`,
+      `/projects/${PID}/admin/feature-flags`,
     ]);
   });
 

@@ -134,7 +134,7 @@ export const TAB_PREFERENCE: readonly {
     action: PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     manage: [PROJECT_ACTIONS.PROJECT_REVIEW_ACT],
   },
-  // Settings (`/projects/<id>/customize/settings`) is configuration by
+  // Settings (`/projects/<id>/admin/general`) is configuration by
   // definition: its read leaf is already a write leaf.
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
 ];
@@ -278,6 +278,7 @@ export function ProjectCustomizeNavItem({ projectId }: { projectId: string }) {
   // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
+    pathname.includes('/customize') &&
     (pathname === customizePath(projectId) || activeCapabilityTab(pathname) !== null);
 
   if (!tab) return null;

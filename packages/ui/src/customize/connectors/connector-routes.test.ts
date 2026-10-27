@@ -15,7 +15,7 @@ import {
   waysFromParams,
 } from './connector-routes';
 
-const BASE = '/projects/p1/customize/connectors';
+const BASE = '/projects/p1/admin/connectors';
 
 const discoverEntry = {
   source: 'discover',
@@ -82,7 +82,7 @@ describe('connectorHref', () => {
     ).toBe(`${BASE}/connected/resend-abc123?tab=tools&connect=c-1`);
   });
   test('path segments are encoded', () => {
-    expect(connectorHref('p 1', 'a/b')).toBe('/projects/p%201/customize/connectors/connected/a%2Fb');
+    expect(connectorHref('p 1', 'a/b')).toBe('/projects/p%201/admin/connectors/connected/a%2Fb');
   });
 });
 

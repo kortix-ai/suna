@@ -33,7 +33,7 @@ const ALERT_DATA = {
   projectId: 'proj-1',
   sessionId: null,
   triggerSlug: 'nightly-report',
-  url: '/projects/proj-1/customize/triggers?notification=note-2',
+  url: '/projects/proj-1/admin/triggers?notification=note-2',
 };
 
 describe('ANDROID_CHANNELS', () => {

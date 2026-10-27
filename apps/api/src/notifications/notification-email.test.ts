@@ -14,7 +14,7 @@ const failed: NotificationEmailItem = {
   kind: 'automation_failed',
   title: 'Nightly report',
   body: 'Insufficient credits',
-  url: `/projects/${PID}/customize/triggers?notification=n1`,
+  url: `/projects/${PID}/admin/triggers?notification=n1`,
 };
 
 function item(i: number): NotificationEmailItem {

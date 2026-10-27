@@ -1,6 +1,6 @@
 /**
  * `kortix models <subcommand>` — which models this project OFFERS, and which
- * one it starts sessions with. The CLI half of Customize → Models.
+ * one it starts sessions with. The CLI half of Project admin → Models.
  *
  * Two independent server-owned things live here, and they must not be confused:
  *
@@ -63,7 +63,7 @@ interface ModelPicker {
 const HELP = help`Usage: kortix models <subcommand> [options]
 
 Which models this project offers, and which one it starts with. Same surface as
-the dashboard's Customize → Models.
+the dashboard's Project admin → Models.
 
 The list is yours: Kortix models, plus models you reach through a provider API
 key or a ChatGPT subscription — your own, one shared with you, or one shared

@@ -59,7 +59,7 @@ describe('ExperimentalTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     // "Feature flags", not "Experimental": the pane moved to
-    // `/projects/[id]/customize/settings?section=feature-flags` and took the name the
+    // `/projects/[id]/admin/feature-flags` and took the name the
     // `CustomizeSection` id has always used.
     expect(out).toContain('Feature flags');
     expect(out).toContain('Features you can switch on before they are generally available.');

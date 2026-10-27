@@ -79,7 +79,7 @@ No link, no second entry, and never echo the value back. A `403` means you lack
 secret-write permission — then use a link. If you do NOT have the value, mint a
 short-lived **setup link** and surface the URL in the same turn, with
 `kortix secrets request` / `kortix connectors connect`. Never tell the user to
-"go to Customize → Connectors". The user gets a fill-in modal (web) or a
+"go to Project admin → Connectors". The user gets a fill-in modal (web) or a
 tappable link (Slack). Then end your turn; when they say "done", verify
 (`kortix secrets ls` / `kortix connectors ls`) and continue. See the
 **credentials-and-setup-links** reference in `kortix-system`

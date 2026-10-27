@@ -13,7 +13,7 @@ A model is the LLM that a session's agent runs on. A project can use Kortix-mana
     Choose a model in the composer's model picker, or run `kortix sessions new --model glm-5.3-flash`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
   </Step>
   <Step title="Connect your own provider">
-    Open **Customize → Models → Providers** and paste a key, or run `kortix providers set anthropic` and paste the key on stdin.
+    Open **Project admin → Models → Providers** and paste a key, or run `kortix providers set anthropic` and paste the key on stdin.
   </Step>
   <Step title="Set the project default">
     Run `kortix models default <model-id>`. Copy the id from `kortix models ls --json`.
@@ -54,7 +54,7 @@ Kortix managed models are the models Platinum Inference offers. You need no key.
 
 ## Connect your own provider
 
-Open **Customize → Models → Providers** and choose a provider. Or use the CLI on the linked project:
+Open **Project admin → Models → Providers** and choose a provider. Or use the CLI on the linked project:
 
 ```bash
 kortix providers set anthropic            # reads the key from stdin
@@ -156,11 +156,11 @@ Two separate controls decide which models a project uses:
 
 The composer's thinking control sets the session's model variant. The choices are the reasoning levels the model itself publishes. A model without reasoning levels shows no control. **Auto** clears the variant, and the model's own default applies. The gateway translates the level into each provider's request field.
 
-A project can set defaults per model: **Customize → Models → Routing → Advanced → Generation defaults**. The fields are reasoning effort, temperature, top_p and max output tokens. A default fills only a field that the request left unset, so a session's variant always wins.
+A project can set defaults per model: **Project admin → Models → Routing → Advanced → Generation defaults**. The fields are reasoning effort, temperature, top_p and max output tokens. A default fills only a field that the request left unset, so a session's variant always wins.
 
 ## Routing and fallback
 
-Open **Customize → Models → Routing**, or use the CLI:
+Open **Project admin → Models → Routing**, or use the CLI:
 
 ```bash
 kortix gateway routing                      # effective policy and its sources
@@ -177,7 +177,7 @@ kortix gateway routing reset
 - `--fallback` is the chain the gateway tries in order when the model fails. It takes up to 8 models.
 - `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
 - The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
-- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Customize → Models → Routing) replaces the chain for one exact model.
+- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Project admin → Models → Routing) replaces the chain for one exact model.
 - `--vision-model` takes a request that carries images when the default model accepts only text.
 - `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 
@@ -210,7 +210,7 @@ Turn on the `pooled_provider_secrets` [feature flag](/docs/project#feature-flags
 
 ## Budgets and costs
 
-A budget caps what a project, or one member in it, spends on models in a period. Open **Customize → Models → Costs**, or use the CLI:
+A budget caps what a project, or one member in it, spends on models in a period. Open **Project admin → Models → Costs**, or use the CLI:
 
 ```bash
 kortix gateway budget                                   # budgets with their spend this period, and this month's project spend
@@ -248,7 +248,7 @@ A project manager reads every log and every session's spend. A plain `member` re
 
 A gateway key lets any OpenAI- or Anthropic-compatible client call the project's models. The client gets the same keys, routing, access rules and budgets as a session.
 
-1. Create a key in **Customize → Models → Gateway**, or run `kortix gateway keys new <name>`. The key starts with `kortix_gw_`. Kortix shows it once. `kortix gateway keys` lists keys, and `kortix gateway keys rm <key-id>` revokes one. Managing keys needs `project.gateway.keys.manage`.
+1. Create a key in **Project admin → Models → Gateway**, or run `kortix gateway keys new <name>`. The key starts with `kortix_gw_`. Kortix shows it once. `kortix gateway keys` lists keys, and `kortix gateway keys rm <key-id>` revokes one. Managing keys needs `project.gateway.keys.manage`.
 2. Point the client at the gateway. On Kortix Cloud the base URL is `https://gateway.kortix.com`. A self-hosted instance shows its own URL in the **Gateway** tab.
 
 | Endpoint | Protocol |

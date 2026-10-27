@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { TestUiHost } from '../../test-utils/ui-host';
 import { IntlTestProvider } from '../../test-utils/intl';
 
-let pathname = '/projects/example/customize/reminders';
+let pathname = '/projects/example/admin/loops';
 let settled = true;
 let reminders = false;
 let tabs = ['agent', 'triggers'];
@@ -25,7 +25,7 @@ afterEach(() => {
   act(() => mounted?.unmount());
   mounted = undefined;
   replace.mockClear();
-  pathname = '/projects/example/customize/reminders';
+  pathname = '/projects/example/admin/loops';
   settled = true;
   reminders = false;
   tabs = ['agent', 'triggers'];
@@ -67,7 +67,7 @@ describe('bookmarked Reminders tab', () => {
     expect(replace).toHaveBeenCalledWith('/projects/example/customize/agents');
   });
   test('other denied tabs keep the shared access fallback', () => {
-    pathname = '/projects/example/customize/secrets';
+    pathname = '/projects/example/admin/secrets';
     render();
     expect(replace).toHaveBeenCalledWith('/projects/example/customize/agents');
   });

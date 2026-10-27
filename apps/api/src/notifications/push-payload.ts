@@ -75,7 +75,7 @@ export function notificationUrl(input: {
   }
   if (input.projectId && input.triggerSlug) {
     // The Triggers page lists kortix.yaml triggers only; reminders are runtime rows.
-    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'reminders' : 'customize/triggers';
+    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'reminders' : 'admin/triggers';
     return `/projects/${encodeURIComponent(input.projectId)}/${page}${query}`;
   }
   if (input.projectId) return `/projects/${encodeURIComponent(input.projectId)}${query}`;

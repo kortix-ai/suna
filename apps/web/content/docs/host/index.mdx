@@ -150,7 +150,7 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
-5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. See [Connect your own provider](/docs/project/models#connect-your-own-provider).
+5. **Add a model key** in the project: **Project admin → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. See [Connect your own provider](/docs/project/models#connect-your-own-provider).
 6. **Turn on email.** Set one connection string:
 
    ```sh
@@ -196,7 +196,7 @@ What the stack does by itself:
 - [Connectors](/docs/connect/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
-Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
+Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Project admin → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
 
 ### Unconfirmed email addresses
 

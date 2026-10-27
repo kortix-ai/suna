@@ -39,6 +39,12 @@ export interface UiRoutes {
    * capability root, for example `models` or `triggers?id=<slug>`.
    */
   customize: (projectId: string, path?: string) => string | null;
+  /**
+   * Project admin: the project-wide libraries (connectors, skills, triggers,
+   * loops, models, secrets, apps, repo) and settings, one section each.
+   * `path` is the section and anything below it (`connectors/<app>`).
+   */
+  admin: (projectId: string, path?: string) => string | null;
   /** A channel of the project, by slug (`project_channels` flag). */
   channel: (projectId: string, slug: string) => string;
   /** The caller's direct messages with one agent, by agent name (`project_channels` flag). */
@@ -59,8 +65,9 @@ const DEFAULT_ROUTES = {
   artifacts: (p: string) => `/projects/${p}/artifacts`,
   space: (p: string, slug: string) => `/projects/${p}/spaces/${encodeURIComponent(slug)}`,
   members: (p: string) => `/projects/${p}/members`,
-  sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
+  sandboxSettings: (p: string) => `/projects/${p}/admin/sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,
+  admin: (p: string, path?: string) => `/projects/${p}/admin${path ? `/${path}` : ''}`,
   channel: (p: string, slug: string) => `/projects/${p}/c/${slug}`,
   dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
   memory: (p: string) => `/projects/${p}/memory`,
@@ -70,9 +77,15 @@ export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;
 
 let routes: UiRoutes = DEFAULT_ROUTES;
 
-/** Replaces the routes the host passes. Omitted routes keep their default. */
+/**
+ * Replaces the routes the host passes. Omitted routes keep their default,
+ * except `admin`: a host that maps `customize` (to its own pages, or to null)
+ * and says nothing of `admin` gets the same mapping for it, since the
+ * libraries left Customize for Project admin (2026-10-27).
+ */
 export function setUiRoutes(overrides: Partial<UiRoutes>): void {
-  routes = { ...DEFAULT_ROUTES, ...overrides };
+  const admin = overrides.admin ?? overrides.customize;
+  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}) };
 }
 
 export function uiRoutes(): UiRoutes {
@@ -95,6 +108,11 @@ export function decodeSpaceSegment(segment: string): string | null {
  */
 export function customizePath(projectId: string, path?: string): string {
   return routes.customize(projectId, path) ?? DEFAULT_ROUTES.customize(projectId, path);
+}
+
+/** A Project admin URL, with the same fallback as `customizePath`. */
+export function adminPath(projectId: string, path?: string): string {
+  return routes.admin(projectId, path) ?? DEFAULT_ROUTES.admin(projectId, path);
 }
 
 /**

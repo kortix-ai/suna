@@ -15,7 +15,7 @@ This is the canonical answer to "I need an API key / I need this app connected."
    time. Do not lecture them about pasting it. Never echo the value back.
 2. **You do NOT have the value → mint a setup link** and surface the URL in your
    reply, in the same turn. Never tell the human to "open the dashboard →
-   Customize → Connectors". Do not ASK the human to paste a key into chat — the
+   Project admin → Connectors". Do not ASK the human to paste a key into chat — the
    link is the better channel when you have to ask.
 
 Setting a secret needs your project's secret-write permission. A `403` from
@@ -264,7 +264,7 @@ the stored row is damaged) is stored and lost. `kortix secrets ls` shows it as
 `… cannot be decrypted with this server's encryption key` or
 `credential_undecryptable`. Never tell the human it is unset or that it is
 set and fine. Ask them to enter it again: mint a setup link
-(`kortix secrets request`), or point them to **Customize → Secrets → Re-enter
+(`kortix secrets request`), or point them to **Project admin → Secrets → Re-enter
 value**. When the broken value is their own override, the fix is **Delete my
 value** on the same row.
 
@@ -318,7 +318,7 @@ something a trigger needs).
 This beats the alternatives you might be tempted by:
 
 - ❌ "Paste your API key here" — when you have to ASK, ask with a link.
-- ❌ "Go to the dashboard → Customize → Connectors → Connect" — the friction that
+- ❌ "Go to the dashboard → Project admin → Connectors → Connect" — the friction that
   makes the human give up. You have a one-click link; use it.
 - ❌ Minting a link for a value already in the conversation — the human gave
   it to you. Store it with `kortix secrets set`.

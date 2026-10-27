@@ -61,7 +61,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 - `agents.<name>.file`, `opencode.config_dir` and `pi.config_dir` in `kortix.yaml` move an agent file or a harness folder to another path.
 - The manifest path is a project setting, `kortix.yaml` by default. See [File and schema](/docs/project/manifest#file-and-schema).
 - A project that keeps agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/` works unchanged. Every reader accepts both layouts.
-- To remove a project skill, open its card under **Customize → Skills** and select **Remove**, or run `kortix marketplace uninstall skills/<name> --yes`. One commit on the default branch deletes the folder with every file in it and takes the skill off every agent's `skills` list. The platform `kortix-*` skills have no **Remove**.
+- To remove a project skill, open its card under **Project admin → Skills** and select **Remove**, or run `kortix marketplace uninstall skills/<name> --yes`. One commit on the default branch deletes the folder with every file in it and takes the skill off every agent's `skills` list. The platform `kortix-*` skills have no **Remove**.
 
 ## What a new project contains
 
@@ -150,7 +150,7 @@ To force a running session onto the newest config, run `kortix sessions reload <
 
 ## Project settings
 
-Open **Customize → Settings** in a project. The sections:
+Open **Project admin → General** in a project. The sections:
 
 | Section | What you set |
 | --- | --- |
@@ -179,7 +179,7 @@ A feature flag turns one surface on or off for one project. Kortix stores the fl
 
 ### Turn a flag on or off
 
-- **Web:** **Customize → Settings → Feature flags**. Each row shows its origin: **Default on**, **Default off**, **Overridden for this project** or **Managed by Kortix**.
+- **Web:** **Project admin → Feature flags**. Each row shows its origin: **Default on**, **Default off**, **Overridden for this project** or **Managed by Kortix**.
 - **CLI:**
 
   ```bash
@@ -250,7 +250,7 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 
 ## Delete a project
 
-1. Open **Customize → Settings → General**.
+1. Open **Project admin → General**.
 2. Under **Danger zone**, select **Delete workspace** and confirm.
 
 From the CLI, run `kortix projects rm [<project_id>]`. It acts on the linked project when you pass no id. `-y` skips the confirmation. Both need `project.delete`. A delete cannot be undone.
