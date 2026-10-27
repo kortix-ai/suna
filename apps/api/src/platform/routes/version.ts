@@ -8,7 +8,8 @@ import { logger } from '../../lib/logger';
  * Sandbox version and changelog endpoints.
  *
  * Sources of truth:
- * - Running version: SANDBOX_VERSION, injected at container start.
+ * - Running version: the configured SANDBOX_VERSION image tag, or none when
+ *   sandboxes use per-project snapshots with no platform-wide image.
  * - Stable releases: GitHub Releases API.
  * - Dev builds: Docker Hub tags for kortix/kortix-sandbox.
  */
@@ -57,11 +58,12 @@ interface GHRelease {
 }
 
 function getRunningVersion(): string {
-  return process.env.SANDBOX_VERSION || config.SANDBOX_VERSION_OVERRIDE || 'unknown';
+  return config.SANDBOX_VERSION_OVERRIDE || 'none';
 }
 
-function getRunningChannel(): VersionChannel {
-  return detectVersionChannel(getRunningVersion());
+function getRunningChannel(): VersionChannel | 'none' {
+  const version = getRunningVersion();
+  return version === 'none' ? 'none' : detectVersionChannel(version);
 }
 
 function githubRequest(path: string, token?: string): Promise<Response> {
@@ -205,7 +207,7 @@ const ChannelSchema = z.enum(['stable', 'dev']);
 const RunningVersionSchema = z
   .object({
     version: z.string(),
-    channel: ChannelSchema,
+    channel: z.enum(['stable', 'dev', 'none']),
   })
   .openapi('SandboxRunningVersion');
 
