@@ -1286,10 +1286,6 @@
         "project_channels": {
           "name": "Kanali",
           "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
-        },
-        "cloud_subagents": {
-          "name": "Засебне сесије подагената",
-          "description": "Агент може да преда задатак подагенту у засебној сесији на сопственом рачунару у облаку. Сесија подагента је повезана са родитељском, види се на бочној траци, наставља да ради после родитељског потеза и користи сопствене рачунарске ресурсе. Искључено: сваки подагент ради унутар родитељске сесије. Нове сесије користе промену; покренута сесија задржава своје подешавање док се поново не покрене."
         }
       },
       "channelsSwitch": {
@@ -20921,9 +20917,6 @@
     "ceilingHidden": "Видљиво администраторима",
     "ceilingDefault": "Подразумевани плафон агента",
     "changeCeiling": "Промени",
-    "humanOnly": "Само за људе",
-    "humanOnlyHelp": "Izdavanje kredencijala projekta ostaje ljudima.",
-    "humanOnlyValue": "Никад се не додељује",
     "effective": "Ефективне дозволе",
     "effectiveHelp": "Kortix дозволе унутар улоге-плафона, без дозвола само за људе. project.read се увек додељује.",
     "outsideCeiling": "Декларисано, али изван улоге-плафона:",

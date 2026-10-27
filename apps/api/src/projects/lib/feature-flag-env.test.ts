@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  CLOUD_SUBAGENTS_ENV_NAME,
   FEATURE_FLAGS_ENV_NAME,
-  cloudSubagentsEnv,
   featureFlagsEnvValue,
 } from './feature-flag-env';
 
@@ -25,16 +23,3 @@ describe('featureFlagsEnvValue', () => {
   });
 });
 
-describe('cloudSubagentsEnv', () => {
-  test('flag on, or unset (platform default on) => KORTIX_PI_CLOUD_SUBAGENTS=1: separate sessions allowed', () => {
-    expect(cloudSubagentsEnv({ experimental: { cloud_subagents: true } })).toEqual({ KORTIX_PI_CLOUD_SUBAGENTS: '1' });
-    expect(cloudSubagentsEnv({})).toEqual({ KORTIX_PI_CLOUD_SUBAGENTS: '1' });
-    expect(cloudSubagentsEnv(null)).toEqual({ KORTIX_PI_CLOUD_SUBAGENTS: '1' });
-  });
-  test('flag off => KORTIX_PI_CLOUD_SUBAGENTS=0: the kill switch, every subagent runs in the parent session', () => {
-    expect(cloudSubagentsEnv({ experimental: { cloud_subagents: false } })).toEqual({ KORTIX_PI_CLOUD_SUBAGENTS: '0' });
-  });
-  test('env name is the one kortixd reads', () => {
-    expect(CLOUD_SUBAGENTS_ENV_NAME).toBe('KORTIX_PI_CLOUD_SUBAGENTS');
-  });
-});

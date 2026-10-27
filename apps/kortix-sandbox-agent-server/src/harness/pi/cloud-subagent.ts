@@ -5,11 +5,9 @@
  * RFC `.agents/skills/learnings/work/claude-code-harness-parity/README.md`,
  * Pillar 1 (the keystone). The model picks the session per call
  * (`extensions/subagents.ts`); `routeSubagent` below decides where the call
- * runs. A separate call runs here when the project allows separate sessions
- * (flag `cloud_subagents`, default ON; the API sets
- * `KORTIX_PI_CLOUD_SUBAGENTS=0` to turn them off) and the box has a control
- * plane. Otherwise it runs in this session (`PiRuntime.spawnSession`), and the
- * tool result says why.
+ * runs. A separate call runs here when the box has a control plane. Otherwise
+ * it runs in this session (`PiRuntime.spawnSession`), and the tool result says
+ * why.
  * A spawn is one `POST /v1/projects/:id/sessions` from this box, which
  * provisions the child its own sandbox + pi and runs the prompt. The child
  * auto-links to this session as its parent: the box's `KORTIX_TOKEN` is
@@ -51,8 +49,6 @@ import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
-export const SEPARATE_OFF_NOTICE =
-  'This project turned separate subagent sessions off (project setting `cloud_subagents`), so the subagent ran inside this session.'
 export const NO_CONTROL_PLANE_NOTICE =
   'This session has no Kortix control plane to start a separate session from, so the subagent ran inside this session.'
 
@@ -60,7 +56,7 @@ export const NO_CONTROL_PLANE_NOTICE =
  * Where one `agent` call runs. A `task_id` resumes the child where it was
  * created: a child this session holds in process is `same`, any other id is
  * a separate session. A new call runs where `requested` says (default
- * `separate`). A separate call the project or the box cannot serve runs in
+ * `separate`). A separate call the box cannot serve runs in
  * this session, with a notice; it never fails.
  */
 export function routeSubagent(input: {
@@ -68,14 +64,11 @@ export function routeSubagent(input: {
   taskId?: string
   /** The task_id names a child this session runs in process. */
   localChild: boolean
-  /** The project allows separate sessions (`KORTIX_PI_CLOUD_SUBAGENTS` is not `0`). */
-  separateAllowed: boolean
   /** The box can reach its control plane (`cloudSubagentApiFrom` is not null). */
   controlPlane: boolean
 }): { session: SubagentSession; notice?: string } {
   if (input.taskId) return { session: input.localChild ? 'same' : 'separate' }
   if (input.requested === 'same') return { session: 'same' }
-  if (!input.separateAllowed) return { session: 'same', notice: SEPARATE_OFF_NOTICE }
   if (!input.controlPlane) return { session: 'same', notice: NO_CONTROL_PLANE_NOTICE }
   return { session: 'separate' }
 }

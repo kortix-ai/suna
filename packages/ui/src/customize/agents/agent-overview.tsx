@@ -103,6 +103,7 @@ export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): A
     case 'subagents':
     case 'commands':
     case 'extensions':
+    case 'tools':
       return block[view];
     default:
       return undefined;

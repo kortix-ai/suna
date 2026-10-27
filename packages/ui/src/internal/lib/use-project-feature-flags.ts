@@ -43,7 +43,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const projectChannels = useFeatureFlag(projectId, 'project_channels');
   const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
   const goals = useFeatureFlag(projectId, 'goals');
-  const cloudSubagents = useFeatureFlag(projectId, 'cloud_subagents');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
   const emailChannel = useFeatureFlag(projectId, 'email_channel');
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
@@ -66,7 +65,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       project_channels: projectChannels.enabled,
       agent_rooms: agentRooms.enabled,
       goals: goals.enabled,
-      cloud_subagents: cloudSubagents.enabled,
       artifacts: artifacts.enabled,
       email_channel: emailChannel.enabled,
       workspace_volume: workspaceVolume.enabled,

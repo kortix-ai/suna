@@ -2016,7 +2016,7 @@ describe('pi subagents extension', () => {
     }
   })
 
-  test('session "same", and the project kill switch, run the child in this session: no session create', async () => {
+  test('session "same" runs the child in this session: no session create', async () => {
     let creates = 0
     const server = Bun.serve({
       port: 0,
@@ -2034,12 +2034,6 @@ describe('pi subagents extension', () => {
       expect(samePart.state.output).toContain('\nsession: same\n')
       expect(samePart.state.output).toContain('<task_result>\nchild report\n</task_result>')
 
-      const off = await boot({ script: [TASK({}), { text: 'child report' }, { text: 'parent done' }], env: { KORTIX_API_URL: apiUrl, KORTIX_PI_CLOUD_SUBAGENTS: '0' } })
-      await promptAndSettle(off, 'delegate it')
-      const offPart = toolParts((await off.bearer(`/kortix/runtime/messages/${off.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage, 'task')[0]!
-      expect(offPart.state.status).toBe('completed')
-      expect(offPart.state.output).toContain('session: same (This project turned separate subagent sessions off (project setting `cloud_subagents`), so the subagent ran inside this session.)')
-      expect(offPart.state.output).toContain('<task_result>\nchild report\n</task_result>')
       expect(creates).toBe(0)
     } finally {
       server.stop(true)

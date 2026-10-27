@@ -13,11 +13,6 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `spaceTabKey`, `spaceHeader`, and the constants `PROJECT_WIDE_SPACE`, `DEFAULT_SPACE_TABS`,
   `DEFAULT_SPACE_HEADER`.
 
-### Added (separate subagent sessions flag)
-- `FeatureFlagKey` `'cloud_subagents'` ("Separate subagent sessions"), listed in `FEATURE_FLAG_KEYS`: on by
-  default. The pi `agent` tool takes `session: "separate" | "same"` per call (default `"separate"`: a real
-  child session on its own sandbox). Off is the project kill switch: every call runs in the parent session.
-
 ### Deprecated (app form)
 - `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
   and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call

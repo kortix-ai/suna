@@ -1286,10 +1286,6 @@
         "project_channels": {
           "name": "频道",
           "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
-        },
-        "cloud_subagents": {
-          "name": "独立子智能体会话",
-          "description": "允许智能体把任务交给在专属云端计算机上独立会话中运行的子智能体。子智能体会话与父会话关联，显示在侧边栏中，在父会话的回合结束后继续运行，并使用自己的计算资源。关闭后，所有子智能体都在父会话内运行。新会话会使用此更改；正在运行的会话在重启前保持原设置。"
         }
       },
       "channelsSwitch": {
@@ -20921,9 +20917,6 @@
     "ceilingHidden": "仅管理员可见",
     "ceilingDefault": "默认智能体上限",
     "changeCeiling": "更改",
-    "humanOnly": "仅限人员",
-    "humanOnlyHelp": "签发项目凭据仅限人员操作。",
-    "humanOnlyValue": "从不授予",
     "effective": "有效权限",
     "effectiveHelp": "上限角色内的 Kortix 权限，减去仅限人员的权限。始终授予 project.read。",
     "outsideCeiling": "已声明，但超出上限角色：",

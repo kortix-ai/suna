@@ -20,8 +20,8 @@
  *    it outlives this turn (`../cloud-subagent.ts`).
  *  - `same`: an in-process pi agent in a child session of this session (see
  *    `PiRuntime.spawnSession`): no boot, no extra sandbox.
- * A separate call that the project (flag `cloud_subagents` off) or the box (no
- * control plane) cannot serve runs in this session, and the result says so.
+ * A separate call the box cannot serve (no control plane) runs in this
+ * session, and the result says so.
  * A `task_id` resumes the child in the session mode it was created in.
  *
  * Named subagent types: `general` (every workspace tool), `explore` (read-only

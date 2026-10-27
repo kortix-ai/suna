@@ -1286,10 +1286,6 @@
         "project_channels": {
           "name": "Canais",
           "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
-        },
-        "cloud_subagents": {
-          "name": "Sessões separadas de subagentes",
-          "description": "Permite que um agente entregue uma tarefa a um subagente em sua própria sessão, em seu próprio computador na nuvem. A sessão do subagente fica vinculada à principal, aparece na barra lateral, continua após o turno principal e usa sua própria capacidade de computação. Desativado, cada subagente roda dentro da sessão principal. Novas sessões usam a mudança; uma sessão em execução mantém sua configuração até reiniciar."
         }
       },
       "channelsSwitch": {
@@ -20921,9 +20917,6 @@
     "ceilingHidden": "Visível para admins",
     "ceilingDefault": "Teto padrão de agentes",
     "changeCeiling": "Alterar",
-    "humanOnly": "Só pessoas",
-    "humanOnlyHelp": "A emissão de credenciais do projeto fica com as pessoas.",
-    "humanOnlyValue": "Nunca concedida",
     "effective": "Permissões efetivas",
     "effectiveHelp": "Permissões Kortix dentro da função teto, menos as permissões só para pessoas. project.read é sempre concedida.",
     "outsideCeiling": "Declaradas, mas fora da função teto:",

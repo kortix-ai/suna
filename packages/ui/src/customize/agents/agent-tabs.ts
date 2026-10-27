@@ -2,11 +2,12 @@
  * The agent page's address: four tabs, and a view inside Access and Runtime.
  *
  *   ?tab=overview | access | runtime | triggers
- *   ?tab=access&view=skills | connectors | secrets | apps | drives | permissions | …
- *   ?tab=runtime&view=model | tools | workspace
+ *   ?tab=access&view=tools | skills | extensions | connectors | secrets | apps | drives | permissions | …
+ *   ?tab=runtime&view=model | workspace
  *
  * The page used to be a rail of seventeen `?section=<key>` topics, then six
- * tabs. Every old link still resolves: `resolveAgentLocation` maps
+ * tabs. Tools moved from Runtime to Access (2026-10-27): `?tab=runtime&view=tools`
+ * opens Access. Every old link still resolves: `resolveAgentLocation` maps
  * `?section=` onto a tab and a view (Basics became the Overview's
  * Availability panel). Instructions and People are no tabs any more: the
  * instructions are edited on the Overview, and People is the header's Share
@@ -21,7 +22,9 @@ export type AgentTab = (typeof AGENT_TABS)[number];
 
 /** Access views, in the order the segmented control lists them. */
 export const ACCESS_VIEWS = [
+  'tools',
   'skills',
+  'extensions',
   'connectors',
   'secrets',
   'apps',
@@ -29,11 +32,10 @@ export const ACCESS_VIEWS = [
   'actions',
   'subagents',
   'commands',
-  'extensions',
 ] as const satisfies readonly AgentConfigSectionKey[];
 export type AccessView = (typeof ACCESS_VIEWS)[number];
 
-export const RUNTIME_VIEWS = ['model', 'tools', 'workspace'] as const satisfies readonly AgentConfigSectionKey[];
+export const RUNTIME_VIEWS = ['model', 'workspace'] as const satisfies readonly AgentConfigSectionKey[];
 export type RuntimeView = (typeof RUNTIME_VIEWS)[number];
 
 /** The URL word for a view. `actions` reads as `permissions` in a link. */
@@ -86,6 +88,11 @@ export function resolveAgentLocation(
     tab = tabOfSection(legacy);
     view = tab === 'access' || tab === 'runtime' ? legacy : null;
   }
+  // A view that moved tabs (Tools: Runtime → Access) follows its view.
+  if ((tab === 'access' || tab === 'runtime') && view && tabOfSection(view) !== tab) {
+    const owner = tabOfSection(view);
+    if (owner === 'access' || owner === 'runtime') tab = owner;
+  }
   if (!tab || !tabs.includes(tab)) tab = tabs[0] ?? 'overview';
   if (tab !== 'access' && tab !== 'runtime') return { tab, view: null };
   const own = (tab === 'access' ? ACCESS_VIEWS : RUNTIME_VIEWS) as readonly AgentConfigSectionKey[];
@@ -113,6 +120,8 @@ const OVERVIEW_FIELDS = new Set([
   'behavior.description',
 ]);
 const ACCESS_FIELDS = new Set([
+  'tools',
+  'behavior.permission',
   'skills',
   'connectors',
   'connectors_required',

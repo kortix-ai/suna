@@ -327,6 +327,7 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'basics', label: 'Basics', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
   { key: 'subagents', label: 'Subagents', group: 'Access' },
+  { key: 'tools', label: 'Tools', group: 'Access' },
   { key: 'commands', label: 'Commands', group: 'Access' },
   { key: 'extensions', label: 'Extensions', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
@@ -335,7 +336,6 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'drives', label: 'Drives', group: 'Access' },
   { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
-  { key: 'tools', label: 'Tools', group: 'Runtime' },
   { key: 'workspace', label: 'Workspace', group: 'Runtime' },
 ] as const satisfies readonly { key: string; label: string; group: AgentConfigSectionGroup }[];
 

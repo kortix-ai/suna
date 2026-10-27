@@ -435,25 +435,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'GET …/email/installation answers null and …/email/mode `enabled: false`; the Resend webhook ignores the project\'s inboxes; ' +
       'channel materialize and sync drop the email connector; the catalog hides native:email.',
   },
-  {
-    key: 'cloud_subagents',
-    name: 'Separate subagent sessions',
-    description:
-      'Let agents hand a task to a subagent in its own Kortix session on its own cloud computer. The subagent session is linked to the parent, shows in the sidebar, keeps running after the parent turn, and uses its own compute. Off, every subagent runs inside the parent session.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (2026-10-27, RFC claude-code-harness-parity, Pillar 1): the
-    // pi `agent` tool's `session` defaults to "separate". Off is the project
-    // kill switch that forces `session: "same"` for every call.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Session provisioning sets KORTIX_PI_CLOUD_SUBAGENTS in the box env ' +
-      '(projects/lib/feature-flag-env.ts): `1` on, `0` off. On, a pi `agent` call with ' +
-      '`session: "separate"` (the default) creates a child session through POST /v1/projects/:id/sessions ' +
-      '(kortixd harness/pi/cloud-subagent.ts). Off, every call runs in process (`session: "same"`) and ' +
-      'the tool result says so. Boot-only: a change reaches the next new box.',
-  },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.

@@ -147,13 +147,11 @@ The `agent` tool takes `session: "separate" | "same"` (decided by Marko):
 - `same`: the in-process child, for quick sub-steps.
 - The choice is per call (`routeSubagent`), not per session. A `task_id`
   resumes the child in the mode it was created in.
-- A separate call with no control plane, or with the project flag off, runs
-  as `same` and the tool result says why. It never fails for that reason.
-- The flag `cloud_subagents` now means "Separate subagent sessions" allowed:
-  `platformDefault` true, the API always sends `KORTIX_PI_CLOUD_SUBAGENTS`
-  (`1`/`0`), and off is the admin kill switch. The key name stayed, to keep
-  stored overrides and the wire contract; a rename (for example
-  `separate_subagent_sessions`) is an open proposal.
+- A separate call with no control plane runs as `same` and the tool result
+  says why. It never fails for that reason.
+- No project flag (2026-10-27, Marko): the model picks `session` per call.
+  The former `cloud_subagents` flag and `KORTIX_PI_CLOUD_SUBAGENTS` are gone;
+  a stored `experimental.cloud_subagents` override is inert.
 - Guardrails unchanged: 4 live separate children per parent, depth 2. Both
   errors name `session: "same"` as the way out.
 - Open: live verification on a real box needs a sandbox image with this

@@ -15,7 +15,6 @@ import {
   cloudSubagentApiFrom,
   NO_CONTROL_PLANE_NOTICE,
   routeSubagent,
-  SEPARATE_OFF_NOTICE,
   subagentContextFrom,
   type CloudSubagentApi,
 } from '@/harness/pi/cloud-subagent'
@@ -333,7 +332,7 @@ describe('subagent context and target', () => {
 })
 
 describe('routeSubagent — where one agent call runs', () => {
-  const ready = { localChild: false, separateAllowed: true, controlPlane: true }
+  const ready = { localChild: false, controlPlane: true }
 
   test('a call with no session runs in a separate session', () => {
     expect(routeSubagent({ ...ready })).toEqual({ session: 'separate' })
@@ -342,11 +341,6 @@ describe('routeSubagent — where one agent call runs', () => {
 
   test('session "same" runs in this session, with no notice', () => {
     expect(routeSubagent({ ...ready, requested: 'same' })).toEqual({ session: 'same' })
-  })
-
-  test('separate with the project setting off runs in this session and says why', () => {
-    expect(routeSubagent({ ...ready, separateAllowed: false })).toEqual({ session: 'same', notice: SEPARATE_OFF_NOTICE })
-    expect(routeSubagent({ ...ready, requested: 'separate', separateAllowed: false })).toEqual({ session: 'same', notice: SEPARATE_OFF_NOTICE })
   })
 
   test('separate with no control plane runs in this session and says why', () => {

@@ -1077,9 +1077,8 @@ identically.
 | `separate` (default) | Its own new Kortix session and sandbox, linked to this session as its parent, listed in the sidebar, alive after this turn. | Real tasks, long or parallel work, a whole job handed to another agent. |
 | `same` | In process, in a child session of this session. No boot, no extra sandbox. | Quick lookups and small sub-steps. |
 
-A `separate` call runs as `same`, and the result says why, when the project
-turned separate sessions off (flag `cloud_subagents` off, the box gets
-`KORTIX_PI_CLOUD_SUBAGENTS=0`) or the box has no control plane (no
+A `separate` call runs as `same`, and the result says why, when the box has
+no control plane (no
 `KORTIX_API_URL`, project id or `KORTIX_TOKEN`). It never fails for that
 reason. A `task_id` resumes the child in the mode it was created in: an id this
 session holds in process is `same`, any other id is a separate session.
@@ -1104,9 +1103,8 @@ stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
-**Separate sessions** (`session: "separate"`, the default; project flag
-`cloud_subagents` "Separate subagent sessions", default on, the API sets
-`KORTIX_PI_CLOUD_SUBAGENTS=1`, or `0` for off; an absent key means on). The
+**Separate sessions** (`session: "separate"`, the default; no project
+setting, the model picks per call). The
 call is a real child session (`harness/pi/cloud-subagent.ts`):
 `POST /v1/projects/:id/sessions` with the
 box token, which links the child to this session and authorizes every later

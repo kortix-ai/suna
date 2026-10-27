@@ -1489,8 +1489,7 @@ export class PiRuntime {
    * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
    * (the default) spawns a REAL Kortix child session with its own sandbox;
    * `same` runs the in-process child. A separate call runs in process, with a
-   * notice in the tool result, when the project turned separate sessions off
-   * (`KORTIX_PI_CLOUD_SUBAGENTS=0`) or the box has no control plane. A
+   * notice in the tool result, when the box has no control plane. A
    * `task_id` resumes the child where it was created. The result shape is
    * identical either way, so the tool contract and the UI do not change.
    */
@@ -1509,7 +1508,6 @@ export class PiRuntime {
       requested: input.session,
       taskId: input.sessionId,
       localChild: !!input.sessionId && this.children.has(input.sessionId),
-      separateAllowed: this.cfg.piSeparateSessions,
       controlPlane: this.cloudSubagents !== null,
     })
     if (route.session === 'separate' && this.cloudSubagents) {

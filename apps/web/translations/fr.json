@@ -1286,10 +1286,6 @@
         "project_channels": {
           "name": "Canaux",
           "description": "Organisez le travail en canaux. Chaque nouveau message dans un canal ou dans un message direct avec un agent démarre un fil. Remplace la liste des sessions dans la barre latérale."
-        },
-        "cloud_subagents": {
-          "name": "Sessions de sous-agents séparées",
-          "description": "Permet à un agent de confier une tâche à un sous-agent dans sa propre session, sur son propre ordinateur cloud. La session du sous-agent est liée à la session parente, apparaît dans la barre latérale, continue après le tour parent et utilise sa propre puissance de calcul. Désactivé, chaque sous-agent s'exécute dans la session parente. Les nouvelles sessions appliquent le changement ; une session en cours garde son réglage jusqu'à son redémarrage."
         }
       },
       "channelsSwitch": {
@@ -20921,9 +20917,6 @@
     "ceilingHidden": "Visible par les admins",
     "ceilingDefault": "Plafond d'agent par défaut",
     "changeCeiling": "Modifier",
-    "humanOnly": "Réservé aux humains",
-    "humanOnlyHelp": "L’émission d’identifiants du projet reste réservée aux personnes.",
-    "humanOnlyValue": "Jamais accordée",
     "effective": "Permissions effectives",
     "effectiveHelp": "Permissions Kortix dans le rôle plafond, moins les permissions réservées aux humains. project.read est toujours accordée.",
     "outsideCeiling": "Déclarées, mais hors du rôle plafond :",

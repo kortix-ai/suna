@@ -154,20 +154,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
-  test('cloud_subagents allows separate subagent sessions by default; off is the project kill switch', () => {
-    expect(findCatalogFlag('cloud_subagents')).toMatchObject({
-      name: 'Separate subagent sessions',
-      stability: 'experimental',
-      enabled: true,
-      operator_only: false,
-    });
-    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'cloud_subagents')!;
-    expect(def.enforcement).toBe('behavioral');
-    expect(def.platformDefault()).toBe(true);
-    expect(resolveFeatureFlag({}, 'cloud_subagents')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { cloud_subagents: false } }, 'cloud_subagents')).toBe(false);
-  });
-
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
       name: 'Composio event triggers',

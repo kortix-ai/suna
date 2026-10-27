@@ -54,9 +54,13 @@ describe('resolveAgentLocation', () => {
     expect(at({})).toEqual({ tab: 'overview', view: null });
   });
 
-  test('Access opens its first view, Runtime opens Model', () => {
-    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'skills' });
+  test('Access opens its first view, Tools; Runtime opens Model', () => {
+    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'tools' });
     expect(at({ tab: 'runtime' })).toEqual({ tab: 'runtime', view: 'model' });
+  });
+
+  test('an old Runtime > Tools link opens Access > Tools', () => {
+    expect(at({ tab: 'runtime', view: 'tools' })).toEqual({ tab: 'access', view: 'tools' });
   });
 
   test('view=permissions is the Kortix permissions view', () => {
@@ -78,7 +82,7 @@ describe('resolveAgentLocation', () => {
       actions: { tab: 'access', view: 'actions' },
       permissions: { tab: 'access', view: 'actions' },
       model: { tab: 'runtime', view: 'model' },
-      tools: { tab: 'runtime', view: 'tools' },
+      tools: { tab: 'access', view: 'tools' },
       workspace: { tab: 'runtime', view: 'workspace' },
     };
     for (const [section, expected] of Object.entries(cases)) {

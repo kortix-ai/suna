@@ -810,9 +810,11 @@ function EditableAgentPage({
   const accessViews = ACCESS_VIEWS.filter((v) => views.includes(v));
   const runtimeViews = RUNTIME_VIEWS.filter((v) => views.includes(v));
   const grantLabel = useGrantLabel();
-  // v2 has no extension grant: its Extensions view lists platform extensions, no count.
+  // v2 has no extension or tool grant: those views list switches, no count. v3 `tools` omitted = all.
   const countOf = (view: AgentConfigSectionKey) =>
-    view === 'drives' || (view === 'extensions' && schemaVersion < 3) ? null : grantLabel(grantOf(draft, view));
+    view === 'drives' || ((view === 'extensions' || view === 'tools') && schemaVersion < 3)
+      ? null
+      : grantLabel(view === 'tools' ? (grantOf(draft, view) ?? 'all') : grantOf(draft, view));
   const switcher =
     location.tab === 'access' && location.view ? (
       <ViewSwitcher label={t('tabAccess')} views={accessViews} active={location.view} hrefFor={viewHref} countOf={countOf} />

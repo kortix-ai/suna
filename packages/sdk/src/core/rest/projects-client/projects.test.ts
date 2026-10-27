@@ -1017,7 +1017,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'agent_rooms',
     'goals',
     'artifacts',
-    'cloud_subagents',
     'email_channel',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
