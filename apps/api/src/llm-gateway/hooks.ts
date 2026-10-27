@@ -685,5 +685,17 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   if (fallback) void switchSessionToFallback(fallback);
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
+  const timing = trace.metadata?.timing as Record<string, unknown> | undefined;
+  if (trace.ok && typeof timing?.upstream_response_ms === 'number') {
+    // Charted in Better Stack: the gateway and model share of time to first token.
+    logger.info(`[gateway-timing] ${trace.provider}/${trace.resolvedModel || trace.requestedModel}`, {
+      provider: trace.provider,
+      model: trace.resolvedModel || trace.requestedModel,
+      streaming: trace.streaming,
+      prep_ms: timing.prep_ms,
+      upstream_response_ms: timing.upstream_response_ms,
+      latency_ms: trace.latencyMs,
+    });
+  }
   await settleWarnBudgets(trace);
 }

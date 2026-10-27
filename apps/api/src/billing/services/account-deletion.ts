@@ -297,6 +297,17 @@ async function clearLegacyAuthUserReferences(userId: string): Promise<void> {
             }
           }
         }
+        // Legacy threads cascade with their account, but their runs do not.
+        // Ownership comes from the thread, never from creator attribution.
+        const [legacyThreads] = await tx.execute(sql`
+          SELECT to_regclass('public.threads') IS NOT NULL
+             AND to_regclass('public.agent_runs') IS NOT NULL AS has`);
+        if (legacyThreads?.has) {
+          await tx.execute(sql`
+            DELETE FROM public.agent_runs WHERE thread_id IN (
+              SELECT thread_id FROM public.threads WHERE account_id IN (${ids})
+            )`);
+        }
         await tx.execute(sql`DELETE FROM basejump.accounts WHERE id IN (${ids})`);
       }
     }

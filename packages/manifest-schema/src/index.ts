@@ -35,7 +35,6 @@ import {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
-  SHOPIFY_SHOP_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
@@ -196,7 +195,6 @@ export {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
-  SHOPIFY_SHOP_RE,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NPM_RE,
   PI_PACKAGE_PATH_RE,
@@ -1713,32 +1711,6 @@ export function validateConnectors(node: unknown, path: string, issues: Manifest
         message: 'graphql connectors require `endpoint`.',
         severity: 'error',
       });
-    }
-    if (provider === 'shopify') {
-      if (entry.shop !== undefined && !(typeof entry.shop === 'string' && SHOPIFY_SHOP_RE.test(entry.shop.trim().toLowerCase()))) {
-        issues.push({
-          path: `${where}.shop`,
-          message: 'shop must be the store\'s permanent host, `<name>.myshopify.com`.',
-          severity: 'error',
-        });
-      }
-      if (
-        entry.scopes !== undefined &&
-        !(Array.isArray(entry.scopes) && entry.scopes.every((scope) => typeof scope === 'string' && /^[a-z_]+$/.test(scope.trim())))
-      ) {
-        issues.push({
-          path: `${where}.scopes`,
-          message: 'scopes must be a list of Shopify access scopes, such as read_orders.',
-          severity: 'error',
-        });
-      }
-      if (entry.auth !== undefined && entry.auth !== null) {
-        issues.push({
-          path: `${where}.auth`,
-          message: 'shopify connectors authenticate through the store\'s OAuth sign-in — omit `auth`.',
-          severity: 'error',
-        });
-      }
     }
     if (
       provider === 'http' &&

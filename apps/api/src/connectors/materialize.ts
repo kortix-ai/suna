@@ -10,7 +10,6 @@
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { channelApiBase, channelAuth } from './channels';
-import { SHOPIFY_AUTH } from './shopify';
 import type { PolicyArgCondition } from './policy';
 
 export interface DesiredPolicy {
@@ -61,10 +60,6 @@ export function connectorConfig(
           baseUrl: channelApiBase(spec.platform ?? ''),
           auth: channelAuth(spec.platform ?? ''),
         };
-      case 'shopify':
-        // The store comes from each account's OAuth grant; `shop` is only the
-        // default Connect offers. The token goes in Shopify's own header.
-        return { shop: spec.shop ?? null, scopes: spec.scopes ?? null, auth: { ...SHOPIFY_AUTH } };
       case 'computer':
         // No credential and no base URL — the gateway routes `tunnel` bindings
         // through the shared tunnel RPC core, not executeCall. The machine is

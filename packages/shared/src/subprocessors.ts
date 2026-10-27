@@ -27,7 +27,7 @@ export const SUBPROCESSOR_NOTICE_DAYS = 30;
 /** The time a merged row has to reach prod before its notice gives fewer than 30 days. */
 export const SUBPROCESSOR_RELEASE_DAYS = 7;
 
-export const SUBPROCESSORS_UPDATED = "2026-10-24";
+export const SUBPROCESSORS_UPDATED = "2026-10-27";
 
 /** The first day `row` may process customer personal data (`YYYY-MM-DD`), or null for an established row. */
 export function subprocessorEffectiveDate(row: Subprocessor): string | null {
@@ -80,6 +80,12 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
     name: "Hivelocity, Inc.",
     purpose: "Servers for agent sandboxes (Kortix Platinum, US)",
     location: "United States",
+  },
+  {
+    name: "Wasabi Technologies, LLC",
+    purpose: "Storage of sandbox templates and customer volume data (Kortix Platinum, US)",
+    location: "United States",
+    addedOn: "2026-10-27",
   },
   {
     name: "PlanetScale, Inc.",

@@ -7,17 +7,15 @@
  *             An OAuth server lists its tools only after sign-in.
  *   composio  Composio's tool list for the toolkit, live.
  *   openapi   the spec's operations, live, through the connector egress.
- *   shopify   the native connector's fixed actions (`shopify.ts`).
  *   graphql, postman, http: nothing to read before install.
  */
 import { composioRestClient } from './composio-catalog-search';
 import type { ConnectorSurfaceVariant } from './connector-catalog';
 import { createConnectorEgressFetch } from './egress';
 import mcpTools from './mcp-tools.json';
-import { shopifyCatalog } from './shopify';
 import { parseSpecDocument } from './spec-doc';
 
-export interface CatalogTool {
+interface CatalogTool {
   name: string;
   description: string;
 }
@@ -27,7 +25,7 @@ export interface CatalogTools {
   /** Every tool the source lists; `tools` holds at most `MAX_TOOLS`. */
   total: number;
   /** Where the list came from. `none`: this way lists nothing before install. */
-  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'kortix' | 'none';
+  source: 'mcp' | 'directory' | 'composio' | 'spec' | 'none';
 }
 
 const MAX_TOOLS = 500;
@@ -119,9 +117,6 @@ function cached(key: string, load: () => Promise<CatalogTools>): Promise<Catalog
 /** The tools of one way to connect. Throws when a live source cannot be read. */
 export function catalogTools(variant: ConnectorSurfaceVariant): Promise<CatalogTools> {
   if (variant.kind === 'mcp' && variant.url) return Promise.resolve(mcpCatalogTools(variant.url));
-  if (variant.connector?.provider === 'shopify') {
-    return Promise.resolve(capped(shopifyCatalog().map(({ path, description }) => ({ name: path, description })), 'kortix'));
-  }
   if (variant.kind === 'composio' && variant.composio) {
     const toolkit = variant.composio.slug;
     return cached(`composio:${toolkit}`, () => composioCatalogTools(toolkit));

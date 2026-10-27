@@ -34,7 +34,7 @@ import { setupLinkApiBase } from './api-base';
 type Phase = 'loading' | 'error' | 'expired' | 'invalid' | 'ready' | 'submitting' | 'done';
 
 /** Every phase that is not the form: tinted tile, title, one muted line. */
-export function StatusNotice({
+function StatusNotice({
   icon: Glyph,
   tone,
   title,

@@ -3847,3 +3847,16 @@ flow(
     }
   },
 );
+
+flow('SESS-61', {
+  domain: 'sessions',
+  routes: ['PATCH /v1/projects/:projectId', 'POST /v1/projects/:projectId/sessions'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project({ managedGit: true });
+  const owner = ctx.client.as(ctx.P.OWNER);
+  await ctx.step('a configured default branch with no commit refuses session creation without a server error', async () => {
+    (await owner.patch('/v1/projects/:projectId', { default_branch: 'missing-default' }, { params: { projectId: project.id } })).status(200);
+    const response = await owner.post('/v1/projects/:projectId/sessions', { initial_prompt: 'noop' }, { params: { projectId: project.id } });
+    response.status(409).body().has('$.code', 'git_ref_not_found').has('$.status', 409);
+  });
+});

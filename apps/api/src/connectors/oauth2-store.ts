@@ -39,8 +39,6 @@ import { validateAuthorizationIssuer } from './oauth2-issuer';
 import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
 import { kortixClientApplication } from './mcp-apps';
 import { registerOAuth2Client } from './oauth2-registration';
-import { allowedReturnUri } from './return-uri';
-import { shopifyTokenUrlShop } from './shopify';
 import {
   type ProtectedResourceProvider,
   discoverProtectedResourceOAuth2,
@@ -54,7 +52,7 @@ export interface ConnectionIdentity {
   connectionId: string;
 }
 
-export async function authorizationCanCompleteOAuth(
+async function authorizationCanCompleteOAuth(
   connectionId: string,
   initiatedBy: string,
 ): Promise<boolean> {
@@ -377,6 +375,20 @@ export async function registerConnectionOAuth2Client(
   return application;
 }
 
+/** A return page the OAuth callback may send the browser to: the web app, or the
+ *  mobile app's `kortix:` scheme. Anything else ends on the API's own "Connected" page. */
+function signInReturnUri(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const uri = new URL(value);
+    if (uri.protocol === 'kortix:') return uri.href;
+    const allowed = new Set([new URL(config.FRONTEND_URL).origin, 'https://kortix.com', 'https://dev.kortix.com', 'https://staging.kortix.com']);
+    return allowed.has(uri.origin) ? uri.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Start a one-click sign-in for a connection server-side: discover the MCP
  * authorization chain, register Kortix as a client (or take Kortix's own
@@ -426,8 +438,8 @@ export async function startConnectionSignIn(input: {
     initiatedBy: input.initiatedBy,
     callbackUrl,
     ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
-    successRedirectUri: allowedReturnUri(input.redirects?.success),
-    errorRedirectUri: allowedReturnUri(input.redirects?.error),
+    successRedirectUri: signInReturnUri(input.redirects?.success),
+    errorRedirectUri: signInReturnUri(input.redirects?.error),
   });
   return started.authorizationUrl;
 }
@@ -525,10 +537,6 @@ export async function completeAuthorizationCodeSession(input: {
   try {
     const loaded = await loadOAuth2Application(claimed.connectionId);
     if (!loaded || !claimed.pkceVerifierEnc) throw new Error('OAuth2 session is incomplete');
-    // A Shopify grant completes only at its own callback (HMAC, store, permanent token).
-    if (shopifyTokenUrlShop(loaded.application.token_url)) {
-      return { redirectUri: claimed.errorRedirectUri, ok: false, errorCode: 'invalid_state' };
-    }
     // RFC 9207 / SEP-2468: reject a code minted by a different authorization
     // server BEFORE redeeming it. This is the authorization-code-injection
     // defence and it has to happen ahead of the token request.

@@ -27,7 +27,7 @@ export function catalogSlug(name: string): string {
 }
 
 /** The way to install: `way` by id, else the recommended one. */
-export function catalogWay(detail: ConnectorCatalogDetail, requestedWay?: string): ConnectorSurfaceVariant {
+function catalogWay(detail: ConnectorCatalogDetail, requestedWay?: string): ConnectorSurfaceVariant {
   const way = requestedWay ? canonicalCatalogId(requestedWay) : undefined;
   const installable = detail.variants.filter((variant) => variant.connector || variant.kind === 'composio');
   const recommended = detail.variants.find((variant) => variant.recommended);
@@ -88,7 +88,7 @@ export function catalogInstallDraft(
 
 /**
  * What makes two profiles the same way in: the MCP server URL, the managed
- * toolkit, the API document, the GraphQL endpoint, or native Shopify. Install answers the
+ * toolkit, the API document, or the GraphQL endpoint. Install answers the
  * existing profile for a way the project already has (a second one needs
  * `as_new_profile`). Null: nothing to match on (a channel, a computer).
  */
@@ -109,9 +109,7 @@ export function connectorIdentity(c: {
           ? c.endpoint
           : provider === 'openapi' || provider === 'postman' || provider === 'http'
             ? typeof c.spec === 'string' ? c.spec : null
-            : provider === 'shopify'
-              ? 'admin' // one way: each account picks its store
-              : null;
+            : null;
   if (!value) return null;
   return `${provider}:${normalizeEndpoint(value)}`;
 }
@@ -128,7 +126,7 @@ function normalizeEndpoint(value: string): string {
 }
 
 /** The identity of a catalogue way, as it would install. */
-export function wayIdentity(way: ConnectorSurfaceVariant): string | null {
+function wayIdentity(way: ConnectorSurfaceVariant): string | null {
   if (way.kind === 'composio') return connectorIdentity({ provider: 'composio', app: way.composio?.slug });
   return way.connector ? connectorIdentity(way.connector) : null;
 }

@@ -1485,11 +1485,6 @@
       "count": 2
     }
   },
-  "src/platform/routes/version.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/platform/sandbox-ownership.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -3111,11 +3106,6 @@
   },
   "src/snapshots/providers/index.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
-  "src/snapshots/providers/platinum-templates.ts": {
-    "no-restricted-properties": {
       "count": 1
     }
   },
