@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUpRightIcon, FolderSimpleIcon } from '@phosphor-icons/react';
+import { HardDrivesIcon } from '@phosphor-icons/react';
 import type { DriveEntry } from '@kortix/sdk';
 
 import {
@@ -13,12 +13,15 @@ import {
 import { useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
+import { EmptyArt } from '../../primitives/empty-art';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { Skeleton } from '../../primitives/skeleton';
 import { Switch } from '../../primitives/switch';
 import { errorToast } from '../../primitives/toast';
-import { UiLink as Link } from '../../providers/ui-provider';
+import { ManageButton } from '../sections/view/agent-editor-access-fields';
+import { EditorList } from '../sections/view/agent-editor-primitives';
+import { AccessLead } from './agent-access-list';
 
 /**
  * Access > Drives: which shared drives an agent gets. Turning one on shares
@@ -46,7 +49,6 @@ export function AgentDrivesSection({
   const t = useTranslations('drives');
   const tTabs = useTranslations('agentEditor.tabs');
   const drive = useProjectDrive(projectId);
-  const driveHref = uiRoutes().drive(projectId);
   const root = useDriveFolder(drive.data?.driveId ?? null, '/');
   const drives = (root.data?.entries ?? []).filter((e) => e.type === 'dir' && !/^\/?Users(\/|$)/.test(e.path));
   const driveId = drive.data?.driveId ?? null;
@@ -54,14 +56,13 @@ export function AgentDrivesSection({
   let list;
   if (drive.isLoading || root.isLoading) {
     list = (
-      <ul className="divide-border divide-y rounded-md border">
+      <EditorList>
         {[0, 1].map((i) => (
-          <li key={i} className="flex items-center gap-3 px-4 py-3">
-            <Skeleton className="size-7 rounded-sm" />
+          <li key={i} className="flex min-h-12 items-center gap-3 px-4 py-2">
             <Skeleton className="h-4 w-40 rounded-sm" />
           </li>
         ))}
-      </ul>
+      </EditorList>
     );
   } else if (drive.isError || root.isError || !driveId) {
     list = (
@@ -76,58 +77,39 @@ export function AgentDrivesSection({
       />
     );
   } else if (drives.length === 0) {
-    list = <EmptyState size="sm" title={t('noCompanyDrives')} />;
+    list = <EmptyState media={<EmptyArt icon={HardDrivesIcon} />} title={t('noCompanyDrives')} />;
   } else {
     list = (
-      <div className="overflow-hidden rounded-md border">
-        <div className="text-muted-foreground hidden grid-cols-[minmax(0,1fr)_14rem_4rem] gap-4 border-b px-4 py-2 text-xs md:grid">
-          <span>{t('driveLabel')}</span>
-          <span>{tTabs('whoSees')}</span>
-          <span className="text-right">{tTabs('on')}</span>
-        </div>
-        <ul className="divide-border divide-y">
-          {drives.map((entry) => (
-            <AgentDriveRow key={entry.path} driveId={driveId} entry={entry} agentName={agentName} />
-          ))}
-        </ul>
-      </div>
+      <EditorList>
+        {drives.map((entry) => (
+          <AgentDriveRow key={entry.path} driveId={driveId} entry={entry} agentName={agentName} />
+        ))}
+      </EditorList>
     );
   }
 
   return (
-    <div className="space-y-8">
+    <section className="space-y-6" data-testid="agent-access-drives">
+      <AccessLead
+        description={tTabs('drivesLead')}
+        action={<ManageButton href={(id) => uiRoutes().drive(id)} />}
+      />
+      {list}
       <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-muted-foreground text-sm text-pretty">{tTabs('drivesLead')}</p>
-          {driveHref ? (
-            <Button asChild variant="outline" size="sm" className="gap-1.5">
-              <Link href={driveHref}>
-                {tTabs('openDrive')}
-                <ArrowUpRightIcon className="size-3.5" />
-              </Link>
-            </Button>
-          ) : null}
-        </div>
-        {list}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
+        <h3 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
           {tTabs('inSession')}
           <span className="text-muted-foreground text-xs font-normal">{tTabs('inSessionHint')}</span>
-        </h2>
-        <ul className="divide-border divide-y rounded-md border">
-          {repositoryAccess ? (
-            <MountRow path="/workspace" label={tTabs('mountRepository')} />
-          ) : null}
+        </h3>
+        <EditorList>
+          {repositoryAccess ? <MountRow path="/workspace" label={tTabs('mountRepository')} /> : null}
           {driveId
             ? drives.map((entry) => (
                 <DriveMount key={entry.path} driveId={driveId} entry={entry} agentName={agentName} />
               ))
             : null}
-        </ul>
+        </EditorList>
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -165,34 +147,23 @@ function AgentDriveRow({ driveId, entry, agentName }: { driveId: string; entry: 
     }
   };
 
+  const who = inherited ? t('everyoneInProject') : on ? tTabs('thisAgent') : tTabs('notShared');
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_14rem_4rem]">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-sm">
-          <FolderSimpleIcon aria-hidden className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-foreground truncate text-sm font-medium">{entry.name}</p>
-          <p className="text-muted-foreground truncate text-xs md:hidden">
-            {inherited ? t('everyoneInProject') : on ? tTabs('thisAgent') : tTabs('notShared')}
-          </p>
-        </div>
-      </div>
-      <span className="text-muted-foreground hidden truncate text-sm md:block">
-        {inherited ? t('everyoneInProject') : on ? tTabs('thisAgent') : tTabs('notShared')}
+    <li className="flex min-h-12 items-center gap-3 px-4 py-2">
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm">{entry.name}</span>
+        <span className="text-muted-foreground block truncate text-xs">{who}</span>
       </span>
-      <div className="flex justify-end">
-        {access.isLoading ? (
-          <Skeleton className="h-5 w-9 rounded-full" />
-        ) : (
-          <Switch
-            checked={on}
-            disabled={!canManage || inherited || pending}
-            onCheckedChange={(v) => void toggle(v)}
-            aria-label={t('levelFor', { name: entry.name })}
-          />
-        )}
-      </div>
+      {access.isLoading ? (
+        <Skeleton className="h-5 w-9 rounded-full" />
+      ) : (
+        <Switch
+          checked={on}
+          disabled={!canManage || inherited || pending}
+          onCheckedChange={(v) => void toggle(v)}
+          aria-label={t('levelFor', { name: entry.name })}
+        />
+      )}
     </li>
   );
 }
@@ -205,8 +176,8 @@ function DriveMount({ driveId, entry, agentName }: { driveId: string; entry: Dri
 
 function MountRow({ path, label }: { path: string; label: string }) {
   return (
-    <li className="flex items-center justify-between gap-4 px-4 py-2.5">
-      <span className="text-foreground min-w-0 truncate text-sm">{label}</span>
+    <li className="flex min-h-12 items-center justify-between gap-4 px-4 py-2">
+      <span className="text-muted-foreground min-w-0 truncate text-sm">{label}</span>
       <span className="text-muted-foreground shrink-0 font-mono text-xs">{path}</span>
     </li>
   );

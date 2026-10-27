@@ -77,8 +77,6 @@ import { InfoBanner } from '../../primitives/info-banner';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
-import { ConnectorsPage } from '../connectors/connectors-page';
-import { SecretsPage } from '../secrets/secrets-page';
 import { configEntitySourcePath } from '../sections/component/config-entity-source-path';
 import {
   type AgentConfigSectionKey,
@@ -104,7 +102,7 @@ import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentCapabilitiesSection } from './agent-capabilities';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AgentDrivesSection } from './agent-drives-section';
-import { AppsGrantPage } from './agent-grant-pages';
+import { AgentAppsAccess, AgentConnectorsAccess, AgentSecretsAccess } from './agent-access-views';
 import { useGrantLabel } from './agent-access-text';
 import { AgentOverview, grantOf, type OverviewFacts } from './agent-overview';
 import {
@@ -131,27 +129,19 @@ import {
   RUNTIME_VIEWS,
   sectionLocationHref,
 } from './agent-tabs';
-import { pruneRequiredConnectors, toggleRequiredConnector } from './connectors-required';
 import { PlatformAgentOverview } from './platform-agent-overview';
 import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPolicySetsPanel } from './agent-policy-sets-section';
 import { useDefaultAgent } from './use-default-agent';
-
-/** A host's agent-scoped Apps screen: the full Apps page for one agent. */
-export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
 
 type Agent = ProjectConfigSummary['agents'][number];
 
 export function AgentPage({
   projectId,
   agentName,
-  renderApps,
 }: {
   projectId: string;
   agentName: string;
-  /** The host's full Apps screen in agent scope. Without it the Apps view is
-   *  the plain grant catalog (`agent-grant-pages.tsx`). */
-  renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -271,7 +261,6 @@ export function AgentPage({
       config={config}
       initial={configQuery.data?.block ?? {}}
       schemaVersion={configQuery.data?.schema_version ?? 2}
-      renderApps={renderApps}
     />
   ) : (
     <ReadOnlyAgentPage
@@ -711,7 +700,6 @@ function EditableAgentPage({
   config,
   initial,
   schemaVersion,
-  renderApps,
 }: {
   projectId: string;
   agent: Agent;
@@ -719,7 +707,6 @@ function EditableAgentPage({
   initial: AgentConfigBlock;
   /** The manifest version: v3 adds the subagent, command and extension grants. */
   schemaVersion: number;
-  renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tCapabilities = useI18nTranslations('agentCapabilities');
@@ -765,19 +752,7 @@ function EditableAgentPage({
   const sourcePath = editor.draft.file ?? configEntitySourcePath(agent.path);
 
   const { draft, set } = editor;
-  const connectorsGrant = useAgentGrant(draft.connectors, (v) => {
-    set('connectors', v);
-    const kept = pruneRequiredConnectors(draft.connectors_required, v);
-    if (kept !== draft.connectors_required) set('connectors_required', kept);
-  });
-  const requiredConnectors = {
-    list: draft.connectors_required ?? [],
-    isRequired: (slug: string) => draft.connectors_required?.includes(slug) === true,
-    toggle: (slug: string) => set('connectors_required', toggleRequiredConnector(draft.connectors_required, slug)),
-  };
   const skillsGrant = useAgentGrant(plainGrant(draft.skills), (v) => set('skills', v));
-  const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
-  const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
 
   const facts = useOverviewFacts(projectId, agent.name, config, draft);
   const headerFacts = useHeaderFacts(agent, config, draft, true);
@@ -827,7 +802,7 @@ function EditableAgentPage({
       options={options}
       skillsOptions={skillsOptions}
       registryOptions={registryOptions}
-      apps={<AppsGrantPage projectId={projectId} editor={editor} />}
+      apps={<AgentAppsAccess projectId={projectId} agentName={agent.name} editor={editor} />}
       drives={
         <AgentDrivesSection
           projectId={projectId}
@@ -876,19 +851,23 @@ function EditableAgentPage({
       case 'access':
       case 'runtime': {
         if (!view) return null;
-        if (view === 'connectors')
+        if (view === 'connectors' || view === 'secrets' || view === 'apps')
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
-              <ConnectorsPage
-                projectId={projectId}
-                surface={surface}
-                grant={connectorsGrant}
-                required={requiredConnectors}
-                agentPanel={
-                  <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />
-                }
-              />
-            </Embedded>
+            <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
+              {switcher}
+              {view === 'connectors' ? (
+                <AgentConnectorsAccess
+                  projectId={projectId}
+                  agentName={agent.name}
+                  editor={editor}
+                  policySets={<AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />}
+                />
+              ) : view === 'secrets' ? (
+                <AgentSecretsAccess projectId={projectId} agentName={agent.name} editor={editor} />
+              ) : (
+                <AgentAppsAccess projectId={projectId} agentName={agent.name} editor={editor} />
+              )}
+            </AgentTabBody>
           );
         // kortix_version 2 and 3: Skills, Tools and Extensions are one switch
         // per built-in and project item (`agent-capabilities.tsx`).
@@ -923,18 +902,6 @@ function EditableAgentPage({
           return (
             <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
               <SkillsPage projectId={projectId} surface={surface} grant={skillsGrant} />
-            </Embedded>
-          );
-        if (view === 'secrets')
-          return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
-              <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />
-            </Embedded>
-          );
-        if (view === 'apps' && renderApps)
-          return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
-              {renderApps({ agentName: agent.name, grant: appsGrant })}
             </Embedded>
           );
         // Model is this agent's model only. The project-wide gateway screens

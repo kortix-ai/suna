@@ -21003,7 +21003,18 @@
     "triggersEmpty": "I trigger che avviano questo agente compariranno qui.",
     "projectPaused": "Al momento in questo progetto nulla si avvia da solo, nemmeno questo agente. I trigger riprendono dalla pagina Trigger del progetto.",
     "requiredUnderAll": "Obbligatorio prima dell'avvio della sessione: {list}. Passa a Specifici per modificarlo.",
-    "configError": "Impossibile caricare le impostazioni di questo agente."
+    "configError": "Impossibile caricare le impostazioni di questo agente.",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"
@@ -23210,7 +23221,11 @@
     "emptyProjectExtensions": "Nessuna estensione di progetto. Registrane una sotto extensions in kortix.yaml.",
     "allBut": "Tutti tranne {count}",
     "allExcept": "Tutti tranne {list}",
-    "rulesTitle": "Regole di approvazione"
+    "rulesTitle": "Regole di approvazione",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   },
   "spaces": {
     "memory": {

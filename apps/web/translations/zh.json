@@ -21003,7 +21003,18 @@
     "triggersEmpty": "启动此代理的触发器将显示在这里。",
     "projectPaused": "此项目当前没有任何内容会自动运行，此代理也不例外。触发器可在项目的触发器页面恢复。",
     "requiredUnderAll": "会话开始前必需：{list}。切换到“指定”即可更改。",
-    "configError": "无法加载此代理的设置。"
+    "configError": "无法加载此代理的设置。",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "connectorsAppReturn": {
     "done": "完成。返回 Kortix 应用"
@@ -23210,7 +23221,11 @@
     "emptyProjectExtensions": "没有项目扩展。请在 kortix.yaml 的 extensions 下注册。",
     "allBut": "除 {count} 项外全部",
     "allExcept": "除 {list} 外全部",
-    "rulesTitle": "审批规则"
+    "rulesTitle": "审批规则",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   },
   "spaces": {
     "memory": {

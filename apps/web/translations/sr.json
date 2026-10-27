@@ -21003,7 +21003,18 @@
     "triggersEmpty": "Okidači koji pokreću ovog agenta pojaviće se ovde.",
     "projectPaused": "Trenutno se ništa u ovom projektu ne pokreće samo, uključujući ovog agenta. Okidači se nastavljaju sa stranice Okidači projekta.",
     "requiredUnderAll": "Obavezno pre početka sesije: {list}. Prebaci na Određeno da promeniš.",
-    "configError": "Nije moguće učitati podešavanja ovog agenta."
+    "configError": "Nije moguće učitati podešavanja ovog agenta.",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"
@@ -23210,7 +23221,11 @@
     "emptyProjectExtensions": "Nema proširenja projekta. Registruj jedno pod extensions u kortix.yaml.",
     "allBut": "Sve osim {count}",
     "allExcept": "Sve osim {list}",
-    "rulesTitle": "Pravila odobravanja"
+    "rulesTitle": "Pravila odobravanja",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   },
   "spaces": {
     "memory": {

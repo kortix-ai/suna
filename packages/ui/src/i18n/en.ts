@@ -1894,7 +1894,18 @@ const catalog = {
     "triggersEmpty": "Triggers that start this agent will show up here.",
     "projectPaused": "Nothing in this project runs on its own right now, this agent included. Triggers resume from the project's Triggers page.",
     "requiredUnderAll": "Required before session start: {list}. Switch to Specific to change it.",
-    "configError": "Could not load this agent's settings."
+    "configError": "Could not load this agent's settings.",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "notifications": {
     "title": "Notifications",
@@ -8616,7 +8627,11 @@ const catalog = {
     "emptyProjectExtensions": "No project extensions. Register one under extensions in kortix.yaml.",
     "allBut": "All but {count}",
     "allExcept": "All except {list}",
-    "rulesTitle": "Approval rules"
+    "rulesTitle": "Approval rules",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   }
 };
 

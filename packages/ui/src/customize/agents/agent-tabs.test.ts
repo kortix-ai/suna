@@ -54,8 +54,8 @@ describe('resolveAgentLocation', () => {
     expect(at({})).toEqual({ tab: 'overview', view: null });
   });
 
-  test('Access opens its first view, Tools; Runtime opens Model', () => {
-    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'tools' });
+  test('Access opens its first view, Skills; Runtime opens Model', () => {
+    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'skills' });
     expect(at({ tab: 'runtime' })).toEqual({ tab: 'runtime', view: 'model' });
   });
 

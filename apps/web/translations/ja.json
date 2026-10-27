@@ -21003,7 +21003,18 @@
     "triggersEmpty": "このエージェントを開始するトリガーがここに表示されます。",
     "projectPaused": "現在このプロジェクトでは何も自動で実行されません。このエージェントも同様です。トリガーはプロジェクトのトリガーページから再開します。",
     "requiredUnderAll": "セッション開始前に必須: {list}。変更するには「指定」に切り替えます。",
-    "configError": "このエージェントの設定を読み込めませんでした。"
+    "configError": "このエージェントの設定を読み込めませんでした。",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"
@@ -23210,7 +23221,11 @@
     "emptyProjectExtensions": "プロジェクトの拡張機能はありません。kortix.yaml の extensions に登録してください。",
     "allBut": "{count} 件を除くすべて",
     "allExcept": "{list} を除くすべて",
-    "rulesTitle": "承認ルール"
+    "rulesTitle": "承認ルール",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   },
   "spaces": {
     "memory": {

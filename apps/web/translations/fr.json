@@ -21003,7 +21003,18 @@
     "triggersEmpty": "Les déclencheurs qui démarrent cet agent apparaîtront ici.",
     "projectPaused": "Rien ne s'exécute de soi-même dans ce projet pour le moment, cet agent compris. Les déclencheurs reprennent depuis la page Déclencheurs du projet.",
     "requiredUnderAll": "Requis avant le démarrage de la session : {list}. Passez à Spécifiques pour le modifier.",
-    "configError": "Impossible de charger les paramètres de cet agent."
+    "configError": "Impossible de charger les paramètres de cet agent.",
+    "connectorNeedsAuth": "Needs sign-in",
+    "connectorError": "Error",
+    "missing": "Missing",
+    "connectorsEmptyTitle": "No connectors yet",
+    "connectorsEmptyDescription": "Connect an app in the project, then choose it here.",
+    "secretsDescription": "Project secrets this agent's sessions get as environment variables.",
+    "secretNotSet": "Not set",
+    "projectGroup": "Project",
+    "secretsEmptyProject": "No project secrets yet.",
+    "secretsEmptyTitle": "No secrets yet",
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
   },
   "connectorsAppReturn": {
     "done": "Terminé. Retour à l’app Kortix"
@@ -23210,7 +23221,11 @@
     "emptyProjectExtensions": "Aucune extension de projet. Enregistrez-en une sous extensions dans kortix.yaml.",
     "allBut": "Tous sauf {count}",
     "allExcept": "Tous sauf {list}",
-    "rulesTitle": "Règles d'approbation"
+    "rulesTitle": "Règles d'approbation",
+    "builtinOn": "{on} of {total} on",
+    "toolsAccess": "Tool access for this agent",
+    "emptyProjectTools": "No project tools. Register one under tools in kortix.yaml.",
+    "loadErrorList": "Could not load this list."
   },
   "spaces": {
     "memory": {

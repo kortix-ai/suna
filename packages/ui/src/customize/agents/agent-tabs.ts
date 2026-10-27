@@ -2,7 +2,7 @@
  * The agent page's address: four tabs, and a view inside Access and Runtime.
  *
  *   ?tab=overview | access | runtime | triggers
- *   ?tab=access&view=tools | skills | extensions | connectors | secrets | apps | drives | permissions | …
+ *   ?tab=access&view=skills | extensions | connectors | secrets | apps | drives | permissions | … | tools
  *   ?tab=runtime&view=model | workspace
  *
  * The page used to be a rail of seventeen `?section=<key>` topics, then six
@@ -22,7 +22,6 @@ export type AgentTab = (typeof AGENT_TABS)[number];
 
 /** Access views, in the order the segmented control lists them. */
 export const ACCESS_VIEWS = [
-  'tools',
   'skills',
   'extensions',
   'connectors',
@@ -32,6 +31,7 @@ export const ACCESS_VIEWS = [
   'actions',
   'subagents',
   'commands',
+  'tools',
 ] as const satisfies readonly AgentConfigSectionKey[];
 export type AccessView = (typeof ACCESS_VIEWS)[number];
 
