@@ -1917,3 +1917,5 @@ defines the pilot's scope and promotion criteria. Existing route-coverage and
 release contracts remain required.
 
 `SESS-60` Explicit human session parent (KRTX-3444). POST sessions with a visible same-project `parent_session_id` returns 201 and GET retains that parent. An absent parent creates a root. A cross-project or another member's private parent is rejected with 404. Explicit grouping does not inherit sharing or automation attribution; bound credentials retain their authenticated parent.
+
+`SESS-61` A project whose configured default branch has no commit rejects session creation with 409 `git_ref_not_found`. The strict manifest read does not synthesize permissive agent grants or return an unhandled 500.
