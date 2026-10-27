@@ -5,7 +5,6 @@ import { UseCasesBand } from '@/features/marketing/landing-sections/use-cases-ba
 import { WorksWithStrip } from '@/features/marketing/landing-sections/works-with-strip';
 import { LandingFaqSection } from '@/features/marketing/landing-sections/faq-section';
 import { PillarsBand } from '@/features/marketing/landing-sections/pillars-band';
-import { ProblemSolution } from '@/features/marketing/landing-sections/problem-solution';
 import { SandBandHero } from '@/features/marketing/landing-hero/sand-band-hero';
 
 /**
@@ -24,7 +23,8 @@ export default function Home() {
       <WorksWithStrip />
       <CaseStudies />
       <PillarsBand />
-      <ProblemSolution />
+      {/* ProblemSolution ("Your know-how is everywhere.") is stashed: hidden
+          from the home page by founder call, 2026-10-27; the component stays. */}
       <HowItWorksTabs />
       <UseCasesBand />
       <TrustBand />

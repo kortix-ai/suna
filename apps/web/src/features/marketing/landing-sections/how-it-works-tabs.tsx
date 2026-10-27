@@ -27,9 +27,9 @@ const TABS: {
   },
   {
     id: 'context',
-    title: 'Connect your tools',
+    title: 'Connect to everything',
     description:
-      'Connect your tools once and choose which agent may use each.',
+      '3,000+ apps in a click, plus MCP servers and any API over OpenAPI, GraphQL or plain HTTP, your own included. Set it up once and choose which agent may use each.',
     panel: () => <StepConnectors />,
     bare: true,
   },
@@ -43,9 +43,9 @@ const TABS: {
   },
   {
     id: 'computer',
-    title: 'Give every session a computer',
+    title: 'Every agent gets its own computer',
     description:
-      'Each session runs on its own isolated machine with your repo.',
+      'A full cloud computer per session: a terminal, your files, code and a browser for anything with no API, from old portals to internal apps. Your team can connect their own computers too, under rules each person sets on the machine.',
     panel: () => <StepComputer />,
     bare: true,
   },
@@ -82,7 +82,7 @@ export function HowItWorksTabs() {
           <div className="px-4 py-12 lg:px-11 lg:py-16 lg:pr-12">
             <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
               How Kortix works.
-              <span className="text-muted-foreground block">One repo, every tool, any model.</span>
+              <span className="text-muted-foreground block">One repo, every tool, a computer per agent.</span>
             </h2>
 
             <div
