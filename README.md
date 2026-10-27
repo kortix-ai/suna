@@ -7,77 +7,59 @@
 
 # Kortix
 
-**The open-source AI Operating System**
+**The sovereign AI Operating System.**
 
-**The leading open-source alternative to Claude Cowork and ChatGPT Work.**
+Multiplayer AI for your whole team. Your company as code. Sovereign and open source.<br />
+Hand it an outcome and agents run it 24/7.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
-[![Docs](https://img.shields.io/badge/Docs-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
+[![Guide](https://img.shields.io/badge/Guide-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
-[Website](https://kortix.com) · [Documentation](https://kortix.com/docs) · [Cloud](https://kortix.com) · [Manifesto](MANIFESTO.md)
+[Website](https://kortix.com) · [Guide](https://kortix.com/docs) · [Cloud](https://kortix.com/auth) · [AI Transformation](https://kortix.com/services) · [Manifesto](MANIFESTO.md)
 
 <br />
 
-<img src="apps/web/public/media/showcase/kortix-showcase.gif" alt="Configure your agents and exactly what they can reach — connectors, Kortix permissions, tool rules, secrets and groups — approve the calls an agent makes, and audit every action it takes" width="900" />
+<img src="apps/web/public/media/showcase/kortix-readme.gif" alt="The Kortix home page: the sovereign AI Operating System, and an agent building a revenue dashboard for a sample company in its own session" width="880" />
 
 </div>
 
 ---
 
-Agents that deliver finished work — reports, decks, code, replies, deployed changes — are now a
-product category. Every version of it runs inside a model lab, on that lab's model, with your
-company's brain on their side of the wall.
+Kortix is the open-source AI Operating System. Your agents, the skills they share, your company
+memory and every connector live in **one git repo you own**. Every session runs on **its own cloud
+computer**, and work lands through a **change request a person approves**.
 
-**Kortix is the one you own.** It's an open-source **[AI Operating System](https://kortix.com/docs)**: your agents, the
-skills they share, your company memory, and every connector live in one git repo — versioned,
-diffable, and shared by the whole company. The agents work on real **cloud computers** — an
-isolated sandbox per session, on its own branch — and land what they produce through a **change
-request** a human approves.
-
-Any model, your own API keys, your own infrastructure or our managed cloud.
+Any model, your own keys, on Kortix Cloud, in your VPC or on your own on-prem network.
 
 ---
 
-## Kortix is right for you if
+## Three things make it yours
 
-- ✅ You want an **open-source, self-hosted alternative to Claude Cowork or ChatGPT Work** for your whole team → [details](#an-open-source-claude-cowork-for-your-whole-team)
-- ✅ You want **AI agents in Slack or Microsoft Teams** that use your tools and reply in the thread → [details](#ai-agents-in-slack-and-microsoft-teams)
-- ✅ You want **background coding agents in the cloud**: a sandbox and a branch per task, and a change request you review → [details](#background-coding-agents-in-the-cloud)
-- ✅ You want to **replace Zapier-style automations with AI agents** that run on a schedule or a webhook → [details](#replace-zapier-style-automations-with-agents)
-- ✅ You want an **"AI employee"** that does the work and waits for a person's approval before it acts → [details](#an-ai-employee-that-asks-before-it-acts)
-- ✅ Your security team needs **governed agents**: per-tool rules, approval gates, an audit trail, SAML SSO, your own VPC → [details](#agents-that-survive-a-security-review)
-- ✅ You want an **AI Operating System to run a company with agents**: every agent, skill, memory file and connector in one git repo → [details](#an-ai-operating-system-for-your-company)
-- ✅ You want to **sell an agent platform under your own brand**: your logo, your structure, Kortix underneath → [details](#white-label)
-
-Kortix is probably **not** the right fit if you want a visual flowchart of fixed steps (a workflow
-builder such as n8n does that well), or only a chat window over your documents (Onyx, Open WebUI or
-LibreChat).
+| | |
+| --- | --- |
+| **Multiplayer AI**<br />One AI for the whole team. | Everyone works with the same agents, skills, memory and connectors, from the web app, Slack or Microsoft Teams. Roles, groups and per-resource permissions decide who may do what, and a person approves what reaches `main`. |
+| **Company as code**<br />Extensible to the core. | Every agent, skill, rule, connector and piece of context is a file in one git repo: versioned, reviewed and extended like software. The agents and the harness they run on are open source. 3,000+ apps, plus MCP, OpenAPI and raw HTTP. A CLI and a TypeScript SDK. |
+| **Sovereign and open**<br />Own your data and your infrastructure. | Open source: read it, fork it, audit it. Self-host in your VPC or on-prem. Any model provider with your own keys. Secrets encrypted at rest with a key per project. |
 
 ---
 
-## How it compares
+## Give it an outcome. Agents run it 24/7.
 
-| | Claude Cowork | ChatGPT Work | **Kortix** |
-| --- | --- | --- | --- |
-| **Source** | Closed | Closed | **Open source — read it, fork it, audit it** |
-| **Models** | Anthropic only | GPT-5.6 only | **Any provider, your own API keys** |
-| **Where it runs** | Anthropic's cloud, or Bedrock / Google Cloud / Microsoft Foundry — no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
-| **Your configuration** | In their product | In their product | **Files in a git repo you own** |
-| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud from $20/mo in credits, unlimited members** |
+```
+Outcome ──> Plan ──> Work ──> Verify ──> Learn ──┐
+   ^                                             │
+   └──────────── the next run starts there ──────┘
+```
 
-Competitor rows reflect publicly documented behavior as of July 2026.
+1. **Outcome.** You state it once, in plain words, with the rules that matter.
+2. **Plan.** An agent owns it end to end, breaks it into work and wakes itself on a schedule.
+3. **Work.** Agents run on their own cloud computers at any hour, started by schedules, webhooks and your tools.
+4. **Verify.** A separate agent checks the result, and changes land through a change request you approve.
+5. **Learn.** What the agents learned goes back into company memory and skills. Every run makes the next one better.
 
-### Kortix and other open-source tools
-
-| If you are looking at… | Pick it when | Pick Kortix when |
-| --- | --- | --- |
-| **n8n** (workflow automation) | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer (research, a report, a fix), with the configuration in git and a person approving what it changes. |
-| **OpenHands** (coding agents) | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps, and every session is a sandbox on its own branch. |
-| **Paperclip** (agent orchestration) | You already run agents such as Claude Code or Codex and want an org chart, budgets and a task board on top of them. | You want the platform to run the agents too: each session on its own cloud computer, from one repo that holds the agents, skills, memory and connectors. |
-| **Onyx, Open WebUI, LibreChat** (chat and search) | You want a chat window or search over company documents. | You want agents that return finished work and take real actions in your tools, not only answers. |
-
+Thousands of agents can run in parallel on one config. [How outcomes work →](https://kortix.com/docs/guide/outcomes)
 
 ---
 
@@ -89,195 +71,120 @@ Three commands. Build your company like a codebase, then bring it live.
 # 1 · Install the CLI
 curl -fsSL https://kortix.com/install | bash
 
-# 2 · Scaffold a project — creates kortix.yaml + your agents, skills and runtime config
+# 2 · Scaffold a project: kortix.yaml plus your agents, skills and runtime config
 kortix init
 
-# 3 · Ship it — pushes your repo and brings the whole thing live in the cloud
+# 3 · Ship it: push the repo and bring the whole thing live in the cloud
 kortix ship
 ```
 
-That's the loop. From here:
+From here:
 
 ```bash
 kortix sessions new --prompt "Summarize this week's commits and open a change request"
-kortix cr ls          # review what an agent proposes — merge to keep it
+kortix cr ls          # review what an agent proposes, merge to keep it
 kortix chat           # talk to a session's agent from your terminal
 ```
 
-Prefer zero setup? Sign up at **[kortix.com](https://kortix.com)**, create a project, and start a
-session — nothing to install. Full command surface: **[CLI reference](https://kortix.com/docs/cli)**.
+No setup: sign up at **[kortix.com](https://kortix.com)**, create a project and start a session.
+The **[Guide](https://kortix.com/docs)** walks you through Kortix from A to Z.
 
 ---
 
-## A company is going to be a git repository
+## The building blocks
 
-Not as a metaphor — literally something you can clone. Inside it: your agents, the skills they've
-built up, the way the work actually gets done, every fact the company has learned, and the
-definition of the machines it all runs on. **Versioned. Diffable. Owned outright.**
-
-```
-project  (git repo + kortix.yaml)
-   └─ session ──> cloud computer: an isolated sandbox on a branch named after the session
-                     └─ the OpenCode agent works
-                           └─ change request ──> you review & merge ──> main
-```
-
-- Every **session** gets its own **cloud computer** — a disposable, isolated Linux sandbox on its
-  own branch. The agent can install, run and break anything; only what it commits survives.
-- Work reaches `main` only through a **change request** you approve, so the company self-improves
-  one reviewed change at a time.
-- Run **thousands of sandboxes in parallel** on the same config, each fully isolated, each feeding
-  work back through change requests.
-
-You can `grep` your entire company.
+| | | Guide |
+| --- | --- | --- |
+| **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs/guide/agents) |
+| **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs/guide/skills) |
+| **Memory and Drive** | What the company knows, as files agents read, plus shared folders for people and agents. | [Memory and Drive](https://kortix.com/docs/guide/memory-and-drive) |
+| **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs/guide/connectors) |
+| **Automations** | Schedules, signed webhooks and app events that start agents with nobody at the keyboard. | [Automations](https://kortix.com/docs/guide/automations) |
+| **Outcomes** | An agent owns an objective until a separate check confirms it is met. | [Outcomes](https://kortix.com/docs/guide/outcomes) |
+| **Computers** | Every session gets its own isolated machine and branch. You can also connect your own computer. | [Computers](https://kortix.com/docs/guide/computers) |
+| **Apps** | The compute platform: sites, internal tools and backends with data, functions and realtime, at a stable URL. | [Apps](https://kortix.com/docs/guide/apps) |
+| **Channels** | Start and continue work from Slack, Microsoft Teams and email. | [Channels](https://kortix.com/docs/guide/channels) |
+| **Models** | Any provider with your own keys, the ChatGPT plan you already pay for, or Kortix-managed models. | [Models](https://kortix.com/docs/guide/models) |
 
 ---
 
-## What people build with Kortix
+## What runs on Kortix
 
-### An open-source Claude Cowork for your whole team
+- **SciencePal**, the AI research assistant of the Hong Kong Institute of AI for Science at City University of Hong Kong, built from Kortix's open-source code.
+- **Platinum**, a sandbox cloud for AI agents, built and tested by agents on Kortix.
+- **Kortix itself**: an intake agent triages every issue and worker agents fix it on their own machines.
+- **An AI-run hedge fund desk**, our own, on real public SEC data with simulated capital.
+- **A US telecommunications infrastructure company** whose agents design fiber routes, self-hosted in its own cloud.
+- **An international executive search firm**, rebuilt around agents.
+- **WRITER**, the enterprise AI platform, built from Kortix's open-source code.
+- **Wring**, autonomous AWS cost optimization.
 
-Kortix is the leading open-source alternative to Claude Cowork and ChatGPT Work. Your team uses it
-in the web app, in Slack and Microsoft Teams, or from the CLI. Agents run on real cloud
-computers and return finished work: decks, reports, code and replies. Any model provider with your
-own keys, or the ChatGPT plan you already pay for. Self-host for free, or use Kortix Cloud.
-
-```bash
-curl -fsSL https://kortix.com/install | bash
-kortix self-host start      # your own box: one Docker Compose stack
-```
-
-### AI agents in Slack and Microsoft Teams
-
-Add the Kortix app to Slack, invite the bot to a channel, and mention it with a task. The message
-starts a session: the agent works on its own cloud computer with your connected tools and replies
-in the same thread. Microsoft Teams works the same way. Follow-ups stay in the same session.
-
-### Background coding agents in the cloud
-
-Each session gets its own isolated sandbox and its own branch. The agent reproduces the bug, writes
-the fix, runs the tests and opens a change request. Every change request gets a preview you can
-open. Merge is default-deny for agents: you review the diff. Your local agent can start cloud
-sessions and go wide.
-
-```bash
-kortix sessions new --prompt "Reproduce issue #142, fix it, and open a change request"
-kortix cr ls      # review what the agents propose
-```
-
-### Replace Zapier-style automations with agents
-
-A trigger starts a session on a cron schedule or a signed webhook, with nobody present. The agent
-reaches 3,000+ apps through one scoped token, plus MCP, OpenAPI, GraphQL and raw HTTP. Connector
-credentials are brokered server-side and never enter the machine.
-
-```yaml
-# kortix.yaml
-triggers:
-  - slug: daily-digest
-    type: cron
-    cron: '0 0 9 * * 1-5'
-    prompt: Summarize yesterday's support tickets and open a change request with the digest.
-```
-
-### An "AI employee" that asks before it acts
-
-Give an agent a job, such as ticket triage, reply drafts or CRM updates. Set each tool to Allow, Ask
-or Block, down to the arguments of each call. An Ask holds the call until a person approves it, then
-the agent resumes. Approval gates are off until you set them.
-
-```yaml
-# kortix.yaml
-agents:
-  support-triage:
-    file: agents/support-triage.md   # what it does, in plain markdown
-    connectors: all                  # what it may reach
-```
-
-### Agents that survive a security review
-
-One isolated sandbox per session. Per-resource permissions for people and agents. Roles, groups, and
-an audit trail. SAML 2.0 single sign-on and SCIM 2.0. Secrets are encrypted at rest with a key per
-project. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. SOC 2 Type I verified.
-
-### An AI Operating System for your company
-
-One repo is the company: agents, skills, memory, connectors and triggers are files, versioned and
-reviewed like code. Thousands of agents run in parallel on one config, each on its own cloud
-computer. An agent can edit its own configuration on its session branch and propose the change. A
-person approves it. [What an AI Operating System is, part by part →](https://kortix.com/docs)
+[See the case studies →](https://kortix.com/#case-studies)
 
 ---
 
-## What you manage
+## How it compares
 
-| | |
-| --- | --- |
-| **Agents** | OpenCode agents with a scoped reach into tools — markdown at the baseline, with the whole OpenCode lifecycle open to you. One per role or task, installable in a click. An agent can edit its own configuration and propose the change; a person approves it. |
-| **Skills** | Reusable know-how that encodes how your company does a job. Written once, shared into every session. |
-| **Memory** | A living company brain — plain files today, a system that compounds what it learns over time. |
-| **Connectors** | 3,000+ apps in a click — plus MCP, OpenAPI, GraphQL and raw HTTP. Credentials are brokered server-side through one scoped token and never enter the machine. |
-| **Secrets** | Encrypted at rest, granted per agent, and injected into the sandbox at runtime. A granted secret is a real environment value inside that session. |
-| **Channels** | Slack and Microsoft Teams are live; email is experimental, per project. Add the app, invite the bot to a channel, and @-mention it to start a session where your team already works. |
-| **Triggers** | Cron and signed webhooks that spawn sessions automatically — every morning, or the instant something happens. |
+| | Claude Cowork | ChatGPT Work | **Kortix** |
+| --- | --- | --- | --- |
+| **Source** | Closed | Closed | **Open source: read it, fork it, audit it** |
+| **Models** | Anthropic only | OpenAI only | **Any provider, your own API keys** |
+| **Where it runs** | Anthropic's cloud or its cloud partners, no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
+| **Your configuration** | In their product | In their product | **Files in a git repo you own** |
 
-Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted** (the agent works
-and checks in for the calls that matter), and **automated** (runs on a schedule or trigger, end to
-end).
+Competitor rows reflect publicly documented behavior as of July 2026.
 
----
-
-## Why Kortix
-
-- **Open & yours.** Open source and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
-- **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
-- **Real work, not chat.** Agents run on real cloud computers and return finished deliverables — and take real actions in your tools.
-- **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
-- **Bring your own models.** Any provider, your own keys — or the ChatGPT subscription you already pay for.
+| If you are looking at… | Pick it when | Pick Kortix when |
+| --- | --- | --- |
+| **n8n** (workflow automation) | The job is a fixed flowchart: the same steps, in the same order, every time. | The job is open-ended work an agent does on its own computer, with the configuration in git and a person approving what it changes. |
+| **OpenHands** (coding agents) | You want a coding-agent control center for an engineering team. | Coding is one of many jobs: the same agents also work in Slack, on schedules and across 3,000+ apps. |
+| **Paperclip** (agent orchestration) | You already run agents and want an org chart and a task board on top of them. | You want the platform to run the agents too, each session on its own cloud computer, from one repo. |
+| **Onyx, Open WebUI, LibreChat** (chat and search) | You want a chat window or search over company documents. | You want agents that return finished work and take real actions in your tools. |
 
 ---
 
 ## Self-host
 
-Kortix runs on your own infrastructure — a laptop, a VPS, your own VPC, or your own on-prem
-network. Start a production-style local instance from Docker images, then switch the CLI between
-Cloud and your own hosts:
+Kortix is self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your
+own servers, from the same images the managed cloud runs.
 
 ```bash
+curl -fsSL https://kortix.com/install | bash
 kortix self-host start
 kortix hosts use selfhost  # ↔  kortix hosts use cloud
 ```
 
-The first interactive setup asks only for the integration credentials that unlock managed git,
-GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are
-generated for you. Note that `self-host start` pulls its images from Docker Hub, so this is a
-self-hosted install rather than a disconnected one.
-
-Managed hosting is **[Kortix Cloud](https://kortix.com)**.
+The first run asks six things and no model key. You connect GitHub and add model keys in the app
+afterwards. Agent sandboxes run on the provider you configure (Platinum by default), and the stack
+pulls its images from Docker Hub, so this is a self-hosted install, not a disconnected one.
+[Self-hosting guide →](https://kortix.com/docs/host)
 
 ---
 
-## Enterprise & security
+## Security
 
-Built to survive a security review, not slip past one: one isolated machine per session · members,
-groups & roles that match your org · per-resource permissions for people **and** agents ·
-connector credentials brokered server-side, so the raw key never reaches the sandbox · a secrets
-manager, encrypted at rest and injected at runtime · a full audit trail · merge that is deny-by-default
-for an agent · approval gates you switch on for the actions that matter · your own VPC or on-prem
-network.
+One isolated machine per session · per-resource permissions for people and agents · roles, groups
+and an audit trail · SAML 2.0 single sign-on and SCIM 2.0 · connector credentials held server-side
+· secrets encrypted at rest with a key per project · merge deny-by-default for agents · approval
+rules you set · Kortix Cloud, your VPC or on-prem. **SOC 2 Type I verified.**
+[Security →](https://kortix.com/security)
 
-Sessions run on Platinum, the reference sandbox provider, where each session is its own microVM.
-Daytona remains only as a legacy fallback, and its removal is scheduled.
+---
+
+## AI Transformation, done for you
+
+Don't want to build it yourself? Our team maps your company, unifies your data, automates the work
+with agents, builds your custom apps and trains your team, all on Kortix, in a repo you own.
+**[kortix.com/services](https://kortix.com/services)**
 
 ---
 
 ## White-label
 
-Kortix stays open source. On top of that, a free white-label license lets you run Kortix however
-you want: your name and logo in place of ours, your own structure, and Kortix as a hosted service
-for your customers. The one requirement: use [Platinum](https://www.platinum.dev) as your exclusive
-compute provider for everything it offers (sandboxes, volumes, runners, AI compute, inference), at
-rates we commit to keep competitive. Sign online and you are licensed on the spot:
+Kortix stays open source. A free white-label license lets you run it under your own name and logo,
+in your own structure, and as a hosted service for your customers. The one requirement: use
+[Platinum](https://www.platinum.dev) as your exclusive compute provider for everything it offers,
+at rates we commit to keep competitive. Sign online and you are licensed on the spot:
 **[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
 [marko@kortix.ai](mailto:marko@kortix.ai).
 
@@ -295,18 +202,18 @@ pnpm build          # build all packages
 pnpm nuke           # tear down the local Docker environment
 ```
 
-Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`);
-documentation source is in `apps/web/content/docs`. The whole platform ships under one version
-(root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`.
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`). The Guide
+and the developer reference are in `apps/web/content/docs`. The whole platform ships under one
+version (root `VERSION`): API, frontend, CLI and desktop release together as `vX.Y.Z`.
 
-Local secrets, test lanes, and the PR gate: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Issues and
-pull requests are welcome.
+Local secrets, test lanes and the PR loop: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Issues and pull
+requests are welcome.
 
 ---
 
 <div align="center">
 <br />
-<strong>We're building the thing that takes a company from human to AGI — and lets it keep every byte of itself on the way there.</strong>
+<strong>We are building the Operating System for SuperIntelligence: for companies run by AI, owned end to end.</strong>
 <br /><br />
 <a href="https://kortix.com">kortix.com</a>
 </div>
