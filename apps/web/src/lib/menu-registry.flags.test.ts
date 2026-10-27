@@ -62,10 +62,10 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-shared-files` and `proj-artifacts` (flag `artifacts`, #10842) are
-    // the flagged palette entries (Apps graduated off the flag system in 2026-10). The filter line is the whole
-    // gate, so it is pinned literally — a rename or a fail-OPEN rewrite of it
-    // would otherwise pass every other test here.
+    // `proj-shared-files` (`drives`) and `proj-artifacts` (`artifacts`, #10842)
+    // are the flagged palette entries (Apps graduated off the flag system in
+    // 2026-10). The filter line is the whole gate, so it is pinned literally — a
+    // rename or a fail-OPEN rewrite of it would otherwise pass every other test here.
     const flagged = menuRegistry.filter(
       (item) => item.requiresFlag && item.showIn.includes('commandPalette'),
     );

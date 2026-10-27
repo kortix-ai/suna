@@ -38,3 +38,15 @@ CVE-2026-93687
 # electron-builder, node-gyp) and the docs-site build (blume/astro), never in a
 # server request path. Remove when a fixed release ships.
 CVE-2026-93748
+
+# CVE-2023-54404 / GHSA-mrhx-c7xc-m3w5 (zod, unbounded issue accumulation): the
+# fixed release is zod 4.6.6; no zod 3.x release has the fix. zod 3.25.76 is the
+# API, web, CLI, mobile, api-contract and sdk schema library, with zod-3-only
+# dependents (@hono/zod-openapi 0.19, @asteasolutions/zod-to-openapi 7), and
+# kortixd compiles api-contract's zod 3 types. The API caps validation issues at
+# the boundary (#10950). Every zod 4.x copy is held at >= 4.6.6 by
+# tests/unit/dependency-advisories.test.js, except the OpenCode harness template's
+# zod 4.1.8: kortixd's install sentinel recognizes exactly that pin, and existing
+# projects carry it in their repos; it moves with kortixd. Remove when the
+# workspace moves to zod 4.
+CVE-2023-54404

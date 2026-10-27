@@ -389,6 +389,33 @@ jobs:
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
 
+  lockfile-advisories:
+    name: GHSA lockfile advisory check
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+      - name: Check root lockfile against GHSA advisories
+        run: npx --yes pnpm@8.11.0 audit --audit-level moderate
+      - name: Check scanner lockfile against GHSA advisories
+        if: always()
+        working-directory: .deepsec
+        run: npx --yes pnpm@9.15.4 audit --audit-level moderate
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: always()
+        with:
+          bun-version: 1.4.3
+      - name: Check daemon lockfile against GHSA advisories
+        if: always()
+        working-directory: apps/kortix-sandbox-agent-server
+        # GHSA-mrhx-c7xc-m3w5 (zod collection-size DoS) has no 3.x fix. kortixd
+        # compiles @kortix/api-contract's zod 3 types, so it moves to zod 4 with
+        # api-contract. Root and .trivyignore carry the same exception.
+        run: bun audit --audit-level moderate --ignore=GHSA-mrhx-c7xc-m3w5
+
   dependency-scan:
     name: Dependency + secret scan
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}

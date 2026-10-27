@@ -113,6 +113,17 @@ mock.module('../composer/composer', () => ({
     );
   },
 }));
+// The outcome footer reads change requests only for a viewer with git read
+// access (#10894). This viewer has it; every other probe answers as before.
+const realProjectCan = await import('../../internal/lib/use-project-can');
+const { PROJECT_ACTIONS: actions } = await import('../../internal/lib/project-actions');
+mock.module('../../internal/lib/use-project-can', () => ({
+  ...realProjectCan,
+  useProjectCan: (projectId: string | undefined, action: string, options?: { accountId?: string }) =>
+    action === actions.PROJECT_GITOPS_READ
+      ? { allowed: true, reason: null, isLoading: false, isError: false }
+      : realProjectCan.useProjectCan(projectId, action, options),
+}));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
 const sdk = await import('@kortix/sdk');

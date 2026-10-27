@@ -57,7 +57,7 @@ import type { ListProjectSessionsOptions } from '../core/rest/projects-client/se
 
 type SessionListFilters = Pick<
   ListProjectSessionsOptions,
-  'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'createdBy' | 'agent' | 'updatedAfter'
+  'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'group' | 'createdBy' | 'agent' | 'updatedAfter'
 >;
 
 /** The filter fields that change the server response, or undefined when none is set. */
@@ -66,8 +66,8 @@ function normalizeSessionListFilters(filters?: SessionListFilters) {
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
   const view = filters?.view;
   const spaceId = filters?.spaceId;
-  const { createdBy, agent, updatedAfter } = filters ?? {};
-  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view && !spaceId && !createdBy && !agent && !updatedAfter) {
+  const { group, createdBy, agent, updatedAfter } = filters ?? {};
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view && !spaceId && !group && !createdBy && !agent && !updatedAfter) {
     return undefined;
   }
   return {
@@ -78,6 +78,7 @@ function normalizeSessionListFilters(filters?: SessionListFilters) {
     ...(labels ? { labels } : {}),
     ...(view ? { view } : {}),
     ...(spaceId ? { spaceId } : {}),
+    ...(group ? { group } : {}),
     ...(createdBy ? { createdBy } : {}),
     ...(agent ? { agent } : {}),
     ...(updatedAfter ? { updatedAfter } : {}),
@@ -564,6 +565,8 @@ export const qk = {
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
     /** `listProjectSpaces` — the project's channels and the caller's DMs. */
     spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
+    /** `listProjectSessionGroups` — the project's session groups, in order. */
+    sessionGroups: (id: string) => [...qk.project.scope(id), 'session-groups'] as const,
     /** `listProjectSpaceApps` — one channel's Apps. Under `apps`, so every App mutation's invalidation refetches it. */
     spaceApps: (id: string, spaceId: string) => [...qk.project.apps(id), 'space', spaceId] as const,
     /** `listProjectSpaceLinks` — one channel's links. */

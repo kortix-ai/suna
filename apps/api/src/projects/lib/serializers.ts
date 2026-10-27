@@ -233,6 +233,7 @@ export function serializeSession(
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
     space_id: row.spaceId ?? null,
+    group_id: row.groupId ?? null,
     first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
     reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType

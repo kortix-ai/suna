@@ -137,6 +137,38 @@ A `visibility` that a server-side caller sets (a trigger, a chat integration) wi
 
 Turning `project_channels` on files every session that is in no space into `#general`. Turning it off deletes nothing: the spaces and every `space_id` stay, and come back when the flag is on again. In React, use `useProjectSpaces`, `useProjectSpaceApps`, `useProjectSpaceLinks`, `useAddProjectSpaceLink`, `usePinProjectSpaceLink`, `useRemoveProjectSpaceLink`, `useProjectSpaceMembers`, `useAddProjectSpaceMembers`, `useRemoveProjectSpaceMember`, `useJoinProjectSpace`, `useLeaveProjectSpace`, `useProjectSpaceGeneralNotice`, `useChannelsOnboarding`, `useMarkChannelsOnboarding` and `useProjectSessions(projectId, { spaceId })` ([Hooks](/docs/sdk/react#hooks)).
 
+## Session groups (experimental)
+
+<Callout type="warning">
+Experimental. Every call in this section needs the project's `session_groups` flag, which is off by default. While it is off, every `sessionGroups` call returns `403` `feature_disabled`, and `listPage({ group })` ignores `group`.
+</Callout>
+
+A session group is a named folder of the project's sessions, for example one per store or client. Every project member sees the same groups in the same order. A session is in at most one group of its project (`ProjectSession.group_id`).
+
+```ts
+const p = kortix.project(projectId);
+
+const storeA = await p.sessionGroups.create({ name: 'Store A' }); // last in the order
+const storeB = await p.sessionGroups.create({ name: 'Store B' });
+await p.sessionGroups.file(sessionId, storeA.group_id); // null takes it out again
+await p.sessionGroups.reorder([storeB.group_id, storeA.group_id]); // every group id, once
+
+const { items } = await p.sessions.listPage({ group: storeA.group_id }); // that group's sessions
+const loose = await p.sessions.listPage({ group: 'none', parent: 'root' }); // the sessions in no group
+```
+
+| Call | Behavior |
+| --- | --- |
+| `sessionGroups.list()` | The groups in order, as `ProjectSessionGroup[]` (`group_id`, `name`, `position`, `created_by`, `created_at`, `updated_at`). Needs read access to the project's sessions. |
+| `sessionGroups.create({ name })` | A group, last in the order. `name` is 1 to 80 characters after trimming. A name another group of the project has, in any case, rejects with `ApiError` `409` `group_name_taken`. A project holds at most 50 groups (`409` `group_limit`). |
+| `sessionGroups.rename(groupId, name)` | The same name rules. An unknown group returns `404` `group_not_found`. |
+| `sessionGroups.reorder(groupIds)` | Every group id of the project, each once, in the new order. A list that is out of date (a group missing, added or foreign) changes nothing and returns `409` `group_order_stale`: read the list again. A repeated id returns `400`. |
+| `sessionGroups.delete(groupId)` | Its sessions stay, in no group. The groups after it move up one place. |
+| `sessionGroups.file(sessionId, groupId)` | Files the session into that group of its project; `null` takes it out. The session keeps its `updated_at`, so it keeps its place in every list. A session the caller cannot see returns `404`; a group of another project or an unknown id returns `404` `group_not_found`. |
+| `sessions.listPage({ group })` | `group` is a group id (that group's sessions, any starter and any depth) or `'none'` (the sessions in no group). A value that is neither returns `400`. |
+
+Creating, renaming, reordering, deleting and filing need the access that changes a session's labels: any member who works in the project. Turning `session_groups` off deletes nothing: the groups and every `group_id` stay, and the sidebar lists every session again until the flag is on again. In React, use `useProjectSessionGroups`, `useCreateProjectSessionGroup`, `useRenameProjectSessionGroup`, `useReorderProjectSessionGroups`, `useDeleteProjectSessionGroup`, `useSetProjectSessionGroup` and `useProjectSessions(projectId, { group })` ([Hooks](/docs/sdk/react#hooks)).
+
 ## Memory (experimental)
 
 Experimental. Every call in this section needs the project's Files (the `drives` flag): while Files are off, every `memory` route returns `403` `feature_disabled`, and without Drive storage `503` `drive_storage_unavailable`. The Memory UI is a Channels surface (`project_channels`); these calls do not need that flag.

@@ -519,6 +519,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'volume is deleted with the session content: by the retention purge after the trash window ' +
       '(projects/session-log-purge.ts) or by account erasure.',
   },
+  {
+    key: 'session_groups',
+    name: 'Session groups',
+    description:
+      "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: every /projects/:id/session-groups route and PUT /projects/:id/sessions/:sid/group answer 403 ' +
+      '`feature_disabled` while off (projects/routes/session-groups.ts). The session list ignores `group` while off, ' +
+      "so the sidebar lists every session again. Turning it off deletes nothing: the groups and each session's " +
+      '`group_id` stay and come back when it is turned on. WEB: no group sections, no New group and no Move to group.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

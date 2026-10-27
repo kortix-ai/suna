@@ -201,6 +201,25 @@ export function withWorktreeDatabase(
   return { ...environment, DB_URL: url.toString() };
 }
 
+/**
+ * A branch database gets `auth.users` and `auth.sessions` from the primary
+ * through two triggers on the primary (`kortix_wt_push_user`,
+ * `kortix_wt_push_session`). With the sessions trigger missing, every token
+ * the runner mints fails the API's liveness check (`jwt_session-not-live`,
+ * 401) and no flow can sign in. `pnpm worktree start` reinstalls both and
+ * reconciles; the runner does the same before it starts the API. Null for any
+ * other database mode.
+ */
+export function branchAuthSyncTarget(
+  topology: LocalTopology,
+  environment: LocalSupabaseEnvironment,
+): { primaryUrl: string; worktreeName: string } | null {
+  if (topology.marker?.dbMode !== "branch" || !topology.worktreeName || !environment.DB_URL) return null;
+  const primary = new URL(environment.DB_URL);
+  primary.pathname = "/postgres";
+  return { primaryUrl: primary.toString(), worktreeName: topology.worktreeName };
+}
+
 function localSupabaseCommand(topology: LocalTopology): string[] {
   const args = ["supabase"];
   if (topology.marker?.dbMode === "isolated") {
@@ -368,6 +387,14 @@ export async function ensureLocalMigrations(
   const exitCode = await migrated.exited;
   if (exitCode !== 0) {
     throw new Error(`local database migration exited with code ${exitCode}`);
+  }
+  const branch = branchAuthSyncTarget(topology, supabase);
+  if (branch) {
+    const { primaryDb, syncBranchUsers } = await import("../../../scripts/worktree/lib/branch-db");
+    const db = primaryDb(branch.primaryUrl);
+    if (!db) throw new Error("no primary Supabase container for the branch database");
+    const error = syncBranchUsers(db, branch.worktreeName);
+    if (error) throw new Error(`branch database auth sync: ${error}`);
   }
   await waitForLocalPostgrest(supabase);
 }

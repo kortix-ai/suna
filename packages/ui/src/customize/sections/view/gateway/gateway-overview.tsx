@@ -221,6 +221,21 @@ export function GatewayOverview({
             <p className="text-muted-foreground text-xs tabular-nums">
               {tabs.find((m) => m.key === metric)?.sub}
             </p>
+            <p className="text-muted-foreground text-xs tabular-nums">
+              LLM estimated usage value (not a bill):{' '}
+              {overview?.estimated_usage_value == null
+                ? 'Unknown'
+                : `$${overview.estimated_usage_value.toFixed(4)}`}{' '}
+              USD
+              {' · '}
+              {overview?.priced_requests ?? 0} priced requests
+              {' · '}
+              {overview?.unpriced_requests ?? 0} unpriced requests
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {overview?.valuation?.coverage ?? 'Estimate coverage unavailable.'} Actual spend above
+              is separate. Estimates are never added to charges. {overview?.valuation?.rate_version}
+            </p>
             <UsageChart
               data={series}
               keys={activeMetric.keys}
@@ -289,10 +304,18 @@ export function GatewayOverview({
                           {name ?? s.session_id.slice(0, 8)}
                         </span>
                         <span className="text-muted-foreground truncate text-xs tabular-nums">
-                          {name ? <span className="font-mono">{s.session_id.slice(0, 8)} · </span> : null}
+                          {name ? (
+                            <span className="font-mono">{s.session_id.slice(0, 8)} · </span>
+                          ) : null}
                           {t('sessionModel', { cost: credits(s.llm_cost) })} ·{' '}
-                          {t('sessionSandbox', { cost: credits(s.compute_cost) })} ·{' '}
-                          {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
+                          {t('sessionSandbox', {
+                            cost: credits(s.compute_cost),
+                          })}{' '}
+                          · {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
+                          {' · '}LLM estimate:{' '}
+                          {s.estimated_usage_value == null
+                            ? 'Unknown'
+                            : `$${s.estimated_usage_value.toFixed(4)} USD`}
                         </span>
                       </div>
                       <ShareBar

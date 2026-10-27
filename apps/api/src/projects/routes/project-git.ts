@@ -17,6 +17,7 @@ import {
 } from '../lib/git';
 import { normalizeString, serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerProjectGitRoutes(): void {
   // POST /v1/projects/:projectId/git-token
@@ -206,6 +207,7 @@ export function registerProjectGitRoutes(): void {
       const result = await backend.inviteCollaborator(ref, username, scope);
       return c.json(result);
     } catch (error) {
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
     }
   },

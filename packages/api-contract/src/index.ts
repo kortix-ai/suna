@@ -70,6 +70,7 @@ export const FeatureFlagMapSchema = z.object({
   workspace_volume: z.boolean(),
   artifacts: z.boolean(),
   email_channel: z.boolean(),
+  session_groups: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -1181,6 +1182,8 @@ export const ProjectSessionSchema = z.object({
   parent_session_id: z.string().nullable().optional(),
   /** The space (channel or DM) the session is filed in; null for a session in no space. */
   space_id: z.string().uuid().nullable(),
+  /** The session group it is filed in (`session_groups`); null for a session in no group. */
+  group_id: z.string().uuid().nullable(),
   /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
   first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
@@ -1535,6 +1538,61 @@ export const SpaceLinkCreateInputSchema = z
   })
   .strict();
 export type SpaceLinkCreateInput = z.infer<typeof SpaceLinkCreateInputSchema>;
+
+/**
+ * A session group: a named folder of the project's sessions in the sidebar
+ * (`/projects/:id/session-groups`, behind the `session_groups` flag). Every
+ * project member sees the same groups in the same order. A session is in at
+ * most one group (`ProjectSession.group_id`).
+ */
+export const SESSION_GROUP_NAME_MAX = 80;
+/** The most groups one project may have. */
+export const SESSION_GROUPS_MAX = 50;
+
+export const SessionGroupSchema = z
+  .object({
+    group_id: z.string(),
+    name: z.string(),
+    /** 0-based place in the project's order; the list is sorted by it. */
+    position: z.number().int().nonnegative(),
+    created_by: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+export type SessionGroup = z.infer<typeof SessionGroupSchema>;
+
+export const SessionGroupListSchema = z.object({ groups: z.array(SessionGroupSchema) }).strict();
+export type SessionGroupList = z.infer<typeof SessionGroupListSchema>;
+
+const SessionGroupNameSchema = z.string().trim().min(1).max(SESSION_GROUP_NAME_MAX);
+
+/** A new group goes last in the order. A name another group of the project has (any case) is refused. */
+export const SessionGroupCreateInputSchema = z.object({ name: SessionGroupNameSchema }).strict();
+export type SessionGroupCreateInput = z.infer<typeof SessionGroupCreateInputSchema>;
+
+export const SessionGroupUpdateInputSchema = z.object({ name: SessionGroupNameSchema }).strict();
+export type SessionGroupUpdateInput = z.infer<typeof SessionGroupUpdateInputSchema>;
+
+/** The project's groups in their new order: every group id, each once. */
+export const SessionGroupOrderInputSchema = z
+  .object({
+    group_ids: z
+      .array(z.string().uuid())
+      .max(SESSION_GROUPS_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, 'group_ids must name each group once'),
+  })
+  .strict();
+export type SessionGroupOrderInput = z.infer<typeof SessionGroupOrderInputSchema>;
+
+/** File a session into a group of its project, or take it out of its group (`null`). */
+export const SessionGroupAssignInputSchema = z.object({ group_id: z.string().uuid().nullable() }).strict();
+export type SessionGroupAssignInput = z.infer<typeof SessionGroupAssignInputSchema>;
+
+export const SessionGroupAssignmentSchema = z
+  .object({ session_id: z.string(), group_id: z.string().nullable() })
+  .strict();
+export type SessionGroupAssignment = z.infer<typeof SessionGroupAssignmentSchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',

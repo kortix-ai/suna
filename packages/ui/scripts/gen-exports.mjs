@@ -60,6 +60,7 @@ export const ENTRIES = {
   './artifacts': 'artifacts/index.ts',
   './browser': 'browser/index.ts',
   './apps': 'apps/index.ts',
+  './artifacts': 'artifacts/index.ts',
   './composer': 'session/composer/index.ts',
   './session': 'session/index.ts',
   './session-panel': 'session/panel/index.ts',

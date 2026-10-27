@@ -1,5 +1,6 @@
 // Main exports
 export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
+export { requiresTls } from './tls';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -85,6 +86,7 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSessionGroups,
   projectSpaces,
   projectSpaceLinks,
   projectSpaceMembers,

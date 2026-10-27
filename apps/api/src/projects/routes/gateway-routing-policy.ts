@@ -28,6 +28,7 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 type RoutingContext = { projectId: string; accountId: string; userId: string };
 
@@ -171,6 +172,7 @@ export function registerGatewayRoutingPolicyRoutes(): void {
         body = await c.req.json();
         policy = parseProjectRoutingPolicyInput(body);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Invalid routing policy',

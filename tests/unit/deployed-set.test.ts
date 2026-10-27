@@ -23,7 +23,7 @@ const SEAMS: Record<string, string[]> = {
   'sandbox stop and wake': ['SESS-12'],
   'LLM gateway': ['GW-2', 'GW-MANAGED-1'],
   'Stripe and billing webhooks': ['BILL-1', 'BILL-3', 'BILL-8', 'BILL-18'],
-  'object storage and uploads': ['SESS-31', 'SESS-31-log', 'FILE-9'],
+  'object storage and uploads': ['SESS-31', 'SESS-31-log', 'FILE-9', 'MEMORY-4'],
   'git push to managed repositories': ['SHIP-1', 'RUN-7', 'GH-19', 'FILE-1'],
   'money path: prompt to merged change request, real CLI': ['GOLD-1', 'CLI-SESS'],
   'MCP over HTTP with a PAT': ['MCP-4'],

@@ -36,6 +36,7 @@ import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platfor
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -470,6 +471,7 @@ export function registerModelsRoutes(): void {
         try {
           manifest = await loadManifestForEdit(writer.row);
         } catch (e) {
+          rethrowDatabaseError(e);
           return c.json(
             { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
             400,

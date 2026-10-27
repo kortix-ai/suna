@@ -76,6 +76,8 @@ import { registerSessionLogRoutes } from './routes/session-log';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
+import { registerSessionListFreshnessMiddleware } from './routes/session-list-freshness';
+import { registerSessionGroupsRoutes } from './routes/session-groups';
 import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
@@ -108,6 +110,8 @@ export function registerAllProjectRoutes(): void {
   // route order. registerProjectsRoutes() registers the global `/*` auth
   // middleware first (its first statement), then the remaining route groups.
   registerProjectsRoutes();
+  // Before every session route: a successful session write forgets the list's memoized pages.
+  registerSessionListFreshnessMiddleware();
   registerTriggerWebhooksRoutes();
   registerEventIngressRoutes();
   registerProjectGitRoutes();
@@ -169,6 +173,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();
   registerSessionListStateRoutes();
+  registerSessionGroupsRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerRoomsRoutes();

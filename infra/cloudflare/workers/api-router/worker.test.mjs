@@ -24,6 +24,38 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test.each(['GET', 'HEAD'])('serves security.txt at the edge for %s without an origin', async (method) => {
+    globalThis.fetch = () => { throw new Error('security.txt must not fetch an origin'); };
+    const response = await worker.fetch(new Request('https://gateway-dev.kortix.com/.well-known/security.txt', { method }), {});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    const body = await response.text();
+    if (method === 'HEAD') {
+      expect(body).toBe('');
+    } else {
+      expect(body).toContain('Contact: mailto:security@kortix.com\n');
+      expect(body).toContain('Canonical: https://gateway-dev.kortix.com/.well-known/security.txt\n');
+      const expires = body.match(/^Expires: (.+)$/m)?.[1];
+      expect(Date.parse(expires)).toBeGreaterThan(Date.parse('2026-10-27T00:00:00Z'));
+    }
+  });
+
+  test.each([
+    ['POST', 'https://gateway-dev.kortix.com/.well-known/security.txt'],
+    ['GET', 'https://gateway-dev.kortix.com/.well-known/other.txt'],
+  ])('preserves origin routing for %s %s', async (method, url) => {
+    globalThis.fetch = async () => new Response('origin response', { status: 404 });
+    const response = await worker.fetch(new Request(url, { method }), env);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('origin response');
+  });
+
+  test('redirects HTTP security.txt requests to HTTPS', async () => {
+    const response = await worker.fetch(new Request('http://gateway-dev.kortix.com/.well-known/security.txt'), env);
+    expect(response.status).toBe(308);
+    expect(response.headers.get('Location')).toBe('https://gateway-dev.kortix.com/.well-known/security.txt');
+  });
+
   test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
     expect(workflow.on.push.branches).toEqual(['dev']);

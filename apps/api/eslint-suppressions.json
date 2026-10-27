@@ -1394,7 +1394,7 @@
   },
   "src/ops/index.ts": {
     "no-console": {
-      "count": 4
+      "count": 1
     },
     "no-restricted-properties": {
       "count": 4
@@ -1483,11 +1483,6 @@
     },
     "no-restricted-imports": {
       "count": 2
-    }
-  },
-  "src/platform/routes/version.ts": {
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/platform/sandbox-ownership.ts": {
@@ -3111,11 +3106,6 @@
   },
   "src/snapshots/providers/index.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
-  "src/snapshots/providers/platinum-templates.ts": {
-    "no-restricted-properties": {
       "count": 1
     }
   },

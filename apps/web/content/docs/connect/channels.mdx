@@ -317,10 +317,13 @@ kortix channels email connect --api-key - --username support --domain mail.examp
 - **Shared with the project** (`share: project`, the default): its mail starts a project session as the project's automation account. Narrow who may use it in the connector's **Accounts**, like any shared account.
 - The first inbox of each owner is that owner's default. Set another with `kortix channels email inboxes default <address>` (or the standard default-account route).
 - Removing an inbox deletes it on Resend when Kortix created it. An inbox you attached by id is only unlinked.
+- After you remove an inbox and add it again, here or in another project, the next email in one of its old threads starts a new session: the old session cannot use the inbox any more, and the new one is told the thread had an earlier conversation.
 
 - **One email thread is one session.** A new message starts a session. A reply in the thread continues it. The agent reads and replies through the inbox that received the mail.
+- **Each email is stored before Kortix acknowledges it.** When Kortix cannot read the email from Resend, or the thread's session is still starting or cannot take it yet, the email is retried for about 20 minutes. A restart or a deploy loses no mail, and Resend sending the same email again never starts a second session.
 - **When the agent has a question, it asks in its reply.** Your answer in the thread reaches it as a new message.
-- **Email has no identity link.** Restrict who may write to an inbox with an allow-list. Kortix drops mail from any other sender. Without `--allow` or `--allow-regex`, the inbox accepts mail from every sender.
+- **A failed run sends no mail.** The session in Kortix shows the error. A reply in a thread whose session failed is dropped after about 20 minutes of retries; send a new email to start a new session.
+- **Email has no identity link.** Restrict who may write to an inbox with an allow-list. Kortix drops mail from any other sender before it stores anything. Without `--allow` or `--allow-regex`, the inbox accepts mail from every sender.
 - A shared inbox needs `project.connector.write`. A private one needs project membership.
 
 | Command | What it does |
@@ -368,8 +371,9 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **The agent replies through the `kortix_telegram` connector:** `send_message`, `edit_message_text`, `delete_message`, `send_chat_action`, `get_chat` and `get_me`. The bot token never enters the sandbox.
 - **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.
 - **Groups run in Telegram's privacy mode by default:** the bot receives only commands, replies to it and mentions. Send `/setprivacy` to @BotFather, or make the bot a group admin, to let it read every message.
-- **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session.
-- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When the session is still starting, or waits behind other sessions of the project, the bot says so; the agent replies once it runs.
+- **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session, and never delivers the message twice.
+- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When its computer fails to start, the bot says so and asks you to send `/new`. A failure the provider may clear (capacity, a rate limit) is retried automatically for a few minutes: the bot says so once, and if the agent does not reply, send `/new`. When the session is still starting, or waits behind other sessions of the project, the bot says so; the agent replies once it runs.
+- **A run that ends in an error is answered in the chat.** The bot names the error, says what to do next and links the session in Kortix. A run you stop sends nothing, and a run started from Kortix itself shows its error there, not in the chat.
 - **A session that cannot take messages says so.** When the chat's session has failed, the bot asks you to send `/new` after about a minute of retries.
 - Connecting needs `project.connector.write`.
 

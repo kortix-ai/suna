@@ -83,6 +83,7 @@ const NOT_WORKERS: Record<string, string> = {
     'renews the lock of one claimed command while its drain lane or inline create runs',
   'router/config/model-pricing.ts': 'refreshes the in-memory model pricing',
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
+  'shared/stream-access-recheck.ts': 're-checks access for one open session stream; runs inside that stream',
   'workers/access-control-cache-worker.ts': 'refreshes the in-memory access-control cache',
   'workers/app-deployment-worker.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
   'workers/event-loop-lag-worker.ts': 'measures event-loop lag',
