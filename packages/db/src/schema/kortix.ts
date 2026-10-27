@@ -8637,6 +8637,8 @@ export const chromeAttachments = kortixSchema.table('chrome_attachments', {
   index('idx_chrome_attachments_chrome').on(table.chromeId, table.status),
   index('idx_chrome_attachments_session').on(table.sessionId),
   check('chrome_attachments_status', sql`${table.status} in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')`),
+]);
+
 /** CLI login grants contain no credential: only the device secret's hash and
  * the approving identity. Polling atomically consumes approval and mints a PAT. */
 export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
