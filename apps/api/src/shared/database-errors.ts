@@ -1,3 +1,5 @@
+import { DrizzleQueryError } from 'drizzle-orm/errors';
+
 export interface DatabaseErrorDetails {
   isDatabaseError: true;
   outerName: string;
@@ -97,6 +99,21 @@ export function inspectDatabaseError(error: unknown): DatabaseErrorDetails | nul
     detail: stringField(databaseNode.detail),
     hint: stringField(databaseNode.hint),
   };
+}
+
+/**
+ * Throws `error` again when it, or an error in its cause chain, came from the
+ * database driver. A route catch-all calls it before echoing the caught
+ * message: `DrizzleQueryError.message` is the whole statement and its bound
+ * parameters. The global handler answers a 500 and keeps the query in the log
+ * (KRTX-3422). Matches the driver classes, not a SQLSTATE-shaped `code`, so a
+ * socket `EPIPE` keeps its route's answer.
+ */
+export function rethrowDatabaseError(error: unknown): void {
+  const fromDatabase = errorChain(error).some(
+    (node) => node instanceof DrizzleQueryError || stringField(node.name) === 'PostgresError',
+  );
+  if (fromDatabase) throw error;
 }
 
 export function isTransientDatabaseError(error: unknown): boolean {

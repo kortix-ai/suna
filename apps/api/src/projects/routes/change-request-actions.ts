@@ -28,6 +28,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
@@ -215,6 +216,7 @@ export function registerChangeRequestActionsRoutes(): void {
             409,
           );
         }
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Merge failed',

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import {
   inspectDatabaseError,
   isTransientDatabaseError,
+  rethrowDatabaseError,
   retryTransientDatabaseRead,
 } from './database-errors';
 
@@ -122,5 +124,33 @@ describe('retryTransientDatabaseRead', () => {
     });
     expect(result).toEqual(['allowed']);
     expect(calls).toBe(2);
+  });
+});
+
+describe('rethrowDatabaseError', () => {
+  test('throws a wrapped database error unchanged, so its query never reaches a response body', () => {
+    const error = wrappedDatabaseError('23505', 'duplicate key value violates unique constraint');
+    let thrown: unknown;
+    try {
+      rethrowDatabaseError(error);
+    } catch (caught) {
+      thrown = caught;
+    }
+    expect(thrown).toBe(error);
+  });
+
+  test('throws a bare DrizzleQueryError, whose message is the statement and its parameters', () => {
+    const error = new DrizzleQueryError('insert into "kortix"."sandbox_templates" values ($1)', ['probe'], new Error('boom'));
+    expect(() => rethrowDatabaseError(error)).toThrow('Failed query: insert into');
+  });
+
+  test('returns for a socket error whose code only looks like a SQLSTATE', () => {
+    const error = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    expect(() => rethrowDatabaseError(error)).not.toThrow();
+  });
+
+  test('returns for an application error, whose message a route may show', () => {
+    expect(() => rethrowDatabaseError(new Error('slug must be lowercase'))).not.toThrow();
+    expect(() => rethrowDatabaseError('plain string')).not.toThrow();
   });
 });

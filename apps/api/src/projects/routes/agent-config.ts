@@ -80,6 +80,7 @@ import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
@@ -274,6 +275,7 @@ export function registerAgentConfigRoutes(): void {
         gitProject = await withProjectGitAuth(loaded.row);
         manifest = await loadManifestForEdit(gitProject);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -382,6 +384,7 @@ export function registerAgentConfigRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -419,6 +422,7 @@ export function registerAgentConfigRoutes(): void {
         if (isRemotePushPolicyRejection(error)) {
           return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
         }
+        rethrowDatabaseError(error);
         return c.json(
           { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
           502,
@@ -503,6 +507,7 @@ export function registerAgentConfigRoutes(): void {
       try {
         manifest = await loadManifestForEdit(loaded.row);
       } catch (e) {
+        rethrowDatabaseError(e);
         return c.json(
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
@@ -610,6 +615,7 @@ export function registerAgentConfigRoutes(): void {
         if (isRemotePushPolicyRejection(err)) {
           return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
         }
+        rethrowDatabaseError(err);
         return c.json(
           { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },
           502,

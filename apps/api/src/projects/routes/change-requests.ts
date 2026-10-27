@@ -40,6 +40,7 @@ import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -446,6 +447,7 @@ export function registerChangeRequestsRoutes(): void {
       try {
         endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to reach sandbox',
@@ -463,6 +465,7 @@ export function registerChangeRequestsRoutes(): void {
             signal: AbortSignal.timeout(30_000),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Sandbox unreachable',
@@ -752,6 +755,7 @@ export function registerChangeRequestsRoutes(): void {
           patch_truncated: diff.patch_truncated,
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to compute diff',
@@ -795,6 +799,7 @@ export function registerChangeRequestsRoutes(): void {
         );
         return c.json(preview);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to preview merge',

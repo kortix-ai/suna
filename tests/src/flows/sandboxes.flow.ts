@@ -227,6 +227,21 @@ flow(
       }
     });
 
+    await ctx.step("POST the same slug again → 409 template_slug_taken, the body names the slug and carries no SQL", async () => {
+      if (!templateId) return;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/sandbox-templates",
+          { slug, name: "e2e template", image: "ubuntu:22.04" },
+          { params: { projectId: p.id } },
+        );
+      r.status(409).body().has("$.code", "template_slug_taken").matches("$.error", new RegExp(`"${slug}"`));
+      if (/Failed query|sandbox_templates|params:/.test(r.text())) {
+        throw new Error(`409 body leaks the database error: ${r.text()}`);
+      }
+    });
+
     await ctx.step("POST create with bad slug → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
