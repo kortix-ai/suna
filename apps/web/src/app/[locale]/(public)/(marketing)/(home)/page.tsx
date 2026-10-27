@@ -22,8 +22,8 @@ export default function Home() {
       <div aria-hidden className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17" />
       <SandBandHero />
       <WorksWithStrip />
-      <CaseStudies />
       <PillarsBand />
+      <CaseStudies />
       <ProblemSolution />
       <HowItWorksTabs />
       <UseCasesBand />

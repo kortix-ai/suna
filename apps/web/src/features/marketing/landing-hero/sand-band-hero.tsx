@@ -67,8 +67,8 @@ export function SandBandHero() {
             <OwnedLine />
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Multiplayer AI for your whole team. Agents, skills, memory and connectors as code in
-            one git repo you own. Any model, in our cloud or yours.
+            Multiplayer AI for your whole team. Open source, on your infrastructure or ours. Your
+            company as code: every agent and every piece of context in one git repo you own.
           </p>
         </div>
 

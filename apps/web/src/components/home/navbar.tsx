@@ -2,7 +2,17 @@
 
 import { MEGA_MENUS, type MegaMenu, MegaMenuPanel } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import Link from '@/components/site-link';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { SiteSwitcher } from '@/features/marketing/kit/site-switcher';
+import { useAuth } from '@/features/providers/auth-provider';
+import { useGitHubStars } from '@/hooks/use-github-stars';
+import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { cn } from '@kortix/ui';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -10,20 +20,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@kortix/ui/context-menu';
-import Loading from '@kortix/ui/loading';
-import { errorToast, successToast } from '@kortix/ui/toast';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { Github } from '@kortix/ui/internal/icons/github';
-import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
-import { useAuth } from '@/features/providers/auth-provider';
-import { useGitHubStars } from '@/hooks/use-github-stars';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
-import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
-import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { Download } from '@kortix/ui/internal/icons/download';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
-import { cn } from '@kortix/ui';
+import Loading from '@kortix/ui/loading';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   CaretDownIcon,
   CaretUpIcon,
@@ -33,8 +36,6 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import { useTranslations } from '@/i18n/use-translations';
-import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   type KeyboardEvent,
@@ -45,7 +46,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Download } from '@kortix/ui/internal/icons/download';
 
 const CTA_LINK = '/auth';
 
@@ -67,10 +67,7 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 type MenuId = MegaMenu['id'];
 
 /** Links in the bar that navigate directly, beside the three menus. */
-const PLAIN_LINKS = [
-  { label: 'Enterprise', href: '/enterprise' },
-  { label: 'Pricing', href: '/pricing' },
-];
+const PLAIN_LINKS = [{ label: 'Pricing', href: '/pricing' }];
 
 const USE_CASES_ENABLED = process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 
@@ -238,7 +235,9 @@ export function Navbar() {
       return;
     }
     if (event.key !== 'Tab') return;
-    const focusable = drawerRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])');
+    const focusable = drawerRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled])',
+    );
     if (!focusable?.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -348,7 +347,11 @@ export function Navbar() {
   // until the new page renders, then the effect above closes it. Same-page
   // anchors scroll in place and close at once.
   const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-    const anchor = href.startsWith('#') ? href.slice(1) : href.startsWith('/#') ? href.slice(2) : null;
+    const anchor = href.startsWith('#')
+      ? href.slice(1)
+      : href.startsWith('/#')
+        ? href.slice(2)
+        : null;
     if (!anchor) {
       // Off-site rows open a new tab; this page never commits.
       if (href.startsWith('http')) return setIsDrawerOpen(false);
@@ -402,7 +405,7 @@ export function Navbar() {
         aria-hidden
         onClick={() => setMenu(null)}
         className={cn(
-          'bg-background/70 fixed inset-0 hidden backdrop-blur-sm transition-[opacity,visibility] duration-moderate ease-out lg:block',
+          'bg-background/70 duration-moderate fixed inset-0 hidden backdrop-blur-sm transition-[opacity,visibility] ease-out lg:block',
           openMenu ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0',
           instant && 'transition-none',
         )}
@@ -431,7 +434,7 @@ export function Navbar() {
             // Below `lg` the bar is always in its scrolled state (background,
             // blur, hairline): the compact bar has no menus to separate it from
             // the page, so it needs its own surface and edge from the start.
-            'relative w-full border-b border-transparent max-lg:border-border max-lg:bg-background/90 max-lg:backdrop-blur-md transition-[background-color,backdrop-filter,border-color] duration-slow ease-out',
+            'max-lg:border-border max-lg:bg-background/90 duration-slow relative w-full border-b border-transparent transition-[background-color,backdrop-filter,border-color] ease-out max-lg:backdrop-blur-md',
             solid && 'bg-background/90 backdrop-blur-md',
             scrolled && 'border-border',
             overBand && 'dark',
@@ -498,10 +501,17 @@ export function Navbar() {
                   onPointerLeave={onTriggerLeave}
                   onClick={onTriggerClick(menu.id)}
                   onKeyDown={onTriggerKeyDown(menu.id)}
-                  className={cn(NAV_ITEM, 'gap-1.5 aria-expanded:bg-muted aria-expanded:text-foreground')}
+                  className={cn(
+                    NAV_ITEM,
+                    'aria-expanded:bg-muted aria-expanded:text-foreground gap-1.5',
+                  )}
                 >
                   {menu.label}
-                  {openMenu === menu.id ? <CaretUpIcon className="size-3" /> : <CaretDownIcon className="size-3" />}
+                  {openMenu === menu.id ? (
+                    <CaretUpIcon className="size-3" />
+                  ) : (
+                    <CaretDownIcon className="size-3" />
+                  )}
                 </button>
               ))}
               {plainLinks.map((link, i) => (
@@ -553,7 +563,9 @@ export function Navbar() {
                 ref={drawerTriggerRef}
                 type="button"
                 onClick={() => setIsDrawerOpen(true)}
-                aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
+                aria-label={tHardcodedUi.raw(
+                  'componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu',
+                )}
                 aria-expanded={isDrawerOpen}
                 className="text-foreground outline-ring -mr-3 flex size-12 items-center justify-center rounded-md focus-visible:outline-2 lg:hidden"
               >
@@ -606,7 +618,9 @@ export function Navbar() {
           data-lenis-prevent
           className="bg-background fixed inset-0 z-50 flex flex-col lg:hidden"
         >
-          <div className={cn(MARKETING_CONTAINER, 'flex h-16 shrink-0 items-center justify-between')}>
+          <div
+            className={cn(MARKETING_CONTAINER, 'flex h-16 shrink-0 items-center justify-between')}
+          >
             <Link
               href="/"
               aria-label={homeLabel}
@@ -685,7 +699,12 @@ export function Navbar() {
             </div>
           </nav>
 
-          <div className={cn(MARKETING_CONTAINER, 'grid shrink-0 grid-cols-2 gap-2 border-t pt-4 pb-6')}>
+          <div
+            className={cn(
+              MARKETING_CONTAINER,
+              'grid shrink-0 grid-cols-2 gap-2 border-t pt-4 pb-6',
+            )}
+          >
             {user ? (
               <MarketingButton size="md" asChild className="col-span-2">
                 <Link href={projectsHref} prefetch onClick={handleDrawerNavClick(projectsHref)}>
