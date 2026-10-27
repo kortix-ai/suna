@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { renderTelegramPrompt, telegramMessageEvent, telegramThreadId, type TelegramMessage } from './session';
+import { config } from '../../config';
+import type { TurnErrorInfo } from '../slack/errors';
+import { sessionWebUrl } from '../slack/util';
+import { renderTelegramPrompt, telegramMessageEvent, telegramNotice, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -39,5 +42,38 @@ describe('telegram inbox envelope', () => {
     expect(prompt).toContain('"chat_id":"-100123"');
     expect(prompt).toContain('"reply_parameters":{"message_id":7}');
     expect(prompt).toContain('status?');
+  });
+});
+
+describe('telegram notices for a session (run errors)', () => {
+  const target = { platform: 'telegram' as const, workspaceId: '555', threadId: '1', projectId: 'p1' };
+  const details = `Details: ${sessionWebUrl(config.FRONTEND_URL, 'p1', 's1')}`;
+  const runFailed = (error?: TurnErrorInfo) => telegramNotice(target, { kind: 'run_failed', sessionId: 's1', error });
+
+  const cases: Array<[TurnErrorInfo | undefined, string, string]> = [
+    [{ name: 'APIError', statusCode: 402, message: 'Payment Required: Insufficient credits. Balance: -6 credits' }, 'Out of credits', 'A workspace admin can top up credits in Kortix. Then send your message again.'],
+    [{ name: 'APIError', statusCode: 429, message: 'rate limited' }, 'Usage limit reached', 'Wait, then send your message again. A project admin can also pick another model in Kortix.'],
+    [{ name: 'MessageOutputLengthError', message: '' }, 'Response too long', 'Ask the agent to continue, or narrow the request.'],
+    [{ name: 'ContextOverflowError', message: '' }, 'Conversation too long', 'Send /new to start a new conversation.'],
+    [{ name: 'APIError', statusCode: 503, message: 'upstream unavailable' }, 'Provider unavailable', 'Send your message again to retry.'],
+    [{ name: 'UnknownError', message: 'boom' }, 'Run failed', 'Send your message again, or send /new to start a new conversation.'],
+    [undefined, 'Run failed', 'Send your message again, or send /new to start a new conversation.'],
+  ];
+  for (const [error, title, advice] of cases) {
+    test(`${title}: the title, what to do next and the session link, never the provider's text`, () => {
+      expect(runFailed(error)).toBe([`Kortix could not finish this run: ${title}.`, advice, details].join('\n'));
+      if (error?.message) expect(runFailed(error)).not.toContain(error.message);
+    });
+  }
+
+  test('a stopped run says nothing', () => {
+    expect(runFailed({ name: 'MessageAbortedError', message: '' })).toBeNull();
+    expect(runFailed({ name: 'Error', message: '', code: 'aborted' })).toBeNull();
+  });
+
+  test('the inbound notices keep their copy', () => {
+    const inbound = { ...target, messageId: '7' };
+    expect(telegramNotice(inbound, { kind: 'create_pending' })).toBe('Kortix is still starting a session for this chat. The agent replies here when it is ready.');
+    expect(telegramNotice(inbound, { kind: 'follow_up_failed' })).toBe("This chat's Kortix session cannot take new messages. Send /new to start a new conversation, then send your message again.");
   });
 });

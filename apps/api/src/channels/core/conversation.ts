@@ -14,6 +14,7 @@
  *                          a racing message waits for that session and follows up
  *
  * Telegram and Email run on it. Slack and Teams still route themselves.
+ * Session-addressed notices (a failed run) go through session-notice.ts.
  */
 import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
@@ -21,6 +22,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
+import type { TurnErrorInfo } from '../slack/errors';
 import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from './threads';
 
 type CreateError = NonNullable<Awaited<ReturnType<typeof createSession>>['error']>;
@@ -33,8 +35,12 @@ export interface ChannelTarget extends ChatThreadKey {
   platform: ChannelPlatform;
   /** Follow-ups are confined to it; ports read the install's secrets with it. */
   projectId: string;
-  /** The message a notice answers (a Telegram `message_id`, an email id). */
-  messageId: string;
+  /**
+   * The inbound message a notice answers (a Telegram `message_id`, an email id).
+   * Absent on a target found from a session (session-notice.ts): `chat_threads`
+   * keeps no message id, so that notice is posted unanchored.
+   */
+  messageId?: string;
 }
 
 /** An outcome the agent will not report itself. The port words it, or stays silent. */
@@ -46,7 +52,12 @@ export type ChannelNotice =
   /** The create failed for good; the thread is free again. */
   | { kind: 'create_failed'; error: CreateError }
   /** Last attempt: the thread's session refused the message (a failed session). */
-  | { kind: 'follow_up_failed' };
+  | { kind: 'follow_up_failed' }
+  /** Session-addressed: a root turn closed in a non-abort error that no Slack or Teams turn carried. */
+  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo };
+
+/** The notices a port receives with a target found from a session (session-notice.ts). */
+export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;
 
 /** What one chat platform does for the core. */
 export interface ChannelPort {

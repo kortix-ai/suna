@@ -15,8 +15,11 @@ import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
-import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
-import { bindChatThread } from '../core/threads';
+import { config as appConfig } from '../../config';
+import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
+import { notifySessionChannel } from '../core/session-notice';
+import { adoptChatThreads, bindChatThread } from '../core/threads';
+import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
 import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
 
@@ -408,3 +411,80 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     await allowSender();
   });
 });
+
+describe('Telegram notices addressed by session — migrated PostgreSQL', () => {
+  const credits = { name: 'APIError', statusCode: 402, message: 'Payment Required: Insufficient credits.' };
+  const runFailed = (sessionId: string, error: Record<string, unknown> = credits) =>
+    notifySessionChannel({ kind: 'run_failed', sessionId, error });
+  const bind = (sessionId: string, threadId: string, platform = 'telegram', workspaceId = BOT_ID) =>
+    bindChatThread({ projectId: PROJECT, platform, workspaceId, threadId, sessionId });
+
+  test('a run error reaches the chat once, unanchored, as the title, the next step and the session link', async () => {
+    const sessionId = await bindChat(940);
+    await runFailed(sessionId);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        body: {
+          chat_id: 940,
+          text: [
+            'Kortix could not finish this run: Out of credits.',
+            'A workspace admin can top up credits in Kortix. Then send your message again.',
+            `Details: ${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, sessionId)}`,
+          ].join('\n'),
+        },
+      },
+    ]);
+  });
+
+  test('a stopped run, and a chat that sent /new, hear nothing', async () => {
+    const stopped = await bindChat(941);
+    await runFailed(stopped, { name: 'MessageAbortedError', message: '' });
+    const left = await bindChat(942);
+    await forgetChatThread(
+      { platform: 'telegram', workspaceId: BOT_ID, threadId: '942', projectId: PROJECT },
+      claimKey(942),
+    );
+    await runFailed(left);
+    expect(calls).toEqual([]);
+  });
+
+  test('a forum topic gets the notice in its topic', async () => {
+    const sessionId = await newSession();
+    await bind(sessionId, '-100940:7');
+    await runFailed(sessionId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toEqual({ chat_id: -100940, text: expect.any(String), message_thread_id: 7 });
+  });
+
+  test('a session that adopted the chat (a reminder successor) reaches it', async () => {
+    const failed = await bindChat(944);
+    const successor = await newSession();
+    await adoptChatThreads(PROJECT, failed, successor);
+    await runFailed(successor);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([944]);
+  });
+
+  test('a session with only Slack or Email threads, or a chat of a bot this project no longer has, hears nothing', async () => {
+    const elsewhere = await newSession();
+    await bind(elsewhere, 'C1:1.0', 'slack', 'T-synthetic');
+    await bind(elsewhere, 'thread-1', 'email', 'inbox-synthetic');
+    await runFailed(elsewhere);
+    const oldBot = await newSession();
+    await bind(oldBot, '945', 'telegram', 'other-bot');
+    await runFailed(oldBot);
+    expect(calls).toEqual([]);
+  });
+
+  test('a session in two chats tells the one it talked in last', async () => {
+    const sessionId = await bindChat(946);
+    await bind(sessionId, '947');
+    await db
+      .update(chatThreads)
+      .set({ lastMessageAt: new Date(Date.now() - 60_000) })
+      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '947')));
+    await runFailed(sessionId);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([946]);
+  });
+});
+

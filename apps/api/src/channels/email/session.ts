@@ -253,6 +253,8 @@ export const NOT_ACCEPTING_REPLY =
 
 async function replyNotAccepting(target: ChannelTarget): Promise<void> {
   const { projectId, workspaceId: inboxId, threadId, messageId: emailId } = target;
+  // A session-addressed target carries no email to answer (Email is not in session-notice.ts).
+  if (!emailId) return;
   try {
     const claimed = await db
       .insert(chatEventDedup)

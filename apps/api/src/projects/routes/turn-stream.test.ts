@@ -297,6 +297,14 @@ function post(body: unknown, ctx: Record<string, unknown> = {}) {
   });
 }
 
+const channelNotices: unknown[] = [];
+mock.module('../../channels/core/session-notice', () => ({
+  notifySessionChannel: async (notice: unknown) => {
+    order.push('channelNotice');
+    channelNotices.push(notice);
+  },
+}));
+
 const sandboxCtx = { sessionId: SANDBOX_ID, sandboxId: SANDBOX_ID, accountId: ACCOUNT_ID };
 const session = (metadata: Record<string, unknown> = {}, createdBy: string | null = USER_ID) => ({
   sessionId: SESSION_ID,
@@ -321,6 +329,7 @@ beforeEach(() => {
   promotedId = null;
   relayEndResult = true;
   relayEndArgs = [];
+  channelNotices.length = 0;
   stepResult = { ok: true };
   answerResult = { ok: true };
   formCardResult = { type: 'AdaptiveCard' };
@@ -860,6 +869,54 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
     expect(contextLookups).toEqual([]);
     expect(notified).toEqual([]);
+  });
+
+  // A Telegram chat has no live turn, so a closed error end that no Slack or
+  // Teams turn carried is told to the session's chat (channels/core/session-notice.ts).
+  test('a closed error end that no channel turn carried tells the session chat, after the relay', async () => {
+    pushType = 'error';
+    relayEndResult = false;
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'turn_end',
+      status: 'error',
+      error_name: 'APIError',
+      error_status: 402,
+      error_message: 'Payment Required: Insufficient credits.',
+    });
+    expect(channelNotices).toEqual([
+      {
+        kind: 'run_failed',
+        sessionId: SESSION_ID,
+        error: { name: 'APIError', message: 'Payment Required: Insufficient credits.', statusCode: 402 },
+      },
+    ]);
+    expect(order.slice(-2)).toEqual(['relayEnd', 'channelNotice']);
+    expect(await response.json()).toEqual({
+      ok: false,
+      turn_completion: { outcome: 'closed', active_turn_count: 0, closed_turn_count: 1 },
+      queue_promoted: false,
+      promoted_prompt_id: null,
+    });
+  });
+
+  test('no session-chat notice when a Slack or Teams turn carried the end, the end was no error, or it closed nothing', async () => {
+    pushType = 'error';
+    relayEndResult = true;
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    expect(channelNotices).toEqual([]);
+
+    pushType = 'completion';
+    relayEndResult = false;
+    await post({ session_id: SESSION_ID, kind: 'end' });
+    expect(channelNotices).toEqual([]);
+
+    pushType = null;
+    completionResult = { outcome: 'identity_mismatch', activeTurnCount: 1, closedTurnCount: 0 };
+    relayEndArgs = [];
+    await post({ session_id: SESSION_ID, kind: 'turn_end', status: 'error', error_name: 'APIError', error_message: 'x' });
+    expect(channelNotices).toEqual([]);
+    expect(relayEndArgs).toEqual([]);
   });
 
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {
