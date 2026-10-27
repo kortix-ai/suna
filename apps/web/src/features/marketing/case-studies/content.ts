@@ -24,6 +24,9 @@
  *    commit terms (CLAUDE.md, `scripts/check-blocked-terms.sh`). Keep each
  *    class broad enough that it does not identify the company: no founding
  *    year, no office count, no city.
+ *  - The telecom card describes the company's own Kortix project (its
+ *    agents and skills, read 2026-10-27). Never name its places, clients
+ *    or systems: they identify it.
  *  - Only what the engagement really contains. No metric, no quote, no
  *    outcome number until the company signs one off.
  */
@@ -79,13 +82,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       icon: 'telecom',
       category: 'Telecommunications',
       org: 'A leading US telecommunications infrastructure company',
-      title: 'A whole company on one AI OS, in its own cloud.',
-      body: 'The company runs Kortix self-hosted in its own cloud account. Every employee signs in with company SSO, and teams use company agents and internal apps built on Kortix, from a company-wide question-answering app to live dashboards.',
+      title: 'Fiber network design, run by agents.',
+      body: 'The company runs its engineering and operations on Kortix, self-hosted in its own cloud. Agents design outside-plant fiber routes from GIS data and satellite imagery for an engineer to review, build bills of materials from the GIS layers, track schedule health across projects and keep live dashboards current on a schedule.',
       facts: [
-        'Self-hosted in its own cloud',
-        'SSO and directory sync',
-        'A company-wide Q&A app',
-        'Internal apps and live dashboards',
+        'Fiber routes designed from GIS and imagery',
+        'Bills of materials from GIS layers',
+        'Schedule health across every project',
+        'Self-hosted in its own cloud, with SSO',
       ],
     },
     {

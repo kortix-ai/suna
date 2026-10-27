@@ -1,6 +1,6 @@
 import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
-import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 /**
  * Landing page copy.
@@ -40,21 +40,42 @@ export const heroEyebrow = {
   ],
 } as const;
 
-/** Closing CTA. Same block the page has always ended with. */
+/**
+ * Closing CTA, above the site map on every marketing page: one line that
+ * echoes the hero, then three ways in, one per buyer. Each claim is a
+ * claims.md row (Hosting, Source, SSO, Services offer) or self-hosted
+ * `commands.install`. No price here: prices live on /pricing and /services.
+ * The door copy is English only for now, like the case studies.
+ */
 export const cta = {
-  badge: 'Get started',
-  // Two-tone title: `title` in ink, `subtitle` muted on the line below.
-  title: 'Run your whole company',
-  subtitle: 'from one repo you own.',
-  // ONE IDEA ONLY. This line is the invitation, nothing else. Pricing, hosting
-  // and channels each pulled the reader somewhere different and belong on their
-  // own pages. If a price ever comes back here it must match
-  // `features/billing/pricing-plans.ts` (credits, any monthly amount from $20)
-  // — an earlier price here was wrong by 2x.
-  sub: 'Start with one job and grow from there.',
-  trust: 'Open source · SSO, RBAC & on-prem · Any model, your keys · No lock-in',
-  ctaPrimary: 'Get started',
-  ctaSecondary: 'Request demo',
+  title: 'Own your company’s AI.',
+  subtitle: 'Start today, in our cloud or yours.',
+  ctaPrimary: 'Start for free',
+  ctaSecondary: 'Talk to sales',
+  trust: 'Open source · SOC 2 Type I · SAML SSO and SCIM · Any model, your keys',
+} as const;
+
+export const ctaDoors = {
+  cloud: {
+    label: 'Kortix Cloud',
+    title: 'Start for free.',
+    body: 'Sign up, invite your team and connect your tools. Nothing to install.',
+    signedIn: 'Open your project',
+    link: 'See plans',
+  },
+  selfHost: {
+    label: 'Self-hosted',
+    title: 'Run it on your own infrastructure.',
+    body: 'Your VPC or your own on-prem network. Install the CLI, then run kortix self-host start.',
+    command: 'curl -fsSL https://kortix.com/install | bash',
+    link: 'Self-hosting guide',
+  },
+  team: {
+    label: 'Enterprise and services',
+    title: 'Roll it out with our team.',
+    body: 'SSO, on-prem and approval rules for the whole company. Or we map your company and build it for you.',
+    link: 'AI Transformation services',
+  },
 } as const;
 
 /**
