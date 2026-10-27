@@ -305,6 +305,7 @@ export function registerChangeRequestsRoutes(): void {
         headAhead = aheadState.ahead;
       } catch (error) {
         if (isRepositoryDisconnectedError(error)) throw error; // 409 with the fix
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to resolve branches',

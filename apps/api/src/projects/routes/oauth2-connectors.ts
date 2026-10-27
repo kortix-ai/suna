@@ -329,6 +329,7 @@ export function registerOauth2ConnectorsRoutes(): void {
     } catch (error) {
       // The application config cannot be decrypted: 409, naming it (http-errors.ts).
       if (error instanceof SecretUndecryptableError) throw error;
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -372,6 +373,7 @@ export function registerOauth2ConnectorsRoutes(): void {
     } catch (error) {
       // The application config cannot be decrypted: 409, naming it (http-errors.ts).
       if (error instanceof SecretUndecryptableError) throw error;
+      rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message }, 400);
     }
   });
@@ -402,6 +404,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       } catch (error) {
         // The application config cannot be decrypted: 409, naming it (http-errors.ts).
         if (error instanceof SecretUndecryptableError) throw error;
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message }, 400);
       }
     },

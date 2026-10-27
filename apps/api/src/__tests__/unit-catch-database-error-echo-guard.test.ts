@@ -117,9 +117,14 @@ function handsOnDatabaseErrors(statement: ts.Statement, caught: string, derived:
   ) {
     return true;
   }
-  return ts.isIfStatement(statement)
-    && throwsCaught(statement.thenStatement, caught)
-    && narrows(statement.expression, caught, derived);
+  // Only a negated test narrows: `if (!(err instanceof Typed)) throw err` lets the typed
+  // error through. `if (err instanceof Typed) throw err` lets everything else through.
+  const condition = ts.isIfStatement(statement) ? unwrap(statement.expression) : null;
+  return condition !== null
+    && ts.isPrefixUnaryExpression(condition)
+    && condition.operator === ts.SyntaxKind.ExclamationToken
+    && throwsCaught((statement as ts.IfStatement).thenStatement, caught)
+    && narrows(condition.operand, caught, derived);
 }
 
 /** A database query only rejects into a `catch` through an `await` in its own `try` block. */
@@ -206,6 +211,7 @@ describe('route catch blocks never echo a database error', () => {
       async function a(c: any) { try { await x(); } catch (err) { return c.json({ error: (err as Error).message }, 400); } }
       async function b(c: any) { try { await x(); } catch (err) { const message = err instanceof Error ? err.message : String(err); return c.json({ error: \`failed: \${message}\` }, 502); } }
       async function d(c: any) { try { await x(); } catch (err) { if (err instanceof Error) return c.json({ error: err.message }, 400); } }
+      async function e(c: any) { try { await x(); } catch (err) { if (err instanceof TypedError) throw err; return c.json({ error: (err as Error).message }, 400); } }
       async function ok1(c: any) { try { await x(); } catch (err) { rethrowDatabaseError(err); return c.json({ error: (err as Error).message }, 400); } }
       async function ok2(c: any) { try { await x(); } catch (err) { if (err instanceof TypedError) return c.json({ error: err.message }, 409); throw err; } }
       async function ok3(c: any) { try { await x(); } catch (err) { if (!(err instanceof TypedError)) throw err; return c.json({ error: err.message }, 409); } }
@@ -215,7 +221,7 @@ describe('route catch blocks never echo a database error', () => {
     writeFileSync(fixture, cases);
     try {
       const lines = echoSites(fixture).map((site) => Number(site.split(':').pop()));
-      expect(lines).toEqual([2, 3, 4]);
+      expect(lines).toEqual([2, 3, 4, 5]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

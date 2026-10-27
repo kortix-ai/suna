@@ -2289,6 +2289,13 @@ flow(
         },
       );
       poll.status(400);
+      // A malformed id answers exactly like an unknown one; it never reaches the uuid column (KRTX-3422).
+      const malformed = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/connections/:connectionId/oauth2/device/:sessionId',
+        {},
+        { params: { projectId: p.id, connectionId, sessionId: 'not-a-uuid' } },
+      );
+      malformed.status(400).body().has('$.error', 'OAuth2 device session not found');
     });
 
     await ctx.step(
