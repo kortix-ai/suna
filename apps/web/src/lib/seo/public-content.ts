@@ -195,7 +195,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     // "AI Transformation" is allowed here only (kortix-brand decisions.md D15).
     title: 'AI Transformation, done for you',
     description:
-      'We map how your company works, unify your data, automate the work with agents and build your custom software. One flat monthly fee. You own all of it.',
+      'AI strategy, transformation and education: we map how your company works, unify your data, automate the work, build your software and train your team.',
     htmlPath: '/services',
   },
   {

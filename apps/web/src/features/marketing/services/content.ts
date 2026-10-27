@@ -36,7 +36,7 @@ export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no q
 export const hero = {
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map how your company works. Then we automate it.',
-  sub: 'We work inside your company. We map what every team does and how it works, unify your data, automate the work with agents, and build the custom software your teams need. You own everything we build.',
+  sub: 'We set your AI strategy, then do the work inside your company: we map how every team works, unify your data, automate the work with agents and build the custom software you need. Then we teach your team to run it. You own everything we build.',
   assurances: ['One flat monthly fee', 'Strategy and build, one team', 'Everything in a repo you own'],
 } as const;
 
@@ -52,16 +52,46 @@ export const proof = [
   { k: 'Your cloud or ours', v: 'Kortix Cloud, your VPC, on-prem' },
 ] as const;
 
+export const pillars = {
+  title: 'Strategy, transformation, education.',
+  titleMuted: 'One team for all three.',
+  items: [
+    { id: 'strategy', n: '01', k: 'AI Strategy', v: 'Where AI pays off in your company, in what order, and what it returns.' },
+    {
+      id: 'transformation',
+      n: '02',
+      k: 'AI Transformation',
+      v: 'We map how your company works, unify your data, automate the work and build your software.',
+    },
+    { id: 'education', n: '03', k: 'AI Education', v: 'We teach your existing team to run the agents and build the next ones.' },
+  ],
+} as const;
+
+export const strategy = {
+  title: 'AI Strategy.',
+  titleMuted: 'A roadmap, not a slide deck.',
+  body: [
+    'We audit **one function or the whole company**. We interview leadership and the people who do the work, set a baseline for each process, and rank every use case by effort and return.',
+    'You get **an AI strategy and a roadmap in your own repo**: what to automate first, second and third, and how you will know it worked.',
+  ],
+  cells: [
+    { k: 'Leadership interviews', v: 'Where the company must get better, from the people who decide.' },
+    { k: 'Team interviews', v: 'How the work really gets done, from the people who do it.' },
+    { k: 'Baselines', v: 'How each process runs today, so you can measure the change.' },
+    { k: 'A ranked roadmap', v: 'Every use case by effort and return, in the order we build it.' },
+  ],
+} as const;
+
 export const stages = {
-  title: 'What happens.',
-  titleMuted: 'Four stages, one team.',
+  title: 'AI Transformation.',
+  titleMuted: 'Map, unify, automate, build.',
   items: [
     {
       id: 'map',
       n: '01',
       k: 'Map your org',
       v: 'We sit with every team and map what each person does, how they do it, which tools they use and where the work waits.',
-      get: ['A map of every team, role and recurring job', 'Where the time goes and where work stalls', 'A ranked list of what to automate first'],
+      get: ['A map of every team, role and recurring job', 'Where the time goes and where work stalls', 'Who does what, in which tool'],
     },
     {
       id: 'unify',
@@ -110,6 +140,24 @@ export const functions = {
   },
 } as const;
 
+export const education = {
+  title: 'AI Education.',
+  titleMuted: 'We teach your existing team.',
+  body: [
+    'Agents stick when your people know how to use them. We train **the team you already have**, on **their own work**, not on generic demos.',
+    'The goal: your team **runs the agents every day and builds the next ones without us**.',
+  ],
+  cells: [
+    { k: 'Leadership sessions', v: 'What AI changes for your company, and the decisions only leaders can make.' },
+    {
+      k: 'Team workshops',
+      v: 'Hands-on, per team: pick one workflow, decide what agents do and where a person approves, then build it.',
+    },
+    { k: 'Builder training', v: 'Your engineers and power users learn to write agents, skills and connectors in your repo.' },
+    { k: 'Playbooks in your repo', v: 'Your workflows written down as skills that your agents and your people both read.' },
+  ],
+} as const;
+
 export const compare = {
   title: 'Better than hiring.',
   titleMuted: 'Better than a consultancy.',
@@ -118,6 +166,7 @@ export const compare = {
     { id: 'strategy', k: 'Strategy', v: ['A map of your org and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
     { id: 'build', k: 'Build', v: ['The same team builds it', 'Once you have hired them', 'Another firm, another contract'] },
     { id: 'data', k: 'Your data', v: ['Unified in one place', 'Up to you', 'Rarely in scope'] },
+    { id: 'people', k: 'Your people', v: ['Trained on their own work', 'Up to you', 'A workshop, then gone'] },
     { id: 'own', k: 'Who owns the work', v: ['You do, in your own repo', 'You do', 'You get a report'] },
     { id: 'price', k: 'Price', v: ['One flat monthly fee', 'Salaries, recruiting, equity', 'Day rates and change orders'] },
   ],
@@ -142,12 +191,12 @@ export const pricing = {
   plan: 'AI Transformation',
   lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
-    'Our team, inside your company',
+    'An AI strategy and a ranked roadmap',
     'A map of your org and how it works',
     'Your data unified in one place',
     'Agents for your recurring work',
     'Custom software and internal apps',
-    'Training for every team',
+    'Training for your existing team',
     'Everything in a git repo you own',
     'Kortix Cloud, your VPC, or on-prem',
   ],
@@ -172,6 +221,11 @@ export const faq = {
       id: 'data',
       q: 'What does "unify your data" mean?',
       a: 'We connect the systems you already run and centralise their data in one company knowledge base. Every agent and every person then works from the same facts.',
+    },
+    {
+      id: 'education',
+      q: 'Do you train our team?',
+      a: 'Yes. Education is part of every membership: leadership sessions, hands-on workshops for each team, and builder training for your engineers. The goal is a team that builds the next agent without us.',
     },
     {
       id: 'own',
@@ -203,6 +257,6 @@ export const faq = {
 } as const;
 
 export const closing = {
-  title: 'Map it. Unify it. Automate it.',
+  title: 'Plan it. Automate it. Teach it.',
   titleMuted: 'Start this month.',
 } as const;

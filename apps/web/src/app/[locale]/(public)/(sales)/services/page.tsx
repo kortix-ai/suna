@@ -3,21 +3,25 @@
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Disclosure, DisclosureList } from '@/features/marketing/kit/disclosure';
 import { DitherGlyph } from '@/features/marketing/kit/dither-glyph';
+import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, PageFrame, SpecGrid } from '@/features/marketing/kit/page-frame';
 import {
   benefits,
   closing,
   compare,
+  education,
   faq,
   functions,
   GUARANTEE,
   hero,
   intro,
+  pillars,
   PRICE,
   pricing,
   proof,
   stages,
+  strategy,
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import {
@@ -131,7 +135,17 @@ export default function ServicesPage() {
         <SpecGrid items={proof} cols="lg:grid-cols-4" />
       </Band>
 
-      {/* ── what happens: map, unify, automate, build ──────────────────── */}
+      {/* ── the three things we do ─────────────────────────────────────── */}
+      <Block id="services">
+        <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
+        <Band className="mt-12">
+          <CellGrid items={pillars.items} cols="lg:grid-cols-3" />
+        </Band>
+      </Block>
+
+      <FeatureSplit id="strategy" {...strategy} cols="lg:grid-cols-4" />
+
+      {/* ── transformation: map, unify, automate, build ─────────────────── */}
       <Block id="how">
         <Heading title={stages.title} titleMuted={stages.titleMuted} />
         <Band className="mt-12">
@@ -168,6 +182,8 @@ export default function ServicesPage() {
           </div>
         </Band>
       </Block>
+
+      <FeatureSplit id="education" {...education} cols="lg:grid-cols-4" />
 
       {/* ── the alternatives ──────────────────────────────────────────────── */}
       <Block id="compare">
