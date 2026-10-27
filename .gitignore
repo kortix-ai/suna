@@ -193,3 +193,7 @@ apps/capture/target/
 # Local planning notes at the repo root: never committed (specs go in a skill reference or the PR body)
 /plan.md
 /memory-plan.md
+
+# Python bytecode (starter skill scripts write it during tests)
+__pycache__/
+*.pyc
