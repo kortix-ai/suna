@@ -1,10 +1,11 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { config, type SandboxProviderName } from '../../config';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, errors, json, lenientBody, queryText } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
+  CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
   CHANGE_REQUEST_LIST_MAX_LIMIT,
   decodeChangeRequestCursor,
   getCrById,
@@ -119,11 +120,20 @@ export function registerChangeRequestsRoutes(): void {
       tags: ['change-requests'],
       summary: 'List change requests of a project',
       description:
-        'One page, newest number first. `limit` defaults to 50; above 500 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
+        'One page, newest number first. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({}).passthrough(),
+        query: z
+          .object({
+            status: queryText('`open`, `merged`, `closed` or `all`. Default: every status. Anything else is a 400.'),
+            origin_session_id: queryText('Only the change requests this session opened.'),
+            limit: queryText(
+              `Change requests per page, an integer from 1 to ${CHANGE_REQUEST_LIST_MAX_LIMIT}. Default ${CHANGE_REQUEST_LIST_DEFAULT_LIMIT}. Anything else is a 400.`,
+            ),
+            cursor: queryText('The `next_cursor` of the previous page. A malformed cursor is a 400.'),
+          })
+          .passthrough(),
       },
       responses: {
         200: json(ChangeRequestListSchema, 'Change requests'),

@@ -44,6 +44,8 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { readJsonObject } from '../../shared/http-body';
+import { normalizeJsonObject } from '../../shared/json';
 import { loadProjectAgents } from '../agents';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -112,7 +114,7 @@ export function registerChannelEmailRoutes(): void {
       if ('response' in target) return target.response as never;
       let body: Record<string, unknown>;
       try {
-        body = ((await c.req.json()) ?? {}) as Record<string, unknown>;
+        body = normalizeJsonObject(await c.req.json());
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
@@ -783,12 +785,7 @@ async function emailDomainsGate(
   if (!emailChannelOn(loaded.row.metadata)) {
     return { response: c.json(featureDisabledBody('email_channel'), 403) } as const;
   }
-  let body: Record<string, unknown>;
-  try {
-    body = ((await c.req.json()) ?? {}) as Record<string, unknown>;
-  } catch {
-    body = {};
-  }
+  const body = await readJsonObject(c);
   const apiKey = typeof body.api_key === 'string' && body.api_key.trim() ? body.api_key.trim() : null;
   if (options.ownKeyRequired && !apiKey) {
     return { response: c.json(keyRequiredBody('Custom domains need your own Resend API key.'), 400) } as const;

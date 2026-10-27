@@ -366,6 +366,15 @@ flow(
       const doc = { files: { 'index.md': { content: '# Agent notes\n\nDraft.\n' } } };
       let written = '';
 
+      const probe = await writer.client.post(LIST, doc, { params: p });
+      if (probe.statusCode === 503) {
+        await ctx.step('no volume storage on this target → publish 503 drive_storage_unavailable', async () => {
+          probe.body().has('$.code', 'drive_storage_unavailable');
+        });
+        return;
+      }
+      probe.status(201);
+
       await ctx.step('an agent granted read + write publishes and shares with the project → 201, 200', async () => {
         const a = (await writer.client.post(LIST, doc, { params: p })).status(201).json<Detail>();
         written = a.artifact_id;

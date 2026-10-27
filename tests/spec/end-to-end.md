@@ -49,7 +49,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `SYS-10` `GET /v1/clients/mobile` → public (no auth) mobile release policy `{minimum_version, store_url_ios, store_url_android}`: each field is a string or `null`; `null` means the operator did not set `MOBILE_MIN_VERSION` / `MOBILE_STORE_URL_IOS` / `MOBILE_STORE_URL_ANDROID`, and a null `minimum_version` means no gate.
 `SYS-11` Public discovery files on the API origin, no auth: `GET /.well-known/security.txt` → 200 `text/plain` with `Contact: mailto:security@kortix.com` and an `Expires` in the future (RFC 9116); `GET /robots.txt` → 200 `User-agent: *` / `Disallow: /`; `GET /sitemap.xml` → 200 `application/xml` with an empty `urlset`.
-`DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
+`DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). The paged project lists document their paging parameters with a description: `change-requests` and `review/items` declare `limit` and `cursor`, `gateway/logs` declares `limit` and `offset` (KRTX-3393). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
 
@@ -1559,7 +1559,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `GW-3b` The OpenAI-compatible LLM chat alias enforces authentication before model execution.
 `GW-7` Anthropic-compatible message aliases enforce authentication and preserve the shared routing contract.
 `GW-8` Internal route resolution rejects missing internal credentials and validates a signed request.
-`GW-9` Project gateway analytics, logs, budgets, keys, playground, and provider verification enforce project permissions and payload validation.
+`GW-9` Project gateway analytics, logs, budgets, keys, playground, and provider verification enforce project permissions and payload validation. `GET …/gateway/logs` takes `limit` from 1 to 100 (default 50) and a non-negative integer `offset`; `limit` 0, 101, 500, -1, `abc` or 1.5 → 400 `limit must be an integer from 1 to 100`, and `offset` -1, `abc`, 2.5 or past 2^53 → 400 `offset must be a non-negative integer`, never a silent clamp (KRTX-3389).
 `GW-10` Every internal gateway control route rejects a request without internal credentials.
 `GW-12` Internal gateway authorization rejects a request without internal credentials.
 `GW-13` `GET /v1/usage` exhausts the `group_by` enum and its per-value response shape: `provider` rows carry `provider` only, `day` rows carry `day` only, `model` rows carry both `provider` and `model` — never a field from another grouping. A malformed `start` or `end` timestamp is a 400 boundary distinct from an inverted window, and a window containing no `usage_events` returns 200 with zeroed totals and an empty `breakdown`, never 404 or 500.

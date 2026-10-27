@@ -277,6 +277,32 @@ describe('the merge reads only the rows it writes', () => {
     expect(await mirrorDrained()).toBe(true);
   });
 
+  test('a sub-agent named only in a call’s output (no metadata.sessionId) still gets its own thread: its missing reply merges exactly as the whole conversion gives it', async () => {
+    const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 3 });
+    // Drop the exact link: the child is named only by the task output (`task_id: <child>`).
+    for (const row of root) {
+      for (const p of row.parts as { type?: string; state?: { metadata?: Record<string, unknown> } }[]) {
+        if (p.type === 'tool' && p.state?.metadata) delete p.state.metadata.sessionId;
+      }
+    }
+    const mirror = [...root, ...child, plain(1000, incompressible(6_000))];
+    const session = await mirrored(mirror);
+    const childReply = child.find((r) => r.info.role === 'assistant')!;
+    const whole = fromV1({ session_id: session, root_id: ROOT, rows: mirror.map((r) => ({ runtime_session_id: String(r.info.sessionID), ...r })) as unknown as V1Row[] });
+    const wanted = new Map(whole.threads.flatMap((t) => t.messages).map((m) => [m.message_id, m]));
+    expect(whole.threads.map((t) => t.thread_id)).toContain(CHILD);
+    await journaled(session, mirror.filter((r) => r !== childReply), { seqs: Object.fromEntries([...wanted].map(([id, m]) => [id, m.seq])) });
+    await drained();
+    await limited({ capBytes: 4_000, memoryMb: 1 }, async () => {
+      expect(await pass()).toMatchObject({ sessions: 1, missing: 1, merged: 1, unplaced: 0, failed: 0 });
+    });
+    const childPage = await page(session, CHILD);
+    expect(ids(childPage.messages)).toEqual(ids(whole.threads.find((t) => t.thread_id === CHILD)!.messages));
+    const { in_context: _i, ext: _e, ...record } = childPage.messages.find((m) => m.message_id === String(childReply.info.id))!;
+    const { in_context: _wi, ext: _we, ...expected } = wanted.get(String(childReply.info.id))!;
+    expect(record).toEqual(expected);
+  });
+
   test('a message too large for the process is counted oversize and warned with its session and size, and keeps the merge pending; what does not fit the cap this pass is deferred to the next', async () => {
     const huge = plain(1, incompressible(70_000)); // 12 x its ~70 kB is over 75 % of 1 MB: never fits
     const first = plain(3, incompressible(2_800));
