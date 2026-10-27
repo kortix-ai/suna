@@ -3,7 +3,7 @@ title: Sessions from code
 description: "The session handle: create, wait for readiness, send and steer prompts, stream events, read transcripts, handle errors, and start sessions from your own backend."
 ---
 
-A session is one agent run in its own sandbox, on its own git branch. This page drives a session from TypeScript with `@kortix/sdk`, from a script or from a server that starts sessions for its own customers. For the concept, see [Sessions](/docs/guide/computers); to set up the client, see [SDK](/docs/sdk).
+A session is one agent run in its own sandbox, on its own git branch. This page drives a session from TypeScript with `@kortix/sdk`, from a script or from a server that starts sessions for its own customers. For the concept, see [Sessions](/docs#computers); to set up the client, see [SDK](/docs/sdk).
 
 The shortest complete run:
 
@@ -66,7 +66,7 @@ Every field is optional. With no input, the session runs the project's default a
 | --- | --- |
 | `initial_prompt` | The first prompt. The server delivers it when the runtime is up, so you need no `send()`. |
 | `agent_name` | The agent to run. Default: the project's default agent. |
-| `model` | The model id (see [Models](/docs/guide/models)). A model the account cannot use returns `400`. |
+| `model` | The model id (see [Models](/docs#models)). A model the account cannot use returns `400`. |
 | `name` | The session title. Without it, the server makes a title from the first prompt. |
 | `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
 | `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. Server-managed keys, such as `source`, `trigger_kind` and `trigger_slug`, return `400`. Prefix your keys, for example `app_`. |
@@ -90,7 +90,7 @@ await s.update({ name: 'Bug triage', labels: ['triage', 'done'], metadata: { app
 const { items } = await kortix.project(projectId).sessions.listPage({ labels: ['triage', 'done'] });
 ```
 
-`labels` replaces the list. `metadata` merges keys, and a `null` value removes a key. `listPage({ labels })` returns only sessions that carry every label. For a pre-booted session that is ready before the first prompt, see [Warm sessions](/docs/guide/computers).
+`labels` replaces the list. `metadata` merges keys, and a `null` value removes a key. `listPage({ labels })` returns only sessions that carry every label. For a pre-booted session that is ready before the first prompt, see [Warm sessions](/docs#computers).
 
 ## Channels and DMs (experimental)
 
@@ -377,12 +377,12 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.stop()` | Stops the sandbox. The disk, the branch and the conversation stay. |
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
 | `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days); after that its messages, files and branch are deleted. |
-| `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/guide/computers). |
-| `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs/guide/computers). |
+| `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs#computers). |
+| `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs#computers). |
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
-| `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/guide/computers). |
-| `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/guide/computers). |
-| `s.reminders.create(input)` | Schedules a prompt into this session. See [Triggers & reminders](/docs/guide/automations). |
+| `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs#computers). |
+| `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs#computers). |
+| `s.reminders.create(input)` | Schedules a prompt into this session. See [Triggers & reminders](/docs#automations). |
 
 The full method list is in [SDK reference](/docs/sdk/reference).
 
@@ -409,7 +409,7 @@ const direct = s.sandboxPortUrl(3000); // the authenticated API proxy URL, for a
 const ports = await s.previews(); // ports the runtime exposes
 ```
 
-See [Ports and previews](/docs/guide/computers).
+See [Ports and previews](/docs#computers).
 
 ## Runtime capabilities
 
@@ -443,13 +443,13 @@ if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompactButton
 - A route for an unlisted feature answers `501 feature_not_supported`.
 - `runtimeSupports` returns `true` before a health answer arrives, and for a runtime that lists no `session.*` capability.
 
-See [Harnesses: OpenCode and pi](/docs/guide/agents).
+See [Harnesses: OpenCode and pi](/docs#agents).
 
 ## Start sessions from your server
 
 Your server holds one Kortix credential and starts sessions for its own customers. Your customers never sign in to Kortix.
 
-1. Get a credential. A personal access key (`kortix_pat_…`) acts as you. A service account key (`kortix_sa_…`) acts as itself and needs a project role first. See [API keys and tokens](/docs/guide/security).
+1. Get a credential. A personal access key (`kortix_pat_…`) acts as you. A service account key (`kortix_sa_…`) acts as itself and needs a project role first. See [API keys and tokens](/docs#security).
 2. Create the client with `createScopedKortix` from `@kortix/sdk/server`. It never writes the process-wide config, so one request never reads another request's config or sandbox. See [Servers that act for many users](/docs/sdk/auth#servers-that-act-for-many-users).
 
 Both credentials give the session the origin `backend`. The request body cannot set the origin. A token from inside a session sandbox is never `backend`.
@@ -516,9 +516,9 @@ The API answers `201` with the session. The full route reference is at https://a
 - When you set it, an alias you did not bind gets no account. Pass `inherit_unbound: true` to let unbound aliases use the project default.
 - A shared (`project`) account works for a personal access key and a service account key.
 - A private (`member`) account works only for its owner, and only in a private session. A new session is private. Binding a private account to a shared session returns `409`. A service account never uses a private account.
-- The credential never enters the sandbox. Kortix resolves it on every connector call. See [Connectors, connections and accounts](/docs/guide/connectors).
+- The credential never enters the sandbox. Kortix resolves it on every connector call. See [Connectors, connections and accounts](/docs#connectors).
 
-`secrets` narrows the project secrets the sandbox receives, from the agent's grant down to the identifiers you list. It never widens the grant. `[]` delivers no project secrets. Only a `backend`-origin caller may set it; any other caller gets `403` `origin_override_forbidden`. See [Secrets](/docs/guide/security).
+`secrets` narrows the project secrets the sandbox receives, from the agent's grant down to the identifiers you list. It never widens the grant. `[]` delivers no project secrets. Only a `backend`-origin caller may set it; any other caller gets `403` `origin_override_forbidden`. See [Secrets](/docs#security).
 
 Tag each session with your own ids in `labels` and `metadata`. Find a customer's sessions with `listPage({ labels: ['customer:c-42'] })`.
 
@@ -561,7 +561,7 @@ const record = await s.cost(); // LLM and compute totals, tokens, model usage, c
 const page = await kortix.billing.sessionCosts.list({ accountId, projectId, from, to, limit: 25 });
 ```
 
-`sessionCosts.list` covers every session of the account in a half-open UTC window `[from, to)`. The default window is the last 30 days. Filter by `projectId` or `ownerId`. See [Track usage](/docs/guide/billing).
+`sessionCosts.list` covers every session of the account in a half-open UTC window `[from, to)`. The default window is the last 30 days. Filter by `projectId` or `ownerId`. See [Track usage](/docs#billing).
 
 ## Session errors
 

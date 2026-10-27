@@ -18,7 +18,7 @@ The install script supports macOS and Linux on x86_64 and arm64. On Windows, run
 1. Downloads the release binary for your system from GitHub Releases.
 2. Checks it against the release's `SHA256SUMS`. A missing or wrong checksum stops the install.
 3. Puts the binary in `~/.kortix/kortix`.
-4. Links `kortix` and `kortixt` (the [TUI](/docs/guide/everywhere)) into `/usr/local/bin`. If that directory is not writable, it uses `~/.local/bin` when it exists, else `sudo`.
+4. Links `kortix` and `kortixt` (the [TUI](/docs#everywhere)) into `/usr/local/bin`. If that directory is not writable, it uses `~/.local/bin` when it exists, else `sudo`.
 
 | Variable | Effect |
 | --- | --- |
@@ -54,7 +54,7 @@ The CLI signs in to one Kortix instance at a time. An instance is a **host**. Th
 | `--host <name>` | Sign in to this host instead of the active one. |
 | `--api <url>` | The API URL for the host. |
 
-To create a token for `--token`, see [API keys and tokens](/docs/guide/security).
+To create a token for `--token`, see [API keys and tokens](/docs#security).
 
 ### Hosts
 
@@ -173,7 +173,7 @@ git pull
 
 ## Work with sessions from a terminal
 
-The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also exist at the top level: `kortix chat`, `kortix connect`. [Sessions](/docs/guide/computers) explains the behavior behind each one.
+The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also exist at the top level: `kortix chat`, `kortix connect`. [Sessions](/docs#computers) explains the behavior behind each one.
 
 ### Start and list
 
@@ -205,7 +205,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | --- | --- |
 | `log [<session_id>]` | The recent messages, read-only. A stopped session is read from its saved transcript and is not woken. `--limit <n>` (default 10). |
 | `wait-for <session_id>` | Block until the agent is done. Exit `0` done, `3` blocked on a question or permission, `124` timed out. `--timeout <seconds>` (default 300). |
-| `connect [<session_id>]` | Deprecated with OpenCode. Attach the OpenCode TUI to a session that still runs OpenCode. With no ID it shows a picker. Every new session runs pi, which has no TUI to attach: the command exits `1`. Use `chat` or `shell` instead. Details are on [TUI](/docs/guide/everywhere). |
+| `connect [<session_id>]` | Deprecated with OpenCode. Attach the OpenCode TUI to a session that still runs OpenCode. With no ID it shows a picker. Every new session runs pi, which has no TUI to attach: the command exits `1`. Use `chat` or `shell` instead. Details are on [TUI](/docs#everywhere). |
 | `digest` | A short review of recent sessions. `--since 7d`. |
 
 ### Unblock
@@ -290,7 +290,7 @@ jobs:
           kortix sessions log "$id" --limit 1
 ```
 
-Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Triggers & reminders](/docs/guide/automations).
+Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Triggers & reminders](/docs#automations).
 
 ## Use Kortix from your coding agent
 
@@ -347,7 +347,7 @@ Exit `3` means the agent waits on a question or a permission. Answer it with `ko
 </Step>
 </Steps>
 
-An MCP client can use Kortix without the CLI. See [Kortix MCP server](/docs/guide/connectors).
+An MCP client can use Kortix without the CLI. See [Kortix MCP server](/docs#connectors).
 
 ## Inside a session sandbox
 
@@ -357,7 +357,7 @@ Commands an agent uses:
 
 | Command | Purpose |
 | --- | --- |
-| `kortix connectors call <slug> <action> [json]` | Call a connector action. See [Connectors](/docs/guide/connectors). |
+| `kortix connectors call <slug> <action> [json]` | Call a connector action. See [Connectors](/docs#connectors). |
 | `kortix secrets request <NAME>` | Mint a link, valid for 7 days, for a person to enter a secret value. |
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
@@ -365,7 +365,7 @@ Commands an agent uses:
 | `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
-What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/guide/agents). These commands are refused for an agent session's token, whatever the grant:
+What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs#agents). These commands are refused for an agent session's token, whatever the grant:
 
 - `kortix projects cli-tokens new` and `rm`
 - `kortix gateway keys` (`ls`, `new`, `rm`)
@@ -399,7 +399,7 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | --- | --- | --- |
 | `login`, `logout`, `whoami`, `token`, `hosts` | Sign in and pick a host. | [Sign in](#sign-in) |
 | `sessions`, `chat`, `connect` | Start, talk to and manage sessions. | [Work with sessions from a terminal](#work-with-sessions-from-a-terminal) |
-| `tui` | The terminal app. | [TUI](/docs/guide/everywhere) |
+| `tui` | The terminal app. | [TUI](/docs#everywhere) |
 | `validate`, `schema`, `doctor`, `system-skills` | Check the project and the setup. | [Check and validate](#check-and-validate) |
 | `version`, `update`, `uninstall`, `feedback` | Manage the CLI itself. | [Maintain the CLI](#maintain-the-cli) |
 
@@ -419,33 +419,33 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 
 | Group | Purpose | Page |
 | --- | --- | --- |
-| `agents` | The default agent, model pins, scope and agent config. | [Agents & permissions](/docs/guide/agents) |
-| `tools` | List the project's tools; `eject` a Kortix tool to change it. | [Tools](/docs/guide/agents) |
-| `models` | The models the project offers and its default model. | [Models](/docs/guide/models) |
-| `providers` | Connect model providers with an API key or OAuth. | [Models](/docs/guide/models) |
-| `gateway` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs/guide/models) |
-| `secrets` | Project secrets, their exposure and who can use them. | [Secrets](/docs/guide/security) |
-| `env` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Secrets](/docs/guide/security) |
-| `sandboxes` | Sandbox templates, builds, health and the provider pin. | [Sandboxes & previews](/docs/guide/computers) |
-| `connectors` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/guide/connectors) |
-| `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs/guide/channels) |
-| `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs/guide/automations) |
-| `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs/guide/automations) |
+| `agents` | The default agent, model pins, scope and agent config. | [Agents & permissions](/docs#agents) |
+| `tools` | List the project's tools; `eject` a Kortix tool to change it. | [Tools](/docs#agents) |
+| `models` | The models the project offers and its default model. | [Models](/docs#models) |
+| `providers` | Connect model providers with an API key or OAuth. | [Models](/docs#models) |
+| `gateway` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs#models) |
+| `secrets` | Project secrets, their exposure and who can use them. | [Secrets](/docs#security) |
+| `env` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Secrets](/docs#security) |
+| `sandboxes` | Sandbox templates, builds, health and the provider pin. | [Sandboxes & previews](/docs#computers) |
+| `connectors` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs#connectors) |
+| `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs#channels) |
+| `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs#automations) |
+| `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs#automations) |
 | `apps` | Deploy and manage Apps. | [Apps](/docs/apps) |
 
 ### Administer
 
 | Group | Purpose | Page |
 | --- | --- | --- |
-| `accounts` | List and switch accounts. | [Accounts & access](/docs/guide/teams) |
-| `members` | Invite and remove people, and change their roles. | [Accounts & access](/docs/guide/teams) |
-| `groups` | Groups of people that share a role. | [Accounts & access](/docs/guide/teams) |
-| `access` | Grant, list and revoke role assignments. | [Accounts & access](/docs/guide/teams) |
-| `roles`, `permissions` | System and custom roles, and the permission catalog. | [Accounts & access](/docs/guide/teams) |
-| `grants` | Assign agents to members or groups. | [Accounts & access](/docs/guide/teams) |
-| `audit` | Read the account audit log. | [Accounts & access](/docs/guide/teams) |
-| `tokens` | Personal access keys, service accounts and connected apps. | [Sign-in, SSO & API keys](/docs/guide/security) |
-| `billing` | Read the plan, credits, transactions and costs. | [Plans & credits](/docs/guide/billing) |
+| `accounts` | List and switch accounts. | [Accounts & access](/docs#teams) |
+| `members` | Invite and remove people, and change their roles. | [Accounts & access](/docs#teams) |
+| `groups` | Groups of people that share a role. | [Accounts & access](/docs#teams) |
+| `access` | Grant, list and revoke role assignments. | [Accounts & access](/docs#teams) |
+| `roles`, `permissions` | System and custom roles, and the permission catalog. | [Accounts & access](/docs#teams) |
+| `grants` | Assign agents to members or groups. | [Accounts & access](/docs#teams) |
+| `audit` | Read the account audit log. | [Accounts & access](/docs#teams) |
+| `tokens` | Personal access keys, service accounts and connected apps. | [Sign-in, SSO & API keys](/docs#security) |
+| `billing` | Read the plan, credits, transactions and costs. | [Plans & credits](/docs#billing) |
 
 ### Self-host
 

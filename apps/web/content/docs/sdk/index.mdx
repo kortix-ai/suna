@@ -83,7 +83,7 @@ A session is one unit of agent work, on its own sandbox and branch. From code, i
 `kortix.projects.list()` returns the projects the token can open. `kortix.projects.provision({ name })` creates a project with a Kortix-managed repository and the starter configuration.
 </Step>
 <Step title="Create the session">
-`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `glm-5.3-flash`, or `provider/model` for your own provider key; see [Models](/docs/guide/models)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
+`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `glm-5.3-flash`, or `provider/model` for your own provider key; see [Models](/docs#models)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
 </Step>
 <Step title="Get the session handle">
 `kortix.session(projectId, sessionId)` binds both ids. The handle has no network cost.
@@ -99,7 +99,7 @@ Open `session.stream({ onEvent })` before `session.send(text)`, so no early even
 </Step>
 </Steps>
 
-The same calls work on both session harnesses, OpenCode and pi. See [Harnesses](/docs/guide/agents).
+The same calls work on both session harnesses, OpenCode and pi. See [Harnesses](/docs#agents).
 
 ## A complete script
 
@@ -200,6 +200,6 @@ Each run creates a new session, so `ensureReady()` waits while its sandbox boots
   <Card icon="code" title="Kortix UI" href="/docs/sdk/ui">The Kortix components and the session chat for your app.</Card>
   <Card icon="key" title="Authentication" href="/docs/sdk/auth">Credentials, token refresh, Sign in with Kortix, and multi-tenant servers.</Card>
   <Card icon="book-open" title="SDK reference" href="/docs/sdk/reference">Every handle, module and type.</Card>
-  <Card icon="plug" title="Connectors from code" href="/docs/guide/connectors">Call Gmail, Slack, GitHub and MCP servers with typed results.</Card>
+  <Card icon="plug" title="Connectors from code" href="/docs#connectors">Call Gmail, Slack, GitHub and MCP servers with typed results.</Card>
   <Card icon="app-window" title="Apps" href="/docs/apps#build-on-apps-from-typescript">Deploy and manage Apps from TypeScript.</Card>
 </CardGroup>

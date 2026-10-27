@@ -33,16 +33,16 @@ principal it acts as, and nothing more.
 | Your product, where people sign in with their Kortix email, password, magic link, social login or SSO | The person's access token from [headless sign-in](#headless-sign-in) | The person who signed in | `kortix.auth.*` + `createKortixSession` |
 | Your own web app with a "Sign in with Kortix" button | OAuth access token, `kortix_oat_` (1 hour; refresh token `kortix_ort_`, 30 days) | The person who approved your app | [`createKortixAuth`](#sign-in-with-kortix) |
 | Code inside a Kortix App | App viewer token. The App's viewer scope must be `api`. | The person viewing the App, capped by their role | `kortix apps access <app> --viewer api`, then `kortixAppViewerToken()`. See [Apps](/docs/apps#know-who-is-looking). |
-| Code inside a session sandbox | `KORTIX_TOKEN` | The session's agent (its service account), limited to that project and session. Its permissions are the agent's `kortix_permissions` capped by its ceiling role. See [What an agent may do](/docs/guide/agents). | Kortix sets it, with `KORTIX_API_URL` as the `backendUrl`. See [Sandboxes & previews](/docs/guide/computers). |
+| Code inside a session sandbox | `KORTIX_TOKEN` | The session's agent (its service account), limited to that project and session. Its permissions are the agent's `kortix_permissions` capped by its ceiling role. See [What an agent may do](/docs#agents). | Kortix sets it, with `KORTIX_API_URL` as the `backendUrl`. See [Sandboxes & previews](/docs#computers). |
 
 Creation, expiry, project binding and key rules are in
-[API keys and tokens](/docs/guide/security).
+[API keys and tokens](/docs#security).
 A web app that already signs people in through the instance's Supabase passes
 that JWT:
 `getToken: async () => (await supabase.auth.getSession()).data.session?.access_token ?? null`.
 New code uses [headless sign-in](#headless-sign-in) instead. A valid
 credential without the needed permission gets `403`. Grant the role in
-[Accounts & access](/docs/guide/teams).
+[Accounts & access](/docs#teams).
 
 ## getToken and 401 recovery
 
@@ -148,7 +148,7 @@ second call changes `getToken`.
 | Password | `auth.signInWithPassword({ email, password })` |
 | Magic link or code | `auth.sendMagicLink({ email, create_user?, redirect_to?, data? })`, then `auth.verifyOtp({ email, token, type: 'magiclink' })` with the code from the email |
 | Social login (PKCE) | `auth.signInWithProvider({ provider, redirect_to, scopes? })` returns `{ url, code_verifier }`. Keep `code_verifier`, send the browser to `url`, then call `auth.exchangeCode({ code, code_verifier })` with the `code` from the redirect. `provider` is one the instance has configured, for example `google` or `github`. |
-| Enterprise SSO | `auth.signInWithSso({ domain, redirect_to? })` returns `{ url }` to send the browser to. A `404` means the domain has no identity provider. See [Single sign-on](/docs/guide/security). |
+| Enterprise SSO | `auth.signInWithSso({ domain, redirect_to? })` returns `{ url }` to send the browser to. A `404` means the domain has no identity provider. See [Single sign-on](/docs#security). |
 | Password reset | `auth.resetPassword({ email, redirect_to? })`, then `auth.verifyOtp({ email, token, type: 'recovery' })`, then `auth.updatePassword({ password }, session.access_token)` with the session `verifyOtp` returned. The new password is 8 to 256 characters. |
 
 Every flow that returns a session returns `{ session, user }`. Pass both to
@@ -250,7 +250,7 @@ with PKCE, and the browser never holds a Kortix token.
     Kortix compares redirect URIs byte for byte. They must use `https`, except
     on a loopback host (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`). `kortix.iam.oauthClients` also has `list`, `get`, `update`,
     `rotateSecret` and `remove`. Field details are in
-    [OAuth apps and connected apps](/docs/guide/security).
+    [OAuth apps and connected apps](/docs#security).
   </Step>
   <Step title="Create the auth kit on your server">
     ```ts
@@ -389,7 +389,7 @@ scopes. Kortix remembers the approval per person and app, so later sign-ins
 return straight to your app. People revoke an app in code with
 `kortix.accounts.connectedApps.list()` and `.revoke(clientId)`, or on the web
 and in the CLI as described in
-[Connected apps](/docs/guide/security). After a revoke the
+[Connected apps](/docs#security). After a revoke the
 app's tokens stop working and the app must ask again.
 
 ### Discovery for other OAuth clients
