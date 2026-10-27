@@ -1,4 +1,6 @@
 import { expect, mock, test } from 'bun:test';
+import type { KortixProject } from '@kortix/sdk';
+import type { NewWorkspaceFormState } from '@kortix/ui/workspace/new/new-workspace-form';
 import { createElement, forwardRef, type ReactNode } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -21,7 +23,13 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
  * is the real page.
  */
 
+const { runCreate } = await import('@kortix/ui/workspace/new/use-create-workspace');
+
 let creates = 0;
+let provisioned = false;
+let query = '';
+const destinations: string[] = [];
+let completeCreate: ((projectId: string) => void) | undefined;
 
 /** The quota payload the mocked `useProjectQuota` returns; undefined = in flight. */
 let quotaData: { capped: boolean; message: string | null } | undefined;
@@ -36,8 +44,8 @@ mock.module('@kortix/ui/workspace/new/use-project-quota', () => ({
 }));
 
 mock.module('next/navigation', () => ({
-  useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {}, prefetch: () => {} }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: () => {}, replace: (path: string) => { destinations.push(path); }, back: () => {}, prefetch: () => {} }),
+  useSearchParams: () => new URLSearchParams(query),
   useParams: () => ({}),
   usePathname: () => '/new',
 }));
@@ -66,16 +74,40 @@ mock.module('@/features/billing/global-upgrade-modal', () => ({
   GlobalUpgradeModal: () => createElement('div', { 'data-testid': 'upgrade-modal-stub' }),
 }));
 mock.module('@kortix/ui/workspace/new/use-create-workspace', () => ({
-  useCreateWorkspace: () => ({
-    create: () => {
-      creates += 1;
-    },
-    status: 'idle',
-    error: null,
-    retry: () => {},
-    canRetry: false,
-    limitReached: false,
-  }),
+  useCreateWorkspace: (options?: { enterProject?: (projectId: string) => void }) => {
+    completeCreate = options?.enterProject;
+    return {
+      create: async (state: NewWorkspaceFormState) => {
+        creates += 1;
+        if (!options?.enterProject) return;
+        // Real create orchestration; only its network/cache/storage boundaries
+        // are injected. The account starts with no projects.
+        await runCreate(state, [{ account_id: 'user-1', name: 'Personal', account_role: 'owner', is_primary_owner: true }], 'user-1', {
+          attemptKeyFor: () => 'synthetic-attempt',
+          clearAttemptKey: () => {},
+          runCreateAttempt: async () => {
+            provisioned = true;
+            return { project_id: 'created-project', account_id: 'user-1' } as KortixProject;
+          },
+          onPhase: () => {},
+          createGitHubRepoProject: async () => { throw new Error('unexpected GitHub create'); },
+          importGitHubRepoProject: async () => { throw new Error('unexpected GitHub import'); },
+          primeProjectCache: () => {},
+          invalidateProjects: () => {},
+          writeLastProjectId: () => {},
+          projectsCachedForAccount: () => [],
+          completeOnboarding: async () => { throw new Error('first project must remain unstamped'); },
+          enterProject: options.enterProject,
+          now: () => 0,
+        });
+      },
+      status: 'idle',
+      error: null,
+      retry: () => {},
+      canRetry: false,
+      limitReached: false,
+    };
+  },
 }));
 // The top bar and the Advanced (GitHub source) field are not what these tests
 // assert; the Advanced field also runs react-query git-account queries. Stubs
@@ -277,4 +309,30 @@ test('the quota is read for the account the create would target', async () => {
   const renderer = await renderPage();
   expect(quotaCalls[0]).toBe('user-1');
   await unmount(renderer);
+});
+
+test('the first project created from the pairing entry lands on My computer', async () => {
+  query = 'connect=computer';
+  provisioned = false;
+  quotaData = { capped: false, message: null };
+  const renderer = await renderPage();
+  await type(renderer, 'Pairing workspace');
+  await act(async () => {
+    findForm(renderer).props.onSubmit({ preventDefault: () => {} });
+  });
+  expect(completeCreate).toBeDefined();
+  expect(provisioned).toBe(true);
+  expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
+  await unmount(renderer);
+  query = '';
+});
+
+test('ordinary creation and hostile destinations keep the default project landing', async () => {
+  for (const value of ['', 'connect=https://example.test', 'connect=//example.test', 'connect=computer/../admin']) {
+    query = value;
+    const renderer = await renderPage();
+    expect(completeCreate).toBeUndefined();
+    await unmount(renderer);
+  }
+  query = '';
 });

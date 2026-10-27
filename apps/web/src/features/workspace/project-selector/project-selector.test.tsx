@@ -156,3 +156,16 @@ test('computer pairing selection preserves the destination for every project', (
     expect(html).toContain('href="/projects/p2/settings/computer"');
     expect(html).not.toContain('href="/projects/p1"');
   });
+
+test('zero-project pairing entry carries intent on the create card and other empty accounts', () => {
+  const html = render({
+    connectComputer: true,
+    sections: buildAccountSections({
+      creatableAccountIds: new Set(['a', 'b']),
+      accounts: [account('a', 'owner', 'Personal'), account('b', 'owner', 'Team')],
+      lists: [{ accountId: 'a', data: [], isError: false }, { accountId: 'b', data: [], isError: false }],
+    }),
+  });
+  expect(html).toContain('href="/new?account=a&amp;connect=computer"');
+  expect(html).toContain('href="/new?account=b&amp;connect=computer"');
+});

@@ -76,7 +76,10 @@ export interface ProjectSelectorViewProps {
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const t = useTranslations('projectSelector');
-  const { email, loading, loadFailed, sections, invites, createHref } = props;
+  const { email, loading, loadFailed, sections, invites } = props;
+  const createHref = props.createHref && props.connectComputer
+    ? `${props.createHref}&connect=computer`
+    : props.createHref;
   const [query, setQuery] = useState('');
 
   const total = countProjects(sections);
@@ -88,7 +91,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
     (section) =>
       !(
         section.state === 'empty-creatable' &&
-        newWorkspacePathForAccount(section.accountId) === createHref
+        newWorkspacePathForAccount(section.accountId) === props.createHref
       ),
   );
   const noAccess = !loading && !loadFailed && !createHref && !hasAnything;
@@ -338,7 +341,7 @@ function AccountBlock({
         </ul>
       ) : section.state === 'empty-creatable' ? (
         <Link
-          href={newWorkspacePathForAccount(section.accountId)}
+          href={`${newWorkspacePathForAccount(section.accountId)}${connectComputer ? '&connect=computer' : ''}`}
           className="group hover:bg-hover focus-visible:ring-ring flex items-center gap-3 rounded-md border border-dashed px-4 py-3 transition-colors outline-none focus-visible:ring-2"
         >
           <span className="text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed">
