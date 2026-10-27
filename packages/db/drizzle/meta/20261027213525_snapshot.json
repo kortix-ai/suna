@@ -1,6 +1,6 @@
 {
-  "id": "7b4c1550-0c30-4423-9a10-5980f141b2c7",
-  "prevId": "3a1d9ad6-9779-46b5-9187-5337e592ed36",
+  "id": "84bc4f83-2265-43a1-b676-dbe46711b86f",
+  "prevId": "7afa170f-9dc5-477f-8c1e-8b0655b76ccb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4697,6 +4697,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "space": {
+          "name": "space",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4710,18 +4722,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "space": {
-          "name": "space",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent": {
-          "name": "agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -17658,6 +17658,151 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_session_groups": {
+      "name": "project_session_groups",
+      "schema": "kortix",
+      "columns": {
+        "group_id": {
+          "name": "group_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uniq_project_session_groups_name": {
+          "name": "uniq_project_session_groups_name",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(\"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_session_groups_project": {
+          "name": "idx_project_session_groups_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_session_groups_account_id_accounts_account_id_fk": {
+          "name": "project_session_groups_account_id_accounts_account_id_fk",
+          "tableFrom": "project_session_groups",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_session_groups_project_id_projects_project_id_fk": {
+          "name": "project_session_groups_project_id_projects_project_id_fk",
+          "tableFrom": "project_session_groups",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_session_groups_name_check": {
+          "name": "project_session_groups_name_check",
+          "value": "char_length(\"kortix\".\"project_session_groups\".\"name\") between 1 and 80"
+        },
+        "project_session_groups_position_check": {
+          "name": "project_session_groups_position_check",
+          "value": "\"kortix\".\"project_session_groups\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "kortix.project_session_public_shares": {
       "name": "project_session_public_shares",
       "schema": "kortix",
@@ -18436,6 +18581,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "group_id": {
+          "name": "group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "secrets_allowlist": {
           "name": "secrets_allowlist",
           "type": "jsonb",
@@ -18485,6 +18636,34 @@
         }
       },
       "indexes": {
+        "idx_project_sessions_group": {
+          "name": "idx_project_sessions_group",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_sessions\".\"group_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_project_sessions_space": {
           "name": "idx_project_sessions_space",
           "columns": [
@@ -18795,6 +18974,20 @@
           ],
           "columnsTo": [
             "space_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_sessions_group_fk": {
+          "name": "project_sessions_group_fk",
+          "tableFrom": "project_sessions",
+          "tableTo": "project_session_groups",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "group_id"
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
