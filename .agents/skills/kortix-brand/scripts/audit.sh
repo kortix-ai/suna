@@ -75,7 +75,7 @@ COMMENT_RE=':[0-9]+: *(//|\*|/\*|\{/\*)'
 scan() {
   local label="$1" pattern="$2" fix="$3" scope="${4:-all}" skip="${5:-}"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' --include='*.css' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$ART_RE" \
     | grep -avE "$LOGO_RE" \
@@ -104,7 +104,7 @@ scan() {
 scan_files() {
   local label="$1" pattern="$2" fix="$3" files="$4"
   local hits
-  hits=$(grep -raEn --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
+  hits=$(grep -raEnH --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -aE "^[^:]*($files)[^/:]*:" \
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$COMMENT_RE" \
