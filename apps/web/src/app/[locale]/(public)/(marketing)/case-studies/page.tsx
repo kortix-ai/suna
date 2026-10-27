@@ -1,3 +1,5 @@
+'use client';
+
 import { CaseStudyGrid } from '@/features/marketing/case-studies/case-studies';
 import { caseStudies } from '@/features/marketing/case-studies/content';
 import { PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
