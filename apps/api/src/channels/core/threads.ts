@@ -113,9 +113,15 @@ export async function touchChatThread(key: ChatThreadKey): Promise<void> {
   await db.update(chatThreads).set({ lastMessageAt: new Date() }).where(threadRow(key));
 }
 
-/** Drop a mapping whose session is gone, so the next message starts a new session. */
-export async function dropChatThread(key: ChatThreadKey): Promise<void> {
-  await db.delete(chatThreads).where(threadRow(key));
+/**
+ * Drop a thread's mapping so the next message starts a new session. With
+ * `sessionId`, only while the thread still maps to that session: a racing
+ * message may have bound a new session since the caller read the row.
+ */
+export async function dropChatThread(key: ChatThreadKey, sessionId?: string): Promise<void> {
+  await db
+    .delete(chatThreads)
+    .where(sessionId ? and(threadRow(key), eq(chatThreads.sessionId, sessionId)) : threadRow(key));
 }
 
 export type FollowUpRoute = { kind: 'here' } | { kind: 'thread_project'; projectId: string } | { kind: 'refused' };

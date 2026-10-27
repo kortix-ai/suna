@@ -9,14 +9,19 @@
  * sleep, so no sandbox and no real wait is needed.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects } from '@kortix/db';
+import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
 import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
-import { resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
-import { bindChatThread } from '../core/threads';
+import { config as appConfig } from '../../config';
+import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
+import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
+import { adoptChatThreads, bindChatThread } from '../core/threads';
+import { turnPromptSource } from '../../projects/lib/notification-recipients';
+import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
 import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
 
@@ -27,13 +32,19 @@ const BOT_ID = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
 const TOKEN = `${BOT_ID}:${'A'.repeat(35)}`;
 const ALLOWED = '111';
 
-const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+type Call = { method: string; body: Record<string, unknown> };
+const calls: Call[] = [];
+const waiters: Array<(call: Call) => void> = [];
+/** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
+const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
     const [, botToken, method] = new URL(req.url).pathname.split('/');
     if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
-    calls.push({ method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> });
+    const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
+    calls.push(call);
+    waiters.splice(0).forEach((resolve) => resolve(call));
     return Response.json({ ok: true, result: { message_id: 1 } });
   },
 });
@@ -103,7 +114,8 @@ beforeAll(async () => {
   restoreLifecycle();
 });
 
-function restoreLifecycle() {
+/** The recorder seam; `overrides` replace single members for one test. */
+function restoreLifecycle(overrides: Parameters<typeof setChannelLifecycleForTest>[0] = {}) {
   setChannelLifecycleForTest({
     resolveProjectAutomationActor: async () => actor,
     createSession: (async (input: Record<string, any>) => {
@@ -125,6 +137,7 @@ function restoreLifecycle() {
       sleeps++;
       await onSleep?.();
     },
+    ...overrides,
   });
 }
 
@@ -147,6 +160,7 @@ afterAll(async () => {
   fake.stop(true);
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await deleteTelegramInstall(PROJECT);
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
@@ -260,21 +274,10 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     // Between this message's lookup and its claim, another message's create
     // bound the chat and released its claim (the actor lookup runs in between).
     let winner = '';
-    setChannelLifecycleForTest({
+    restoreLifecycle({
       resolveProjectAutomationActor: async () => {
         winner = await bindChat(919);
         return ACTOR;
-      },
-      createSession: (async (input: Record<string, any>) => {
-        created.push(input);
-        return { status: 'created', sessionId: crypto.randomUUID() };
-      }) as never,
-      deliverThroughQueue: (async (command: Record<string, any>) => {
-        delivered.push(command);
-        return deliverResult;
-      }) as never,
-      sleep: async () => {
-        sleeps++;
       },
     });
     try {
@@ -286,6 +289,33 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(delivered).toHaveLength(1);
     expect(delivered[0]!.sessionId).toBe(winner);
     expect(await claimRows(919)).toHaveLength(0);
+  });
+
+  test('two messages that both saw a dead session start one new session, not two', async () => {
+    const dead = await bindChat(960);
+    const first = update('one', ALLOWED, 960);
+    const second = update('two', ALLOWED, 960);
+    // The second message reads the dead session; while its delivery is refused,
+    // the first message revives the chat. The second must then follow up into
+    // that new session instead of dropping its mapping and creating another.
+    restoreLifecycle({
+      deliverThroughQueue: (async (command: Record<string, any>) => {
+        delivered.push(command);
+        if (command.sessionId !== dead) return 'queued';
+        if (command.idempotencyKey === `telegram:${BOT_ID}:${second.id}`) await handleTelegramEvent(first);
+        return 'no-session';
+      }) as never,
+    });
+    try {
+      await handleTelegramEvent(second);
+    } finally {
+      restoreLifecycle();
+    }
+    expect(createdSessions).toHaveLength(1);
+    expect((await threadRow(960))?.sessionId).toBe(createdSessions[0]);
+    const intoNew = delivered.filter((d) => d.sessionId === createdSessions[0]);
+    expect(intoNew).toHaveLength(1);
+    expect(intoNew[0]!.idempotencyKey).toBe(`telegram:${BOT_ID}:${second.id}`);
   });
 
   test('a project with no owner starts nothing and holds no claim', async () => {
@@ -388,5 +418,160 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
     expect((row!.metadata as any).telegram.allowedUserIds).toEqual(['5', '6']);
     await allowSender();
+  });
+});
+
+describe('Telegram notices addressed by session — migrated PostgreSQL', () => {
+  const credits = { name: 'APIError', statusCode: 402, message: 'Payment Required: Insufficient credits.' };
+  const runFailed = (sessionId: string, error: Record<string, unknown> = credits) =>
+    notifySessionChannel({ kind: 'run_failed', sessionId, error });
+  const bind = (sessionId: string, threadId: string, platform = 'telegram', workspaceId = BOT_ID) =>
+    bindChatThread({ projectId: PROJECT, platform, workspaceId, threadId, sessionId });
+
+  test('a run error reaches the chat once, unanchored, as the title, the next step and the session link', async () => {
+    const sessionId = await bindChat(940);
+    await runFailed(sessionId);
+    expect(calls).toEqual([
+      {
+        method: 'sendMessage',
+        body: {
+          chat_id: 940,
+          text: [
+            'Kortix could not finish this run: Out of credits.',
+            'A workspace admin can top up credits in Kortix. Then send your message again.',
+            `Details: ${sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, sessionId)}`,
+          ].join('\n'),
+        },
+      },
+    ]);
+  });
+
+  test('a stopped run, and a chat that sent /new, hear nothing', async () => {
+    const stopped = await bindChat(941);
+    await runFailed(stopped, { name: 'MessageAbortedError', message: '' });
+    const left = await bindChat(942);
+    await forgetChatThread(
+      { platform: 'telegram', workspaceId: BOT_ID, threadId: '942', projectId: PROJECT },
+      claimKey(942),
+    );
+    await runFailed(left);
+    expect(calls).toEqual([]);
+  });
+
+  test('a forum topic gets the notice in its topic', async () => {
+    const sessionId = await newSession();
+    await bind(sessionId, '-100940:7');
+    await runFailed(sessionId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toEqual({ chat_id: -100940, text: expect.any(String), message_thread_id: 7 });
+  });
+
+  test('a session that adopted the chat (a reminder successor) reaches it', async () => {
+    const failed = await bindChat(944);
+    const successor = await newSession();
+    await adoptChatThreads(PROJECT, failed, successor);
+    await runFailed(successor);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([944]);
+  });
+
+  test('a session with only Slack or Email threads, or a chat of a bot this project no longer has, hears nothing', async () => {
+    const elsewhere = await newSession();
+    await bind(elsewhere, 'C1:1.0', 'slack', 'T-synthetic');
+    await bind(elsewhere, 'thread-1', 'email', 'inbox-synthetic');
+    await runFailed(elsewhere);
+    const oldBot = await newSession();
+    await bind(oldBot, '945', 'telegram', 'other-bot');
+    await runFailed(oldBot);
+    expect(calls).toEqual([]);
+  });
+
+  test('a session in two chats tells the one it talked in last', async () => {
+    // The chat bound first is the older one, so a lookup that ignored the
+    // last-message order would pick it.
+    const sessionId = await bindChat(946);
+    await bind(sessionId, '947');
+    await db
+      .update(chatThreads)
+      .set({ lastMessageAt: new Date(Date.now() - 60_000) })
+      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '946')));
+    await runFailed(sessionId);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([947]);
+  });
+
+  test('a run the chat did not prompt (the web, a reminder) is not told to it; an unknown source still is', async () => {
+    const sessionId = await bindChat(952);
+    const notify = (promptSource: string | null) =>
+      notifySessionChannel({ kind: 'run_failed', sessionId, error: credits, promptSource });
+    await notify('ui');
+    await notify('trigger:reminder');
+    expect(calls).toEqual([]);
+    await notify('telegram');
+    await notify(null);
+    expect(calls.map((c) => c.body.chat_id)).toEqual([952, 952]);
+  });
+
+  test('the prompt source of a turn is the newest lifecycle prompt its message id names', async () => {
+    const sessionId = await newSession();
+    const prompt = (source: string, wireMessageId: string) =>
+      db.insert(sessionLifecycleCommands).values({
+        commandType: 'continue_session',
+        source,
+        projectId: PROJECT,
+        accountId: ACCOUNT,
+        sessionId,
+        payload: { wireMessageId },
+      });
+    await prompt('telegram', 'msg_chat');
+    await prompt('ui', 'msg_web');
+    expect(await turnPromptSource(sessionId, 'msg_chat')).toBe('telegram');
+    expect(await turnPromptSource(sessionId, 'msg_web')).toBe('ui');
+    expect(await turnPromptSource(sessionId, 'msg_unknown')).toBeNull();
+    expect(await turnPromptSource(sessionId, null)).toBeNull();
+  });
+
+  test('a sandbox that cannot start says so once, with its classified reason, and asks for /new', async () => {
+    const sessionId = await bindChat(948);
+    const reason = "Couldn't access the project's Git repository. Check the project's Git credentials and try again.";
+    await notifyStartFailure(sessionId, reason, { transient: false });
+    expect(calls).toHaveLength(1);
+    const text = String(calls[0]!.body.text);
+    expect(text).toContain(reason);
+    expect(text).toContain('Send /new');
+    expect(text).toContain(`/projects/${PROJECT}/sessions/${sessionId}`);
+  });
+
+  test('a failure the provider may clear is told once, as retrying; a final failure still is', async () => {
+    const sessionId = await bindChat(951);
+    const capacity = 'The compute provider is at capacity right now.';
+    await notifyStartFailure(sessionId, capacity, { transient: true });
+    await notifyStartFailure(sessionId, capacity, { transient: true });
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]!.body.text)).toStartWith(`Kortix could not start this chat's session yet. ${capacity}\n`);
+    expect(String(calls[0]!.body.text)).toContain('If the agent does not reply, send /new');
+    await notifyStartFailure(sessionId, capacity, { transient: false });
+    expect(calls).toHaveLength(2);
+    expect(String(calls[1]!.body.text)).toStartWith("Kortix could not start this chat's session, so the agent did not run.");
+  });
+
+  test('a web session that fails to start writes no once-claim', async () => {
+    const webSession = await newSession();
+    await notifyStartFailure(webSession, 'at capacity', { transient: true });
+    expect(calls).toEqual([]);
+    expect(await db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `channel:start-retrying:${webSession}`))).toEqual([]);
+  });
+
+  test('a kick-off failure posts the generic copy, never its internal text', async () => {
+    const sessionId = await bindChat(949);
+    await notifyStartFailure(sessionId, 'connect ECONNREFUSED 10.0.0.1:5432');
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]!.body.text)).not.toContain('ECONNREFUSED');
+    expect(String(calls[0]!.body.text)).toStartWith("Kortix could not start this chat's session, so the agent did not run.\n");
+  });
+
+  test('provisioning failures reach the chat through the registered notifier', async () => {
+    const sessionId = await bindChat(950);
+    const sent = nextCall();
+    notifySessionProvisioningFailed(sessionId, 'x', { transient: false });
+    expect((await sent).body.chat_id).toBe(950);
   });
 });
