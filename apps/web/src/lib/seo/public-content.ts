@@ -65,6 +65,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/security',
   '/self-hosted',
   '/services',
+  '/case-studies',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -197,6 +198,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'AI strategy, transformation and education: we map how your company works, unify your data, automate the work, build your software and train your team.',
     htmlPath: '/services',
+  },
+  {
+    kind: 'marketing',
+    slug: 'case-studies',
+    title: 'Case studies',
+    description:
+      'What runs on Kortix today: a science agent at City University of Hong Kong, an AI-run hedge fund desk, a cloud company built by agents, Kortix itself and more.',
+    htmlPath: '/case-studies',
   },
   {
     kind: 'marketing',

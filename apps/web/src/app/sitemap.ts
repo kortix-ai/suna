@@ -30,6 +30,7 @@ export const LOCALIZED_ROUTES = [
   '/security',
   '/self-hosted',
   '/services',
+  '/case-studies',
   '/white-label',
   '/cli',
   '/desktop',

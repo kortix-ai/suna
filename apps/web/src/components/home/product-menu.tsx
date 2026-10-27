@@ -89,7 +89,6 @@ export const MEGA_MENUS: MegaMenu[] = [
         title: 'Learn',
         links: [
           { label: 'Guide', href: '/docs' },
-          { label: 'Use cases', href: '/use-cases' },
           { label: 'Blog', href: '/blog' },
           { label: 'Changelog', href: '/changelog' },
         ],

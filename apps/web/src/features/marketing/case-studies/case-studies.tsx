@@ -3,6 +3,7 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
+import { cn } from '@kortix/ui';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -12,6 +13,7 @@ import {
   CheckIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { caseStudies, type CaseStudy } from './content';
@@ -72,6 +74,47 @@ function Mark({ item }: { item: CaseStudy }) {
   );
 }
 
+/** One case study: its mark, who, the title, the story and four facts. */
+function CaseStudyCard({ item, className }: { item: CaseStudy; className?: string }) {
+  return (
+    <li
+      id={item.id}
+      className={cn('bg-background flex scroll-mt-20 flex-col gap-5 p-6 lg:p-11', className)}
+    >
+      <Mark item={item} />
+      <div className="flex flex-col gap-1">
+        <p className="text-muted-foreground text-sm">{item.category}</p>
+        <p className="text-foreground text-sm font-medium">{item.org}</p>
+      </div>
+      <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">
+        {item.title}
+      </h3>
+      <p className="text-muted-foreground text-base text-pretty">{item.body}</p>
+      <ul className="mt-auto grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        {item.facts.map((fact) => (
+          <li key={fact} className="text-foreground flex items-start gap-2">
+            <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {fact}
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/** Every case study as a two-column grid: the /case-studies page. */
+export function CaseStudyGrid() {
+  return (
+    <Band>
+      <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
+        {caseStudies.items.map((item) => (
+          <CaseStudyCard key={item.id} item={item} />
+        ))}
+      </ul>
+    </Band>
+  );
+}
+
 /**
  * Case studies as one horizontal row: cards snap into place, the arrows move
  * one card, and the row scrolls by touch, trackpad or keyboard too. Nothing
@@ -127,6 +170,9 @@ export function CaseStudies({ id = 'case-studies' }: { id?: string }) {
             >
               <ArrowRightIcon aria-hidden />
             </MarketingButton>
+            <MarketingButton variant="secondary" size="md" asChild>
+              <Link href="/case-studies">All case studies</Link>
+            </MarketingButton>
           </>
         }
       />
@@ -139,28 +185,11 @@ export function CaseStudies({ id = 'case-studies' }: { id?: string }) {
           className="bg-border scrollbar-hide outline-ring flex snap-x snap-mandatory gap-px overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2"
         >
           {caseStudies.items.map((item) => (
-            <li
+            <CaseStudyCard
               key={item.id}
-              className="bg-background flex w-4/5 shrink-0 snap-start flex-col gap-5 p-6 sm:w-3/5 lg:w-2/5 lg:p-11"
-            >
-              <Mark item={item} />
-              <div className="flex flex-col gap-1">
-                <p className="text-muted-foreground text-sm">{item.category}</p>
-                <p className="text-foreground text-sm font-medium">{item.org}</p>
-              </div>
-              <h3 className="text-foreground text-xl font-medium tracking-tight text-balance">
-                {item.title}
-              </h3>
-              <p className="text-muted-foreground text-base text-pretty">{item.body}</p>
-              <ul className="mt-auto grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-                {item.facts.map((fact) => (
-                  <li key={fact} className="text-foreground flex items-start gap-2">
-                    <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-                    {fact}
-                  </li>
-                ))}
-              </ul>
-            </li>
+              item={item}
+              className="w-4/5 shrink-0 snap-start sm:w-3/5 lg:w-2/5"
+            />
           ))}
         </ul>
       </Band>

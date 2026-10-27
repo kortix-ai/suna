@@ -67,7 +67,11 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 type MenuId = MegaMenu['id'];
 
 /** Links in the bar that navigate directly, beside the three menus. */
-const PLAIN_LINKS = [{ label: 'Pricing', href: '/pricing' }];
+const PLAIN_LINKS = [
+  { label: 'Use cases', href: '/use-cases' },
+  { label: 'Case studies', href: '/case-studies' },
+  { label: 'Pricing', href: '/pricing' },
+];
 
 const USE_CASES_ENABLED = process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
 
@@ -143,7 +147,11 @@ export function Navbar() {
       })),
     }),
   );
-  const plainLinks = localizeUiCatalog(PLAIN_LINKS, tI18nComplete, SITE_CONFIG_TRANSLATION_KEYS);
+  const plainLinks = localizeUiCatalog(
+    PLAIN_LINKS,
+    tI18nComplete,
+    SITE_CONFIG_TRANSLATION_KEYS,
+  ).filter((link) => USE_CASES_ENABLED || link.href !== '/use-cases');
 
   const solid = scrolled || openMenu !== null || isDrawerOpen;
 
