@@ -75,13 +75,13 @@ export const MEGA_MENUS: MegaMenu[] = [
   },
   {
     id: 'resources',
+    // /developers stays live but is in no menu (founder, 2026-10-27).
     label: 'Resources',
     groups: [
       {
         title: 'Learn',
         links: [
           { label: 'Documentation', href: '/docs' },
-          { label: 'Developers', href: '/developers' },
           { label: 'Use cases', href: '/use-cases' },
           { label: 'Blog', href: '/blog' },
           { label: 'Changelog', href: '/changelog' },
