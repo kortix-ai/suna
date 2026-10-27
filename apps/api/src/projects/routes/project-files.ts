@@ -547,7 +547,8 @@ export function registerProjectFilesRoutes(): void {
     // Visibility isolation: a scoped-out member can't read the commit history of
     // an agent/skill they aren't granted — return the same 404 as a missing file
     // so the path isn't confirmed to exist. Mirrors files/content (above).
-    // See F-5 (weekly pentest run #4).
+    // See F-5 (weekly pentest run #4). `git log -- <folder>` lists every commit
+    // under the folder, so a folder that holds a hidden file is refused too.
     const denier = await resourceDenierForRequest({
       userId: loaded.userId,
       accountId: loaded.row.accountId,
@@ -555,7 +556,7 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
-    if (denier?.isDenied(treePath)) return c.json({ error: 'File not found' }, 404);
+    if (denier?.containsDenied(treePath)) return c.json({ error: 'File not found' }, 404);
 
     const ref = c.req.query('ref') || loaded.row.defaultBranch;
     const limit = Number(c.req.query('limit') || '50');
