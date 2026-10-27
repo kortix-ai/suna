@@ -227,7 +227,7 @@ must name a declared, enabled agent.
 | `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
 | `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
 | `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
-| `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
+| `skills`     | Skill names the agent may load. Same shape (default: `none`), or `{ exclude: [names] }`: every skill, built-in Kortix skills included, except those. v3 `extensions` takes the same exclude form. |
 | `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
 | `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
 | `policy_sets` | `{ <connector slug>: <set name> }`. The agent's calls on that connector use the set before the base rules. No entry = base rules. A change needs `project.agent.write` + `project.connector.write` (`kortix agents scope <agent> --policy-set <slug>=<name>`). An unknown set blocks that connector for the agent (`policy_set_missing`). |

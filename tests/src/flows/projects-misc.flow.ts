@@ -489,6 +489,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'GET /v1/projects/:projectId/agents/:agentName/capabilities',
       'GET /v1/projects/:projectId/files/content',
     ],
   },
@@ -617,6 +618,31 @@ flow(
             params: { projectId: project.id, agentName: 'kortix' },
           });
         r.status(403);
+      },
+    );
+
+    await ctx.step(
+      'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; no grant → 403',
+      async () => {
+        const path = '/v1/projects/:projectId/agents/:agentName/capabilities';
+        const r = await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'kortix' } });
+        r.status(200).body().has('$.agent', 'kortix');
+        const catalog = r.json<{
+          tools: Array<{ id: string; group: string; aliases: string[] }>;
+          skills: Array<{ id: string; group: string; description: string | null; feature_flag: string | null }>;
+          extensions: Array<{ id: string; required: boolean }>;
+        }>();
+        const agentTool = catalog.tools.find((tool) => tool.id === 'agent');
+        if (agentTool?.group !== 'interaction' || agentTool.aliases[0] !== 'task') throw new Error(`agent tool row: ${JSON.stringify(agentTool)}`);
+        const system = catalog.skills.find((skill) => skill.id === 'kortix-system');
+        if (system?.group !== 'builtin' || !system.description) throw new Error(`kortix-system row: ${JSON.stringify(system)}`);
+        if (catalog.skills.find((skill) => skill.id === 'kortix-goals')?.feature_flag !== 'goals') throw new Error('kortix-goals carries no goals flag');
+        const required = catalog.extensions.filter((ext) => ext.required).map((ext) => ext.id).join(',');
+        if (required !== 'kortix-nested-calls,kortix-presentation,kortix-turn') throw new Error(`required extensions: ${required}`);
+        (await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'ghost' } }))
+          .status(404).body().has('$.code', 'agent_not_found');
+        const bare = await team.addMember('member');
+        (await ctx.client.as(bare).get(path, { params: { projectId: project.id, agentName: 'kortix' } })).status(403);
       },
     );
   },

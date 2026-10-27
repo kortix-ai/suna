@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentGrantSetV2, ProjectConfigSummary } from '@kortix/sdk';
+import type { AgentCapabilityGrant, ProjectConfigSummary } from '@kortix/sdk';
 import { KeyIcon, PlugsConnectedIcon, TerminalWindowIcon } from '@phosphor-icons/react';
 
 import { useTranslations as useI18nTranslations } from '../../i18n';
@@ -11,11 +11,16 @@ import { agentAccess } from './agent-access';
  * the Overview rows, the Agents index, My Kortix): "All", "None", "N of M"
  * when the catalog size is known, else "N".
  */
-export function useGrantLabel(): (value: AgentGrantSetV2 | number | undefined, total?: number) => string {
+export function useGrantLabel(): (value: AgentCapabilityGrant | number | undefined, total?: number) => string {
   const t = useI18nTranslations('agentEditor.tabs');
   const tPage = useI18nTranslations('agentEditor.page');
+  const tCapabilities = useI18nTranslations('agentCapabilities');
   return (value, total) => {
     if (value === 'all') return tPage('all');
+    // `{ exclude }`: every item but the named ones.
+    if (value !== undefined && typeof value === 'object' && !Array.isArray(value)) {
+      return value.exclude.length > 0 ? tCapabilities('allBut', { count: value.exclude.length }) : tPage('all');
+    }
     const count = typeof value === 'number' ? value : Array.isArray(value) ? value.length : 0;
     if (count === 0) return tPage('none');
     return total !== undefined ? t('countOf', { count, total }) : String(count);

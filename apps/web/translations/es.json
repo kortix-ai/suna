@@ -23070,5 +23070,36 @@
     "jump": "Ir a la respuesta de #{number}",
     "unavailable": "Esta respuesta no está disponible en el historial cargado.",
     "loadError": "No se pudo cargar la respuesta. Inténtalo de nuevo."
+  },
+  "agentCapabilities": {
+    "skillsTitle": "Skills",
+    "skillsDescription": "Cada skill que este agente puede cargar. Los skills integrados vienen con Kortix.",
+    "toolsTitle": "Herramientas",
+    "toolsDescription": "Cada herramienta que este agente puede llamar. Una herramienta desactivada no se ofrece al modelo.",
+    "extensionsTitle": "Extensiones",
+    "extensionsDescription": "Código que se ejecuta en cada sesión de este agente.",
+    "extensionsAccess": "Acceso a extensiones de este agente",
+    "groups": {
+      "builtin": "Integrados",
+      "project": "Proyecto",
+      "workspace": "Espacio de trabajo",
+      "interaction": "Interacción",
+      "kortix": "Kortix",
+      "platform": "Plataforma"
+    },
+    "alwaysOn": "Siempre activa",
+    "flagOff": "Desactivado para este proyecto.",
+    "flagSettings": "Ajustes",
+    "followsTool": "Sigue el interruptor de la herramienta {tool}.",
+    "toggle": "Activar o desactivar {name}",
+    "replacedBy": "Reemplazada por {path}.",
+    "projectTool": "Módulo {path}",
+    "loadError": "No se pudieron cargar las herramientas, skills y extensiones de este agente.",
+    "retry": "Reintentar",
+    "emptyProjectSkills": "No hay skills del proyecto. Registra uno en skills de kortix.yaml.",
+    "emptyProjectExtensions": "No hay extensiones del proyecto. Registra una en extensions de kortix.yaml.",
+    "allBut": "Todos menos {count}",
+    "allExcept": "Todos excepto {list}",
+    "rulesTitle": "Reglas de aprobación"
   }
 }

@@ -15,7 +15,7 @@
  * variants — not two pages that drift.
  */
 
-import type { AgentGrantSetV2 } from '@kortix/sdk';
+import type { AgentCapabilityGrant, AgentGrantSetV2 } from '@kortix/sdk';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
@@ -150,4 +150,13 @@ export function GrantModeTabs({
       <p className="text-muted-foreground min-w-0 text-sm text-pretty">{hint}</p>
     </div>
   );
+}
+
+/**
+ * A grant in the plain All · Specific · None form. `{ exclude }` exists only
+ * on kortix_version 3 skills and extensions, which the capability switches
+ * edit; a v2 screen that receives one reads it as All.
+ */
+export function plainGrant(value: AgentCapabilityGrant | undefined): AgentGrantSetV2 | undefined {
+  return value === undefined || typeof value === 'string' || Array.isArray(value) ? value : 'all';
 }

@@ -14,6 +14,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   type AgentConfigBlock,
   type AgentConfigResponse,
+  getAgentCapabilities,
   getAgentConfig,
   updateAgentConfig,
 } from '@kortix/sdk';
@@ -93,5 +94,19 @@ export function useUpdateAgentConfig(projectId: string, agentName: string) {
       // The agents list + its per-agent badges come from project-detail.
       void invalidateProject(qc, projectId);
     },
+  });
+}
+
+export function agentCapabilitiesQueryKey(projectId: string, agentName: string) {
+  return ['agent-capabilities', projectId, agentName] as const;
+}
+
+/** Every tool, skill and extension the agent can have (`getAgentCapabilities`). The grants stay in the draft. */
+export function useAgentCapabilities(projectId: string, agentName: string, enabled = true) {
+  return useQuery({
+    queryKey: agentCapabilitiesQueryKey(projectId, agentName),
+    queryFn: () => getAgentCapabilities(projectId, agentName),
+    enabled: enabled && !!projectId && !!agentName,
+    ...contract('config'),
   });
 }

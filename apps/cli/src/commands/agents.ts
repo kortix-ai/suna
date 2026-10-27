@@ -377,8 +377,9 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | { exclude: string[] } | undefined, fallback: string): string {
   if (value === undefined) return fallback;
+  if (!Array.isArray(value) && typeof value === 'object') return value.exclude.length > 0 ? `all except ${value.exclude.join(', ')}` : 'all';
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';
   return value.length === 0 ? 'none' : value.join(', ');

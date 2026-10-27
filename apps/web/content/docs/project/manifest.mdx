@@ -178,7 +178,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `enabled` | `true` | Boolean. `false`: Kortix does not start the agent. |
 | `connectors` | none | Grant set of connector slugs. |
 | `secrets` | none | Grant set of secret names the agent receives in its sandbox. |
-| `skills` | the `.md` decides | Grant set of skill names. Set, it overrides `permission.skill` in the agent `.md`. Omitted, the `.md` rule applies. |
+| `skills` | the `.md` decides | Grant set of skill names, or `{ exclude: [names] }` for every skill but those. Set, it overrides `permission.skill` in the agent `.md`. Omitted, the `.md` rule applies. |
 | `apps` | none | Grant set of App slugs the agent may open when the App access is `restricted` or `private`. |
 | `policy_sets` | none | Map of connector slug to the name of a policy set on that connector. The agent's calls on that connector use the set's rules before the base rules. A connector with no entry uses the base rules. See [Policy sets](/docs/connect/connectors#policy-sets). |
 | `commands` | none | v3 only. Grant set of command names from the top-level `commands`. The agent runs only these. |
@@ -190,7 +190,7 @@ An agent name matches `[a-z0-9][a-z0-9_-]{0,127}`.
 | `harnesses` | none | Per-agent `pi.packages`, `pi.exclude`, `opencode.plugins`, `opencode.exclude`. |
 | `network_egress` | none | Declaration only. Accepts `{ version: 1, default: deny, rules: [] }` and warns that egress is not enforced. |
 
-A grant set is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all.
+A grant set is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all. `skills`, and on v3 `extensions`, also take `{ exclude: [names] }`: every name except those, including names added later. `GET /v1/projects/:id/agents/:name/capabilities` lists every tool, skill and extension an agent can have.
 
 **`file` rules.** The path ends in `.md`. It does not start with `/` or `-`. It has no `.`, `..` or empty segment. Each segment uses letters, digits, `_`, `-`, `.` and spaces. With `file` omitted, Kortix reads `agents/<name>.md`, then `.kortix/opencode/agents/<name>.md`, or `<opencode.config_dir>/agents/<name>.md` when that key is set. The API refuses a request that changes `file` (`400`, `invalid_config`). To move an agent, move its `.md` and edit `file` in the same commit.
 

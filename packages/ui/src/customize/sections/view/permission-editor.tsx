@@ -243,9 +243,12 @@ function PermissionRuleRow({
 export function ToolsSection({
   permission,
   onChange,
+  title,
 }: {
   permission: PermissionConfig | undefined;
   onChange: (next: PermissionConfig | undefined) => void;
+  /** Set when the section sits under another lead section (the tool switches): it becomes a subsection with this title. */
+  title?: string;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // A bare string is one action applied to EVERY tool, not one customized
@@ -260,9 +263,9 @@ export function ToolsSection({
 
   return (
     <EditorSection
-      title={tI18nComplete.raw('textea93d6a262ec')}
+      title={title ?? tI18nComplete.raw('textea93d6a262ec')}
       description={tI18nComplete.raw('text765f388e2ce6')}
-      lead
+      lead={title === undefined}
       bare
     >
       {/* Open, not behind a disclosure: the page gives Tools a full column

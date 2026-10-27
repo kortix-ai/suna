@@ -8026,6 +8026,37 @@ const catalog = {
     "filter": "Filter by space",
     "all": "All",
     "projectWide": "Project-wide"
+  },
+  "agentCapabilities": {
+    "skillsTitle": "Skills",
+    "skillsDescription": "Each skill this agent may load. Built-in skills come with Kortix.",
+    "toolsTitle": "Tools",
+    "toolsDescription": "Each tool this agent may call. A tool that is off is not offered to the model.",
+    "extensionsTitle": "Extensions",
+    "extensionsDescription": "Code that runs inside every session of this agent.",
+    "extensionsAccess": "Extension access for this agent",
+    "groups": {
+      "builtin": "Built-in",
+      "project": "Project",
+      "workspace": "Workspace",
+      "interaction": "Interaction",
+      "kortix": "Kortix",
+      "platform": "Platform"
+    },
+    "alwaysOn": "Always on",
+    "flagOff": "Turned off for this project.",
+    "flagSettings": "Settings",
+    "followsTool": "Follows the {tool} tool switch.",
+    "toggle": "Turn {name} on or off",
+    "replacedBy": "Replaced by {path}.",
+    "projectTool": "Module {path}",
+    "loadError": "Could not load this agent's tools, skills and extensions.",
+    "retry": "Try again",
+    "emptyProjectSkills": "No project skills. Register one under skills in kortix.yaml.",
+    "emptyProjectExtensions": "No project extensions. Register one under extensions in kortix.yaml.",
+    "allBut": "All but {count}",
+    "allExcept": "All except {list}",
+    "rulesTitle": "Approval rules"
   }
 };
 

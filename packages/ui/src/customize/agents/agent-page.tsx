@@ -92,7 +92,8 @@ import {
 } from '../sections/view/agent-editor';
 import { EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
 import { ModelSection } from '../sections/view/agent-editor-basics-fields';
-import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
+import { ToolsSection } from '../sections/view/permission-editor';
+import { type AgentGrant, plainGrant, useAgentGrant } from '../shared/agent-resource-scope';
 import { CapabilityShellEmbedProvider } from '../shared/capability-page-shell';
 import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
 import { toArray } from '../shared/utils';
@@ -100,6 +101,7 @@ import { SkillsPage } from '../skills/skills-page';
 import { TriggersPage } from '../triggers/triggers-page';
 import { editConfigPrompt, useConfigureThread } from '../use-configure-thread';
 import { AgentAuthorityCard } from './agent-authority-card';
+import { AgentCapabilitiesSection } from './agent-capabilities';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AgentDrivesSection } from './agent-drives-section';
 import { AppsGrantPage } from './agent-grant-pages';
@@ -720,6 +722,7 @@ function EditableAgentPage({
   renderApps?: RenderAgentApps;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
+  const tCapabilities = useI18nTranslations('agentCapabilities');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const editor = useAgentDraft(initial);
@@ -729,9 +732,16 @@ function EditableAgentPage({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const pathname = useUiPathname();
   const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
-  const views = useMemo(
+  // A v2 agent has no extension grant, but the platform extensions its
+  // sessions load are listed (and two follow tool switches): the Extensions
+  // view opens on v2 too. The Overview counts grants, so it keeps v2's keys.
+  const overviewViews = useMemo(
     () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
     [schemaVersion, drivesOn],
+  );
+  const views = useMemo<AgentConfigSectionKey[]>(
+    () => (schemaVersion === 2 ? [...overviewViews, 'extensions'] : overviewViews),
+    [schemaVersion, overviewViews],
   );
   const location = useAgentLocation(AGENT_TABS, views);
   const share = useShareDialog(location.open === 'share');
@@ -765,7 +775,7 @@ function EditableAgentPage({
     isRequired: (slug: string) => draft.connectors_required?.includes(slug) === true,
     toggle: (slug: string) => set('connectors_required', toggleRequiredConnector(draft.connectors_required, slug)),
   };
-  const skillsGrant = useAgentGrant(draft.skills, (v) => set('skills', v));
+  const skillsGrant = useAgentGrant(plainGrant(draft.skills), (v) => set('skills', v));
   const secretsGrant = useAgentGrant(draft.secrets, (v) => set('secrets', v));
   const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
 
@@ -800,7 +810,9 @@ function EditableAgentPage({
   const accessViews = ACCESS_VIEWS.filter((v) => views.includes(v));
   const runtimeViews = RUNTIME_VIEWS.filter((v) => views.includes(v));
   const grantLabel = useGrantLabel();
-  const countOf = (view: AgentConfigSectionKey) => (view === 'drives' ? null : grantLabel(grantOf(draft, view)));
+  // v2 has no extension grant: its Extensions view lists platform extensions, no count.
+  const countOf = (view: AgentConfigSectionKey) =>
+    view === 'drives' || (view === 'extensions' && schemaVersion < 3) ? null : grantLabel(grantOf(draft, view));
   const switcher =
     location.tab === 'access' && location.view ? (
       <ViewSwitcher label={t('tabAccess')} views={accessViews} active={location.view} hrefFor={viewHref} countOf={countOf} />
@@ -845,7 +857,7 @@ function EditableAgentPage({
               config={config}
               block={draft}
               prompt={editor.oc.prompt ?? ''}
-              views={views}
+              views={overviewViews}
               facts={facts}
               editor={editor}
               hrefFor={viewHref}
@@ -878,6 +890,35 @@ function EditableAgentPage({
                 }
               />
             </Embedded>
+          );
+        // kortix_version 2 and 3: Skills, Tools and Extensions are one switch
+        // per built-in and project item (`agent-capabilities.tsx`).
+        if (schemaVersion >= 2 && (view === 'skills' || view === 'tools' || view === 'extensions'))
+          return (
+            <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
+              {switcher}
+              <EditorSectionStyleProvider value="tab">
+                <div className="space-y-8">
+                  <AgentCapabilitiesSection
+                    view={view}
+                    schemaVersion={schemaVersion}
+                    projectId={projectId}
+                    agentName={agent.name}
+                    editor={editor}
+                    flagSettingsHref={projectAdminHref(projectId, 'feature-flags')}
+                  />
+                  {view === 'tools' ? (
+                    <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>
+                      <ToolsSection
+                        permission={editor.oc.permission}
+                        onChange={(next) => editor.setOc('permission', next)}
+                        title={tCapabilities('rulesTitle')}
+                      />
+                    </CapabilityShellEmbedProvider>
+                  ) : null}
+                </div>
+              </EditorSectionStyleProvider>
+            </AgentTabBody>
           );
         if (view === 'skills')
           return (

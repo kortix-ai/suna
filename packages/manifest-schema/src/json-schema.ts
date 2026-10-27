@@ -924,7 +924,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         additionalProperties: { type: 'string', pattern: POLICY_SET_NAME_RE.source },
       },
       secrets: grantSetSchema(),
-      skills: grantSetSchema(),
+      skills: excludableGrantSchema('Skills this agent may load.'),
       apps: {
         ...grantSetSchema({ type: 'string', pattern: APP_GRANT_ENTRY_PATTERN }),
         description:
@@ -1232,6 +1232,17 @@ function namedGrantSchema(description: string): JsonSchemaFragment {
   return { ...grantSetSchema(), description: `${description} "all", "none" (default) or a list of names.` };
 }
 
+/** `agents.<name>.skills` / `.extensions` (v3): a named grant, or `{ exclude: [...] }`. */
+function excludableGrantSchema(description: string): JsonSchemaFragment {
+  return {
+    description: `${description} "all", "none" (default), a list of names, or { exclude: [names] } for every name but those.`,
+    oneOf: [
+      grantSetSchema(),
+      { type: 'object', required: ['exclude'], properties: { exclude: { type: 'array', items: NON_BLANK_STRING } }, additionalProperties: false },
+    ],
+  };
+}
+
 /** v3 pi package source: an exact npm pin or a repository path, alone or in pi's filter form. */
 function piSourceV3Schema(): JsonSchemaFragment {
   const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: REPO_PATH_PATTERN, not: { pattern: '^npm:' } }] };
@@ -1274,10 +1285,10 @@ function agentBlockV3Schema(): JsonSchemaFragment {
           { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
         ],
       },
-      skills: namedGrantSchema('Registered and Kortix skills this agent may load.'),
+      skills: excludableGrantSchema('Registered and Kortix skills this agent may load.'),
       subagents: namedGrantSchema('Declared subagents this agent may start.'),
       commands: namedGrantSchema('Registered slash commands this agent runs.'),
-      extensions: namedGrantSchema('Registered extensions a session of this agent loads.'),
+      extensions: excludableGrantSchema('Registered extensions a session of this agent loads.'),
       connectors: v2.properties.connectors,
       connectors_required: v2.properties.connectors_required,
       policy_sets: v2.properties.policy_sets,

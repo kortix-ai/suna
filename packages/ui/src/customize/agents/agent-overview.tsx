@@ -17,7 +17,7 @@
  * their values.
  */
 
-import type { AgentConfigBlock, AgentGrantSetV2, PermissionConfig, ProjectConfigSummary } from '@kortix/sdk';
+import type { AgentCapabilityGrant, AgentConfigBlock, PermissionConfig, ProjectConfigSummary } from '@kortix/sdk';
 import { capitalizeWords } from '@kortix/shared';
 import {
   BookOpenTextIcon,
@@ -92,7 +92,7 @@ export const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
 };
 
 /** The grant a block holds for one Access view. Drives has none in the block. */
-export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): AgentGrantSetV2 | undefined {
+export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): AgentCapabilityGrant | undefined {
   switch (view) {
     case 'actions':
       return block.kortix_permissions ?? block.kortix_cli;
@@ -109,10 +109,15 @@ export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): A
   }
 }
 
-/** How many ids a grant names: `all`, a number, or 0 for None. */
-export function grantCount(value: AgentGrantSetV2 | undefined): number | 'all' {
-  if (value === 'all') return 'all';
+/** How many ids a grant names: `all` (also `{ exclude }`: all but some), a number, or 0 for None. */
+export function grantCount(value: AgentCapabilityGrant | undefined): number | 'all' {
+  if (value === 'all' || (value !== undefined && !Array.isArray(value) && typeof value === 'object')) return 'all';
   return Array.isArray(value) ? value.length : 0;
+}
+
+/** The names `{ exclude }` leaves out, else none. */
+export function grantExcluded(value: AgentCapabilityGrant | undefined): string[] {
+  return value !== undefined && !Array.isArray(value) && typeof value === 'object' ? value.exclude : [];
 }
 
 export interface OverviewFacts {
@@ -278,6 +283,7 @@ function AccessSummary({
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const tPage = useI18nTranslations('agentEditor.page');
+  const tCapabilities = useI18nTranslations('agentCapabilities');
   const grantLabel = useGrantLabel();
   const catalog = useLocalizedAgentConfigCatalog();
   const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
@@ -300,7 +306,9 @@ function AccessSummary({
             view === 'drives'
               ? t('drivesDetail')
               : count === 'all'
-                ? t('detailAll')
+                ? grantExcluded(value).length > 0
+                  ? tCapabilities('allExcept', { list: grantExcluded(value).join(', ') })
+                  : t('detailAll')
                 : count === 0
                   ? t('detailNone')
                   : (value as string[]).join(', ');

@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import type { AgentCapabilityGrant } from './agent-capabilities';
 import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
@@ -77,13 +78,18 @@ export interface AgentConfigBlock {
    *  the declared value; a change needs `project.connector.write`. */
   policy_sets?: Record<string, string>;
   secrets?: AgentGrantSetV2;
-  skills?: AgentGrantSetV2;
+  /** The skills this agent may load. v3 also takes `{ exclude: [...] }`: every skill but those. */
+  skills?: AgentCapabilityGrant;
+  /** v3: the tools this agent may call. Omitted: all. `{ exclude: [...] }`: every tool but those. */
+  tools?: AgentCapabilityGrant;
+  /** v3: pi's codemode tool. Omitted: `on`. */
+  codemode?: 'on' | 'only' | 'off';
   /** v3: the declared subagents this agent may start (`mode` `subagent` or `all`). */
   subagents?: AgentGrantSetV2;
   /** v3: the registered commands this agent may run. */
   commands?: AgentGrantSetV2;
-  /** v3: the registered extensions a session of this agent loads. */
-  extensions?: AgentGrantSetV2;
+  /** v3: the registered extensions a session of this agent loads. `{ exclude: [...] }`: every one but those. */
+  extensions?: AgentCapabilityGrant;
   /** Kortix Apps (by App slug) this agent may open when the App is
    *  `restricted` or `private`. Deny by default. A `project`-mode App needs
    *  only `project.app.read` in `kortix_permissions`. */

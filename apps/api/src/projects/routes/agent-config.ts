@@ -93,6 +93,14 @@ const GrantSetSchema = z.union([
   z.array(z.string().min(1).max(200)).max(500),
 ]);
 
+// `agents.<name>.skills` / `.extensions` (v3): a grant set, or `{ exclude }`:
+// every registered name but those. validateManifest refuses the exclude form
+// on a v2 manifest and checks every name.
+const ExcludableGrantSetSchema = z.union([
+  GrantSetSchema,
+  z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+]);
+
 // `agents.<name>.tools` (`AgentToolsV2`): all/none, an allowlist, an
 // exclude list, or the earlier name → boolean map. validateManifest checks the names.
 const AgentToolsSchema = z.union([
@@ -124,14 +132,14 @@ const AgentBlockSchema = z
     // value; a PUT that changes it needs project.connector.write too.
     policy_sets: z.record(z.string().min(1).max(128), z.string().max(64)).optional(),
     secrets: GrantSetSchema.optional(),
-    skills: GrantSetSchema.optional(),
+    skills: ExcludableGrantSetSchema.optional(),
     // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
     apps: GrantSetSchema.optional(),
     kortix_permissions: GrantSetSchema.optional(),
     // kortix_version 3 grants. A PUT that omits one keeps the declared value.
     subagents: GrantSetSchema.optional(),
     commands: GrantSetSchema.optional(),
-    extensions: GrantSetSchema.optional(),
+    extensions: ExcludableGrantSetSchema.optional(),
     codemode: z.enum(['on', 'only', 'off']).optional(),
     // Deprecated request alias of kortix_permissions. The handler normalizes it
     // (normalizeKortixPermissionAliases) before serialization.
