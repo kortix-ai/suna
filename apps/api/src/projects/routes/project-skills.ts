@@ -22,7 +22,7 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
 import { isRepoFileNotFoundError, readRepoFile, listRepoFiles } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
@@ -135,7 +135,7 @@ export function registerProjectSkillsRoutes(): void {
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
       }
       const validation = validateManifest(plan.raw, manifest.format);
-      if (!validation.valid) return c.json({ error: 'Removal would leave invalid project configuration', issues: validation.issues }, 409);
+      if (!validation.valid) return c.json({ error: 'Removal would leave invalid project configuration', ...boundedIssues(validation.issues) }, 409);
       manifest.raw = plan.raw;
       const writes = manifestWrites(manifest);
       // An imported manifest inside the removed folder would leave dangling imports.
@@ -208,7 +208,7 @@ export function registerProjectSkillsRoutes(): void {
     const parsed = CreateSkillSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json(
-        { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+        { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
         400,
       );
     }
@@ -268,7 +268,7 @@ export function registerProjectSkillsRoutes(): void {
         manifest.raw = { ...manifest.raw, skills: { ...skills, [slug]: `skills/${slug}` } };
         const validation = validateManifest(manifest.raw, manifest.format);
         if (!validation.valid) {
-          return c.json({ error: 'The skill would leave invalid project configuration', code: 'manifest_invalid', issues: validation.issues }, 409);
+          return c.json({ error: 'The skill would leave invalid project configuration', code: 'manifest_invalid', ...boundedIssues(validation.issues) }, 409);
         }
         const writes = manifestWrites(manifest);
         await commitMultipleFilesToBranch(gitProject, {

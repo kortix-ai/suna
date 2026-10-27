@@ -45,7 +45,7 @@ import {
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { auth, errors, json } from '../../openapi';
+import { RESPONSE_ISSUE_LIMIT, auth, boundedIssues, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
@@ -372,7 +372,7 @@ export function registerAgentConfigRoutes(): void {
       const parsed = DefaultAgentBodySchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) {
         return c.json(
-          { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+          { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
           400,
         );
       }
@@ -390,7 +390,7 @@ export function registerAgentConfigRoutes(): void {
 
       const applied = applyDefaultAgentV2(manifest, agentName);
       if (!applied.ok) {
-        return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+        return c.json({ error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) }, 400);
       }
 
       manifest.raw = applied.raw;
@@ -476,7 +476,7 @@ export function registerAgentConfigRoutes(): void {
       const parsed = AgentBlockSchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) {
         return c.json(
-          { error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues },
+          { error: 'Invalid body', code: 'invalid_body', ...boundedIssues(parsed.error.issues) },
           400,
         );
       }
@@ -517,13 +517,13 @@ export function registerAgentConfigRoutes(): void {
             {
               error: `Unknown sandbox template "${governanceBlock.sandbox}"`,
               code: 'invalid_config',
-              issues: [
+              ...boundedIssues([
                 {
                   path: `agents.${agentName}.sandbox`,
                   message: 'must name an available project template or "default".',
                   severity: 'error',
                 },
-              ],
+              ]),
             },
             400,
           );
@@ -696,7 +696,7 @@ async function prepareAgentConfigV2(
   }
 
   const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
-  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) } };
 
   // Validate the behavior half (if the request touches it at all) BEFORE
   // committing anything — a bad frontmatter shape must never land a
@@ -715,7 +715,7 @@ async function prepareAgentConfigV2(
       return {
         ok: false,
         status: 400,
-        body: { error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '), code: 'invalid_config', issues: errorIssues },
+        body: { error: errorIssues.slice(0, RESPONSE_ISSUE_LIMIT).map((i) => `${i.path}: ${i.message}`).join('; '), code: 'invalid_config', ...boundedIssues(errorIssues) },
       };
     }
     extraWrite = { path: agentMd.path, content: serializeAgentMarkdown(nextFrontmatter, nextBody) };
@@ -759,7 +759,7 @@ async function prepareAgentConfigV3(
     governance: { ...input.governance, ...(input.requestedFile !== undefined ? { file: input.requestedFile } : {}) },
     behavior: resolved.draft,
   });
-  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', issues: applied.issues } };
+  if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) } };
 
   // An unchanged prompt file is not rewritten.
   const { promptWrite } = applied;

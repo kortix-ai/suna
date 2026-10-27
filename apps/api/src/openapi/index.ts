@@ -66,13 +66,59 @@ export const auth: Pick<RouteConfig, 'security'> = { security: [{ bearerAuth: []
  * Single validation-error contract for every typed route. Zod failures (bad body,
  * params, query) become a consistent 400 envelope instead of per-route ad-hoc shapes.
  */
-function defaultHook(result: { success: boolean; error?: { issues: unknown } }, c: any) {
+export function defaultHook(result: { success: boolean; error?: { issues: readonly unknown[] } }, c: any) {
   if (!result.success) {
     return c.json(
-      { error: true, message: 'Validation failed', status: 400, issues: result.error?.issues },
+      { error: true, message: 'Validation failed', status: 400, ...boundedIssues(result.error?.issues) },
       400,
     );
   }
+}
+
+/** The most validation issues one response lists (KRTX-3419). */
+export const RESPONSE_ISSUE_LIMIT = 20;
+/** The most issues kept per union branch. */
+const UNION_BRANCH_ISSUE_LIMIT = 3;
+/** Serialized bytes of `issues` past which no further issue is added. */
+const RESPONSE_ISSUE_BYTES = 16 * 1024;
+
+/**
+ * Zod nests a failing union branch's WHOLE issue list in one `invalid_union`
+ * issue (`unionErrors`), so a union over an array kept every element error in
+ * a single issue. Each branch becomes `{ issues: <first 3>, issue_count }`.
+ */
+function compactIssue(issue: unknown): unknown {
+  if (!issue || typeof issue !== 'object' || !('unionErrors' in issue)) return issue;
+  const { unionErrors, ...rest } = issue as { unionErrors?: unknown };
+  const branches = Array.isArray(unionErrors) ? unionErrors : [];
+  return {
+    ...rest,
+    union_errors: branches.map((branch) =>
+      boundedIssues((branch as { issues?: unknown[] })?.issues, UNION_BRANCH_ISSUE_LIMIT),
+    ),
+  };
+}
+
+/**
+ * A response's `issues`: the first 20 (union branches compacted, about 16 KB at
+ * most past the first issue), plus `issue_count` with the total. Zod reports one
+ * issue per failing array element, so the whole list let a 1.5 MB request
+ * answer 68 MB. `unit-bounded-issues-guard` keeps every response on it.
+ */
+export function boundedIssues<T>(
+  issues: readonly T[] | undefined,
+  limit = RESPONSE_ISSUE_LIMIT,
+): { issues: T[]; issue_count: number } {
+  const all = issues ?? [];
+  const kept: T[] = [];
+  let bytes = 0;
+  for (const issue of all.slice(0, limit)) {
+    const compact = compactIssue(issue) as T;
+    bytes += JSON.stringify(compact)?.length ?? 0;
+    if (kept.length > 0 && bytes > RESPONSE_ISSUE_BYTES) break;
+    kept.push(compact);
+  }
+  return { issues: kept, issue_count: all.length };
 }
 
 /** Create an OpenAPIHono sub-app with the shared error contract. */
