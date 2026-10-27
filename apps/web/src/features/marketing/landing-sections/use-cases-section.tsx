@@ -4,7 +4,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from '@/components/site-link';
 import { DitherField } from '@/features/marketing/kit/dither-field';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, ArrowsClockwiseIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { cn } from '@kortix/ui';
 import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
@@ -24,10 +24,16 @@ export type UseCaseItem = { slug: string; url: string; title: string; team: Team
  * titles — link through to the write-ups.
  */
 
+// The outcome loop (kortix-brand D18) heads this section: hand Kortix an
+// outcome, agents run it 24/7, for every team below. Goals is early access
+// (the `goals` flag is experimental, off by default), so the note says so.
 const COPY = {
   eyebrow: 'Outcomes',
-  title: 'What Kortix delivers,',
-  titleMuted: 'end to end, for every team.',
+  title: 'Give it an outcome. Agents run it 24/7.',
+  titleMuted: 'End to end, for every team.',
+  sub: 'Agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and through a change request you approve, then learn from it.',
+  loop: ['Outcome', 'Plan', 'Work', 'Verify', 'Learn'],
+  early: 'Outcomes (Goals) are in early access.',
   you: 'You',
 };
 
@@ -141,6 +147,20 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
           {copy.title}
           <span className="text-muted-foreground block">{copy.titleMuted}</span>
         </h2>
+        <p className="text-muted-foreground max-w-2xl text-base text-pretty">{copy.sub}</p>
+        <ol aria-label="The outcome loop" className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 text-sm">
+          {copy.loop.map((step, i) => (
+            <li key={step} className="flex items-center gap-2">
+              {i > 0 ? <ArrowRightIcon aria-hidden className="text-muted-foreground size-3.5" /> : null}
+              <span className="text-foreground bg-muted rounded-sm px-2 py-1">{step}</span>
+            </li>
+          ))}
+          <li className="flex items-center gap-2">
+            <ArrowsClockwiseIcon aria-hidden className="text-muted-foreground size-3.5" />
+            <span className="text-muted-foreground">24/7</span>
+          </li>
+        </ol>
+        <p className="text-muted-foreground text-xs">{copy.early}</p>
       </div>
 
       {/* The ruler runs rail to rail. Seven team names sit over one
