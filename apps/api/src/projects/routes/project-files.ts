@@ -5,7 +5,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { commitFileToBranch, GitFileRevisionConflictError } from '../git/commit-writer';
 import { assertAgentSessionWorkspaceAllowsRepository } from '../lib/access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, queryText } from '../../openapi';
 import {
   archiveRepoSubtree,
   getBranchDiff,
@@ -49,10 +49,6 @@ function isMissingGitPathError(error: unknown): boolean {
 
 /** Entry cap of the recursive `GET /files` list (no `depth`). */
 const RECURSIVE_LIST_LIMIT = 1000;
-
-/** An optional text query field. A repeated key reads as its first value, as `c.req.query()` reads it. */
-const queryText = (description: string) =>
-  z.preprocess((value) => (Array.isArray(value) ? value[0] : value), z.string().optional()).openapi({ description });
 
 /** A folder page size from `?limit=`: a decimal integer from 1 to the ceiling, else null. */
 function pageLimit(raw: string): number | null {

@@ -20464,7 +20464,9 @@
       "text7c0a91e5b3d2": "Nicht eingestufte Tools",
       "text9d2b6f0c41ae": "Tools & Regeln",
       "openThreadAction": "Thread öffnen",
-      "untitledThread": "Thread ohne Titel"
+      "untitledThread": "Thread ohne Titel",
+      "text314ae71b8c8d": "Artefakte",
+      "textfe204b549282": "Artefakte Dokumente Dokument Folien Präsentation Board Design Dashboard Seite veröffentlicht teilen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -23345,6 +23347,22 @@
       "agentsFailedPeopleAdded": "{what} zu #{name} hinzugefügt. Die Agenten konnten nicht hinzugefügt werden und bleiben ausgewählt.",
       "allAdded": "Alle im Projekt sind schon hier.",
       "noMatches": "Nichts passt zu „{query}“."
+    },
+    "privateNotIn": {
+      "row": "Private Kanäle, in denen du nicht Mitglied bist",
+      "title": "Private Kanäle, in denen du nicht Mitglied bist",
+      "description": "Du kannst umbenennen, archivieren und Personen hinzufügen. Nur Mitglieder lesen, was in einem Kanal steht, daher kannst du dich nicht selbst hinzufügen.",
+      "meta": "{count, plural, =0 {Keine Mitglieder} one {# Mitglied} other {# Mitglieder}} · erstellt von {name}",
+      "metaNoCreator": "{count, plural, =0 {Keine Mitglieder} one {# Mitglied} other {# Mitglieder}}",
+      "archived": "Archiviert",
+      "menu": "Optionen für #{name}",
+      "addPeople": "Personen hinzufügen",
+      "rename": "Umbenennen",
+      "archive": "Archivieren",
+      "unarchive": "Wiederherstellen",
+      "archivedToast": "#{name} archiviert",
+      "unarchivedToast": "#{name} wiederhergestellt",
+      "failed": "#{name} konnte nicht aktualisiert werden. Versuche es erneut."
     }
   }
 }

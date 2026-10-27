@@ -544,6 +544,8 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'session_provider_secret_pools.session_id': 'kept: secret ids, no values',
   'session_user_provider_connections.session_id': 'kept: ids only',
   'session_tool_approvals.session_id': 'kept: an action path, no content',
+  'memory_thread_loads.session_id': 'kept: memory layer and page ids, no content',
+  'project_space_links.session_id': 'kept: a channel link outlives the thread that shared it',
 };
 
 test('every table that names a session is classified for the purge', async () => {
