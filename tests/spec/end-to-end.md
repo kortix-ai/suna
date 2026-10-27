@@ -870,7 +870,7 @@ Every BYOK route has `billingMode:'none'` and zero markup. The gateway resolves 
 
 ### Platform
 
-`PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
+`PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public). Running version reports the configured sandbox image tag; without a platform-wide image, version and channel are `none`, never an inferred latest release. Per-session health remains the source of truth for per-project snapshots.
 
 ### OAuth2 provider (Kortix as IdP for CLI/MCP/tunnel)
 
