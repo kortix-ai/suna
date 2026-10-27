@@ -47,6 +47,9 @@
     "ws": "8.21.3"
   },
   "overrides": {
-    "undici": "8.10.2"
+    "undici": "8.12.2"
+  },
+  "patchedDependencies": {
+    "undici@8.12.2": "../../patches/undici@8.12.2.patch"
   }
 }
