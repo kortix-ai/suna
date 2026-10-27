@@ -47,15 +47,12 @@ test('the independently installed daemon lockfile resolves node-forge at its fix
   for (const version of versions) expect(Bun.semver.satisfies(version, FIXED['node-forge']), version).toBe(true);
 });
 
-test('the scanner workspace and the OpenCode template resolve zod 4 at its fixed version', () => {
+// The OpenCode harness template keeps zod 4.1.8: kortixd's install sentinel
+// (opencode-config-deps.ts) recognizes exactly that pin, and existing projects
+// carry it in their own repos. It moves with kortixd, under the .trivyignore entry.
+test('the scanner workspace resolves zod 4 at its fixed version', () => {
   const scanner = Bun.YAML.parse(readFileSync(new URL('../../.deepsec/pnpm-lock.yaml', import.meta.url), 'utf8'));
-  const template = Bun.JSONC.parse(
-    readFileSync(new URL('../../packages/starter/templates/base/harnesses/opencode/bun.lock', import.meta.url), 'utf8'),
-  );
-  const versions = [
-    ...resolved(Object.keys(scanner.packages), 'zod', ''),
-    ...Object.values(template.packages).map((entry) => entry[0]).filter((id) => id.startsWith('zod@')).map((id) => id.slice(4)),
-  ];
+  const versions = resolved(Object.keys(scanner.packages), 'zod', '');
   expect(versions.length).toBeGreaterThan(0);
   for (const version of versions) expect(Bun.semver.satisfies(version, FIXED.zod), `zod@${version}`).toBe(true);
 });
