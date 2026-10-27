@@ -1,14 +1,15 @@
 /**
- * The /services sales page: AI Transformation, done for you by our
- * Deployment Strategists and Forward Deployed Engineers, sold as one flat
- * monthly membership. The idea: we map
+ * The /services sales page: AI Transformation, done for you, sold as one
+ * flat monthly membership. The idea: we map
  * your org (what people do, how they work), unify your data, automate the
  * work and build your custom software. A standalone page with its own shell;
  * the AI OS site and this page link through `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
- *  - The team is "Deployment Strategists and Forward Deployed Engineers",
- *    named in general: no headcount, no "full time" (founder, 2026-10-27).
+ *  - The team is "we" / "our team". The roles (Deployment Strategists,
+ *    Forward Deployed Engineers) appear once, in the "Who does the work?"
+ *    answer: no headcount, no "full time", no per-stage owners (founder,
+ *    2026-10-27: "remove all that overindexing on FDE/strategist").
  *  - A flat $20,000 a month. No discount, no "limited time", no strike-through
  *    price: the founder dropped the $5,000 launch discount as too fishy.
  *  - Guarantee, kept low-key (one line, never a card or a headline): "Not
@@ -33,10 +34,9 @@ export const PRICE = { now: '$20,000', per: '/month' } as const;
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  team: 'Deployment Strategists + Forward Deployed Engineers',
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map how your company works. Then we automate it.',
-  sub: 'Our Deployment Strategists and Forward Deployed Engineers work inside your company. They map what every team does and how it works, unify your data, automate the work with agents, and build the custom software your teams need. You own everything they build.',
+  sub: 'We work inside your company. We map what every team does and how it works, unify your data, automate the work with agents, and build the custom software your teams need. You own everything we build.',
   assurances: ['One flat monthly fee', 'Strategy and build, one team', 'Everything in a repo you own'],
 } as const;
 
@@ -58,7 +58,6 @@ export const stages = {
   items: [
     {
       id: 'map',
-      who: 'Deployment Strategist',
       n: '01',
       k: 'Map your org',
       v: 'We sit with every team and map what each person does, how they do it, which tools they use and where the work waits.',
@@ -66,7 +65,6 @@ export const stages = {
     },
     {
       id: 'unify',
-      who: 'Forward Deployed Engineer',
       n: '02',
       k: 'Unify your data',
       v: 'We connect every system you run and centralise its data in one place, so every agent and every person works from the same facts.',
@@ -74,7 +72,6 @@ export const stages = {
     },
     {
       id: 'automate',
-      who: 'Deployment Strategist + Forward Deployed Engineer',
       n: '03',
       k: 'Automate the work',
       v: 'Agents take over the recurring work we mapped, on schedules and triggers. Your people keep the decisions and the exceptions.',
@@ -82,7 +79,6 @@ export const stages = {
     },
     {
       id: 'build',
-      who: 'Forward Deployed Engineer',
       n: '04',
       k: 'Build custom software',
       v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on the Kortix AI Operating System.',
@@ -122,7 +118,7 @@ export const compare = {
     { id: 'strategy', k: 'Strategy', v: ['A map of your org and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
     { id: 'build', k: 'Build', v: ['The same team builds it', 'Once you have hired them', 'Another firm, another contract'] },
     { id: 'data', k: 'Your data', v: ['Unified in one place', 'Up to you', 'Rarely in scope'] },
-    { id: 'own', k: 'What you keep', v: ['Every agent and app, in your repo', 'What they build', 'The report'] },
+    { id: 'own', k: 'Who owns the work', v: ['You do, in your own repo', 'You do', 'You get a report'] },
     { id: 'price', k: 'Price', v: ['One flat monthly fee', 'Salaries, recruiting, equity', 'Day rates and change orders'] },
   ],
 } as const;
@@ -131,7 +127,7 @@ export const benefits = {
   title: 'Membership benefits.',
   titleMuted: 'Why companies join instead of hiring.',
   items: [
-    { id: 'team', icon: 'team', k: 'Inside your company', v: 'Deployment Strategists and Forward Deployed Engineers in your teams and your tools.' },
+    { id: 'team', icon: 'team', k: 'Inside your company', v: 'Our team works in your teams and your tools.' },
     { id: 'flat', icon: 'flat', k: 'One flat fee', v: 'One price every month. No day rates, no change orders.' },
     { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The people who map your company build the automation.' },
     { id: 'os', icon: 'os', k: 'Built on the AI OS', v: 'Agents, skills, memory and connectors on the open-source Kortix AI Operating System.' },
@@ -146,7 +142,7 @@ export const pricing = {
   plan: 'AI Transformation',
   lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
-    'Deployment Strategists and Forward Deployed Engineers',
+    'Our team, inside your company',
     'A map of your org and how it works',
     'Your data unified in one place',
     'Agents for your recurring work',
@@ -164,8 +160,8 @@ export const faq = {
   items: [
     {
       id: 'team',
-      q: 'What do Deployment Strategists and Forward Deployed Engineers do?',
-      a: 'Deployment Strategists sit with your leaders and teams, map what every person does and how they work, and decide what agents take first. Forward Deployed Engineers connect your systems, unify your data, build the agents and the custom software, and keep it all running.',
+      q: 'Who does the work?',
+      a: 'Our own team: strategists who map how your company works, and Forward Deployed Engineers who build it. They work inside your company, in your tools.',
     },
     {
       id: 'price',
@@ -179,8 +175,8 @@ export const faq = {
     },
     {
       id: 'own',
-      q: 'What do we keep?',
-      a: 'Everything. The agents, skills, connectors and apps live in one git repo you own, on the open-source Kortix AI Operating System.',
+      q: 'Who owns what you build?',
+      a: 'You do. Every agent, skill, connector and app lives in a git repo you own, on the open-source Kortix AI Operating System. Every session and file of context stays yours.',
     },
     {
       id: 'host',

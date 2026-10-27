@@ -97,13 +97,6 @@ export default function ServicesPage() {
       {/* ── hero: the offer, the promise, the intro call ─────────────────── */}
       <section id="hero" className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-44 lg:pb-24">
         <div className="flex min-w-0 flex-col gap-7">
-          <a
-            href="#how"
-            className="text-foreground hover:bg-muted outline-ring duration-moderate inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-2"
-          >
-            <UsersThreeIcon className="size-4" aria-hidden />
-            {hero.team}
-          </a>
           <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl">
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
@@ -148,7 +141,6 @@ export default function ServicesPage() {
                 <div className="flex flex-col gap-3 lg:col-span-3">
                   <span className="text-muted-foreground font-mono text-xs tabular-nums">{stage.n}</span>
                   <h3 className="text-foreground text-xl font-medium tracking-tight">{stage.k}</h3>
-                  <p className="text-muted-foreground text-sm">{stage.who}</p>
                 </div>
                 <p className="text-muted-foreground text-base text-pretty lg:col-span-5">{stage.v}</p>
                 <ul className="flex flex-col gap-2 text-sm lg:col-span-4">
