@@ -1,5 +1,5 @@
 /**
- * Case studies for the AI OS home page and /services: eight equal cards. No
+ * Case studies for the AI OS home page and /services: eight cards in one horizontal row. No
  * card links anywhere, by founder decision.
  *
  * ACCURACY AND NAMING (read before editing):
@@ -8,7 +8,9 @@
  *    (2026-10-27), WRITER (name 2026-10-22, logo 2026-10-27). "Built from
  *    Kortix's open-source code" is a product built from the public repo:
  *    never "customer" or "partner", never a licence claim. WRITER's brand
- *    terms forbid implying endorsement: no "uses Kortix", no quote. The CityU logo is
+ *    terms forbid implying endorsement: no "uses Kortix", no quote. The
+ *    customers named on the WRITER card are WRITER's own, from writer.com
+ *    (2026-10-27): never say they use Kortix. The CityU logo is
  *    CityU's trade mark (its logo/name policy): remove it on request.
  *  - SciencePal facts: CityU press release 2025-11-05. Wring: wring.co and
  *    its Kortix project. Platinum: platinum.dev and its repo's `kortix.yaml`
@@ -147,13 +149,13 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       logo: { src: '/media/case-studies/writer.svg', alt: 'WRITER', width: 110, height: 35 },
       category: 'Enterprise AI',
       org: 'WRITER',
-      title: 'An enterprise AI platform, built from open source.',
-      body: 'WRITER, the enterprise AI platform, built parts of its agent product from Kortix’s open-source code. Anyone can do the same: read the code, fork it and ship a product on it.',
+      title: 'The enterprise AI platform, built from Kortix’s open-source code.',
+      body: 'WRITER built its core agent platform from Kortix’s open-source code. Enterprises such as Salesforce, Vanguard, KPMG, Dropbox and H&R Block run their marketing, sales and support agents on WRITER.',
       facts: [
-        'An enterprise AI platform',
+        'Core platform built from Kortix’s code',
+        'Salesforce, Vanguard and KPMG',
+        'Dropbox, H&R Block and Boots',
         'Agents for marketing, sales and support',
-        'Built from Kortix’s open-source code',
-        'Open source: read it, fork it, audit it',
       ],
     },
   ],
