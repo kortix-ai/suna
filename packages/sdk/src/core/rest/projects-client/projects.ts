@@ -101,6 +101,7 @@ export type FeatureFlagKey =
   | 'goals'
   | 'workspace_volume'
   | 'artifacts'
+  /** Separate subagent sessions: the pi `agent` tool may run a subagent in its own Kortix session (`session: "separate"`, the default). On by default; off forces `session: "same"`. */
   | 'cloud_subagents'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'

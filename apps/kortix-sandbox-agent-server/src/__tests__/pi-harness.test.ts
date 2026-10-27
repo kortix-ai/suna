@@ -1948,7 +1948,7 @@ describe('pi packages', () => {
 describe('pi subagents extension', () => {
   const TASK = (args: Record<string, unknown>) => ({ tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general', ...args } })
 
-  test('cloud subagents: every child carries the narrowed parent tools and the resolved parent agent, never `default`', async () => {
+  test('separate sessions (the default, no `session` arg): every child carries the narrowed parent tools and the resolved parent agent, never `default`', async () => {
     // A fake Kortix API: it records each create and answers an already-settled child with a report.
     const creates: Array<Record<string, any>> = []
     const server = Bun.serve({
@@ -1978,7 +1978,6 @@ describe('pi subagents extension', () => {
         script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), TASK({ subagent_type: 'general', prompt: 'look' }), { text: 'parent done' }],
         env: {
           KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled),
-          KORTIX_PI_CLOUD_SUBAGENTS: '1',
           KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
           KORTIX_AGENT_NAME: 'default',
         },
@@ -1994,6 +1993,37 @@ describe('pi subagents extension', () => {
       const parts = toolParts(wire, 'task')
       expect(parts.map((part) => part.state.metadata.sessionId)).toEqual(['cloud-child-1', 'cloud-child-2'])
       expect(parts[0]!.state.output).toContain('cloud report')
+      expect(parts[0]!.state.output).toContain('task_id: cloud-child-1 (for resuming to continue this task if needed)\nsession: separate\n')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('session "same", and the project kill switch, run the child in this session: no session create', async () => {
+    let creates = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/projects/proj-pi-test/sessions') creates += 1
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const apiUrl = `http://127.0.0.1:${server.port}/v1`
+      const same = await boot({ script: [TASK({ session: 'same' }), { text: 'child report' }, { text: 'parent done' }], env: { KORTIX_API_URL: apiUrl } })
+      await promptAndSettle(same, 'delegate it')
+      const samePart = toolParts((await same.bearer(`/kortix/runtime/messages/${same.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage, 'task')[0]!
+      expect(samePart.state.metadata.sessionId).toMatch(/^ses_pi[0-9a-f]{24}$/)
+      expect(samePart.state.output).toContain('\nsession: same\n')
+      expect(samePart.state.output).toContain('<task_result>\nchild report\n</task_result>')
+
+      const off = await boot({ script: [TASK({}), { text: 'child report' }, { text: 'parent done' }], env: { KORTIX_API_URL: apiUrl, KORTIX_PI_CLOUD_SUBAGENTS: '0' } })
+      await promptAndSettle(off, 'delegate it')
+      const offPart = toolParts((await off.bearer(`/kortix/runtime/messages/${off.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage, 'task')[0]!
+      expect(offPart.state.status).toBe('completed')
+      expect(offPart.state.output).toContain('session: same (This project turned separate subagent sessions off (project setting `cloud_subagents`), so the subagent ran inside this session.)')
+      expect(offPart.state.output).toContain('<task_result>\nchild report\n</task_result>')
+      expect(creates).toBe(0)
     } finally {
       server.stop(true)
     }
@@ -2017,6 +2047,8 @@ describe('pi subagents extension', () => {
     expect(childId).not.toBe(root)
     expect(task.state.status).toBe('completed')
     expect(task.state.output).toContain(`task_id: ${childId}`)
+    // No KORTIX_API_URL: the default separate call has no control plane, so it ran here and says so.
+    expect(task.state.output).toContain('session: same (This session has no Kortix control plane to start a separate session from, so the subagent ran inside this session.)')
     expect(task.state.output).toContain('<task_result>\nchild wrote sub.txt\n</task_result>')
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'parent done' })
 
@@ -2161,6 +2193,8 @@ describe('pi subagents extension', () => {
     const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!
     expect(described.description).toContain('reviewer: Reviews one change')
     expect(described.description).not.toContain('hidden')
+    expect(described.description).toContain('- session: "separate" (default): the subagent gets its own new Kortix session with its own computer.')
+    expect(described.description).toContain('- session: "same": the subagent runs inside this session, on this computer.')
     await promptAndSettle(r, 'review')
     const root = r.service.runtime()!.rootId
     let page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage

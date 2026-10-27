@@ -19,9 +19,9 @@ export const FEATURE_FLAGS_ENV_NAME = 'KORTIX_FEATURE_FLAGS';
 const LEGACY_IMAGE_FLAGS = ['genui'];
 
 /**
- * Read by kortixd (harness/pi/config.ts): `1` routes the pi `agent` tool to a real cloud child
- * session (harness/pi/cloud-subagent.ts). Set only while the `cloud_subagents` flag is on; absent,
- * the box keeps the in-process child. Boot-only.
+ * Read by kortixd (harness/pi/config.ts): `1` allows the pi `agent` tool's `session: "separate"`
+ * (a real child session, harness/pi/cloud-subagent.ts); `0` forces every call into the parent
+ * session. Always set, from the `cloud_subagents` flag: a box treats an absent key as `1`. Boot-only.
  */
 export const CLOUD_SUBAGENTS_ENV_NAME = 'KORTIX_PI_CLOUD_SUBAGENTS';
 
@@ -33,9 +33,9 @@ export function featureFlagsEnvValue(metadata: unknown): string {
   return [...flags, ...LEGACY_IMAGE_FLAGS].sort().join(',');
 }
 
-/** `{ KORTIX_PI_CLOUD_SUBAGENTS: '1' }` while the project flag is on, else no key. */
+/** `{ KORTIX_PI_CLOUD_SUBAGENTS: '1' }` while the project flag is on, `'0'` while it is off. */
 export function cloudSubagentsEnv(metadata: unknown): Record<string, string> {
-  return resolveFeatureFlag(metadata, 'cloud_subagents') ? { [CLOUD_SUBAGENTS_ENV_NAME]: '1' } : {};
+  return { [CLOUD_SUBAGENTS_ENV_NAME]: resolveFeatureFlag(metadata, 'cloud_subagents') ? '1' : '0' };
 }
 
 export async function buildFeatureFlagSandboxEnv(projectId: string): Promise<Record<string, string>> {

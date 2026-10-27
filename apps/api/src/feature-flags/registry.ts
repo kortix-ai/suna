@@ -437,20 +437,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'cloud_subagents',
-    name: 'Cloud subagents',
+    name: 'Separate subagent sessions',
     description:
-      'Run each subagent an agent starts as its own Kortix session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute.',
+      'Let agents hand a task to a subagent in its own Kortix session on its own cloud computer. The subagent session is linked to the parent, shows in the sidebar, keeps running after the parent turn, and uses its own compute. Off, every subagent runs inside the parent session.',
     stability: 'experimental',
     available: () => true,
-    // Off by default (RFC claude-code-harness-parity, Pillar 1): a subagent
-    // becomes a billed sandbox per `agent` call. A project opts in.
-    platformDefault: () => false,
+    // On by default (2026-10-27, RFC claude-code-harness-parity, Pillar 1): the
+    // pi `agent` tool's `session` defaults to "separate". Off is the project
+    // kill switch that forces `session: "same"` for every call.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only. On, session provisioning sets KORTIX_PI_CLOUD_SUBAGENTS=1 in the box env ' +
-      '(projects/lib/feature-flag-env.ts) and the pi `agent` tool creates a child session through ' +
-      'POST /v1/projects/:id/sessions (kortixd harness/pi/cloud-subagent.ts) instead of an in-process ' +
-      'child. Off, the key is absent and the in-process child runs. Boot-only: a change reaches the next new box.',
+      'BEHAVIORAL only. Session provisioning sets KORTIX_PI_CLOUD_SUBAGENTS in the box env ' +
+      '(projects/lib/feature-flag-env.ts): `1` on, `0` off. On, a pi `agent` call with ' +
+      '`session: "separate"` (the default) creates a child session through POST /v1/projects/:id/sessions ' +
+      '(kortixd harness/pi/cloud-subagent.ts). Off, every call runs in process (`session: "same"`) and ' +
+      'the tool result says so. Boot-only: a change reaches the next new box.',
   },
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no

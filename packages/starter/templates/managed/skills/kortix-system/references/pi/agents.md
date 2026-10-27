@@ -40,9 +40,20 @@ skill outside the grant is absent from the system prompt.
 
 ## Subagents
 
-The `task` tool runs one prompt in a child session and returns its final
-message. Arguments: `description`, `prompt`, `subagent_type`, and `task_id`
-to continue an earlier child.
+The `agent` tool (`task` is its deprecated alias) runs one prompt in a child
+session and returns its final message. Arguments: `description`, `prompt`,
+`subagent_type` (or an inline `agent` spec), `task_id` to continue an earlier
+child, and `session`:
+
+| `session` | Where the subagent runs | Use it for |
+| --- | --- | --- |
+| `separate` (default) | Its own new Kortix session and computer, linked to this session, visible in the sidebar, still running after your turn. | Real tasks, long or parallel work, a whole job handed to another agent. |
+| `same` | Inside this session, on this computer. Instant, no extra computer. | Quick lookups and small sub-steps. |
+
+When a separate session is not possible (the project turned the setting
+"Separate subagent sessions" off, or the session has no control plane), the
+call runs in this session and the result says so. A `task_id` continues the
+child where it was created.
 
 | `subagent_type` | What it is |
 | --- | --- |
@@ -50,9 +61,11 @@ to continue an earlier child.
 | `explore` | Read-only: `bash`, `read`, `glob`, `grep`. |
 | `<agent name>` | Each project agent with `mode: subagent` or `mode: all`, with its own prompt, model and `permission`. |
 
-- A subagent cannot start another subagent.
+- A `same` subagent cannot start another subagent. A `separate` subagent can,
+  up to 2 levels deep.
+- At most 4 separate subagents of one session run at once.
 - A subagent cannot ask the user a question.
-- Several `task` calls in one message run at the same time.
+- Several `agent` calls in one message run at the same time.
 - The user sees each child session in the product, as with OpenCode.
 
 ## Skills

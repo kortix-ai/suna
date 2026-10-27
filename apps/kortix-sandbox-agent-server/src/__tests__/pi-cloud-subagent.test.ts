@@ -4,13 +4,18 @@
  * tool narrowing, depth), the parent link via the bearer, onSession with the
  * real child id, poll-to-idle, the final-report read-back, the depth gate, the
  * live-child cap, abort → stop, and task_id resume as a follow-up prompt.
- * No real time, no network.
+ * Also routeSubagent: the per-call `session` choice, its default, the
+ * fallback when separate is off or has no control plane, and task_id resume
+ * per mode. No real time, no network.
  */
 import { describe, expect, test } from 'bun:test'
 import {
   childToolAllowlist,
   cloudSpawnSession,
   cloudSubagentApiFrom,
+  NO_CONTROL_PLANE_NOTICE,
+  routeSubagent,
+  SEPARATE_OFF_NOTICE,
   subagentContextFrom,
   type CloudSubagentApi,
 } from '@/harness/pi/cloud-subagent'
@@ -216,7 +221,7 @@ describe('cloudSpawnSession — guardrails', () => {
     const { impl, calls } = fakeApi({})
     await expect(
       cloudSpawnSession(api(impl, { depth: 2, maxDepth: 2 }), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go' }, fast),
-    ).rejects.toThrow('nest at most 2 levels')
+    ).rejects.toThrow('nest at most 2 levels and this session is level 2. Pass session: "same"')
     expect(calls).toEqual([])
   })
 
@@ -225,7 +230,7 @@ describe('cloudSpawnSession — guardrails', () => {
     const parent = api(impl, { maxLive: 1 })
     const first = cloudSpawnSession(parent, { title: 'a', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)
     await expect(cloudSpawnSession(parent, { title: 'b', agent: 'general', systemPrompt: '', prompt: 'go' }, fast)).rejects.toThrow(
-      'At most 1 cloud subagents run at once',
+      'At most 1 separate subagent sessions run at once for one session, and 1 are running. Wait for one to return, or pass session: "same"',
     )
     expect((await first).status).toBe('completed')
     expect(parent.live.count).toBe(0)
@@ -324,5 +329,33 @@ describe('subagent context and target', () => {
       cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p', sandboxToken: 't', sessionId: PARENT, context: { depth: 1, tools: ['read'] }, maxLive: 2, maxDepth: 3 }),
     ).toEqual({ apiUrl: 'https://a', projectId: 'p', token: 't', sessionId: PARENT, depth: 1, maxDepth: 3, maxLive: 2, toolAllowlist: ['read'], live: { count: 0 } })
     expect(cloudSubagentApiFrom({ apiUrl: 'https://a', projectId: 'p', sandboxToken: 't' })).toMatchObject({ depth: 0, maxDepth: 2, maxLive: 4 })
+  })
+})
+
+describe('routeSubagent — where one agent call runs', () => {
+  const ready = { localChild: false, separateAllowed: true, controlPlane: true }
+
+  test('a call with no session runs in a separate session', () => {
+    expect(routeSubagent({ ...ready })).toEqual({ session: 'separate' })
+    expect(routeSubagent({ ...ready, requested: 'separate' })).toEqual({ session: 'separate' })
+  })
+
+  test('session "same" runs in this session, with no notice', () => {
+    expect(routeSubagent({ ...ready, requested: 'same' })).toEqual({ session: 'same' })
+  })
+
+  test('separate with the project setting off runs in this session and says why', () => {
+    expect(routeSubagent({ ...ready, separateAllowed: false })).toEqual({ session: 'same', notice: SEPARATE_OFF_NOTICE })
+    expect(routeSubagent({ ...ready, requested: 'separate', separateAllowed: false })).toEqual({ session: 'same', notice: SEPARATE_OFF_NOTICE })
+  })
+
+  test('separate with no control plane runs in this session and says why', () => {
+    expect(routeSubagent({ ...ready, controlPlane: false })).toEqual({ session: 'same', notice: NO_CONTROL_PLANE_NOTICE })
+  })
+
+  test('a task_id resumes the child in the mode it was created in, whatever the call asks', () => {
+    expect(routeSubagent({ ...ready, taskId: 'ses_local', localChild: true })).toEqual({ session: 'same' })
+    expect(routeSubagent({ ...ready, taskId: 'ses_local', localChild: true, requested: 'separate' })).toEqual({ session: 'same' })
+    expect(routeSubagent({ ...ready, taskId: 'child-7', requested: 'same' })).toEqual({ session: 'separate' })
   })
 })

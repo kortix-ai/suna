@@ -1284,8 +1284,8 @@
           "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
         },
         "cloud_subagents": {
-          "name": "Cloud-Subagenten",
-          "description": "Führt jeden Subagenten als eigene Sitzung auf einem eigenen Cloud-Computer aus, nicht in der Elternsitzung. Der Subagent öffnet sich als Untersitzung und gibt seinen Abschlussbericht an die Elternsitzung zurück. Jeder Subagent nutzt eigene Rechenleistung. Neue Sitzungen nutzen es. Eine laufende Sitzung behält ihre internen Subagenten bis zum Neustart."
+          "name": "Separate Subagenten-Sitzungen",
+          "description": "Ein Agent kann eine Aufgabe an einen Subagenten in einer eigenen Sitzung auf einem eigenen Cloud-Computer übergeben. Die Subagenten-Sitzung ist mit der Elternsitzung verknüpft, erscheint in der Seitenleiste, läuft nach dem Zug der Elternsitzung weiter und nutzt eigene Rechenleistung. Aus: Jeder Subagent läuft in der Elternsitzung. Neue Sitzungen nutzen die Änderung; eine laufende Sitzung behält ihre Einstellung bis zum Neustart."
         }
       }
     },

@@ -825,8 +825,8 @@ const catalog = {
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
         "cloud_subagents": {
-          "name": "Cloud subagents",
-          "description": "Runs each subagent as its own session on its own cloud computer, not inside the parent session. The subagent opens as a child session and returns its final report to the parent. Each subagent uses its own compute. New sessions use it. A running session keeps its in-process subagents until it restarts."
+          "name": "Separate subagent sessions",
+          "description": "Lets an agent hand a task to a subagent in its own session on its own cloud computer. The subagent session is linked to the parent, shows in the sidebar, keeps running after the parent turn, and uses its own compute. Off, every subagent runs inside the parent session. New sessions use the change; a running session keeps its setting until it restarts."
         }
       }
     },

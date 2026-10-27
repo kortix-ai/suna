@@ -1,10 +1,15 @@
 /**
- * Cloud subagent spawn: the `agent` tool as a REAL Kortix child session.
+ * Separate-session subagent spawn: the `agent` tool's `session: "separate"`
+ * (the default) as a REAL Kortix child session.
  *
  * RFC `.agents/skills/learnings/work/claude-code-harness-parity/README.md`,
- * Pillar 1 (the keystone). Behind the project flag `cloud_subagents` (the API
- * sets `KORTIX_PI_CLOUD_SUBAGENTS=1`, default OFF), `runtime.kortixHost()`
- * routes `spawnSession` here instead of the in-process `PiRuntime.spawnSession`.
+ * Pillar 1 (the keystone). The model picks the session per call
+ * (`extensions/subagents.ts`); `routeSubagent` below decides where the call
+ * runs. A separate call runs here when the project allows separate sessions
+ * (flag `cloud_subagents`, default ON; the API sets
+ * `KORTIX_PI_CLOUD_SUBAGENTS=0` to turn them off) and the box has a control
+ * plane. Otherwise it runs in this session (`PiRuntime.spawnSession`), and the
+ * tool result says why.
  * A spawn is one `POST /v1/projects/:id/sessions` from this box, which
  * provisions the child its own sandbox + pi and runs the prompt. The child
  * auto-links to this session as its parent: the box's `KORTIX_TOKEN` is
@@ -14,9 +19,9 @@
  * of the child from this box (`agentSessionStanding`, connectors/share.ts):
  * the session row, its transcript, a follow-up prompt, a stop.
  *
- * The return shape is `SpawnSessionResult`, identical to the in-process path,
- * so `extensions/subagents.ts` is unchanged: the tool part carries the child id
- * in `metadata.sessionId` and the output starts `task_id: <id>`.
+ * The return shape is `SpawnSessionResult`, identical to the in-process path:
+ * the tool part carries the child id in `metadata.sessionId` and the output
+ * starts `task_id: <id>`.
  *
  * What a child gets, and why it never has more than its parent:
  *  - A named project agent (`subagent_type: reviewer`) runs as that agent. The
@@ -37,12 +42,43 @@
  *    runs under its agent's permission policy, never a wider one).
  *
  * Guardrails: at most `maxLive` children wait at once per parent box, and a
- * child at depth `maxDepth` cannot start another cloud child (depth rides in
- * `runtime_context` as `kortix.subagent.depth`). An aborted parent call stops
+ * child at depth `maxDepth` cannot start another separate child (depth rides in
+ * `runtime_context` as `kortix.subagent.depth`). Both refuse with an error
+ * that names `session: "same"` as the way out. An aborted parent call stops
  * its child.
  */
 import { logger } from '@/lib/log/logger'
-import type { SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
+import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
+
+/** Why a separate call ran in this session instead. The tool result carries it to the model. */
+export const SEPARATE_OFF_NOTICE =
+  'This project turned separate subagent sessions off (project setting `cloud_subagents`), so the subagent ran inside this session.'
+export const NO_CONTROL_PLANE_NOTICE =
+  'This session has no Kortix control plane to start a separate session from, so the subagent ran inside this session.'
+
+/**
+ * Where one `agent` call runs. A `task_id` resumes the child where it was
+ * created: a child this session holds in process is `same`, any other id is
+ * a separate session. A new call runs where `requested` says (default
+ * `separate`). A separate call the project or the box cannot serve runs in
+ * this session, with a notice; it never fails.
+ */
+export function routeSubagent(input: {
+  requested?: SubagentSession
+  taskId?: string
+  /** The task_id names a child this session runs in process. */
+  localChild: boolean
+  /** The project allows separate sessions (`KORTIX_PI_CLOUD_SUBAGENTS` is not `0`). */
+  separateAllowed: boolean
+  /** The box can reach its control plane (`cloudSubagentApiFrom` is not null). */
+  controlPlane: boolean
+}): { session: SubagentSession; notice?: string } {
+  if (input.taskId) return { session: input.localChild ? 'same' : 'separate' }
+  if (input.requested === 'same') return { session: 'same' }
+  if (!input.separateAllowed) return { session: 'same', notice: SEPARATE_OFF_NOTICE }
+  if (!input.controlPlane) return { session: 'same', notice: NO_CONTROL_PLANE_NOTICE }
+  return { session: 'separate' }
+}
 
 /** `runtime_context` key: this session's subagent depth (a root session has none = 0). */
 export const SUBAGENT_DEPTH_KEY = 'kortix.subagent.depth'
@@ -208,13 +244,13 @@ export async function cloudSpawnSession(
 
   if (api.depth >= api.maxDepth) {
     throw new Error(
-      `Cloud subagents nest at most ${api.maxDepth} levels and this session is level ${api.depth}. Do this task here instead of delegating it.`,
+      `Separate subagent sessions nest at most ${api.maxDepth} levels and this session is level ${api.depth}. Pass session: "same" to run it inside this session, or do the task here.`,
     )
   }
   const createBody = buildCreateBody(api, input)
   if (api.live.count >= api.maxLive) {
     throw new Error(
-      `At most ${api.maxLive} cloud subagents run at once for one session, and ${api.live.count} are running. Wait for one to return, then start the next.`,
+      `At most ${api.maxLive} separate subagent sessions run at once for one session, and ${api.live.count} are running. Wait for one to return, or pass session: "same" to run this one inside this session.`,
     )
   }
   // Reserved before the first await: parallel `agent` calls in one message all pass through here.
@@ -254,15 +290,15 @@ function buildCreateBody(api: CloudSubagentApi, input: SpawnSessionInput): Recor
   // A named agent brings its own prompt. A built-in or inline spec has only this one.
   const instructions = named ? '' : input.systemPrompt.trim()
   if (instructions.length > INITIAL_CONTEXT_MAX_CHARS) {
-    throw new Error(`Inline agent instructions are ${instructions.length} characters; a cloud subagent takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
+    throw new Error(`Inline agent instructions are ${instructions.length} characters; a separate subagent session takes at most ${INITIAL_CONTEXT_MAX_CHARS}.`)
   }
   // Every child, named or not, is narrowed to the parent's tools (the in-process path's `rootToolAllowed`).
   const tools = childToolAllowlist(api.toolAllowlist, input.tools)
   const invalid = (tools ?? []).filter((name) => !TOOL_NAME.test(name))
-  if (invalid.length > 0) throw new Error(`Invalid tool names for a cloud subagent: ${invalid.join(', ')}.`)
+  if (invalid.length > 0) throw new Error(`Invalid tool names for a separate subagent session: ${invalid.join(', ')}.`)
   const toolsValue = tools?.join(',')
   if (toolsValue && toolsValue.length > RUNTIME_CONTEXT_STRING_MAX) {
-    throw new Error(`The tool list for a cloud subagent is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
+    throw new Error(`The tool list for a separate subagent session is longer than ${RUNTIME_CONTEXT_STRING_MAX} characters.`)
   }
   return {
     initial_prompt: input.prompt,
@@ -302,7 +338,7 @@ async function resumeChild(
 
   if (api.live.count >= api.maxLive) {
     throw new Error(
-      `At most ${api.maxLive} cloud subagents run at once for one session, and ${api.live.count} are running. Wait for one to return, then start the next.`,
+      `At most ${api.maxLive} separate subagent sessions run at once for one session, and ${api.live.count} are running. Wait for one to return, or pass session: "same" to run this one inside this session.`,
     )
   }
   api.live.count += 1

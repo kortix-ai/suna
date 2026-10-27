@@ -1284,8 +1284,8 @@
           "description": "Donnez à l'agent une boîte e-mail sur Resend : les e-mails reçus démarrent et poursuivent des sessions, et l'agent lit, répond et envoie depuis la boîte. Utilisez votre propre clé API Resend et votre domaine."
         },
         "cloud_subagents": {
-          "name": "Sous-agents cloud",
-          "description": "Exécute chaque sous-agent comme sa propre session sur son propre ordinateur cloud, et non dans la session parente. Le sous-agent s'ouvre comme session enfant et renvoie son rapport final à la session parente. Chaque sous-agent utilise sa propre puissance de calcul. Les nouvelles sessions l'utilisent. Une session en cours garde ses sous-agents internes jusqu'à son redémarrage."
+          "name": "Sessions de sous-agents séparées",
+          "description": "Permet à un agent de confier une tâche à un sous-agent dans sa propre session, sur son propre ordinateur cloud. La session du sous-agent est liée à la session parente, apparaît dans la barre latérale, continue après le tour parent et utilise sa propre puissance de calcul. Désactivé, chaque sous-agent s'exécute dans la session parente. Les nouvelles sessions appliquent le changement ; une session en cours garde son réglage jusqu'à son redémarrage."
         }
       }
     },

@@ -5,7 +5,7 @@
  * (`subagent_type`) or an inline ephemeral agent defined in the call (`agent`,
  * no manifest entry). It keeps OpenCode's contract end to end, because the
  * product already renders it: input `{ description, prompt, subagent_type?,
- * agent?, task_id? }`, the child session id in the tool part's
+ * agent?, task_id?, session? }`, the child session id in the tool part's
  * `metadata.sessionId` (the web client's `getChildSessionId` → `TaskTool`
  * preview and full view), and an output that starts `task_id: <id>` so the
  * model can resume the same child.
@@ -14,8 +14,15 @@
  * `task` (a deprecated alias, kept so prompts and sessions written for OpenCode
  * keep working). Both are callable and behave identically.
  *
- * A child is an in-process pi agent in a child session of this session (see
- * `PiRuntime.spawnSession`), not a second process: no boot cost, no port.
+ * `session` picks where the child runs, per call:
+ *  - `separate` (the default): its own new Kortix session with its own
+ *    sandbox, linked to this session as its parent, listed in the sidebar, and
+ *    it outlives this turn (`../cloud-subagent.ts`).
+ *  - `same`: an in-process pi agent in a child session of this session (see
+ *    `PiRuntime.spawnSession`): no boot, no extra sandbox.
+ * A separate call that the project (flag `cloud_subagents` off) or the box (no
+ * control plane) cannot serve runs in this session, and the result says so.
+ * A `task_id` resumes the child in the session mode it was created in.
  *
  * Named subagent types: `general` (every workspace tool), `explore` (read-only
  * search), and every compiled agent whose `mode` is `subagent` or `all`. A
@@ -24,7 +31,8 @@
  * filters the list: a denied type is not offered, and a call to it is refused.
  * An inline agent has no name to deny; the session's tool rules still gate every
  * call its child makes, so delegating never unlocks a denied call.
- * Children get no `agent`/`task` (no nesting) and no `question` (nobody answers a child).
+ * A `same` child gets no `agent`/`task` (no nesting) and no `question` (nobody answers a
+ * child). A `separate` child runs its own pi, so it may delegate again, up to the depth cap.
  */
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
@@ -38,13 +46,18 @@ export interface KortixHost {
   builtInSubagents(): boolean
   /** The calling agent's `permission.task` rule for this subagent name is not `deny`. */
   subagentAllowed(name: string): boolean
-  /** Run one prompt in a child session of this session and return its final answer. */
+  /** Run one prompt in a child (separate or same session, see `session`) and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
 }
+
+/** Where a subagent runs: its own new Kortix session (`separate`), or inside this session (`same`). */
+export type SubagentSession = 'separate' | 'same'
 
 export interface SpawnSessionInput {
   /** Continue this existing child session instead of creating one. */
   sessionId?: string
+  /** The session the call asks for; `separate` when absent. Ignored on a resume (`sessionId`). */
+  session?: SubagentSession
   title: string
   /** The agent name the child's messages carry. */
   agent: string
@@ -69,6 +82,10 @@ export interface SpawnSessionResult {
   text: string
   error?: string
   model: { providerID: string; modelID: string }
+  /** Where the child ran. */
+  session?: SubagentSession
+  /** Why the child ran somewhere other than the call asked for. */
+  notice?: string
 }
 
 interface SubagentType {
@@ -129,10 +146,16 @@ const parameters = Type.Object({
   prompt: Type.String({ description: 'The task for the agent to perform' }),
   subagent_type: Type.Optional(Type.String({ description: 'The named agent to use for this task. Omit it when you pass an inline `agent` spec.' })),
   agent: Type.Optional(inlineAgent),
-  task_id: Type.Optional(Type.String({ description: 'Set only to resume a previous task: the task_id a previous task output returned' })),
+  task_id: Type.Optional(Type.String({ description: 'Set only to resume a previous task: the task_id a previous task output returned. The task resumes in the session it was created in.' })),
+  session: Type.Optional(
+    Type.Union([Type.Literal('separate'), Type.Literal('same')], {
+      description:
+        'Where the subagent runs. "separate" (default): its own new Kortix session with its own computer, linked to this session, visible in the sidebar, and it keeps running after your turn. Use it for real tasks, long or parallel work, or a whole job handed to another agent. "same": inside this session, instant and with no extra computer. Use it for quick lookups and small sub-steps.',
+    }),
+  ),
 })
 
-type SubagentParams = { description: string; prompt: string; subagent_type?: string; agent?: InlineAgent; task_id?: string }
+type SubagentParams = { description: string; prompt: string; subagent_type?: string; agent?: InlineAgent; task_id?: string; session?: SubagentSession }
 interface InlineAgent {
   instructions: string
   description?: string
@@ -154,6 +177,11 @@ function describe(types: Map<string, SubagentType>): string {
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
     '- To continue a previous task with its context, pass the task_id its output returned.',
+    '',
+    'Session (where the subagent runs):',
+    '- session: "separate" (default): the subagent gets its own new Kortix session with its own computer. It is linked to this session as its parent, the user sees it in the sidebar, and it keeps running after your turn ends. Use it for real tasks, long or parallel work, and any whole job you hand to another agent.',
+    '- session: "same": the subagent runs inside this session, on this computer. It starts instantly and costs no extra computer. Use it for quick lookups and small sub-steps.',
+    '- If a separate session is not possible here, the subagent runs in this session and the result says so.',
   ].join('\n')
 }
 
@@ -181,6 +209,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         const spawn = resolveSpawn(params, host)
         const result = await host.spawnSession({
           ...(params.task_id ? { sessionId: params.task_id } : {}),
+          ...(params.session ? { session: params.session } : {}),
           ...spawn,
           prompt: params.prompt,
           signal,
@@ -189,9 +218,10 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
         })
         if (result.status === 'aborted') throw new Error(`The subagent was aborted. task_id: ${result.sessionId}`)
         const body = result.status === 'error' ? `<task_error>\n${result.error ?? 'The subagent failed.'}\n</task_error>` : `<task_result>\n${result.text}\n</task_result>`
+        const where = result.session ? `\nsession: ${result.session}${result.notice ? ` (${result.notice})` : ''}` : ''
         return {
-          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)\n\n${body}` }],
-          details: { sessionId: result.sessionId, model: result.model },
+          content: [{ type: 'text' as const, text: `task_id: ${result.sessionId} (for resuming to continue this task if needed)${where}\n\n${body}` }],
+          details: { sessionId: result.sessionId, model: result.model, ...(result.session ? { session: result.session } : {}) },
         }
       },
     })
@@ -202,7 +232,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
 }
 
 /** The spawn input for a call: an inline ephemeral agent, else the named subagent type. */
-function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessionInput, 'prompt' | 'signal' | 'onSession' | 'sessionId'> {
+function resolveSpawn(params: SubagentParams, host: KortixHost): Omit<SpawnSessionInput, 'prompt' | 'signal' | 'onSession' | 'sessionId' | 'session'> {
   const inline = params.agent
   if (inline) {
     return {

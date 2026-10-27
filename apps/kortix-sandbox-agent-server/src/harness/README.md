@@ -1044,11 +1044,30 @@ provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
 tools and events work, TUI-only rendering does nothing.
 
 `kortix-subagents` is the `agent` tool (OpenCode called it `task`): input `{
-description, prompt, subagent_type?, agent?, task_id? }`, the child id in the
-part's `metadata.sessionId` (set while the child runs), output `task_id: <id>`
-+ `<task_result>`. It registers under two names with one handler — `agent` (use
-this) and `task` (a deprecated alias kept so OpenCode-era prompts and sessions
-keep working); both are callable and behave identically. Each call
+description, prompt, subagent_type?, agent?, task_id?, session? }`, the child id
+in the part's `metadata.sessionId` (set while the child runs), output `task_id:
+<id>`, a `session: separate|same` line (with the reason when a separate call
+ran in this session), then `<task_result>`. It registers under two names with
+one handler — `agent` (use this) and `task` (a deprecated alias kept so
+OpenCode-era prompts and sessions keep working); both are callable and behave
+identically.
+
+`session` picks where each call runs, per call (`cloud-subagent.ts`
+`routeSubagent`):
+
+| `session` | Where the child runs | Use it for |
+| --- | --- | --- |
+| `separate` (default) | Its own new Kortix session and sandbox, linked to this session as its parent, listed in the sidebar, alive after this turn. | Real tasks, long or parallel work, a whole job handed to another agent. |
+| `same` | In process, in a child session of this session. No boot, no extra sandbox. | Quick lookups and small sub-steps. |
+
+A `separate` call runs as `same`, and the result says why, when the project
+turned separate sessions off (flag `cloud_subagents` off, the box gets
+`KORTIX_PI_CLOUD_SUBAGENTS=0`) or the box has no control plane (no
+`KORTIX_API_URL`, project id or `KORTIX_TOKEN`). It never fails for that
+reason. A `task_id` resumes the child in the mode it was created in: an id this
+session holds in process is `same`, any other id is a separate session.
+
+A `same` call
 runs an in-process pi agent in a child session (`parentID` = root), with its
 own wire transcript served by `/session`, `/session/:id`,
 `/session/:id/message`, `/session/:root/children`, the state document and
@@ -1061,16 +1080,18 @@ or `all`; v3 has only the declared agents. The calling agent's
 the list and refuses a call to it. Or an inline ephemeral agent `agent: {
 instructions, model?, tools?, description? }`, defined on the fly with no
 manifest entry, run under the agent name `inline`; it has no name to deny, so
-the session's own tool rules are its only gate. A child gets no `agent`/`task`
-(no nesting) and no `question`. Several
+the session's own tool rules are its only gate. A `same` child gets no
+`agent`/`task` (no nesting) and no `question`. Several
 calls in one message run concurrently; a batch that includes any other tool
 stays sequential. A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
 
-**Cloud subagents** (project flag `cloud_subagents`, default off; the API sets
-`KORTIX_PI_CLOUD_SUBAGENTS=1`). Each call is a real child session instead
-(`harness/pi/cloud-subagent.ts`): `POST /v1/projects/:id/sessions` with the
+**Separate sessions** (`session: "separate"`, the default; project flag
+`cloud_subagents` "Separate subagent sessions", default on, the API sets
+`KORTIX_PI_CLOUD_SUBAGENTS=1`, or `0` for off; an absent key means on). The
+call is a real child session (`harness/pi/cloud-subagent.ts`):
+`POST /v1/projects/:id/sessions` with the
 box token, which links the child to this session and authorizes every later
 read of it. A named agent runs as itself; `general`, `explore` and an inline
 spec run as the parent's resolved agent (never the `default` sentinel; the
@@ -1089,8 +1110,10 @@ to a child of this session only. An aborted call, and a wait past the 30 min
 ceiling, stop the child. Guardrails: at most
 `KORTIX_PI_CLOUD_SUBAGENTS_MAX` (4) children wait at once per parent, and a
 session at depth `KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH` (2, from
-`kortix.subagent.depth`) starts no cloud child. A box with no control plane
-uses the in-process child.
+`kortix.subagent.depth`) starts no separate child. Both refuse the call with
+an error that names `session: "same"` as the way to run it here. A separate
+child runs its own pi with the `agent` tool, so it may delegate again up to
+that depth.
 
 ### Images
 

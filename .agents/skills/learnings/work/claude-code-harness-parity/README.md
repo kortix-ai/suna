@@ -139,6 +139,27 @@ fly) and **declared/retained** (reusable). Both spawn a real cloud session.
   `parent_session_id` (`session-costs.ts:974,1016`). Ties to the
   **"name the account before spending"** learning.
 
+**Status 2026-10-27 — the session is a per-call choice, separate by default.**
+The `agent` tool takes `session: "separate" | "same"` (decided by Marko):
+- `separate` (default): its own new Kortix session and sandbox, linked to the
+  parent, in the sidebar, alive after the parent turn
+  (`pi/cloud-subagent.ts` `cloudSpawnSession`).
+- `same`: the in-process child, for quick sub-steps.
+- The choice is per call (`routeSubagent`), not per session. A `task_id`
+  resumes the child in the mode it was created in.
+- A separate call with no control plane, or with the project flag off, runs
+  as `same` and the tool result says why. It never fails for that reason.
+- The flag `cloud_subagents` now means "Separate subagent sessions" allowed:
+  `platformDefault` true, the API always sends `KORTIX_PI_CLOUD_SUBAGENTS`
+  (`1`/`0`), and off is the admin kill switch. The key name stayed, to keep
+  stored overrides and the wire contract; a rename (for example
+  `separate_subagent_sessions`) is an open proposal.
+- Guardrails unchanged: 4 live separate children per parent, depth 2. Both
+  errors name `session: "same"` as the way out.
+- Open: live verification on a real box needs a sandbox image with this
+  kortixd; billing roll-up and the session quota for children are unchanged
+  from the draft above.
+
 Files: `pi/extensions/subagents.ts`, `pi/runtime.ts`, `pi/surface.ts:135-153`;
 `apps/api/src/projects/session-open/`, `lib/session-create.ts`,
 `lib/session-list.ts`, `routes/project-sessions.ts:188`.

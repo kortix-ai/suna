@@ -36,7 +36,7 @@ import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import { CODEMODE_TOOL, type CodemodeMode } from './codemode'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { cloudSpawnSession, cloudSubagentApiFrom, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
+import { cloudSpawnSession, cloudSubagentApiFrom, routeSubagent, subagentContextFrom, type CloudSubagentApi, type SubagentContext } from './cloud-subagent'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { PiModels, SelectedModel } from './model'
 import { compactionSettings, nativeModelId } from './model'
@@ -345,7 +345,7 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   /** This session as a cloud subagent: its depth and tool narrowing (KORTIX_SESSION_CONTEXT). A root session: depth 0, no narrowing. */
   private readonly subagentContext: SubagentContext
-  /** The cloud-subagent target, built on the first cloud spawn. */
+  /** The separate-session target, built on the first `agent` call; null without a control plane. */
   private cloudSubagents: CloudSubagentApi | null = null
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
@@ -1486,30 +1486,41 @@ export class PiRuntime {
   }
 
   /**
-   * In-process child by default. When `KORTIX_PI_CLOUD_SUBAGENTS` is on (RFC
-   * Pillar 1 keystone, default OFF) and the box can reach its control plane,
-   * spawn a REAL cloud child session instead (cloud-subagent.ts). The result
-   * shape is identical, so the tool contract and the UI are unchanged. A box
-   * with no API falls back to the in-process child even when the flag is on.
+   * Route one `agent` call (cloud-subagent.ts `routeSubagent`): `separate`
+   * (the default) spawns a REAL Kortix child session with its own sandbox;
+   * `same` runs the in-process child. A separate call runs in process, with a
+   * notice in the tool result, when the project turned separate sessions off
+   * (`KORTIX_PI_CLOUD_SUBAGENTS=0`) or the box has no control plane. A
+   * `task_id` resumes the child where it was created. The result shape is
+   * identical either way, so the tool contract and the UI do not change.
    */
-  private resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
-    if (this.cfg.piCloudSubagents) {
-      // One target per box: its live-child counter is the per-parent cap.
-      this.cloudSubagents ??= cloudSubagentApiFrom({
-        apiUrl: this.cfg.apiUrl,
-        projectId: this.cfg.projectId,
-        sandboxToken: this.cfg.sandboxToken,
-        sessionId: this.env.KORTIX_SESSION_ID,
-        context: this.subagentContext,
-        maxLive: this.cfg.piCloudSubagentsMax,
-        maxDepth: this.cfg.piCloudSubagentsMaxDepth,
-      })
+  private async resolveSpawn(input: SpawnSessionInput): Promise<SpawnSessionResult> {
+    // One target per box: its live-child counter is the per-parent cap.
+    this.cloudSubagents ??= cloudSubagentApiFrom({
+      apiUrl: this.cfg.apiUrl,
+      projectId: this.cfg.projectId,
+      sandboxToken: this.cfg.sandboxToken,
+      sessionId: this.env.KORTIX_SESSION_ID,
+      context: this.subagentContext,
+      maxLive: this.cfg.piCloudSubagentsMax,
+      maxDepth: this.cfg.piCloudSubagentsMaxDepth,
+    })
+    const route = routeSubagent({
+      requested: input.session,
+      taskId: input.sessionId,
+      localChild: !!input.sessionId && this.children.has(input.sessionId),
+      separateAllowed: this.cfg.piSeparateSessions,
+      controlPlane: this.cloudSubagents !== null,
+    })
+    if (route.session === 'separate' && this.cloudSubagents) {
       // The agent and its tools are read per call: a prompt may switch the agent (applyAgent).
       // The spread keeps the shared `live` counter.
-      if (this.cloudSubagents) return cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
-      logger.warn('[pi] KORTIX_PI_CLOUD_SUBAGENTS is on but the box has no control plane; using the in-process child')
+      const result = await cloudSpawnSession({ ...this.cloudSubagents, ...this.cloudParent() }, input)
+      return { ...result, session: 'separate' }
     }
-    return this.spawnSession(input)
+    if (route.notice) logger.info('[pi] separate subagent session ran in this session', { notice: route.notice })
+    const result = await this.spawnSession(input)
+    return { ...result, session: 'same', ...(route.notice ? { notice: route.notice } : {}) }
   }
 
   /**

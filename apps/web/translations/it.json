@@ -1284,8 +1284,8 @@
           "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         },
         "cloud_subagents": {
-          "name": "Subagenti cloud",
-          "description": "Esegue ogni subagente come sessione propria su un proprio computer cloud, non dentro la sessione principale. Il subagente si apre come sessione figlia e restituisce il report finale alla sessione principale. Ogni subagente usa la propria capacità di calcolo. Le nuove sessioni lo usano. Una sessione in corso mantiene i suoi subagenti interni finché non si riavvia."
+          "name": "Sessioni separate dei subagenti",
+          "description": "Consente a un agente di affidare un'attività a un subagente in una sessione propria, su un proprio computer cloud. La sessione del subagente è collegata a quella principale, compare nella barra laterale, continua dopo il turno principale e usa la propria capacità di calcolo. Disattivato, ogni subagente viene eseguito nella sessione principale. Le nuove sessioni usano la modifica; una sessione in corso mantiene la sua impostazione finché non si riavvia."
         }
       }
     },

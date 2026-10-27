@@ -130,6 +130,7 @@ export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfi
  */
 export const MY_KORTIX_PROMPT = [
   "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.",
+  'When you hand a task to another agent (an AI employee) with the `agent` tool, leave `session` at its default (separate): the agent gets its own session the user can open. Use `session: "same"` only for quick sub-steps.',
   'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
 ].join('\n\n');
 

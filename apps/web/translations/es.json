@@ -1284,8 +1284,8 @@
           "description": "Da al agente una bandeja de correo en Resend: el correo entrante inicia y continúa sesiones, y el agente lee, responde y envía desde la bandeja. Usa tu propia clave de API y dominio de Resend."
         },
         "cloud_subagents": {
-          "name": "Subagentes en la nube",
-          "description": "Ejecuta cada subagente como su propia sesión en su propio ordenador en la nube, no dentro de la sesión principal. El subagente se abre como sesión secundaria y devuelve su informe final a la sesión principal. Cada subagente usa su propia capacidad de cómputo. Las sesiones nuevas lo usan. Una sesión en curso mantiene sus subagentes internos hasta que se reinicia."
+          "name": "Sesiones separadas de subagentes",
+          "description": "Permite que un agente entregue una tarea a un subagente en su propia sesión, en su propio ordenador en la nube. La sesión del subagente está vinculada a la principal, aparece en la barra lateral, sigue funcionando después del turno principal y usa su propia capacidad de cómputo. Desactivado, cada subagente se ejecuta dentro de la sesión principal. Las sesiones nuevas usan el cambio; una sesión en curso mantiene su ajuste hasta que se reinicia."
         }
       }
     },
