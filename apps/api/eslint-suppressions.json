@@ -3109,11 +3109,6 @@
       "count": 1
     }
   },
-  "src/snapshots/providers/platinum-templates.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/snapshots/providers/platinum-upload.ts": {
     "no-console": {
       "count": 1
