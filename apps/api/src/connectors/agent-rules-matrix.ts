@@ -6,7 +6,7 @@ import type { AgentGrant } from '@kortix/db';
 import { agentMayUseConnector, agentPolicySet } from '../iam/agent-scope';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 
-export interface RulesMatrixCell {
+interface RulesMatrixCell {
   /** The agent's grant lists this connector (or `all`). */
   granted: boolean;
   /** The rule set it runs under here; null = the base rules. */
