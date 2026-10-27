@@ -1028,10 +1028,21 @@ export function invalidateProjectMirror(projectId: string): void {
   invalidateBranchList(projectId);
 }
 
+/**
+ * A repo path as git names the entry: without `./`, empty and `.` segments and
+ * without leading or trailing `/`. '' is the root. Every check that matches a
+ * caller's path against repo paths (the resource denier) must use this, the
+ * same function the git reads use, or a respelled path slips past the check.
+ */
+export function canonicalTreePath(input: string): string {
+  return input.split('/').filter((segment) => segment !== '' && segment !== '.').join('/');
+}
+
+/** `canonicalTreePath` of a caller's path; null for the root. Throws on an absolute or traversal path. */
 export function normalizeTreePath(input?: string | null) {
-  if (!input || input === '.' || input === '/') return null;
+  if (!input || input === '/') return null;
   if (input.startsWith('/') || input.includes('..')) throw new Error('Invalid path');
-  return input.replace(/^\.\/+/, '').replace(/\/+$/, '');
+  return canonicalTreePath(input) || null;
 }
 
 /**

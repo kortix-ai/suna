@@ -54,6 +54,17 @@ describe('buildResourceDenier — denied agent blocks its exact file only', () =
     expect(denier.isDenied('./.opencode/agent/release-bot.md')).toBe(true);
     expect(denier.isDenied('/.opencode/agent/release-bot.md')).toBe(true);
   });
+  test('every spelling git reads as the same file is blocked (KRTX-3403)', () => {
+    for (const path of [
+      './/.opencode/agent/release-bot.md',
+      '././.opencode/agent/release-bot.md',
+      '.opencode//agent/release-bot.md',
+      '.opencode/./agent/release-bot.md',
+      '.opencode/agent/release-bot.md/',
+    ]) {
+      expect(denier.isDenied(path)).toBe(true);
+    }
+  });
   test('an accessible (or unscoped) agent file is NOT blocked', () => {
     expect(denier.isDenied('.opencode/agent/free-bot.md')).toBe(false);
   });
@@ -99,6 +110,35 @@ describe('buildResourceDenier — containsDenied gates archives that cannot be s
   test('a clean subtree with no denied resources is allowed', () => {
     expect(denier.containsDenied('.opencode/skills/open-skill')).toBe(false);
     expect(denier.containsDenied('docs')).toBe(false);
+  });
+  test('every spelling of the root or of a parent dir is refused (KRTX-3403)', () => {
+    for (const path of ['.', './', './/', './.', '.opencode/', '.opencode//', './.opencode/.', '.opencode//agent']) {
+      expect(denier.containsDenied(path)).toBe(true);
+    }
+  });
+});
+
+describe('buildResourceDenier — a kortix.yaml agent with its own .md file', () => {
+  const declared = {
+    ...CONFIG,
+    agent_discovery: 'declarative',
+    agents: [
+      { name: 'kortix', path: 'agents/kortix.md', description: null, mode: null, source: 'kortix.yaml' },
+      { name: 'hidden-bot', path: 'agents/hidden-bot.md', description: null, mode: null, source: 'kortix.yaml' },
+      { name: 'inline-bot', path: 'kortix.yaml#agents.inline-bot', description: null, mode: null, source: 'kortix.yaml' },
+    ],
+    skills: [],
+  } as unknown as ProjectConfigSummary;
+
+  test('the denied declared agent’s file is blocked, under any spelling (KRTX-3403)', () => {
+    const denier = buildResourceDenier(declared, new Set(['kortix', 'inline-bot']), new Set())!;
+    expect(denier.isDenied('agents/hidden-bot.md')).toBe(true);
+    expect(denier.isDenied('.//agents/hidden-bot.md')).toBe(true);
+    expect(denier.isDenied('agents/kortix.md')).toBe(false);
+    expect(denier.containsDenied('agents')).toBe(true);
+  });
+  test('a denied declared agent with no file of its own leaves the shared manifest readable', () => {
+    expect(buildResourceDenier(declared, new Set(['kortix', 'hidden-bot']), new Set())).toBeNull();
   });
 });
 

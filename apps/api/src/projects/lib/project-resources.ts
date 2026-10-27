@@ -15,7 +15,7 @@ import type { ProjectConfigSummary } from '../git/types';
 import { filterAccessibleObjects, hasAnyResourceGrants } from '../../iam';
 import { actorForToken } from '../../iam/actor';
 import { loadProjectConfig, listRepoFiles } from '../git';
-import { refreshMirror } from '../git/mirror';
+import { canonicalTreePath, refreshMirror } from '../git/mirror';
 import { withProjectGitAuth } from './git';
 import { ttlMemo } from '../../shared/ttl-memo';
 
@@ -177,8 +177,12 @@ export async function filterConfigResourcesForUser(
 // surface (file content/list/search + the Slack picker) filters consistently —
 // the red-team's root-cause fix for route-by-route forgetting.
 
-function trimPath(p: string): string {
-  return p.replace(/^\.?\//, '');
+// The same canonical form the git reads use, so `.//x`, `x/` and `a//x` match `x`.
+const trimPath = canonicalTreePath;
+
+/** An agent's own behavior file. A declared agent with none is `kortix.yaml#agents.<name>`. */
+function agentFile(path: string | null | undefined): string | null {
+  return path && path.endsWith('.md') && !path.includes('#') ? trimPath(path) : null;
 }
 
 export interface ResourceDenier {
@@ -216,11 +220,13 @@ export function buildResourceDenier(
   okAgent: Set<string>,
   okSkill: Set<string>,
 ): ResourceDenier | null {
-  // Denied agents → block their exact file (opencode agents are single .md
-  // files; a kortix.yaml agent has no separate file, only the shared manifest).
+  // Denied agents → block their own .md file. A kortix.yaml agent has one too
+  // (`agents/<name>.md` or its `file`); one without a file only has its block
+  // in the shared manifest, which stays readable.
   const deniedExact = new Set<string>();
   for (const a of config.agents ?? []) {
-    if (!okAgent.has(a.name) && a.source === 'opencode' && a.path) deniedExact.add(trimPath(a.path));
+    const file = okAgent.has(a.name) ? null : agentFile(a.path);
+    if (file) deniedExact.add(file);
   }
   // Denied skills → block the whole skill directory (SKILL.md + references/…).
   const deniedPrefixes: string[] = [];
