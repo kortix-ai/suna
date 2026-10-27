@@ -59,7 +59,7 @@ const uiSheetMock = () => ({
 });
 mock.module('../../../primitives/sheet', uiSheetMock);
 mock.module('../../../primitives/sheet', uiSheetMock);
-const uiHintMock = () => ({ default: Passthrough });
+const uiHintMock = () => ({ default: Passthrough, Hint: Passthrough });
 mock.module('../../../primitives/hint', uiHintMock);
 mock.module('../../../primitives/hint', uiHintMock);
 // Radix Tabs schedules a requestAnimationFrame this DOM-less renderer lacks. The

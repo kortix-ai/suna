@@ -16,7 +16,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
 import { supabaseAuth } from '../../middleware/auth';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { RESPONSE_ISSUE_LIMIT, auth, defaultHook, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import type { AppEnv } from '../../types';
 
@@ -426,10 +426,11 @@ export function registerProjectSessionsRoutes(): void {
     const issues: Array<{ path?: Array<string | number>; message?: string }> =
       result.error?.issues ?? [];
     const coded = issues.filter((issue) => codes[String(issue.path?.[0] ?? '')]);
-    if (coded.length === 0) return;
+    // Returning nothing would send zod's raw, uncapped result: answer the shared envelope instead.
+    if (coded.length === 0) return defaultHook(result, c);
     return c.json(
       {
-        error: coded.map((issue) => issue.message).join('; '),
+        error: coded.slice(0, RESPONSE_ISSUE_LIMIT).map((issue) => issue.message).join('; '),
         code: codes[String(coded[0]!.path![0])],
       },
       400,

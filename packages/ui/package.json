@@ -67,7 +67,6 @@
     "./customize/agents/agent-detail-aside": "./src/customize/agents/agent-detail-aside.tsx",
     "./customize/agents/agent-page": "./src/customize/agents/agent-page.tsx",
     "./customize/agents/agents-page": "./src/customize/agents/agents-page.tsx",
-    "./customize/connectors/catalog/use-catalog": "./src/customize/connectors/catalog/use-catalog.ts",
     "./customize/connectors/connector-routes": "./src/customize/connectors/connector-routes.ts",
     "./customize/connectors/connectors-app-return-bar": "./src/customize/connectors/connectors-app-return-bar.tsx",
     "./customize/connectors/connectors-page": "./src/customize/connectors/connectors-page.tsx",
@@ -85,7 +84,6 @@
     "./customize/sections/component/teams-byo-wizard": "./src/customize/sections/component/teams-byo-wizard.tsx",
     "./customize/sections/component/teams-connect-card": "./src/customize/sections/component/teams-connect-card.tsx",
     "./customize/sections/component/telegram-channel-row": "./src/customize/sections/component/telegram-channel-row.tsx",
-    "./customize/sections/connector-connection-form": "./src/customize/sections/connector-connection-form.ts",
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
     "./customize/sections/connector-oauth2-fields": "./src/customize/sections/connector-oauth2-fields.tsx",
@@ -284,7 +282,6 @@
     "./internal/icons/edge": "./src/internal/icons/edge.tsx",
     "./internal/icons/github": "./src/internal/icons/github.tsx",
     "./internal/icons/home": "./src/internal/icons/home.tsx",
-    "./internal/icons/kortix": "./src/internal/icons/kortix.tsx",
     "./internal/icons/microsoft-teams": "./src/internal/icons/microsoft-teams.tsx",
     "./internal/icons/open-ai": "./src/internal/icons/open-ai.tsx",
     "./internal/icons/plus": "./src/internal/icons/plus.tsx",
@@ -540,8 +537,6 @@
     "./workspace/new/workspace-name": "./src/workspace/new/workspace-name.ts",
     "./workspace/project-selector/project-selector-model": "./src/workspace/project-selector/project-selector-model.ts",
     "./workspace/projects/modal/project-icon-field": "./src/workspace/projects/modal/project-icon-field.tsx",
-    "./workspace/projects/onboarding/app-logo": "./src/workspace/projects/onboarding/app-logo.tsx",
-    "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
     "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
@@ -742,10 +737,6 @@
         "types": "./dist/customize/agents/agents-page.d.ts",
         "import": "./dist/customize/agents/agents-page.js"
       },
-      "./customize/connectors/catalog/use-catalog": {
-        "types": "./dist/customize/connectors/catalog/use-catalog.d.ts",
-        "import": "./dist/customize/connectors/catalog/use-catalog.js"
-      },
       "./customize/connectors/connector-routes": {
         "types": "./dist/customize/connectors/connector-routes.d.ts",
         "import": "./dist/customize/connectors/connector-routes.js"
@@ -813,10 +804,6 @@
       "./customize/sections/component/telegram-channel-row": {
         "types": "./dist/customize/sections/component/telegram-channel-row.d.ts",
         "import": "./dist/customize/sections/component/telegram-channel-row.js"
-      },
-      "./customize/sections/connector-connection-form": {
-        "types": "./dist/customize/sections/connector-connection-form.d.ts",
-        "import": "./dist/customize/sections/connector-connection-form.js"
       },
       "./customize/sections/connector-oauth2": {
         "types": "./dist/customize/sections/connector-oauth2.d.ts",
@@ -1603,10 +1590,6 @@
       "./internal/icons/home": {
         "types": "./dist/internal/icons/home.d.ts",
         "import": "./dist/internal/icons/home.js"
-      },
-      "./internal/icons/kortix": {
-        "types": "./dist/internal/icons/kortix.d.ts",
-        "import": "./dist/internal/icons/kortix.js"
       },
       "./internal/icons/microsoft-teams": {
         "types": "./dist/internal/icons/microsoft-teams.d.ts",
@@ -2609,14 +2592,6 @@
       "./workspace/projects/modal/project-icon-field": {
         "types": "./dist/workspace/projects/modal/project-icon-field.d.ts",
         "import": "./dist/workspace/projects/modal/project-icon-field.js"
-      },
-      "./workspace/projects/onboarding/app-logo": {
-        "types": "./dist/workspace/projects/onboarding/app-logo.d.ts",
-        "import": "./dist/workspace/projects/onboarding/app-logo.js"
-      },
-      "./workspace/projects/onboarding/connect-app": {
-        "types": "./dist/workspace/projects/onboarding/connect-app.d.ts",
-        "import": "./dist/workspace/projects/onboarding/connect-app.js"
       },
       "./workspace/projects/policies-panel": {
         "types": "./dist/workspace/projects/policies-panel.d.ts",

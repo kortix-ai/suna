@@ -12,11 +12,11 @@ import {
   apps,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
-import { auth, errors, json } from '../openapi';
+import { auth, boundedIssues, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { inspectDatabaseError } from '../shared/database-errors';
+import { inspectDatabaseError, rethrowDatabaseError } from '../shared/database-errors';
 import {
   AppArtifactStorageRefusedError,
   AppArtifactStorageUnavailableError,
@@ -420,6 +420,7 @@ export function registerAppsRoutes(): void {
         }, row.slug);
         return c.json({ agents });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: `kortix.yaml could not be read: ${(error as Error).message}` }, 503);
       }
     },
@@ -866,7 +867,7 @@ export function registerAppsRoutes(): void {
       if (source.kind !== 'static') {
         const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
         if ('issues' in resolved) {
-          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
+          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', ...boundedIssues(resolved.issues) }, 400);
         }
         releaseConfig = resolved.config;
         const [latest] = await db.select({ provider: appDeployments.hostingProvider }).from(appDeployments)
@@ -1158,6 +1159,7 @@ export function registerAppsRoutes(): void {
             }
             const refusal = appLimitResponse(c, error);
             if (refusal) return refusal;
+            rethrowDatabaseError(error);
             return c.json({
               error: 'App start failed',
               detail: error instanceof Error ? error.message : String(error),

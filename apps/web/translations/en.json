@@ -20487,7 +20487,9 @@
       "text7c0a91e5b3d2": "Unclassified tools",
       "text9d2b6f0c41ae": "Tools & rules",
       "openThreadAction": "Open thread",
-      "untitledThread": "Untitled thread"
+      "untitledThread": "Untitled thread",
+      "text314ae71b8c8d": "Artifacts",
+      "textfe204b549282": "artifacts docs doc slides deck presentation board design dashboard page published share"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

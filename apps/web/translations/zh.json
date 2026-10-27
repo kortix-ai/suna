@@ -20476,7 +20476,9 @@
       "text7c0a91e5b3d2": "未分类工具",
       "text9d2b6f0c41ae": "工具与规则",
       "openThreadAction": "打开话题",
-      "untitledThread": "未命名话题"
+      "untitledThread": "未命名话题",
+      "text314ae71b8c8d": "工件",
+      "textfe204b549282": "工件 文档 幻灯片 演示文稿 白板 设计 仪表板 页面 已发布 分享"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -23037,8 +23039,8 @@
         "restoreShort": "恢复",
         "viewing": "正在查看{time}的版本",
         "backToCurrent": "返回当前版本",
-        "added": "+{count} 行",
-        "removed": "−{count} 行",
+        "added": "+{count, plural, other {# 行}}",
+        "removed": "−{count, plural, other {# 行}}",
         "viewingBy": "由 {author}",
         "created": "页面已创建",
         "edited": "页面已编辑"
@@ -23289,7 +23291,7 @@
       "rosterTitlePeople": "成员",
       "rosterTitleAgents": "智能体",
       "viewAllMembers": "查看全部成员",
-      "agentThreads": "{count} 个话题",
+      "agentThreads": "{count, plural, other {# 个话题}}",
       "threadFilter": {
         "search": "搜索话题",
         "filter": "筛选",
@@ -23422,8 +23424,8 @@
       "inviteByEmail": "通过邮箱邀请",
       "confirmEmpty": "添加成员",
       "confirm": "添加{what}",
-      "peopleCount": "{count} 人",
-      "agentsCount": "{count} 个智能体",
+      "peopleCount": "{count, plural, other {# 人}}",
+      "agentsCount": "{count, plural, other {# 个智能体}}",
       "both": "{people}和{agents}",
       "added": "已向 #{name} 添加{what}。",
       "failed": "无法添加成员。请重试。",
@@ -23433,6 +23435,22 @@
       "agentsFailedPeopleAdded": "已向 #{name} 添加{what}。无法添加智能体：它们仍处于选中状态。",
       "allAdded": "项目里的所有人都已经在这里。",
       "noMatches": "没有与“{query}”匹配的项。"
+    },
+    "privateNotIn": {
+      "row": "你未加入的私有频道",
+      "title": "你未加入的私有频道",
+      "description": "你可以重命名、归档和添加成员。只有成员能阅读频道内容，因此你无法将自己加入。",
+      "meta": "{count, plural, =0 {没有成员} other {# 名成员}} · 由 {name} 创建",
+      "metaNoCreator": "{count, plural, =0 {没有成员} other {# 名成员}}",
+      "archived": "已归档",
+      "menu": "#{name} 的选项",
+      "addPeople": "添加成员",
+      "rename": "重命名",
+      "archive": "归档",
+      "unarchive": "取消归档",
+      "archivedToast": "已归档 #{name}",
+      "unarchivedToast": "已取消归档 #{name}",
+      "failed": "无法更新 #{name}。请重试。"
     }
   },
   "appsModal": {

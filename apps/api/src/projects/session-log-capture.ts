@@ -70,7 +70,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { jsonbSafeValue } from './lib/jsonb-safe';
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { threadRoom } from './lib/thread-memory';
 import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
 import { offloadLargeTexts } from './session-log-blobs';
@@ -431,14 +431,25 @@ type SkeletonRow = V1Row & { message_id: string };
  * contains (`strpos` on the jsonb text equals `JSON.stringify(...).includes` for an id with no character
  * JSON escapes). Every other part and info key is dropped. So `fromV1` places every message as the whole
  * mirror would, in memory that grows with the row count, not the bytes.
+ *
+ * `names` lists only the ids no call names by `state.metadata.sessionId`: `spawnerOf` reads the substring
+ * fallback for those ids alone, and a call that names a session exactly is kept for its `sessionId`. The
+ * `strpos` scan is tool states x ids: on prod, a 182 MB mirror with 479 runtime sessions ran past 2 min with
+ * every id and takes 3.3 s with the 1 id no call names (2026-10-27).
  */
 async function mirrorSkeleton(tx: Tx, sessionId: string): Promise<SkeletonRow[]> {
   // Postgres reads every tool state of the mirror as text: allow more than the pool's 25 s on a mirror of hundreds of MB.
   await tx.execute(sql`set local statement_timeout = '2min'`);
   return tx.execute<SkeletonRow>(sql`
-    WITH ids AS (
+    WITH ids AS MATERIALIZED (
       SELECT DISTINCT opencode_session_id AS g FROM kortix.session_transcript_messages
-       WHERE session_id = ${sessionId} AND opencode_session_id <> '')
+       WHERE session_id = ${sessionId} AND opencode_session_id <> ''
+      EXCEPT
+      SELECT e.p #>> '{state,metadata,sessionId}' FROM kortix.session_transcript_messages c,
+             jsonb_array_elements(CASE WHEN jsonb_typeof(c.parts) = 'array' THEN c.parts ELSE '[]' END) e(p)
+       WHERE c.session_id = ${sessionId} AND e.p ->> 'type' = 'tool'
+         AND jsonb_typeof(e.p #> '{state,metadata,sessionId}') = 'string'
+         AND c.opencode_session_id IS DISTINCT FROM e.p #>> '{state,metadata,sessionId}')
     SELECT m.message_id, m.opencode_session_id AS runtime_session_id,
            CASE WHEN jsonb_typeof(m.info) <> 'object' THEN m.info ELSE coalesce((
              SELECT jsonb_object_agg(f.k, CASE WHEN f.k = 'summary' THEN to_jsonb(f.v = 'true'::jsonb) ELSE f.v END)
@@ -452,7 +463,8 @@ async function mirrorSkeleton(tx: Tx, sessionId: string): Promise<SkeletonRow[]>
                FROM jsonb_array_elements(CASE WHEN jsonb_typeof(m.parts) = 'array' THEN m.parts ELSE '[]' END) WITH ORDINALITY e(p, i)
                CROSS JOIN LATERAL (SELECT CASE WHEN e.p ->> 'type' = 'tool' AND jsonb_typeof(e.p -> 'state') = 'object' THEN (e.p -> 'state')::text END AS state) s
                CROSS JOIN LATERAL (SELECT jsonb_agg(ids.g) AS names FROM ids WHERE ids.g IS DISTINCT FROM m.opencode_session_id AND strpos(s.state, ids.g) > 0) n
-              WHERE jsonb_typeof(e.p) = 'object' AND (e.p ->> 'type' = 'compaction' OR n.names IS NOT NULL)), '[]') AS parts
+              WHERE jsonb_typeof(e.p) = 'object' AND (e.p ->> 'type' = 'compaction' OR n.names IS NOT NULL
+                    OR (e.p ->> 'type' = 'tool' AND jsonb_typeof(e.p #> '{state,metadata,sessionId}') = 'string'))), '[]') AS parts
       FROM kortix.session_transcript_messages m
      WHERE m.session_id = ${sessionId}
      ORDER BY m.message_id`);

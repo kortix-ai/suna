@@ -61,7 +61,7 @@ Access:
 Observability:
   usage [--days N]                  Request/error/cost totals + by-model. --json.
   sources [--hours N]               Spend by source: trigger, member, channel, API (default 24h). --json.
-  logs [--limit N] [--failed]       Recent gateway requests. --json.
+  logs [--limit N] [--failed]       Recent gateway requests, N from 1 to 100 (default 50). --json.
   logs <logId|requestId>            One request's full detail (JSON).
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
 

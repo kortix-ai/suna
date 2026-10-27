@@ -20476,7 +20476,9 @@
       "text7c0a91e5b3d2": "Herramientas sin clasificar",
       "text9d2b6f0c41ae": "Herramientas y reglas",
       "openThreadAction": "Abrir hilo",
-      "untitledThread": "Hilo sin título"
+      "untitledThread": "Hilo sin título",
+      "text314ae71b8c8d": "Artefactos",
+      "textfe204b549282": "artefactos documentos documento diapositivas presentación pizarra diseño panel página publicado compartir"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -23433,6 +23435,22 @@
       "agentsFailedPeopleAdded": "Se añadieron {what} a #{name}. No se pudieron añadir los agentes: siguen seleccionados.",
       "allAdded": "Todos los del proyecto ya están aquí.",
       "noMatches": "Nada coincide con «{query}»."
+    },
+    "privateNotIn": {
+      "row": "Canales privados en los que no estás",
+      "title": "Canales privados en los que no estás",
+      "description": "Puedes renombrar, archivar y añadir personas. Solo los miembros leen lo que hay en un canal, así que no puedes añadirte a ti mismo.",
+      "meta": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}} · creado por {name}",
+      "metaNoCreator": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}}",
+      "archived": "Archivado",
+      "menu": "Opciones de #{name}",
+      "addPeople": "Añadir personas",
+      "rename": "Renombrar",
+      "archive": "Archivar",
+      "unarchive": "Desarchivar",
+      "archivedToast": "#{name} archivado",
+      "unarchivedToast": "#{name} desarchivado",
+      "failed": "No se pudo actualizar #{name}. Inténtalo de nuevo."
     }
   },
   "appsModal": {

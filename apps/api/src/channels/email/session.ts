@@ -7,6 +7,8 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 import { logger } from '../../lib/logger';
 import { ensureEmailSessionBinding } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
@@ -19,26 +21,16 @@ import {
 import { type ChannelPort, type ChannelSessionPlan, type ChannelTarget, routeChannelMessage } from '../core/conversation';
 import {
   type EmailSenderPolicy,
+  emailOwnKeyForAccount,
   emailOwnKeyForInbox,
-  emailSenderPolicyForInbox,
+  listProjectsForWorkspace,
   loadEmailInboxAccountForInbox,
 } from '../install-store';
-import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
-import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { InboundEmail, ResendInboxEmailReceivedEvent } from './types';
 
-let emailSenderPolicyLoader = emailSenderPolicyForInbox;
-
 export function resetEmailChannelForTest() {
-  emailSenderPolicyLoader = emailSenderPolicyForInbox;
   threadEmailLoader = getResendThreadEmail;
-}
-
-export function setEmailSenderPolicyLoaderForTest(
-  loader: typeof emailSenderPolicyForInbox,
-) {
-  emailSenderPolicyLoader = loader;
 }
 
 export async function resolveProjectForEmailInbox(inboxId: string): Promise<string | null> {
@@ -66,48 +58,98 @@ export function setThreadEmailLoaderForTest(loader: typeof getResendThreadEmail)
   threadEmailLoader = loader;
 }
 
+export const EMAIL_MESSAGE_EVENT = 'email.message.received';
+
+/** `IntegrationEvent.data` of a received email: the webhook's ids and headers, never a body. */
+interface EmailEventData {
+  inbox_id: string;
+  thread_id: string;
+  email_id: string;
+  from: string;
+  to: string[];
+  subject: string | null;
+}
+
 /**
- * One received inbox email. The event names it (inbox, thread, email) but
- * carries no body, so the body is read from Resend once the sender passed the
- * inbox's policy. An inbox this environment does not know is ignored: dev,
- * staging and prod share Kortix's Resend team and its team-wide webhooks.
+ * The event-inbox envelope of a received email, or null when the Resend event
+ * is not one. The event names the email but carries no body; the consumer
+ * reads the body from Resend.
  */
-export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEvent): Promise<void> {
-  if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return;
-  const { inbox_id: inboxId, thread_id: threadId, email_id: emailId } = event.data;
-  if (!inboxId || !threadId || !emailId) return;
-  if (await alreadyHandled(`email:event:${emailId}`)) return;
-  const projectId = await resolveProjectForEmailInbox(inboxId);
-  if (!projectId) return;
-  const policy = await emailSenderPolicyLoader(projectId, inboxId);
-  const sender = event.data.from ?? '';
-  if (!isEmailSenderAllowed(sender, policy)) {
-    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender });
+export function emailMessageEvent(projectId: string, event: ResendInboxEmailReceivedEvent): IntegrationEvent | null {
+  if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return null;
+  const { inbox_id, thread_id, email_id, email } = event.data;
+  if (!inbox_id || !thread_id || !email_id) return null;
+  const data: EmailEventData = {
+    inbox_id,
+    thread_id,
+    email_id,
+    from: email?.from ?? '',
+    to: email?.to ?? [],
+    subject: email?.subject ?? null,
+  };
+  return {
+    id: email_id,
+    source: `email:${inbox_id}`,
+    type: EMAIL_MESSAGE_EVENT,
+    time: event.created_at ?? new Date().toISOString(),
+    subject: thread_id,
+    projectId,
+    data: data as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * One stored received email, in the project that held its inbox at the ack.
+ * The route checked the sender policy before the store; the email runs only
+ * while that project still has the channel, the inbox and the sender allowed.
+ * A throw retries the email (8 attempts over about 20 min).
+ */
+export async function handleEmailEvent(event: IntegrationEvent, run: { finalAttempt: boolean }): Promise<void> {
+  const { inbox_id: inboxId, thread_id: threadId, email_id: emailId, from, to, subject } =
+    event.data as unknown as EmailEventData;
+  let { projectId } = event;
+  let account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    // The inbox left the project since the ack. The project that holds it now
+    // gets the email, as a fresh delivery would; with none, it is dropped.
+    const current = await resolveProjectForEmailInbox(inboxId);
+    account = current && current !== projectId ? await loadEmailInboxAccountForInbox(current, inboxId) : null;
+    if (!account) {
+      logger.info('[email-webhook] inbox removed from the project since the email arrived; dropped', { projectId, inboxId, emailId });
+      return;
+    }
+    projectId = current!;
+  }
+  if (!(await emailChannelOnForProject(projectId))) {
+    logger.info('[email-webhook] email channel turned off since the email arrived; dropped', { projectId, inboxId, emailId });
     return;
   }
-  if (!(await claimInboundMessage(inboxId, emailId))) return;
-  const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
+  if (!isEmailSenderAllowed(from, account.senderPolicy)) {
+    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender: from });
+    return;
+  }
+  const apiKey = resolveEmailApiKey(await emailOwnKeyForAccount(account));
   if (!apiKey) {
     logger.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
     return;
   }
   const full = await threadEmailLoader({ apiKey, inboxId, threadId, emailId });
-  const email: InboundEmail = {
+  // The sender controls every field. One U+0000 in the subject or the body
+  // fails the session's jsonb writes on every attempt, so the email dead-letters.
+  const email: InboundEmail = jsonbSafeValue({
     inboxId,
     threadId,
     emailId,
-    from: full.from || sender,
-    to: full.to ?? event.data.to ?? [],
-    subject: full.subject ?? event.data.subject ?? null,
+    from: full.from || from,
+    to: full.to ?? to,
+    subject: full.subject ?? subject,
     text: full.text || stripHtml(full.html) || '',
     attachments: (full.attachments ?? []).map((a) => ({
       id: a.id,
       filename: a.filename ?? null,
       size: a.size ?? null,
     })),
-  };
-  // Resend does not retry a webhook the route already acked (channels/webhook-work.ts),
-  // so every attempt is the last one.
+  });
   await routeChannelMessage(
     emailPort,
     {
@@ -123,24 +165,82 @@ export async function dispatchResendEmailEvent(event: ResendInboxEmailReceivedEv
       followUp: { text: renderFollowUpPrompt(email) },
       plan: (revived) => planEmailSession(projectId, email, revived),
     },
-    { finalAttempt: true },
+    run,
   );
 }
 
-/** A readable body for an HTML-only email. */
-function stripHtml(html: string | null | undefined): string {
+// A cold start can take ~405 s (a 15 s body read, a 90 s clone, a 300 s
+// first-prompt wait): the visibility outlasts it. Two per replica, so mail
+// never takes every job slot.
+registerEventConsumer('email.', handleEmailEvent, { visibilityMs: 7 * 60_000, batch: 2 });
+
+/**
+ * A readable body for an HTML-only email. Linear in the input: a sender
+ * controls it, and a quadratic pattern stalled the API on crafted HTML (a run
+ * of `<script` or `<` took seconds).
+ */
+export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
-  return html
-    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
+  return dropTags(
+    dropScriptsAndStyles(html)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n'),
+  )
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Drop every `<script>` and `<style>` block; an unclosed one stays as text. */
+function dropScriptsAndStyles(html: string): string {
+  const opener = /<(script|style)\b/gi;
+  const closers = { script: /<\/script/gi, style: /<\/style/gi };
+  // A tag with no closer after one opener has none after any later opener: skip it unscanned.
+  const closable = { script: true, style: true };
+  let out = '';
+  let pos = 0;
+  for (let open = opener.exec(html); open; open = opener.exec(html)) {
+    const tag = open[1]!.toLowerCase() as keyof typeof closers;
+    if (!closable[tag]) continue;
+    const closer = closers[tag];
+    closer.lastIndex = open.index;
+    const close = closer.exec(html);
+    const end = close ? html.indexOf('>', close.index) : -1;
+    if (end < 0) {
+      closable[tag] = false;
+      continue;
+    }
+    out += html.slice(pos, open.index);
+    pos = end + 1;
+    opener.lastIndex = pos;
+  }
+  return out + html.slice(pos);
+}
+
+/**
+ * Drop every tag: a `<` that starts one (a letter, `/` or `!`) through the
+ * next `>`. A `<` in text ("a < b") stays. One scan for `>` per tag, never
+ * re-read, so the cost is linear.
+ */
+function dropTags(html: string): string {
+  let out = '';
+  let pos = 0;
+  let gt = -1;
+  for (let lt = html.indexOf('<'); lt >= 0; lt = html.indexOf('<', pos)) {
+    if (gt < lt) gt = html.indexOf('>', lt);
+    if (gt < 0) break;
+    if (/[a-z/!]/i.test(html[lt + 1] ?? '')) {
+      out += html.slice(pos, lt);
+      pos = gt + 1;
+    } else {
+      out += html.slice(pos, lt + 1);
+      pos = lt + 1;
+    }
+  }
+  return out + html.slice(pos);
 }
 
 /**
@@ -153,15 +253,40 @@ const emailPort: ChannelPort = {
     if (notice.kind === 'create_failed' && notice.error.body.code === 'project_archived') await replyNotAccepting(target);
   },
   async prepareFollowUp(target, thread) {
-    if (await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId: target.workspaceId })) {
-      return true;
+    const inboxId = target.workspaceId;
+    if (thread.projectId !== target.projectId) {
+      // The inbox moved: the thread's project released it and this one holds
+      // it now. Its old session cannot reach this inbox, so the thread starts
+      // over here. While both projects hold it (an attach in flight), refuse.
+      if ((await listProjectsForWorkspace('email', inboxId)).includes(thread.projectId)) {
+        logger.warn('[email-webhook] two projects hold the inbox; email dropped', { inboxId, projectIds: [thread.projectId, target.projectId] });
+        return 'refuse';
+      }
+      logger.warn('[email-webhook] inbox moved to another project; the thread starts over there', {
+        inboxId,
+        threadId: target.threadId,
+        fromProjectId: thread.projectId,
+        toProjectId: target.projectId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
+    }
+    const binding = await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId });
+    if (binding === 'bound') return 'deliver';
+    if (binding === 'stale') {
+      logger.info('[email-webhook] inbox was removed and added again; the thread starts over', {
+        projectId: target.projectId,
+        inboxId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
     }
     logger.warn('[email-webhook] could not bind the thread session to the inbox connection; email dropped', {
       projectId: target.projectId,
       sessionId: thread.sessionId,
-      inboxId: target.workspaceId,
+      inboxId,
     });
-    return false;
+    return 'refuse';
   },
 };
 
@@ -275,43 +400,6 @@ async function replyNotAccepting(target: ChannelTarget): Promise<void> {
   }
 }
 
-async function alreadyHandled(key: string): Promise<boolean> {
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length === 0;
-  } catch (err) {
-    logger.warn('[email-webhook] event dedup check failed', { error: err instanceof Error ? err.message : String(err) });
-    return false;
-  }
-}
-
-async function claimInboundMessage(inboxId: string, emailId: string): Promise<boolean> {
-  const key = `email:msg:${inboxId}:${emailId}`;
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length > 0;
-  } catch (err) {
-    logger.error('[email-webhook] inbound message claim failed (fail-open)', { error: err instanceof Error ? err.message : String(err) });
-    return true;
-  }
-}
-
 /**
  * How the agent works the inbox: the `kortix connectors` CLI, which every
  * harness's shell has. The MCP face exists only in OpenCode's config, so a
@@ -351,7 +439,7 @@ function renderAgentPrompt(email: InboundEmail, revived: boolean): string {
   const lines: string[] = [];
   if (revived) {
     lines.push(
-      'NOTE: This email thread had an earlier conversation, but that session was deleted.',
+      'NOTE: This email thread had an earlier conversation in another Kortix session, which cannot continue it: that session was deleted, or this inbox was removed and connected again.',
       'Pick the thread back up from the current email context.',
       '',
     );
