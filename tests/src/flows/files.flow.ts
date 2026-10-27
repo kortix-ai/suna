@@ -763,6 +763,16 @@ flow(
         failIfAny(wrong);
       });
 
+      await ctx.step("a glob or pathspec-magic path names no file: files/history gives the scoped-out member none of the hidden file's commits", async () => {
+        const wrong: string[] = [];
+        for (const path of ["agents/ke2e-hidden-bot.m*", "agents/ke2e-hidden-bot.m?", "*hidden-bot*", "agents/[k]e2e-hidden-bot.md", ":/agents/ke2e-hidden-bot.md"]) {
+          const r = await scopedOut.get("/v1/projects/:projectId/files/history", { params, query: { path } });
+          const commits = r.statusCode === 200 ? r.json<{ commits?: unknown[] }>().commits ?? [] : [];
+          if (![200, 404].includes(r.statusCode) || commits.length > 0) wrong.push(`history ${JSON.stringify(path)} → ${r.statusCode}, ${commits.length} commits`);
+        }
+        failIfAny(wrong);
+      });
+
       await ctx.step("the scoped-out member cannot archive the repository root or agents/ under any spelling → 403", async () => {
         const wrong: string[] = [];
         for (const path of [".", "./", ".//", "./.", "agents", "./agents", "agents/", "agents//", "./agents/."]) {
