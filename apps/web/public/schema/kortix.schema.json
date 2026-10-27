@@ -2411,33 +2411,54 @@
                   ]
                 },
                 "skills": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                  "description": "Skills this agent may load. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
                   "oneOf": [
                     {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "\\S"
-                      }
-                    },
-                    {
-                      "type": "string",
-                      "anyOf": [
+                      "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                      "oneOf": [
                         {
-                          "enum": [
-                            "all",
-                            "*",
-                            "none",
-                            ""
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "all",
+                                "*",
+                                "none",
+                                ""
+                              ]
+                            },
+                            {
+                              "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                            },
+                            {
+                              "pattern": "^\\s*$(?![\\s\\S])"
+                            }
                           ]
-                        },
-                        {
-                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                        },
-                        {
-                          "pattern": "^\\s*$(?![\\s\\S])"
                         }
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "exclude"
+                      ],
+                      "properties": {
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -7683,6 +7704,8 @@
                   "websearch",
                   "skill",
                   "lsp",
+                  "agent",
+                  "codemode",
                   "invalid",
                   "execute",
                   "plan_exit"
@@ -8244,33 +8267,54 @@
                   ]
                 },
                 "skills": {
-                  "description": "Registered and Kortix skills this agent may load. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Registered and Kortix skills this agent may load. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
                   "oneOf": [
                     {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "\\S"
-                      }
-                    },
-                    {
-                      "type": "string",
-                      "anyOf": [
+                      "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                      "oneOf": [
                         {
-                          "enum": [
-                            "all",
-                            "*",
-                            "none",
-                            ""
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "all",
+                                "*",
+                                "none",
+                                ""
+                              ]
+                            },
+                            {
+                              "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                            },
+                            {
+                              "pattern": "^\\s*$(?![\\s\\S])"
+                            }
                           ]
-                        },
-                        {
-                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                        },
-                        {
-                          "pattern": "^\\s*$(?![\\s\\S])"
                         }
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "exclude"
+                      ],
+                      "properties": {
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   ]
                 },
@@ -8337,33 +8381,54 @@
                   ]
                 },
                 "extensions": {
-                  "description": "Registered extensions a session of this agent loads. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Registered extensions a session of this agent loads. \"all\", \"none\" (default), a list of names, or { exclude: [names] } for every name but those.",
                   "oneOf": [
                     {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "\\S"
-                      }
-                    },
-                    {
-                      "type": "string",
-                      "anyOf": [
+                      "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                      "oneOf": [
                         {
-                          "enum": [
-                            "all",
-                            "*",
-                            "none",
-                            ""
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        },
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "all",
+                                "*",
+                                "none",
+                                ""
+                              ]
+                            },
+                            {
+                              "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                            },
+                            {
+                              "pattern": "^\\s*$(?![\\s\\S])"
+                            }
                           ]
-                        },
-                        {
-                          "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
-                        },
-                        {
-                          "pattern": "^\\s*$(?![\\s\\S])"
                         }
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "exclude"
+                      ],
+                      "properties": {
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "\\S"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
                     }
                   ]
                 },

@@ -23153,6 +23153,37 @@
     "unavailable": "Questa risposta non è disponibile nella cronologia caricata.",
     "loadError": "Impossibile caricare la risposta. Riprova."
   },
+  "agentCapabilities": {
+    "skillsTitle": "Skill",
+    "skillsDescription": "Ogni skill che questo agente può caricare. Gli skill integrati sono forniti da Kortix.",
+    "toolsTitle": "Strumenti",
+    "toolsDescription": "Ogni strumento che questo agente può chiamare. Uno strumento disattivato non viene offerto al modello.",
+    "extensionsTitle": "Estensioni",
+    "extensionsDescription": "Codice che viene eseguito in ogni sessione di questo agente.",
+    "extensionsAccess": "Accesso alle estensioni per questo agente",
+    "groups": {
+      "builtin": "Integrati",
+      "project": "Progetto",
+      "workspace": "Area di lavoro",
+      "interaction": "Interazione",
+      "kortix": "Kortix",
+      "platform": "Piattaforma"
+    },
+    "alwaysOn": "Sempre attiva",
+    "flagOff": "Disattivato per questo progetto.",
+    "flagSettings": "Impostazioni",
+    "followsTool": "Segue l'interruttore dello strumento {tool}.",
+    "toggle": "Attiva o disattiva {name}",
+    "replacedBy": "Sostituito da {path}.",
+    "projectTool": "Modulo {path}",
+    "loadError": "Impossibile caricare strumenti, skill ed estensioni di questo agente.",
+    "retry": "Riprova",
+    "emptyProjectSkills": "Nessuno skill di progetto. Registrane uno sotto skills in kortix.yaml.",
+    "emptyProjectExtensions": "Nessuna estensione di progetto. Registrane una sotto extensions in kortix.yaml.",
+    "allBut": "Tutti tranne {count}",
+    "allExcept": "Tutti tranne {list}",
+    "rulesTitle": "Regole di approvazione"
+  },
   "spaces": {
     "memory": {
       "search": "Cerca nella memoria",

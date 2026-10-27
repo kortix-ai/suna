@@ -23153,6 +23153,37 @@
     "unavailable": "Cette réponse n'est pas disponible dans l'historique chargé.",
     "loadError": "Impossible de charger la réponse. Réessayez."
   },
+  "agentCapabilities": {
+    "skillsTitle": "Skills",
+    "skillsDescription": "Chaque skill que cet agent peut charger. Les skills intégrés sont fournis par Kortix.",
+    "toolsTitle": "Outils",
+    "toolsDescription": "Chaque outil que cet agent peut appeler. Un outil désactivé n'est pas proposé au modèle.",
+    "extensionsTitle": "Extensions",
+    "extensionsDescription": "Du code qui s'exécute dans chaque session de cet agent.",
+    "extensionsAccess": "Accès de cet agent aux extensions",
+    "groups": {
+      "builtin": "Intégrés",
+      "project": "Projet",
+      "workspace": "Espace de travail",
+      "interaction": "Interaction",
+      "kortix": "Kortix",
+      "platform": "Plateforme"
+    },
+    "alwaysOn": "Toujours actif",
+    "flagOff": "Désactivé pour ce projet.",
+    "flagSettings": "Paramètres",
+    "followsTool": "Suit l'interrupteur de l'outil {tool}.",
+    "toggle": "Activer ou désactiver {name}",
+    "replacedBy": "Remplacé par {path}.",
+    "projectTool": "Module {path}",
+    "loadError": "Impossible de charger les outils, skills et extensions de cet agent.",
+    "retry": "Réessayer",
+    "emptyProjectSkills": "Aucun skill de projet. Enregistrez-en un sous skills dans kortix.yaml.",
+    "emptyProjectExtensions": "Aucune extension de projet. Enregistrez-en une sous extensions dans kortix.yaml.",
+    "allBut": "Tous sauf {count}",
+    "allExcept": "Tous sauf {list}",
+    "rulesTitle": "Règles d'approbation"
+  },
   "spaces": {
     "memory": {
       "search": "Rechercher dans la mémoire",

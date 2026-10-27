@@ -23153,6 +23153,37 @@
     "unavailable": "この応答は読み込まれた履歴にはありません。",
     "loadError": "応答を読み込めませんでした。もう一度お試しください。"
   },
+  "agentCapabilities": {
+    "skillsTitle": "スキル",
+    "skillsDescription": "このエージェントが読み込めるスキル。組み込みスキルは Kortix に含まれています。",
+    "toolsTitle": "ツール",
+    "toolsDescription": "このエージェントが呼び出せるツール。オフのツールはモデルに提示されません。",
+    "extensionsTitle": "拡張機能",
+    "extensionsDescription": "このエージェントのすべてのセッションで動くコード。",
+    "extensionsAccess": "このエージェントの拡張機能へのアクセス",
+    "groups": {
+      "builtin": "組み込み",
+      "project": "プロジェクト",
+      "workspace": "ワークスペース",
+      "interaction": "対話",
+      "kortix": "Kortix",
+      "platform": "プラットフォーム"
+    },
+    "alwaysOn": "常にオン",
+    "flagOff": "このプロジェクトではオフです。",
+    "flagSettings": "設定",
+    "followsTool": "{tool} ツールのスイッチに従います。",
+    "toggle": "{name} をオンまたはオフにする",
+    "replacedBy": "{path} に置き換えられています。",
+    "projectTool": "モジュール {path}",
+    "loadError": "このエージェントのツール、スキル、拡張機能を読み込めませんでした。",
+    "retry": "再試行",
+    "emptyProjectSkills": "プロジェクトのスキルはありません。kortix.yaml の skills に登録してください。",
+    "emptyProjectExtensions": "プロジェクトの拡張機能はありません。kortix.yaml の extensions に登録してください。",
+    "allBut": "{count} 件を除くすべて",
+    "allExcept": "{list} を除くすべて",
+    "rulesTitle": "承認ルール"
+  },
   "spaces": {
     "memory": {
       "search": "メモリを検索",

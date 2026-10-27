@@ -982,6 +982,20 @@ agents:
     }
   });
 
+  test('{ exclude: [...] } is accepted; a malformed exclude is rejected', () => {
+    const yaml = (skills: string) => `
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    skills: ${skills}
+`;
+    expect(summarize(yaml('{ exclude: [kortix-goals] }')).errorPaths).toEqual([]);
+    expect(summarize(yaml('{ exclude: kortix-goals }')).errorPaths).toContain('agents.w.skills');
+    expect(summarize(yaml('{ exclude: [42] }')).errorPaths).toContain('agents.w.skills');
+    expect(summarize(yaml('{ exclude: [], also: [] }')).errorPaths).toContain('agents.w.skills');
+  });
+
   test('omitting `skills` is still valid shape (v2 deny-by-default applies at resolution time)', () => {
     const { valid } = summarize(`
 kortix_version: 2

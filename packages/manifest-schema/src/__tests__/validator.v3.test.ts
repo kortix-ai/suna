@@ -131,6 +131,23 @@ describe('kortix_version 3: agents', () => {
     expect(errorPaths(swap('    mode: subagent\n', '    mode: subagent\n    enabled: false\n'))).toContain('agents.assistant.subagents');
   });
 
+  test('skills and extensions take { exclude: [...] }: everything but the named ones', () => {
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [kortix-goals, triage-rules] }'))).toEqual([]);
+    expect(errorPaths(swap('extensions: [audit, web-access]', 'extensions: { exclude: [audit] }'))).toEqual([]);
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [nope] }'))).toContain('agents.researcher.skills');
+    expect(errorPaths(swap('extensions: [audit, web-access]', 'extensions: { exclude: [nope] }'))).toContain('agents.assistant.extensions');
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: [triage-rules], also: [] }'))).toContain('agents.researcher.skills');
+    expect(errorPaths(swap('skills: [triage-rules, kortix-system]', 'skills: { exclude: triage-rules }'))).toContain('agents.researcher.skills');
+  });
+
+  test('subagents and commands do not take the exclude form', () => {
+    expect(errorPaths(swap('commands: [weekly-report, summarize]', 'commands: { exclude: [summarize] }'))).toContain('agents.assistant.commands');
+  });
+
+  test('tools may name the agent and codemode tools', () => {
+    expect(errorPaths(swap('exclude: [lookup_order]', 'exclude: [agent, task, codemode]'))).toEqual([]);
+  });
+
   test('tools rejects the v2 map form', () => {
     expect(errorPaths(swap('    tools: all\n', '    tools:\n      bash: false\n'))).toContain('agents.assistant.tools');
   });

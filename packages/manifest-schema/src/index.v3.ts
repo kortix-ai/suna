@@ -54,6 +54,7 @@ import {
   type GrantSetV2,
   type PermissionConfigV2,
   type PiPackageEntryV2,
+  resolveGrantSet,
   resolveProjectRepository,
   validateAgentMdFrontmatter,
   validateAppGrantList,
@@ -71,6 +72,12 @@ export type CodemodeV3 = (typeof CODEMODE_VALUES)[number];
 /** `agents.<name>.tools`: `all` (default), `none`, a list, or `{ exclude: [...] }`. */
 export type AgentToolsV3 = 'all' | 'none' | string[] | { exclude: string[] };
 
+/**
+ * `agents.<name>.skills` and `.extensions`: a grant set, or `{ exclude: [...] }`,
+ * which grants every registered name except the listed ones (and any added later).
+ */
+export type ExcludableGrantSetV3 = GrantSetV2 | { exclude: string[] };
+
 /** `commands.<name>`: a slash command. Exactly one of `prompt` / `prompt_file`. */
 export interface CommandV3 {
   description?: string;
@@ -87,6 +94,25 @@ export interface ExtensionV3 {
   opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo path, or pi's `{ source, extensions, … }` form. */
   pi?: PiPackageEntryV2;
+}
+
+/** The names `{ exclude: [...] }` leaves out, or null when the value is another form. */
+export function excludedNamesV3(value: unknown): string[] | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const exclude = (value as { exclude?: unknown }).exclude;
+  return Array.isArray(exclude) ? exclude.filter((name): name is string => typeof name === 'string').map((name) => name.trim()) : null;
+}
+
+/**
+ * The names a v3 grant selects from `universe`: `all` is every name,
+ * `{ exclude }` every name but the listed ones, a list as written, and an
+ * omitted or `none` grant none.
+ */
+export function grantedNamesV3(value: unknown, universe: readonly string[]): string[] {
+  const excluded = excludedNamesV3(value);
+  if (excluded) return universe.filter((name) => !excluded.includes(name));
+  const grant = resolveGrantSet(value, 'none');
+  return grant === 'all' ? [...universe] : grant === 'none' ? [] : grant;
 }
 
 /** One `agents.<name>` entry. Behavior and grants in one block. */
@@ -110,10 +136,10 @@ export interface AgentBlockV3 {
   /** pi's codemode tool. Default `on`. */
   codemode?: CodemodeV3;
   tools?: AgentToolsV3;
-  skills?: GrantSetV2;
+  skills?: ExcludableGrantSetV3;
   subagents?: GrantSetV2;
   commands?: GrantSetV2;
-  extensions?: GrantSetV2;
+  extensions?: ExcludableGrantSetV3;
   connectors?: GrantSetV2;
   connectors_required?: string[];
   secrets?: GrantSetV2;
@@ -673,9 +699,9 @@ function validateAgentBlockV3(
 
   // Grants of registered things.
   validateToolGrantV3(entry.tools, `${where}.tools`, registry.tools, issues);
-  validateNamedGrantV3(entry.skills, `${where}.skills`, 'skills', registry.skills, issues);
+  validateNamedGrantV3(entry.skills, `${where}.skills`, 'skills', registry.skills, issues, true);
   validateNamedGrantV3(entry.commands, `${where}.commands`, 'commands', registry.commands, issues);
-  validateNamedGrantV3(entry.extensions, `${where}.extensions`, 'extensions', registry.extensions, issues);
+  validateNamedGrantV3(entry.extensions, `${where}.extensions`, 'extensions', registry.extensions, issues, true);
   const subagents = new Set([...agents].filter(([other, scan]) => other !== name && scan.enabled && scan.mode !== 'primary').map(([other]) => other));
   validateNamedGrantV3(entry.subagents, `${where}.subagents`, 'subagents', subagents, issues);
 
@@ -691,12 +717,25 @@ function validateAgentBlockV3(
   }
 }
 
-/** A grant of registered names: `all`, `none`, or a list where each name is registered. */
-function validateNamedGrantV3(value: unknown, where: string, label: string, known: Set<string>, issues: ManifestIssue[]): void {
-  const before = issues.length;
-  validateGrantList(value, where, label, issues, false, 2);
-  if (issues.length !== before || !Array.isArray(value)) return;
-  const unknown = value.map((item) => String(item).trim()).filter((item) => !known.has(item));
+/**
+ * A grant of registered names: `all`, `none`, or a list where each name is
+ * registered. `excludable` also takes `{ exclude: [names] }`.
+ */
+function validateNamedGrantV3(value: unknown, where: string, label: string, known: Set<string>, issues: ManifestIssue[], excludable = false): void {
+  let names: unknown = value;
+  if (excludable && isTable(value)) {
+    if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude) || value.exclude.some((name) => typeof name !== 'string' || !name.trim())) {
+      issues.push({ path: where, message: `${label} must be \`all\`, \`none\`, a list of names, or \`{ exclude: [names] }\`.`, severity: 'error' });
+      return;
+    }
+    names = value.exclude;
+  } else {
+    const before = issues.length;
+    validateGrantList(value, where, label, issues, false, 2);
+    if (issues.length !== before) return;
+  }
+  if (!Array.isArray(names)) return;
+  const unknown = names.map((item) => String(item).trim()).filter((item) => !known.has(item));
   if (unknown.length > 0) {
     issues.push({
       path: where,

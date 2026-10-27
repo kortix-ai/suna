@@ -23153,6 +23153,37 @@
     "unavailable": "Diese Antwort ist im geladenen Verlauf nicht verfügbar.",
     "loadError": "Die Antwort konnte nicht geladen werden. Versuche es erneut."
   },
+  "agentCapabilities": {
+    "skillsTitle": "Skills",
+    "skillsDescription": "Jeder Skill, den dieser Agent laden darf. Integrierte Skills liefert Kortix mit.",
+    "toolsTitle": "Tools",
+    "toolsDescription": "Jedes Tool, das dieser Agent aufrufen darf. Ein ausgeschaltetes Tool wird dem Modell nicht angeboten.",
+    "extensionsTitle": "Erweiterungen",
+    "extensionsDescription": "Code, der in jeder Sitzung dieses Agents läuft.",
+    "extensionsAccess": "Zugriff dieses Agents auf Erweiterungen",
+    "groups": {
+      "builtin": "Integriert",
+      "project": "Projekt",
+      "workspace": "Arbeitsbereich",
+      "interaction": "Interaktion",
+      "kortix": "Kortix",
+      "platform": "Plattform"
+    },
+    "alwaysOn": "Immer an",
+    "flagOff": "Für dieses Projekt ausgeschaltet.",
+    "flagSettings": "Einstellungen",
+    "followsTool": "Folgt dem Schalter des Tools {tool}.",
+    "toggle": "{name} ein- oder ausschalten",
+    "replacedBy": "Ersetzt durch {path}.",
+    "projectTool": "Modul {path}",
+    "loadError": "Tools, Skills und Erweiterungen dieses Agents konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "emptyProjectSkills": "Keine Projekt-Skills. Registriere einen unter skills in kortix.yaml.",
+    "emptyProjectExtensions": "Keine Projekt-Erweiterungen. Registriere eine unter extensions in kortix.yaml.",
+    "allBut": "Alle außer {count}",
+    "allExcept": "Alle außer {list}",
+    "rulesTitle": "Freigaberegeln"
+  },
   "spaces": {
     "memory": {
       "search": "Speicher durchsuchen",

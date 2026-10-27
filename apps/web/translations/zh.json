@@ -23153,6 +23153,37 @@
     "unavailable": "已加载的历史记录中没有此回复。",
     "loadError": "无法加载回复。请重试。"
   },
+  "agentCapabilities": {
+    "skillsTitle": "技能",
+    "skillsDescription": "此智能体可以加载的每个技能。内置技能随 Kortix 提供。",
+    "toolsTitle": "工具",
+    "toolsDescription": "此智能体可以调用的每个工具。关闭的工具不会提供给模型。",
+    "extensionsTitle": "扩展",
+    "extensionsDescription": "在此智能体每个会话中运行的代码。",
+    "extensionsAccess": "此智能体的扩展访问权限",
+    "groups": {
+      "builtin": "内置",
+      "project": "项目",
+      "workspace": "工作区",
+      "interaction": "交互",
+      "kortix": "Kortix",
+      "platform": "平台"
+    },
+    "alwaysOn": "始终开启",
+    "flagOff": "此项目已关闭。",
+    "flagSettings": "设置",
+    "followsTool": "跟随 {tool} 工具的开关。",
+    "toggle": "开启或关闭 {name}",
+    "replacedBy": "已由 {path} 替换。",
+    "projectTool": "模块 {path}",
+    "loadError": "无法加载此智能体的工具、技能和扩展。",
+    "retry": "重试",
+    "emptyProjectSkills": "没有项目技能。请在 kortix.yaml 的 skills 下注册。",
+    "emptyProjectExtensions": "没有项目扩展。请在 kortix.yaml 的 extensions 下注册。",
+    "allBut": "除 {count} 项外全部",
+    "allExcept": "除 {list} 外全部",
+    "rulesTitle": "审批规则"
+  },
   "spaces": {
     "memory": {
       "search": "搜索记忆",

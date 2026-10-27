@@ -23153,6 +23153,37 @@
     "unavailable": "Ovaj odgovor nije dostupan u učitanoj istoriji.",
     "loadError": "Odgovor nije moguće učitati. Pokušajte ponovo."
   },
+  "agentCapabilities": {
+    "skillsTitle": "Veštine",
+    "skillsDescription": "Svaka veština koju ovaj agent može da učita. Ugrađene veštine dolaze uz Kortix.",
+    "toolsTitle": "Alati",
+    "toolsDescription": "Svaki alat koji ovaj agent može da pozove. Isključen alat se ne nudi modelu.",
+    "extensionsTitle": "Proširenja",
+    "extensionsDescription": "Kod koji se pokreće u svakoj sesiji ovog agenta.",
+    "extensionsAccess": "Pristup proširenjima za ovog agenta",
+    "groups": {
+      "builtin": "Ugrađeno",
+      "project": "Projekat",
+      "workspace": "Radni prostor",
+      "interaction": "Interakcija",
+      "kortix": "Kortix",
+      "platform": "Platforma"
+    },
+    "alwaysOn": "Uvek uključeno",
+    "flagOff": "Isključeno za ovaj projekat.",
+    "flagSettings": "Podešavanja",
+    "followsTool": "Prati prekidač alata {tool}.",
+    "toggle": "Uključi ili isključi {name}",
+    "replacedBy": "Zamenjeno sa {path}.",
+    "projectTool": "Modul {path}",
+    "loadError": "Nije moguće učitati alate, veštine i proširenja ovog agenta.",
+    "retry": "Pokušaj ponovo",
+    "emptyProjectSkills": "Nema veština projekta. Registruj jednu pod skills u kortix.yaml.",
+    "emptyProjectExtensions": "Nema proširenja projekta. Registruj jedno pod extensions u kortix.yaml.",
+    "allBut": "Sve osim {count}",
+    "allExcept": "Sve osim {list}",
+    "rulesTitle": "Pravila odobravanja"
+  },
   "spaces": {
     "memory": {
       "search": "Претражи меморију",

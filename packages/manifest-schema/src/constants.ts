@@ -423,6 +423,9 @@ export const HARNESS_TOOL_NAMES = [
   'websearch',
   'skill',
   'lsp',
+  // pi: the subagent tool (`task` is its alias) and the codemode tool.
+  'agent',
+  'codemode',
   // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
   'invalid',
   'execute',

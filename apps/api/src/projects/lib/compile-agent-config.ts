@@ -62,6 +62,8 @@ import {
   type ManifestV3,
   OPENCODE_BUILTIN_AGENTS_V3,
   resolveGrantSet,
+  excludedNamesV3,
+  grantedNamesV3,
   type ManifestIssue,
   type ManifestV2,
   type PermissionActionV2,
@@ -454,9 +456,11 @@ const OTHER_PERMISSION_KEYS: readonly string[] = [
  * everything) — an author who picked "specific skills" and selected nothing
  * gets the safe (deny) reading, not an accidental "all".
  */
-function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
+function skillsGrantToPermissionRule(skills: GrantSetV2 | { exclude: string[] }): PermissionRuleV2 {
+  const excluded = excludedNamesV3(skills);
+  if (excluded) return excludeRule(excluded);
   if (skills === 'all') return 'allow';
-  if (skills === 'none' || skills.length === 0) return 'deny';
+  if (skills === 'none' || !Array.isArray(skills) || skills.length === 0) return 'deny';
   const rule: Record<string, PermissionActionV2> = { '*': 'deny' };
   for (const name of skills) rule[name] = 'allow';
   return rule;
@@ -477,7 +481,7 @@ function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
  */
 function applySkillsGovernance(
   base: PermissionConfigV2 | undefined,
-  skills: GrantSetV2,
+  skills: GrantSetV2 | { exclude: string[] },
 ): PermissionConfigV2 {
   return withPermissionRule(base, 'skill', skillsGrantToPermissionRule(skills));
 }
@@ -518,10 +522,24 @@ function mapOf<T>(value: unknown): Record<string, T> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, T>) : {};
 }
 
-/** The names a grant set selects from `universe` (`all`), or as listed. Omitted is none. */
+/** The names a grant set selects from `universe` (`all`, `{ exclude }`), or as listed. Omitted is none. */
 function grantedNames(value: unknown, universe: string[]): string[] {
-  const grant = resolveGrantSet(value, 'none');
-  return grant === 'all' ? universe : grant === 'none' ? [] : grant;
+  return grantedNamesV3(value, universe);
+}
+
+/**
+ * The `permission.skill` rule of a v3 `skills` grant. `{ exclude }` allows `*`
+ * and denies each named skill, so a skill added later is on, like `all`.
+ */
+function skillsRuleV3(value: unknown, universe: string[]): PermissionRuleV2 {
+  const excluded = excludedNamesV3(value);
+  return excluded ? excludeRule(excluded) : allowlistRule(grantedNames(value, universe));
+}
+
+/** `{ exclude }` as a rule: `*` allow, each named one deny. Nothing excluded: `allow`. */
+function excludeRule(excluded: string[]): PermissionRuleV2 {
+  if (excluded.length === 0) return 'allow';
+  return { '*': 'allow', ...Object.fromEntries(excluded.map((name) => [name, 'deny' as const])) };
 }
 
 /** An allowlist rule: everything `deny`, then each name `allow`. No names: `deny`. */
@@ -636,7 +654,7 @@ function compileAgentV3(
   if (tools) out.tools = tools;
 
   // Omitted permission is `allow`: a tool never waits for an answer unless the agent says `ask`.
-  let permission = withPermissionRule(block.permission ?? 'allow', 'skill', allowlistRule(grantedNames(block.skills, universe.skills)));
+  let permission = withPermissionRule(block.permission ?? 'allow', 'skill', skillsRuleV3(block.skills, universe.skills));
   permission = withPermissionRule(permission, 'task', allowlistRule(grantedNames(block.subagents, universe.subagents)));
   out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(permission));
 

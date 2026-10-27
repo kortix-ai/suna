@@ -44,6 +44,15 @@ describe("selected project skill removal", () => {
     });
     expect(raw.skills.pdf).toBe("skills/pdf");
   });
+  test("drops the removed skill from an { exclude } grant", () => {
+    const raw = {
+      kortix_version: 3,
+      skills: { pdf: "skills/pdf" },
+      agents: { helper: { skills: { exclude: ["pdf", "kortix-goals"] } } },
+    };
+    const plan = planSkillRemoval(raw, ["skills/pdf/SKILL.md"], "skills/pdf");
+    expect((plan.raw.agents as Record<string, unknown>).helper).toEqual({ skills: { exclude: ["kortix-goals"] } });
+  });
   test("requires an exact installed folder and refuses traversal, managed and shared paths", () => {
     for (const folder of [
       "skills",

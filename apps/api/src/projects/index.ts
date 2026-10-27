@@ -90,6 +90,7 @@ import { registerChangeRequestActionsRoutes } from './routes/change-request-acti
 import { registerMarketplaceInstallSessionRoutes } from './routes/marketplace-install-session';
 import { registerReviewItemsRoutes } from './routes/review-items';
 import { registerAgentScopeRoutes } from './routes/agent-scope';
+import { registerAgentCapabilitiesRoutes } from './routes/agent-capabilities';
 import { registerAgentConfigRoutes } from './routes/agent-config';
 import { registerProjectSkillsRoutes } from './routes/project-skills';
 import { registerGatewayRoutes } from './routes/gateway';
@@ -182,6 +183,7 @@ export function registerAllProjectRoutes(): void {
   registerReviewItemsRoutes();
   registerAgentScopeRoutes();
   registerAgentConfigRoutes();
+  registerAgentCapabilitiesRoutes();
   registerProjectSkillsRoutes();
   registerGatewayRoutes();
   registerChannelBindingsRoutes();

@@ -450,6 +450,13 @@ agents:
     });
   });
 
+  test('{ exclude } compiles to `*` allow and each named skill deny; an empty exclude is a bare allow', () => {
+    const compiled = compileAgentConfig(parseYaml('kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    skills: { exclude: [kortix-goals] }\n')) as CompiledAgents;
+    expect(compiled.agent.a.permission).toEqual({ skill: { '*': 'allow', 'kortix-goals': 'deny' } });
+    const empty = compileAgentConfig(parseYaml('kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    skills: { exclude: [] }\n')) as CompiledAgents;
+    expect(empty.agent.a.permission).toEqual({ skill: 'allow' });
+  });
+
   test('governance `skills` overrides a hand-authored permission.skill rule in the .md', () => {
     const manifest = parseYaml(`
 kortix_version: 2
@@ -1160,6 +1167,21 @@ agents:
     expect(selected.commands).toEqual({ summarize: { template: 'Summarize $ARGUMENTS.', agents: ['researcher'] } });
     const lead = compileSelectedAgentConfig(parseYaml(MANIFEST), 'lead', 'opencode', FILES);
     expect(Object.keys(lead.agent).filter((name) => !lead.agent[name]!.disable).sort()).toEqual(['lead', 'quiet', 'researcher']);
+  });
+
+  test('skills { exclude } allows every skill but the named ones, including skills added later', () => {
+    const set = compileAgentConfig(parseYaml(MANIFEST.replace('    skills: all\n', '    skills: { exclude: [kortix-goals, pdf] }\n')), 'opencode', FILES)!;
+    expect((set.agent.lead!.permission as Record<string, unknown>).skill).toEqual({ '*': 'allow', 'kortix-goals': 'deny', pdf: 'deny' });
+    const empty = compileAgentConfig(parseYaml(MANIFEST.replace('    skills: all\n', '    skills: { exclude: [] }\n')), 'opencode', FILES)!;
+    expect((empty.agent.lead!.permission as Record<string, unknown>).skill).toBe('allow');
+  });
+
+  test('extensions { exclude } loads every registered extension but the named ones', () => {
+    const raw = parseYaml(MANIFEST.replace('    extensions: all\n', '    extensions: { exclude: [web] }\n'));
+    const set = compileAgentConfig(raw, 'opencode', FILES)!;
+    expect(set.agent.lead!.extensions).toEqual(['audit', 'adapter']);
+    expect(Object.keys(set.extensions ?? {}).sort()).toEqual(['adapter', 'audit', 'web']);
+    expect(manifestPiPackages(raw, 'lead')).toEqual(['./extensions/audit.pi.ts', { source: './extensions/adapter', extensions: ['*.ts'] }]);
   });
 
   test('pi packages and codemode come from the session agent', () => {

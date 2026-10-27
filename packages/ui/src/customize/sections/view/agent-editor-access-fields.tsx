@@ -25,6 +25,7 @@ import { CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import { UiLink as Link } from '../../../providers/ui-provider';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
+import { plainGrant } from '../../shared/agent-resource-scope';
 import { type GrantOption, GrantSetField, KortixPermissionsField } from './grant-mode-field';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
@@ -122,7 +123,7 @@ export function SkillsSection({ draft, set, options }: GrantSectionProps) {
       bare
     >
       <GrantSetField
-        value={draft.skills}
+        value={plainGrant(draft.skills)}
         onChange={(v: AgentGrantSetV2) => set('skills', v)}
         options={options}
         emptyLabel={tI18nComplete.raw('text66e36043ff7c')}
@@ -221,7 +222,7 @@ export function RegistryGrantSection({
       bare
     >
       <GrantSetField
-        value={draft[grant]}
+        value={plainGrant(draft[grant])}
         onChange={(v: AgentGrantSetV2) => set(grant, v)}
         options={options}
         emptyLabel={t(`${grant}.empty`)}

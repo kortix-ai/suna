@@ -230,7 +230,7 @@ Each grant in `agents.<name>` unlocks one kind of resource:
 | --- | --- | --- | --- |
 | `connectors` | connector slugs | none | Calls to those [connectors](/docs/connect/connectors#share-accounts-and-give-agents-access). |
 | `secrets` | secret identifiers | none | Those [secrets](/docs/project/secrets#which-agents-receive-it) in the sandbox and through the secrets API. |
-| `skills` | skill names | the agent file decides | Loading those skills. See [Skills](#skills). |
+| `skills` | skill names, or `exclude: [...]` | the agent file decides | Loading those skills, built-in Kortix skills included. See [Skills](#skills). |
 | `apps` | App slugs | none | Opening those [Apps](/docs/apps#agents-and-apps) when their access is restricted or private. The agent also needs `project.app.read`. |
 | `kortix_permissions` | `project.*` permissions | none | Kortix CLI, API and git actions. See [What an agent may do](#what-an-agent-may-do). |
 | `policy_sets` | connector slug → set name | the base rules | Its own rule set on those connectors. See [Policy sets](/docs/connect/connectors#policy-sets). |
@@ -242,12 +242,21 @@ The first five take the same values (`policy_sets` is a map, not a grant set):
 - `none`, `""` or `[]`: nothing.
 - A list: only those entries.
 
+`skills` also takes `{ exclude: [names] }`: every skill except those, including skills added later. On v3, `extensions` takes the same form. Turn one built-in skill off and keep the rest:
+
+```yaml
+agents:
+  support:
+    skills:
+      exclude: [kortix-goals]
+```
+
 Set grants in one of three ways. Each one commits `kortix.yaml` on the default branch and needs `project.agent.write`. A change to `policy_sets` also needs `project.connector.write`. The dashboard and CLI paths need a `kortix_version: 2` manifest. On v3, use a change request.
 
 <Tabs>
 
 <Tab title="Dashboard">
-Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
+Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps**, **Kortix permissions** and **Extensions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**. **Skills** lists every built-in Kortix skill and every project skill, **Tools** every tool, and **Extensions** every extension, each with its own switch. One switch off under All saves `{ exclude: [name] }`. A built-in skill behind a project feature flag that is off shows as turned off for the project. The three platform extensions `kortix-nested-calls`, `kortix-presentation` and `kortix-turn` are always on. `kortix-subagents` follows the `agent` tool switch, and `codemode` the `codemode` tool switch.
 </Tab>
 
 <Tab title="CLI">

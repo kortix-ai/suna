@@ -257,8 +257,9 @@ export interface AgentBlockV2 {
    *  (compile-agent-config.ts) maps it onto the agent's `permission.skill`, so
    *  it's a first-class, cleanly-named governance control instead of
    *  something the author has to express by hand-writing glob rules in the
-   *  agent's own frontmatter. */
-  skills?: GrantSetV2;
+   *  agent's own frontmatter. `{ exclude: [...] }` grants every skill but
+   *  the listed ones. */
+  skills?: GrantSetV2 | { exclude: string[] };
   /** Which of the project's Kortix Apps (by App slug) an agent-session
    *  credential may open when the App's access mode is `restricted` or
    *  `private` (spec 2026-09-22 §2.5). Same grant-set shape as connectors
@@ -867,7 +868,15 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
-  validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  // `{ exclude: [names] }`: every skill but those, including skills added later.
+  if (isTable(entry.skills)) {
+    const exclude = entry.skills.exclude;
+    if (Object.keys(entry.skills).length !== 1 || !Array.isArray(exclude) || exclude.some((name) => typeof name !== 'string' || !name.trim())) {
+      issues.push({ path: `${where}.skills`, message: 'skills must be `all`, `none`, a list of skill names, or `{ exclude: [names] }`.', severity: 'error' });
+    }
+  } else {
+    validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  }
   validateAppGrantList(entry.apps, `${where}.apps`, issues);
   validateHarnessesV2(entry.harnesses, `${where}.harnesses`, issues, 'agent');
   // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
