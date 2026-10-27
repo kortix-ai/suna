@@ -14,6 +14,7 @@
 
 import { ApiError, type ProjectSession, type ProjectSessionGroup } from '@kortix/sdk';
 import {
+  findCachedProjectSession,
   useCreateProjectSessionGroup,
   useDeleteProjectSessionGroup,
   useProjectSessions,
@@ -21,6 +22,7 @@ import {
   useReorderProjectSessionGroups,
   useSetProjectSessionGroup,
 } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -30,7 +32,7 @@ import {
   PencilSimpleIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import { useMemo, useState, type DragEvent, type ReactNode, type SyntheticEvent } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
@@ -70,6 +72,16 @@ const SESSION_DRAG_TYPE = 'application/x-kortix-session';
 const GROUP_DRAG_TYPE = 'application/x-kortix-session-group';
 /** Mirrors `SESSION_GROUP_NAME_MAX` in `@kortix/api-contract`: the server refuses a longer name. */
 const GROUP_NAME_MAX = 80;
+
+/**
+ * The group header being dragged in this window, if any. `dataTransfer` data is
+ * unreadable during `dragover`, and the drop line needs to know whether the
+ * dragged group lands above or below the one under the pointer.
+ */
+let draggingGroupId: string | null = null;
+
+/** Keeps a click or key inside a group's menu or dialog (portals bubble through React) off the header's toggle. */
+const stopAtMenu = (event: SyntheticEvent) => event.stopPropagation();
 
 /** The collapsed-sections id of one group. */
 export function sessionGroupSectionId(groupId: string): string {
@@ -125,6 +137,7 @@ function useDropTarget(handlers: { onDropSession?: (sessionId: string) => void; 
 /** Filing and reordering, with their result toasts. One instance per list. */
 export function useSessionGroupActions(projectId: string, groups: readonly ProjectSessionGroup[]) {
   const t = useTranslations('sidebar.sessionGroups');
+  const queryClient = useQueryClient();
   const { mutateAsync: file } = useSetProjectSessionGroup(projectId);
   const { mutateAsync: reorder } = useReorderProjectSessionGroups(projectId);
   return useMemo(() => {
@@ -133,6 +146,9 @@ export function useSessionGroupActions(projectId: string, groups: readonly Proje
     return {
       /** `toast`: a menu move reports where the row went; a drop shows it in place. */
       move: async (sessionId: string, groupId: string | null, options?: { toast?: boolean }) => {
+        // A drop on the row's own group (or of an ungrouped row on the list) changes nothing.
+        const cached = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
+        if (cached && (cached.group_id ?? null) === groupId) return;
         try {
           await file({ sessionId, groupId });
           if (options?.toast) successToast(t('moved'), { description: nameOf(groupId) });
@@ -149,7 +165,7 @@ export function useSessionGroupActions(projectId: string, groups: readonly Proje
         }
       },
     };
-  }, [file, reorder, groups, t]);
+  }, [file, reorder, groups, t, queryClient, projectId]);
 }
 
 /**
@@ -316,7 +332,9 @@ function SessionGroupSection({
     labels,
     limit: SIDEBAR_PAGE_SIZE,
     enabled: open,
-    refetchOnWindowFocus: true,
+    // No focus refetch: a new session never starts inside a group, and a
+    // project with dozens of open groups would refetch every one of them.
+    refetchOnWindowFocus: false,
   });
   // A pinned row shows under Pinned only. The `group_id` check drops a row the
   // viewer just moved out, before the refetch lands.
@@ -343,13 +361,21 @@ function SessionGroupSection({
             onDragStart={(event) => {
               event.dataTransfer.setData(GROUP_DRAG_TYPE, group.group_id);
               event.dataTransfer.effectAllowed = 'move';
+              draggingGroupId = group.group_id;
+            }}
+            onDragEnd={() => {
+              draggingGroupId = null;
             }}
             className={cn(
               'group/section-header text-muted-foreground relative flex items-center gap-1 rounded-md px-2 text-sm font-medium',
               SESSION_ROW_HEIGHT_CLASS,
               drop.over === 'session' && 'bg-sidebar-row text-sidebar-foreground',
-              // A group dropped here takes this place: a line marks it.
-              drop.over === 'group' && 'before:bg-foreground/40 before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:rounded-full',
+              // A group dropped here takes this place: a line marks the side it
+              // lands on (below this group when it comes from above).
+              drop.over === 'group' &&
+                'before:bg-foreground/40 before:absolute before:inset-x-2 before:h-0.5 before:rounded-full',
+              drop.over === 'group' &&
+                (groupIds.indexOf(draggingGroupId ?? '') < index ? 'before:bottom-0' : 'before:top-0'),
             )}
           >
             <FolderSimpleIcon aria-hidden className="size-3.5 shrink-0" />
@@ -418,7 +444,8 @@ function SessionGroupMenu({
   };
 
   return (
-    <>
+    // `contents`: the trigger stays a flex item of the header (`ml-auto`).
+    <span className="contents" onClick={stopAtMenu} onKeyDown={stopAtMenu}>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -432,10 +459,6 @@ function SessionGroupMenu({
               'before:absolute before:-inset-1',
               'group-hover/section-header:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
             )}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
-            }}
           >
             <DotsThreeIcon className="size-4" />
           </Button>
@@ -483,7 +506,7 @@ function SessionGroupMenu({
           })
         }
       />
-    </>
+    </span>
   );
 }
 

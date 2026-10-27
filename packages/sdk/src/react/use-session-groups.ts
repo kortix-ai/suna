@@ -1,6 +1,7 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { ApiError } from '../core/http/api/errors';
 import {
   createProjectSessionGroup,
   deleteProjectSessionGroup,
@@ -36,6 +37,24 @@ export function useProjectSessionGroups(projectId: string | null | undefined, op
  */
 const callerShowsError = () => {};
 
+/**
+ * Refetch the paged session lists a change of these groups can touch: every
+ * list without a group filter (Pinned, a search), the no-group lists and the
+ * lists of `groups`. Another group's list keeps its rows: with dozens of
+ * groups open, refetching all of them on every move was a request burst.
+ */
+function invalidateGroupLists(queryClient: QueryClient, projectId: string, groups: ReadonlyArray<string | null>) {
+  const prefix = [...qk.project.sessionsScope(projectId), 'list-paged'];
+  return queryClient.invalidateQueries({
+    queryKey: prefix,
+    predicate: (query) => {
+      // ['…', 'list-paged', scope, filters?]
+      const group = (query.queryKey[prefix.length + 1] as { group?: string } | undefined)?.group;
+      return !group || group === 'none' || groups.includes(group);
+    },
+  });
+}
+
 function useInvalidateSessionGroups(projectId: string) {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: qk.project.sessionGroups(projectId) });
@@ -61,15 +80,15 @@ export function useRenameProjectSessionGroup(projectId: string) {
   });
 }
 
-/** Delete a group. Its sessions move to no group, so the session lists refetch too. */
+/** Delete a group. Its sessions move to no group, so its list and the no-group lists refetch too. */
 export function useDeleteProjectSessionGroup(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (groupId: string) => deleteProjectSessionGroup(projectId, groupId),
-    onSuccess: () =>
+    onSuccess: (_result, groupId) =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.project.sessionGroups(projectId) }),
-        queryClient.invalidateQueries({ queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] }),
+        invalidateGroupLists(queryClient, projectId, [groupId]),
       ]),
     onError: callerShowsError,
   });
@@ -116,6 +135,8 @@ export function useReorderProjectSessionGroups(projectId: string) {
  */
 export function useSetProjectSessionGroup(projectId: string) {
   const queryClient = useQueryClient();
+  const groupOf = (sessionId: string) =>
+    findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId)?.group_id ?? null;
   const write = (sessionId: string, groupId: string | null) => {
     updateCachedProjectSessions(queryClient, projectId, (sessions) =>
       sessions.map((session) => (session.session_id === sessionId ? { ...session, group_id: groupId } : session)),
@@ -126,9 +147,19 @@ export function useSetProjectSessionGroup(projectId: string) {
   return useMutation({
     mutationFn: ({ sessionId, groupId }: { sessionId: string; groupId: string | null }) =>
       setProjectSessionGroup(projectId, sessionId, groupId),
-    onMutate: ({ sessionId, groupId }) => write(sessionId, groupId),
+    onMutate: ({ sessionId, groupId }) => {
+      const from = groupOf(sessionId);
+      write(sessionId, groupId);
+      return { from };
+    },
     onSuccess: (assignment) => write(assignment.session_id, assignment.group_id),
-    onError: callerShowsError,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'] }),
+    onError: (error) => {
+      // The group is gone (another member deleted it): its section must go too.
+      if (error instanceof ApiError && error.code === 'group_not_found') {
+        void queryClient.invalidateQueries({ queryKey: qk.project.sessionGroups(projectId) });
+      }
+    },
+    onSettled: (_result, _error, { groupId }, context) =>
+      invalidateGroupLists(queryClient, projectId, [context?.from ?? null, groupId]),
   });
 }

@@ -260,3 +260,43 @@ test('a refusal reaches the caller, never the host default mutation onError (no 
   }
   expect(hostErrors).toEqual([]);
 });
+
+test('a move refetches only the lists it touches: its old and new group, the no-group lists; another group stays', async () => {
+  await mount();
+  const list = (group: string) => qk.project.sessionsPaged('P1', 'visible', { group });
+  for (const id of ['A', 'B', 'C']) {
+    client.setQueryData(list(id), { pages: [{ items: id === 'A' ? [row('S3', 'A')] : [], next_cursor: null }], pageParams: [null] });
+  }
+  await act(async () => {
+    void api.file.mutateAsync({ sessionId: 'S3', groupId: 'B' }).catch(() => undefined);
+  });
+  await settle();
+  await act(async () => held[0]!.respond(200, { session_id: 'S3', group_id: 'B' }));
+  await settle();
+  const stale = (key: readonly unknown[]) => client.getQueryState(key)?.isInvalidated;
+  expect(stale(list('A'))).toBe(true);
+  expect(stale(list('B'))).toBe(true);
+  expect(stale(listKey)).toBe(true);
+  expect(stale(list('C'))).toBe(false);
+});
+
+test('a delete refetches the deleted group and the no-group lists, never another group', async () => {
+  await mount();
+  const list = (group: string) => qk.project.sessionsPaged('P1', 'visible', { group });
+  for (const id of ['A', 'B']) client.setQueryData(list(id), { pages: [{ items: [], next_cursor: null }], pageParams: [null] });
+  await answer(() => api.remove.mutateAsync('A'), 200, { ok: true });
+  expect(client.getQueryState(list('A'))?.isInvalidated).toBe(true);
+  expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(list('B'))?.isInvalidated).toBe(false);
+});
+
+test('a move refused with group_not_found (someone deleted the group) reads the groups again', async () => {
+  await mount();
+  await act(async () => {
+    void api.file.mutateAsync({ sessionId: 'S1', groupId: 'A' }).catch(() => undefined);
+  });
+  await settle();
+  await act(async () => held[0]!.respond(404, { error: 'No such session group in this project.', code: 'group_not_found' }));
+  await settle();
+  expect(requests()).toContain('GET /projects/P1/session-groups');
+});

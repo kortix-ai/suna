@@ -367,6 +367,22 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, ungrouped).sort()).toEqual(['LOOSE', 'OLDER-API']);
   });
 
+  test('a filtered list takes a session only when it matches the filter: labels, agent, starter and activity', () => {
+    const qc = new QueryClient();
+    const labelled = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', labels: ['urgent'] });
+    const byAgent = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', agent: 'shopper' });
+    const byPerson = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', createdBy: 'u1' });
+    const recent = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', updatedAfter: '2026-10-27T00:00:00.000Z' });
+    for (const key of [labelled, byAgent, byPerson, recent]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('PLAIN', {
+      group_id: 'GA', labels: [], agent_name: 'default', created_by: 'u2', updated_at: '2026-10-26T00:00:00.000Z',
+    }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('MATCH', {
+      group_id: 'GA', labels: ['urgent', 'ops'], agent_name: 'shopper', created_by: 'u1', updated_at: '2026-10-27T09:00:00.000Z',
+    }));
+    for (const key of [labelled, byAgent, byPerson, recent]) expect(ids(qc, key)).toEqual(['MATCH']);
+  });
+
   test('the group filter is its own key segment, absent when unset', () => {
     expect(qk.project.sessionsPaged('P1', 'visible', { group: 'GA' })).not.toEqual(qk.project.sessionsPaged('P1'));
     expect(qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: undefined })).toEqual(

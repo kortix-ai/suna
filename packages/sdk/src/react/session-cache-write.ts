@@ -53,6 +53,10 @@ type ListFilters = {
   view?: 'pinned' | 'archived' | 'deleted';
   spaceId?: string;
   group?: string;
+  labels?: string[];
+  createdBy?: string;
+  agent?: string;
+  updatedAfter?: string;
 };
 
 /**
@@ -84,6 +88,14 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   // A group list takes only that group's sessions; the no-group list only a session in none.
   if (filters.group === 'none' && session.group_id) return false;
   if (filters.group && filters.group !== 'none' && session.group_id !== filters.group) return false;
+  // The other server filters, checked on the row: a row that fails one waits for the refetch.
+  if (filters.labels?.length && !filters.labels.every((label) => session.labels?.includes(label))) return false;
+  if (filters.agent && session.agent_name !== filters.agent) return false;
+  if (filters.createdBy) {
+    const starter = session.initiator ? (session.initiator.type === 'member' ? session.initiator.id : null) : session.created_by;
+    if (starter !== filters.createdBy) return false;
+  }
+  if (filters.updatedAfter && !(Date.parse(session.updated_at) >= Date.parse(filters.updatedAfter))) return false;
   if (!filters.startedBy) return true;
   const isMember = (session.initiator?.type ?? 'member') === 'member';
   if (filters.startedBy === 'automated') return !isMember;

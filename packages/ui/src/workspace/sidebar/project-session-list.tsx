@@ -255,10 +255,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // flag is unknown the lists wait: a list keyed without `group` would load,
   // then load again with it.
   const sessionGroupsFlag = useFeatureFlag(projectId, 'session_groups');
-  const groupsEnabled = sessionGroupsFlag.enabled;
-  const listsReady = !sessionGroupsFlag.isLoading;
+  const groupsQuery = useProjectSessionGroups(projectId, { enabled: sessionGroupsFlag.enabled });
+  // Groups render once their list loaded. Until then the lists below wait; if
+  // the list cannot load, they list every session (as with the flag off), so
+  // a grouped session never disappears behind a failed read.
+  const groupsEnabled = sessionGroupsFlag.enabled && groupsQuery.isSuccess;
+  const listsReady = !sessionGroupsFlag.isLoading && !(sessionGroupsFlag.enabled && groupsQuery.isPending);
   const groupFilter = groupsEnabled ? 'none' : undefined;
-  const groupsQuery = useProjectSessionGroups(projectId, { enabled: groupsEnabled });
   const groups = useMemo(
     () => (groupsEnabled ? (groupsQuery.data ?? []) : []),
     [groupsEnabled, groupsQuery.data],
@@ -514,12 +517,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onShare={(s) => setSessionToShare(s)}
           onRename={(id, name) => setSessionToRename({ id, name })}
           onEditLabels={setSessionToLabel}
-          // Top-level rows only: a spawned session stays under its parent.
-          groups={groupsEnabled && !nested ? groups : undefined}
+          // Top-level sessions only: a spawned session stays with its parent,
+          // also where it shows on its own (Pinned).
+          groups={groupsEnabled && !nested && sessionParentId(session) === null ? groups : undefined}
           onMoveToGroup={(id, groupId) => void groupActions.move(id, groupId, { toast: true })}
           onNewGroupFor={(id) => setGroupCreate({ fileSessionId: id })}
           onDragStart={
-            groupsEnabled && !nested ? (event) => startSessionDrag(event, session.session_id) : undefined
+            groupsEnabled && !nested && sessionParentId(session) === null
+              ? (event) => startSessionDrag(event, session.session_id)
+              : undefined
           }
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
