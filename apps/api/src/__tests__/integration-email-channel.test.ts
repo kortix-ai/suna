@@ -66,9 +66,12 @@ function email(inbox: string, n: number, thread: string, opts: { type?: string; 
       inbox_id: inbox,
       thread_id: `${inbox}-${thread}`,
       email_id: `eml-${inbox}-${n}`,
-      from: opts.from ?? 'Sender <sender@example.test>',
-      to: ['inbox@example.test'],
-      subject: 'A question',
+      email: {
+        id: `eml-${inbox}-${n}`,
+        from: opts.from ?? 'Sender <sender@example.test>',
+        to: ['inbox@example.test'],
+        subject: 'A question',
+      },
     },
   };
 }
@@ -393,7 +396,7 @@ describe('a received email: stored before the ack, then run', () => {
 
   test('a header with a NUL is stored (as U+FFFD), not refused on every Resend retry', async () => {
     const event = email(INBOX, 13, 'nul');
-    event.data.subject = 'Re:\u0000 invoice';
+    event.data.email!.subject = 'Re:\u0000 invoice';
     const res = await deliver(event);
     expect(await res.json()).toEqual({ ok: true });
     const [job] = (await jobsOf(INBOX)).filter((j) => j.jobKey.endsWith('-13'));

@@ -77,9 +77,16 @@ interface EmailEventData {
  */
 export function emailMessageEvent(projectId: string, event: ResendInboxEmailReceivedEvent): IntegrationEvent | null {
   if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return null;
-  const { inbox_id, thread_id, email_id, from, to, subject } = event.data;
+  const { inbox_id, thread_id, email_id, email } = event.data;
   if (!inbox_id || !thread_id || !email_id) return null;
-  const data: EmailEventData = { inbox_id, thread_id, email_id, from: from ?? '', to: to ?? [], subject: subject ?? null };
+  const data: EmailEventData = {
+    inbox_id,
+    thread_id,
+    email_id,
+    from: email?.from ?? '',
+    to: email?.to ?? [],
+    subject: email?.subject ?? null,
+  };
   return {
     id: email_id,
     source: `email:${inbox_id}`,

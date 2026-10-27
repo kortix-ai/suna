@@ -81,7 +81,7 @@ export function registerEmailWebhookRoutes(): void {
       const inbound = emailMessageEvent(projectId, event);
       if (!inbound) return c.json({ ok: true, ignored: true });
       // The inbox's sender policy gates the store: a rejected sender's mail is never kept.
-      const sender = event.data.from ?? '';
+      const sender = String(inbound.data.from);
       if (!isEmailSenderAllowed(sender, account.senderPolicy)) {
         logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId: event.data.inbox_id, emailId: inbound.id, sender });
         return c.json({ ok: true, ignored: true });
