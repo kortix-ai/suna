@@ -26,6 +26,7 @@ import { join } from 'node:path';
  */
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import { requiresTls } from '../src/tls';
 import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
 import { repairEarlyAppliedMigrations } from './early-applied-migration-repair';
 import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
@@ -211,7 +212,10 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
-  const databaseUrl = resolveUrl(rest);
+  // pg connects in plaintext unless the URL asks for TLS. `no-verify`: Supabase
+  // certificates chain to Supabase's own CA, which Node does not trust.
+  const resolvedUrl = resolveUrl(rest);
+  const databaseUrl = requiresTls(resolvedUrl) ? `${resolvedUrl}${resolvedUrl.includes('?') ? '&' : '?'}sslmode=no-verify` : resolvedUrl;
   const checkOrder = migrationCheckOrder(cmd, databaseUrl, process.env.KORTIX_PREVIEW_MIGRATION);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
   const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);

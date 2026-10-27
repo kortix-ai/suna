@@ -1485,11 +1485,6 @@
       "count": 2
     }
   },
-  "src/platform/routes/version.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/platform/sandbox-ownership.ts": {
     "kortix-api/projects-surface": {
       "count": 1
