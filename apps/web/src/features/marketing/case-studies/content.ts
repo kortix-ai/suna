@@ -1,16 +1,19 @@
 /**
- * Case studies for the AI OS home page and /services: four equal cards. No
+ * Case studies for the AI OS home page and /services: eight equal cards. No
  * card links anywhere, by founder decision.
  *
  * ACCURACY AND NAMING (read before editing):
- *  - HKAI-Sci / SciencePal is the one named case: founder decisions
- *    2026-10-22 and 2026-10-27 (the City University of Hong Kong logo, a
- *    description, no link). Facts: CityU press release 2025-11-05 (HKAI-Sci
- *    launched SciencePal: literature search with citations, protein design
- *    and materials science agents). Write "built from Kortix's open-source
- *    code", never "customer" or "partner": it is a product built from the
- *    open-source repo. The logo is CityU's trade mark (its logo/name policy):
- *    remove it on request.
+ *  - Named cases, each a founder decision: HKAI-Sci / SciencePal (2026-10-22,
+ *    2026-10-27: the City University of Hong Kong logo), Wring and Platinum
+ *    (2026-10-27), NinjaTech AI / SuperNinja (2026-10-22). "Built from
+ *    Kortix's open-source code" is a product built from the public repo:
+ *    never "customer" or "partner", never a licence claim. The CityU logo is
+ *    CityU's trade mark (its logo/name policy): remove it on request.
+ *  - SciencePal facts: CityU press release 2025-11-05. Wring: wring.co and
+ *    its Kortix project. Platinum: platinum.dev and its repo's `kortix.yaml`
+ *    (engineer and QA agents, Linear). Kortix: the `kortix-ai/company`
+ *    project (engineering factory, compliance agency, sales, support and
+ *    marketing agents).
  *  - The hedge fund is Kortix's own desk (`kortix-ai/hedgefund`): real
  *    public SEC data, simulated capital and trades, a person at every gate.
  *    Always say it is ours and that the capital is simulated.
@@ -19,14 +22,15 @@
  *    class broad enough that it does not identify the company: no founding
  *    year, no office count, no city.
  *  - Only what the engagement really contains. No metric, no quote, no
- *    outcome number until the customer signs one off.
+ *    outcome number until the company signs one off.
  */
 
 export type CaseStudy = {
   id: string;
-  /** A third-party logo on a white tile, or a Phosphor glyph. */
+  /** A third-party logo on a white tile, a drawn brand mark, or a Phosphor glyph. */
   logo?: { src: string; alt: string; width: number; height: number };
-  icon?: 'telecom' | 'search' | 'finance';
+  mark?: 'kortix' | 'platinum';
+  icon?: 'telecom' | 'search' | 'finance' | 'agent';
   category: string;
   /** Who it is, as a name (logo cases) or a class. */
   org: string;
@@ -54,6 +58,62 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
+      id: 'wring',
+      logo: { src: '/media/case-studies/wring.svg', alt: 'Wring', width: 74, height: 28 },
+      category: 'Cloud cost',
+      org: 'Wring',
+      title: 'Autonomous AWS cost optimization.',
+      body: 'Wring cuts its customers’ AWS bills with agents on Kortix. The agents find the AWS credit programs each customer qualifies for, prepare the applications and follow each one through to the decision. The customer approves, the agents do the paperwork.',
+      facts: [
+        'Credit programs found per customer',
+        'Applications prepared by agents',
+        'A person approves every submission',
+        'Runs as one Kortix project',
+      ],
+    },
+    {
+      id: 'platinum',
+      mark: 'platinum',
+      category: 'Infrastructure',
+      org: 'Platinum',
+      title: 'A sandbox cloud, built and tested by agents.',
+      body: 'Platinum runs microVM sandboxes for AI agents that boot in about 400 ms. Its repo is a Kortix project: an engineering agent takes Linear issues, builds and tests the change and opens the pull request. A QA agent then drives the real dashboard, records the flow and reports to Slack with the video.',
+      facts: [
+        'An engineering agent on Linear issues',
+        'Pull requests built and tested by agents',
+        'A QA agent that records real flows',
+        'Every Kortix session runs on Platinum',
+      ],
+    },
+    {
+      id: 'telecom',
+      icon: 'telecom',
+      category: 'Telecommunications',
+      org: 'A leading US telecommunications infrastructure company',
+      title: 'A whole company on one AI OS, in its own cloud.',
+      body: 'The company runs Kortix self-hosted in its own cloud account. Every employee signs in with company SSO, and teams use company agents and internal apps built on Kortix, from a company-wide question-answering app to live dashboards.',
+      facts: [
+        'Self-hosted in its own cloud',
+        'SSO and directory sync',
+        'A company-wide Q&A app',
+        'Internal apps and live dashboards',
+      ],
+    },
+    {
+      id: 'kortix',
+      mark: 'kortix',
+      category: 'Software',
+      org: 'Kortix',
+      title: 'Kortix, run on Kortix.',
+      body: 'Our own company is one Kortix project. An intake agent triages every new issue and hands it to a worker agent, which fixes it on its own machine and opens the pull request. A compliance agency keeps our SOC 2 policies and evidence current. People review, approve and sign.',
+      facts: [
+        'Issues triaged by an intake agent',
+        'Up to 16 worker agents at once',
+        'SOC 2 policies kept current by agents',
+        'Sales, support and marketing agents',
+      ],
+    },
+    {
       id: 'hedge-fund',
       icon: 'finance',
       category: 'Finance',
@@ -68,20 +128,6 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
       ],
     },
     {
-      id: 'telecom',
-      icon: 'telecom',
-      category: 'Telecommunications',
-      org: 'A leading US telecommunications infrastructure company',
-      title: 'A whole company on one AI OS, in its own cloud.',
-      body: 'The company runs Kortix self-hosted in its own cloud account. Every employee signs in with company SSO, and teams use company agents and internal apps built on Kortix, from a company-wide question-answering app to live dashboards.',
-      facts: [
-        'Self-hosted in its own cloud',
-        'SSO and directory sync',
-        'A company-wide question-answering app',
-        'Internal apps and live dashboards',
-      ],
-    },
-    {
       id: 'executive-search',
       icon: 'search',
       category: 'Professional services',
@@ -93,6 +139,20 @@ export const caseStudies: { title: string; titleMuted: string; items: readonly C
         'Client and pitch materials',
         'Internal operations automated',
         'The whole firm on one AI OS',
+      ],
+    },
+    {
+      id: 'superninja',
+      icon: 'agent',
+      category: 'Consumer AI',
+      org: 'NinjaTech AI',
+      title: 'SuperNinja: a general AI agent.',
+      body: 'NinjaTech AI built SuperNinja, its general-purpose AI agent, from Kortix’s open-source code. Anyone can do the same: read the code, fork it and ship a product on it.',
+      facts: [
+        'A general-purpose AI agent',
+        'Built from Kortix’s open-source code',
+        'Shipped as its own product',
+        'Open source: read it, fork it, audit it',
       ],
     },
   ],

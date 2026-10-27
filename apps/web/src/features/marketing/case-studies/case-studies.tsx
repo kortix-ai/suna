@@ -1,10 +1,25 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
-import { BriefcaseIcon, CellTowerIcon, ChartLineUpIcon, CheckIcon } from '@phosphor-icons/react/dist/ssr';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { BriefcaseIcon, CellTowerIcon, ChartLineUpIcon, CheckIcon, RobotIcon } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 
 import { caseStudies, type CaseStudy } from './content';
 
-const ICONS = { telecom: CellTowerIcon, search: BriefcaseIcon, finance: ChartLineUpIcon } as const;
+const ICONS = { telecom: CellTowerIcon, search: BriefcaseIcon, finance: ChartLineUpIcon, agent: RobotIcon } as const;
+
+const PLATINUM_TRACKING = 'tracking-[0.22em]'; // audit:allow Platinum's own wordmark tracking (pt-logo.tsx), a third-party mark
+
+/** Platinum's mark as platinum.dev draws it (`pt-logo.tsx`): a square and PLATINUM in mono, both currentColor. */
+function PlatinumMark() {
+  return (
+    <span className="text-foreground inline-flex items-center gap-4" role="img" aria-label="Platinum">
+      <span aria-hidden className="block size-5 bg-current" />
+      <span aria-hidden className={`font-mono text-xl ${PLATINUM_TRACKING}`}>
+        PLATINUM
+      </span>
+    </span>
+  );
+}
 
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
@@ -14,20 +29,34 @@ function Mark({ item }: { item: CaseStudy }) {
   if (item.logo) {
     return (
       <div className={`${LOGO_TILE_BACKGROUND} flex h-40 items-center justify-center rounded-md border`}>
-        <Image src={item.logo.src} alt={item.logo.alt} width={item.logo.width} height={item.logo.height} unoptimized className="h-24 w-auto" />
+        <Image
+          src={item.logo.src}
+          alt={item.logo.alt}
+          width={item.logo.width}
+          height={item.logo.height}
+          unoptimized
+          // A wordmark (wider than 2.5:1) sits lower so it matches a stacked mark's weight.
+          className={item.logo.width / item.logo.height > 2.5 ? 'h-12 w-auto' : 'h-24 w-auto'}
+        />
       </div>
     );
   }
-  const Icon = ICONS[item.icon ?? 'search'];
+  const Icon = ICONS[item.icon ?? 'agent'];
   return (
     <div className="bg-muted flex h-40 items-center justify-center rounded-md">
-      <Icon className="text-foreground size-12" aria-hidden />
+      {item.mark === 'kortix' ? (
+        <KortixLogo size={28} variant="logomark" />
+      ) : item.mark === 'platinum' ? (
+        <PlatinumMark />
+      ) : (
+        <Icon className="text-foreground size-12" aria-hidden />
+      )}
     </div>
   );
 }
 
 /**
- * Case studies as four equal cards in a 2 × 2 grid. Nothing here links
+ * Case studies as eight equal cards, two per row. Nothing here links
  * anywhere, on purpose. Copy and the naming rules: `./content.ts`.
  */
 export function CaseStudies({ id = 'case-studies' }: { id?: string }) {
