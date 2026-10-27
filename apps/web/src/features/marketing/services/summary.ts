@@ -136,8 +136,3 @@ export const ownership = {
     'Run it on **Kortix Cloud, in your VPC, or on your own on-prem network**. Any model provider with your own keys.',
   ],
 } as const;
-
-export const closing = {
-  title: 'Start with one function.',
-  titleMuted: 'Book a call, and we pick the first one together.',
-} as const;

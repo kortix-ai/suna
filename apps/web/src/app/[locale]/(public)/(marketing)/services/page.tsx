@@ -7,7 +7,6 @@ import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, KeyRows, PageFrame, PageHero, SpecGrid } from '@/features/marketing/kit/page-frame';
 import {
-  closing,
   execution,
   hero,
   offerings,
@@ -25,7 +24,8 @@ import { useState } from 'react';
  * `features/marketing/services/summary.ts`.
  *
  * Layout matches /enterprise: the landing page's frame, `FeatureSplit`
- * sections, dither art in the hero. Every "Book a call" opens the demo modal.
+ * sections, dither art in the hero. No closing section: the footer carries the
+ * call to action, and the hero's "Book a call" opens the demo modal.
  *
  * TODO(idea): the hero has no real artifact (kortix-brand magic_trick.md).
  * The idea it lacks is a real adoption report or roadmap excerpt.
@@ -36,11 +36,6 @@ const CAL_NAMESPACE = 'kortix-services-call';
 
 export default function ServicesPage() {
   const [calOpen, setCalOpen] = useState(false);
-  const bookCall = (
-    <MarketingButton size="md" className="hit-area-y-1" onClick={() => setCalOpen(true)}>
-      Book a call
-    </MarketingButton>
-  );
 
   return (
     <>
@@ -56,7 +51,9 @@ export default function ServicesPage() {
                 <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
                   <Link href="/">See the AI OS</Link>
                 </MarketingButton>
-                {bookCall}
+                <MarketingButton size="md" className="hit-area-y-1" onClick={() => setCalOpen(true)}>
+                  Book a call
+                </MarketingButton>
               </>
             }
           />
@@ -91,10 +88,6 @@ export default function ServicesPage() {
         </Block>
 
         <FeatureSplit id="ownership" {...ownership} />
-
-        <Block id="start">
-          <Heading title={closing.title} titleMuted={closing.titleMuted} actions={bookCall} />
-        </Block>
       </PageFrame>
 
       <DemoQualifierModal
