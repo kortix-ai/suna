@@ -77,43 +77,32 @@ async function groupCounts(query: ReturnType<typeof sql>): Promise<Record<string
  * (each a self-contained read with no side effects) are wrapped. User-facing
  * request paths keep throwing — this is not a blanket DB error suppressor.
  */
-async function safeCount(label: string, query: ReturnType<typeof sql>): Promise<number | null> {
+async function safeQuery<T>(operation: () => Promise<T>, diagnostic: string, fallback: T): Promise<T> {
   try {
-    return await oneCount(query);
+    return await operation();
   } catch (err) {
-    console.error(`[ops/overview] ${label} query failed — degrading to null:`, err);
-    return null;
+    console.error(diagnostic, err);
+    return fallback;
   }
+}
+
+async function safeCount(label: string, query: ReturnType<typeof sql>): Promise<number | null> {
+  return safeQuery<number | null>(() => oneCount(query), `[ops/overview] ${label} query failed — degrading to null:`, null);
 }
 
 async function safeGroup(
   label: string,
   query: ReturnType<typeof sql>,
 ): Promise<Record<string, number>> {
-  try {
-    return await groupCounts(query);
-  } catch (err) {
-    console.error(`[ops/overview] ${label} query failed — degrading to {} :`, err);
-    return {};
-  }
+  return safeQuery(() => groupCounts(query), `[ops/overview] ${label} query failed — degrading to {} :`, {});
 }
 
 async function safeRecentAuditEvents(): Promise<RecentAuditEvent[] | null> {
-  try {
-    return await recentAuditEvents();
-  } catch (err) {
-    console.error('[ops/overview] recent audit events query failed — degrading to null:', err);
-    return null;
-  }
+  return safeQuery<RecentAuditEvent[] | null>(recentAuditEvents, '[ops/overview] recent audit events query failed — degrading to null:', null);
 }
 
 async function safeUsageLast24h(): Promise<UsageRow[] | null> {
-  try {
-    return await usageLast24h();
-  } catch (err) {
-    console.error('[ops/overview] usage 24h query failed — degrading to null:', err);
-    return null;
-  }
+  return safeQuery<UsageRow[] | null>(usageLast24h, '[ops/overview] usage 24h query failed — degrading to null:', null);
 }
 
 async function recentAuditEvents(): Promise<RecentAuditEvent[]> {
