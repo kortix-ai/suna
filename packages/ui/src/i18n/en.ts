@@ -7450,9 +7450,6 @@ const catalog = {
       "selected": "{count} selected",
       "required": "{count, plural, one {# required before a session starts} other {# required before a session starts}}",
       "projectDefault": "Project default",
-      "defaultRules": "Default rules",
-      "everything": "{action} everything",
-      "rules": "{count, plural, one {# rule} other {# rules}}",
       "repoAccess": "Can read and push the repository",
       "noRepoAccess": "No repository access",
       "granted": "{count, plural, one {# grant} other {# grants}}",
@@ -7518,6 +7515,7 @@ const catalog = {
       "summaryLead": "{name} can use",
       "summaryNone": "{name} has no access yet: no skills, connectors, secrets or permissions.",
       "summaryCount": {
+        "tools": "{count, plural, one {# tool} other {# tools}}",
         "skills": "{count, plural, one {# skill} other {# skills}}",
         "connectors": "{count, plural, one {# connector} other {# connectors}}",
         "secrets": "{count, plural, one {# secret} other {# secrets}}",
@@ -7527,7 +7525,9 @@ const catalog = {
         "commands": "{count, plural, one {# command} other {# commands}}",
         "extensions": "{count, plural, one {# extension} other {# extensions}}"
       },
+      "summaryExcept": "{all} except {list}",
       "summaryAll": {
+        "tools": "every tool",
         "skills": "every skill",
         "connectors": "every connector",
         "secrets": "every secret",

@@ -17,8 +17,7 @@
  * their values.
  */
 
-import type { AgentCapabilityGrant, AgentConfigBlock, PermissionConfig, ProjectConfigSummary } from '@kortix/sdk';
-import { capitalizeWords } from '@kortix/shared';
+import type { AgentCapabilityGrant, AgentConfigBlock, ProjectConfigSummary } from '@kortix/sdk';
 import {
   BookOpenTextIcon,
   CaretRightIcon,
@@ -91,7 +90,7 @@ export const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   workspace: CubeIcon,
 };
 
-/** The grant a block holds for one Access view. Drives has none in the block. */
+/** The grant a block holds for one Access view. Drives has none in the block; `tools` omitted is every tool. */
 export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): AgentCapabilityGrant | undefined {
   switch (view) {
     case 'actions':
@@ -103,8 +102,9 @@ export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): A
     case 'subagents':
     case 'commands':
     case 'extensions':
-    case 'tools':
       return block[view];
+    case 'tools':
+      return block.tools ?? 'all';
     default:
       return undefined;
   }
@@ -223,13 +223,17 @@ function SummarySentence({
   const locale = useLocale();
   const parts = views
     .filter((view) => view !== 'drives')
-    .map((view) => ({ view, count: grantCount(grantOf(block, view)) }))
+    .map((view) => ({ view, count: grantCount(grantOf(block, view)), excluded: grantExcluded(grantOf(block, view)) }))
     .filter((part) => part.count !== 0);
   if (parts.length === 0) {
     return <p className="text-muted-foreground text-sm text-pretty">{t('summaryNone', { name })}</p>;
   }
   const words = parts.map((part) =>
-    part.count === 'all' ? t(`summaryAll.${part.view}`) : t(`summaryCount.${part.view}`, { count: part.count }),
+    part.count !== 'all'
+      ? t(`summaryCount.${part.view}`, { count: part.count })
+      : part.excluded.length > 0
+        ? t('summaryExcept', { all: t(`summaryAll.${part.view}`), list: part.excluded.join(', ') })
+        : t(`summaryAll.${part.view}`),
   );
   // Format with placeholders, then swap each one for its link.
   const formatted = new Intl.ListFormat(locale, { type: 'conjunction' }).format(words.map((_, i) => `\u0000${i}\u0000`));
@@ -472,12 +476,6 @@ function AsideLink({
   );
 }
 
-function toolsValue(permission: PermissionConfig | undefined, t: ReturnType<typeof useI18nTranslations>) {
-  if (permission === undefined) return t('defaultRules');
-  if (typeof permission === 'string') return t('everything', { action: capitalizeWords(permission) });
-  return t('rules', { count: Object.keys(permission).length });
-}
-
 function OverviewAside({
   agent,
   config,
@@ -492,7 +490,7 @@ function OverviewAside({
   block: AgentConfigBlock;
   editor?: AgentDraft;
   facts: OverviewFacts;
-  hrefs: { model: string; tools: string; workspace: string; triggers: string };
+  hrefs: { model: string; workspace: string; triggers: string };
   onOpenShare?: () => void;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
@@ -610,7 +608,6 @@ function OverviewAside({
           href={hrefs.model}
           value={behavior.model ? (behavior.model.split('/').pop() ?? behavior.model) : tPage('projectDefault')}
         />
-        <AsideLink label={t('tools')} href={hrefs.tools} value={toolsValue(behavior.permission, tPage)} />
         <AsideLink label={t('workspace')} href={hrefs.workspace} value={block.sandbox ?? tPage('projectDefault')} />
       </AsideSection>
 
@@ -659,7 +656,7 @@ export function AgentOverview({
   facts: OverviewFacts;
   editor?: AgentDraft;
   hrefFor: (view: AgentConfigSectionKey) => string | null;
-  hrefs: { model: string; tools: string; workspace: string; triggers: string };
+  hrefs: { model: string; workspace: string; triggers: string };
   sourcePath: string;
   /** Opens the header's Share dialog; absent for a viewer who cannot manage people. */
   onOpenShare?: () => void;

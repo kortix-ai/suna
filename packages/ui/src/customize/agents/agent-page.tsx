@@ -810,11 +810,9 @@ function EditableAgentPage({
   const accessViews = ACCESS_VIEWS.filter((v) => views.includes(v));
   const runtimeViews = RUNTIME_VIEWS.filter((v) => views.includes(v));
   const grantLabel = useGrantLabel();
-  // v2 has no extension or tool grant: those views list switches, no count. v3 `tools` omitted = all.
+  // v2 has no extension grant: that view lists switches, no count.
   const countOf = (view: AgentConfigSectionKey) =>
-    view === 'drives' || ((view === 'extensions' || view === 'tools') && schemaVersion < 3)
-      ? null
-      : grantLabel(view === 'tools' ? (grantOf(draft, view) ?? 'all') : grantOf(draft, view));
+    view === 'drives' || (view === 'extensions' && schemaVersion < 3) ? null : grantLabel(grantOf(draft, view));
   const switcher =
     location.tab === 'access' && location.view ? (
       <ViewSwitcher label={t('tabAccess')} views={accessViews} active={location.view} hrefFor={viewHref} countOf={countOf} />
@@ -865,7 +863,6 @@ function EditableAgentPage({
               hrefFor={viewHref}
               hrefs={{
                 model: viewHref('model'),
-                tools: viewHref('tools'),
                 workspace: viewHref('workspace'),
                 triggers: agentLocationHref(pathname, 'triggers'),
               }}
@@ -1106,7 +1103,6 @@ function ReadOnlyAgentPage({
               hrefFor={viewHref}
               hrefs={{
                 model: sectionLocationHref(pathname, 'model'),
-                tools: sectionLocationHref(pathname, 'model'),
                 workspace: sectionLocationHref(pathname, 'model'),
                 triggers: agentLocationHref(pathname, 'triggers'),
               }}
