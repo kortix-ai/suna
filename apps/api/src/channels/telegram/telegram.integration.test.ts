@@ -103,7 +103,8 @@ beforeAll(async () => {
   restoreLifecycle();
 });
 
-function restoreLifecycle() {
+/** The recorder seam; `overrides` replace single members for one test. */
+function restoreLifecycle(overrides: Parameters<typeof setChannelLifecycleForTest>[0] = {}) {
   setChannelLifecycleForTest({
     resolveProjectAutomationActor: async () => actor,
     createSession: (async (input: Record<string, any>) => {
@@ -125,6 +126,7 @@ function restoreLifecycle() {
       sleeps++;
       await onSleep?.();
     },
+    ...overrides,
   });
 }
 
@@ -260,21 +262,10 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     // Between this message's lookup and its claim, another message's create
     // bound the chat and released its claim (the actor lookup runs in between).
     let winner = '';
-    setChannelLifecycleForTest({
+    restoreLifecycle({
       resolveProjectAutomationActor: async () => {
         winner = await bindChat(919);
         return ACTOR;
-      },
-      createSession: (async (input: Record<string, any>) => {
-        created.push(input);
-        return { status: 'created', sessionId: crypto.randomUUID() };
-      }) as never,
-      deliverThroughQueue: (async (command: Record<string, any>) => {
-        delivered.push(command);
-        return deliverResult;
-      }) as never,
-      sleep: async () => {
-        sleeps++;
       },
     });
     try {
@@ -286,6 +277,33 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     expect(delivered).toHaveLength(1);
     expect(delivered[0]!.sessionId).toBe(winner);
     expect(await claimRows(919)).toHaveLength(0);
+  });
+
+  test('two messages that both saw a dead session start one new session, not two', async () => {
+    const dead = await bindChat(960);
+    const first = update('one', ALLOWED, 960);
+    const second = update('two', ALLOWED, 960);
+    // The second message reads the dead session; while its delivery is refused,
+    // the first message revives the chat. The second must then follow up into
+    // that new session instead of dropping its mapping and creating another.
+    restoreLifecycle({
+      deliverThroughQueue: (async (command: Record<string, any>) => {
+        delivered.push(command);
+        if (command.sessionId !== dead) return 'queued';
+        if (command.idempotencyKey === `telegram:${BOT_ID}:${second.id}`) await handleTelegramEvent(first);
+        return 'no-session';
+      }) as never,
+    });
+    try {
+      await handleTelegramEvent(second);
+    } finally {
+      restoreLifecycle();
+    }
+    expect(createdSessions).toHaveLength(1);
+    expect((await threadRow(960))?.sessionId).toBe(createdSessions[0]);
+    const intoNew = delivered.filter((d) => d.sessionId === createdSessions[0]);
+    expect(intoNew).toHaveLength(1);
+    expect(intoNew[0]!.idempotencyKey).toBe(`telegram:${BOT_ID}:${second.id}`);
   });
 
   test('a project with no owner starts nothing and holds no claim', async () => {

@@ -128,8 +128,9 @@ export async function routeChannelMessage(
   const existing = await findChatThread(target);
   if (existing) {
     if ((await followUp(port, message, existing, run)) !== 'no-session') return;
-    // Its session is gone, or it belongs to another project.
-    await dropChatThread(target);
+    // Its session is gone, or it belongs to another project. Drop only that
+    // mapping: a racing message may have bound a new session since our read.
+    await dropChatThread(target, existing.sessionId);
   }
 
   const plan = await message.plan(existing !== null);
