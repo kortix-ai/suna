@@ -76,3 +76,5 @@ export {
   useGoalClock,
   useGoalIssueText,
 } from '../internal/goals/goal-meta';
+
+export { SessionStatusMark } from './sidebar/session-status-mark';
