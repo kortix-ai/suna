@@ -31,6 +31,13 @@ session create returns `201` with the session, including `session_id` and
 when Kortix queues the create. Read the session with
 `GET /v1/projects/<project_id>/sessions/<session_id>` until it appears.
 
+With only a `session_id`, `GET /v1/sessions/<session_id>` returns the same
+session with its `project_id`, under the same access rules: a session you
+cannot read, an unknown id, and a deleted session all return `404`. A session
+in an account or project you have no access to also returns `404`, so the id
+alone never shows that a session exists. A key scoped to one project cannot
+call it. Use the project route with that key.
+
 ## Pick a surface
 
 All four surfaces reach the same API with the same permissions.
@@ -150,13 +157,16 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Sign-in, SSO & API keys](/docs/accounts/identity#enterprise-features) |
 | `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs/project/models#budgets-and-costs) |
 | `feature_disabled` | `403` | The project has this feature flag off. The body names `feature`. | [Projects](/docs/project#feature-flags) |
-| `feature_operator_only` | `403` | Only Kortix (a platform admin) may change this flag, for example `apps`. | [Projects](/docs/project#feature-flags) |
+| `feature_operator_only` | `403` | Only Kortix (a platform admin) may change this flag. Apps is generally available and has no feature flag. | [Projects](/docs/project#feature-flags) |
 | `account_mfa_required` | `403` | The account requires two-factor, and this sign-in did not use it. | [Sign-in, SSO & API keys](/docs/accounts/identity#two-factor-and-mfa-enforcement) |
 | `expiry_required`, `expiry_too_far` | `400` | A new key breaks the account's key rules. | [Sign-in, SSO & API keys](/docs/accounts/identity#api-keys-and-tokens) |
 | `INVALID_IDEMPOTENCY_KEY` | `400` | The `Idempotency-Key` header is not 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
 | `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/sdk/sessions#session-errors) |
+| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
+| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs/work/sessions#restore-a-deleted-session) |
+| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Sessions](/docs/work/sessions#restore-a-deleted-session) |
 | `project_archived` | `404` | The project was deleted. | [Projects](/docs/project#delete-a-project) |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/git) |
@@ -215,6 +225,10 @@ A list route that pages takes `limit` and `cursor`. Pass the next cursor back as
 | `GET /v1/accounts/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
 | `GET /v1/projects/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
 
+A session page holds only the sessions you may open, and it is full while more
+remain: only the last page holds fewer than `limit` sessions. A delete does not
+move a session in the list order.
+
 The session list also returns an `ETag`. Send it back as `If-None-Match` and an
 unchanged list answers `304` with no body.
 
@@ -244,6 +258,7 @@ take a different credential or protocol than a plain bearer call:
 | The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/sdk/sessions). |
 | SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [SCIM provisioning](/docs/accounts/identity#scim-provisioning) |
 | Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/connect/triggers#webhooks) |
+| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/connect/triggers#app-events) |
 | The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/project/models#use-the-gateway-from-your-own-tools) |
 | The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/git) |
 

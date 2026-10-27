@@ -1,9 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
-import { getVisibleTiers } from '../services/tiers';
+import { PLAN_MAX_MONTHLY_USD, PLAN_MIN_MONTHLY_USD, PLAN_PRESETS } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
-import { makeOpenApiApp, json, auth } from '../../openapi';
+import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { resolveBillingReadAccountId } from '../http-require-billing-write';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
 
@@ -12,7 +13,7 @@ creditsRouter.openapi(
     method: 'get',
     path: '/tier-configurations',
     tags: ['billing'],
-    summary: 'List visible tier configurations',
+    summary: 'List the credits plan tier ladder and amount bounds',
     ...auth,
     responses: {
       200: json(
@@ -27,22 +28,26 @@ creditsRouter.openapi(
               can_purchase_credits: z.boolean(),
             }),
           ),
+          min_monthly_usd: z.number(),
+          max_monthly_usd: z.number(),
         }),
-        'Visible tiers',
+        'Tier ladder: monthly amounts of the one credits plan; any whole amount in bounds',
       ),
     },
   }),
   async (c) => {
-    const tiers = getVisibleTiers().map((t) => ({
-      name: t.name,
-      display_name: t.displayName,
-      monthly_price: t.monthlyPrice,
-      yearly_price: t.yearlyPrice,
-      monthly_credits: t.monthlyCredits,
-      can_purchase_credits: t.canPurchaseCredits,
+    // Each preset grants its price in credits (1 credit = $0.01): monthly_credits
+    // stays in USD, as on every other billing response.
+    const tiers = PLAN_PRESETS.map((p) => ({
+      name: `credits_${p.monthlyUsd}`,
+      display_name: `${(p.monthlyUsd * 100).toLocaleString('en-US')} credits`,
+      monthly_price: p.monthlyUsd,
+      yearly_price: 0,
+      monthly_credits: p.monthlyUsd,
+      can_purchase_credits: true,
     }));
 
-    return c.json({ tiers });
+    return c.json({ tiers, min_monthly_usd: PLAN_MIN_MONTHLY_USD, max_monthly_usd: PLAN_MAX_MONTHLY_USD });
   },
 );
 
@@ -63,10 +68,14 @@ creditsRouter.openapi(
         }),
         'Credit breakdown',
       ),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    // The account the caller asked for (account_id), gated by billing.read,
+    // like every sibling billing read; never the caller's personal account by
+    // default (KRTX-2989).
+    const accountId = await resolveBillingReadAccountId(c);
     const balance = await getCreditBalance(accountId);
 
     if (!balance) {
@@ -92,10 +101,11 @@ creditsRouter.openapi(
     request: { query: z.object({ days: z.coerce.number().optional() }) },
     responses: {
       200: json(z.record(z.string(), z.any()), 'Usage summary'),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    const accountId = await resolveBillingReadAccountId(c);
     const days = Number(c.req.query('days') ?? 30);
     const summary = await getTransactionsSummary(accountId, days);
     return c.json(summary);

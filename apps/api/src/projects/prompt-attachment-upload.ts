@@ -7,7 +7,7 @@ import { db } from '../shared/db';
 import { toPublicStorageUrl } from '../shared/supabase';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { completeChunkedPromptAttachment, processingError } from './prompt-attachment-chunks';
-import { PromptAttachmentError, type BindingRow, type Transaction, type PromptAttachmentScope, type Row, storage, storageUnavailable, chunkedMode, chunkBytes, filePath, metadata, assertOwner, assertUnexpired, selectAttachment, noReferences, COMPLETE_BOUND_MS } from './prompt-attachment-storage';
+import { PromptAttachmentError, type BindingRow, type Transaction, type PromptAttachmentScope, type Row, storage, storageUnavailable, chunkedMode, chunkBytes, filePath, metadata, assertOwner, assertUnexpired, selectAttachment, noReferences, COMPLETE_BOUND_MS, isMissingObject, storageWriteFailure } from './prompt-attachment-storage';
 
 /** Lifetime reported for a direct upload URL. Storage signs for 2 hours by
  * default; a shorter report makes the client re-sign before Storage refuses. */
@@ -25,13 +25,17 @@ type PromptAttachmentUploadTarget =
 const PROMPT_ATTACHMENT_MAX_PENDING_HANDLES = 40;
 const PROMPT_ATTACHMENT_MAX_UNBOUND_BYTES = 500 * 1024 * 1024;
 /** The upload target for one attachment. The direct URL carries a write token:
- * never log it. */
+ * never log it. A re-sign may overwrite: the row is still `uploading`, its owner
+ * asked, and a PUT that landed before its response was lost left an object that
+ * Storage would otherwise refuse to sign over (KRTX-2980). Completion verifies
+ * whatever is stored. */
 async function uploadTarget(
   row: Pick<Row, 'objectPath' | 'mime'>,
+  overwrite = false,
 ): Promise<PromptAttachmentUploadTarget> {
   if (chunkedMode()) return { kind: 'chunked', chunk_size: chunkBytes() };
-  const { data, error } = await storage().createSignedUploadUrl(filePath(row), { upsert: false });
-  if (error || !data?.signedUrl) throw storageUnavailable();
+  const { data, error } = await storage().createSignedUploadUrl(filePath(row), { upsert: overwrite });
+  if (error || !data?.signedUrl) throw storageWriteFailure(error);
   return {
     kind: 'direct',
     url: toPublicStorageUrl(data.signedUrl),
@@ -64,7 +68,7 @@ export async function beginPromptAttachment(
         'Attachment upload cannot restart. Attach the file again.',
         409,
       );
-    return { ...metadata(row), upload: await uploadTarget(row) };
+    return { ...metadata(row), upload: await uploadTarget(row, true) };
   }
   if (
     !Number.isSafeInteger(input.size) ||
@@ -94,7 +98,6 @@ export async function beginPromptAttachment(
       message: billing.message,
       code: billing.reason,
       balance: billing.balance,
-      billing_model: billing.billingModel,
       has_subscription: billing.hasSubscription,
       billing_state: billing.billingState,
       account_id: scope.accountId,
@@ -163,11 +166,6 @@ export async function beginPromptAttachment(
   return { ...metadata(row), upload };
 }
 
-
-function isMissingObject(error: unknown): boolean {
-  const { status, statusCode } = (error ?? {}) as { status?: number; statusCode?: string };
-  return status === 404 || statusCode === '404' || statusCode === 'not_found';
-}
 
 /** Stream the stored object once: exact size and incremental SHA-256, without
  * holding the file in memory. */

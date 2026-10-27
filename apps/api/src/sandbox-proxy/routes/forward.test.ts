@@ -21,6 +21,7 @@ import * as realRequestContext from '../../lib/request-context';
 import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realRetryBudget from '../preview-retry-budget';
 import { PROXY_ATTEMPT_TIMEOUT_MS, PROXY_IMPORT_ATTEMPT_TIMEOUT_MS } from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
@@ -34,6 +35,9 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
@@ -67,13 +71,13 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // driver's connect timeout — 5 s per prompt, which times these cases out.
   // This suite is about delivery dedupe and wire-id placement, so the gate is
   // stubbed to its no-op answer.
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   // The runtime-asset lane beside the config gate. Void, never awaited — a
   // stub is enough here, and its absence is a module LINK error, not a skip.
   scheduleAssetConvergence: () => {},
   // The model-catalog lane. AWAITED by the route, unlike the asset lane — a
   // stub that resolves immediately keeps every case in this file off the
-  // network, same reasoning as `convergeBeforeTurnStart` above.
+  // network, same reasoning as `convergeConfigIfBehind` above.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
@@ -93,6 +97,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
+  stoppedSandboxWakePending: async () => false,
 }));
 // Daytona ingress is a pass-through: the effective port is the addressed port.
 mock.module('../backend', () => ({
@@ -106,6 +111,27 @@ mock.module('../backend', () => ({
   markSandboxUsed: () => {},
   markSandboxErrored: async () => {},
   wakeSandbox: async () => {},
+}));
+
+// A client abort asks who may stop the running turn (`abort-authority.ts`, its
+// rule tested beside it), then stamps the stop. Both are recorded here.
+let abortVerdict: { allowed: true; by: string | null } | { allowed: false } = { allowed: true, by: 'u1' };
+let abortAsks: Array<{ userId: string | null; sessionId: string }> = [];
+const stopLog: Array<{ name: string; scope: unknown; by: unknown }> = [];
+mock.module('../forward/abort-authority', () => ({
+  decideClientAbort: async (access: { kind: string; userId?: string }, record: { sessionId: string }) => {
+    abortAsks.push({ userId: access.kind === 'principal' ? (access.userId ?? null) : null, sessionId: record.sessionId });
+    return abortVerdict;
+  },
+  // A rewind of the caller's own message (its rule is tested in rewind-authority.test.ts).
+  decideClientRewind: async () => true,
+}));
+const realTurnLedger = await import('../../projects/session-turn-ledger');
+mock.module('../../projects/session-turn-ledger', () => ({
+  ...realTurnLedger,
+  markTurnStopRequested: async (_sessionId: string, name: string, scope: unknown, by: unknown) => {
+    stopLog.push({ name, scope, by });
+  },
 }));
 
 const { forwardToSandbox } = await import('./preview');
@@ -242,6 +268,44 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     const second = await forwardToSandbox(...args);
     expect(fetchCalls).toBe(2);
     expect(await second.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
+});
+
+describe('forwardToSandbox — a client abort asks who may stop the turn', () => {
+  const abort = (access: typeof principal = principal) =>
+    forwardToSandbox('sb-1', 8000, access, 'POST', '/session/ses_root/abort', '', jsonHeaders(), undefined, 'http://app.local');
+  beforeEach(() => {
+    abortVerdict = { allowed: true, by: 'u1' };
+    abortAsks = [];
+    stopLog.length = 0;
+  });
+
+  test('refused: 403 not_turn_prompter, nothing stamped, nothing forwarded', async () => {
+    abortVerdict = { allowed: false };
+    queueFetch();
+    const res = await abort();
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Only the member who started this run, the session owner or a project manager can stop it.',
+      code: 'not_turn_prompter',
+    });
+    expect(abortAsks).toEqual([{ userId: 'u1', sessionId: 'sess-1' }]);
+    expect(stopLog).toEqual([]);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('allowed: the stop is stamped under the stopper, then forwarded once', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort()).status).toBe(200);
+    expect(stopLog).toEqual([{ name: 'UserStop', scope: { opencodeSessionId: 'ses_root' }, by: 'u1' }]);
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a sandbox-authored abort is the agent acting: it asks nothing and stamps nothing', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort({ ...principal, sandboxAuthored: true })).status).toBe(200);
+    expect(abortAsks).toEqual([]);
+    expect(stopLog).toEqual([]);
   });
 });
 

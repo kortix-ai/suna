@@ -140,14 +140,16 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
 
   /**
    * Lines where the JavaScript engine provably differs from Oniguruma. Each
-   * entry is asserted to STILL differ, so a Shiki upgrade that fixes it fails
-   * this test and the entry gets deleted.
+   * entry is asserted to STILL differ, so a Shiki or runtime upgrade that fixes
+   * it fails this test and the entry gets deleted.
    *
-   * ini: `(^[\t ]+)?(?=;)` … `end: (?!\G)` — the engine's `\G` emulation ends
-   * the zero-width begin at once, so a `;` comment AFTER a value on the same
-   * line stays base colour. Comments at the start of a line still colour.
+   * Empty on bun 1.4.3. On bun 1.3.14 `ini` line 2 differed: `(^[\t ]+)?(?=;)`
+   * … `end: (?!\G)` — the engine's `\G` emulation ended the zero-width begin
+   * at once, so a `;` comment AFTER a value on the same line stayed base
+   * colour. Bun 1.4.3 paints it like Oniguruma. The app runs on Hermes, which
+   * this test does not exercise: that line is unmeasured there.
    */
-  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = { ini: [2] };
+  const KNOWN_ENGINE_DIFFERENCES: Record<string, number[]> = {};
 
   /**
    * Lines where the wasm reference's own verdict is not portable: excluded

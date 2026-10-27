@@ -98,11 +98,15 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // `.revoke` (20260921121500000 — a member may mint their own PAT),
     // `project.usage.read` (project-scoped costs), and the four topic leaves that
     // split `project.customize.*` (20261003235127508: settings.write,
-    // sandbox.write, model.read, model.write). The two retired customize rows
-    // stay until the contract migration; the API no longer lists them. Then
+    // sandbox.write, model.read, model.write); the two retired customize rows
+    // left with the contract migration 20261017134834494. Then
     // `project.app.admin` (20261009115640000, which also removed the two
-    // `project.backend.*` leaves #9264 had added).
-    expect(seeded).toHaveLength(80);
+    // `project.backend.*` leaves #9264 had added). Then Kortix Capture's
+    // `capture.read_all` and `capture.manage` (20261015003000001). Then rooms'
+    // `project.room.read` and `project.room.write` (20261020130102200). Then
+    // artifacts' `project.artifact.{read,write,manage,public}` (20261024055005000).
+    expect(seeded).toHaveLength(86);
+    expect(seeded.filter((a) => a.startsWith('project.customize.'))).toEqual([]);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -134,15 +138,21 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const owner = await systemRoleActions('owner', 'account');
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
-    expect([owner.length, admin.length, member.length]).toEqual([29, 26, 7]);
+    // +2 owner and admin: Kortix Capture's capture.read_all and capture.manage (20261015003000001).
+    // +1 admin: billing.write (20261015003246450).
+    expect([owner.length, admin.length, member.length]).toEqual([31, 29, 5]);
+    // A plain member does not read the whole directory (20261013172952181):
+    // they see the people and groups they share access with.
+    expect(member).not.toContain('member.read');
+    expect(member).not.toContain('group.read');
     expect(member.filter((a) => !admin.includes(a))).toEqual([]);
     expect(admin.filter((a) => !owner.includes(a))).toEqual([]);
-    // The four owner-only powers, named.
+    // The owner-only powers, named. Admins manage billing (20261015003246450).
     expect(owner.filter((a) => !admin.includes(a)).sort()).toEqual([
       'account.delete',
-      'billing.write',
       'member.super_admin.grant',
     ]);
+    expect(admin).toContain('billing.write');
     // A plain account member has NO write surface over the account. Its only
     // non-read leaves act on the member's OWN personal tokens, which carry no
     // more than the member's own roles.
@@ -156,8 +166,11 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
     // Manager: +4 topic leaves from the customize split (agent.write it held),
-    // +1 project.app.admin (mirrors project.app.write). Member: unchanged.
-    expect([manager.length, member.length]).toEqual([51, 15]);
+    // +1 project.app.admin (mirrors project.app.write), -2 retired
+    // project.customize.* (20261017134834494). Both: +2 project.room.*
+    // (20261020130102200). Manager +4, member +3 project.artifact.* (manage is
+    // the manager's alone) (20261024055005000).
+    expect([manager.length, member.length]).toEqual([55, 20]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this

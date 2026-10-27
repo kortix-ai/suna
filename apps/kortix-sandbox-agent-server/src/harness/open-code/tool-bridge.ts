@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import { loadTools, toolBridgeKey } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { toolNamesInDir } from './config-directory-inventory'
 
 /**
@@ -26,6 +27,7 @@ import { toolNamesInDir } from './config-directory-inventory'
  * A tool the served config dir defines itself (`tools/<name>.ts`, the copies
  * the project template wrote before the tools were hosted) keeps the
  * project's file: two tools of one name would break every model request.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function toolBridgeSource(listPath: string): string {
   return `// Written by kortixd (harness/open-code/tool-bridge.ts). Do not edit.
@@ -33,6 +35,7 @@ import { readFileSync } from 'node:fs'
 
 const LIST = ${JSON.stringify(listPath)}
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const KortixTools = async () => {
   const { url, key, tools } = JSON.parse(readFileSync(LIST, 'utf8'))
   const schemas = new Map(tools.map((tool) => [tool.name, tool.parameters]))
@@ -63,9 +66,11 @@ export const KortixTools = async () => {
 /**
  * Load the hosted tools, write the bridge plugin to `path` and its tool list
  * beside it, and return the plugin's `file://` spec. `projectRoot` is the
- * checkout OpenCode serves its config from (the working tree or a release);
- * null loads only the Kortix tools. The list holds only the loaded tools: a
+ * release (or, with releases off, the working tree) the boot link serves,
+ * whether or not it has an OpenCode config dir (`readBootReleaseRoot`); null
+ * loads only the Kortix tools. The list holds only the loaded tools: a
  * Kortix tool the project does not list is not in it.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function writeToolBridge(
   path: string,
@@ -94,7 +99,7 @@ export async function writeToolBridge(
 
 function compiledTools(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null') as Partial<CompiledAgentSet> | null
+    return JSON.parse(compiledAgentConfigFromEnv(env) ?? 'null') as Partial<CompiledAgentSet> | null
   } catch {
     return null
   }

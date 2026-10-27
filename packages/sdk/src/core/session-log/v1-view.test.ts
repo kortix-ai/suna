@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Message, Part } from '../runtime/runtime-types';
-import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, type SessionLogState } from './store';
-import type { SessionLog } from './types';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, selectSessionLogThread, type SessionLogState } from './store';
+import { normalizeShellExits } from './shell-exit';
+import type { SessionLog, SessionLogMessage } from './types';
 import { fromV1, toV1, type V1Transcript } from './v1';
-import { sessionLogOfV1Rows, sessionLogRowsFor, type V1MessageRow } from './v1-view';
+import { sessionLogOfV1Rows, sessionLogRowsFor, sessionLogThreadWithV1Rows, type V1MessageRow } from './v1-view';
+import { sessionLogTurns } from './turns';
 
 const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log');
 const fixtures: Array<[string, SessionLog]> = readdirSync(CONTRACT_FIXTURES)
@@ -34,19 +36,27 @@ function stateOf(log: SessionLog): SessionLogState {
 const rowsOfV1 = (v1: V1Transcript): V1MessageRow[] => v1.rows.map((r) => ({ info: r.info as unknown as Message, parts: r.parts as unknown as Part[] }));
 const ev = (type: string, properties: unknown) => ({ type, properties });
 const NONE: V1MessageRow[] = [];
+/** A thread as the store holds it. */
+const storedThread = <T extends { messages: SessionLogMessage[] }>(thread: T): T => ({
+  ...thread,
+  messages: thread.messages.map(normalizeShellExits),
+});
 
 describe('sessionLogRowsFor: the v1 rows of a v2 thread', () => {
   for (const [name, native] of fixtures) {
-    test(`${name}: a thread without the kortix.transcript.v1 ext keeps the v1 store rows (as the API's v1 reads do)`, () => {
+    test(`${name}: a native thread (no kortix.transcript.v1 ext, as pi writes) reads as toV1 of that thread, by its thread id`, () => {
       const logs = { kses_1: stateOf(native) };
-      const v1Rows: V1MessageRow[] = [];
-      for (const thread of native.threads) expect(sessionLogRowsFor(logs, thread.thread_id, v1Rows)).toBe(v1Rows);
+      for (const thread of native.threads) {
+        // The store holds a shell command that exited non-zero as completed (KRTX-3021).
+        const expected = rowsOfV1(toV1({ ...native, threads: [storedThread(thread)] }));
+        expect(sessionLogRowsFor(logs, thread.thread_id, NONE)).toEqual(expected);
+      }
     });
     test(`${name}: a thread fromV1 marked reads as toV1 of that thread`, () => {
       const log = asV1Threads(native);
       const logs = { kses_1: stateOf(log) };
       for (const thread of log.threads) {
-        const expected = rowsOfV1(toV1({ ...log, threads: [thread] }));
+        const expected = rowsOfV1(toV1({ ...log, threads: [storedThread(thread)] }));
         expect(sessionLogRowsFor(logs, thread.thread_id, NONE)).toEqual(expected);
       }
     });
@@ -142,6 +152,93 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
   });
 });
 
+describe('sessionLogThreadWithV1Rows: a v2 thread with the v1 rows the log lacks (an optimistic send)', () => {
+  const optimistic = (id: string, created: number, text: string): V1MessageRow => ({
+    info: { id, sessionID: ROOT, role: 'user', time: { created }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+    parts: [{ id: `${id}-p`, sessionID: ROOT, messageID: id, type: 'text', text } as unknown as Part],
+  });
+
+  test('a row the log holds or tombstoned stays out; an optimistic send is appended as a fromV1 user message', () => {
+    let state = stateOf(v1Golden);
+    const v2 = v1Golden.threads[0]!.messages;
+    const deleted = v2[1]!.message_id;
+    state = applySessionLogEvent(state, ev('log.message', { message_id: deleted, rev: Number.MAX_SAFE_INTEGER }));
+    const thread = selectSessionLogThread(state)!;
+    const last = Date.parse(v2.at(-1)!.created_at);
+    const v1Rows = [optimistic(v2[0]!.message_id, last, 'stale copy'), optimistic(deleted, last, 'deleted'), optimistic('msg_optimistic', last + 1_000, 'just sent')];
+    const merged = sessionLogThreadWithV1Rows(state, thread, v1Rows);
+    expect(merged.messages.slice(0, -1)).toEqual(thread.messages);
+    expect(merged.messages.at(-1)).toMatchObject({
+      message_id: 'msg_optimistic', thread_id: ROOT, role: 'user', kind: 'turn', status: 'complete', in_context: true,
+      seq: thread.messages.at(-1)!.seq + 1, created_at: new Date(last + 1_000).toISOString(), blocks: [{ type: 'text', id: 'msg_optimistic-p', text: 'just sent' }],
+    });
+    expect({ ...merged, messages: [] }).toEqual({ ...thread, messages: [] });
+  });
+
+  test('a stub whose echo id the log holds (a re-minted prompt) stays out, in the thread and in the v1 rows', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    const echo = thread.messages[0]!.message_id;
+    const stub = optimistic('msg_stub', 1, 'sent');
+    const echoOf = (id: string) => (id === 'msg_stub' ? echo : undefined);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub], echoOf)).toBe(thread);
+    expect(sessionLogThreadWithV1Rows(state, thread, [stub]).messages.map((m) => m.message_id)).toContain('msg_stub');
+    const rows = sessionLogRowsFor({ kses_1: state }, ROOT, [stub], echoOf);
+    expect(rows.map((r) => r.info.id)).not.toContain('msg_stub');
+    expect(sessionLogRowsFor({ kses_1: state }, ROOT, [stub]).map((r) => r.info.id)).toContain('msg_stub');
+  });
+
+  test('a compaction marker and its summary row the log lacks (pi: a failed compaction is not in its store) are one message, as on v1', () => {
+    const state = stateOf(golden);
+    const thread = selectSessionLogThread(state)!;
+    const last = Date.parse(thread.messages.at(-1)!.created_at) + 1_000;
+    const marker: V1MessageRow = {
+      info: { id: 'msg_cm', sessionID: ROOT, role: 'user', time: { created: last }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+      parts: [{ id: 'msg_cm-p', sessionID: ROOT, messageID: 'msg_cm', type: 'compaction', auto: false } as unknown as Part],
+    };
+    const summary: V1MessageRow = {
+      info: { id: 'msg_cs', sessionID: ROOT, role: 'assistant', parentID: 'msg_cm', summary: true, time: { created: last, completed: last }, error: { name: 'UnknownError', data: { message: 'Compaction failed' } }, modelID: 'm', providerID: 'p', mode: 'compaction', agent: 'compaction', path: { cwd: '/', root: '/' }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } } as unknown as Message,
+      parts: [],
+    };
+    const merged = sessionLogThreadWithV1Rows(state, thread, [marker, summary]);
+    const added = merged.messages.slice(thread.messages.length);
+    const expected = sessionLogOfV1Rows('', ROOT, [marker, summary]).threads[0]!.messages;
+    expect(added.map((m) => m.message_id)).toEqual(['msg_cm']);
+    expect(added.map(({ seq: _s, ...m }) => m)).toEqual(expected.map(({ seq: _s, ...m }) => m));
+  });
+
+  test('an older v1 row the log lacks (a loadOlder page) goes in by its time, before the log\'s messages: its turn is turn 0', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    const first = Date.parse(thread.messages[0]!.created_at);
+    const older = optimistic('msg_older', first - 60_000, 'an earlier prompt');
+    const newer = optimistic('msg_newer', Date.parse(thread.messages.at(-1)!.created_at) + 1_000, 'just sent');
+    const merged = sessionLogThreadWithV1Rows(state, thread, [older, newer]);
+    expect(merged.messages.map((m) => m.message_id)).toEqual(['msg_older', ...thread.messages.map((m) => m.message_id), 'msg_newer']);
+    // The log's own messages keep their seq.
+    expect(merged.messages.slice(1, -1)).toEqual(thread.messages);
+    expect(sessionLogTurns(merged)[0]!.id).toBe('msg_older');
+    expect(sessionLogTurns(merged).at(-1)!.id).toBe('msg_newer');
+  });
+
+  test('identity: the same inputs give the same thread; no extra row gives the thread itself; a changed row renews only its message', () => {
+    const state = stateOf(v1Golden);
+    const thread = selectSessionLogThread(state)!;
+    expect(sessionLogThreadWithV1Rows(state, thread, [])).toBe(thread);
+    expect(sessionLogThreadWithV1Rows(state, thread, [optimistic(thread.messages[0]!.message_id, 1, 'held')])).toBe(thread);
+    // Optimistic sends: newer than every message, so they go last.
+    const after = Date.parse(thread.messages.at(-1)!.created_at);
+    const v1Rows = [optimistic('msg_o1', after + 1, 'one'), optimistic('msg_o2', after + 2, 'two')];
+    const first = sessionLogThreadWithV1Rows(state, thread, v1Rows);
+    expect(sessionLogThreadWithV1Rows(state, thread, v1Rows)).toBe(first);
+    const second = sessionLogThreadWithV1Rows(state, thread, [v1Rows[0]!, optimistic('msg_o2', after + 2, 'two, edited')]);
+    expect(second).not.toBe(first);
+    expect(second.messages.at(-2)).toBe(first.messages.at(-2)!);
+    expect(second.messages.at(-1)).not.toBe(first.messages.at(-1)!);
+    expect(second.messages.at(-1)!.blocks).toEqual([{ type: 'text', id: 'msg_o2-p', text: 'two, edited' }]);
+  });
+});
+
 describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store rows (v2 not negotiated)', () => {
   const v1 = toV1(v1Golden);
   const RS = v1.root_id!;
@@ -165,10 +262,53 @@ describe('sessionLogOfV1Rows: the session log of one runtime session\'s v1 store
     expect(sessionLogOfV1Rows('kses_v1', RS, [])).toEqual(expected([]));
   });
 
+  test('an optimistic send (a v1 row the store appended) is the last message: a complete user turn with its text', () => {
+    const sent: V1MessageRow = {
+      info: { id: 'msg_zzopt', sessionID: RS, role: 'user', time: { created: T + 5_000 }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as unknown as Message,
+      parts: [{ id: 'prt_zzopt', sessionID: RS, messageID: 'msg_zzopt', type: 'text', text: 'next question' } as unknown as Part],
+    };
+    const view = sessionLogOfV1Rows('kses_v1', RS, [...rows, sent]).threads[0]!;
+    expect(view.messages.at(-1)).toMatchObject({ message_id: 'msg_zzopt', role: 'user', kind: 'turn', status: 'complete', in_context: true, blocks: [{ type: 'text', id: 'prt_zzopt', text: 'next question' }] });
+  });
+
   test('an open call stays open: the live turn is streaming, not closed by the closure rule', () => {
     const message = sessionLogOfV1Rows('kses_v1', RS, rows).threads[0]!.messages.at(-1)!;
     expect(message).toMatchObject({ message_id: 'msg_zlive', status: 'streaming' });
     expect(message.blocks.map((b) => (b as { status?: string }).status)).toEqual(['running', 'pending']);
+  });
+
+  test('a changed row keeps the block of every part object it still holds (a text delta does not replace its tool calls)', () => {
+    const first = sessionLogOfV1Rows('kses_v1', RS, rows).threads[0]!.messages.at(-1)!;
+    // A text part streams in: a new row object, the same two tool part objects.
+    const text = { id: 'prt_zlive3', sessionID: RS, messageID: 'msg_zlive', type: 'text', text: 'hel' } as unknown as Part;
+    const grown: V1MessageRow = { ...live, parts: [...live.parts, text] };
+    const second = sessionLogOfV1Rows('kses_v1', RS, [...rows.slice(0, -1), grown]).threads[0]!.messages.at(-1)!;
+    expect(second).not.toBe(first);
+    expect(second.blocks[0]).toBe(first.blocks[0]);
+    expect(second.blocks[1]).toBe(first.blocks[1]);
+    // A changed part gets a new block, and the view still equals fromV1 (live).
+    const more: V1MessageRow = { ...grown, parts: [live.parts[0]!, { ...live.parts[1]!, state: { status: 'running', input: { filePath: '/w/b' }, time: { start: T + 3 } } } as unknown as Part, { ...text, text: 'hello' } as Part] };
+    const input = [...rows.slice(0, -1), more];
+    const third = sessionLogOfV1Rows('kses_v1', RS, input);
+    const last = third.threads[0]!.messages.at(-1)!;
+    expect(last.blocks[0]).toBe(first.blocks[0]);
+    expect(last.blocks[1]).not.toBe(first.blocks[1]);
+    expect(third).toEqual(expected(input));
+  });
+
+  test('restore_grade and grade_counts count only in-context messages, as fromV1 does', () => {
+    // A failed attempt (an errored reply, out of context) whose call lost its input: the model never saw it.
+    const failed: V1MessageRow = {
+      info: { ...(live.info as object), id: 'msg_zfail', time: { created: T + 10, completed: T + 11 }, error: { name: 'APIError', data: { message: 'upstream 500' } } } as unknown as Message,
+      parts: [{ id: 'prt_zfail1', sessionID: RS, messageID: 'msg_zfail', type: 'tool', callID: 'call_f', tool: 'bash', state: { status: 'completed', output: 'ok', title: '', metadata: {}, time: { start: T + 10, end: T + 11 } } }] as unknown as Part[],
+    };
+    const input = [...rows, failed];
+    const want = expected(input);
+    const message = want.threads[0]!.messages.at(-1)!;
+    expect(message).toMatchObject({ message_id: 'msg_zfail', in_context: false, hidden_reason: 'failed_attempt' });
+    const got = sessionLogOfV1Rows('kses_v1', RS, input);
+    expect(got.grade_counts).toEqual(want.grade_counts!);
+    expect(got.restore_grade).toBe(want.restore_grade);
   });
 
   test('the same rows array gives the same log; a changed row gives a new message for that row only', () => {

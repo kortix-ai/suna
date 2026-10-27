@@ -1,9 +1,9 @@
 'use client';
 
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
-import { isDesktop } from '@/lib/desktop';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -33,6 +33,10 @@ function hrefForTab(projectId: string, id: string) {
  * | Mod+1 … Mod+8         | Switch to nth open tab              |
  * | Mod+9                 | Switch to LAST open tab             |
  *
+ * Mod+T and the desktop `new-session` command call `onNewSession`. With the
+ * project's `project_channels` flag on, the shell passes "open the default
+ * channel" instead of "new session". Without `onNewSession` they do nothing.
+ *
  * `Mod` follows the user's `tabSwitchModifier` preference (Ctrl by default).
  * Global shortcuts (Mod+J new session, Mod+K command palette, Mod+B sidebar
  * toggles) live in their own components and aren't duplicated here.
@@ -45,7 +49,8 @@ export function useProjectShellShortcuts({
   onNewSession,
 }: {
   projectId: string;
-  onNewSession: () => void;
+  /** Mod+T and the desktop `new-session` command. Channels on: opens the default channel. */
+  onNewSession?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -75,7 +80,7 @@ export function useProjectShellShortcuts({
     const onCommand = (event: Event) => {
       const command = (event as CustomEvent<string>).detail;
       if (command === 'new-session') {
-        onNewSession();
+        onNewSession?.();
         return;
       }
       if (command !== 'close-tab') return;
@@ -106,7 +111,7 @@ export function useProjectShellShortcuts({
       const goToTab = (id: string) => router.push(hrefForTab(projectId, id));
 
       // New tab — Mod+T
-      if (modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
+      if (onNewSession && modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
         e.preventDefault();
         onNewSession();
         return;

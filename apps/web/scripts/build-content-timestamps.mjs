@@ -23,12 +23,11 @@
 // commit is rebased or cherry-picked, which would mislead recency-aware
 // retrievers.
 //
-// A squash merge stamps a new committer date on the commit that carries the
-// content and the manifest the PR regenerated, and the manifest cannot know the
-// date of the commit it ships in. `staleContentTimestamps` therefore excuses an
-// entry whose content's last commit also touched the manifest: the commit that
-// carried the content also carried a regenerated manifest. Content changed
-// without the manifest still fails.
+// The committed manifest is only the fallback for builds that cannot read full
+// git history (a shallow clone). A date in it cannot be verified from the tree:
+// a squash merge stamps a new committer date on the commit that carries it.
+// `invalidContentTimestamps` therefore checks what the tree decides: the entry
+// keys equal the content sources on disk, and every value is an ISO instant.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -51,32 +50,14 @@ const MARKETING_SOURCES = {
   enterprise: 'apps/web/src/app/[locale]/(public)/(marketing)/enterprise/page.tsx',
   pricing: 'apps/web/src/app/[locale]/(public)/(marketing)/pricing/page.tsx',
   marketplace: 'apps/web/src/app/[locale]/(public)/(marketing)/marketplace/page.tsx',
-  support: 'apps/web/src/app/[locale]/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
-  'agent-computer': 'apps/web/src/app/[locale]/(public)/(marketing)/agent-computer/page.tsx',
-  'agents-and-skills': 'apps/web/src/app/[locale]/(public)/(marketing)/agents-and-skills/page.tsx',
-  automations: 'apps/web/src/app/[locale]/(public)/(marketing)/automations/page.tsx',
-  channels: 'apps/web/src/app/[locale]/(public)/(marketing)/channels/page.tsx',
-  'company-as-code': 'apps/web/src/app/[locale]/(public)/(marketing)/company-as-code/page.tsx',
-  connectors: 'apps/web/src/app/[locale]/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
-  // Solutions: the hub, then one entry per role. The eight role pages share a
-  // single dynamic route, so the meaningful source of each one is its own
-  // content file — that is the file whose last commit dates the page.
-  solutions: 'apps/web/src/features/marketing/solutions/hub-page.tsx',
-  'solutions/sales': 'apps/web/src/features/marketing/solutions/roles/sales.ts',
-  'solutions/marketing': 'apps/web/src/features/marketing/solutions/roles/marketing.ts',
-  'solutions/product': 'apps/web/src/features/marketing/solutions/roles/product.ts',
-  'solutions/engineering': 'apps/web/src/features/marketing/solutions/roles/engineering.ts',
-  'solutions/finance': 'apps/web/src/features/marketing/solutions/roles/finance.ts',
-  'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
-  'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
-  'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
+  'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
   careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
-  download: 'apps/web/src/app/[locale]/(public)/(marketing)/download/page.tsx',
+  download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
 };
 
 function gitAvailable() {
@@ -102,9 +83,9 @@ function gitAvailable() {
   }
 }
 
-function lastCommit(format, pathRelativeToRepo, rev = 'HEAD') {
+function lastCommit(format, pathRelativeToRepo) {
   try {
-    return execFileSync('git', ['log', '-1', `--format=${format}`, rev, '--', pathRelativeToRepo], {
+    return execFileSync('git', ['log', '-1', `--format=${format}`, 'HEAD', '--', pathRelativeToRepo], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
     }).trim();
@@ -178,20 +159,23 @@ function collectContentTimestampManifest() {
   return manifest;
 }
 
-// Keys of `committed` that differ from a fresh generation, minus the entries
-// whose content's last commit also touched the manifest (see the header). Empty without usable git history.
-function staleContentTimestamps(committed) {
-  if (!gitAvailable()) return [];
-  const manifestRel = relative(REPO_ROOT, MANIFEST_PATH).replaceAll('\\', '/');
+// Keys of `committed` that disagree with the content sources on disk: a source
+// without an entry, an entry without a source, or a value that is not an ISO
+// instant. Reads the tree only, so the result is the same on every branch.
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+function invalidContentTimestamps(committed) {
   const sources = contentSources();
-  const stale = [];
-  for (const key of new Set([...Object.keys(sources), ...Object.keys(committed)])) {
-    const iso = sources[key] ? (lastCommitIso(sources[key]) ?? undefined) : undefined;
-    if (iso === committed[key]) continue;
-    const contentCommit = iso && key in committed ? lastCommit('%H', sources[key]) : '';
-    if (!contentCommit || lastCommit('%H', manifestRel, contentCommit) !== contentCommit) stale.push(key);
+  const expected = Object.entries(sources)
+    .filter(([, rel]) => existsSync(join(REPO_ROOT, rel)))
+    .map(([key]) => key);
+  const invalid = [];
+  for (const key of new Set([...expected, ...Object.keys(committed)])) {
+    const value = committed[key];
+    const valid = expected.includes(key) && typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+    if (!valid) invalid.push(key);
   }
-  return stale.sort();
+  return invalid.sort();
 }
 
 function createContentTimestampManifest() {
@@ -228,10 +212,18 @@ function safeWrite(manifest) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    refreshContentTimestamps();
-  } catch {
+    if (process.argv.includes('--strict')) {
+      if (!gitAvailable()) throw new Error('Content timestamps require full git history');
+      const manifest = collectContentTimestampManifest();
+      mkdirSync(dirname(MANIFEST_PATH), { recursive: true });
+      writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+    } else {
+      refreshContentTimestamps();
+    }
+  } catch (error) {
+    if (process.argv.includes('--strict')) throw error;
     // The manifest is an optimization. Direct generation must not block a build.
   }
 }
 
-export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps, staleContentTimestamps };
+export { createContentTimestampManifest, invalidContentTimestamps, MANIFEST_PATH, refreshContentTimestamps };

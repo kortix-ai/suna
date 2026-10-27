@@ -1,6 +1,6 @@
 'use client';
 
-import { ProductMenu } from '@/components/home/product-menu';
+import { MEGA_MENUS, type MegaMenu, MegaMenuPanel } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {
   ContextMenu,
@@ -8,81 +8,103 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import Loading from '@/components/ui/loading';
-import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
-import {
-  NavigationMenu,
-  NavigationMenuContent,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-  NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/context-menu';
+import Loading from '@kortix/ui/loading';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { ChatGPT } from '@/features/icon/icons/chat-gpt';
-import { Claude } from '@/features/icon/icons/claude';
-import { Github } from '@/features/icon/icons/github';
-import { OpenClaw } from '@/features/icon/icons/open-claw';
-import { Viktor } from '@/features/icon/icons/viktor';
-import { Zapier } from '@/features/icon/icons/zapier';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_CONTAINER } from '@/features/marketing/kit/section';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useIsMobile } from '@/hooks/utils';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useGitHubStars } from '@/hooks/use-github-stars';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
-import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
 import {
-  ArrowRightIcon,
+  CaretDownIcon,
+  CaretUpIcon,
   StackIcon as Layers,
   ListIcon as Menu,
   TextTIcon as Type,
   XIcon as X,
 } from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
-import { type MouseEvent, useCallback, useEffect, useState } from 'react';
-import { Download } from '@/features/icon/icons/download';
-
-const SCROLL_THRESHOLD_DOWN = 50;
-const SCROLL_THRESHOLD_UP = 20;
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 const CTA_LINK = '/auth';
 
-/**
- * The marketing sections all sit on `mx-auto max-w-7xl px-6`. The bar's surface
- * still spans the viewport, but its contents ride the exact same measure, so the
- * logo's left edge and the CTA's right edge line up with the section text below.
- */
-const CONTENT_MEASURE = 'mx-auto w-full max-w-7xl px-6';
+/** The bar turns solid once the page has scrolled this far. */
+const SOLID_AFTER_PX = 20;
+/** Half the 64px bar: a dark band counts as under the bar until it clears this line. */
+const BAR_MIDLINE_PX = 32;
+/** First hover waits this long, so a pointer crossing the bar opens nothing. */
+const HOVER_INTENT_MS = 80;
+/** Leaving the bar and panel closes after this grace, so a diagonal exit survives. */
+const LEAVE_GRACE_MS = 150;
+/** A click this soon after hover opened the menu keeps it open instead of toggling. */
+const HOVER_CLICK_GRACE_MS = 400;
+/** The mega menu is a desktop surface; below this width the drawer takes over. */
+const DESKTOP_QUERY = '(min-width: 1024px)';
 
-/** The links a drawer row expands to; empty for a row that simply navigates. */
-function drawerSubLinks(item: NavLink): NavSubLink[] {
-  if ('menu' in item) return item.menu.columns.flatMap((column) => column.links);
-  return typeof item.href === 'string' ? [] : item.href;
-}
+const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
-/**
- * The drawer is deliberately static: tapping the menu button swaps it in the
- * same frame, with no enter motion, no level pushes, no stagger. Rows keep a
- * `py` tall enough for a 40px+ hit area at this type size.
- */
-const DRAWER_ROW = 'flex items-center gap-2 py-2 text-lg font-medium transition-colors';
+type MenuId = MegaMenu['id'];
 
-interface NavbarProps {
-  isAbsolute?: boolean;
-}
+/** Links in the bar that navigate directly, beside the three menus. */
+const PLAIN_LINKS = [
+  { label: 'Enterprise', href: '/enterprise' },
+  { label: 'Pricing', href: '/pricing' },
+];
 
-export function Navbar({ isAbsolute = false }: NavbarProps) {
+const USE_CASES_ENABLED = process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false';
+
+/** Bar text link: ink at rest, muted on hover (Buio). */
+const BAR_LINK =
+  'text-foreground hover:text-muted-foreground outline-ring flex h-full items-center rounded-sm text-sm transition-colors duration-moderate focus-visible:outline-2';
+
+/** Nav trigger or link: a quiet row that turns into a muted pill while its menu is open. */
+const NAV_ITEM =
+  'text-foreground hover:text-muted-foreground outline-ring flex h-8 items-center rounded-md px-3 text-sm transition-colors duration-moderate focus-visible:outline-2';
+
+/** Drawer row: one link per line, the full width, 44px tall to tap. */
+const DRAWER_ROW =
+  'text-foreground hover:text-muted-foreground outline-ring flex min-h-11 w-full items-center gap-2 rounded-sm text-left text-base transition-colors duration-moderate focus-visible:outline-2';
+
+const firstLink = (panel: HTMLElement | null | undefined) =>
+  panel?.querySelector<HTMLElement>('a[href]') ?? null;
+
+export function Navbar() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [hasScrolled, setHasScrolled] = useState(false);
+  const { user } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const reduceMotion = useReducedMotion();
+  const openDemo = useRequestDemo();
+  const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
+
+  const [scrolled, setScrolled] = useState(false);
+  // True while a page's dark top band (`data-hero-band`) is under the bar.
+  const [overBand, setOverBand] = useState(false);
+  const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
+  // Keyboard opens and Escape closes skip the reveal: a keyboard action is
+  // never animated (animations-dev).
+  const [instant, setInstant] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   // Drawer navigation closes the drawer when it commits, not on tap
   // (KRTX-1591): an instant close left the old page frozen for ~2 s at mobile
@@ -90,22 +112,23 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   // navigating to; the tapped row runs the spinner until `pathname` lands on
   // it.
   const [pendingHref, setPendingHref] = useState<string | null>(null);
-  const { user } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
-  const t = useTranslations('common');
-  const isMobile = useIsMobile();
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const triggerRefs = useRef<Partial<Record<MenuId, HTMLButtonElement | null>>>({});
+  const panelRefs = useRef<Partial<Record<MenuId, HTMLDivElement | null>>>({});
+  const timerRef = useRef<number | undefined>(undefined);
+  const hoverOpenedAtRef = useRef(0);
+  const focusPanelRef = useRef(false);
 
   // `latestProjectPath` reads document.cookie, which the server pass cannot see.
   // Seed the state with the landing door and adopt the remembered project after
-  // mount, so the "Projects" href is identical on both passes.
-  //
-  // No dependency array on purpose. Keyed on `[user]` the href froze at mount,
-  // so opening another project in a second tab left this one pointing at the
-  // previously remembered project — and an anchor's href is also what a
-  // middle-click and "copy link address" use, so a stale value is visible, not
-  // just wrong on click. Re-reading after every render costs one cookie read
-  // and a string compare, and the setter is guarded so it cannot loop.
+  // mount, so the "Projects" href is identical on both passes. No dependency
+  // array on purpose: a project opened in another tab must update this href
+  // (an anchor's href is also what middle-click and "copy link" use). The
+  // setter is guarded so it cannot loop.
   const [projectsHref, setProjectsHref] = useState(PROJECT_LANDING_PATH);
   useEffect(() => {
     if (!user) return;
@@ -113,23 +136,239 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     setProjectsHref((prev) => (prev === next ? prev : next));
   });
 
-  const filteredNavLinks = localizeUiCatalog(
-    siteConfig.nav.links,
-    tI18nComplete,
-    SITE_CONFIG_TRANSLATION_KEYS,
+  const menus = localizeUiCatalog(MEGA_MENUS, tI18nComplete, SITE_CONFIG_TRANSLATION_KEYS).map(
+    (menu) => ({
+      ...menu,
+      groups: menu.groups.map((group) => ({
+        ...group,
+        links: group.links.filter((link) => USE_CASES_ENABLED || link.href !== '/use-cases'),
+      })),
+    }),
   );
-  const { stars, formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
-  const openDemo = useRequestDemo();
+  const plainLinks = localizeUiCatalog(PLAIN_LINKS, tI18nComplete, SITE_CONFIG_TRANSLATION_KEYS);
 
-  const isNavActive = useCallback(
-    (href: string) =>
-      href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`),
-    [pathname],
-  );
+  const solid = scrolled || openMenu !== null || isDrawerOpen;
+
+  const clearTimer = () => window.clearTimeout(timerRef.current);
+
+  const setMenu = useCallback((id: MenuId | null, opts?: { instant?: boolean }) => {
+    window.clearTimeout(timerRef.current);
+    setInstant(opts?.instant ?? false);
+    setOpenMenu(id);
+  }, []);
+
+  // A page may open on a dark band (the home hero marks its band with
+  // `data-hero-band`). While the band is under the bar's midline, the bar and
+  // its panels take the band's dark scope, solid or not, so the bar never
+  // flips to a light surface on top of the dark band. Re-run on navigation:
+  // the band comes and goes with the page.
+  useEffect(() => {
+    const band = document.querySelector<HTMLElement>('[data-hero-band]');
+    const onScroll = () => {
+      setScrolled(window.scrollY > SOLID_AFTER_PX);
+      setOverBand(band !== null && band.getBoundingClientRect().bottom > BAR_MIDLINE_PX);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    onScroll();
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [pathname]);
+
+  // An open menu closes on Escape wherever focus is: after a hover open it is
+  // still on the page, outside the bar. The bar's own handler below also
+  // returns focus to the trigger when focus is inside.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(null, { instant: true });
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [openMenu, setMenu]);
+
+  // Crossing into the desktop width closes the drawer; leaving it closes the menu.
+  useEffect(() => {
+    const query = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => (query.matches ? setIsDrawerOpen(false) : setMenu(null));
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [setMenu]);
+
+  // A committed navigation closes the menu (Next keeps this component mounted).
+  const [menuPathname, setMenuPathname] = useState(pathname);
+  if (menuPathname !== pathname) {
+    setMenuPathname(pathname);
+    setOpenMenu(null);
+    setInstant(true);
+  }
+
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+
+  // A keyboard open moves focus to the panel's first link once it is no longer inert.
+  useEffect(() => {
+    if (!openMenu || !focusPanelRef.current) return;
+    focusPanelRef.current = false;
+    firstLink(panelRefs.current[openMenu])?.focus();
+  }, [openMenu]);
+
+  // The drawer is a modal dialog: it locks the page scroll, takes focus on
+  // open and gives it back to the menu button on close.
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    drawerCloseRef.current?.focus();
+    const trigger = drawerTriggerRef.current;
+    return () => {
+      document.body.style.overflow = prev;
+      trigger?.focus();
+    };
+  }, [isDrawerOpen]);
+
+  // Escape closes the drawer; Tab wraps inside it, so focus never reaches the
+  // page behind.
+  const onDrawerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setIsDrawerOpen(false);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = drawerRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])');
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  // The navigation commit is the close: the drawer stays up (spinner on the
+  // tapped row) until the router lands on the target.
+  useEffect(() => {
+    if (pendingHref !== null && pathname === pendingHref) setIsDrawerOpen(false);
+  }, [pathname, pendingHref]);
+
+  // A drawer closed by hand must not leave a row marked pending; this is also
+  // what clears the pending mark after the commit close above.
+  useEffect(() => {
+    if (!isDrawerOpen) setPendingHref(null);
+  }, [isDrawerOpen]);
+
+  // ---- Mega menu: hover, click, keyboard -------------------------------------
+
+  const onTriggerEnter = (id: MenuId) => (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse') return;
+    clearTimer();
+    if (openMenu === id) return;
+    // Switching between open menus is instant; only the first open waits.
+    if (openMenu) {
+      hoverOpenedAtRef.current = Date.now();
+      setMenu(id);
+      return;
+    }
+    timerRef.current = window.setTimeout(() => {
+      hoverOpenedAtRef.current = Date.now();
+      setMenu(id);
+    }, HOVER_INTENT_MS);
+  };
+
+  const onTriggerLeave = () => {
+    // Leaving before the intent delay fires cancels the open.
+    if (!openMenu) clearTimer();
+  };
+
+  const onTriggerClick = (id: MenuId) => (event: MouseEvent) => {
+    // Enter and Space fire a click with `detail === 0`: open at once and move focus in.
+    if (event.detail === 0) {
+      focusPanelRef.current = openMenu !== id;
+      setMenu(openMenu === id ? null : id, { instant: true });
+      return;
+    }
+    const justHovered = Date.now() - hoverOpenedAtRef.current < HOVER_CLICK_GRACE_MS;
+    setMenu(openMenu === id && !justHovered ? null : id);
+  };
+
+  const onTriggerKeyDown = (id: MenuId) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    const panelLink = firstLink(panelRefs.current[id]);
+    if (event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey && openMenu === id)) {
+      event.preventDefault();
+      if (openMenu === id) {
+        panelLink?.focus();
+        return;
+      }
+      focusPanelRef.current = true;
+      setMenu(id, { instant: true });
+    }
+  };
+
+  // Tab off either end of an open panel returns to the bar: Shift+Tab on the
+  // first link to its trigger, Tab on the last link to the next trigger.
+  const onPanelKeyDown = (id: MenuId) => (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const links = panelRefs.current[id]?.querySelectorAll<HTMLElement>('a[href]');
+    if (!links?.length) return;
+    const index = MEGA_MENUS.findIndex((menu) => menu.id === id);
+    if (event.shiftKey && document.activeElement === links[0]) {
+      event.preventDefault();
+      triggerRefs.current[id]?.focus();
+    } else if (!event.shiftKey && document.activeElement === links[links.length - 1]) {
+      event.preventDefault();
+      const next = MEGA_MENUS[index + 1];
+      setMenu(null, { instant: true });
+      if (next) triggerRefs.current[next.id]?.focus();
+      else wrapperRef.current?.querySelector<HTMLElement>('[data-after-menus]')?.focus();
+    }
+  };
+
+  const onWrapperKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !openMenu) return;
+    const trigger = triggerRefs.current[openMenu];
+    setMenu(null, { instant: true });
+    trigger?.focus();
+  };
+
+  // The logo, the plain links and the actions close the menu as soon as the
+  // pointer reaches them (Buio `data-mega-close`).
+  const closeOnEnter = (event: PointerEvent) => {
+    if (event.pointerType === 'mouse' && openMenu) setMenu(null);
+  };
+
+  // ---- Drawer ----------------------------------------------------------------
+
+  // Page links commit first: the drawer stays up (spinner on the tapped row)
+  // until the new page renders, then the effect above closes it. Same-page
+  // anchors scroll in place and close at once.
+  const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+    const anchor = href.startsWith('#') ? href.slice(1) : href.startsWith('/#') ? href.slice(2) : null;
+    if (!anchor) {
+      // Off-site rows open a new tab; this page never commits.
+      if (href.startsWith('http')) return setIsDrawerOpen(false);
+      const target = href.split('#')[0];
+      // The page is already committed: close now, no navigation is in flight.
+      if (pathname === target) return setIsDrawerOpen(false);
+      setPendingHref(target);
+      return;
+    }
+    e.preventDefault();
+    setIsDrawerOpen(false);
+    if (pathname !== '/') return router.push(`/#${anchor}`);
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
+    window.history.replaceState(null, '', `/#${anchor}`);
+  };
+
+  // A row is pending when its target is the navigation in flight.
+  const isPending = (href: string) => href.split('#')[0] === pendingHref;
 
   // "Brandmark" is the symbol, "Logomark" is the wordmark (the brandkit's own
-  // naming). The copied color follows the active theme so pasting into a
-  // matching canvas is legible immediately.
+  // naming). The copied color follows the active theme.
   const copyBrandSvg = async (kind: 'symbol' | 'wordmark') => {
     const color = document.documentElement.classList.contains('dark') ? 'White' : 'Black';
     const path =
@@ -145,151 +384,77 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     }
   };
 
-  const compareIcon = (slug: string) => {
-    switch (slug) {
-      case 'zapier':
-        return <Zapier />;
-      case 'openclaw':
-        return <OpenClaw />;
-      case 'viktor':
-        return <Viktor />;
-      case 'chatgpt':
-        return <ChatGPT />;
-      case 'claude':
-        return <Claude />;
-      default:
-        return null;
-    }
+  const signInLabel = tHardcodedUi.raw('componentsHomeNavbar.logIn');
+  const getStartedLabel = tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted');
+  const projectsLabel = tHardcodedUi.raw('i18nComplete.text04e2a9728af7');
+  const homeLabel = tHardcodedUi.raw('i18nComplete.text7ecec93ed268');
+
+  const panelTransition = {
+    duration: instant || reduceMotion ? 0 : openMenu ? 0.24 : 0.18,
+    ease: EASE_OUT,
   };
-
-  // Asymmetric thresholds: the bar compacts at 50px and only expands again below
-  // 20px, so a reader hovering around the trigger point never sees it flicker.
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setHasScrolled((wasScrolled) =>
-        wasScrolled
-          ? currentScrollY >= SCROLL_THRESHOLD_UP
-          : currentScrollY > SCROLL_THRESHOLD_DOWN,
-      );
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    if (!isDrawerOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [isDrawerOpen]);
-
-  // The navigation commit is the close: the drawer stays up (spinner on the
-  // tapped row) until the router lands on the target.
-  useEffect(() => {
-    if (pendingHref !== null && pathname === pendingHref) setIsDrawerOpen(false);
-  }, [pathname, pendingHref]);
-
-  // A drawer closed by hand must not leave a row marked pending; this is also
-  // what clears the pending mark after the commit close above.
-  useEffect(() => {
-    if (!isDrawerOpen) setPendingHref(null);
-  }, [isDrawerOpen]);
-
-  const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
-
-  // Anchor links scroll in place on the home page and close the drawer at
-  // once. Page links commit first: the drawer stays up — spinner on the tapped
-  // row — until the new page renders, then the effect above closes it.
-  const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-    const anchor = href.startsWith('#')
-      ? href.slice(1)
-      : href.startsWith('/#')
-        ? href.slice(2)
-        : null;
-
-    if (!anchor) {
-      // Off-site rows open a new tab; this page never commits.
-      if (href.startsWith('http')) {
-        setIsDrawerOpen(false);
-        return;
-      }
-      const target = href.split('#')[0];
-      // The page is already committed: close now, no navigation is in flight.
-      if (pathname === target) {
-        setIsDrawerOpen(false);
-        return;
-      }
-      setPendingHref(target);
-      return;
-    }
-    e.preventDefault();
-    if (pathname !== '/') {
-      router.push(`/#${anchor}`);
-      setIsDrawerOpen(false);
-      return;
-    }
-    const element = document.getElementById(anchor);
-    element?.scrollIntoView({ behavior: 'smooth' });
-    window.history.replaceState(null, '', `/#${anchor}`);
-    setIsDrawerOpen(false);
-  };
-
-  // One flat drawer: links that navigate directly, then one labelled group per
-  // menu (Product, Company) — no second level to push into.
-  const directDrawerLinks = filteredNavLinks.filter(
-    (item): item is Extract<NavLink, { href: string }> =>
-      !('menu' in item) && typeof item.href === 'string',
-  );
-  const groupedDrawerLinks = filteredNavLinks.filter((item) => drawerSubLinks(item).length > 0);
-
-  // A row is pending when its target is the navigation in flight. `pendingHref`
-  // is null when nothing is in flight, so the plain compare covers that too.
-  const isPending = (href: string) => href.split('#')[0] === pendingHref;
 
   return (
     <>
-      <header
+      {/* Dims the page under an open menu; a click on it closes. */}
+      <div
+        aria-hidden
+        onClick={() => setMenu(null)}
         className={cn(
-          'border-border-default bg-background fixed relative inset-x-0 top-0 z-50 flex h-16 w-full flex-col items-center justify-between border-b transition-all duration-300 ease-out motion-reduce:transition-none',
+          'bg-background/70 fixed inset-0 hidden backdrop-blur-sm transition-[opacity,visibility] duration-moderate ease-out lg:block',
+          openMenu ? 'visible opacity-100' : 'pointer-events-none invisible opacity-0',
+          instant && 'transition-none',
         )}
+      />
+      <div
+        ref={wrapperRef}
+        className="relative"
+        onPointerEnter={clearTimer}
+        onPointerLeave={(event) => {
+          if (event.pointerType !== 'mouse' || !openMenu) return;
+          timerRef.current = window.setTimeout(() => setMenu(null), LEAVE_GRACE_MS);
+        }}
+        onBlur={(event) => {
+          // Focus that leaves for another element closes; a click on panel
+          // whitespace (no `relatedTarget`) does not.
+          const next = event.relatedTarget as Node | null;
+          if (openMenu && next && !event.currentTarget.contains(next)) {
+            setMenu(null, { instant: true });
+          }
+        }}
+        onKeyDown={onWrapperKeyDown}
       >
-        <div
+        <header
+          data-solid={solid || undefined}
           className={cn(
-            CONTENT_MEASURE,
-            'relative flex h-full w-full items-center justify-between',
-            'transition-[height] duration-300 ease-out motion-reduce:transition-none',
+            // Below `lg` the bar is always in its scrolled state (background,
+            // blur, hairline): the compact bar has no menus to separate it from
+            // the page, so it needs its own surface and edge from the start.
+            'relative w-full border-b border-transparent max-lg:border-border max-lg:bg-background/90 max-lg:backdrop-blur-md transition-[background-color,backdrop-filter,border-color] duration-slow ease-out',
+            solid && 'bg-background/90 backdrop-blur-md',
+            scrolled && 'border-border',
+            overBand && 'dark',
           )}
         >
-          <div className="flex flex-1 items-center gap-8">
+          <div className={cn(MARKETING_CONTAINER, 'flex h-16 items-center justify-between')}>
             <ContextMenu>
               <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
                   href="/"
-                  aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
-                  className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
+                  aria-label={homeLabel}
+                  onPointerEnter={closeOnEnter}
+                  className="text-foreground outline-ring flex h-16 w-fit shrink-0 items-center rounded-sm focus-visible:outline-2"
                 >
                   <KortixLogo size={15} variant="logomark" />
                 </Link>
               </ContextMenuTrigger>
-              {/* Interfere-style brand menu: three flat actions, no submenus.
-                  Copy puts the theme-matching SVG source on the clipboard;
-                  download hands over the whole brandkit as one zip. */}
+              {/* Brand menu: copy the theme-matching SVG, download the brandkit, open the design system. */}
               <ContextMenuContent className="w-56">
-                <ContextMenuItem
-                  onClick={() => copyBrandSvg('symbol')}
-                  className="cursor-pointer gap-2 text-sm"
-                >
+                <ContextMenuItem onClick={() => copyBrandSvg('symbol')} className="gap-2 text-sm">
                   <KortixLogo size={14} variant="symbol" className="text-foreground" />
                   {tHardcodedUi.raw('componentsHomeNavbar.copySymbolSvg')}
                 </ContextMenuItem>
-                <ContextMenuItem
-                  onClick={() => copyBrandSvg('wordmark')}
-                  className="cursor-pointer gap-2 text-sm"
-                >
+                <ContextMenuItem onClick={() => copyBrandSvg('wordmark')} className="gap-2 text-sm">
                   <Type className="size-3.5 shrink-0" />
                   {tHardcodedUi.raw('componentsHomeNavbar.copyWordmarkSvg')}
                 </ContextMenuItem>
@@ -300,13 +465,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     a.download = 'kortix-brand-assets.zip';
                     a.click();
                   }}
-                  className="cursor-pointer gap-2 text-sm"
+                  className="gap-2 text-sm"
                 >
                   <Download className="size-3.5 shrink-0" />
                   {tHardcodedUi.raw('componentsHomeNavbar.downloadBrandAssets')}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem asChild className="cursor-pointer gap-2 text-sm">
+                <ContextMenuItem asChild className="gap-2 text-sm">
                   <Link href="/design-system" prefetch>
                     <Layers className="size-3.5 shrink-0" />
                     {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
@@ -315,258 +480,236 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </ContextMenuContent>
             </ContextMenu>
 
-            <nav className="hidden items-center justify-center gap-1 md:flex">
-              {filteredNavLinks.map((item) => {
-                if ('menu' in item) {
-                  return (
-                    <ProductMenu
-                      key={item.id}
-                      name={item.name}
-                      menu={item.menu}
-                      isNavActive={isNavActive}
-                    />
-                  );
-                }
-
-                return typeof item.href === 'string' ? (
-                  <Button
-                    key={item.id}
-                    variant="ghost"
-                    size="sm"
-                    asChild
-                    className={cn(
-                      'h-8 px-3 font-medium [&>svg]:hidden',
-                      'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
-                      isNavActive(item.href)
-                        ? 'bg-secondary text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <Link href={item.href}>{item.name}</Link>
-                  </Button>
-                ) : (
-                  <NavigationMenu key={item.id} viewport={false} className="max-w-none flex-none">
-                    <NavigationMenuList>
-                      <NavigationMenuItem>
-                        <NavigationMenuTrigger
-                          className={cn(
-                            marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-                            'h-8 px-3 font-medium [&>svg]:hidden',
-                            'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
-                            item.href.some((link) => isNavActive(link.href))
-                              ? 'bg-secondary text-foreground'
-                              : 'text-muted-foreground hover:text-foreground',
-                          )}
-                        >
-                          {item.name}
-                        </NavigationMenuTrigger>
-                        <NavigationMenuContent className="min-w-56">
-                          {item.href.map((link) => (
-                            <NavigationMenuLink key={link.href} asChild>
-                              <Link
-                                href={link.href}
-                                className={cn(
-                                  'flex flex-row items-center justify-start gap-2',
-                                  isNavActive(link.href) && 'bg-accent/50 text-accent-foreground',
-                                )}
-                              >
-                                {item.name === 'Compare' &&
-                                  compareIcon(link.href.split('/').pop() || '')}
-                                {link.name}
-                              </Link>
-                            </NavigationMenuLink>
-                          ))}
-                        </NavigationMenuContent>
-                      </NavigationMenuItem>
-                    </NavigationMenuList>
-                  </NavigationMenu>
-                );
-              })}
+            {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
+            <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">
+              {menus.map((menu) => (
+                <button
+                  key={menu.id}
+                  ref={(node) => {
+                    triggerRefs.current[menu.id] = node;
+                  }}
+                  type="button"
+                  aria-expanded={openMenu === menu.id}
+                  aria-controls={`mega-${menu.id}`}
+                  onPointerEnter={onTriggerEnter(menu.id)}
+                  onPointerLeave={onTriggerLeave}
+                  onClick={onTriggerClick(menu.id)}
+                  onKeyDown={onTriggerKeyDown(menu.id)}
+                  className={cn(NAV_ITEM, 'gap-1.5 aria-expanded:bg-muted aria-expanded:text-foreground')}
+                >
+                  {menu.label}
+                  {openMenu === menu.id ? <CaretUpIcon className="size-3" /> : <CaretDownIcon className="size-3" />}
+                </button>
+              ))}
+              {plainLinks.map((link, i) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onPointerEnter={closeOnEnter}
+                  data-after-menus={i === 0 ? '' : undefined}
+                  className={NAV_ITEM}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </nav>
-          </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {/* `stars`, not `formattedStars`: the formatter returns an en dash
-                for a missing count, so keying on it printed a GitHub chip
-                reading "–" whenever /api/github-stars failed. No number, no
-                chip. */}
-            {stars !== null && !starsLoading && (
-              <Button variant="ghost" size="sm" asChild className="hidden sm:flex">
+            <div className="flex items-center justify-end gap-1" onPointerEnter={closeOnEnter}>
+              {/* `stars`, not `formattedStars`: the formatter returns an en dash
+                  for a missing count. No number, no chip. */}
+              {stars !== null && !starsLoading && (
                 <Link
                   href="https://github.com/kortix-ai/suna"
                   target="_blank"
                   rel="noopener noreferrer"
+                  className={cn(BAR_LINK, 'mr-4 hidden gap-2 xl:flex')}
                 >
-                  <Github className="text-foreground size-4" />
-                  <span
-                    className={cn(
-                      'text-foreground font-medium tabular-nums',
-                      starsLoading && 'opacity-50',
-                    )}
-                  >
-                    {formattedStars}
-                  </span>
+                  <Github className="size-4" />
+                  <span className="tabular-nums">{formattedStars}</span>
                 </Link>
-              </Button>
-            )}
-
-            {user ? (
-              <Button size="sm" asChild>
-                <Link href={projectsHref} prefetch>
-                  {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
-                </Link>
-              </Button>
-            ) : (
-              <Button size="sm" asChild>
-                <Link href={CTA_LINK} onClick={trackCtaSignup}>
-                  {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
-                </Link>
-              </Button>
-            )}
-
-            <Button
-              onClick={toggleDrawer}
-              variant="ghost"
-              size="icon-sm"
-              className="md:hidden"
-              aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
-            >
-              <Menu className="size-5" />
-            </Button>
+              )}
+              {user ? (
+                <MarketingButton asChild className="hit-area-y-3">
+                  <Link href={projectsHref} prefetch>
+                    {projectsLabel}
+                  </Link>
+                </MarketingButton>
+              ) : (
+                <>
+                  <MarketingButton variant="secondary" asChild className="hidden lg:inline-flex">
+                    <Link href={CTA_LINK}>{signInLabel}</Link>
+                  </MarketingButton>
+                  <MarketingButton asChild className="hit-area-y-3">
+                    <Link href={CTA_LINK} onClick={trackCtaSignup}>
+                      {getStartedLabel}
+                    </Link>
+                  </MarketingButton>
+                </>
+              )}
+              <button
+                ref={drawerTriggerRef}
+                type="button"
+                onClick={() => setIsDrawerOpen(true)}
+                aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
+                aria-expanded={isDrawerOpen}
+                className="text-foreground outline-ring -mr-3 flex size-12 items-center justify-center rounded-md focus-visible:outline-2 lg:hidden"
+              >
+                <Menu className="size-5" />
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+
+        {/* The panel reveal: height from 0 to the tallest panel, ease-out.
+            All panels share one grid cell, so the height never changes while
+            switching menus; only the content cross-fades. */}
+        <m.div
+          initial={false}
+          animate={{ height: openMenu ? 'auto' : 0 }}
+          transition={panelTransition}
+          className={cn(
+            'absolute inset-x-0 top-full hidden overflow-hidden lg:block',
+            openMenu && 'shadow-md',
+            overBand && 'dark',
+          )}
+        >
+          <div className="bg-background grid border-b">
+            {menus.map((menu) => (
+              <MegaMenuPanel
+                key={menu.id}
+                ref={(node) => {
+                  panelRefs.current[menu.id] = node;
+                }}
+                menu={menu}
+                open={openMenu === menu.id}
+                onNavigate={() => setMenu(null, { instant: true })}
+                onKeyDown={onPanelKeyDown(menu.id)}
+                stars={stars !== null && !starsLoading ? formattedStars : null}
+              />
+            ))}
+          </div>
+        </m.div>
+      </div>
+
       {/* Static full-screen drawer: appears and disappears in the same frame
-          as the tap — no scrim, no card inset, no motion. */}
-      {isDrawerOpen && isMobile && (
-        <div className="bg-background fixed inset-0 z-50 flex flex-col md:hidden">
-          {/* Header mirrors the bar: logo left, close where the menu button was. */}
-          <div
-            className={cn(CONTENT_MEASURE, 'flex h-16 shrink-0 items-center justify-between pr-4')}
-          >
+          as the tap. Below lg only; the bar's resize listener closes it above. */}
+      {isDrawerOpen && (
+        <div
+          ref={drawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
+          onKeyDown={onDrawerKeyDown}
+          data-lenis-prevent
+          className="bg-background fixed inset-0 z-50 flex flex-col lg:hidden"
+        >
+          <div className={cn(MARKETING_CONTAINER, 'flex h-16 shrink-0 items-center justify-between')}>
             <Link
               href="/"
-              aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
+              aria-label={homeLabel}
               onClick={handleDrawerNavClick('/')}
-              className="flex items-center gap-2"
+              className="text-foreground flex h-16 items-center gap-2"
             >
               <KortixLogo size={15} variant="logomark" />
               {isPending('/') && <Loading variant="spokes" />}
             </Link>
-            <Button
-              onClick={toggleDrawer}
-              variant="ghost"
-              size="icon"
-              className="rounded-full"
+            <button
+              ref={drawerCloseRef}
+              type="button"
+              onClick={() => setIsDrawerOpen(false)}
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
+              className="text-foreground outline-ring -mr-3 flex size-12 items-center justify-center rounded-md focus-visible:outline-2"
             >
               <X className="size-5" />
-            </Button>
+            </button>
           </div>
 
-          {/* One flat list: direct links first, then a labelled group per menu. */}
-          <nav className="min-h-0 flex-1 overflow-y-auto px-6">
-            <ul className="flex flex-col">
-              <li>
-                <Link
-                  href="/"
-                  onClick={handleDrawerNavClick('/')}
-                  className={cn(
-                    DRAWER_ROW,
-                    isNavActive('/') || isPending('/')
-                      ? 'text-foreground'
-                      : 'text-muted-foreground active:text-foreground',
-                  )}
-                >
-                  {tHardcodedUi.raw('componentsHomeNavbar.home')}
-                  {isPending('/') && <Loading variant="spokes" />}
-                </Link>
-              </li>
-              {directDrawerLinks.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={item.href}
-                    onClick={handleDrawerNavClick(item.href)}
-                    className={cn(
-                      DRAWER_ROW,
-                      isNavActive(item.href) || isPending(item.href)
-                        ? 'text-foreground'
-                        : 'text-muted-foreground active:text-foreground',
-                    )}
-                  >
-                    {item.name}
-                    {isPending(item.href) && <Loading variant="spokes" />}
-                  </Link>
-                </li>
+          {/* One column: each group is a small muted label over its links.
+              Simple on a phone, no side-by-side lists to squeeze. */}
+          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className={cn(MARKETING_CONTAINER, 'flex flex-col gap-8 py-6')}>
+              {[
+                ...menus.map((menu) => ({
+                  id: menu.id,
+                  label: menu.label,
+                  links: menu.groups.flatMap((group) => group.links),
+                })),
+                {
+                  id: 'kortix',
+                  label: 'Kortix',
+                  links: [
+                    { label: tHardcodedUi.raw('componentsHomeNavbar.home'), href: '/' },
+                    ...plainLinks,
+                    { label: 'X', href: 'https://x.com/kortix', external: true },
+                  ],
+                },
+              ].map((section) => (
+                <div key={section.id}>
+                  <p className="text-muted-foreground text-sm">{section.label}</p>
+                  <ul className="mt-1">
+                    {section.links.map((link) => (
+                      <li key={link.href}>
+                        <Link
+                          href={link.href}
+                          onClick={handleDrawerNavClick(link.href)}
+                          {...('external' in link && link.external
+                            ? { target: '_blank', rel: 'noreferrer noopener' }
+                            : {})}
+                          className={DRAWER_ROW}
+                        >
+                          {link.label}
+                          {isPending(link.href) && <Loading variant="spokes" />}
+                        </Link>
+                      </li>
+                    ))}
+                    {section.id === 'kortix' ? (
+                      <li>
+                        <button
+                          type="button"
+                          className={cn(DRAWER_ROW, 'w-full')}
+                          onClick={() => {
+                            setIsDrawerOpen(false);
+                            openDemo();
+                          }}
+                        >
+                          {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
+                        </button>
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
               ))}
-            </ul>
-            {groupedDrawerLinks.map((item) => (
-              <div key={item.id} className="mt-6">
-                <p className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-                  {item.name}
-                </p>
-                <ul className="mt-1 flex flex-col">
-                  {drawerSubLinks(item).map((link) => (
-                    <li key={link.href}>
-                      <Link
-                        href={link.href}
-                        onClick={handleDrawerNavClick(link.href)}
-                        {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
-                        className={cn(
-                          DRAWER_ROW,
-                          isNavActive(link.href) || isPending(link.href)
-                            ? 'text-foreground'
-                            : 'text-muted-foreground active:text-foreground',
-                        )}
-                      >
-                        {link.name}
-                        {isPending(link.href) && <Loading variant="spokes" />}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            </div>
           </nav>
 
-          {/* Footer: demo pill, hairline, socials, login. */}
-          <div className="shrink-0 space-y-3 px-6 pb-6">
-            <Button
-              variant="secondary"
-              size="lg"
-              className="w-full"
-              onClick={() => {
-                setIsDrawerOpen(false);
-                openDemo();
-              }}
-            >
-              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-            </Button>
-
+          <div className={cn(MARKETING_CONTAINER, 'grid shrink-0 grid-cols-2 gap-2 border-t pt-4 pb-6')}>
             {user ? (
-              <Link
-                href={projectsHref}
-                prefetch
-                onClick={handleDrawerNavClick(projectsHref)}
-                className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
-              >
-                {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
-                {isPending(projectsHref) ? <Loading variant="spokes" /> : <ArrowRightIcon className="size-4" />}
-              </Link>
-            ) : (
-              <Button size="lg" className="w-full" asChild>
-                <Link
-                  href={CTA_LINK}
-                  onClick={(e) => {
-                    trackCtaSignup();
-                    handleDrawerNavClick(CTA_LINK)(e);
-                  }}
-                  className="w-full"
-                >
-                  {tHardcodedUi.raw('componentsHomeNavbar.logIn')}
-                  {isPending(CTA_LINK) && <Loading variant="spokes" />}
+              <MarketingButton size="md" asChild className="col-span-2">
+                <Link href={projectsHref} prefetch onClick={handleDrawerNavClick(projectsHref)}>
+                  {projectsLabel}
+                  {isPending(projectsHref) && <Loading variant="spokes" />}
                 </Link>
-              </Button>
+              </MarketingButton>
+            ) : (
+              <>
+                <MarketingButton size="md" variant="secondary" asChild>
+                  <Link href={CTA_LINK} onClick={handleDrawerNavClick(CTA_LINK)}>
+                    {signInLabel}
+                    {isPending(CTA_LINK) && <Loading variant="spokes" />}
+                  </Link>
+                </MarketingButton>
+                <MarketingButton size="md" asChild>
+                  <Link
+                    href={CTA_LINK}
+                    onClick={(e) => {
+                      trackCtaSignup();
+                      handleDrawerNavClick(CTA_LINK)(e);
+                    }}
+                  >
+                    {getStartedLabel}
+                  </Link>
+                </MarketingButton>
+              </>
             )}
           </div>
         </div>

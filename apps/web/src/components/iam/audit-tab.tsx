@@ -10,27 +10,26 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
-import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
-import { CopyButton } from '@/components/markdown/copy-button';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { CopyOverlay, HighlightedCode, CopyButton } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '@kortix/ui/dropdown-menu';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -38,33 +37,29 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   EMPTY_PRINCIPAL_SELECTION,
   PROJECT_SELECT_ALL,
-  PrincipalPicker,
   type PrincipalSelection,
   ProjectSelect,
   formatRelative,
   singlePrincipal,
-} from '@/features/workspace/shared/access';
-import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+} from '@kortix/ui/access/access/index';
+import { PrincipalPicker } from '@kortix/ui/access';
+import { localizeUiCatalog, translateUiCatalogText } from '@kortix/ui/i18n';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, type ListAuditFilter, listAuditEvents } from '@/lib/iam-client';
-import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from './audit-credential-label';
-import { cn } from '@/lib/utils';
-import {
-  downloadAccountAudit,
-  listAccountMembers,
-  listProjectSessions,
-  listProjectsForAccount,
-} from '@kortix/sdk';
+import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from '@kortix/ui/session/panel/audit/audit-credential-label';
+import { AuditSessionPicker } from './audit-session-picker';
+import { cn } from '@kortix/ui';
+import { downloadAccountAudit, listAccountMembers, listProjectsForAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   type AuditActionDescription,
@@ -72,7 +67,7 @@ import {
   describeAuditAction,
   formatResourcePill,
 } from './audit-display-helpers';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 type ActorType = NonNullable<IamAuditEvent['actor_type']>;
 type Outcome = NonNullable<IamAuditEvent['outcome']>;
@@ -128,19 +123,22 @@ export function auditFilterWire(filter: AuditFilterState): ListAuditFilter {
   };
 }
 
+// `id` is the tab value. The label is translated (`localizeUiCatalog`), so a
+// tab keyed by its label matched nothing outside English (KRTX-2399).
 const QUICK_FILTERS: Array<{
+  id: string;
   label: string;
   action?: string;
   actorType?: ActorType;
   outcome?: Outcome;
   resourceType?: string;
 }> = [
-  { label: 'All activity' },
-  { label: 'People', actorType: 'human' },
-  { label: 'Agents', actorType: 'agent' },
-  { label: 'Sessions', resourceType: 'project_session' },
-  { label: 'Connectors', action: 'connector.' },
-  { label: 'Failures', outcome: 'failure' },
+  { id: 'all', label: 'All activity' },
+  { id: 'people', label: 'People', actorType: 'human' },
+  { id: 'agents', label: 'Agents', actorType: 'agent' },
+  { id: 'sessions', label: 'Sessions', resourceType: 'project_session' },
+  { id: 'connectors', label: 'Connectors', action: 'connector.' },
+  { id: 'failures', label: 'Failures', outcome: 'failure' },
 ];
 
 const RESOURCE_TYPES = [
@@ -229,13 +227,6 @@ export function AuditTab({ accountId }: { accountId: string }) {
     queryFn: () => listProjectsForAccount(accountId),
     ...contract('inventory'),
   });
-  const sessionsQuery = useQuery({
-    queryKey: ['audit-project-sessions', filter.projectId],
-    queryFn: () => listProjectSessions(filter.projectId, { scope: 'project' }),
-    enabled: !!filter.projectId,
-    staleTime: 15_000,
-  });
-
   const emailByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of membersQuery.data ?? []) {
@@ -265,7 +256,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
   const hasFilter = filterCount > 0;
   const activeQuickFilter = QUICK_FILTERS.find((preset) =>
     isQuickFilterActive(filter, preset),
-  )?.label;
+  )?.id;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
@@ -371,13 +362,13 @@ export function AuditTab({ accountId }: { accountId: string }) {
       <Tabs
         value={activeQuickFilter}
         onValueChange={(value) => {
-          const preset = QUICK_FILTERS.find((item) => item.label === value);
+          const preset = QUICK_FILTERS.find((item) => item.id === value);
           if (preset) setFilter((current) => applyQuickFilter(current, preset));
         }}
       >
         <TabsList type="underline" className="h-auto w-full flex-wrap justify-start">
           {quickFilters.map((preset) => (
-            <TabsTrigger key={preset.label} value={preset.label} className="w-fit flex-none pb-3">
+            <TabsTrigger key={preset.id} value={preset.id} className="w-fit flex-none pb-3">
               {preset.label}
             </TabsTrigger>
           ))}
@@ -418,38 +409,11 @@ export function AuditTab({ accountId }: { accountId: string }) {
           }
         />
 
-        <Select
-          value={filter.sessionId || 'all'}
-          disabled={!filter.projectId}
-          onValueChange={(value) =>
-            setFilter((current) => ({
-              ...current,
-              sessionId: value === 'all' ? '' : value,
-            }))
-          }
-        >
-          <SelectTrigger size="sm" className="h-9 w-[220px]">
-            <SelectValue
-              placeholder={
-                filter.projectId
-                  ? tI18nComplete.raw('text78648d4d6649')
-                  : tI18nComplete.raw('textf7b9225a1fdc')
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{tI18nComplete.raw('text78648d4d6649')}</SelectItem>
-            {(sessionsQuery.data ?? []).map((session) => (
-              <SelectItem
-                key={session.session_id}
-                value={session.session_id}
-                description={session.session_id}
-              >
-                {session.name || `Session ${session.session_id.slice(0, 8)}`}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AuditSessionPicker
+          projectId={filter.projectId}
+          value={filter.sessionId}
+          onChange={(sessionId) => setFilter((current) => ({ ...current, sessionId }))}
+        />
 
         <AdvancedFilters
           accountId={accountId}
@@ -872,7 +836,7 @@ function AuditRow({
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-foreground truncate text-sm font-medium">{action.title}</span>
                 {action.detail ? (
-                  <code className="bg-muted/50 text-muted-foreground truncate rounded px-1.5 py-0.5 font-mono text-xs">
+                  <code className="bg-muted/50 text-muted-foreground truncate rounded-sm px-1.5 py-0.5 font-mono text-xs">
                     {action.detail}
                   </code>
                 ) : null}
@@ -1206,8 +1170,8 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
       </div>
       <CopyOverlay code={code}>
         {/* The capped scroller sits inside the overlay so the copy button stays
-            pinned while the JSON scrolls. `HighlightedCode` hardcodes
-            `text-sm leading-[1.65]` on its own `<code>`; a `[&_code]:` selector
+            pinned while the JSON scrolls. `HighlightedCode` hardcodes its own
+            text size and line height on its `<code>`; a `[&_code]:` selector
             is one specificity step above that class, so this pane's smaller type
             wins without `!important`. */}
         <div className="max-h-64 overflow-auto p-3 [&_code]:text-xs [&_code]:leading-relaxed">

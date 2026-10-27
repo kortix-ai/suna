@@ -35,6 +35,9 @@ const collaborator = {
           expiresAt: value.expiresAt ?? null,
           revokedAt: null,
           lastUsedAt: null,
+          messageId: null,
+          snapshot: null,
+          snapshotAt: null,
           createdAt: new Date(0),
           updatedAt: new Date(0),
         };
@@ -83,14 +86,6 @@ const cases: {
     mode: 'view',
     allowWebsocket: false,
   },
-  {
-    input: { transcript: true },
-    resourceType: 'transcript',
-    port: null,
-    filePath: null,
-    mode: 'view',
-    allowWebsocket: false,
-  },
 ];
 for (const item of cases)
   test(`${item.resourceType}: exact insert projection and token`, async () => {
@@ -123,14 +118,18 @@ for (const item of cases)
       },
     ]);
     expect(result.share.public_token).toBe(publicShareToken(shareId));
-    expect(locks).toBe(item.resourceType === 'transcript' ? 1 : 0);
-    if (item.resourceType === 'transcript') {
-      const repeat = await createPublicShare({ transcript: true }, ctx);
-      expect(repeat.ok).toBe(true);
-      if (!repeat.ok) throw new Error(repeat.error);
-      expect(repeat.created).toBe(false);
-      expect(repeat.share.public_token).toBe(result.share.public_token);
-      expect(inserted).toHaveLength(1);
-      expect(locks).toBe(2);
-    }
+    // No share kind mints idempotently any more (transcript reuse was the only
+    // one, and transcript sharing is removed): every mint persists exactly one
+    // row and takes no advisory lock.
+    expect(locks).toBe(0);
   });
+
+test('a transcript share mint is refused: no row, no lock', async () => {
+  rows.length = 0;
+  inserted.length = 0;
+  locks = 0;
+  const result = await createPublicShare({ transcript: true }, ctx);
+  expect(result).toEqual({ ok: false, status: 400, error: 'Transcript sharing is no longer available' });
+  expect(inserted).toHaveLength(0);
+  expect(locks).toBe(0);
+});

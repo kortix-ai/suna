@@ -37,7 +37,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   },
   '@/components/ui/button': { Button: host('Button') },
   '@/components/ui/text': { Text: host('Text') },
-  '@/components/ui/switch': { Switch: host('Switch') },
+  '@/components/kortix/switch': { Switch: host('Switch') },
   '@/components/kortix/kortix-loader': { KortixLoader: host('Loader') },
   '@/components/kortix/settings-list': {
     SettingsPage: host('Page'),
@@ -89,6 +89,8 @@ const KINDS = {
   shared: { push: true, email: true },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: false, email: false },
+  capture_device_down: { push: true, email: true },
+  capture_device_recovered: { push: true, email: false },
 };
 function recordWith(extra: Record<string, unknown> = {}) {
   return {
@@ -177,6 +179,7 @@ describe('Settings → Notifications without a notification_center project', () 
 
 describe('Settings → Notifications with a notification_center project', () => {
   test("this phone's switches, then one Push switch per kind from the user's record, no Email", async () => {
+    record = recordWith({ data: { kinds: KINDS, email_available: true, hidden_kinds: [] } });
     await render();
     expect(recordOptions).toEqual({ userId: 'user-1' });
     expect(seen('carryOver')).toHaveLength(1);
@@ -191,11 +194,27 @@ describe('Settings → Notifications with a notification_center project', () => 
       'Shared with you',
       'Failure alert',
       'Recovery alert',
+      'Capture computer stopped',
+      'Capture computer recording again',
+      'Message',
       'Device settings',
     ]);
     expect(row('Turn failed').right.props.checked).toBe(false);
     expect(row('Question').right.props.checked).toBe(true);
     expect(row('Recovery alert').right.props.checked).toBe(false);
+  });
+
+  test('a kind in hidden_kinds has no row; an API without hidden_kinds hides Message', async () => {
+    const labels = () => rows.map((props) => props.label);
+    record = recordWith({ data: { kinds: KINDS, email_available: true, hidden_kinds: ['message', 'shared'] } });
+    await render();
+    expect(labels()).not.toContain('Message');
+    expect(labels()).not.toContain('Shared with you');
+    expect(labels()).toContain('Question');
+    record = recordWith();
+    await render();
+    expect(labels()).not.toContain('Message');
+    expect(labels()).toContain('Shared with you');
   });
 
   test("a session kind shows on only when the record and this phone's switch are both on", async () => {

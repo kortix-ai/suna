@@ -50,11 +50,12 @@ function InlineMeta({ items }: { items: ReactNode[] }) {
   );
 }
 
-export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
+export function PtySpawnTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const view = useMemo(() => ptySpawnView(input, output), [input, output]);
 
   const metaText = (value: string) => (
@@ -77,7 +78,7 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalWindowIcon}
       trigger={{
         title: PTY_TEXT.startedTerminal,

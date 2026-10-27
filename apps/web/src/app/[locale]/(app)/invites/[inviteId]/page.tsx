@@ -2,24 +2,29 @@
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { ClockIcon as Clock } from '@phosphor-icons/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { m } from 'motion/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import {
+  AuthPendingScreen,
+  DetailPanel,
+  DetailRow,
+  OutcomeTitle,
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import { inviteLandingPath } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
-import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
+import { createClient as createBrowserSupabaseClient, fetchSamlEnabled } from '@/lib/supabase/client';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import {
   acceptAccountInviteAndLand,
   accountInviteLanding,
@@ -27,6 +32,7 @@ import {
   describeAccountInvite,
   type AccountInviteDescribe,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
@@ -43,6 +49,7 @@ export default function InvitePage() {
   const locale = useLocale();
   const { inviteId } = useParams<{ inviteId: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   // `appHome` comes from a cookie, so the server cannot know it. The third
   // argument is the *server* snapshot, so the first render matches the server's
@@ -77,14 +84,24 @@ export default function InvitePage() {
       const current = inviteQuery.data;
       if (!current) throw new Error('Invite is still loading');
       // Only the addressee's description names projects; a redacted one has none.
-      return acceptAccountInviteAndLand(inviteId!, current.invite.email_matches_caller ? current.invite : null);
+      return acceptAccountInviteAndLand(
+        inviteId!,
+        current.invite.email_matches_caller ? current.invite : null,
+      );
     },
-    onSuccess: ({ landing }) => {
+    onSuccess: async ({ landing }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.accounts.scope() }),
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
+      ]);
       // Land a newly-joined member in the project the invite granted, or in the
       // account they just joined. The plain door reopened the project this
       // browser remembered, in the account they came from (KRTX-1731).
       router.replace(inviteLandingPath(landing));
     },
+    // The ErrorStrip below shows the API's sentence. Without this no-op the
+    // QueryClient's default mutation `onError` adds a second, generic toast.
+    onError: () => {},
   });
 
   const declineMutation = useMutation({
@@ -94,12 +111,44 @@ export default function InvitePage() {
       await declineAccountInvite(inviteId!);
       return { kind: 'account' as const };
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
       // `/accounts` was a page; it is a modal (`?accountId=`) now, and a
       // declined invite is not a reason to open it. The landing door is where
       // a signed-in user with nothing else to do belongs.
       router.replace(PROJECT_LANDING_PATH);
     },
+    onError: () => {},
+  });
+
+  // A directory invite on an instance that cannot prove the address: the
+  // account's own IdP can. Found by provider id, because the address's domain
+  // may not be the IdP's (a guest from another company).
+  const ssoMutation = useMutation({
+    mutationFn: async (providerId: string) => {
+      const callback = `/auth/callback?${new URLSearchParams({ returnUrl: `/invites/${inviteId}` })}`;
+      const { data, error } = await createBrowserSupabaseClient().auth.signInWithSSO({
+        providerId,
+        options: { redirectTo: authRedirectUrl(callback), skipBrowserRedirect: true },
+      });
+      if (error || !data?.url) throw error ?? new Error('no SSO redirect');
+      window.location.href = data.url;
+    },
+    // The screen shows its own sentence; no generic toast.
+    onError: () => {},
+  });
+  // Offer single sign-on only where Auth can run it: a self-host has SAML off
+  // until an operator turns it on, and the button would only fail there.
+  const ssoOffered =
+    !!inviteQuery.data &&
+    !inviteQuery.data.invite.email_matches_caller &&
+    inviteQuery.data.invite.reason === 'email_unconfirmed' &&
+    !!inviteQuery.data.invite.sso_provider_id;
+  const samlQuery = useQuery({
+    queryKey: ['auth', 'saml-enabled'],
+    queryFn: fetchSamlEnabled,
+    enabled: ssoOffered,
+    staleTime: Infinity,
   });
 
   useEffect(() => {
@@ -112,30 +161,29 @@ export default function InvitePage() {
     router.replace(inviteLandingPath(accountInviteLanding({ account_id: inv.account_id }, inv)));
   }, [inviteQuery.data, router]);
 
-  if (authLoading || !user || inviteQuery.isLoading) {
-    return (
-      <BrandSurface>
-        <div className="text-foreground/40 flex items-center gap-2.5 text-sm">
-          <Loading className="h-4 w-4" />
-          {tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}
-        </div>
-      </BrandSurface>
-    );
+  if (authLoading || !user || inviteQuery.isLoading || (ssoOffered && samlQuery.isLoading)) {
+    return <AuthPendingScreen footer={false} />;
   }
 
   if (inviteQuery.error) {
     return (
-      <BrandSurface>
-        <InviteCard kicker="Invite">
-          <StateHeading>
-            {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
-          </StateHeading>
-          <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
-          <GhostAction href={homeHref}>
+      <AuthFrame footerVariant="none">
+        <Rise>
+          <StepHeader
+            title={
+              <OutcomeTitle tone="muted">
+                {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
+              </OutcomeTitle>
+            }
+            description={tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}
+          />
+        </Rise>
+        <Rise delay={0.06}>
+          <HomeAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
-          </GhostAction>
-        </InviteCard>
-      </BrandSurface>
+          </HomeAction>
+        </Rise>
+      </AuthFrame>
     );
   }
 
@@ -146,61 +194,119 @@ export default function InvitePage() {
   // Wrong-account check first: the server redacts identifying fields in this
   // case, and checking expiry before this would leak "this invite exists and
   // expired" to someone who shouldn't know it exists at all.
+  // The caller holds the address, but this instance cannot prove it (no email
+  // provider) and nobody shared the invite: the directory pushed it.
+  if (!invite.email_matches_caller && invite.reason === 'email_unconfirmed') {
+    const providerId = samlQuery.data ? invite.sso_provider_id : null;
+    const ssoError = ssoMutation.isError
+      ? tHardcodedUi.raw('appInvitesInviteidPage.ssoUnavailable')
+      : null;
+    return (
+      <AuthFrame footerVariant="none">
+        <Rise>
+          <StepHeader
+            title={
+              providerId
+                ? tHardcodedUi.raw('appInvitesInviteidPage.ssoTitle')
+                : tHardcodedUi.raw('appInvitesInviteidPage.askAdminTitle')
+            }
+            description={
+              providerId
+                ? tHardcodedUi.raw('appInvitesInviteidPage.ssoDescription')
+                : tHardcodedUi.raw('appInvitesInviteidPage.askAdminDescription')
+            }
+          />
+        </Rise>
+        <Rise delay={0.06} className="space-y-3">
+          {ssoError ? <ErrorStrip message={ssoError} /> : null}
+          {providerId ? (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() => ssoMutation.mutate(providerId)}
+              disabled={ssoMutation.isPending}
+              aria-busy={ssoMutation.isPending || undefined}
+            >
+              {ssoMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {tHardcodedUi.raw('appInvitesInviteidPage.ssoContinue')}
+            </Button>
+          ) : null}
+          <HomeAction href={homeHref}>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
+          </HomeAction>
+        </Rise>
+      </AuthFrame>
+    );
+  }
+
   if (!invite.email_matches_caller) {
     return (
-      <BrandSurface>
-        <InviteCard
-          kicker={tHardcodedUi.raw('appInvitesInviteidPage.line122JsxAttrKickerWrongAccount')}
-        >
-          <StateHeading>
-            {tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}
-          </StateHeading>
-          <StateBody>
-            {tHardcodedUi.raw(
-              'appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount',
-            )}{' '}
-            <span className="text-foreground/80 font-medium">{user.email}</span>.
-          </StateBody>
-          <p className="text-foreground/30 mt-4 text-xs">
-            {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
-          </p>
+      <AuthFrame footerVariant="none">
+        <Rise>
+          <StepHeader
+            title={tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}
+            description={
+              invite.reason === 'sso_email_domain_unverified' ? (
+                tHardcodedUi.raw('appInvitesInviteidPage.ssoDomainUnverified')
+              ) : (
+                <>
+                  {tHardcodedUi.raw(
+                    'appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount',
+                  )}{' '}
+                  <span className="text-foreground font-medium wrap-break-word">{user.email}</span>.{' '}
+                  {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
+                </>
+              )
+            }
+          />
+        </Rise>
+        <Rise delay={0.06} className="space-y-3">
           {/* Sign-in comes back to this invite (KRTX-1731): a manual sign-out
               used to drop the return path. */}
           <Button
             type="button"
             size="lg"
-            className="mt-6 w-full text-sm"
+            className="w-full"
             onClick={() => void performSignOut({ returnUrl: `/invites/${inviteId}` })}
           >
             {tHardcodedUi.raw('appInvitesInviteidPage.signOutAndContinue')}
           </Button>
-          <GhostAction href={homeHref}>
+          <HomeAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
-          </GhostAction>
-        </InviteCard>
-      </BrandSurface>
+          </HomeAction>
+        </Rise>
+      </AuthFrame>
     );
   }
 
   if (invite.expired) {
     return (
-      <BrandSurface>
-        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.inviteKicker')}>
-          <StateHeading>
-            {tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}
-          </StateHeading>
-          <StateBody>
-            {tHardcodedUi.raw('appInvitesInviteidPage.expiredPrefix')}{' '}
-            <span className="text-foreground/60">{formatWhen(invite.expires_at, locale)}</span>
-            {tHardcodedUi.raw(
-              'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
-            )}
-          </StateBody>
-          <GhostAction href={homeHref}>
+      <AuthFrame footerVariant="none">
+        <Rise>
+          <StepHeader
+            title={
+              <OutcomeTitle tone="muted">
+                {tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}
+              </OutcomeTitle>
+            }
+            description={
+              <>
+                {tHardcodedUi.raw('appInvitesInviteidPage.expiredPrefix')}{' '}
+                <span className="text-foreground">{formatWhen(invite.expires_at, locale)}</span>
+                {tHardcodedUi.raw(
+                  'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
+                )}
+              </>
+            }
+          />
+        </Rise>
+        <Rise delay={0.06}>
+          <HomeAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
-          </GhostAction>
-        </InviteCard>
-      </BrandSurface>
+          </HomeAction>
+        </Rise>
+      </AuthFrame>
     );
   }
 
@@ -229,143 +335,84 @@ export default function InvitePage() {
       : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 
   return (
-    <BrandSurface>
-      <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.invitationKicker')}>
-        {inviterEmail ? (
-          <div className="flex items-center gap-3">
-            <UserAvatar email={inviterEmail} size="lg" />
-            <div className="min-w-0">
-              <div className="text-foreground/85 truncate text-sm font-medium">{inviterEmail}</div>
-              <div className="text-foreground/40 mt-0.5 text-xs">
-                {invitedProject
-                  ? tHardcodedUi.raw('appInvitesInviteidPage.invitedYouToAProject')
-                  : tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-foreground/50 text-sm leading-relaxed">
-            {invitedProject
-              ? tHardcodedUi.raw('appInvitesInviteidPage.youHaveBeenInvitedToAProject')
-              : tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}
-          </div>
-        )}
+    <AuthFrame footerVariant="none">
+      <Rise>
+        <StepHeader
+          mark={inviterEmail ? <UserAvatar email={inviterEmail} size="lg" /> : undefined}
+          title={
+            inviterEmail ? (
+              <>
+                <span className="wrap-break-word">{inviterEmail}</span>{' '}
+                <span className="text-muted-foreground">
+                  {invitedProject
+                    ? tHardcodedUi.raw('appInvitesInviteidPage.invitedYouToAProject')
+                    : tHardcodedUi.raw(
+                        'appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam',
+                      )}
+                </span>
+              </>
+            ) : invitedProject ? (
+              tHardcodedUi.raw('appInvitesInviteidPage.youHaveBeenInvitedToAProject')
+            ) : (
+              tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')
+            )
+          }
+          description={
+            invitedProject
+              ? tHardcodedUi('appInvitesInviteidPage.joinProjectDescription', {
+                  projectName: invitedProject.name,
+                  roleLabel: projectRoleLabel,
+                })
+              : tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })
+          }
+        />
+      </Rise>
 
-        <div className="border-foreground/[0.08] bg-foreground/[0.03] mt-5 flex items-center gap-3 rounded-2xl border px-4 py-3.5">
-          <div className="bg-foreground/[0.05] text-foreground/60 flex size-10 shrink-0 items-center justify-center rounded-2xl">
-            <KortixLogo size={16} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground/85 truncate text-sm font-medium">{targetName}</div>
-            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
-              <Clock className="size-3" />
-              {targetLabel}
-              {tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{' '}
-              {formatWhen(invite.expires_at, locale)}
-            </div>
-          </div>
-        </div>
+      <Rise delay={0.06} className="space-y-5">
+        <DetailPanel>
+          <DetailRow label={targetLabel} value={targetName} />
+          <DetailRow
+            label={tHardcodedUi.raw('i18nComplete.textf6725f3af08a')}
+            value={formatWhen(invite.expires_at, locale)}
+          />
+        </DetailPanel>
 
-        <p className="text-foreground/35 mt-4 text-xs leading-relaxed">
-          {invitedProject
-            ? tHardcodedUi('appInvitesInviteidPage.joinProjectDescription', {
-                projectName: invitedProject.name,
-                roleLabel: projectRoleLabel,
-              })
-            : tHardcodedUi('appInvitesInviteidPage.joinAccountDescription', { roleLabel })}
-        </p>
+        {errorMessage ? <ErrorStrip message={errorMessage} /> : null}
 
-        {errorMessage ? (
-          <InfoBanner tone="destructive" className="mt-4">
-            {errorMessage}
-          </InfoBanner>
-        ) : null}
-
-        <div className="mt-6 flex gap-2">
+        <div className="flex gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="lg"
             onClick={() => declineMutation.mutate()}
             disabled={anyPending}
-            className="flex-1 text-sm"
+            aria-busy={declinePending || undefined}
+            className="flex-1"
           >
-            {declinePending ? (
-              <Loading className="mx-auto h-4 w-4" />
-            ) : (
-              tHardcodedUi.raw('appInvitesInviteidPage.decline')
-            )}
+            {declinePending ? <Loading className="size-4 shrink-0" /> : null}
+            {tHardcodedUi.raw('appInvitesInviteidPage.decline')}
           </Button>
           <Button
             type="button"
             size="lg"
             onClick={() => acceptMutation.mutate()}
             disabled={anyPending}
-            className="flex-1 text-sm"
+            aria-busy={acceptPending || undefined}
+            className="flex-1"
           >
-            {acceptPending ? (
-              <Loading className="mx-auto h-4 w-4" />
-            ) : (
-              tHardcodedUi.raw('appInvitesInviteidPage.accept')
-            )}
+            {acceptPending ? <Loading className="size-4 shrink-0" /> : null}
+            {tHardcodedUi.raw('appInvitesInviteidPage.accept')}
           </Button>
         </div>
-      </InviteCard>
-    </BrandSurface>
+      </Rise>
+    </AuthFrame>
   );
 }
 
-// ─── Brand primitives ────────────────────────────────────────────────────────
-
-function BrandSurface({ children }: { children: React.ReactNode }) {
+/** The way out of a terminal invite state. `replace` keeps the old `router.replace` history. */
+function HomeAction({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 overflow-hidden">
-      <WallpaperBackground wallpaperId="brandmark" />
-      <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
-      <div className="relative z-10 flex h-full items-center justify-center px-4">{children}</div>
-    </div>
-  );
-}
-
-function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: string }) {
-  return (
-    <m.div
-      initial={{ opacity: 0, y: 20, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-[380px]"
-    >
-      <div className="flex flex-col items-center gap-5">
-        <KortixLogo size={26} />
-        <div className="bg-background/80 dark:bg-background/75 border-foreground/[0.06] w-full rounded-2xl border px-7 py-7 backdrop-blur-2xl">
-          <p className="text-foreground/30 mb-5 text-xs tracking-[0.2em] uppercase">{kicker}</p>
-          {children}
-        </div>
-      </div>
-    </m.div>
-  );
-}
-
-function StateHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h1 className="text-foreground/85 text-3xl leading-none font-extralight tracking-tight">
-      {children}
-    </h1>
-  );
-}
-
-function StateBody({ children }: { children: React.ReactNode }) {
-  return <p className="text-foreground/50 mt-3 text-sm leading-relaxed">{children}</p>;
-}
-
-function GhostAction({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Button
-      asChild
-      variant="ghost"
-      className="text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05] mt-6 h-10 px-4 text-sm"
-    >
-      {/* `replace` keeps the history behaviour the old `router.replace` had. */}
+    <Button asChild size="lg" variant="secondary" className="w-full">
       <Link href={href} replace prefetch>
         {children}
       </Link>

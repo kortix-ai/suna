@@ -4,72 +4,65 @@ export interface AllowEntry {
   reason: string;
 }
 
+/** One reason for all 11 drive-sync routes: the in-guest daemon's own sync surface. */
+const DRIVE_SYNC_REASON =
+  "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.";
+
+/** The drive-sync routes DRIVE_SYNC_REASON covers, as [method, path] pairs. */
+const DRIVE_SYNC_ROUTES: Array<[string, string]> = [
+  ["GET", "/v1/projects/:*/sessions/:*/drive-sync/mounts"],
+  ["GET", "/v1/projects/:*/sessions/:*/drive-sync/:*/head"],
+  ["GET", "/v1/projects/:*/sessions/:*/drive-sync/:*/files"],
+  ["GET", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/stat"],
+  ["GET", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/content"],
+  ["PUT", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/content"],
+  ["POST", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload"],
+  ["PUT", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload/:*/blocks/:*"],
+  ["POST", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload/:*/commit"],
+  ["POST", "/v1/projects/:*/sessions/:*/drive-sync/:*/files/move"],
+  ["DELETE", "/v1/projects/:*/sessions/:*/drive-sync/:*/files"],
+];
+
+/** One reason for all 9 setup routes: the self-hosted setup app. */
+const SETUP_REASON = "self-hosted setup app is intentionally not mounted when internal billing is enabled";
+
+/** The setup routes SETUP_REASON covers, as [method, path] pairs. */
+const SETUP_ROUTES: Array<[string, string]> = [
+  ["GET", "/v1/setup/health"],
+  ["GET", "/v1/setup/install-status"],
+  ["GET", "/v1/setup/sandbox-providers"],
+  ["GET", "/v1/setup/setup-status"],
+  ["GET", "/v1/setup/setup-wizard-step"],
+  ["GET", "/v1/setup/status"],
+  ["POST", "/v1/setup/bootstrap-owner"],
+  ["POST", "/v1/setup/setup-complete"],
+  ["POST", "/v1/setup/setup-wizard-step"],
+];
+
+const allowFor = (routes: Array<[string, string]>, reason: string): AllowEntry[] =>
+  routes.map(([method, path]) => ({ method, path, reason }));
+
 export const uncoveredAllow: AllowEntry[] = [
+    ...allowFor(DRIVE_SYNC_ROUTES, DRIVE_SYNC_REASON),
+  // The CLI device-login (RFC 8628-style) routes. Covered by the CLI's own
+  // device flow rather than by a browser journey: start → poll → decide is a
+  // terminal handshake, and the CLI is not in the flow-runner matrix. They
+  // arrived with the CLI device-grant merge and, like the routes below, were
+  // absent from the committed manifest, so the gate never saw them.
   {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/mounts",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/head",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/stat",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "GET",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/content",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "PUT",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/content",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
+    method: "POST",
+    path: "/v1/cli/device/start",
+    reason: "CLI device login, step 1: exercised by `kortix login` (terminal handshake, no browser flow)",
   },
   {
     method: "POST",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "PUT",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload/:*/blocks/:*",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
+    path: "/v1/cli/device/poll",
+    reason: "CLI device login, step 2: polled by `kortix login` until approved",
   },
   {
     method: "POST",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/upload/:*/commit",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files/move",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
-  },
-  {
-    method: "DELETE",
-    path: "/v1/projects/:*/sessions/:*/drive-sync/:*/files",
-    reason:
-      "session drive sync: called only by a session's own in-guest daemon with its session sandbox credential (the handler re-checks sandbox, session, project, account and live status against session_sandboxes, and the folders recorded for it), to keep the session's folders in sync on a provider without volume mounts. Not an end-user API route. Covered against the real routes in apps/api/src/__tests__/integration-drive-access-enforcement.test.ts and end to end through the daemon's real HTTP client in apps/kortix-sandbox-agent-server/src/__tests__/drive-sync.test.ts.",
+    path: "/v1/cli/device/decide",
+    reason: "CLI device login, step 3: approved in the CLI approval page; the CLI is not in the flow-runner matrix",
   },
   {
     method: "GET",
@@ -131,7 +124,7 @@ export const uncoveredAllow: AllowEntry[] = [
     method: "POST",
     path: "/v1/projects/provision-stream",
     reason:
-      "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage, and its own source-level guards live in apps/api/src/projects/provision-stream.test.ts",
+      "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage",
   },
   {
     method: "POST",
@@ -144,12 +137,6 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/platform/runtime-projection",
     reason:
       "sandbox-only projection sink: the in-guest daemon pushes its own /kortix/opencode/state document with a sandbox token, and the handler re-checks that token's sandbox against session_sandboxes (sandbox -> session -> account) before storing. Not an end-user API route — same class as /v1/platform/boot-timeline. Credential, scoping, gzip decoding and the decompressed size cap are covered black-box in apps/api/src/platform/routes/runtime-projection.test.ts; the SERVED side is flow-covered through the snapshot runtime leg in SESS-20.",
-  },
-  {
-    method: "POST",
-    path: "/v1/projects/:*/monitors/ingest",
-    reason:
-      "monitor-box-only event intake: the runner posts with its own box's sandbox token, authenticated against project_monitor_boxes; not an end-user API route. Auth, dedup, truncation, and rate-limit behavior are covered source-level in apps/api/src/__tests__/unit-monitor-ingest-route.test.ts",
   },
   {
     method: "PUT",
@@ -230,6 +217,7 @@ export const uncoveredAllow: AllowEntry[] = [
       reason: "retired provider passthrough: a 410 stub (apps/api/src/routes/retired.ts). No flow can declare ALL; RET-1 calls one and unit-retired-routes.test.ts covers every row",
     })),
   ),
+{ method: "POST", path: "/v1/projects/:*/transfer", reason: "project transfer between accounts (KRTX-1747): an end-user settings action, not a browser journey — covered against the real route table by apps/api/src/projects/routes/project-transfer.test.ts (gate order, error mapping), by the real-PostgreSQL movement suite apps/api/src/projects/lib/project-transfer.integration.test.ts (movement, role re-pointing, real-engine non-member deny, classification completeness), and exercised live in the PR sandbox" },
 ];
 
 export const externalRoutes: AllowEntry[] = [
@@ -246,13 +234,5 @@ export const externalRoutes: AllowEntry[] = [
   { method: "POST", path: "/v1/openai/chat/completions", reason: "llm-gateway OpenAI-compat chat alias" },
   { method: "POST", path: "/v1/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress" },
   { method: "POST", path: "/v1/openai/messages", reason: "llm-gateway standalone service Anthropic-Messages ingress, OpenAI-compat-namespace alias" },
-  { method: "GET", path: "/v1/setup/health", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "GET", path: "/v1/setup/install-status", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "GET", path: "/v1/setup/sandbox-providers", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "GET", path: "/v1/setup/setup-status", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "GET", path: "/v1/setup/setup-wizard-step", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "GET", path: "/v1/setup/status", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "POST", path: "/v1/setup/bootstrap-owner", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "POST", path: "/v1/setup/setup-complete", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
-  { method: "POST", path: "/v1/setup/setup-wizard-step", reason: "self-hosted setup app is intentionally not mounted when internal billing is enabled" },
+  ...allowFor(SETUP_ROUTES, SETUP_REASON),
 ];

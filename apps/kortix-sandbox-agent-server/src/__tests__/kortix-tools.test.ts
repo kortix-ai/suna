@@ -36,7 +36,7 @@ function router(handle: (call: Call) => unknown | Response): void {
     async fetch(req) {
       const call = { path: new URL(req.url).pathname, headers: Object.fromEntries(req.headers), body: await req.json() }
       calls.push(call)
-      const reply = handle(call)
+      const reply = await handle(call)
       return reply instanceof Response ? reply : Response.json(reply)
     },
   })
@@ -174,10 +174,32 @@ describe('scrape_webpage', () => {
     router(() => Response.json({ success: false, error: 'blocked' }, { status: 403 }))
     await expect(scrapeWebpage.execute({ urls: 'https://bad.test' }, ctx())).rejects.toThrow('Failed to scrape all 1 URLs. https://bad.test: blocked')
   })
+
+  test('a scrape the provider answers late still reaches the tool: the cap covers the provider envelope', async () => {
+    // Firecrawl documents its own `timeout` up to 60000ms and answers past it
+    // when engines cascade. A tool cap below that envelope turns a
+    // slow-but-successful scrape into a tool timeout. Scale the tool's cap
+    // 50x down so this runs in ~2s: the router answers at 1000ms, a 35s cap
+    // aborts at 700ms, the shipped cap (1.8s) waits and the call is made once.
+    const native = AbortSignal.timeout
+    const patched = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
+    patched.timeout = (ms) => native(Math.round(ms / 50))
+    try {
+      router(async (call) => {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        return page(call.body.url)
+      })
+      const result = JSON.parse(out(await scrapeWebpage.execute({ urls: 'https://slow.example.test/page' }, ctx())))
+      expect(result).toMatchObject({ url: 'https://slow.example.test/page', success: true, title: 'T' })
+      expect(calls).toHaveLength(1)
+    } finally {
+      patched.timeout = native
+    }
+  })
 })
 
 describe('the Kortix tools follow the capability of what they do', () => {
-  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
+  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
 
   test.each([
     ['web_search', { websearch: 'deny' }, 'deny'],
@@ -212,7 +234,7 @@ describe('the Kortix tools follow the capability of what they do', () => {
   })
 
   test('an "always" reply to a memory write allows the edit capability, not memory reads elsewhere', async () => {
-    const broker = new PermissionBroker('ses_test', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
+    const broker = new PermissionBroker('ses_test', '/workspace', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
     const asked = broker.ask({ tool: 'memory', args: { command: 'create', path: 'memory/a.md' } })
     const [request] = broker.list()
     expect(request!.permission).toBe('edit')
@@ -287,6 +309,15 @@ describe('show', () => {
     expect(result.message).toBe('1 item(s) presented to user as carousel.')
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
+  })
+
+  test('an empty items value ("null", "[]") beside a single item shows that item', async () => {
+    writeFileSync(join(dir, 'SKILL.md'), '# skill')
+    for (const items of ['null', '[]']) {
+      const result = JSON.parse(out(await show({ type: 'file', path: 'SKILL.md', theme: 'success', items })))
+      expect(result.entry).toMatchObject({ type: 'file', path: join(dir, 'SKILL.md'), theme: 'success' })
+    }
+    await expect(show({ items: 'null' })).rejects.toThrow("'type' is required.")
   })
 })
 

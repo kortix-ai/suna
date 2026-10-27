@@ -79,6 +79,18 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'DASHBOARD_PASSWORD', category: 'database', kind: 'generated', required: true, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_ID', category: 'database', kind: 'generated', required: false, rotatable: true },
   { key: 'S3_PROTOCOL_ACCESS_KEY_SECRET', category: 'database', kind: 'generated', required: false, rotatable: true },
+  // Kortix Capture's bundled object store (MinIO). The API signs with this pair
+  // to issue per-device credentials. Rotating the password restarts the store
+  // and the API together; stored objects are unaffected.
+  { key: 'CAPTURE_STORE_ROOT_USER', category: 'database', kind: 'generated', required: false, rotatable: false },
+  { key: 'CAPTURE_STORE_ROOT_PASSWORD', category: 'database', kind: 'generated', required: false, rotatable: true },
+  // External Capture object store (KORTIX_CAPTURE_STORE=external) static S3
+  // credentials. Both optional and operator-supplied: omit them on AWS to use
+  // the box's instance-role default chain; set them for R2/MinIO. Registered
+  // here only so `env ls` MASKS the secret instead of printing it in plaintext
+  // among the "Other configuration" keys (see the array-level comment above).
+  { key: 'KORTIX_CAPTURE_S3_ACCESS_KEY_ID', category: 'database', kind: 'operator', required: false },
+  { key: 'KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY', category: 'database', kind: 'operator', required: false },
   // Internal Supabase-infra encryption keys — see the array-level comment
   // above for why these are generated-but-not-rotatable.
   { key: 'SECRET_KEY_BASE', category: 'database', kind: 'generated', required: true, rotatable: false },
@@ -113,17 +125,17 @@ export const SECRET_DEFS: SecretDef[] = [
   // IdP until re-registered.
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
-  // Agent sandbox — three interchangeable providers (SandboxProviderName in
-  // apps/api/src/config.ts). `init`/`configure` ask which ONE this instance
-  // runs on (default daytona) and only collect that provider's key(s); the
-  // actual required-secret gate is the composite sandboxProviderConfigured()
-  // check in commands/self-host.ts (whichever provider ALLOWED_SANDBOX_
-  // PROVIDERS names), not a blanket `required` flag per key here — Daytona
-  // stays `required: true` below only because it's the default/recommended
-  // provider, not because it's unconditionally needed.
-  { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: true },
-  { key: 'E2B_API_KEY', category: 'sandbox', kind: 'operator', required: false },
-  { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: false },
+  // Agent sandbox — Platinum (the reference) or the legacy Daytona fallback,
+  // whose removal is scheduled (SandboxProviderName in apps/api/src/config.ts).
+  // `init`/`configure` ask which ONE this instance runs on (default platinum)
+  // and only collect that provider's key(s); the actual required-secret gate
+  // is the composite sandboxProviderConfigured() check in
+  // commands/self-host.ts (whichever provider ALLOWED_SANDBOX_PROVIDERS
+  // names), not a blanket `required` flag per key here — Platinum stays
+  // `required: true` below only because it's the default provider, not
+  // because it's unconditionally needed.
+  { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: true },
+  { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: false },
   { key: 'PLATINUM_WEBHOOK_SECRET', category: 'sandbox', kind: 'operator', required: false },
 
   // Managed git — NOT init-required: configured in-app (Settings → Git,
@@ -150,7 +162,6 @@ export const SECRET_DEFS: SecretDef[] = [
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
   { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'MORPH_API_KEY', category: 'llm', kind: 'operator', required: false },
 
   // Connectors
   { key: 'COMPOSIO_API_KEY', category: 'connectors', kind: 'operator', required: false },
@@ -159,6 +170,9 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'PIPEDREAM_PROJECT_ID', category: 'connectors', kind: 'operator', required: false },
   { key: 'POSTMAN_API_KEY', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_WEBHOOK_SECRET', category: 'connectors', kind: 'operator', required: false },
+  // JSON: Kortix's own OAuth clients for MCP catalogue apps without dynamic
+  // client registration (apps/api/src/connectors/mcp-apps.ts).
+  { key: 'KORTIX_OAUTH_CLIENTS', category: 'connectors', kind: 'operator', required: false },
 
   // Reachability (tunnel mode only — see self-host/tunnel.ts). Both optional:
   // absent, the `cloudflared` service runs a free zero-config quick tunnel
@@ -246,6 +260,11 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // old pair.
   S3_PROTOCOL_ACCESS_KEY_ID: ['supabase-storage', 'kortix-api'],
   S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage', 'kortix-api'],
+  CAPTURE_STORE_ROOT_USER: ['capture-store', 'kortix-api'],
+  CAPTURE_STORE_ROOT_PASSWORD: ['capture-store', 'kortix-api'],
+  // External Capture store config is read by the API only (via env_file).
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: ['kortix-api'],
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: ['kortix-api'],
   SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
   REALTIME_DB_ENC_KEY: ['supabase-realtime'],
   VAULT_ENC_KEY: ['supabase-supavisor'],
@@ -267,12 +286,22 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   SMTP_ADMIN_EMAIL: ['supabase-auth'],
   SMTP_SENDER_NAME: ['supabase-auth'],
   SAML_PRIVATE_KEY: ['supabase-auth'],
+  // The auth behavior flags (SHARED_AUTH_DEFAULTS). GoTrue reads them only
+  // through Compose interpolation, so only a recreate applies a new value.
+  // The API also reads ENABLE_EMAIL_AUTOCONFIRM: while it is on, a password
+  // email proves nothing (KRTX-1715). Both must restart on one value.
+  DISABLE_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_SIGNUP: ['supabase-auth'],
+  ENABLE_EMAIL_AUTOCONFIRM: ['supabase-auth', 'kortix-api'],
+  ENABLE_ANONYMOUS_USERS: ['supabase-auth'],
+  ENABLE_PHONE_SIGNUP: ['supabase-auth'],
+  ENABLE_PHONE_AUTOCONFIRM: ['supabase-auth'],
+  ADDITIONAL_REDIRECT_URLS: ['supabase-auth'],
 
   // Agent sandbox — all three interchangeable providers
   DAYTONA_API_KEY: ['kortix-api'],
   DAYTONA_SERVER_URL: ['kortix-api'],
   DAYTONA_TARGET: ['kortix-api'],
-  E2B_API_KEY: ['kortix-api'],
   PLATINUM_API_KEY: ['kortix-api'],
   PLATINUM_API_URL: ['kortix-api'],
   PLATINUM_TEMPLATE: ['kortix-api'],
@@ -294,7 +323,6 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
 
   // LLM
   OPENROUTER_API_KEY: ['kortix-api'],
-  MORPH_API_KEY: ['kortix-api'],
 
   // Connectors
   COMPOSIO_API_KEY: ['kortix-api'],
@@ -304,6 +332,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   POSTMAN_API_KEY: ['kortix-api'],
   PIPEDREAM_ENVIRONMENT: ['kortix-api'],
   PIPEDREAM_WEBHOOK_SECRET: ['kortix-api'],
+  KORTIX_OAUTH_CLIENTS: ['kortix-api'],
 
   // Reachability
   CLOUDFLARE_TUNNEL_TOKEN: ['cloudflared'],

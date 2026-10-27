@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { channelOfSessionMetadata, questionReleaseSentinel } from '../channels/question-release';
+import { channelOfSessionMetadata, isUnattendedSessionMetadata, questionReleaseSentinel, unattendedQuestionSentinel } from '../channels/question-release';
 
 // The agent's `question` tool BLOCKS. In a chat channel the answer arrives
 // later as a new turn, so the call must be released or the turn hangs. That
@@ -31,7 +31,12 @@ describe('channelOfSessionMetadata', () => {
 
   test('a null per-channel block is not mistaken for one', () => {
     // `typeof null === "object"`; the guard must not treat null as a block.
-    expect(channelOfSessionMetadata({ teams: null, slack: null })).toBeNull();
+    expect(channelOfSessionMetadata({ teams: null, slack: null, telegram: null, email: null })).toBeNull();
+  });
+
+  test('Telegram and Email sessions are channels too: nobody answers their question in a UI', () => {
+    expect(channelOfSessionMetadata({ source: 'telegram', telegram: { chat_id: 1 } })).toBe('telegram');
+    expect(channelOfSessionMetadata({ source: 'email', email: { thread_id: 't' } })).toBe('email');
   });
 });
 
@@ -58,6 +63,26 @@ describe('questionReleaseSentinel', () => {
         expect(questionReleaseSentinel(channel, posted)).not.toMatch(/rather than the question tool/);
       }
     }
+  });
+
+  test('the Slack and Teams copy is unchanged, word for word', () => {
+    const posted = (where: string) =>
+      `(Posted to ${where}. Questions here are async — the user answers with a tap or a reply, and that reaches you as a NEW turn with full context. Do NOT wait for an answer, and post nothing else: the question is your reply. Just finish this turn now.)`;
+    const unposted = (where: string, send: string) =>
+      `(This question could NOT be posted to ${where}, so the user has not seen it. Ask it in plain words with ${send}, then finish this turn — their reply reaches you as a NEW turn.)`;
+    expect(questionReleaseSentinel('slack', true)).toBe(posted('the Slack thread'));
+    expect(questionReleaseSentinel('teams', true)).toBe(posted('the Teams conversation'));
+    expect(questionReleaseSentinel('slack', false)).toBe(unposted('the Slack thread', '`slack send`'));
+    expect(questionReleaseSentinel('teams', false)).toBe(unposted('the Teams conversation', '`teams send`'));
+  });
+
+  test('a Telegram or Email question was never shown: ask it through the channel connector', () => {
+    const telegram = questionReleaseSentinel('telegram', false);
+    expect(telegram).toContain('could NOT be posted to the Telegram chat');
+    expect(telegram).toContain('`kortix connectors call kortix_telegram.send_message`');
+    const email = questionReleaseSentinel('email', false);
+    expect(email).toContain('could NOT be posted to the email thread');
+    expect(email).toContain('`kortix connectors call email.reply_message`');
   });
 
   test('an UNposted question says so, and points at the channel`s own send', () => {
@@ -181,5 +206,46 @@ describe('POST /turn-question releases channel questions, and only those', () =>
     const firstReturnAfterRelay = body.indexOf('return c.json', body.indexOf('relayTurnQuestion('));
     expect(releaseAt).toBeGreaterThan(-1);
     expect(releaseAt).toBeLessThan(firstReturnAfterRelay);
+  });
+});
+
+// A session a trigger started (cron, webhook, monitor) has nobody to answer a
+// question. Prod 2026-10-09: a keyed cron session asked one and blocked 5 days;
+// every later fire queued behind it.
+describe('unattended sessions', () => {
+  test('a trigger-started session is unattended', () => {
+    expect(isUnattendedSessionMetadata({ source: 'trigger:cron' })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'trigger:webhook' })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'trigger:monitor' })).toBe(true);
+  });
+
+  test('a session that marks itself unattended is unattended (--meta unattended=true stores a string)', () => {
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: 'true' })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: true })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: 'false' })).toBe(false);
+  });
+
+  test('a person or a channel is not unattended', () => {
+    expect(isUnattendedSessionMetadata({ source: 'web' })).toBe(false);
+    expect(isUnattendedSessionMetadata({ source: 'slack' })).toBe(false);
+    expect(isUnattendedSessionMetadata({})).toBe(false);
+    expect(isUnattendedSessionMetadata(null)).toBe(false);
+    expect(isUnattendedSessionMetadata('trigger:cron')).toBe(false);
+  });
+
+  test('the sentinel says nobody answers, and where a decision goes', () => {
+    const s = unattendedQuestionSentinel();
+    expect(s).toContain('nobody can answer');
+    expect(s).toContain('finish');
+    expect(s).not.toMatch(/wait for/i);
+  });
+
+  test('POST /turn-question releases an unattended session`s question before responding', async () => {
+    const all = await Bun.file(new URL('../projects/routes/turn-questions.ts', import.meta.url).pathname).text();
+    const body = all.slice(all.indexOf("path: '/{projectId}/turn-question'"));
+    expect(body).toContain('isUnattendedSessionMetadata(turnQuestionSession.metadata)');
+    const releaseAt = body.indexOf('await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers)');
+    expect(releaseAt).toBeGreaterThan(-1);
+    expect(releaseAt).toBeLessThan(body.indexOf('return c.json', body.indexOf('relayTurnQuestion(')));
   });
 });

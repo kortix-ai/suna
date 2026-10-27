@@ -9,7 +9,8 @@
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "types": ["bun"]
   },
   "include": ["src/**/*.ts"]
 }

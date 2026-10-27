@@ -126,7 +126,7 @@ function toSandboxInfo(project: ProjectSummary, session: ProjectSessionSummary):
     external_id:
       session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id,
     name: session.name || `${project.name} session`,
-    provider: session.sandbox_provider || 'daytona',
+    provider: session.sandbox_provider || 'platinum',
     base_url: session.sandbox_url || '',
     status: normalizeSessionStatus(session.status),
     version: null,
@@ -204,42 +204,11 @@ async function listProjectSessionSandboxes(): Promise<
   });
 }
 
-export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
-  project: ProjectSummary;
-  session: ProjectSessionSummary;
-  runtime: ProjectSessionSandbox | null;
-  sandbox: SandboxInfo;
-} | null> {
-  const rows = await listProjectSessionSandboxes();
-  if (!sandboxId) return rows[0] ?? null;
-  return (
-    rows.find(
-      (row) =>
-        row.sandbox.sandbox_id === sandboxId ||
-        row.sandbox.external_id === sandboxId ||
-        row.session.session_id === sandboxId ||
-        row.runtime?.external_id === sandboxId
-    ) ?? null
-  );
-}
-
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 /**
- * Get user's active sandbox.
- * GET /platform/sandbox
- */
-export async function getActiveSandbox(): Promise<SandboxInfo | null> {
-  try {
-    const row = await findProjectSessionSandbox();
-    return row?.sandbox ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * List all project-session sandboxes from the DB.
+ * List all project-session sandboxes from the DB: each project's first
+ * sessions page (Settings → Instances only).
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {

@@ -21,7 +21,7 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { Avatar } from '@/components/kortix/avatar';
+import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   SessionPublicShareRows,
@@ -49,7 +49,7 @@ const MODE_OPTIONS: Array<{ mode: ShareMode; icon: AppIcon; label: string }> = [
   { mode: 'members', icon: UsersIcon, label: 'Specific people' },
 ];
 
-export interface SessionShareFormProps {
+interface SessionShareFormProps {
   projectId: string;
   session: ProjectSession;
   /** The sharing was saved. */
@@ -160,7 +160,7 @@ export function SessionShareForm({ projectId, session, onDone, onConfirmPublicLi
                 return (
                   <SettingsRow
                     key={member.user_id}
-                    leading={<Avatar variant="custom" size={28} fallbackText={name} />}
+                    leading={<ParticipantAvatar person={{ name: null, email: member.email ?? null }} size={28} />}
                     label={member.user_id === viewerUserId ? `${name} (you)` : name}
                     checked={memberIds.includes(member.user_id)}
                     right={null}

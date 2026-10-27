@@ -7,6 +7,9 @@
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
+import { createDatabaseSession } from '../fixtures/database-project';
+import { seedSessionTranscript } from '../fixtures/session-transcript';
+import { openFlowDb } from '../fixtures/turn-end';
 
 function requireExit(result: CliResult, expected: number, action: string): void {
   // An edge-laundered 5xx or a killed process is infrastructure, not contract.
@@ -221,9 +224,10 @@ flow(
   'CLI-SESS',
   {
     domain: 'cli',
+    tags: ['deployed'],
     serial: true,
     timeoutMs: 300_000,
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId',
@@ -305,6 +309,259 @@ flow(
   },
 );
 
+/**
+ * CLI-SESS-PIN — `kortix sessions pin|unpin|archive|unarchive` and
+ * `ls --pinned|--archived` through the real CLI process (KRTX-2418). The CLI
+ * signs in with the OWNER's personal access token, which is a person, so the
+ * pin and the archive apply to the OWNER's own list. Local profile: a
+ * database session, no sandbox.
+ */
+flow(
+  'CLI-SESS-PIN',
+  {
+    domain: 'cli',
+    requires: ['database'],
+    routes: [
+      'GET /v1/accounts/me',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/pin',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    if (!project.accountId) throw new Error('CLI-SESS-PIN fixture project is missing accountId');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: project.accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    const shortId = sessionId.split('-')[0]!;
+    const sandbox = await authenticatedCli(ctx, 'sessions-pin');
+    type Row = { session_id: string; pinned_at?: string | null; archived_at?: string | null };
+    const cli = (args: string[]) => sandbox.run(['sessions', ...args, '--project', project.id]);
+    const ls = async (...flags: string[]) =>
+      parseJson<Row[]>(await cli(['ls', ...flags, '--json']), `kortix sessions ls ${flags.join(' ')}`);
+    const find = (rows: Row[]) => rows.find((row) => row.session_id === sessionId);
+    const readBack = async () =>
+      (await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId } }))
+        .status(200)
+        .json<Row>();
+    try {
+      await ctx.step('kortix sessions pin sets pinned_at; ls --pinned lists the session and ls marks it (pinned)', async () => {
+        const result = await cli(['pin', sessionId]);
+        requireExit(result, 0, 'kortix sessions pin');
+        if (!result.stdout.includes(`Pinned ${shortId}`)) throw new Error(`sessions pin output: ${result.stdout}`);
+        if (!(await readBack()).pinned_at) throw new Error('the session read has no pinned_at after the pin');
+        if (!find(await ls('--pinned'))?.pinned_at) throw new Error('ls --pinned omitted the pinned session');
+        const human = await cli(['ls']);
+        requireExit(human, 0, 'kortix sessions ls');
+        if (!human.stdout.includes(`${shortId} (pinned)`)) throw new Error(`sessions ls did not mark the pin: ${human.stdout}`);
+      });
+
+      await ctx.step('kortix sessions archive --json unpins; the default ls hides it, ls --archived lists it', async () => {
+        const [result] = parseJson<Array<Row & { ok: boolean; project_id: string }>>(
+          await cli(['archive', sessionId, '--json']),
+          'kortix sessions archive',
+        );
+        if (!result?.ok || result.session_id !== sessionId || result.project_id !== project.id) {
+          throw new Error(`sessions archive --json: ${JSON.stringify(result)}`);
+        }
+        if (!result.archived_at || result.pinned_at !== null) {
+          throw new Error(`archive did not unpin: ${JSON.stringify(result)}`);
+        }
+        if (find(await ls())) throw new Error('the default ls still lists the archived session');
+        if (!find(await ls('--archived'))?.archived_at) throw new Error('ls --archived omitted the archived session');
+        if (find(await ls('--pinned'))) throw new Error('ls --pinned still lists the session after the archive');
+      });
+
+      await ctx.step('kortix sessions unarchive <short id> resolves the archived session; the default ls lists it again', async () => {
+        const result = await cli(['unarchive', shortId]);
+        requireExit(result, 0, 'kortix sessions unarchive');
+        if (!result.stdout.includes(`Unarchived ${shortId}`)) throw new Error(`sessions unarchive output: ${result.stdout}`);
+        const row = find(await ls());
+        if (!row || row.archived_at !== null) throw new Error(`the default ls after unarchive: ${JSON.stringify(row)}`);
+      });
+
+      await ctx.step('kortix sessions unpin clears the pin; the session read answers null/null', async () => {
+        requireExit(await cli(['pin', sessionId]), 0, 'kortix sessions pin (again)');
+        const result = await cli(['unpin', sessionId]);
+        requireExit(result, 0, 'kortix sessions unpin');
+        if (!result.stdout.includes(`Unpinned ${shortId}`)) throw new Error(`sessions unpin output: ${result.stdout}`);
+        const state = await readBack();
+        if (state.pinned_at !== null || state.archived_at !== null) {
+          throw new Error(`the session read after unpin: ${JSON.stringify(state)}`);
+        }
+        if (find(await ls('--pinned'))) throw new Error('ls --pinned still lists the unpinned session');
+      });
+
+      await ctx.step('kortix sessions ls --pinned --archived exits 2 and names the conflict', async () => {
+        const result = await cli(['ls', '--pinned', '--archived']);
+        requireExit(result, 2, 'kortix sessions ls --pinned --archived');
+        if (!result.stderr.includes('only one of --pinned, --archived')) {
+          throw new Error(`ls --pinned --archived stderr: ${result.stderr}`);
+        }
+      });
+    } finally {
+      sandbox.dispose();
+    }
+  },
+);
+
+/**
+ * CLI-SESS-RM — `kortix sessions rm <id>` WITHOUT `--project` (KRTX-2818). The
+ * CLI has no linked project, so it locates the session by scanning every
+ * account's projects. The contract: it deletes exactly the named session, or
+ * fails with no side effect. A sibling session in the same project, and one in
+ * a team project, are read back after every step. Local profile: database
+ * sessions, no sandbox.
+ */
+flow(
+  'CLI-SESS-RM',
+  {
+    domain: 'cli',
+    requires: ['database'],
+    routes: [
+      'GET /v1/accounts/me',
+      'GET /v1/projects',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const team = await ctx.fixtures.team();
+    const teamProject = await team.project();
+    if (!project.accountId || !teamProject.accountId) throw new Error('CLI-SESS-RM fixture project is missing accountId');
+    const session = (target: { id: string; accountId?: string }) =>
+      createDatabaseSession(ctx.env, { projectId: target.id, accountId: target.accountId!, userId: ctx.P.OWNER.userId! });
+    const named = await session(project);
+    const sibling = await session(project);
+    const teamSession = await session(teamProject);
+    ctx.track('session', named, { projectId: project.id });
+    ctx.track('session', sibling, { projectId: project.id });
+    ctx.track('session', teamSession, { projectId: teamProject.id });
+    const status = async (projectId: string, sessionId: string) =>
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } })).statusCode;
+    const requireLive = async (label: string, projectId: string, sessionId: string) => {
+      const code = await status(projectId, sessionId);
+      if (code !== 200) throw new Error(`${label} ${sessionId} read back ${code}, expected 200`);
+    };
+    const sandbox = await authenticatedCli(ctx, 'sessions-rm');
+    try {
+      await ctx.step('rm <unknown id> exits 1 naming the id; no session is deleted', async () => {
+        const unknown = crypto.randomUUID();
+        const result = await sandbox.run(['sessions', 'rm', unknown], { timeoutMs: 120_000 });
+        requireExit(result, 1, 'kortix sessions rm <unknown id>');
+        if (!result.stderr.includes(`Session ${unknown} not found`)) throw new Error(`rm <unknown id> stderr: ${result.stderr}`);
+        await requireLive('the named session', project.id, named);
+        await requireLive('the sibling session', project.id, sibling);
+        await requireLive('the team session', teamProject.id, teamSession);
+      });
+
+      await ctx.step('rm <id> with no project linked finds the session and deletes exactly it', async () => {
+        const result = await sandbox.run(['sessions', 'rm', named, '--json'], { timeoutMs: 120_000 });
+        const [row] = parseJson<Array<{ session_id: string; project_id: string; deleted: boolean }>>(result, 'kortix sessions rm <id>');
+        if (row?.session_id !== named || row.project_id !== project.id || !row.deleted) {
+          throw new Error(`rm <id> --json: ${result.stdout}`);
+        }
+        const gone = await status(project.id, named);
+        if (gone !== 404) throw new Error(`the named session read back ${gone} after rm, expected 404`);
+        await requireLive('the sibling session', project.id, sibling);
+        await requireLive('the team session', teamProject.id, teamSession);
+      });
+
+      await ctx.step('rm <id> of a team-account session found by the cross-account scan deletes exactly it', async () => {
+        const result = await sandbox.run(['sessions', 'rm', teamSession, '--json'], { timeoutMs: 120_000 });
+        const [row] = parseJson<Array<{ session_id: string; project_id: string; deleted: boolean }>>(result, 'kortix sessions rm <team id>');
+        if (row?.session_id !== teamSession || row.project_id !== teamProject.id || !row.deleted) {
+          throw new Error(`rm <team id> --json: ${result.stdout}`);
+        }
+        const gone = await status(teamProject.id, teamSession);
+        if (gone !== 404) throw new Error(`the team session read back ${gone} after rm, expected 404`);
+        await requireLive('the sibling session', project.id, sibling);
+      });
+    } finally {
+      sandbox.dispose();
+    }
+  },
+);
+
+/**
+ * CLI-SESS-RECOVER — `kortix sessions recover` through the real CLI process
+ * (KRTX-2419). The session is lost: its sandbox row is `stopped` with
+ * `runtimeIdentityState: 'unavailable'`, and the provider removal is a row
+ * stamp, as in SESS-55. Local profile: a database session with a saved
+ * conversation, no sandbox.
+ */
+flow(
+  'CLI-SESS-RECOVER',
+  {
+    domain: 'cli',
+    requires: ['database'],
+    routes: [
+      'GET /v1/accounts/me',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/recover',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    if (!project.accountId) throw new Error('CLI-SESS-RECOVER fixture project is missing accountId');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: project.accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: project.accountId, sessionId });
+    const db = await openFlowDb(ctx.env);
+    const row = async () =>
+      (await db.query<{ external_id: string | null; recovered: string | null }>(
+        `SELECT s.external_id, p.metadata->>'lostRecoveredAt' AS recovered
+           FROM kortix.session_sandboxes s JOIN kortix.project_sessions p USING (session_id) WHERE s.session_id = $1`,
+        [sessionId],
+      )).rows[0];
+    const shortId = sessionId.split('-')[0]!;
+    const sandbox = await authenticatedCli(ctx, 'sessions-recover');
+    const cli = (args: string[]) => sandbox.run(['sessions', ...args, '--project', project.id]);
+    try {
+      await db.query(
+        `UPDATE kortix.session_sandboxes SET status = 'stopped', metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+           'runtimeIdentityState', 'unavailable', 'preservedExternalId', external_id, 'providerRemovedAt', now()::text)
+         WHERE session_id = $1`,
+        [sessionId],
+      );
+
+      await ctx.step('kortix sessions recover <short id> → exit 0; the row is retired and the session marked', async () => {
+        const result = await cli(['recover', shortId]);
+        requireExit(result, 0, 'kortix sessions recover');
+        if (!result.stdout.includes(`${shortId} continues on a new computer`)) {
+          throw new Error(`sessions recover output: ${result.stdout}`);
+        }
+        const after = await row();
+        if (after?.external_id !== null || !after.recovered) throw new Error(`after recover: ${JSON.stringify(after)}`);
+      });
+
+      await ctx.step('a second kortix sessions recover → exit 1 with the API reason; nothing changes', async () => {
+        const before = await row();
+        const result = await cli(['recover', sessionId, '--json']);
+        requireExit(result, 1, 'kortix sessions recover (again)');
+        if (!result.stderr.includes('is not lost')) throw new Error(`sessions recover (again) stderr: ${result.stderr}`);
+        if (JSON.stringify(await row()) !== JSON.stringify(before)) throw new Error('the refused recover changed the session');
+      });
+    } finally {
+      sandbox.dispose();
+      await db.end();
+    }
+  },
+);
+
 flow(
   'CLI-TRG',
   {
@@ -314,7 +571,7 @@ flow(
     // polls above; 180s could no longer contain them plus the 120s fire budget.
     // Not a general timeout tuning pass — only the arithmetic this fix forces.
     timeoutMs: 420_000,
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId/triggers',
@@ -446,3 +703,58 @@ flow(
     }
   },
 );
+
+flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/projects/:projectId/access',
+] }, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project();
+  const member = await team.addMember('member');
+  const sandbox = await authenticatedCli(ctx, 'role-change');
+  if (!member.userId) throw new Error('fixture member has no user identity');
+  const userId = member.userId;
+  try {
+    for (const role of ['manager', 'member']) {
+      await ctx.step(`grant --user ${role} replaces the previous project role`, async () => {
+        requireExit(await sandbox.run(['access', 'grant', '--user', userId,
+          '--role', role, '--project', project.id, '--json']), 0, 'access grant');
+        const listing = parseJson<{ members: Array<{ user_id: string; effective_project_role: string }> }>(
+          await sandbox.run(['access', 'ls', '--project', project.id, '--json']), 'access ls');
+        if (listing.members.find((item) => item.user_id === member.userId)?.effective_project_role !== role) {
+          throw new Error('effective project role did not match the successful grant');
+        }
+      });
+    }
+  } finally { sandbox.dispose(); }
+});
+
+flow('CLI-MODEL-CATALOG', {
+  domain: 'cli',
+  routes: ['GET /v1/projects/:projectId/model-picker'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const sandbox = await authenticatedCli(ctx, 'model-catalog');
+  try {
+    await ctx.step('a fresh project discovers unavailable ids through JSON and terminal output', async () => {
+      const args = ['models', 'ls', '--project', project.id];
+      const payload = parseJson<{
+        models: Record<string, unknown>;
+        catalog: Record<string, { availability: string }>;
+      }>(await sandbox.run([...args, '--json']), 'models ls --json');
+      const entries = Object.entries(payload.catalog);
+      if (!entries.length) throw new Error('fresh project has no discoverable catalog ids');
+      const output = await sandbox.run(args);
+      requireExit(output, 0, 'models ls');
+      for (const [id, metadata] of entries) {
+        if (id in payload.models) throw new Error('unavailable id leaked into runnable picker');
+        if (!['plan', 'login', 'provider'].includes(metadata.availability)) {
+          throw new Error(`missing availability for ${id}`);
+        }
+        if (!output.stdout.includes(id)) throw new Error(`terminal omitted catalog id ${id}`);
+      }
+      if (!output.stdout.includes('Unavailable catalog ids')) throw new Error('availability section missing');
+    });
+  } finally {
+    sandbox.dispose();
+  }
+});

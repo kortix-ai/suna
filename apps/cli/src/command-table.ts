@@ -2,6 +2,8 @@ export interface Command {
   name: string;
   args?: string;
   blurb: string;
+  /** The project feature flag the command exists behind (see feature-flags.ts). */
+  featureFlag?: string;
 }
 
 export interface CommandSection {
@@ -123,12 +125,24 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'connect',
             args: '[session-id]',
-            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
+            blurb: 'Deprecated: attach the OpenCode TUI to an OpenCode session (pi sessions use chat or shell)',
           },
           {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
+          },
+          {
+            name: 'rooms',
+            args: '<subcommand>',
+            blurb: 'Chat rooms where sessions and people talk (join, send, read, next)',
+            featureFlag: 'agent_rooms',
+          },
+          {
+            name: 'peers',
+            args: '',
+            blurb: 'Sessions and people you can @-mention in a room, with session status',
+            featureFlag: 'agent_rooms',
           },
           {
             name: 'tui',
@@ -147,6 +161,7 @@ export const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+          { name: 'migrate', args: '[--write]', blurb: 'Convert kortix.yaml from kortix_version 2 to 3' },
           {
             name: 'doctor',
             args: '[--no-session]',
@@ -154,7 +169,7 @@ export const TIERS: readonly CommandTier[] = [
           },
           {
             name: 'schema',
-            args: '[--version 1|2]',
+            args: '[--version 1|2|3]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
           },
         ],
@@ -185,7 +200,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Composio/MCP/HTTP)',
           },
           {
             name: 'secrets',
@@ -215,12 +230,12 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'apps',
             args: '<subcommand>',
-            blurb: 'Experimental: deploy Apps (sites and servers) with stable Kortix URLs',
+            blurb: 'Deploy Apps (sites and servers) with stable Kortix URLs',
           },
           {
             name: 'marketplace',
             args: '<subcommand>',
-            blurb: 'Search, show, install, and inspect marketplace items',
+            blurb: 'Search, show, install, and uninstall project marketplace skills',
           },
         ],
       },
@@ -231,6 +246,11 @@ export const TIERS: readonly CommandTier[] = [
             name: 'files',
             args: '<subcommand>',
             blurb: 'Browse repo files, commits, branches, diffs; download a zip',
+          },
+          {
+            name: 'drive',
+            args: '<subcommand>',
+            blurb: "The project's Files: list, read, upload, move, delete, share folders",
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {
@@ -248,6 +268,23 @@ export const TIERS: readonly CommandTier[] = [
             name: 'chrome',
             args: '<subcommand>',
             blurb: "Drive the user's own Chrome from a session (use, release, ls, status)",
+          },
+          {
+            name: 'goals',
+            args: '<subcommand>',
+            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+            featureFlag: 'goals',
+          },
+          {
+            name: 'artifacts',
+            args: '<subcommand>',
+            blurb: 'Share Files paths as docs and pages: publish, add, share, versions',
+            featureFlag: 'artifacts',
+          },
+          {
+            name: 'capture',
+            args: '<subcommand>',
+            blurb: 'Search the Capture timeline of the person you act for (search, timeline, frame)',
           },
         ],
       },
@@ -304,3 +341,14 @@ export const TIERS: readonly CommandTier[] = [
     ],
   },
 ];
+
+/** The feature flag of a root command, or undefined for an unflagged one. */
+export function commandFeatureFlag(name: string): string | undefined {
+  for (const tier of TIERS) {
+    for (const section of tier.sections) {
+      const command = section.commands.find((c) => c.name === name);
+      if (command) return command.featureFlag;
+    }
+  }
+  return undefined;
+}

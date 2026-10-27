@@ -120,6 +120,20 @@ module "audit_archive" {
   tags             = local.tags
 }
 
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its `*.manifest.json`
+# events, and the device role the API assumes with a per-device session policy.
+# The task names them through the non-secret KORTIX_CAPTURE_S3_BUCKET /
+# _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN overrides in the deploy workflow.
+# Nothing records until an account turns Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -147,6 +161,14 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
+
+  # api.kortix-dev-use2.internal → task IPs, for the gateway (below).
+  service_discovery        = { namespace_id = aws_service_discovery_private_dns_namespace.internal.id }
+  extra_security_group_ids = [aws_security_group.api_internal.id]
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
@@ -181,7 +203,8 @@ module "gateway" {
   secrets           = var.api_secrets
   secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
 
-  alb_ingress_cidrs = local.cloudflare_ip_ranges
+  alb_ingress_cidrs        = local.cloudflare_ip_ranges
+  extra_security_group_ids = [aws_security_group.gateway_internal.id]
 
   task_cpu                   = 512
   task_memory                = 2048
@@ -193,6 +216,72 @@ module "gateway" {
   stop_timeout               = 120
   requests_per_target_target = 120
   tags                       = local.tags
+}
+
+# ── Gateway → API inside the VPC ──────────────────────────────────────────────
+# The gateway's control-plane calls (/internal/gateway/*) went gateway → NAT →
+# Cloudflare → api-router Worker → ALB → API: 15 ms min, 27 ms p50, 54 ms p90
+# per call (gateway /health checks.api.latency_ms, 40 samples, 2026-10-20).
+# The gateway now calls http://api.kortix-dev-use2.internal:8008 directly
+# (KORTIX_API_INTERNAL_URL in deploy-dev.yml) and falls back to the public URL
+# on a connection error. Plaintext HTTP: the hop never leaves the VPC, only
+# the gateway's security group may open it, and the bearer token plus the edge
+# key are still checked by the API on every /internal call.
+resource "aws_service_discovery_private_dns_namespace" "internal" {
+  name = "${local.name}.internal"
+  vpc  = module.network.vpc_id
+  tags = local.tags
+}
+
+# Inline rules on the module's task security groups are authoritative, so a
+# standalone rule against them would be removed on the next apply. These two
+# extra groups carry only the gateway → API rule.
+resource "aws_security_group" "api_internal" {
+  #checkov:skip=CKV2_AWS_5:Attached to the ECS service through module.api extra_security_group_ids.
+  name        = "${local.name}-api-internal"
+  description = "API tasks: ingress from the gateway tasks inside the VPC"
+  vpc_id      = module.network.vpc_id
+  # Drata 8028 cannot resolve local.tags; keep inventory keys literal.
+  tags = {
+    ManagedBy   = "terraform"
+    Environment = "dev"
+    Region      = "us-east-2"
+    Service     = "kortix-api"
+    Name        = "${local.name}-api-internal"
+  }
+}
+
+resource "aws_security_group" "gateway_internal" {
+  #checkov:skip=CKV2_AWS_5:Attached to the ECS service through module.gateway extra_security_group_ids.
+  name        = "${local.name}-gateway-internal"
+  description = "Gateway tasks: egress to the API tasks inside the VPC"
+  vpc_id      = module.network.vpc_id
+  # Drata 8028 cannot resolve local.tags; keep inventory keys literal.
+  tags = {
+    ManagedBy   = "terraform"
+    Environment = "dev"
+    Region      = "us-east-2"
+    Service     = "kortix-api"
+    Name        = "${local.name}-gateway-internal"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "api_from_gateway" {
+  security_group_id            = aws_security_group.api_internal.id
+  referenced_security_group_id = aws_security_group.gateway_internal.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  description                  = "Gateway control-plane calls"
+}
+
+resource "aws_vpc_security_group_egress_rule" "gateway_to_api" {
+  security_group_id            = aws_security_group.gateway_internal.id
+  referenced_security_group_id = aws_security_group.api_internal.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  description                  = "Gateway control-plane calls"
 }
 
 # ── DNS: this stack's origin hostnames ────────────────────────────────────────

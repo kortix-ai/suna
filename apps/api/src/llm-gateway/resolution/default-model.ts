@@ -8,7 +8,6 @@ import {
   getSessionAgentContext,
 } from '../../repositories/model-preferences';
 import { chooseDefaultModel } from './choose-default-model';
-import { platformDefaultModelId } from '../models/served-managed-models';
 import {
   chooseEffectiveAgent,
   type ModelSource,
@@ -17,6 +16,7 @@ import {
   toWireModel,
 } from './effective';
 import { resolveCandidates } from './resolve-candidates';
+import { runtimeModelCatalog } from '../models/runtime-catalog';
 
 // Resolves the account/agent/project-configured default model for a gateway
 // principal, once at authentication (in withResolvedTier). The result is attached
@@ -119,15 +119,62 @@ async function connectedByokFallback(
   }
 }
 
+/**
+ * The degrade target for an unservable default: a ChatGPT (`codex/…`) default
+ * first tries the current ChatGPT flagship, so a slug ChatGPT dropped keeps
+ * the person on their subscription; then a connected BYOK provider.
+ */
+async function unservableDefaultFallback(
+  model: string,
+  probe: (candidate: string) => Promise<boolean>,
+  projectId: string | undefined,
+  principalUserId?: string,
+): Promise<string | null> {
+  const flagship = runtimeModelCatalog.codexModelIds()[0];
+  const successor = flagship ? `codex/${flagship}` : null;
+  if (successor && toWireModel(model).startsWith('codex/') && toWireModel(model) !== successor && (await probe(successor))) {
+    return successor;
+  }
+  return connectedByokFallback(projectId, principalUserId);
+}
+
+/**
+ * The default for an account without the managed-models entitlement, whose
+ * platform default (a managed model) the gateway refuses: its connected
+ * ChatGPT subscription, else a connected BYOK provider, else null.
+ */
+async function ownModelDefault(
+  probe: (candidate: string) => Promise<boolean>,
+  projectId: string | undefined,
+  principalUserId?: string,
+): Promise<string | null> {
+  const flagship = runtimeModelCatalog.codexModelIds()[0];
+  if (flagship && projectId && (await probe(`codex/${flagship}`))) return `codex/${flagship}`;
+  return connectedByokFallback(projectId, principalUserId);
+}
+
 export async function resolveDefaultModelForPrincipal(
   principal: AuthedPrincipal,
 ): Promise<string | undefined> {
   const defaults = await cachedAccountDefaults(principal.accountId, principal.projectId);
   const hasAgentDefaults = Object.keys(defaults.agents).length > 0;
   const projectDefault = principal.projectId ? defaults.projects[principal.projectId] : undefined;
+  const probe = (model: string) =>
+    isModelServableForAccount({
+      userId: principal.userId,
+      accountId: principal.accountId,
+      projectId: principal.projectId as string,
+      freeModelsOnly: principal.freeModelsOnly ?? false,
+      model,
+      sessionId: principal.sessionId,
+    });
+  // Spec 2026-09-22 §2.3: personal overrides of the on-behalf-of human only.
+  const personalUserId = (principal.personalUserId === undefined ? principal.userId : principal.personalUserId) ?? undefined;
+  const platform = async () =>
+    principal.freeModelsOnly ? ((await ownModelDefault(probe, principal.projectId, personalUserId)) ?? undefined) : undefined;
   // Fast path: nothing configured for this account/project → the platform default
   // applies (no session read needed).
-  if (!defaults.account && !hasAgentDefaults && !projectDefault) return undefined;
+  if (!defaults.account && !hasAgentDefaults && !projectDefault) return platform();
 
   let agentName: string | null = null;
   if (hasAgentDefaults && principal.sessionId) {
@@ -140,29 +187,15 @@ export async function resolveDefaultModelForPrincipal(
     agentName,
     projectDefault,
     freeModelsOnly: principal.freeModelsOnly,
-    platformDefault: platformDefaultModelId(),
   });
 
   const kept = await degradeUnservableDefault(
     chosen,
     { hasProject: !!principal.projectId },
-    () =>
-      isModelServableForAccount({
-        userId: principal.userId,
-        accountId: principal.accountId,
-        projectId: principal.projectId as string,
-        freeModelsOnly: principal.freeModelsOnly ?? false,
-        model: chosen as string,
-        sessionId: principal.sessionId,
-      }),
-    () =>
-      connectedByokFallback(
-        principal.projectId,
-        // Spec 2026-09-22 §2.3: personal overrides of the on-behalf-of human only.
-        (principal.personalUserId === undefined ? principal.userId : principal.personalUserId) ?? undefined,
-      ),
+    () => probe(chosen as string),
+    () => unservableDefaultFallback(chosen as string, probe, principal.projectId, personalUserId),
   );
-  return kept ?? undefined;
+  return kept ?? platform();
 }
 
 /**
@@ -200,6 +233,8 @@ export async function isModelServableForAccount(params: {
    * session, which reaches only keys shared with the whole project.
    */
   personalUserId?: string | null;
+  /** `false`: a pool that is cooling down counts as unservable (a fallback asks "can it serve NOW?"). */
+  restingIsServable?: boolean;
 }): Promise<boolean> {
   if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
@@ -224,7 +259,9 @@ export async function isModelServableForAccount(params: {
     // and pauses only for a while. Calling it unservable degraded the default
     // off `project:default` (so the project's chain never ran) and refused new
     // sessions and channel turns; the request path handles the pause itself.
-    if (err instanceof GatewayResolutionError) return err.code === 'provider_pool_rate_limited';
+    if (err instanceof GatewayResolutionError) {
+      return params.restingIsServable !== false && err.code === 'provider_pool_rate_limited';
+    }
     throw err;
   }
 }
@@ -270,7 +307,6 @@ export async function resolveEffectiveModel(params: {
     projectDefault: defaults.projects[params.projectId],
     accountDefault: defaults.account,
     freeModelsOnly: params.freeModelsOnly,
-    platformDefault: platformDefaultModelId(),
   });
   // Degrade a stale/unservable resolved default (e.g. a BYOK model whose key was
   // disconnected) to something the project can actually use right now, so the
@@ -279,27 +315,35 @@ export async function resolveEffectiveModel(params: {
   // connected (connectedByokFallback), then finally the bare platform default.
   // The same personal scope as the explicit check above: a default reached
   // only through one person's keys is not a default for a shared session.
+  const probe = (model: string) =>
+    isModelServableForAccount({
+      userId: params.userId,
+      accountId: params.accountId,
+      projectId: params.projectId,
+      freeModelsOnly: params.freeModelsOnly,
+      model,
+      sessionId: params.sessionId,
+      providerSecretPools: params.providerSecretPools,
+      ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
+    });
   const kept = await degradeUnservableDefault(
     chain.model,
     { hasProject: true },
+    () => probe(chain.model as string),
     () =>
-      isModelServableForAccount({
-        userId: params.userId,
-        accountId: params.accountId,
-        projectId: params.projectId,
-        freeModelsOnly: params.freeModelsOnly,
-        model: chain.model as string,
-        sessionId: params.sessionId,
-        providerSecretPools: params.providerSecretPools,
-        ...(params.personalUserId !== undefined ? { personalUserId: params.personalUserId } : {}),
-      }),
-    () =>
-      connectedByokFallback(
+      unservableDefaultFallback(
+        chain.model as string,
+        probe,
         params.projectId,
         (params.personalUserId === undefined ? params.userId : params.personalUserId) ?? undefined,
       ),
   );
-  if (!kept) return { model: null, source: 'platform' };
+  if (!kept) {
+    const own = params.freeModelsOnly
+      ? await ownModelDefault(probe, params.projectId, (params.personalUserId === undefined ? params.userId : params.personalUserId) ?? undefined)
+      : null;
+    return { model: own, source: 'platform' };
+  }
   // kept === chain.model means the originally-configured default WAS servable
   // (probe passed) — return it with its real source (agent/project/account).
   // Any other value is the connected-provider fallback degrade target, which

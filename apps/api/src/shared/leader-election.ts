@@ -23,6 +23,7 @@
  */
 
 import os from 'node:os';
+import { requiresTls } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -45,6 +46,8 @@ const QUERY_TIMEOUT_MS = 10_000;
 const DEMOTE_AFTER_MS = TTL_MS - 10_000;
 // Independent of the tick chain: a hung tick must not be able to hide an expired lease.
 const WATCHDOG_MS = 5_000;
+// An onAcquire that waited this long for an onRelease drain logs a warning.
+const ACQUIRE_WAIT_WARN_MS = 30_000;
 
 export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
@@ -139,6 +142,28 @@ let lastRenewStartedMono = 0;
 let watchdog: ReturnType<typeof setTimeout> | null = null;
 let handlers: LeaderElectionHandlers | null = null;
 let tableReady = false;
+// The last onAcquire/onRelease call. The watchdog demotes beside the lease tick, so a re-acquire
+// can come while onRelease still awaits. An onAcquire that ran then found the workers' guards
+// still up and started nothing, and the rest of onRelease then stopped them for the whole term
+// (2026-10-16 prod: the backfill worker stopped after a lease flap, cron kept running).
+let handlerChain: Promise<void> = Promise.resolve();
+let handlersPending = 0;
+// Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
+let term = 0;
+// `bun --hot` re-evaluates this module but keeps globalThis. The last evaluation's
+// stop lives there, so a re-evaluated start first stops that election (its renew
+// loop, watchdog and lease client) and releases its lease, instead of running beside it.
+const hot = globalThis as typeof globalThis & { __kortixLeaderElectionStop?: () => Promise<void> };
+
+/** Run `fn` after every earlier handler call settled, in call order. */
+function serially(fn: () => Promise<void>): Promise<void> {
+  handlersPending += 1;
+  const next = handlerChain.then(fn).finally(() => {
+    handlersPending -= 1;
+  });
+  handlerChain = next.catch(() => undefined);
+  return next;
+}
 
 /**
  * True while this node holds a lease it can still trust. A singleton writer
@@ -196,7 +221,22 @@ async function acquireOrRenew(): Promise<boolean> {
 async function promote(): Promise<void> {
   if (leader) return;
   leader = true;
+  const myTerm = ++term;
   logger.info('[leader] acquired background-worker leadership', { ownerId });
+  const queuedAt = performance.now();
+  const behindRelease = handlersPending > 0;
+  // Not awaited: the lease tick must not wait for an onRelease still in flight before it renews.
+  void serially(async () => {
+    if (behindRelease) {
+      const ms = Math.round(performance.now() - queuedAt);
+      if (ms > ACQUIRE_WAIT_WARN_MS) logger.warn('[leader] onAcquire waited for onRelease', { ms });
+      else logger.info('[leader] onAcquire waited for onRelease', { ms });
+    }
+    await acquireHandlers(myTerm);
+  });
+}
+
+async function acquireHandlers(myTerm: number): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
@@ -208,7 +248,7 @@ async function promote(): Promise<void> {
     logger.error('[leader] onAcquire failed — stepping down to retry next tick', {
       error: err instanceof Error ? err.message : String(err),
     });
-    leader = false;
+    if (term === myTerm) leader = false;
     try {
       await handlers?.onRelease();
     } catch (releaseErr) {
@@ -222,12 +262,15 @@ async function promote(): Promise<void> {
 async function demote(reason: string): Promise<void> {
   if (!leader) return;
   leader = false;
+  term += 1;
   logger.warn('[leader] released background-worker leadership', { ownerId, reason });
-  try {
-    await handlers?.onRelease();
-  } catch (err) {
-    logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
-  }
+  await serially(async () => {
+    try {
+      await handlers?.onRelease();
+    } catch (err) {
+      logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function tick(): Promise<void> {
@@ -264,6 +307,12 @@ export function startLeaderElection(
   h: LeaderElectionHandlers,
   opts: { eligible?: boolean } = {},
 ): void {
+  const previous = hot.__kortixLeaderElectionStop;
+  hot.__kortixLeaderElectionStop = stopLeaderElection;
+  if (previous && previous !== stopLeaderElection) {
+    void previous().catch(() => {}).then(() => startLeaderElection(h, opts));
+    return;
+  }
   if (running) return;
   // A pod that runs no singleton workers must never hold the lease (see
   // runsSingletonWorkers): joining the election would let it become a
@@ -285,6 +334,7 @@ export function startLeaderElection(
   // Dedicated 1-connection client so lease traffic never contends with the app
   // pool. prepare:false matches the Supabase-pooler app client.
   sql = postgres(config.DATABASE_URL, {
+    ...(requiresTls(config.DATABASE_URL) ? { ssl: 'require' as const } : {}),
     prepare: false,
     max: LEADER_ELECTION_POOL_MAX,
     idle_timeout: 30,

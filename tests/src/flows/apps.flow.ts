@@ -1,14 +1,14 @@
 /**
- * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
+ * Kortix Apps — project-owned App CRUD, artifact registration, and
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
  * or one deployment together with its provider images, and the machine, scale,
  * exec and volume routes. Maps to spec section 28 (APP-1..8,
- * APP-11; APP-9 and APP-10 live in apps-tokens.flow.ts).
+ * APP-11, APP-13, APP-14; APP-9, APP-10 and APP-12 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";
+import type { Client } from "../core/client";
+import type { Principal } from "../core/types";
 import { CliSandbox } from "../fixtures/cli";
-import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
-import { setFeatureAsOperator } from "../fixtures/feature-flags";
 import { withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 
@@ -30,43 +30,37 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
 
-    await ctx.step("clear any apps flag override from a reused project (operator route)", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", null);
-    });
-
-    await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
+    await ctx.step("a project with no flag override reaches Apps: list answers 200", async () => {
+      // Apps went GA (2026-10-14, spec §28): there is no `apps` flag, so a
+      // project that never opted in can list and create Apps. APP-2 covers
+      // persisted `apps: false`, including an accepted deployment.
       const response = await owner.get("/v1/projects/:projectId/apps", {
         params: projectParams,
       });
-      response.status(403);
-      response.body().has("$.code", "feature_disabled");
-      response.body().has("$.feature", "apps");
+      response.status(200).body().has("$.apps", []);
     });
 
-    await ctx.step("owner cannot write the internal-only apps flag: /features → 403 feature_operator_only", async () => {
+    await ctx.step("the graduated apps key is unknown: /features → 400, no catalog row", async () => {
       const response = await owner.patch(
         "/v1/projects/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
-      response.status(403);
-      response.body().has("$.code", "feature_operator_only");
-      response.body().has("$.feature", "apps");
-    });
-
-    await ctx.step("a platform operator enables apps; the owner's catalog lists it read-only", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+      response.status(400);
+      response.body().has("$.error", "Unknown feature flag 'apps'");
       const read = await owner.get("/v1/projects/:projectId", { params: projectParams });
       read.status(200);
-      const row = (read.json() as { experimental_features: Array<{ key: string; enabled: boolean; operator_only?: boolean }> })
-        .experimental_features.find((f) => f.key === "apps");
-      if (!row || row.enabled !== true || row.operator_only !== true) {
-        throw new Error(`apps catalog row is ${JSON.stringify(row)}; want enabled + operator_only`);
+      // CLIs before v0.14.0 gate every `kortix apps` command on this value.
+      read.body().has("$.experimental.apps", true);
+      const rows =(read.json() as { experimental_features: Array<{ key: string }> })
+        .experimental_features;
+      if (rows.some((f) => f.key === "apps")) {
+        throw new Error(`the catalog still lists apps: ${JSON.stringify(rows)}`);
       }
     });
 
@@ -113,7 +107,7 @@ flow(
         .has("$.slug", slug)
         .has("$.desired_state", "running")
         .has("$.always_on", true)
-        .has("$.estimated_monthly_usd", 73.48)
+        .has("$.estimated_monthly_usd", 39.95)
         .has("$.warnings", [])
         // One primitive: clients branch on capabilities. No labels, services or uses until set.
         .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
@@ -162,7 +156,7 @@ flow(
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
         .status(200).body().has("$.always_on", true);
       const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
-      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 39.95);
       if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
@@ -226,7 +220,7 @@ flow(
   {
     domain: "apps",
     routes: [
-      "PUT /v1/admin/api/projects/:id/features",
+      "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
       "DELETE /v1/projects/:projectId/apps/:appId",
       "POST /v1/projects/:projectId/apps/artifacts",
@@ -244,12 +238,26 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
 
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
+    await ctx.step("persist legacy apps:false directly; Apps still lists with 200", async () => {
+      await withDb(ctx, async (db) => {
+        const seeded = await db.query(
+          `UPDATE kortix.projects
+           SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+             'experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"apps":false}'::jsonb)
+           WHERE project_id = $1
+           RETURNING metadata->'experimental'->'apps' AS apps`,
+          [project.id],
+        );
+        if (seeded.rows.length !== 1 || seeded.rows[0].apps !== false) {
+          throw new Error("legacy apps:false was not persisted");
+        }
+      });
+      (await owner.get("/v1/projects/:projectId/apps", { params: projectParams }))
+        .status(200).body().has("$.apps", []);
     });
 
     const slug = ctx.fixtures
@@ -348,6 +356,27 @@ flow(
     );
 
     await ctx.step(
+      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      async () => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifactId,
+            provider: "daytona",
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/caddy:alpine",
+              command: ["caddy", "file-server"],
+              port: 80,
+            },
+          },
+          { params: appParams },
+        );
+        response.status(400).body().has("$.code", "sandbox_provider_deprecated");
+      },
+    );
+
+    await ctx.step(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(
@@ -396,6 +425,32 @@ flow(
       },
     );
 
+    await ctx.step("legacy apps:false permits an immutable OCI deployment: 202 queued, version 1, readable by ID", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        {
+          artifact_id: artifactId,
+          source: {
+            kind: "oci_image",
+            image: "docker.io/library/nginx:alpine",
+            command: ["nginx", "-g", "daemon off;"],
+            port: 80,
+          },
+        },
+        { params: appParams },
+      );
+      response.status(202).body().has("$.status", "queued").has("$.version", 1).exists("$.deployment_id");
+      const deploymentBody = response.json<unknown>();
+      if (typeof deploymentBody !== "object" || deploymentBody === null ||
+          !("deployment_id" in deploymentBody) || typeof deploymentBody.deployment_id !== "string") {
+        throw new Error("accepted deployment did not return a deployment ID");
+      }
+      const deploymentId = deploymentBody.deployment_id;
+      (await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", {
+        params: { ...appParams, deploymentId },
+      })).status(200).body().has("$.deployment.deployment_id", deploymentId);
+    });
+
     await ctx.step("delete the test App after the boundary checks", async () => {
       const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
         params: appParams,
@@ -417,14 +472,10 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let appId = "";
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("limits")
@@ -511,6 +562,7 @@ flow(
       "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
@@ -526,10 +578,6 @@ flow(
     const editor = await team.addMember("member");
     await team.grantProjectRole(project.id, editor.userId!, "member");
     const teammate = ctx.client.as(editor);
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("scoped")
@@ -603,6 +651,14 @@ flow(
       if (!visible.includes(appId)) {
         throw new Error(`project-wide App ${appId} was hidden from a teammate`);
       }
+
+      // A listed App is one the teammate can open: the card mints this session.
+      const session = await teammate.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200).body().exists("$.url").exists("$.expires_at");
     });
 
     await ctx.step(
@@ -713,9 +769,215 @@ flow(
 );
 
 flow(
+  "APP-13",
+  {
+    domain: "apps",
+    timeoutMs: 240_000,
+    routes: [
+      "PUT /v1/admin/api/projects/:id/features",
+      "POST /v1/accounts/:accountId/iam/groups",
+      "POST /v1/accounts/:accountId/iam/groups/:groupId/members",
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const accountParams = { accountId: team.id };
+
+    // The reported failure (2026-10-14, #kortix-triage): an App admitting two
+    // groups refused a member of BOTH, while the same App restricted to one
+    // group loaded — read as AND semantics. Under OR, either membership admits
+    // and widening the allow-list can never lock a member out, so this flow
+    // signs in one member per position and proves the verdicts at the real
+    // surface: list, read and the access session that opens the App.
+    const qrOnly = await team.addMember("member");
+    const absOnly = await team.addMember("member");
+    const bothMember = await team.addMember("member");
+    const neither = await team.addMember("member");
+    const noRole = await team.addMember("member");
+    const userId = (member: Principal) => {
+      if (!member.userId) throw new Error("group fixture member has no user id");
+      return member.userId;
+    };
+    await team.grantProjectRole(project.id, userId(qrOnly), "member");
+    await team.grantProjectRole(project.id, userId(absOnly), "member");
+    await team.grantProjectRole(project.id, userId(bothMember), "member");
+    await team.grantProjectRole(project.id, userId(neither), "member");
+
+    const asQrOnly = ctx.client.as(qrOnly);
+    const asAbsOnly = ctx.client.as(absOnly);
+    const asBoth = ctx.client.as(bothMember);
+
+    const group = async (slug: string, members: Principal[]) => {
+      const created = await owner.post(
+        "/v1/accounts/:accountId/iam/groups",
+        { name: ctx.fixtures.name(slug) },
+        { params: accountParams },
+      );
+      const groupId = created.status(201).json<{ group_id: string }>().group_id;
+      (
+        await owner.post(
+          "/v1/accounts/:accountId/iam/groups/:groupId/members",
+          { userIds: members.map(userId) },
+          { params: { ...accountParams, groupId } },
+        )
+      ).status(200);
+      return groupId;
+    };
+
+    const slug = ctx.fixtures
+      .name("group-scoped")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .slice(0, 63);
+    let appId = "";
+    let qr = "";
+    let abs = "";
+
+    const canOpen = async (client: Client) => {
+      const read = await client.get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      const listed = await client.get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      const session = await client.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...params, appId } },
+      );
+      return { read, listedId: ids.includes(appId), session };
+    };
+
+    await ctx.step(
+      "setup: two allowed groups — one member in each, one in both, one in neither, and a fifth in the FIRST group with no project role — and an App restricted to the two groups",
+      async () => {
+        // The fifth member sits INSIDE an allowed group: the pin below is that
+        // group membership never widens the project, which only bites for a
+        // member the App itself would admit.
+        qr = await group("grp-qr", [qrOnly, bothMember, noRole]);
+        abs = await group("grp-abs", [absOnly, bothMember]);
+        // Apps is GA (2026-10-14): no flag setup — a fresh project lists and
+        // creates Apps with no override (APP-2 pins that).
+        const created = await owner.post(
+          "/v1/projects/:projectId/apps",
+          { slug, name: "ke2e group App" },
+          { params },
+        );
+        created.status(201);
+        appId = created.json<{ app_id: string }>().app_id;
+        const restricted = await owner.patch(
+          "/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", group_ids: [qr, abs] },
+          { params: { ...params, appId } },
+        );
+        restricted.status(200).body().has("$.mode", "restricted");
+      },
+    );
+
+    await ctx.step("a member of the first allowed group can open the App", async () => {
+      const { read, listedId, session } = await canOpen(asQrOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the first allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of the second allowed group can open the App — EITHER group suffices", async () => {
+      const { read, listedId, session } = await canOpen(asAbsOnly);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of the second allowed group does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of BOTH allowed groups can open the App (the reported failure)", async () => {
+      const { read, listedId, session } = await canOpen(asBoth);
+      read.status(200).body().has("$.app_id", appId);
+      if (!listedId) throw new Error("a member of both allowed groups does not see the App");
+      session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("a member of neither allowed group stays denied", async () => {
+      // 404, never 403: the status must not disclose a teammate's restricted App.
+      const read = await ctx.client.as(neither).get("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      read.status(404);
+      const listed = await ctx.client.as(neither).get("/v1/projects/:projectId/apps", { params });
+      const ids = listed.status(200).json<{ apps: Array<{ app_id: string }> }>().apps.map((a) => a.app_id);
+      if (ids.includes(appId)) throw new Error("a member of neither allowed group sees the App");
+      (
+        await ctx.client.as(neither).post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("group membership does not stand in for project access", async () => {
+      // An account member INSIDE an allowed group but with no role on the
+      // project still gets nothing: the App allow-list narrows PROJECT
+      // members, it never widens the project itself. The contrast with the
+      // neither-member step (a project member without app access gets a 200
+      // list with the App filtered out) shows this 403 is the project gate
+      // firing — group membership did not buy project access.
+      const listed = await ctx.client.as(noRole).get("/v1/projects/:projectId/apps", { params });
+      listed.status(403).body().has("$.code", "no_project_membership").has("$.action", "project.read");
+    });
+
+    await ctx.step("narrowing the policy to one group keeps that group's members in", async () => {
+      const narrowed = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [abs] },
+        { params: { ...params, appId } },
+      );
+      narrowed.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asBoth);
+      session.status(200).body().exists("$.url");
+      // The dropped group legitimately loses access: the policy now means it.
+      (
+        await asQrOnly.post(
+          "/v1/projects/:projectId/apps/:appId/access-session",
+          {},
+          { params: { ...params, appId } },
+        )
+      ).status(404);
+    });
+
+    await ctx.step("widening back to both groups restores the dropped group's members", async () => {
+      const widened = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId/access",
+        { mode: "restricted", group_ids: [qr, abs] },
+        { params: { ...params, appId } },
+      );
+      widened.status(200).body().has("$.mode", "restricted");
+      const { session } = await canOpen(asQrOnly);
+      session.status(200).body().exists("$.url");
+      const bothAgain = await canOpen(asBoth);
+      bothAgain.session.status(200).body().exists("$.url");
+    });
+
+    await ctx.step("delete the test App", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: { ...params, appId },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+  },
+);
+
+flow(
   "APP-5",
   {
     domain: "apps",
+    tags: ["deployed"],
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
@@ -729,16 +991,12 @@ flow(
     // certificate for an App hostname. Unauthenticated by design (Caddy cannot
     // present a bearer token), so the contract that matters is: 200 ONLY for a
     // real App host, and no certificate for anything else.
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
     const projectParams = { projectId: project.id };
     let appId = "";
     let appHost = "";
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     await ctx.step("create an App and take its public hostname", async () => {
       const slug = ctx.fixtures
@@ -811,7 +1069,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -838,10 +1095,11 @@ flow(
     let appHost = "";
 
     // The gate, at the App's own hostname. Local Apps answer under
-    // `<route-key>.apps.localhost`; the API honours `x-kortix-app-host` there.
+    // `<route-key>.apps.localhost`: the Host names the App (an unsigned
+    // `x-kortix-app-host` claim is never trusted).
     const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
       const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
-        headers: { accept: "application/json", "x-kortix-app-host": appHost, ...headers },
+        headers: { accept: "application/json", host: `${appHost}:${new URL(apiOrigin).port}`, ...headers },
         redirect: "manual",
       });
       const text = await response.text();
@@ -873,8 +1131,7 @@ flow(
     const asToken = (token: string) => ctx.client.withBearer(token, "app-viewer-token");
 
     try {
-      await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App restricted to the viewer that acts as them (api scope)", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
           { params: projectParams });
         created.status(201);
@@ -1018,14 +1275,10 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const IN_PROGRESS = ["queued", "validating", "building", "provisioning", "checking"];
-
-    await ctx.step("enable the apps flag", async () => {
-      await setFeatureAsOperator(ctx, project.id, "apps", true);
-    });
 
     const slug = ctx.fixtures
       .name("images")
@@ -1150,7 +1403,6 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
-    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 300_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
@@ -1169,7 +1421,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    const project = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     const slug = ctx.fixtures.name("static").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
@@ -1182,7 +1434,7 @@ flow(
 
     const page = async (path: string, headers: Record<string, string> = {}) => {
       const response = await fetch(`${apiOrigin}${path}`, {
-        headers: { "x-kortix-app-host": appHost, ...headers },
+        headers: { host: `${appHost}:${new URL(apiOrigin).port}`, ...headers },
         redirect: "manual",
       });
       return { status: response.status, headers: response.headers, text: await response.text() };
@@ -1208,8 +1460,7 @@ flow(
     };
 
     try {
-      await ctx.step("enable Apps and sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("sign the CLI in", async () => {
         const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app8") });
         const login = await cli.login(pat, { noProject: true, account: project.accountId });
         if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
@@ -1363,6 +1614,12 @@ flow(
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore",
       "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId/access",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "GET /v1/projects/:projectId/apps/:appId/deployments",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
     ],
   },
   async (ctx) => {
@@ -1381,8 +1638,7 @@ flow(
     const machine = { projectId: project.id, appId: "", machineId: UNKNOWN_ID };
 
     try {
-      await ctx.step("enable Apps, create an App with no release, sign the CLI in", async () => {
-        await setFeatureAsOperator(ctx, project.id, "apps", true);
+      await ctx.step("create an App with no release, sign the CLI in", async () => {
         const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e fleet App" }, { params: { projectId: project.id } });
         created.status(201);
         appId = created.json<any>().app_id;
@@ -1465,20 +1721,25 @@ flow(
           throw new Error(`capabilities with a volume and no server release: ${JSON.stringify(capabilities)}`);
         }
         const ls = await cli.run(["apps", "volumes", slug, "--project", project.id]);
-        if (ls.exitCode !== 0 || !/data\s+app\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
+        if (ls.exitCode !== 0 || !/data\s+app\s+-\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
       });
 
-      await ctx.step("extend only grows: shrink → 400 volume_shrink_refused, 101 GB → 400 volume_size_invalid, retention 61 → 400; 20 GB with retention 7 → 200 and reads back", async () => {
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 5 }, { params: vol() }))
-          .status(400).body().has("$.code", "volume_shrink_refused");
+      await ctx.step("a volume has a fixed size: 101 GB → 400 volume_size_invalid, retention 61 → 400, any other size without a provider → 503 volume_size_unknown; retention 7 → 200 and reads back; the CLI sets retention 30", async () => {
         (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 101 }, { params: vol() }))
           .status(400).body().has("$.code", "volume_size_invalid");
         (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { snapshot_retention_days: 61 }, { params: vol() }))
           .status(400).body().has("$.code", "volume_retention_invalid");
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20, snapshot_retention_days: 7 }, { params: vol() }))
-          .status(200).body().has("$.size_gb", 20).has("$.snapshot_retention_days", 7);
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20 }, { params: vol() }))
+          .status(503).body().has("$.code", "volume_size_unknown");
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { snapshot_retention_days: 7 }, { params: vol() }))
+          .status(200).body().has("$.size_gb", 10).has("$.snapshot_retention_days", 7);
         const read = await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() });
-        read.status(200).body().has("$.volumes[0].size_gb", 20).has("$.volumes[0].snapshot_retention_days", 7);
+        read.status(200).body().has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 7)
+          .has("$.volumes[0].used_bytes", null).has("$.volumes[0].last_commit_at", null);
+        const set = await cli.run(["apps", "volumes", "set", slug, "data", "--retention", "30", "--project", project.id]);
+        if (set.exitCode !== 0 || !set.stdout.includes("keeps daily snapshots 30 days")) {
+          throw new Error(`kortix apps volumes set: exit ${set.exitCode}, stdout ${set.stdout}, stderr ${set.stderr}`);
+        }
       });
 
       await ctx.step("destroy needs ?confirm=<name> (400 confirmation_required); restore and fork refuse an unknown snapshot (400 snapshot_invalid); fork refuses a bad name", async () => {
@@ -1508,7 +1769,26 @@ flow(
           await member.del("/v1/projects/:projectId/apps/:appId", { params: app() }),
         ];
         refusals.forEach((response) => response.status(403));
-        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes[0].size_gb", 20);
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body()
+          .has("$.volumes[0].size_gb", 10).has("$.volumes[0].snapshot_retention_days", 30);
+      });
+
+      await ctx.step("a project member who can open the App (project.app.read, no deploy) reads the App but not its operations: 403 on access policy, deployments, deployment events, runtime logs, machines, volumes and snapshots", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "project" }, { params: app() })).status(200);
+        (await member.get("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200).body().has("$.app_id", appId);
+        const deployment = { ...app(), deploymentId: UNKNOWN_ID };
+        const refusals = [
+          await member.get("/v1/projects/:projectId/apps/:appId/access", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs", { params: deployment }),
+          await member.get("/v1/projects/:projectId/apps/:appId/machines", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() }),
+          await member.get("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", { params: vol() }),
+        ];
+        refusals.forEach((response) => response.status(403));
+        (await owner.get("/v1/projects/:projectId/apps/:appId/deployments", { params: app() })).status(200).body().exists("$.deployments");
+        (await owner.get("/v1/projects/:projectId/apps/:appId/access", { params: app() })).status(200).body().has("$.mode", "project");
       });
 
       await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
@@ -1527,6 +1807,197 @@ flow(
       if (volumeId) await withDb(ctx, (db) => db.query("DELETE FROM kortix.app_volumes WHERE volume_id = $1", [volumeId])).catch(() => {});
       if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
       cli.dispose();
+    }
+  },
+);
+
+flow(
+  "APP-14",
+  {
+    domain: "apps",
+    requires: ["database", "appHost"],
+    routes: [
+      "POST /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+      "POST /v1/projects/:projectId/apps/:appId/token",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const slug = ctx.fixtures.name("ext").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    // An IP-literal private address: the API never fetches it (the SSRF guard
+    // refuses it before any connection), so the framing probe is deterministic
+    // and the site counts as frameable — the viewer's browser may reach it.
+    const site = "https://127.0.0.1:9/dashboard";
+    const moved = "https://127.0.0.1:9/moved";
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
+    let appId = "";
+    let plainId = "";
+    const app = () => ({ ...projectParams, appId });
+
+    try {
+      await ctx.step("an http or credential-carrying external_url is refused with 400 and creates nothing", async () => {
+        for (const external_url of ["http://example.com", "https://user:pass@example.com", "javascript:alert(1)"]) {
+          (await owner.post("/v1/projects/:projectId/apps", { slug, name: "bad", external_url }, { params: projectParams }))
+            .status(400);
+        }
+        (await owner.get("/v1/projects/:projectId/apps", { params: projectParams })).status(200).body().has("$.apps", []);
+      });
+
+      await ctx.step("create with external_url: 201, url is the site, preview only, no cost, no warning", async () => {
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "Ops dashboard", external_url: site }, { params: projectParams });
+        created.status(201).body()
+          .has("$.external_url", site)
+          .has("$.url", site)
+          .has("$.capabilities", ["preview"])
+          .has("$.estimated_monthly_usd", 0)
+          .has("$.active_deployment_id", null)
+          .has("$.warnings", []);
+        appId = created.json<any>().app_id;
+      });
+
+      await ctx.step("list and get carry the external App with its site URL", async () => {
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        list.status(200);
+        const listed = list.json<any>().apps.find((row: any) => row.app_id === appId);
+        if (listed?.external_url !== site || listed?.url !== site) throw new Error(`list: ${list.text()}`);
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200).body().has("$.external_url", site);
+      });
+
+      await ctx.step("deploy and sign-in tokens answer 409 app_capability_unsupported: Kortix never runs it", async () => {
+        const deploy = await owner.post("/v1/projects/:projectId/apps/:appId/deployments",
+          { artifact_id: UNKNOWN_ID, source: { kind: "static" } }, { params: app() });
+        deploy.status(409).body().has("$.code", "app_capability_unsupported").has("$.capability", "deployments");
+        const token = await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: app() });
+        token.status(409).body().has("$.code", "app_capability_unsupported").has("$.capability", "member_tokens");
+      });
+
+      await ctx.step("access-session hands out the site URL itself", async () => {
+        (await owner.post("/v1/projects/:projectId/apps/:appId/access-session", {}, { params: app() }))
+          .status(200).body().has("$.url", site);
+      });
+
+      await ctx.step("the App's Kortix host redirects 302 to the site", async () => {
+        const routeKey = await withDb(ctx, async (db) =>
+          (await db.query("SELECT route_key FROM kortix.apps WHERE app_id = $1", [appId])).rows[0]?.route_key as string);
+        // A public App: the gate lets an anonymous request through to the redirect.
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "public" }, { params: app() })).status(200);
+        const response = await fetch(`${apiOrigin}/`, {
+          headers: { host: `${routeKey}.apps.localhost:${new URL(apiOrigin).port}` },
+          redirect: "manual",
+        });
+        if (response.status !== 302 || response.headers.get("location") !== site) {
+          throw new Error(`Kortix host: ${response.status} location=${response.headers.get("location")}`);
+        }
+      });
+
+      await ctx.step("PATCH external_url moves the App; a PATCH on an App Kortix runs answers 409 app_not_external", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { external_url: moved }, { params: app() }))
+          .status(200).body().has("$.external_url", moved).has("$.url", moved);
+        const plain = await owner.post("/v1/projects/:projectId/apps", { slug: `${slug.slice(0, 56)}-plain`, name: "plain" }, { params: projectParams });
+        plain.status(201).body().has("$.external_url", null);
+        plainId = plain.json<any>().app_id;
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { external_url: moved }, { params: { ...projectParams, appId: plainId } }))
+          .status(409).body().has("$.code", "app_not_external");
+      });
+
+      await ctx.step("delete removes the external App from the list", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200);
+        const list = await owner.get("/v1/projects/:projectId/apps", { params: projectParams });
+        if (list.json<any>().apps.some((row: any) => row.app_id === appId)) throw new Error(`still listed: ${list.text()}`);
+        appId = "";
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
+      if (plainId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: plainId } }).catch(() => {});
+    }
+  },
+);
+
+flow(
+  "APP-15",
+  {
+    domain: "apps",
+    requires: ["database"],
+    routes: [
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/files/content",
+      "PUT /v1/projects/:projectId/files/content",
+      "POST /v1/connectors/projects/:projectId/connectors/sync",
+      "PATCH /v1/projects/:projectId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const slug = ctx.fixtures.name("yaml").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
+    let appId = "";
+    const manifest = async () => {
+      const r = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: "kortix.yaml" } });
+      r.status(200);
+      return r.json<{ content: string; ref: string; revision: string }>();
+    };
+    const until = (needle: string, description: string) =>
+      waitFor(manifest, { until: (m) => m.content.includes(needle), timeoutMs: 60_000, intervalMs: 2_000, description });
+
+    try {
+      await ctx.step("creating an external App commits apps.<slug> with display.listed: true to kortix.yaml", async () => {
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "Yaml probe", external_url: "https://127.0.0.1:9/probe" }, { params });
+        created.status(201).body().has("$.display", { listed: true });
+        appId = created.json<any>().app_id;
+        const m = await until(`${slug}:`, "the App block in kortix.yaml");
+        if (!/listed: true/.test(m.content)) throw new Error(`kortix.yaml lacks listed: true:\n${m.content}`);
+      });
+
+      await ctx.step("a create at a taken slug, or with a link the caller may not make, is refused before anything reaches kortix.yaml", async () => {
+        const before = (await manifest()).content;
+        (await owner.post("/v1/projects/:projectId/apps", { slug, name: "Takeover", cpu: 4, always_on: true }, { params })).status(409);
+        const other = `${slug.slice(0, 30)}-b`;
+        (await owner.post("/v1/projects/:projectId/apps", { slug: other, name: "Linker", uses: ["no-such-app"] }, { params }))
+          .status(400).body().has("$.code", "app_not_found");
+        const after = (await manifest()).content;
+        if (after !== before) throw new Error(`kortix.yaml changed after refused creates:\n${after}`);
+      });
+
+      await ctx.step("PATCH labels commits them to the App block before the row changes", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId", { labels: ["ops"] }, { params: { ...params, appId } }))
+          .status(200).body().has("$.labels", ["ops"]);
+        await until("- ops", "labels in kortix.yaml");
+      });
+
+      await ctx.step("a kortix.yaml change pushed outside the API applies to the App on the next sync", async () => {
+        const m = await manifest();
+        const content = m.content.replace("- ops", "- finance");
+        (await owner.put("/v1/projects/:projectId/files/content", { path: "kortix.yaml", ref: m.ref, content, expected_revision: m.revision }, { params }))
+          .status(200);
+        (await owner.post("/v1/connectors/projects/:projectId/connectors/sync", {}, { params })).status(200);
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } })).status(200).body().has("$.labels", ["finance"]);
+      });
+
+      await ctx.step("renaming the project commits project.name to kortix.yaml", async () => {
+        (await owner.patch("/v1/projects/:projectId", { name: "Renamed through the API" }, { params })).status(200);
+        await until("name: Renamed through the API", "project.name in kortix.yaml");
+      });
+
+      await ctx.step("deleting the App removes its block from kortix.yaml", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } })).status(200);
+        appId = "";
+        await waitFor(manifest, { until: (m) => !m.content.includes(`${slug}:`), timeoutMs: 60_000, intervalMs: 2_000, description: "the App block is gone" });
+      });
+    } finally {
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } });
     }
   },
 );

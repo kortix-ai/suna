@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import type { SecretValueStatus } from '@kortix/api-contract';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { accountMemberJoin } from '../iam/membership-read';
@@ -27,6 +28,16 @@ export function decryptAccountSecret(accountId: string, envelope: string): strin
   const decipher = createDecipheriv('aes-256-gcm', key(accountId), iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+/** Can this server decrypt the envelope? The plaintext is discarded. */
+export function probeAccountSecret(accountId: string, envelope: string): SecretValueStatus {
+  try {
+    decryptAccountSecret(accountId, envelope);
+    return 'ok';
+  } catch {
+    return 'undecryptable';
+  }
 }
 
 /**
@@ -281,16 +292,21 @@ export async function loadCodexAccountLogin(accountId: string, secretId: string)
 
 /**
  * An unconfigured session uses the caller's newest personal ChatGPT
- * connection, preferring one whose login still works: a connection marked for
- * reconnection is the default only when every other one is marked too.
+ * connection, preferring one whose login still works and that is not resting
+ * after a rate or usage limit: a connection marked for reconnection, or
+ * resting, is the default only when every other one is too. `restingSeconds`
+ * is set when the chosen connection rests, so the caller can fall back
+ * instead of sending to an account that will refuse.
  */
-export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<ResolvedAccountSecret | null> {
+export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<(ResolvedAccountSecret & { restingSeconds?: number }) | null> {
   if (!(await memberMayReadProject(accountId, projectId, userId))) return null;
-  const [row] = await db.select({
+  const [found] = await db.select({
     secretId: accountSecretResources.secretId,
     label: accountSecretResources.label,
     valueEnc: accountSecretResources.valueEnc,
     updatedAt: accountSecretResources.updatedAt,
+    cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
     .innerJoin(...accountMemberJoin(accountId, userId))
@@ -306,13 +322,18 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
     ))
     .orderBy(
       sql`${accountSecretResources.needsReauthAt} is not null`,
+      sql`coalesce(${accountSecretResources.cooldownUntil} > now(), false)`,
       desc(accountSecretResources.createdAt),
       desc(accountSecretResources.secretId),
     )
     .limit(1);
-  return row
-    ? { secretId: row.secretId, label: row.label, value: readAccountSecret(accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt }
-    : null;
+  if (!found) return null;
+  const [row] = await liftDueCooldowns(accountId, [found]);
+  const restingMs = row!.cooldownUntil ? row!.cooldownUntil.getTime() - Date.now() : 0;
+  return {
+    secretId: row!.secretId, label: row!.label, value: readAccountSecret(accountId, row!.secretId, row!.valueEnc), updatedAt: row!.updatedAt,
+    ...(restingMs > 0 ? { restingSeconds: Math.ceil(restingMs / 1000) } : {}),
+  };
 }
 
 /**

@@ -19,8 +19,9 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
-    // Baked by the release build (`--define`); unset in a local `bun run`.
-    clientVersion: process.env.KORTIX_CLI_VERSION ? `cli/${process.env.KORTIX_CLI_VERSION}` : undefined,
+    // Baked by the release build (`--define`); `dev` in a local `bun run`. The
+    // API names a CLI-created session's source from it (KRTX-2914).
+    clientVersion: `cli/${process.env.KORTIX_CLI_VERSION ?? 'dev'}`,
   };
 }
 
@@ -238,4 +239,15 @@ export async function sandboxDaemonRequest(
     signal: AbortSignal.timeout(timeoutMs),
   });
   return { status: res.status, text: await res.text() };
+}
+
+/** Public device bootstrap cannot use the authenticated SDK transport: there
+ * is deliberately no credential until approval. Keep it in the transport seam. */
+export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
+  const response = await fetch(`${sdkBackendUrl(apiBase)}/cli/device/${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
+    body: JSON.stringify(body), signal,
+  });
+  if (!response.ok) throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+  return await response.json() as T;
 }

@@ -6,7 +6,6 @@ import {
   CubeIcon,
   GitBranchIcon,
   KanbanIcon,
-  HardDrivesIcon,
   SquaresFourIcon,
   UsersIcon,
   WrenchIcon,
@@ -15,8 +14,8 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import Hint from '@/components/ui/hint';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import Hint from '@kortix/ui/hint';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import {
   Sidebar,
   SidebarContent,
@@ -29,9 +28,9 @@ import {
   SidebarRail,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/sidebar';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 interface AdminNavItem {
   href: string;
@@ -46,7 +45,6 @@ const NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/projects', label: 'Projects', icon: KanbanIcon },
   { href: '/admin/analytics', label: 'Analytics', icon: ChartLineUpIcon },
   { href: '/admin/sandboxes', label: 'Sandboxes', icon: CubeIcon },
-  { href: '/admin/volumes', label: 'Volumes', icon: HardDrivesIcon },
   // The instance's ONE managed-git identity. It sits here, not on an account
   // page, because it is instance-global — see `app/admin/git/page.tsx`.
   { href: '/admin/git', label: 'Git', icon: GitBranchIcon },

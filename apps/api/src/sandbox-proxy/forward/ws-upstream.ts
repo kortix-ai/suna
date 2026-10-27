@@ -1,6 +1,7 @@
 import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { sessionStreamAccessCheck } from '../../shared/space-access';
 import {
   buildSandboxUpstreamHeaders,
   loadSandbox,
@@ -8,7 +9,7 @@ import {
   routeSandboxIngress,
 } from '../backend';
 import { canonicalProxyPath } from '../proxy-path';
-import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import { carriesSessionData } from '../session-data-ports';
 import { resumeAndReloadSandbox, shouldWakeStoppedSandboxForWsAttach } from './wake';
 
 // === WebSocket upstream resolution =============================================
@@ -35,7 +36,7 @@ export async function resolvePreviewWsUpstream(opts: {
    *  See `shouldWakeStoppedSandboxForWsAttach`. */
   wakeRequested?: boolean;
 }): Promise<
-  | { ok: true; url: string; headers: Record<string, string> }
+  | { ok: true; url: string; headers: Record<string, string>; accessCheck: () => Promise<boolean> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, queryString } = opts;
@@ -64,7 +65,6 @@ export async function resolvePreviewWsUpstream(opts: {
   // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
   // side, one function further down the file.
   if (
-    requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -126,5 +126,18 @@ export async function resolvePreviewWsUpstream(opts: {
     if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
   }
 
-  return { ok: true, url: upstreamUrl.toString(), headers };
+  // The socket re-checks the same session gate while it is open, with the
+  // shared stream rules: no query in a project without a
+  // private channel, and a failed read closes only a private channel's session.
+  const accessCheck = sessionStreamAccessCheck(record.projectId, record.sessionId, () =>
+    canAccessSandboxSession({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+      accountId: record.accountId,
+      userId,
+      callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
+    }),
+  );
+  return { ok: true, url: upstreamUrl.toString(), headers, accessCheck };
 }

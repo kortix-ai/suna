@@ -114,6 +114,21 @@ module "audit_archive" {
   tags   = local.tags
 }
 
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its
+# `*.manifest.json` events, and the device role the API assumes with a
+# per-device session policy. The task names them through the non-secret
+# KORTIX_CAPTURE_S3_BUCKET / _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN
+# overrides in the deploy workflow. Nothing records until an account turns
+# Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -142,6 +157,10 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
@@ -156,12 +175,11 @@ module "api" {
   # ("InvalidParameterException"), which failed Deploy Prod for v0.13.54 and
   # v0.13.55. Pinning 100 (KRTX-586) needs availability_zone_rebalancing =
   # "DISABLED" on this service first; that is a resilience decision of its own.
-  min_capacity       = 3
-  max_capacity       = 10
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  min_capacity     = 3
+  max_capacity     = 10
+  use_fargate_spot = false
+  cpu_target       = 55
+  memory_target    = 65
   # Load-proportional scaling. CPU/mem alone left the service flat during the
   # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
   # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
@@ -228,7 +246,6 @@ module "gateway" {
   min_capacity               = 3
   max_capacity               = 20
   use_fargate_spot           = false
-  container_insights         = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

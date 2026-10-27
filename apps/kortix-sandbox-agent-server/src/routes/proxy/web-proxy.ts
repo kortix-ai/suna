@@ -1,14 +1,14 @@
 /**
  * Web Forward Proxy — /web-proxy/{scheme}/{host}/{path}
  *
- * Transparent forward proxy: fetches ANY URL from within the sandbox
+ * Forward proxy: fetches public HTTP(S) URLs from within the sandbox
  * and relays the response back. Designed to power the Internal Browser
  * feature, making it behave as if the user is browsing from inside
  * the sandbox machine.
  *
  * URL scheme:
  *   /web-proxy/https/example.com/path?q=test  → GET https://example.com/path?q=test
- *   /web-proxy/http/localhost:3000/api/users   → GET http://localhost:3000/api/users
+ *   Private and loopback destinations are not reachable through this route.
  *
  * For HTML responses:
  *   1. Strips security headers (CSP, X-Frame-Options) so iframe embedding works
@@ -28,10 +28,8 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { lookup } from 'node:dns/promises'
-import { networkInterfaces } from 'node:os'
+import { assertSafeEgressUrl, resolvePinnedEgress, UnsafeEgressError } from '@kortix/shared/ssrf-guard'
 
-import { logger } from '@/lib/log/logger'
 import {
   FETCH_TIMEOUT_MS,
   MAX_RETRIES,
@@ -71,116 +69,9 @@ const CREDENTIAL_HEADERS = new Set([
   'cookie',
   'x-kortix-user-context',
   'x-kortix-service-call',
-  // Sandbox-provider preview credentials (daytona.ts, e2b.ts).
+  // Sandbox-provider preview credentials (daytona.ts).
   'x-daytona-preview-token',
-  'e2b-traffic-access-token',
 ])
-
-/**
- * Every address that belongs to THIS machine.
- *
- * Loopback is not enough. The daemon binds 0.0.0.0, so the box's own interface
- * address — its eth0 10.x/172.x — reaches :8000 exactly as 127.0.0.1 does, and
- * a guard that only knew about loopback let that spelling through.
- *
- * Computed once: a sandbox's addresses do not change during its life, and this
- * sits in the path of every proxied asset request.
- */
-let ownAddressCache: Set<string> | null = null
-function ownAddresses(): Set<string> {
-  if (ownAddressCache) return ownAddressCache
-  const found = new Set<string>()
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      // Drop the IPv6 zone index (`fe80::1%eth0`) — it is not part of the address.
-      found.add(entry.address.toLowerCase().split('%')[0] as string)
-    }
-  }
-  ownAddressCache = found
-  return found
-}
-
-/** Does this literal address reach the box itself? */
-function isLoopbackAddress(addr: string): boolean {
-  const a = addr.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0] as string
-  if (a === '::1' || a === '::' || a === '0.0.0.0') return true
-  // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
-  if (a.startsWith('::ffff:')) return isLoopbackAddress(a.slice('::ffff:'.length))
-  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a)) return true
-  // The box's own non-loopback bind addresses. Same destination, different route.
-  return ownAddresses().has(a)
-}
-
-/**
- * Does this hostname name the box itself, by spelling alone?
- *
- * `new URL()` has already folded the inet_aton forms for us — `127.1`,
- * `2130706433`, `0x7f000001` all arrive here as `127.0.0.1`, and `0` as
- * `0.0.0.0` — verified against Bun, so this only has to handle NAMES.
- *
- * The trailing dot is the DNS root label: `localhost.` and `foo.localhost.`
- * resolve exactly like the undotted forms, and reached the control plane until
- * this stripped them.
- */
-function isLoopbackName(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.+$/, '')
-  if (host === 'localhost' || host.endsWith('.localhost')) return true
-  return isLoopbackAddress(host)
-}
-
-/**
- * Does this host reach the box, by any spelling OR by DNS?
- *
- * Matching on the name alone is not enough and never can be: `127.0.0.1.nip.io`
- * is a ready-made public name for 127.0.0.1, and any attacker-controlled domain
- * becomes one with a single A record. So resolve it and judge the ADDRESS.
- *
- * KNOWN RESIDUAL: this resolves and then fetches, so a DNS rebind between the
- * two calls still slips through. Closing that needs the connection pinned to the
- * address we checked, which Bun's fetch does not expose. It is a much narrower
- * hole than the spelling bypass — it needs attacker-controlled DNS and a won
- * race — and the credential strip above is unconditional, so a request that does
- * win the race still carries none of our secrets.
- */
-type HostResolver = (hostname: string) => Promise<ReadonlyArray<{ address: string }>>
-
-async function defaultHostResolver(hostname: string): Promise<ReadonlyArray<{ address: string }>> {
-  return lookup(hostname, { all: true })
-}
-
-async function reachesThisBox(
-  hostname: string,
-  resolveHost: HostResolver,
-): Promise<{ self: boolean; address: string | null }> {
-  if (isLoopbackName(hostname)) return { self: true, address: null }
-  try {
-    const resolved = await resolveHost(hostname.replace(/\.+$/, ''))
-    if (resolved.some((entry) => isLoopbackAddress(entry.address))) {
-      return { self: true, address: null }
-    }
-    // Handed back so the caller can CONNECT to the address it just vetted,
-    // instead of resolving a second time and trusting the answer to match.
-    return { self: false, address: resolved[0]?.address ?? null }
-  } catch {
-    // Unresolvable. The fetch below fails on its own; do not turn a DNS blip
-    // into a spurious 403 for a legitimate site.
-    return { self: false, address: null }
-  }
-}
-
-export interface WebProxyOptions {
-  /**
-   * Ports this proxy refuses to reach ON THIS BOX — our own control plane.
-   *
-   * Named for the destination, not for loopback: the daemon binds 0.0.0.0
-   * (proxy.ts), so the box's own interface address reaches it just as
-   * 127.0.0.1 does, and a guard that thought in terms of "loopback" missed
-   * that spelling entirely.
-   */
-  blockedSelfPorts: ReadonlySet<number>
-  /** Resolver seam for deterministic DNS-rebinding tests. Production uses DNS. */
-  resolveHost?: HostResolver
-}
 
 const STRIP_RESPONSE_HEADERS = new Set([
   'content-security-policy',
@@ -193,6 +84,7 @@ const STRIP_RESPONSE_HEADERS = new Set([
   'cross-origin-resource-policy',
   'content-encoding',    // We decompress to rewrite; don't claim it's still compressed
   'content-length',      // Content length changes after rewriting
+  'refresh',             // Do not let a response header navigate outside the guarded proxy
   'transfer-encoding',   // Remove chunked encoding — we buffer for rewriting
 ])
 
@@ -205,7 +97,7 @@ const STRIP_RESPONSE_HEADERS = new Set([
  * @param search  - query string from the request, e.g. "?q=test"
  */
 function parseTargetUrl(subPath: string, search: string): string | null {
-  const match = subPath.match(/^\/(https?)\/([\w.\-]+(?::\d+)?)(\/.*)?$/)
+  const match = subPath.match(/^\/(https?)\/(\[[\da-fA-F:.]+\](?::\d+)?|[\w.\-]+(?::\d+)?)(\/.*)?$/)
   if (!match) return null
 
   const scheme = match[1]
@@ -519,7 +411,7 @@ function transformHtml(html: string, targetUrl: string): string {
 
 // ── Route Handler ────────────────────────────────────────────────────────────
 
-async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Response> {
+async function handleWebProxy(c: Context): Promise<Response> {
   const url = new URL(c.req.url)
 
   const subPath = url.pathname.replace(/^\/web-proxy/, '') || '/'
@@ -533,64 +425,6 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
   }
 
   const parsedTarget = new URL(targetUrl)
-
-  // Keep the web proxy off the box's OWN control plane.
-  //
-  // Browsing a dev server the agent started (`localhost:3000`) is the point of
-  // this proxy. Re-entering the daemon (:8000) or opencode (:4096) is not: those
-  // are reached from outside through apps/api, which enforces a stack of
-  // path-keyed controls on the way — the agent-authorization check, the
-  // connector gate, durable lifecycle authority, prompt idempotency, and the secret-grant
-  // re-mint. A request tunnelled through here arrives on loopback with the path
-  // buried in OUR url, so every one of those is skipped and the caller runs a
-  // turn apps/api would have refused.
-  const targetPort = parsedTarget.port
-    ? Number(parsedTarget.port)
-    : parsedTarget.protocol === 'https:'
-      ? 443
-      : 80
-  //
-  // `fetchTarget` is what we actually connect to. It differs from `targetUrl`
-  // only when we had to vet the destination — everything else (HTML rewriting,
-  // redirect resolution, logs) keeps the original host, which is what the
-  // browser needs to see.
-  let fetchTarget = targetUrl
-  if (opts.blockedSelfPorts.has(targetPort)) {
-    const target = await reachesThisBox(
-      parsedTarget.hostname,
-      opts.resolveHost ?? defaultHostResolver,
-    )
-    if (target.self) {
-      logger.warn('[web-proxy] refused a request to the box control plane', {
-        host: parsedTarget.hostname,
-        port: targetPort,
-      })
-      return c.json(
-        {
-          error: 'this port is not reachable through the web proxy',
-          code: 'WEB_PROXY_PORT_BLOCKED',
-        },
-        403,
-      )
-    }
-    // PIN THE CONNECTION TO THE ADDRESS WE VETTED.
-    //
-    // Otherwise the check is resolve-then-fetch, and a DNS rebind between the
-    // two — TTL 0, second answer 127.0.0.1 — sends us to the control plane we
-    // just refused. Connecting by address closes that window; the Host header
-    // is already the original host, so the upstream still sees what it expects.
-    //
-    // http only, and that is sufficient rather than lazy: the rebind target
-    // would have to be our own loopback control plane, and neither the daemon
-    // nor opencode speaks TLS there, so an https request cannot complete a
-    // handshake against it. Leaving https alone also keeps SNI and certificate
-    // validation intact, which pinning by IP would break.
-    if (target.address && parsedTarget.protocol === 'http:') {
-      const pinned = new URL(targetUrl)
-      pinned.hostname = target.address
-      fetchTarget = pinned.toString()
-    }
-  }
 
   const headers = buildUpstreamHeaders(c, CREDENTIAL_HEADERS)
   headers.set('Host', parsedTarget.host)
@@ -636,12 +470,16 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
     try {
       const signal = getFetchSignal(acceptsSSE, clientAbort)
 
-      const response = await fetch(fetchTarget, {
+      // Resolve and pin on every attempt; redirects return through this same guard.
+      const target = await resolvePinnedEgress(targetUrl, { allowHttp: true })
+      if (target.host) headers.set('Host', target.host)
+      const response = await fetch(target.url, {
         method: c.req.method,
         headers,
         body,
         redirect: 'manual',
         signal,
+        ...(target.serverName ? { tls: { serverName: target.serverName } } : {}),
       })
 
       // ── Build response headers ──────────────────────────────────────
@@ -660,7 +498,7 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
       if (location && response.status >= 300 && response.status < 400) {
         try {
           // Resolve the redirect target relative to the current target URL
-          const resolved = new URL(location, targetUrl)
+          const resolved = await assertSafeEgressUrl(new URL(location, targetUrl).href, { allowHttp: true })
           if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
             const scheme = resolved.protocol.replace(':', '')
             responseHeaders.set(
@@ -668,7 +506,9 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
               `/web-proxy/${scheme}/${resolved.host}${resolved.pathname}${resolved.search}${resolved.hash}`,
             )
           }
-        } catch { /* leave as-is */ }
+        } catch {
+          return c.json({ error: 'redirect target is not reachable through the web proxy', code: 'WEB_PROXY_PORT_BLOCKED' }, 403)
+        }
 
         return new Response(null, {
           status: response.status,
@@ -713,6 +553,9 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
         headers: responseHeaders,
       })
     } catch (error) {
+      if (error instanceof UnsafeEgressError) {
+        return c.json({ error: 'target is not reachable through the web proxy', code: 'WEB_PROXY_PORT_BLOCKED' }, 403)
+      }
       const errMsg = error instanceof Error ? error.message : String(error)
       lastError = errMsg
 
@@ -750,8 +593,8 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
   }, 502)
 }
 
-export function createWebProxyRouter(opts: WebProxyOptions): Hono {
+export function createWebProxyRouter(): Hono {
   const webProxyRouter = new Hono()
-  webProxyRouter.all('/*', (c) => handleWebProxy(c, opts))
+  webProxyRouter.all('/*', (c) => handleWebProxy(c))
   return webProxyRouter
 }

@@ -1,3 +1,4 @@
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env';
 import { agentConfigEtag } from './compile-agent-config';
 
 export interface SessionRuntimeEnvInput {
@@ -51,13 +52,8 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
-  /**
-   * The agent harness the sandbox daemon boots, from the manifest's `runtime:`
-   * field. `pi` emits `KORTIX_HARNESS=pi` (pi-agent-core in-process in the
-   * daemon); `opencode`/omitted emits nothing, so an OpenCode session's env is
-   * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
-   */
-  harness?: 'opencode' | 'pi';
+  /** kortix.yaml `harnesses.pi.codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
+  piCodemode?: 'off' | 'on' | 'only' | null;
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
@@ -157,10 +153,13 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
-    // Which harness kortixd boots. Absent = OpenCode (the daemon default).
-    ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
-    ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
-    ...(input.harness === 'pi' && input.piPackagesBundle
+    // Which harness kortixd boots: always pi (OpenCode is sunset). Never leave it
+    // out: an unset KORTIX_HARNESS boots OpenCode, the daemon default kept for
+    // boxes that already run it.
+    KORTIX_HARNESS: 'pi',
+    ...(input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
+    ...(input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
+    ...(input.piPackagesBundle
       ? {
           KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,
           KORTIX_PI_PACKAGES_FALLBACK_URL: input.piPackagesBundle.fallbackUrl,
@@ -189,7 +188,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? {
-          KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig,
+          // `KORTIX_COMPILED_AGENT_CONFIG=<json>` whenever it fits in one env
+          // string, which is every config today's daemons read. Past 128 KiB the
+          // guest cannot exec with it, so it travels gzipped in parts that each
+          // fit (@kortix/api-contract/compiled-agent-config-env).
+          ...encodeCompiledAgentConfigEnv(input.compiledAgentConfig),
           // Content hash of the line above, echoed by the daemon's /kortix/health.
           // It is what makes "is this session running the latest config?" a
           // question anyone can answer — the box reports what it actually

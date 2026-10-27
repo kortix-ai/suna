@@ -29,14 +29,13 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { SsoRequiredSignOut } from '@/components/auth/SsoRequiredSignOut';
 import { PastedTextSheet } from '@/components/files/PastedTextSheet';
 import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
+import { reportAccessRemedy } from '@/lib/auth/sso-required';
 import { authRedirect } from '@/lib/auth/mfa';
-import {
-  GlobalUpgradeSheet,
-  SandboxUpgradeGateListener,
-} from '@/components/billing/GlobalUpgradeSheet';
+import { GlobalUpgradeSheet } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
 import { SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -107,6 +106,8 @@ createKortix({
     // A 401 may mean the login ended: the monitor checks once (COR-144).
     if ((error as { status?: unknown } | null)?.status === 401) reportUnauthorized();
   },
+  // 403 `sso_required` from an SDK REST call: `SsoRequiredSignOut` signs out (KRTX-1716).
+  onAccessRemedy: reportAccessRemedy,
 });
 
 // React Query has no DOM in React Native: without these listeners every query
@@ -596,13 +597,13 @@ export default function RootLayout() {
                               </AuthProtection>
                             </View>
                             <OtaUpdateManager />
-                            <SandboxUpgradeGateListener />
                             <GlobalUpgradeSheet />
                             {/* A "Pasted text" tile's full text: sent messages and composers (`openPastedText`). */}
                             <PastedTextSheet />
                             <PortalHost />
                             <OfflineBanner />
                             <SessionEndedDialog />
+                            <SsoRequiredSignOut />
                             <PushNotificationsBridge />
                           </ThemeProvider>
                         </BottomSheetModalProvider>

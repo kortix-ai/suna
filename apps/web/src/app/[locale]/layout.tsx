@@ -1,28 +1,31 @@
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
-import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
+import { FileDropGuard } from '@/components/file-drop-guard';
+import { DesktopBackButton } from '@kortix/ui/internal/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { LazyMotionProvider } from '@/components/lazy-motion-provider';
 import { RootClientHosts, RootQueryHosts } from '@/components/root-client-hosts';
-import { IconProvider } from '@/components/ui/icon-provider';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { IconProvider } from '@kortix/ui/icon-provider';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
 import { SsoRequiredProvider } from '@/features/auth/sso-required';
-import { BrandingProvider } from '@/features/branding/branding-provider';
+import { BrandingProvider } from '@kortix/ui/internal/branding/branding-provider';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
-import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
+import { CHUNK_BOOT_RECOVERY_SCRIPT } from '@/lib/chunk-boot-recovery';
+import { DESKTOP_INIT_SCRIPT } from '@kortix/ui/internal/lib/desktop';
+import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { runtimeConfigIsBakedAtBuild } from '@/lib/runtime-config-mode';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
-import { cn } from '@/lib/utils';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
+import { cn } from '@kortix/ui';
 import { featureFlags } from '@kortix/sdk';
 import type { Metadata, Viewport } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
@@ -170,7 +173,7 @@ const SITE_JSON_LD = {
         'https://x.com/kortix',
         'https://linkedin.com/company/kortix',
       ],
-      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/support` },
+      contactPoint: { '@type': 'ContactPoint', contactType: 'Customer Support', url: `${siteMetadata.url}/contact` },
     },
     {
       '@type': 'SoftwareApplication',
@@ -244,6 +247,7 @@ export default async function RootLayout({
       className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: CHUNK_BOOT_RECOVERY_SCRIPT }} />
         {/* Runtime config. Standalone/Docker: evaluated per request via
             connection() above, so images pick up container env vars.
             Vercel: baked at build from the same environment. */}
@@ -255,6 +259,10 @@ export default async function RootLayout({
 
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
+
+        {/* Interface theme palettes on /new, /projects/** and /settings — set
+            before first paint so the stored palette never flashes the default. */}
+        <script dangerouslySetInnerHTML={{ __html: INTERFACE_THEME_INIT_SCRIPT }} />
 
         {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
 
@@ -334,7 +342,7 @@ export default async function RootLayout({
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
@@ -343,11 +351,14 @@ export default async function RootLayout({
               <TooltipProvider delayDuration={150}>
                 <AuthProvider>
                   <I18nProvider initialLocale={htmlLang}>
-                    {/* Publishes the App Router to lib/navigation/router-bridge so
+                    {/* Publishes the App Router to packages/ui/src/internal/lib/navigation/router-bridge so
                     stores and error handlers navigate softly instead of
                     reloading the document. */}
                     <RouterBridge />
                     <BrowserNoiseGuard />
+                    {/* A file dropped outside every drop zone would replace the
+                    page with the file and lose unsent attachments. */}
+                    <FileDropGuard />
                     <TurnAttentionBadge />
                     <DesktopChrome />
                     {/* The window's one Back: every screen gets an exit on the
@@ -356,8 +367,9 @@ export default async function RootLayout({
                     <ReactQueryProvider>
                       <Toaster />
                       {/* Global "Request a demo" qualifier modal — mounted once here
-                      so every enterprise CTA across the app (accounts settings,
-                      billing, IAM) can open it via useRequestDemo(). */}
+                      so a public-site CTA can open it via useRequestDemo(). In
+                      the signed-in app, "Talk to sales" is one click
+                      (features/billing/use-enterprise-sales.ts). */}
                       {/* Organization branding (Enterprise): the active
                       account's own logo / icon / favicon / product name.
                       Reads the shared account-list query, so it sits inside

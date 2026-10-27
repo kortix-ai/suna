@@ -10,12 +10,15 @@
  *
  * The expected revision is pinned ONCE from KORTIX_BASE_SHA and preserved into
  * the Git fallback request. A fallback is never silent: the S3 failure is
- * logged as `config_provider_s3_failed`, the transition as
- * `config_provider_fallback`, and both stay visible on `/kortix/health`
- * (`config_provider`) and in the boot timeline the daemon relays at readiness.
- * Those wire names (events, health key, `config-provider:*` boot marks) predate
- * this service's rename and stay unchanged; dashboards and stored timelines
- * read them.
+ * logged as `workspace_provider_s3_failed`, the transition as
+ * `workspace_provider_fallback`, and both stay visible on `/kortix/health`
+ * (`workspace_provider`).
+ *
+ * The workspace is not config. This provider writes nothing into the boot
+ * timeline (`boot_timeline` on `/kortix/health`), which reports the runtime
+ * and the config release it boots from. The config provider
+ * (services/config-provider) downloads its own copy of the release and never
+ * reads `/workspace`.
  *
  * Never recurses between transports, never mixes a partial S3 stage with a Git
  * checkout (the stage is private and removed on failure; the target is
@@ -27,7 +30,7 @@ import { readRepoInfo } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
 import type { SnapshotHydrationSummary } from '@/lib/project-snapshot/hydrate'
 import { acquire, type S3Attempt } from './acquire'
-import { adoptOrClearBakedCheckout } from './checkout'
+import { adoptOrClearBakedCheckout, excludeVolumePnpmStore } from './checkout'
 import { scheduleHistoryBackfill } from './git'
 import type { MaterializeRequest, MaterializedProject, WorkspaceProviderSummary } from './types'
 
@@ -36,7 +39,6 @@ export const DEFAULT_S3_DEADLINE_MS = 45_000
 
 export interface ProvideWorkspaceOptions {
   signal?: AbortSignal
-  bootMark?: (label: string) => void
   deadlineMs?: number
   /** Receives the health-visible summary on success AND on failure. */
   onSummary?: (summary: WorkspaceProviderSummary) => void
@@ -67,6 +69,7 @@ function summarize(
   const actual = result.sha ?? null
   return {
     mode: mode,
+    volume: cfg.workspaceVolume === true,
     provider: result.provider ?? null,
     expected_sha: expected,
     actual_sha: actual,
@@ -94,7 +97,6 @@ export async function provideWorkspace(
 ): Promise<ProvideWorkspaceResult> {
   const started = Date.now()
   const timings: Record<string, number> = {}
-  const mark = opts.bootMark ?? (() => {})
   const mode: ProjectSnapshotMode = cfg.projectSnapshotMode ?? 'git'
   const expectedSha = trustedSha(cfg)
   const req: MaterializeRequest = {
@@ -110,7 +112,7 @@ export async function provideWorkspace(
   const finish = (result: MaterializedProject): ProvideWorkspaceResult => {
     const summary = summarize(cfg, mode, started, result, s3State, { ok: true })
     logger.info('[workspace-provider] complete', {
-      event: 'config_provider_complete',
+      event: 'workspace_provider_complete',
       provider: result.provider,
       mode: mode,
       expectedSha,
@@ -125,13 +127,12 @@ export async function provideWorkspace(
       // Loud, not fatal: the legacy clone can also land on a newer tip when the
       // branch moved between session create and boot. Never silent.
       logger.warn('[workspace-provider] checkout SHA differs from the session pin', {
-        event: 'config_provider_sha_drift',
+        event: 'workspace_provider_sha_drift',
         provider: result.provider,
         expectedSha,
         actualSha: result.sha,
       })
     }
-    mark(result.provider === 's3' ? 'config-provider:s3:ok' : result.fallback ? 'config-provider:git:fallback' : 'config-provider:git:ok')
     opts.onSummary?.(summary)
     return { ...result, summary }
   }
@@ -143,8 +144,8 @@ export async function provideWorkspace(
     const adopted = await adoptOrClearBakedCheckout(cfg)
     timings.warm = Date.now() - t0
     if (adopted) {
+      if (cfg.workspaceVolume) await excludeVolumePnpmStore(cfg.projectTarget)
       const info = await readRepoInfo(cfg.projectTarget)
-      mark('config-provider:warm')
       return finish({
         provider: 'git',
         sha: info?.commit ?? null,
@@ -154,11 +155,12 @@ export async function provideWorkspace(
       })
     }
 
-    const acquired = await acquire(req, { mode, mark, timings, s3: s3State }, {
+    const acquired = await acquire(req, { mode, timings, s3: s3State }, {
       fetchImpl: opts.fetchImpl,
       inactivityTimeoutMs: opts.inactivityTimeoutMs,
       tarBinary: opts.tarBinary,
     })
+    if (cfg.workspaceVolume) await excludeVolumePnpmStore(cfg.projectTarget)
     const finished = finish(acquired)
     const hydration = acquired.hydration
     if (hydration) {
@@ -168,7 +170,7 @@ export async function provideWorkspace(
         finished.summary.hydration = h
         finished.summary.timings.s3_hydrate = h.ms
         ;(h.status === 'ok' ? logger.info : logger.warn).call(logger, '[workspace-provider] snapshot hydration settled', {
-          event: 'config_provider_hydration',
+          event: 'workspace_provider_hydration',
           status: h.status,
           attempts: h.attempts,
           bytes: h.bytes,
@@ -177,7 +179,6 @@ export async function provideWorkspace(
           error: h.error,
           expectedSha,
         })
-        mark(`config-provider:hydrate:${h.status}`)
         opts.onSummary?.(finished.summary)
       })
     }
@@ -186,7 +187,7 @@ export async function provideWorkspace(
     const message = (err as Error)?.message ?? String(err)
     const summary = summarize(cfg, mode, started, { timings }, s3State, { ok: false, error: message })
     logger.error('[workspace-provider] materialization failed', {
-      event: 'config_provider_complete',
+      event: 'workspace_provider_complete',
       outcome: 'error',
       mode: mode,
       expectedSha,

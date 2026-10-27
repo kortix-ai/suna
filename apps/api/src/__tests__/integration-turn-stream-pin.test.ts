@@ -122,8 +122,9 @@ describe('POST /v1/projects/:projectId/turn-stream — runtime_session pin autho
       kind: 'runtime_session',
       runtime_session_id: 'oc_member_chosen',
     });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    // A member who cannot see the session is told it does not exist, as on GET.
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
     expect(await pinOf()).toBeNull();
   });
 
@@ -132,8 +133,9 @@ describe('POST /v1/projects/:projectId/turn-stream — runtime_session pin autho
       kind: 'opencode_session',
       opencode_session_id: 'oc_member_chosen_alias',
     });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
+    // A member who cannot see the session is told it does not exist, as on GET.
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
     expect(await pinOf()).toBeNull();
   });
 

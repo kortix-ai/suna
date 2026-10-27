@@ -14,7 +14,7 @@ import { db } from '../../shared/db';
 export interface ChatThreadKey {
   /** `slack`, `teams`, `email`, or `telegram` (the `chat_threads.platform` column). */
   platform: string;
-  /** Slack team, Teams tenant, or AgentMail inbox. */
+  /** Slack team, Teams tenant, or email (Resend) inbox. */
   workspaceId: string;
   threadId: string;
 }
@@ -94,14 +94,34 @@ export async function bindChatThread(
   return inserted ?? (await findChatThread(key));
 }
 
+/**
+ * Move every thread bound to one session of a project to another: a successor
+ * session takes over its failed predecessor's conversations, so replies in
+ * those threads reach it. Returns the number of threads moved.
+ */
+export async function adoptChatThreads(projectId: string, fromSessionId: string, toSessionId: string): Promise<number> {
+  const moved = await db
+    .update(chatThreads)
+    .set({ sessionId: toSessionId })
+    .where(and(eq(chatThreads.projectId, projectId), eq(chatThreads.sessionId, fromSessionId)))
+    .returning({ threadId: chatThreads.threadId });
+  return moved.length;
+}
+
 /** Record a delivered message on the thread. */
 export async function touchChatThread(key: ChatThreadKey): Promise<void> {
   await db.update(chatThreads).set({ lastMessageAt: new Date() }).where(threadRow(key));
 }
 
-/** Drop a mapping whose session is gone, so the next message starts a new session. */
-export async function dropChatThread(key: ChatThreadKey): Promise<void> {
-  await db.delete(chatThreads).where(threadRow(key));
+/**
+ * Drop a thread's mapping so the next message starts a new session. With
+ * `sessionId`, only while the thread still maps to that session: a racing
+ * message may have bound a new session since the caller read the row.
+ */
+export async function dropChatThread(key: ChatThreadKey, sessionId?: string): Promise<void> {
+  await db
+    .delete(chatThreads)
+    .where(sessionId ? and(threadRow(key), eq(chatThreads.sessionId, sessionId)) : threadRow(key));
 }
 
 export type FollowUpRoute = { kind: 'here' } | { kind: 'thread_project'; projectId: string } | { kind: 'refused' };

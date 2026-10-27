@@ -41,9 +41,6 @@ function baseConfig(): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
   }
 }
 
@@ -139,7 +136,7 @@ describe('daemon file write routes', () => {
       daemon: 'ok',
       opencode: 'ok',
       // The fake OpenCode reports no version, so steering (1.18.15 and later) is not listed.
-      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'runtime.retract.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer')],
+      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer')],
     })
     // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([
@@ -511,6 +508,34 @@ describe('daemon file write routes', () => {
       headers: authHeaders(),
     })
     expect(res.status).toBe(403)
+  })
+
+  // A symlink inside the workspace is lexically inside the allowed roots, so a
+  // prefix check on the unresolved path let it read and write anywhere.
+  it('refuses reads and writes through a workspace symlink that points outside the allowed roots (403)', async () => {
+    await fs.symlink('/', `${WORKSPACE}/escape`)
+    const read = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/escape/etc/hosts`)}`, {
+      headers: authHeaders(),
+    })
+    expect(read.status).toBe(403)
+    const content = await fetch(`${base}/file/content?path=${encodeURIComponent('escape/etc/hosts')}`, {
+      headers: authHeaders(),
+    })
+    expect(content.status).toBe(403)
+    const mkdir = await fetch(`${base}/file/mkdir`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: `${WORKSPACE}/escape/etc/kortix-escape-probe/a` }),
+    })
+    expect(mkdir.status).toBe(403)
+    // A symlink that stays inside the workspace still works.
+    await fs.writeFile(`${WORKSPACE}/inside.txt`, 'inside')
+    await fs.symlink(`${WORKSPACE}/inside.txt`, `${WORKSPACE}/inside-link.txt`)
+    const ok = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/inside-link.txt`)}`, {
+      headers: authHeaders(),
+    })
+    expect(ok.status).toBe(200)
+    expect(await ok.text()).toBe('inside')
   })
 })
 

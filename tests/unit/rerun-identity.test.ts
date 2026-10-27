@@ -41,9 +41,9 @@ describe('runAttemptSuffix', () => {
 });
 
 describe('release gate run identity', () => {
-  test('the pinned shard run id carries the attempt', () => {
+  test('the pinned API run id carries the attempt', () => {
     expect(releaseWorkflow).toContain(
-      "KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}",
+      "KE2E_RUN_ID: ${{ github.run_id }}-api${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}",
     );
   });
 

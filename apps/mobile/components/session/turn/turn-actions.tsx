@@ -18,14 +18,15 @@ import * as React from 'react';
 import { View } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
-import { useColorScheme } from 'nativewind';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CheckIcon, CopyIcon } from '@/lib/icons';
-import type { Turn } from '@/lib/session/types';
+import type { SessionLogTurn } from '@kortix/sdk';
 import { turnDurationMs, turnEndedAt, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { THEME } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 
 import { SessionTurnMeta, TURN_ACTION_HIT_SLOP, TURN_ACTION_ICON_SIZE } from './session-turn-meta';
 
@@ -41,7 +42,7 @@ interface TurnActionsProps {
   response: string;
   /** The turn: the details sheet derives Finished and Duration exactly like
    * web (`sessionTurnEndedAt` / `sessionTurnDurationMs`). */
-  turn: Turn;
+  turn: SessionLogTurn;
   costInfo?: TurnMetaCost;
 }
 
@@ -58,8 +59,8 @@ export function TurnActions({ response, turn, costInfo }: TurnActionsProps) {
 }
 
 function CopyResponseButton({ response }: { response: string }) {
-  const { colorScheme } = useColorScheme();
-  const color = THEME[colorScheme === 'dark' ? 'dark' : 'light'].mutedForeground;
+  const tone = useTone();
+  const color = THEME[tone].mutedForeground;
   const [copied, setCopied] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   // 0 = Copy showing, 1 = Check showing. Starts settled: web `initial={false}`.
@@ -77,7 +78,8 @@ function CopyResponseButton({ response }: { response: string }) {
   );
 
   const handleCopy = React.useCallback(async () => {
-    await Clipboard.setStringAsync(response);
+    // A generative UI block pastes as its markdown, not as OpenUI source.
+    await Clipboard.setStringAsync(genuiToMarkdown(response));
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), COPIED_MS);

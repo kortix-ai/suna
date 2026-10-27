@@ -6,6 +6,8 @@
  * authorization, and a visible, undeleted session. An agent session credential
  * may manage reminders on its OWN session only.
  */
+import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -21,6 +23,8 @@ import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { logger } from '../../lib/logger';
+import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
+import type { GitTriggerSpec } from '../triggers';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -38,14 +42,14 @@ import {
   setSessionReminderEnabled,
 } from '../lib/session-reminders';
 
-const ReminderSchema = z.object({}).passthrough();
+const ReminderSchema = z.record(z.string(), z.any());
 const sessionParams = z.object({ projectId: z.string(), sessionId: z.string() });
 const reminderParams = sessionParams.extend({ reminderId: z.string() });
 
 /** Resolve the caller's right to schedule prompts into this session, or an error response. */
-async function authorizeReminderSession(c: any) {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
+async function authorizeReminderSession(c: Context<AppEnv>) {
+  const projectId = c.req.param('projectId') ?? '';
+  const sessionId = c.req.param('sessionId') ?? '';
   if (!isUuid(sessionId)) return { response: c.json({ error: 'Invalid session id' }, 400) };
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
@@ -72,7 +76,7 @@ async function authorizeReminderSession(c: any) {
   if (typeof metadata.deletedAt === 'string') {
     return { response: c.json({ error: 'Session is deleted' }, 409) };
   }
-  return { projectId, sessionId, loaded, visible, agentCaller };
+  return { response: null, projectId, sessionId, loaded, visible, agentCaller } as const;
 }
 
 export function registerSessionRemindersRoutes(): void {
@@ -98,7 +102,7 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -150,9 +154,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const rows = await listSessionReminders(access.projectId, access.sessionId);
       return c.json({ reminders: rows.map(serializeSessionReminder) });
     },
@@ -184,10 +188,10 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const { projectId, sessionId, loaded, visible, agentCaller } = access;
 
       const now = new Date();
@@ -196,7 +200,7 @@ export function registerSessionRemindersRoutes(): void {
 
       // Each fire re-prompts the session's own agent, so the caller must be
       // allowed to run it now, as with a prompt.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
 
       // Fast refusal; the locked insert below is the authoritative cap.
       if ((await countActiveSessionReminders(projectId, sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
@@ -264,13 +268,13 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       if (typeof body.enabled !== 'boolean') {
         return c.json({ error: 'enabled (boolean) is required' }, 400);
       }
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       if (
@@ -285,6 +289,53 @@ export function registerSessionRemindersRoutes(): void {
       }
       const updated = await setSessionReminderEnabled(row, body.enabled, new Date());
       return c.json(serializeSessionReminder(updated));
+    },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run
+  //
+  // Fire the reminder once now — the Retry of a failed run. The schedule does
+  // not move. A person's run is their prompt, so it acts as them.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}/run',
+      tags: ['sessions'],
+      summary: 'Run a session reminder now',
+      ...auth,
+      request: { params: reminderParams },
+      responses: {
+        202: json(ReminderSchema, 'The reminder, with its prompt queued for the session'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c) => {
+      const access = await authorizeReminderSession(c);
+      if (access.response) return access.response;
+      const { projectId, loaded, visible, agentCaller } = access;
+      const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
+      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
+      const spec = row.scheduleSpec as unknown as GitTriggerSpec;
+      const now = new Date();
+      const result = await fireGitTrigger({
+        spec: agentCaller ? spec : { ...spec, reminder: { ...spec.reminder!, promptAuthorUserId: loaded.userId } },
+        project: loaded.row,
+        payload: {},
+        renderedPrompt: spec.promptTemplate,
+        source: 'manual',
+        deliberate: true,
+      });
+      // `fired`: the session had failed, so a successor session started with
+      // the reminder (fireReminderSuccessor). `queued`: the prompt waits for
+      // delivery, which sets the final status — `failed` again, or cleared.
+      if (result.status !== 'queued' && result.status !== 'fired') {
+        return c.json({ error: result.error ?? result.reason ?? 'The reminder could not run' }, 409);
+      }
+      await markGitTriggerFired(projectId, row.slug, now, 'fired', { endsAlert: result.status === 'fired' });
+      const updated = await getSessionReminder(projectId, result.sessionId ?? access.sessionId, row.slug);
+      return c.json(serializeSessionReminder(updated ?? row), 202);
     },
   );
 
@@ -303,9 +354,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       await deleteSessionReminder(access.projectId, row.slug);

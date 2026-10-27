@@ -6,7 +6,6 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { accountMemberRow } from '../../iam/membership-read';
-import { roleAllows } from '../access';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import {
   OPENCODE_CONSOLE_PROVIDERS,
@@ -23,7 +22,6 @@ import {
 } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountSecretGrants, accountSecretResources } from '@kortix/db';
 import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
@@ -33,6 +31,7 @@ import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
+  projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import {
@@ -358,9 +357,8 @@ export function registerProviderOauthRoutes(): void {
       return c.json({ error: 'Reconnecting keeps the account label and access; send only resource_id' }, 400);
     }
     const named = resourceLabel !== null || resourceId !== null;
-    if (named && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-      !projectLlmGatewayEnabled(loaded.row.metadata))) {
-      return c.json({ error: 'Pooled OAuth connections require pooled provider secrets and the LLM gateway' }, 403);
+    if (named && !resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
+      return c.json({ error: 'Pooled OAuth connections require pooled provider secrets' }, 403);
     }
     if (named) {
       const [member] = await accountMemberRow(loaded.row.accountId, loaded.userId);
@@ -525,8 +523,7 @@ export function registerProviderOauthRoutes(): void {
     }
 
     if (state.rc && state.rid) {
-      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-        !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
       const reconnected = await reconnectAccountResource({
@@ -545,8 +542,7 @@ export function registerProviderOauthRoutes(): void {
     // The sealed resource id makes a completed device flow idempotent. A new
     // device flow gets a new resource; it never overwrites another user's login.
     if (state.l && state.rid) {
-      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-        !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
       const secretId = await writeAccountResource({
@@ -651,7 +647,7 @@ export function registerProviderOauthRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const provider = c.req.param('provider');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
@@ -659,7 +655,7 @@ export function registerProviderOauthRoutes(): void {
     if (!cfg) return c.json({ error: 'Not found' }, 404);
 
     // Same test the GET secrets route uses for `can_manage_shared`.
-    const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+    const canManageShared = await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
     const ownPrivate = eq(projectSecrets.ownerUserId, loaded.userId);
 
     await runAuditedTransaction(

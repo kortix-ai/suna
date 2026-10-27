@@ -1,7 +1,8 @@
+import { ledgerExists } from '../src/ledger-exists';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import pg from 'pg';
+import { withClient, withTransaction } from '../src/with-client';
 
 /**
  * Idempotent CONCURRENTLY migrations that a targeted release applied before
@@ -47,16 +48,10 @@ export async function repairEarlyAppliedMigrations(
   migrationsDir: string,
 ): Promise<string[]> {
   const fileNames = migrationNamesInDirectory(migrationsDir);
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const table = await client.query<{ exists: boolean }>(
-      "select to_regclass('kortix_migrations.pgmigrations') is not null as exists",
-    );
-    if (!table.rows[0]?.exists) return [];
+  return withClient(databaseUrl, async (client) => {
+    if (!(await ledgerExists(client))) return [];
 
-    await client.query('begin');
-    try {
+    return withTransaction(client, async () => {
       await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
       const ledger = await client.query<{ name: string }>(
         'select name from kortix_migrations.pgmigrations',
@@ -74,13 +69,7 @@ export async function repairEarlyAppliedMigrations(
         }
         await client.query('delete from kortix_migrations.pgmigrations where name = $1', [name]);
       }
-      await client.query('commit');
       return release;
-    } catch (error) {
-      await client.query('rollback');
-      throw error;
-    }
-  } finally {
-    await client.end();
-  }
+    });
+  });
 }

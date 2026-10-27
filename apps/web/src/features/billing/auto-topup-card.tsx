@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { Switch } from '@/components/ui/switch';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { spring } from '@/lib/springs';
-import { cn } from '@/lib/utils';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { Switch } from '@kortix/ui/switch';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { spring, cn } from '@kortix/ui';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import {
   configureAutoTopup,
   getAutoTopupSettings,
@@ -22,28 +21,39 @@ import {
   AUTO_TOPUP_MIN_AMOUNT,
   AUTO_TOPUP_MIN_BUFFER,
   AUTO_TOPUP_MIN_THRESHOLD,
+  creditsToDollars,
+  dollarsToCredits,
+  formatCredits,
 } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { formatWholeUsd, monthlyCreditsForUsd, TOP_UP_BONUS_STEPS, topUpBonusCredits } from '@kortix/ui/internal/billing/compute-pricing';
 import { autoTopupFailureNotice } from './auto-topup-failure-notice';
 
 /**
- * Parse + clamp the raw string field values to the same integers the server
- * receives. Shared by the configRef/onChange effects, `handleSave`, and the
- * inline buffer-validation check below, so all four always agree on what
- * "the current amount/threshold" is.
+ * Parse + clamp the raw string field values to the USD numbers the server
+ * receives. The threshold field holds CREDITS (it is an amount the account
+ * holds, 1 credit = $0.01); the amount field holds dollars (it is a purchase).
+ * Shared by the configRef/onChange effects, `handleSave`, and the inline
+ * buffer-validation check below, so all four always agree on what "the
+ * current amount/threshold" is.
  */
-function clampAutoTopupValues(thresholdInput: string, amountInput: string) {
+export function clampAutoTopupValues(thresholdCreditsInput: string, amountInput: string) {
   const threshold = Math.max(
     AUTO_TOPUP_MIN_THRESHOLD,
-    parseInt(thresholdInput, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD,
+    creditsToDollars(parseInt(thresholdCreditsInput, 10) || dollarsToCredits(AUTO_TOPUP_DEFAULT_THRESHOLD)),
   );
   const amount = Math.max(
     AUTO_TOPUP_MIN_AMOUNT,
     parseInt(amountInput, 10) || AUTO_TOPUP_DEFAULT_AMOUNT,
   );
   return { threshold, amount };
+}
+
+/** The smallest whole-dollar top-up that clears the threshold by the buffer. */
+export function minimumAutoTopupAmount(thresholdUsd: number): number {
+  return Math.ceil(thresholdUsd + AUTO_TOPUP_MIN_BUFFER);
 }
 
 /**
@@ -94,6 +104,7 @@ export function AutoTopupCard({
 }: AutoTopupCardProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('billing.autoTopup');
+  const tCredits = useTranslations('settings.credits');
   const locale = useLocale();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
@@ -123,14 +134,15 @@ export function AutoTopupCard({
   });
 
   const [enabled, setEnabled] = useState(defaultEnabled);
-  const [threshold, setThreshold] = useState(String(defaultThreshold));
+  // In credits: the field the person types into. Converted to USD on save.
+  const [threshold, setThreshold] = useState(String(dollarsToCredits(defaultThreshold)));
   const [amount, setAmount] = useState(String(defaultAmount));
 
   // Sync from fetched settings
   useEffect(() => {
     if (!fetchedConfig) return;
     setEnabled(fetchedConfig.enabled);
-    setThreshold(String(fetchedConfig.threshold));
+    setThreshold(String(dollarsToCredits(fetchedConfig.threshold)));
     setAmount(String(fetchedConfig.amount));
     setDirty(false);
   }, [fetchedConfig]);
@@ -156,8 +168,8 @@ export function AutoTopupCard({
   const bufferError =
     enabled && amountNum < thresholdNum + AUTO_TOPUP_MIN_BUFFER
       ? t('bufferError', {
-          buffer: formatWholeUsd(AUTO_TOPUP_MIN_BUFFER, locale),
-          minimum: formatWholeUsd(thresholdNum + AUTO_TOPUP_MIN_BUFFER, locale),
+          buffer: formatCredits(dollarsToCredits(AUTO_TOPUP_MIN_BUFFER), { locale }),
+          minimum: formatWholeUsd(minimumAutoTopupAmount(thresholdNum), locale),
         })
       : null;
 
@@ -265,7 +277,8 @@ export function AutoTopupCard({
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-2 pt-1 text-xs">
               <span className="text-muted-foreground">{t('add')}</span>
-              <MoneyInput
+              <AmountInput
+                prefix="$"
                 value={amount}
                 min={AUTO_TOPUP_MIN_AMOUNT}
                 label={t('amountLabel')}
@@ -275,15 +288,18 @@ export function AutoTopupCard({
                 }}
               />
               <span className="text-muted-foreground">{t('whenBelow')}</span>
-              <MoneyInput
+              <AmountInput
                 value={threshold}
-                min={AUTO_TOPUP_MIN_THRESHOLD}
+                min={dollarsToCredits(AUTO_TOPUP_MIN_THRESHOLD)}
                 label={t('thresholdLabel')}
                 onChange={(next) => {
                   setThreshold(next);
                   setDirty(true);
                 }}
               />
+              <span className="text-muted-foreground">
+                {tCredits('unit', { count: dollarsToCredits(thresholdNum) })}
+              </span>
 
               <AnimatePresence initial={false}>
                 {showSaveButton && dirty && (
@@ -313,6 +329,19 @@ export function AutoTopupCard({
             {!bufferError && showMissingCardWarning && (
               <p className="text-kortix-orange mt-2.5 text-xs">{t('paymentNeeded')}</p>
             )}
+
+            {!bufferError && !showMissingCardWarning && (
+              <p className="text-muted-foreground mt-2.5 text-xs tabular-nums">
+                {topUpBonusCredits(amountNum) > 0
+                  ? t('bonusHint', {
+                      credits: formatCredits(monthlyCreditsForUsd(amountNum), { locale }),
+                      bonus: formatCredits(topUpBonusCredits(amountNum), { locale }),
+                    })
+                  : t('bonusFrom', {
+                      min: formatWholeUsd(TOP_UP_BONUS_STEPS[TOP_UP_BONUS_STEPS.length - 1].minUsd, locale),
+                    })}
+              </p>
+            )}
           </m.div>
         )}
       </AnimatePresence>
@@ -334,26 +363,22 @@ export function AutoTopupCard({
   );
 }
 
-function formatWholeUsd(amount: number, locale: string): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
 
-/** A dollar field sized to its content — these sit inside a sentence, so a
- *  full-width `Input` would break the line it belongs to. */
-function MoneyInput({
+/** A number field sized to its content — these sit inside a sentence, so a
+ *  full-width `Input` would break the line it belongs to. `prefix` is the
+ *  currency mark on a purchase amount; a credits amount has none and names
+ *  its unit after the field instead. */
+function AmountInput({
   value,
   min,
   label,
+  prefix,
   onChange,
 }: {
   value: string;
   min: number;
   label: string;
+  prefix?: string;
   onChange: (next: string) => void;
 }) {
   return (
@@ -363,7 +388,11 @@ function MoneyInput({
         'focus-within:ring-[0.6px]',
       )}
     >
-      <span className="text-muted-foreground pointer-events-none absolute left-2 text-xs">$</span>
+      {prefix ? (
+        <span className="text-muted-foreground pointer-events-none absolute left-2 text-xs">
+          {prefix}
+        </span>
+      ) : null}
       <input
         type="number"
         min={min}
@@ -372,7 +401,10 @@ function MoneyInput({
         aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="text-foreground h-full w-[3.75rem] [appearance:textfield] bg-transparent pr-2 pl-5 text-xs font-medium tabular-nums outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className={cn(
+          'text-foreground h-full [appearance:textfield] bg-transparent pr-2 text-xs font-medium tabular-nums outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+          prefix ? 'w-[3.75rem] pl-5' : 'w-[4.5rem] pl-2',
+        )}
       />
     </span>
   );

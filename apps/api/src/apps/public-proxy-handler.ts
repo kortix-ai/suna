@@ -30,7 +30,7 @@ const lastActivityWrite = new Map<string, number>();
  * after the response. The lease now simply expires, so the idle reaper sees an
  * App go idle at most 60 s after its last request.
  */
-async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
+export async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
   const last = lastActivityWrite.get(runtimeId) ?? 0;
   if (now.getTime() - last < ACTIVITY_WRITE_EVERY_MS) return;
   if (lastActivityWrite.size > 10_000) lastActivityWrite.clear();
@@ -97,6 +97,8 @@ async function routeAppPublicRequest(
   const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
   const accessResponse = await authorizeServiceRequest(request, url, gateApp, state.service?.access ?? 'app');
   if (accessResponse) return accessResponse;
+  // An external App's Kortix host is a stable link to its site.
+  if (state.app.externalUrl) return Response.redirect(state.app.externalUrl, 302);
   const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
   if (sessionViewer) bindAppViewerSession(sessionViewer);
   // Answered by the gate itself, before any runtime work: reading who you are
@@ -238,9 +240,8 @@ async function fetchWithRecovery(
     }
   }
 
-  // 400 was Daytona's shape. E2B reports a dead runtime as 5xx, so the check has
-  // to see those statuses or the recovery below can never run for it.
-  if (upstream.status === 400 || upstream.status >= 502) {
+  // 400 is Daytona's shape for a runtime it can no longer reach.
+  if (upstream.status === 400) {
     const body = await upstream.clone().text().catch(() => '');
     if (appProviderStoppedResponse(provider(), upstream.status, body)) {
       await upstream.body?.cancel().catch(() => {});

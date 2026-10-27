@@ -34,6 +34,9 @@ export interface ChangeRequest {
   merge_commit_sha: string | null;
   closed_at: string | null;
   closed_by: string | null;
+  /** A closed request's replacement: the next request opened for the same
+   *  branch, when the caller may read it. Absent on older servers. */
+  superseded_by?: { cr_id: string; number: number } | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -115,11 +118,18 @@ export interface ListChangeRequestsOptions {
    * filtering at the source instead.
    */
   originSessionId?: string;
-  /** Capped server-side at 500. Omitted keeps the historical unbounded
-   *  response every existing caller depends on. */
+  /** Page size. The server's default is 50; above 500 it answers 400. */
   limit?: number;
+  /** A previous page's `next_cursor`: continue the list after it. */
+  cursor?: string;
 }
 
+/**
+ * One page of the project's change requests, newest number first. The list
+ * is bounded (50 by default): walk the rest with `cursor` and the response's
+ * `next_cursor`, which is null on the last page. A server older than
+ * KRTX-2316 sends no `next_cursor` and returned every change request.
+ */
 export async function listChangeRequests(
   projectId: string,
   status?: ChangeRequestStatus | 'all',
@@ -129,9 +139,10 @@ export async function listChangeRequests(
   if (status) params.set('status', status);
   if (options?.originSessionId) params.set('origin_session_id', options.originSessionId);
   if (options?.limit != null) params.set('limit', String(options.limit));
+  if (options?.cursor) params.set('cursor', options.cursor);
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
-    await backendApi.get<{ change_requests: ChangeRequest[] }>(
+    await backendApi.get<{ change_requests: ChangeRequest[]; next_cursor?: string | null }>(
       `/projects/${projectId}/change-requests${query}`,
       {
         // This is often a badge/background poll. Keep failures visible to the

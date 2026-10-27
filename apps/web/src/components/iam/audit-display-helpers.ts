@@ -305,11 +305,6 @@ function httpPatterns(tI18nComplete: UiTranslator): HttpPatternHandler[] {
         if (m === 'POST' && s[4] === 'fire')
           return { title: tI18nComplete.raw('text183bd99db5b3'), kind: 'create' };
       }
-      // Monitor event intake — the project monitor box appending to its event
-      // log (sandbox-token-only).
-      if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
-        return { title: tI18nComplete.raw('text6201f8d3134e'), kind: 'create' };
-      }
       return null;
     },
     // ── Project lifecycle ────────────────────────────────────────────
@@ -616,7 +611,16 @@ export function describeAuditAction(
       };
     }
     if (pattern) {
-      return { ...pattern, mapped: true, method, route: null, area: routeArea(path) };
+      // A pattern's own title can be an English literal: translate it like the
+      // catalog's (KRTX-2400). A title that is already translated passes through.
+      return {
+        ...pattern,
+        title: translateAuditTitle(pattern.title, tI18nComplete),
+        mapped: true,
+        method,
+        route: null,
+        area: routeArea(path),
+      };
     }
     return {
       title: compactHttpAction(method, path),

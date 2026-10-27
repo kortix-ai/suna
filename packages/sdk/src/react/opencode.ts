@@ -19,7 +19,7 @@
 // hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
 // hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
 // primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
-// reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
+// reference (apps/white-label/lumen) imports ONLY that surface — no `server-store`,
 // no `RuntimeEventStreamProvider`, no `useCanonicalRuntimeSession`, no raw
 // stores, no `getClient`.
 //
@@ -138,7 +138,7 @@ export {
   type SessionMessagesSource,
 } from './use-session-messages';
 // The session log (`kortix.session/2`) of a session `useSession` owns; null while it reads v1.
-export { useSessionLog, useSessionLogThread } from './use-session-log';
+export { useSessionLog, useSessionLogOlder, useSessionLogRecord, useSessionLogThread } from './use-session-log';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,

@@ -1,6 +1,6 @@
-import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gt, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
-import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
+import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -48,6 +48,23 @@ export interface AccountTokenValidationResult {
    *  turn-stream and audit/events from boxes that outlived their token).
    *  Absent on success and on 'Validation error' (a DB failure IS transient). */
   credentialDead?: boolean;
+  /** When the presented secret hash-matches a stored token row that is dead,
+   *  expired, lease-refused or idle-revoked, the row's real identity rides on
+   *  the refusal so the LLM gateway can log the request against its owning
+   *  account (KRTX-1749). Absent when nothing matches: a garbage secret stays
+   *  unattributed, so spray traffic writes no log rows.
+   *
+   *  Account-only refusals (a personal PAT has no project) are attributed but
+   *  the product's log readers are project-scoped — today that class of row is
+   *  intentionally DB-forensics-only (KRTX-2631), not in any UI/CLI list.
+   *  An account-scoped reader needs its own membership authorization contract. */
+  refusedIdentity?: {
+    accountId: string;
+    userId: string;
+    tokenId: string | null;
+    projectId: string | null;
+    sessionId: string | null;
+  };
 }
 
 export interface CreateAccountTokenParams {
@@ -129,12 +146,15 @@ export class PatPolicyError extends Error {
   }
 }
 
-async function loadPatPolicy(accountId: string): Promise<{
+async function loadPatPolicy(
+  accountId: string,
+  database: Pick<typeof db, 'select'>,
+): Promise<{
   maxLifetimeDays: number | null;
   requireExpiry: boolean;
   idleRevokeDays: number | null;
 } | null> {
-  const [row] = await db
+  const [row] = await database
     .select({
       maxLifetimeDays: accounts.patMaxLifetimeDays,
       requireExpiry: accounts.patRequireExpiry,
@@ -163,12 +183,36 @@ async function loadPatPolicy(accountId: string): Promise<{
 export async function createAccountToken(
   params: CreateAccountTokenParams,
 ): Promise<CreateAccountTokenResult> {
+  if (!params.projectId) return insertAccountToken(params);
+  const projectId = params.projectId;
+  return db.transaction(async (tx) => {
+    // Serialize project-bound mints with archive/revocation. The lock lasts
+    // through insert and owner validation; DELETE either sees this token or
+    // the mint sees the committed archive.
+    const [project] = await tx.select({ status: projects.status }).from(projects)
+      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, params.accountId)))
+      .for('share');
+    if (project?.status === 'archived') throw new Error('Project is archived');
+    if (params.sessionId) {
+      // Keep the session tombstone UPDATE from passing an uncommitted mint.
+      await tx.select({ sessionId: projectSessions.sessionId }).from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)))
+        .for('share');
+    }
+    return insertAccountToken(params, tx);
+  });
+}
+
+async function insertAccountToken(
+  params: CreateAccountTokenParams,
+  database: Pick<typeof db, 'insert' | 'select' | 'update'> = db,
+): Promise<CreateAccountTokenResult> {
   if (!isApiKeySecretConfigured()) {
     throw new Error('API_KEY_SECRET not configured');
   }
 
   if (!params.sessionId) {
-    const policy = await loadPatPolicy(params.accountId);
+    const policy = await loadPatPolicy(params.accountId, database);
     if (policy) {
       if (policy.requireExpiry && !params.expiresAt) {
         throw new PatPolicyError(
@@ -191,7 +235,7 @@ export async function createAccountToken(
   const { publicKey, secretKey } = generateAccountTokenPair();
   const secretKeyHash = hashSecretKey(secretKey);
 
-  const [row] = await db
+  const [row] = await database
     .insert(accountTokens)
     .values({
       accountId: params.accountId,
@@ -212,6 +256,23 @@ export async function createAccountToken(
     throw new Error('Failed to create account token');
   }
 
+  // Check after inserting: deletion tombstones the owner before revoking its
+  // tokens. Either its revocation sees this row or this read sees the tombstone.
+  if (params.sessionId && params.projectId) {
+    try {
+      const [project] = await database.select({ status: projects.status }).from(projects)
+        .where(and(eq(projects.projectId, params.projectId), eq(projects.accountId, params.accountId)));
+      if (project?.status === 'archived') throw new Error('Project is archived');
+      const [session] = await database.select({ metadata: projectSessions.metadata }).from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)));
+      if (typeof session?.metadata?.deletedAt === 'string') throw new Error('Session is deleted');
+    } catch (error) {
+      await database.update(accountTokens).set({ status: 'revoked', revokedAt: new Date() })
+        .where(eq(accountTokens.tokenId, row.tokenId));
+      throw error;
+    }
+  }
+
   return {
     tokenId: row.tokenId,
     publicKey: row.publicKey,
@@ -222,6 +283,37 @@ export async function createAccountToken(
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * The expiry rule every mint route applies before `createAccountToken`:
+ *   - an `expiresAt` at or before now → 400 `token_expiry_in_past`;
+ *   - a project-scoped caller (`parentTokenId` = the caller's own token) must
+ *     pass `expiresAt`, at or before its own expiry when it has one → else 403
+ *     `token_mint_exceeds_parent`. A child never outlives its parent.
+ * Browser sessions and unscoped PATs pass no `parentTokenId` and are unchanged.
+ */
+export async function checkTokenMintExpiry(
+  expiresAt: Date | undefined,
+  parentTokenId: string | undefined,
+): Promise<{ status: 400 | 403; code: string; error: string } | null> {
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    return { status: 400, code: 'token_expiry_in_past', error: 'expires_at must be in the future' };
+  }
+  if (!parentTokenId) return null;
+  const [parent] = await db
+    .select({ expiresAt: accountTokens.expiresAt })
+    .from(accountTokens)
+    .where(eq(accountTokens.tokenId, parentTokenId))
+    .limit(1);
+  if (!expiresAt || (parent?.expiresAt && expiresAt > parent.expiresAt)) {
+    return {
+      status: 403,
+      code: 'token_mint_exceeds_parent',
+      error: 'A project-scoped token must set expires_at, no later than its own expiry.',
+    };
+  }
+  return null;
 }
 
 /**
@@ -248,12 +340,18 @@ export async function createAccountToken(
 export async function listAccountTokens(
   accountId: string,
   projectId?: string,
+  userId?: string,
 ): Promise<AccountTokenListEntry[]> {
   const filter = and(
     eq(accountTokens.accountId, accountId),
     projectId ? eq(accountTokens.projectId, projectId) : undefined,
+    userId ? eq(accountTokens.userId, userId) : undefined,
     eq(accountTokens.status, 'active'),
     isNull(accountTokens.revokedAt),
+    // An expired token and a token of an archived (or gone) project no longer
+    // authenticate, so they are not live. `?mine=true` keeps expired keys as history.
+    or(isNull(accountTokens.expiresAt), gt(accountTokens.expiresAt, sql`now()`)),
+    or(isNull(accountTokens.projectId), eq(projects.status, 'active')),
   );
   return db
     .select({
@@ -269,6 +367,7 @@ export async function listAccountTokens(
       revokedAt: accountTokens.revokedAt,
     })
     .from(accountTokens)
+    .leftJoin(projects, eq(projects.projectId, accountTokens.projectId))
     .where(filter)
     .orderBy(desc(accountTokens.createdAt));
 }
@@ -289,7 +388,7 @@ export async function listAccountTokens(
  * Only (1) belongs on a person's own settings page, so this filters to it by
  * the three columns that DEFINE the other two rather than by a name heuristic:
  * the browser used to guess with `name.startsWith('Connector Session ')`
- * (`components/iam/api-key-rows.ts`) because the list payload carried no
+ * (`packages/ui/src/access/iam/api-key-rows.ts`) because the list payload carried no
  * `session_id`. A person's key is theirs alone — the caller only ever gets
  * their own rows back, never another member's.
  */
@@ -348,6 +447,22 @@ export async function getAccountTokenOwner(
     userId: row.userId ?? null,
     personal: !row.sessionId && !row.serviceAccountId && !row.agentGrant,
   };
+}
+
+/** Permanently remove only revoked, hand-minted keys in the authorized account. */
+export async function deleteRevokedPersonalAccountToken(
+  tokenId: string,
+  accountId: string,
+): Promise<boolean> {
+  const rows = await db.delete(accountTokens).where(and(
+    eq(accountTokens.tokenId, tokenId),
+    eq(accountTokens.accountId, accountId),
+    eq(accountTokens.status, 'revoked'),
+    isNull(accountTokens.sessionId),
+    isNull(accountTokens.serviceAccountId),
+    isNull(accountTokens.agentGrant),
+  )).returning({ tokenId: accountTokens.tokenId });
+  return rows.length > 0;
 }
 
 export async function revokeAccountToken(
@@ -561,6 +676,8 @@ async function validateAccountTokenMatching(
       const [dead] = await db
         .select({
           tokenId: accountTokens.tokenId,
+          accountId: accountTokens.accountId,
+          userId: accountTokens.userId,
           projectId: accountTokens.projectId,
           sessionId: accountTokens.sessionId,
           status: accountTokens.status,
@@ -573,11 +690,36 @@ async function validateAccountTokenMatching(
         isValid: false,
         error: dead && isRevokedRow(dead) ? deadTokenReason(dead) : 'PAT not found or revoked',
         credentialDead: true,
+        // The secret hash-matches a real (dead) row: the gateway refusal keeps
+        // its owner (KRTX-1749). A garbage secret matches nothing and stays
+        // unattributed.
+        ...(dead
+          ? {
+              refusedIdentity: {
+                accountId: dead.accountId,
+                userId: dead.userId,
+                tokenId: dead.tokenId,
+                projectId: dead.projectId,
+                sessionId: dead.sessionId,
+              },
+            }
+          : {}),
       };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
-      return { isValid: false, error: 'PAT expired', credentialDead: true };
+      return {
+        isValid: false,
+        error: 'PAT expired',
+        credentialDead: true,
+        refusedIdentity: {
+          accountId: row.accountId,
+          userId: row.userId,
+          tokenId: row.tokenId,
+          projectId: row.projectId,
+          sessionId: row.sessionId,
+        },
+      };
     }
 
     // A session credential is authority for one live sandbox, not a durable
@@ -598,7 +740,18 @@ async function validateAccountTokenMatching(
         )
         .limit(1);
       if (!lease)
-        return { isValid: false, error: SESSION_LEASE_REFUSAL, credentialDead: true };
+        return {
+          isValid: false,
+          error: SESSION_LEASE_REFUSAL,
+          credentialDead: true,
+          refusedIdentity: {
+            accountId: row.accountId,
+            userId: row.userId,
+            tokenId: row.tokenId,
+            projectId: row.projectId,
+            sessionId: row.sessionId,
+          },
+        };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -621,6 +774,13 @@ async function validateAccountTokenMatching(
           isValid: false,
           error: 'PAT auto-revoked due to inactivity',
           credentialDead: true,
+          refusedIdentity: {
+            accountId: row.accountId,
+            userId: row.userId,
+            tokenId: row.tokenId,
+            projectId: row.projectId,
+            sessionId: row.sessionId,
+          },
         };
       }
     }

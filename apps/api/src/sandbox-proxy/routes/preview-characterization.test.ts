@@ -27,6 +27,7 @@ import { HTTPException } from 'hono/http-exception';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realPublicShares from '../../shared/session-public-shares';
+import * as realRetryBudget from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sbx-uuid-1',
@@ -55,8 +56,12 @@ const counts = {
   markSandboxUsed: 0,
   markSandboxErrored: 0,
   resumeStopped: 0,
+  registerRuntimeFork: 0,
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({
   config: { FRONTEND_URL: 'http://localhost:3000' },
 }));
@@ -89,7 +94,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/lib/turn-start-convergence', () => ({
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
@@ -103,11 +108,24 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
+// A forwarded fork is recorded through projects/surface (#10421); the real
+// module loads the whole projects graph, so the record is counted here.
+mock.module('../../projects/surface', () => ({
+  registerRuntimeFork: async () => {
+    counts.registerRuntimeFork += 1;
+  },
+  // Imported at load by modules this graph pulls in (memory/layers.ts); never called here.
+  resolveUserIdentities: async () => new Map(),
+}));
+// A wake claimed by `/start` or another request leaves the row `stopped` until
+// the provider confirms the box; tests flip this to model that window.
+let wakePending = false;
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);
   },
+  stoppedSandboxWakePending: async () => wakePending,
 }));
 mock.module('../../shared/session-public-shares', () => ({
   ...realPublicShares,
@@ -234,6 +252,7 @@ function forward(overrides?: {
 }
 
 beforeEach(() => {
+  wakePending = false;
   __resetPromptDedupe();
   currentRecord = { ...ACTIVE_RECORD };
   previewAccessAllowed = true;
@@ -324,25 +343,24 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('a member without session visibility is refused on the daemon port, not on an app port', async () => {
-    sessionAccessAllowed = false;
-    let thrown: unknown = null;
-    try {
-      await forward({ port: 8000, path: '/session' });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(HTTPException);
-    expect((thrown as HTTPException).status).toBe(403);
-    expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
-    expect(fetchCalls).toBe(0);
-
-    // An ordinary app port carries no conversation, so the visibility gate does not apply.
-    queueFetch(new Response('app', { status: 200 }));
-    const appPort = await forward({ port: 3000, path: '/' });
-    expect(appPort.status).toBe(200);
-    expect(fetchCalls).toBe(1);
-  });
+  // Pentest M-2: an app port serves the session's workspace too, so a member
+  // whose session access was revoked must not replay ids into its dev server.
+  test.each([[8000, '/session'], [3000, '/'], [3211, '/file.txt']])(
+    'a member without session visibility is refused on port %d',
+    async (port, path) => {
+      sessionAccessAllowed = false;
+      let thrown: unknown = null;
+      try {
+        await forward({ port, path });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(HTTPException);
+      expect((thrown as HTTPException).status).toBe(403);
+      expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
+      expect(fetchCalls).toBe(0);
+    },
+  );
 
   test('a share-token caller cannot switch agents — refused with no principal to authorize', async () => {
     queueFetch(new Response('should never be fetched'));
@@ -368,7 +386,9 @@ describe('forwardToSandbox refusal branches', () => {
 // ── the stopped-box policy at the forwarder ──────────────────────────────────
 
 describe('forwardToSandbox on a stopped sandbox', () => {
-  test('a passive read is 503 from the control plane, with no dial and no wake', async () => {
+  // KRTX-3140: a GET never wakes a stopped box, so `retry: true` kept every
+  // open tab re-reading a parked session's transcript every 15 s, forever.
+  test('a passive read is 503 from the control plane, with no dial, no wake and no retry', async () => {
     currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
     queueFetch(new Response('should never be fetched'));
     const res = await forward({ port: 8000, path: '/session' });
@@ -380,7 +400,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
       hop: 'control_plane',
       upstream_status: null,
       code: 'sandbox_not_ready',
-      retry: true,
+      retry: false,
     });
     expect(res.headers.get('x-kortix-proxy-hop')).toBe('control_plane');
     expect(res.headers.get('x-kortix-upstream-status')).toBeNull();
@@ -388,6 +408,62 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(fetchCalls).toBe(0);
     expect(counts.wakeSandbox).toBe(0);
     expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('a passive read while a wake is in flight still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    wakePending = true;
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('a passive read of a provisioning box still says retry: true', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'provisioning' };
+    const res = await forward({ port: 8000, path: '/session/sess-1/message' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({
+      error: 'sandbox not ready (status: provisioning)',
+      code: 'sandbox_not_ready',
+      retry: true,
+    });
+  });
+
+  test.each([
+    [8000, '/session/sess-1/fork'],
+    [4096, '/session/sess-1/fork/'],
+    [4097, '/proxy/4096/session/sess-1/fork'],
+    [8000, '/session/sess-1/%66ork'],
+  ])('forking a stopped conversation on port %s at %s returns an actionable conflict', async (port, path) => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port, path, body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('forking an active conversation still forwards the runtime result', async () => {
+    queueFetch(new Response('{"id":"fork-1"}', { status: 200 }));
+    const res = await forward({ method: 'POST', port: 8000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'fork-1' });
+    expect(fetchCalls).toBe(1);
+    expect(counts.registerRuntimeFork).toBe(1);
+    expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('an app route named fork retains the normal stopped-preview response', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port: 3000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(503);
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
   });
 
   test('a browser navigation gets the 200 starting page, not the 5xx', async () => {
@@ -417,6 +493,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     queueFetch(new Response('should stay queued until the box answers'));
     const during = await forward(args);
     expect(during.status).toBe(503);
+    expect(await during.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
     expect(counts.resumeStopped).toBe(1);
     expect(counts.wakeSandbox).toBe(0);
     expect(fetchCalls).toBe(0);
@@ -448,10 +525,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
 // ── the retry / wake machinery ───────────────────────────────────────────────
 
 describe('forwardToSandbox retry and wake', () => {
-  // The retry sleeps (250 ms / 1 s / 3 s) are real, so the four-attempt cases
-  // need ~4.5 s — above Bun's 5 s default per-test timeout on a direct run.
-  // The explicit 8 s keeps them honest and fast instead of loosening the
-  // batch runner's 15 s floor.
+  // The retry sleeps are 1 ms here (the PROXY_RETRY_DELAYS_MS mock above).
   test('a GET 502 invalidates the ingress link and retries to a 200, never waking the box', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
     const res = await forward({ port: 3000, path: '/' });
@@ -472,7 +546,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(browser.headers.get('x-kortix-upstream-status')).toBe('502');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('retries exhausted: a machine client gets the bare upstream 5xx', async () => {
     const fiftyTwo = () => new Response('bad gateway', { status: 502 });
@@ -482,7 +556,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(await machine.text()).toBe('bad gateway');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('a connection-refused GET wakes the sandbox once, then gives up with a 502 on the daemon hop', async () => {
     queueFetch(refused(), refused(), refused(), refused());
@@ -525,7 +599,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(timeline?.[0]).toContain('total=');
     expect(timeline?.[0]).toContain('ingress=');
     expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
-  }, 8_000);
+  });
 
   test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {
     const down = () => new Response('failed to get runner info: no IP address found', { status: 400 });
@@ -538,7 +612,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(counts.invalidatePreviewLink).toBe(3);
     // The 400 was returned before the give-up path, so the row was never errored.
     expect(counts.markSandboxErrored).toBe(0);
-  }, 8_000);
+  });
 
   test('a dead signal followed by an unreachable network errors the row before the 502', async () => {
     queueFetch(
@@ -552,7 +626,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(1);
     expect(counts.markSandboxErrored).toBe(1);
-  }, 8_000);
+  });
 });
 
 // ── provider-edge and signed-context auth failures ───────────────────────────
@@ -589,7 +663,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);
@@ -825,13 +899,13 @@ describe('resolvePreviewWsUpstream', () => {
     expect(result).toEqual({ ok: false, status: 403, message: 'not authorized' });
   });
 
-  test('session visibility gates the conversation ports, not an app port', async () => {
+  test('session visibility gates every port, an app port included', async () => {
     sessionAccessAllowed = false;
     const daemon = await resolvePreviewWsUpstream(wsArgs());
     expect(daemon).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
 
     const appPort = await resolvePreviewWsUpstream(wsArgs({ upstreamPort: 3000, remainingPath: '/ws' }));
-    expect(appPort.ok).toBe(true);
+    expect(appPort).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
   });
 
   test('a stopped box stays 503 unless the attach was marked user-initiated on a PTY path', async () => {
@@ -872,6 +946,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?foo=1&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
 
     const shadowed = await resolvePreviewWsUpstream(wsArgs({ queryString: '?pv=client' }));
@@ -879,6 +954,7 @@ describe('resolvePreviewWsUpstream', () => {
       ok: true,
       url: 'ws://sandbox.local/kortix/pty/term-1?pv=tok&pv=client&user_ctx=signed-ctx&tier=free',
       headers: { [KORTIX_USER_CONTEXT_HEADER]: 'signed-ctx', authorization: 'Bearer svc-key' },
+      accessCheck: expect.any(Function),
     });
   });
 });

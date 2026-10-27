@@ -59,7 +59,6 @@ jobs:
             CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
             DEV_EDGE_SECRET=kortix-dev-env:API_KEY_SECRET?
             STAGING_EDGE_SECRET=kortix-staging-env:API_KEY_SECRET?
-            PROD_EDGE_SECRET=kortix-prod-env:API_KEY_SECRET?
 
       - name: Validate Cloudflare configuration
         run: |
@@ -88,7 +87,9 @@ jobs:
         working-directory: infra/cloudflare/workers/preview-router
         run: |
           set -euo pipefail
-          for name in DEV_EDGE_SECRET STAGING_EDGE_SECRET PROD_EDGE_SECRET; do
+          # prod is synced by the `prod-edge-secret` job below: kortix-prod-env is
+          # readable only through the prod role (`environment: prod`).
+          for name in DEV_EDGE_SECRET STAGING_EDGE_SECRET; do
             if [ -z "${!name:-}" ]; then
               echo "::warning::$name has no API_KEY_SECRET in its env blob — that environment's previews answer 503 until it is set."
               continue
@@ -101,7 +102,7 @@ jobs:
           jq -e '
             map(.name) | (index("DEV_EDGE_SECRET") != null)
           ' <<<"$secrets"
-          for name in STAGING_EDGE_SECRET PROD_EDGE_SECRET; do
+          for name in STAGING_EDGE_SECRET; do
             if ! jq -e --arg n "$name" 'any(.[]; .name == $n)' <<<"$secrets" >/dev/null; then
               echo "::warning::$name is not set — that environment's previews will answer 503."
             fi
@@ -358,3 +359,38 @@ jobs:
           tr -d '\r' < "$headers" | grep -Eiq '^x-kortix-preview-environment: dev$'
           tr -d '\r' < "$headers" | grep -Eiq '^content-type: application/json'
           jq -e '.error == "Unauthorized"' "$body"
+
+  # Prod only: reads kortix-prod-env, so it needs the prod role and therefore
+  # `environment: prod` (branch `prod`). Dispatch with `--ref prod` to run it;
+  # from any other ref the job is skipped.
+  prod-edge-secret:
+    name: Sync the prod preview edge secret
+    if: github.ref == 'refs/heads/prod'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    environment: prod
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the aws-env action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager (prod role)
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          # The prod role reads kortix-ci-env and kortix-prod*-env.
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
+          keys: |
+            CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
+            PROD_EDGE_SECRET=kortix-prod-env:API_KEY_SECRET
+      - name: Sync PROD_EDGE_SECRET
+        working-directory: infra/cloudflare/workers/preview-router
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROD_EDGE_SECRET" | npx --yes wrangler@4.34.0 secret put PROD_EDGE_SECRET >/dev/null
+          secrets="$(npx --yes wrangler@4.34.0 secret list --format json)"
+          jq -e 'any(.[]; .name == "PROD_EDGE_SECRET")' <<<"$secrets" >/dev/null
+          echo "synced PROD_EDGE_SECRET"

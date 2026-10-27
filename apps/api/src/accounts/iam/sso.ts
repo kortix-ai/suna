@@ -9,6 +9,7 @@ import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import { Resolver } from 'node:dns/promises';
 import {
   createSsoGroupMapping,
@@ -23,7 +24,9 @@ import {
   ssoDomainVerificationRecordValue,
   upsertSsoProvider,
   isPersonalAccount,
+  signOutNonSsoMembers,
 } from '../../repositories/sso';
+import { logger } from '../../lib/logger';
 import {
   iamRouter,
   AccountIdParam,
@@ -79,6 +82,31 @@ async function lookupTxt(name: string): Promise<string[]> {
 }
 
 /**
+ * `signOutNonSsoMembers`, or null when it threw. The write is already saved
+ * and the gate already refuses those people, so a route that saved something
+ * still writes its audit event (`revoked_sessions: null`), then answers
+ * `signOutFailed`.
+ */
+async function endRefusedSignIns(accountId: string, actorUserId: string): Promise<number | null> {
+  try {
+    return await signOutNonSsoMembers(accountId, actorUserId);
+  } catch (err) {
+    logger.error('[sso] could not end the sign-ins SSO only refuses', { accountId, error: String(err) });
+    return null;
+  }
+}
+
+function signOutFailed(c: Context): Response {
+  return c.json(
+    {
+      error: 'Could not sign out the members who signed in without SSO. Save the SSO provider again to retry.',
+      code: 'sso_sign_out_failed',
+    },
+    500,
+  );
+}
+
+/**
  * SAML belongs to an organization. A personal account's owner could register
  * an IdP that asserts any address, and Supabase creates a separate SSO user
  * for it (KRTX-1715). An existing provider keeps working; this refuses only
@@ -128,7 +156,7 @@ export function registerIamSsoRoutes(): void {
       request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional(), auto_provision_groups: z.boolean().optional(), autoProvisionGroups: z.boolean().optional(), enforce_sso: z.boolean().optional(), enforceSso: z.boolean().optional() }) } } } },
       responses: {
         200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
-        ...errors(400, 401, 402, 403),
+        ...errors(400, 401, 402, 403, 500),
       },
     }),
     async (c: any) => {
@@ -195,6 +223,11 @@ export function registerIamSsoRoutes(): void {
       }
     }
 
+    // Turning enforcement on, or a new IdP while it is on, ends the sign-ins
+    // the gate now refuses. Every save runs it: it ends nothing unless
+    // enforcement is effective, and a save after `sso_sign_out_failed` retries.
+    const revokedSessions = await endRefusedSignIns(accountId, userId);
+
     await auditIam(c, {
       accountId,
       action: before ? 'iam.sso.provider.update' : 'iam.sso.provider.create',
@@ -221,9 +254,11 @@ export function registerIamSsoRoutes(): void {
         auto_provision_groups: provider.autoProvisionGroups,
         enforce_sso: provider.enforceSso,
         domain_verified: isSsoDomainVerified(provider),
+        revoked_sessions: revokedSessions,
       },
     });
 
+    if (revokedSessions === null) return signOutFailed(c);
     return c.json({ provider: ssoProviderResponse(provider) });
     },
   );
@@ -372,10 +407,11 @@ export function registerIamSsoRoutes(): void {
       request: { params: AccountIdParam },
       responses: {
         200: json(z.object({ provider: SsoProviderSchema }), 'The provider, with its domain verified'),
-        ...errors(401, 402, 403, 404, 409, 422, 502),
+        ...errors(401, 402, 403, 404, 409, 422, 500, 502),
       },
     }),
     async (c: any) => {
+      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       const denied = await requireEntitlement(c, accountId, 'sso');
@@ -383,7 +419,22 @@ export function registerIamSsoRoutes(): void {
 
       const provider = await getSsoProvider(accountId);
       if (!provider) return c.json({ error: 'no SSO provider configured' }, 404);
-      if (isSsoDomainVerified(provider)) return c.json({ provider: ssoProviderResponse(provider) });
+      if (isSsoDomainVerified(provider)) {
+        // A repeat after `sso_sign_out_failed` retries the sign-out.
+        const revokedSessions = await endRefusedSignIns(accountId, userId);
+        if (revokedSessions === null) return signOutFailed(c);
+        if (revokedSessions > 0) {
+          await auditIam(c, {
+            accountId,
+            action: 'iam.sso.provider.domain_verify',
+            resourceType: 'sso_provider',
+            resourceId: provider.ssoProviderId,
+            before: { primary_domain: provider.primaryDomain, domain_verified: true },
+            after: { primary_domain: provider.primaryDomain, domain_verified: true, method: 'retry', revoked_sessions: revokedSessions },
+          });
+        }
+        return c.json({ provider: ssoProviderResponse(provider) });
+      }
 
       if (await domainVerifiedByOtherAccount(accountId, provider.primaryDomain)) {
         return c.json(
@@ -424,14 +475,22 @@ export function registerIamSsoRoutes(): void {
 
       const verified = await setSsoDomainVerified(accountId, true);
       if (!verified) return c.json({ error: 'no SSO provider configured' }, 404);
+      // With `enforce_sso` already on, verifying turns enforcement on.
+      const revokedSessions = await endRefusedSignIns(accountId, userId);
       await auditIam(c, {
         accountId,
         action: 'iam.sso.provider.domain_verify',
         resourceType: 'sso_provider',
         resourceId: verified.ssoProviderId,
         before: { primary_domain: provider.primaryDomain, domain_verified: false },
-        after: { primary_domain: verified.primaryDomain, domain_verified: true, method: 'dns_txt' },
+        after: {
+          primary_domain: verified.primaryDomain,
+          domain_verified: true,
+          method: 'dns_txt',
+          revoked_sessions: revokedSessions,
+        },
       });
+      if (revokedSessions === null) return signOutFailed(c);
       return c.json({ provider: ssoProviderResponse(verified) });
     },
   );
@@ -507,10 +566,13 @@ export function registerIamSsoRoutes(): void {
     }),
     async (c: any) => {
     const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
-    const rows = await listSsoGroupMappings(accountId);
+    const actor = await actorOf(c, accountId);
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_READ);
+    // A mapping names its group: only the groups the caller may see
+    // (iam/directory-visibility.ts), none for a plain member.
+    const [rows, { groupIds }] = await Promise.all([listSsoGroupMappings(accountId), visibleDirectory(actor)]);
     return c.json({
-      mappings: rows.map((m) => ({
+      mappings: rows.filter((m) => !groupIds || groupIds.has(m.groupId)).map((m) => ({
         mapping_id: m.mappingId,
         claim_value: m.claimValue,
         group_id: m.groupId,

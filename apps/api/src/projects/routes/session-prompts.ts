@@ -3,9 +3,10 @@ import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
+import { clearRestoredModelPin } from '../lib/session-model-fallback-revert';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -25,6 +26,7 @@ import { notificationsEnabled } from '../../notifications/enabled';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
+import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -39,6 +41,11 @@ import {
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
 import { markTurnStopRequested } from '../session-turn-ledger';
+import {
+  NOT_TURN_PROMPTER,
+  NOT_TURN_PROMPTER_MESSAGE,
+  mayStopRunningTurn,
+} from '../session-lifecycle/turn-stop-authority';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -88,6 +95,8 @@ const NOT_PROMPT_AUTHOR = {
   error: 'Only the member who sent this prompt can change or send it',
   code: 'not_prompt_author',
 } as const;
+/** A Stop, or a "Stop and send", by a member who may not end the running turn. */
+const NOT_TURN_PROMPTER_BODY = { error: NOT_TURN_PROMPTER_MESSAGE, code: NOT_TURN_PROMPTER } as const;
 
 const RemovedSessionPromptSchema = z.object({
   placement: z.enum(['transcript', 'composer']).optional(),
@@ -145,7 +154,7 @@ export function registerSessionPromptsRoutes(): void {
             message_id: z.string().optional().openapi({ description: 'Wire message id (starts with msg_). Omit it and the server mints one and places it in order on delivery.' }),
             parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
             placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
-            delivery: SessionPromptDeliverySchema.optional().openapi({ description: 'How the prompt reaches a running turn: steer (read at its next step), queue (after it ends), interrupt (ends it after the running tool). Sets placement.' }),
+            delivery: SessionPromptDeliverySchema.optional().openapi({ description: 'How the prompt reaches a running turn: steer (read at its next step), queue (after it ends), interrupt (ends it after the running tool; only for the member who prompted that turn, the session owner or a project manager, else 403 not_turn_prompter). Sets placement.' }),
             overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
             remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
             client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
@@ -288,7 +297,18 @@ export function registerSessionPromptsRoutes(): void {
       // at create would let a member send the first message as their granted
       // agent and every one after it as any other agent in the manifest. Falls
       // back to the session's own agent when the prompt names none.
-      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName, undefined, visible.row.spaceId);
+
+      // "Stop and send" ends the running turn, so it asks what Stop asks
+      // (`turn-stop-authority.ts`). With no running turn it is a plain send.
+      if (delivery === 'interrupt') {
+        const verdict = await mayStopRunningTurn({
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        });
+        if (!verdict.allowed) return c.json(NOT_TURN_PROMPTER_BODY, 403);
+      }
 
       // NO connector pre-flight here. A prompt used to be refused 409
       // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
@@ -310,7 +330,6 @@ export function registerSessionPromptsRoutes(): void {
             message: billing.message,
             code: billing.reason,
             balance: billing.balance,
-            billing_model: billing.billingModel,
             has_subscription: billing.hasSubscription,
             billing_state: billing.billingState,
             account_id: loaded.row.accountId,
@@ -370,6 +389,10 @@ export function registerSessionPromptsRoutes(): void {
         parts,
         overrides,
         authorSessionId,
+        // The sender may stop ANY running turn of this session (owner or
+        // manager when they sent it). Admission reads it before a Quick Queue
+        // row ends a turn another member prompted.
+        ...(visible.canManageLifecycle ? { mayStopAnyTurn: true } : {}),
       };
       const enqueued = await enqueueReleasingHold(
         sessionId,
@@ -377,6 +400,10 @@ export function registerSessionPromptsRoutes(): void {
         undefined,
         sendState.then((state) => state.held),
       );
+      // This prompt runs on the pin the revert restored: drop the marker.
+      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+        void clearRestoredModelPin(sessionId);
+      }
 
       // KRTX-1742: a person who prompts a session follows its notifications
       // from now on. Never un-mutes; the creator follows without a row. Only
@@ -386,6 +413,19 @@ export function registerSessionPromptsRoutes(): void {
         void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
           logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
         );
+      }
+
+      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      if (!enqueued.deduped) {
+        collectMessageLinksInBackground({
+          projectId,
+          sessionId,
+          spaceId: visible.row.spaceId,
+          visibility: visible.row.visibility,
+          userId: personUserId(c, loaded),
+          text,
+          projectMetadata: loaded.row.metadata,
+        });
       }
 
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
@@ -456,7 +496,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_READ,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // Captured BEFORE the read: an answer is only as fresh as the moment it
       // was asked. Clients rank queue snapshots on this server clock (JAY-728).
@@ -513,7 +553,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The session AND inbox scopes are in the DELETE's own predicate, so
       // neither a prompt id from another session nor an automation's
@@ -588,7 +628,7 @@ export function registerSessionPromptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Edit a queued prompt',
       description:
-        'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent. `delivery: interrupt` turns it into a Quick Queue prompt that ends the running turn after its current tool ("Stop and send").',
+        'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent. `delivery: interrupt` turns it into a Quick Queue prompt that ends the running turn after its current tool ("Stop and send"). While a turn runs, only the member who prompted it, the session owner or a project manager may do that; anyone else gets `403` with `code: "not_turn_prompter"`.',
       ...auth,
       request: {
         params: z.object({
@@ -626,7 +666,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const body = await readJsonObject(c);
       if (body.delivery !== undefined && body.delivery !== 'interrupt') {
@@ -634,6 +674,16 @@ export function registerSessionPromptsRoutes(): void {
       }
       if (body.text === undefined && body.delivery === undefined) {
         return c.json({ error: 'text or delivery is required' }, 400);
+      }
+      // "Stop and send" ends the running turn: refused before any write, edit
+      // included, for a member who may not stop it (`turn-stop-authority.ts`).
+      if (body.delivery === 'interrupt') {
+        const verdict = await mayStopRunningTurn({
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        });
+        if (!verdict.allowed) return c.json(NOT_TURN_PROMPTER_BODY, 403);
       }
       let outcome: Awaited<ReturnType<typeof editInboxPrompt>> | null = null;
       if (body.text !== undefined) {
@@ -701,7 +751,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // ONE primitive for "retry" and for "send now": both are the user pointing
       // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
@@ -726,6 +776,8 @@ export function registerSessionPromptsRoutes(): void {
       path: '/{projectId}/sessions/{sessionId}/prompts/hold',
       tags: ['sessions'],
       summary: 'Hold or release the prompt queue of a session',
+      description:
+        'A hold is the Stop button: it also stops the running turn. Only the member who prompted that turn, the session owner or a project manager may hold while a turn runs; anyone else gets `403` with `code: "not_turn_prompter"`. With no running turn, anyone who may send may hold. Releasing is always open.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -738,7 +790,7 @@ export function registerSessionPromptsRoutes(): void {
           z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
           'Hold applied',
         ),
-        ...errors(400, 404),
+        ...errors(400, 403, 404),
       },
     }),
     // STOP HAS TO REACH THE QUEUE.
@@ -768,7 +820,7 @@ export function registerSessionPromptsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_SESSION_START,
       );
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const body = await readJsonObject(c);
       if (typeof body.held !== 'boolean') {
@@ -785,10 +837,26 @@ export function registerSessionPromptsRoutes(): void {
       // stamp only over an abort: a turn that completes drops it, and a named
       // cause replaces it. Scoped to the session's root OpenCode session, like
       // the proxy stamp. The write never throws.
+      //
+      // A hold over a running turn stops it, so only the turn's prompter, the
+      // session owner or a project manager may place one (`turn-stop-authority.ts`).
+      // A refusal writes nothing: no stamp, no hold. With no running turn the
+      // hold only pauses the queue, open to anyone who may send. `by` is the
+      // person who stopped; an agent credential names nobody.
       if (body.held) {
-        await markTurnStopRequested(sessionId, 'UserStop', {
-          opencodeSessionId: visible.row.runtimeSessionId ?? null,
+        const stopper = isProjectSessionPrincipal(c) ? null : loaded.userId;
+        const verdict = await mayStopRunningTurn({
+          sessionId,
+          callerUserId: stopper,
+          canManageLifecycle: visible.canManageLifecycle,
         });
+        if (!verdict.allowed) return c.json(NOT_TURN_PROMPTER_BODY, 403);
+        await markTurnStopRequested(
+          sessionId,
+          'UserStop',
+          { opencodeSessionId: visible.row.runtimeSessionId ?? null },
+          stopper,
+        );
       }
       await holdInboxPrompts(sessionId, body.held);
       if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);

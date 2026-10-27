@@ -16,6 +16,7 @@ let signInResult: () => Promise<unknown> = async () => ({
   error: null,
 });
 let signUpResult: () => Promise<unknown> = async () => ({ data: {}, error: null });
+let resetResult: () => Promise<{ error: null | { message: string } }> = async () => ({ error: null });
 
 mock.module('next/headers', () => ({
   cookies: async () => ({ get: () => undefined, delete: () => undefined }),
@@ -34,6 +35,10 @@ mock.module('@/lib/supabase/server', () => ({
       supabaseCalls.push('signIn');
       return signInResult();
     },
+    resetPasswordForEmail: async (email: string, options: { redirectTo: string }) => {
+      supabaseCalls.push(`reset:${email}:${options.redirectTo}`);
+      return resetResult();
+    },
     signUp: async () => {
       supabaseCalls.push('signUp');
       return signUpResult();
@@ -41,6 +46,7 @@ mock.module('@/lib/supabase/server', () => ({
   } }),
 }));
 
+const { POST: resetPost } = await import('../../../(system)/api/auth/forgot-password/route');
 const { POST: sendCodePost } = await import('../../../(system)/api/auth/send-code/route');
 const { POST: passwordPost } = await import('../../../(system)/api/auth/password/route');
 const { AUTH_ROUTE_TIMEOUT_MS } = await import('@/lib/auth/submit-auth');
@@ -71,6 +77,7 @@ const passwordRequest = (intent: string) =>
 
 beforeEach(() => {
   supabaseCalls.length = 0;
+  resetResult = async () => ({ error: null });
   otpResult = async () => ({ data: {}, error: null });
   signInResult = async () => ({
     data: { user: { id: 'u1', created_at: new Date().toISOString() }, session: { access_token: 'a', refresh_token: 'r' } },
@@ -130,7 +137,7 @@ test('an action that never settles still answers within the route bound', async 
   await new Promise((resolve) => setImmediate(resolve));
   jest.advanceTimersByTime(AUTH_ROUTE_TIMEOUT_MS);
   const res = await pending;
-  expect(res.status).toBe(200);
+  expect(res.status).toBe(503);
   const body = await res.json() as { message?: string };
   expect(body.message).toBeTruthy();
   expect(String(body.message).toLowerCase()).toContain('try again');
@@ -160,4 +167,36 @@ test('an action that throws answers 500 with a JSON error, never a hung response
   } finally {
     console.error = originalError;
   }
+});
+
+const resetRequest = (origin = 'http://localhost:13000') =>
+  new NextRequest('http://localhost:13000/api/auth/forgot-password', {
+    method: 'POST', body: form(), headers: { origin, host: 'localhost:13000' },
+  });
+
+test('reset-email route forwards the email and trusted reset redirect', async () => {
+  const res = await resetPost(resetRequest());
+  expect(res.status).toBe(200);
+  expect((await res.json()).success).toBe(true);
+  expect(supabaseCalls).toEqual(['reset:synthetic@example.test:http://localhost:13000/auth/reset-password']);
+});
+
+test('reset-email rejects a cross-origin request before sending mail', async () => {
+  const res = await resetPost(resetRequest('https://evil.example'));
+  expect(res.status).toBe(403);
+  expect(supabaseCalls).toHaveLength(0);
+});
+
+test('a hung reset-email provider returns a retryable error within the bound', async () => {
+  jest.useFakeTimers();
+  resetResult = () => new Promise(() => {});
+  const pending = resetPost(resetRequest());
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  jest.advanceTimersByTime(AUTH_ROUTE_TIMEOUT_MS);
+  const res = await pending;
+  // The route relays the action's status instead of answering every outcome
+  // 200 (KRTX-2049): the deadline fallback is an explicit 503.
+  expect(res.status).toBe(503);
+  expect((await res.json()).message).toContain('try again');
 });

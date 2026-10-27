@@ -42,9 +42,6 @@ function cfg(overrides: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
     ...overrides,
   }
 }
@@ -153,5 +150,20 @@ describe('native configuration behind the host boundary', () => {
     // boot any more.
     expect('opencodeConfigDirHint' in native).toBe(false)
     expect(() => loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: 'invalid' })).toThrow()
+  })
+})
+
+describe('resolveOpencodeConfigDir — kortix.yaml v3', () => {
+  afterEach(() => {
+    delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+  })
+
+  test('a v3 session never resolves a project config dir: the image default runs', async () => {
+    mkdirSync(join(workspace, 'harnesses/opencode'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/opencode/opencode.jsonc'), '{}')
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ schema: 3, agent: {} })
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ agent: {} })
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'harnesses/opencode'))
   })
 })

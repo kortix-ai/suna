@@ -14,10 +14,10 @@
 
 import { useMemo } from 'react';
 import { View } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { Progress } from '@/components/ui/progress';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { useTone } from '@/lib/utils/tone';
 import {
   CheckCircleIcon,
   DotsThreeCircleIcon,
@@ -44,23 +44,24 @@ import type { ToolProps } from '../shared/types';
 /** `text-xs leading-snug` (1.375). */
 const TODO_TEXT = { fontSize: TURN_TYPE.xs.fontSize, lineHeight: TURN_TYPE.xs.fontSize * 1.375 };
 
-export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
+export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const { colorScheme } = useColorScheme();
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
 
   const todos = useMemo(
     () => selectTodos({ input, metadata, streamingInput }),
     [input, metadata, streamingInput],
   );
   const { total, pct, keyed, subtitle, badge } = useMemo(() => todoProgress(todos), [todos]);
-  const track = withAlpha(THEME[colorScheme === 'dark' ? 'dark' : 'light'].primary, 0.08);
+  const tone = useTone();
+  const track = withAlpha(THEME[tone].primary, 0.08);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ListChecksIcon}
       trigger={{ title: 'Todos', subtitle }}
       badge={badge}

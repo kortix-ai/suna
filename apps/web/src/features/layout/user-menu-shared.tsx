@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The rows two different menus both need: Theme, Help, and the log-out flow.
@@ -23,7 +23,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@kortix/ui/alert-dialog';
 import {
   DropdownMenuItem,
   DropdownMenuPortal,
@@ -33,17 +33,19 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@kortix/ui/dropdown-menu';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { openExternalRoute } from '@/lib/desktop';
+import { openExternalRoute } from '@kortix/ui/internal/lib/desktop';
+import { isInterfaceThemeId } from '@/lib/interface-themes';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import {
   ArticleIcon,
   BookOpenIcon,
   LifebuoyIcon,
-  MonitorIcon,
   Moon,
+  PaintBrushIcon,
   PaperPlaneTiltIcon,
   QuestionIcon,
   ScrollIcon,
@@ -51,10 +53,10 @@ import {
   StorefrontIcon,
   Sun,
 } from '@phosphor-icons/react';
-import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
+import { INTERFACE_THEME_OPTIONS, ThemeSwatch, useInterfaceTheme } from './interface-theme';
 
 export type MenuLink = {
   label: string;
@@ -77,10 +79,9 @@ export type MenuLink = {
  * the sidebar and the header, so this render path is not rare.
  */
 export const HELP_LINKS: MenuLink[] = [
-  // One support row, not two. This menu used to open with "Help center" (/help)
-  // and close with "Support" (/support) — two destinations for one intent, and
-  // the /help one was the weaker page. The help centre is now part of /support.
-  { label: 'Support', href: '/support', Icon: LifebuoyIcon },
+  // One support row, not two. The /help and /support pages are gone; support
+  // requests go to the contact page.
+  { label: 'Support', href: '/contact', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
   { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
@@ -94,19 +95,16 @@ export const LEGAL_LINKS: MenuLink[] = [
 ];
 
 /**
- * The three theme values `next-themes` accepts, in the order the rest of the
- * product lists them (see the Appearance tab in user settings — same words, same
- * icons, same order). A person who learns the control in one place should not
- * have to re-read it in the other.
- */
-export const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
-  { value: 'system', label: 'System', Icon: MonitorIcon },
-] as const;
-
-/**
- * Theme as a submenu of three rows like any other.
+ * Theme as a submenu.
+ *
+ * `INTERFACE_THEME_OPTIONS` now carries 44 rows — System, four Kortix
+ * palettes, and 39 curated terminal themes — too many to list in a
+ * dropdown. This submenu shows the System row, the four Kortix rows, and (if
+ * the current selection is a terminal theme) that one extra row so the
+ * checked state is never silently hidden; "More themes…" opens the
+ * Appearance tab's Select, which lists every row grouped and scrollable. That
+ * Select is shared with this submenu — `INTERFACE_THEME_OPTIONS` — so a
+ * person who learns the control here meets the same rows there.
  *
  * It used to be a segmented control pinned below Log out — the one row in the
  * menu that was not a menu item, sitting under the one row that ends your
@@ -116,8 +114,14 @@ export const THEME_OPTIONS = [
  */
 export function ThemeSubmenu() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const themeOptions = useLocalizedUiCatalog(THEME_OPTIONS);
+  const t = useTranslations('settings.appearance');
+  const { selected, select, choice, resolvedTheme } = useInterfaceTheme();
+
+  const primaryOptions = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'labelled');
+  const selectedOption = INTERFACE_THEME_OPTIONS.find((option) => option.value === selected);
+  const extraSelectedOption =
+    selectedOption && selectedOption.kind === 'named' ? selectedOption : undefined;
+
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
@@ -126,14 +130,37 @@ export function ThemeSubmenu() {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-          <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-            {themeOptions.map(({ value, label, Icon }) => (
-              <DropdownMenuRadioItem key={value} value={value}>
-                <Icon />
-                {label}
+          <DropdownMenuRadioGroup
+            value={selected}
+            onValueChange={(value) => {
+              if (isInterfaceThemeId(value)) select(value);
+            }}
+          >
+            {primaryOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                <ThemeSwatch value={option.value} choice={choice} />
+                {t(`themes.${option.labelKey}`)}
               </DropdownMenuRadioItem>
             ))}
+            {extraSelectedOption && (
+              <DropdownMenuRadioItem value={extraSelectedOption.value}>
+                <ThemeSwatch value={extraSelectedOption.value} choice={choice} />
+                {extraSelectedOption.name}
+              </DropdownMenuRadioItem>
+            )}
           </DropdownMenuRadioGroup>
+
+          <DropdownMenuSeparator />
+
+          {/* Opens the Appearance tab's own Select, which lists every terminal
+              theme grouped and scrollable — the submenu itself only ever
+              shows the six rows above. */}
+          <DropdownMenuItem
+            onSelect={() => useSettingsPanelStore.getState().openSettings('appearance')}
+          >
+            <PaintBrushIcon />
+            {t('moreThemes')}
+          </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>
@@ -144,7 +171,7 @@ export function ThemeSubmenu() {
  * Every reference and legal page collapsed into one submenu, so the top level
  * only carries things you act on rather than eight links.
  *
- * External rows render a real `<a target="_blank">` rather than calling
+ * External rows render a real `<a target="_blank" rel="noopener noreferrer">` rather than calling
  * `window.open` from a handler. Three reasons: the browser opens the tab inside
  * the click's own user-gesture window, so no popup blocker can eat it — a
  * deferred close is exactly the kind of gap that trips one; cmd-click and

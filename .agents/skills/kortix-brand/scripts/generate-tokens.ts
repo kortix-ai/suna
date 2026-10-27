@@ -4,9 +4,13 @@
 //   bun .agents/skills/kortix-brand/scripts/generate-tokens.ts           write
 //   bun .agents/skills/kortix-brand/scripts/generate-tokens.ts --check   exit 1 on drift
 //
-// It rewrites ONLY marker-delimited regions in apps/web/src/app/globals.css and
-// apps/mobile/global.css, whole-file outputs under references/visual/, and
-// apps/api/src/lib/email/brand-tokens.generated.ts.
+// It rewrites ONLY marker-delimited regions in apps/web/src/app/globals.css,
+// packages/ui/src/styles/theme.css and apps/mobile/global.css, whole-file
+// outputs under references/visual/, packages/ui/src/styles/tokens.css and
+// fonts.css, and
+// apps/api/src/lib/email/brand-tokens.generated.ts, and
+// packages/shared/src/brand-css.generated.ts (the kit tokens and the Roobert
+// faces as strings, for pages a server renders: a doc artifact).
 // Stdlib only.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
@@ -16,7 +20,11 @@ const VISUAL = join(ROOT, '.agents/skills/kortix-brand/references/visual');
 const JSON_PATH = join(VISUAL, 'visual-system.json');
 const WEB_CSS = join(ROOT, 'apps/web/src/app/globals.css');
 const MOBILE_CSS = join(ROOT, 'apps/mobile/global.css');
+const UI_THEME_CSS = join(ROOT, 'packages/ui/src/styles/theme.css');
+const UI_TOKENS_CSS = join(ROOT, 'packages/ui/src/styles/tokens.css');
+const UI_FONTS_CSS = join(ROOT, 'packages/ui/src/styles/fonts.css');
 const EMAIL_TS = join(ROOT, 'apps/api/src/lib/email/brand-tokens.generated.ts');
+const SHARED_CSS_TS = join(ROOT, 'packages/shared/src/brand-css.generated.ts');
 
 const EDIT_HINT =
   'edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts';
@@ -197,6 +205,11 @@ function webRootAndDark(): string {
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) lines.push(decl(`duration-${k}`, `${v.ms}ms`));
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
     lines.push(decl(`ease-${k}`, `cubic-bezier(${v.bezier.join(', ')})`));
+  // The type scale on :root: theme.css keeps it out of Tailwind's own :root
+  // output (a re-themable step reads var(--text-sm, …)), and bare
+  // var(--text-sm) readers (print.css, /design-system) need it declared.
+  for (const [k, v] of Object.entries<any>(vs.typography.scale))
+    lines.push(decl(`text-${k}`, v.size), decl(`text-${k}--line-height`, v.line_height));
   const g = vs.effects['liquid-glass'];
   lines.push(decl('liquid-glass-bg', g.bg[0]));
   lines.push(decl('liquid-glass-bg-hover', g['bg-hover'][0]));
@@ -225,8 +238,8 @@ function webTheme(): string {
   const L: string[] = [];
   L.push('/* Type scale. Roles and surfaces are in references/visual/typography.md. */');
   for (const [k, v] of Object.entries<any>(vs.typography.scale)) {
-    L.push(`--text-${k}: ${v.size};`);
-    L.push(`--text-${k}--line-height: ${v.line_height};`);
+    L.push(`--text-${k}: var(--text-${k}, ${v.size});`);
+    L.push(`--text-${k}--line-height: var(--text-${k}--line-height, ${v.line_height});`);
   }
   L.push(`/* ${vs.color.emoji.rule} */`);
   const pair = (name: string, p: [string, string]) => `--color-${name}: light-dark(${p[0]}, ${p[1]});`;
@@ -236,10 +249,35 @@ function webTheme(): string {
   for (const fam of ['fill', 'ring'])
     for (const [k, v] of Object.entries<any>(vs.color.glyph[fam])) L.push(pair(`glyph-${fam}-${k}`, v));
   L.push('/* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */');
-  for (const [k, v] of Object.entries<any>(vs.motion.duration)) L.push(`--transition-duration-${k}: ${v.ms}ms;`);
+  for (const [k, v] of Object.entries<any>(vs.motion.duration))
+    L.push(`--transition-duration-${k}: var(--duration-${k}, ${v.ms}ms);`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
-    L.push(`--ease-${k}: cubic-bezier(${v.bezier.join(', ')});`);
+    L.push(`--ease-${k}: var(--ease-${k}, cubic-bezier(${v.bezier.join(', ')}));`);
   return L.join('\n');
+}
+
+/** @kortix/ui tokens.css: the web :root/.dark values as one unlayered file, so
+ *  --spacing still overrides Tailwind's default. Names match apps/web. */
+function uiTokens(): string {
+  const extra: string[] = [
+    `  --font-sans-system: ${systemStack(vs.typography.stacks.sans)};`,
+    `  --font-mono-system: ${systemStack(vs.typography.stacks.mono)};`,
+  ];
+  const lines = webRootAndDark().split('\n');
+  const rootEnd = lines.indexOf('}');
+  lines.splice(rootEnd, 0, ...extra);
+  const body = lines
+    .join('\n')
+    .replace(/^:root \{$/m, ':root {\n  color-scheme: light;')
+    .replace(/^\.dark \{$/m, '.dark {\n  color-scheme: dark;');
+  return [
+    '/* GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '   @kortix/ui design tokens: light on :root, dark on .dark (class on <html>).',
+    '   A white-label host overrides any of these variables in its own :root / .dark. */',
+    '',
+    body,
+    '',
+  ].join('\n');
 }
 
 // ───────────────────────── mobile generators ─────────────────────────
@@ -385,6 +423,23 @@ function kitFonts(): string {
   return L.join('\n');
 }
 
+/** @kortix/ui fonts.css: the kit @font-face rules plus the two variables that
+ *  theme.css reads (--font-roobert, --font-roobert-mono). Opt-in, Kortix-owned
+ *  surfaces only (D8a); a white-label host never imports it. */
+function uiFonts(): string {
+  return [
+    kitFonts().replace(
+      '   Use these URLs',
+      '   @kortix/ui/fonts.css: import it after theme.css on Kortix-owned surfaces only (D8a).\n   Use these URLs'
+    ),
+    ':root {',
+    `  --font-roobert: '${vs.typography.families.sans.name}';`,
+    `  --font-roobert-mono: '${vs.typography.families.mono.name}';`,
+    '}',
+    '',
+  ].join('\n');
+}
+
 /** TS module for transactional email: opaque light-theme hex only (clients cannot read CSS variables). */
 function emailTokens(): string {
   const hex = (name: string) => toHex(resolveColor(name, 'light'));
@@ -455,6 +510,19 @@ function rewriteRegions(file: string, bodies: Record<string, string>): string {
   return out.join('\n');
 }
 
+/** The kit tokens (light, dark by prefers-color-scheme) and the Roobert faces
+ *  (absolute kortix.com URLs) as strings, for a page a server renders. */
+function sharedCss(): string {
+  return [
+    '// GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '// The brand tokens and fonts for a page a server renders (a doc artifact): the',
+    '// kit tokens.css (light, dark by prefers-color-scheme) and @kortix/ui fonts.css.',
+    `export const BRAND_TOKENS_CSS = ${JSON.stringify(kitTokens())};`,
+    `export const BRAND_FONTS_CSS = ${JSON.stringify(uiFonts())};`,
+    '',
+  ].join('\n');
+}
+
 // ───────────────────────── main ─────────────────────────
 const errors = validate();
 if (errors.length) {
@@ -464,7 +532,10 @@ if (errors.length) {
 }
 
 const outputs: Record<string, string> = {
-  [WEB_CSS]: rewriteRegions(WEB_CSS, { '': webRootAndDark(), theme: webTheme() }),
+  [WEB_CSS]: rewriteRegions(WEB_CSS, { '': webRootAndDark() }),
+  [UI_THEME_CSS]: rewriteRegions(UI_THEME_CSS, { theme: webTheme() }),
+  [UI_TOKENS_CSS]: uiTokens(),
+  [UI_FONTS_CSS]: uiFonts(),
   [MOBILE_CSS]: rewriteRegions(MOBILE_CSS, {
     'mobile-light': mobileBlock('light'),
     'mobile-dark': mobileBlock('dark'),
@@ -472,6 +543,7 @@ const outputs: Record<string, string> = {
   [join(VISUAL, 'tokens.css')]: kitTokens(),
   [join(VISUAL, 'fonts.css')]: kitFonts(),
   [EMAIL_TS]: emailTokens(),
+  [SHARED_CSS_TS]: sharedCss(),
 };
 
 const check = process.argv.includes('--check');

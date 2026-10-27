@@ -21,7 +21,7 @@ import {
 } from '@/services/config-provider/api-client'
 import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import { clearConfigReleaseNotice } from '@/services/config-provider/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
+import { obtainRelease } from '@/services/config-provider/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
@@ -77,6 +77,7 @@ interface DescriptorAnswer {
   reason: string | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface BootConfigPathInput {
   cfg: OpenCodeConfig
   opencode: Pick<Opencode, 'getInternalUrl' | 'markWorkspaceReady'>
@@ -115,6 +116,7 @@ export interface BootConfigPathInput {
   descriptorTimeoutMs?: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface BootConfigPathResult {
   dir: string
   source: ConfigSource
@@ -159,6 +161,7 @@ function boundedReason(reasons: readonly string[]): string | null {
 async function askForTheDesiredRelease(
   api: ConfigReleaseApi | null,
   timeoutMs: number | undefined,
+  baseSha: string | undefined,
 ): Promise<DescriptorAnswer> {
   if (!api) {
     return {
@@ -168,7 +171,7 @@ async function askForTheDesiredRelease(
     }
   }
   try {
-    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs }), reason: null }
+    return { releasesEnabled: true, descriptor: await fetchConfigReleaseDescriptor(api, { timeoutMs, baseSha }), reason: null }
   } catch (err) {
     if (isFeatureDisabledError(err)) {
       return { releasesEnabled: false, descriptor: null, reason: 'config releases are disabled for this project' }
@@ -209,19 +212,14 @@ async function bootCandidates(
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        // The checkout is the release when the box checked out its commit:
-        // wait for it only then. A box with no base pin (KORTIX_BASE_SHA unset)
-        // waits only for a release with no archive, which nothing else may
-        // hold yet; HEAD decides (obtain.ts). Any other boot builds the
-        // release meanwhile.
-        const checkout =
-          checkoutMayHold(cfg.baseSha, answer.descriptor) && (await input.workspace) === null ? cfg.projectTarget : null
+        // Downloaded on its own, while the workspace provider checks out the
+        // same commit: neither waits for the other (obtain.ts).
         const obtained = await obtainRelease({
           root,
           manifest,
           snapshot: answer.descriptor.snapshot,
           api,
-          workspace: checkout,
+          git: cfg,
           managedSkillsDir: input.managedSkillsDir,
           prepare: (staged) =>
             input.prepare
@@ -319,6 +317,7 @@ function defaultPrepare(input: BootConfigPathInput): (dir: string, platformOwned
       : prepareConfigDir(dir, input.managedSkillsDir, {}, input.cfg.projectTarget)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<BootConfigPathResult> {
   const { cfg, opencode } = input
   const root = input.root ?? bootConfigRoot()
@@ -330,9 +329,9 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   const budget = input.proofBudgetMs ?? VERIFY_READY_TIMEOUT_MS
   const linkFailures: string[] = []
   /** The one seam that changes what OpenCode reads. A refusal is stated, not thrown. */
-  const point = async (dir: string, why: string): Promise<boolean> => {
+  const point = async (dir: string, why: string, releaseRoot: string | null = null): Promise<boolean> => {
     try {
-      await serveConfigDir(dir, why, root)
+      await serveConfigDir(dir, why, root, releaseRoot)
       return true
     } catch (err) {
       const reason = `the boot link could not be pointed at ${dir}: ${err instanceof Error ? err.message : String(err)}`
@@ -359,7 +358,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   const started = input.start()
 
   // ── Step 1 ─────────────────────────────────────────────────────────────────
-  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs)
+  const answer = await askForTheDesiredRelease(api, input.descriptorTimeoutMs, cfg.baseSha)
   if (answer.descriptor) input.mark?.('config-release-fetched')
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
@@ -382,7 +381,7 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
     // sentinel — the pre-release preparation, unchanged.
     await prepare(dir, source === 'image-default')
     input.mark?.('config-deps')
-    await point(dir, `config releases are not in play: ${answer.reason ?? 'no reason given'}`)
+    await point(dir, `config releases are not in play: ${answer.reason ?? 'no reason given'}`, workspaceError ? null : cfg.projectTarget)
     await started
     if (!(await input.refresh?.().catch(() => false))) await input.respawn()
     logger.info('[boot-config] config releases are not in play; opencode reads the checkout', {
@@ -455,11 +454,12 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
           source_commit: candidate.manifest.source_commit,
           config_dir: candidate.manifest.config_dir,
           agent_repoint_reason: candidate.manifest.agent_repoint_reason ?? null,
+          compiled_governance: candidate.manifest.compiled_governance,
         },
         candidate.root,
       )
     }
-    await point(candidate.dir, `boot candidate ${index + 1} of ${candidates.length}: ${candidate.label}`)
+    await point(candidate.dir, `boot candidate ${index + 1} of ${candidates.length}: ${candidate.label}`, candidate.root)
     if (index === 0 && (await input.refresh?.().catch(() => false))) {
       // The process from step 0 has not read a config dir yet, so repointing
       // the link and rewriting the composed config is enough — no respawn.

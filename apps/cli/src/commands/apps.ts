@@ -17,7 +17,7 @@ import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
 import { addAppBlocks } from './apps-launch-yaml.ts';
 import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
-import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
+import { connectCommand, deployOrder, deployableBlocks, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
   type ContextOptions,
   commandArg,
@@ -64,6 +64,10 @@ Subcommands:
                                     and ignores both.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
+    --url <https-url>               An external App: a site hosted elsewhere that
+                                    Kortix lists and shows in the Apps page, and
+                                    never deploys. It runs no machine and takes
+                                    no App slot.
   launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
@@ -92,13 +96,18 @@ Subcommands:
     --build-command <command>       Bundle build command.
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
-    --provider <name>               daytona, platinum, or e2b.
+    --provider <name>               platinum (default when the server has it), or daytona
+                                    (legacy fallback, removal scheduled).
     --access <mode>                 private (default), project, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
+    --listed | --unlisted           A card on the Apps page, or Background Apps.
+                                    A new App is unlisted unless kortix.yaml sets
+                                    display.listed: true. Pass --listed for a
+                                    site or UI people open.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -107,11 +116,15 @@ Subcommands:
                                     deployment. A run-mode change applies within
                                     5 minutes.
     --name <name>
+    --url <https-url>               Move an external App to another URL.
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
+    --listed | --unlisted           Show the App as a card on the Apps page, or
+                                    keep it in Background Apps (the default for
+                                    a new App; kortix.yaml display.listed).
     --uses <slugs>                  Replace the Apps this App uses. Comma-
                                     separated; --uses= clears the list.
   link <id|slug> --uses <slugs>     Add Apps this App uses. Code in the App then
@@ -133,15 +146,19 @@ Subcommands:
                                     Destroy one machine. Its volume stays; its group runs
                                     one machine fewer.
   scale count <id|slug> <n>         Machines for a process group (0-20). --process <group>
-                                    (default app). A group with a mount gets one new, empty
-                                    volume per new machine.
+                                    (default app). A group with a mount runs one machine:
+                                    scale its machine size instead (apps set --cpu/--memory).
+    --new-volumes                   Accept more: each new machine gets its own, EMPTY
+                                    volume and serves different data behind the same URL.
   scale show <id|slug>              Machines per process group.
   exec <id|slug> -- <command…>      Run one command in a running machine and print its
                                     output (admins). --machine <id>, --timeout <s> (≤ 300).
-  volumes [ls] <id|slug>            Volumes: name, group, size, attached, retention.
+  volumes [ls] <id|slug>            Volumes: name, group, used, size, attached, retention.
   volumes create <id|slug> <name> --size <gb> [--process <group>]
-  volumes extend <id|slug> <volume> --size <gb>
-                                    Grow a volume (it never shrinks).
+  volumes set <id|slug> <volume> --retention <days>
+                                    Keep daily snapshots 1-60 days (default 5).
+                                    A volume has a fixed size (100 GB on Platinum) and
+                                    cannot grow: past that, keep files in object storage.
   volumes snapshots <id|slug> <volume>
                                     Daily snapshots (kept snapshot_retention_days), manual
                                     ones and the final one of a destroyed volume.
@@ -203,8 +220,9 @@ export function resolveDeploymentTarget(
  * active deployment, whatever `desired_state` says, so it reads `static`.
  */
 export function appStateLabel(
-  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'>,
+  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id' | 'external_url'>,
 ): string {
+  if (app.external_url) return 'external';
   if (!app.active_deployment_id) return 'undeployed';
   if (app.hosting_type === 'static') return 'static';
   return app.desired_state;
@@ -329,6 +347,7 @@ async function createCommand(
   dropRetiredBudgetFlag(rest);
   const uses = usesList(takeFlagValue(rest, ['--uses']));
   const name = takeFlagValue(rest, ['--name']);
+  const externalUrl = takeFlagValue(rest, ['--url']);
   const slugInput = rest.find((value) => !value.startsWith('-'));
   if (!slugInput) return fail('create needs a slug');
   rest.splice(rest.indexOf(slugInput), 1);
@@ -344,6 +363,7 @@ async function createCommand(
       '--idle-timeout',
     ),
     ...(uses ? { uses } : {}),
+    ...(externalUrl ? { external_url: externalUrl } : {}),
     ...runMode(rest),
   };
   // Omitted flags stay off the wire: the server picks the defaults.
@@ -359,7 +379,7 @@ async function createCommand(
 
 /** How a server App runs: 24/7, or on demand. None for a static App (no machine). */
 function runModeRows(app: App): string {
-  if (app.hosting_type === 'static') return '';
+  if (app.hosting_type === 'static' || app.external_url) return '';
   const value = app.always_on === false ? `on demand (stops after ${app.idle_timeout_seconds}s idle)` : '24/7';
   return `  ${C.dim}${pad('runs', 14)}${C.reset}${value}\n`;
 }
@@ -368,7 +388,7 @@ function runModeRows(app: App): string {
 function displaySummary(app: App): string | null {
   const display = app.display ?? {};
   const parts = [
-    display.parent ? `tab in ${display.parent}` : display.listed === false ? 'not in the Apps grid' : null,
+    display.parent ? `tab in ${display.parent}` : display.listed !== true ? 'not on the Apps page (kortix apps set <app> --listed)' : null,
     display.preview === 'none' ? 'icon card' : null,
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
@@ -380,11 +400,12 @@ function appLines(app: App): string {
     value ? `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n` : '';
   return (
     row('url', app.url) +
-    row('capabilities', app.capabilities?.join(', ')) +
+    row('hosted', app.external_url ? 'elsewhere (external App: Kortix shows it, never deploys it)' : null) +
+    row('capabilities', app.capabilities?.length ? app.capabilities.join(', ') : app.external_url ? 'none (the site refuses a frame: it opens in a new tab)' : null) +
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
     row('shown', displaySummary(app)) +
-    row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
+    (app.external_url ? '' : row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`)) +
     runModeRows(app)
   );
 }
@@ -426,6 +447,10 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const uses = usesList(takeFlagValue(rest, ['--uses']));
+  const externalUrl = takeFlagValue(rest, ['--url']);
+  const listed = takeFlagBool(rest, ['--listed']);
+  const unlisted = takeFlagBool(rest, ['--unlisted']);
+  if (listed && unlisted) return fail('Pass --listed or --unlisted, not both');
   Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
@@ -435,21 +460,28 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (disk !== undefined) input.disk_gb = disk;
   if (idle !== undefined) input.idle_timeout_seconds = idle;
   if (uses !== undefined) input.uses = uses;
-  if (Object.keys(input).length === 0) {
+  if (externalUrl !== undefined) input.external_url = externalUrl;
+  if (Object.keys(input).length === 0 && !listed && !unlisted) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
+      'set needs at least one of --name, --url, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses, --listed, --unlisted',
     );
   }
   const ctx = await context(options);
   if (!ctx) return 1;
   const app = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, target);
+    // A PATCH replaces `display` whole: merge the switch into what the App has.
+    if (listed || unlisted) input.display = { ...(found.display ?? {}), listed: listed };
     return ctx.apps.update(found.app_id, input);
   });
   printWarnings(app);
   if (json) emitJson(app);
   else {
     process.stdout.write(`\n  ${status.ok(`updated ${app.slug}`)}\n`);
+    if (app.external_url) {
+      process.stdout.write(`${appLines(app)}\n`);
+      return 0;
+    }
     process.stdout.write(
       `  ${C.dim}${pad('machine', 14)}${C.reset}${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk\n`,
     );
@@ -560,8 +592,12 @@ async function deployCommand(
   const manifestApps = !pathArgument && !flags.image && !flags.app && !flags.manifestApp && !flags.slug
     ? loadManifestApps(process.cwd())
     : null;
+  const { deploy: deployable, skipped } = manifestApps ? deployableBlocks(manifestApps.blocks) : { deploy: [], skipped: [] };
   if (manifestApps && Object.keys(manifestApps.blocks).length > 1) {
-    const order = deployOrder(manifestApps.blocks);
+    const order = deployOrder(manifestApps.blocks).filter((name) => deployable.includes(name));
+    for (const name of skipped) {
+      if (!json) process.stderr.write(`${C.dim}Skipping apps.${name}: it declares settings only (no path or image)${C.reset}\n`);
+    }
     const ctx = await context(options);
     if (!ctx) return 1;
     const results: unknown[] = [];
@@ -618,10 +654,15 @@ async function deployOne(
       app = await ctx.apps.get(app.app_id);
     }
 
-    // kortix.yaml owns labels (when listed) and display (absent = the defaults).
+    // kortix.yaml owns labels and display when it declares them. An absent
+    // `display` keeps the App's own (`kortix apps set --listed`); `display: {}`
+    // resets it. `--listed` / `--unlisted` beat both.
+    const display = flags.listed === undefined
+      ? manifestBlock?.display
+      : { ...(manifestBlock?.display ?? app.display ?? {}), listed: flags.listed };
     const sync = {
       ...(manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? []) ? { labels: manifestBlock.labels } : {}),
-      ...(manifestBlock && JSON.stringify(manifestBlock.display ?? {}) !== JSON.stringify(app.display ?? {}) ? { display: manifestBlock.display ?? {} } : {}),
+      ...(display !== undefined && JSON.stringify(display) !== JSON.stringify(app.display ?? {}) ? { display } : {}),
     };
     if (Object.keys(sync).length > 0) app = await ctx.apps.update(app.app_id, sync);
     const releaseConfig = appReleaseInputFromBlock(manifestBlock);
@@ -671,12 +712,20 @@ async function showCommand(
   if (json) emitJson(result);
   else {
     const app = result.app;
-    const hosting = app.hosting_type === 'static'
+    const hosting = app.external_url
+      ? 'external · hosted elsewhere'
+      : app.hosting_type === 'static'
         ? 'static · served from storage, no runtime'
         : app.hosting_type === 'sandbox'
           ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state}`
           : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${C.dim}${hosting}${C.reset}\n${appLines(app)}`);
+    if (!app.external_url && app.access_mode !== 'public') {
+      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${app.access_mode}\n`);
+      process.stdout.write(
+        `  Open in a browser: kortix apps access-link ${app.app_id} --project ${ctx.projectId}${options.hostArg ? ` --host ${options.hostArg}` : ''}\n`,
+      );
+    }
     for (const deployment of result.deployments) {
       const live =
         deployment.deployment_id === result.app.active_deployment_id

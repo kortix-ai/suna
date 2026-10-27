@@ -190,6 +190,68 @@ describe('manifest-edit — TOML (existing text-surgery behavior, unchanged)', (
     rmSync(dir, { recursive: true, force: true });
   });
 
+  test('TOML mutations select the first identity and stop at nested or adjacent headers', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
+    const file = join(dir, 'kortix.toml');
+    const original = `# root
+[[triggers]]
+slug = 'other'
+enabled = true
+# target
+[[triggers]]
+slug = 'nightly'
+  enabled = true # old
+[triggers.config]
+enabled = true
+[[triggers]]
+slug = "nightly"
+enabled = true`;
+    writeFileSync(file, original);
+    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(original.replace('  enabled = true # old', '  enabled = false'));
+    writeFileSync(file, original);
+    expect(removeArrayBlock('triggers', 'slug', 'nightly', dir)).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(`# root
+[[triggers]]
+slug = 'other'
+enabled = true
+[triggers.config]
+enabled = true
+[[triggers]]
+slug = "nightly"
+enabled = true`);
+    const tables = `# root
+[policy]
+  enabled = true # old
+[policy.nested]
+enabled = true
+[policy]
+enabled = true`;
+    writeFileSync(file, tables);
+    setTableScalar('policy', 'enabled', false, dir);
+    expect(readFileSync(file, 'utf8')).toBe(tables.replace('  enabled = true # old', '  enabled = false'));
+  });
+
+  test('TOML scalar insertion preserves EOF, comments and missing-identity files', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { setScalarInArrayBlock, removeArrayBlock, setTableScalar } = await import('../manifest-edit');
+    const file = join(dir, 'kortix.toml');
+    for (const ending of ['', '\n']) {
+      const original = `# root\n[[triggers]]\n# identity\nslug = "nightly"${ending}`;
+      writeFileSync(file, original);
+      expect(setScalarInArrayBlock('triggers', 'slug', 'absent', 'enabled', false, dir)).toBe(false);
+      expect(removeArrayBlock('triggers', 'slug', 'absent', dir)).toBe(false);
+      expect(readFileSync(file, 'utf8')).toBe(original);
+      expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
+      expect(readFileSync(file, 'utf8')).toBe(original.replace('[[triggers]]', '[[triggers]]\nenabled = false'));
+      const table = `# root\n[policy]\n# keep\nmode = 'ask'${ending}`;
+      writeFileSync(file, table);
+      setTableScalar('policy', 'enabled', false, dir);
+      expect(readFileSync(file, 'utf8')).toBe(table.replace('[policy]', '[policy]\nenabled = false'));
+    }
+  });
+
   test('appendArrayBlock adds a [[section]] block', async () => {
     const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
@@ -325,6 +387,67 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
     writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
     appendArrayBlock('sandbox.templates', { slug: 'gpu', image: 'kortix/gpu:latest' }, dir);
+    expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
+  });
+
+  // `kortix connectors add` on a starter manifest re-indented every section
+  // comment and re-flowed lists, because a missing section went through a
+  // whole-document re-serialization.
+  const STARTER = [
+    'kortix_version: 2',
+    'project:',
+    '  description: "A long description that a re-serializer would fold onto a second line, which it must not"',
+    'tools:',
+    '  web_search: kortix:web_search      # maintained by Kortix',
+    '',
+    '# ─── Agents ───',
+    '# Governance only.',
+    'agents:',
+    '  kortix:',
+    '    skills: [a, b]',
+    '',
+    '  # The AP agent.',
+    '  ap-agent:',
+    '    connectors: []',
+    '',
+    'triggers:',
+    '  - slug: nightly',
+    '    type: cron',
+    '',
+    '# ─── Channels ───',
+    '# Managed in the dashboard.',
+    '',
+  ].join('\n');
+
+  test('appendArrayBlock adds a missing section without touching any existing byte', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), STARTER);
+    appendArrayBlock('connectors', { slug: 'my-mcp', provider: 'mcp', url: 'https://x.example/mcp', auth: { type: 'bearer' } }, dir);
+    const text = readFileSync(manifestFile(dir), 'utf8');
+    expect(text.startsWith(STARTER)).toBe(true);
+    expect(text.slice(STARTER.length)).toBe(
+      '\nconnectors:\n  - slug: my-mcp\n    provider: mcp\n    url: https://x.example/mcp\n    auth:\n      type: bearer\n',
+    );
+    expect(arrayEntryExists('connectors', 'slug', 'my-mcp', dir)).toBe(true);
+  });
+
+  test('appendArrayBlock puts a new item before the comments that head the next section', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), STARTER);
+    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
+    const text = readFileSync(manifestFile(dir), 'utf8');
+    expect(text).toBe(STARTER.replace('    type: cron\n', '    type: cron\n  - slug: weekly\n    type: cron\n'));
+    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
+  });
+
+  test('appendArrayBlock under an existing parent map never duplicates the parent key', async () => {
+    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    writeFileSync(join(dir, 'kortix.yaml'), 'kortix_version: 2\nsandbox:\n  default: python\n');
+    appendArrayBlock('sandbox.templates', { slug: 'gpu', image: 'kortix/gpu:latest' }, dir);
+    expect(readFileSync(manifestFile(dir), 'utf8').match(/^sandbox:/gm)?.length).toBe(1);
     expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
   });
 

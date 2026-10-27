@@ -10,12 +10,14 @@ import {
 import {
   LOCAL_TEST_PROFILE_HEADER,
   assertLoopbackHttpUrl,
+  branchAuthSyncTarget,
   hasRequiredLocalSupabaseEnvironment,
   localApiUsesTestProfile,
   localMigrationPlan,
   waitForLocalPostgrest,
   localTopology,
   parseSupabaseEnvironment,
+  withWorktreeDatabase,
 } from "../src/core/local-stack";
 import { runExitCode } from "../src/core/result";
 
@@ -52,13 +54,15 @@ describe("ke2e local profile", () => {
       KE2E_SUPABASE_ANON_KEY: "anon",
       KE2E_SUPABASE_SERVICE_ROLE_KEY: "service-role",
       KE2E_LOCAL_BILLING_ENABLED: "1",
-      KE2E_CAP_DAYTONA: "0",
+      KE2E_CAP_SANDBOX: "0",
       KE2E_CAP_MANAGED_GIT: "0",
       KE2E_CAP_MANAGED_GIT_PUSH: "0",
       KE2E_CAP_FUNDED: "0",
       KE2E_CAP_PROJECT_SNAPSHOTS: "0",
       KE2E_DEFAULT_FLOW_ATTEMPTS: "1",
       KE2E_STRIPE_WEBHOOK_SECRET: "whsec_local_flow_runner_disabled",
+      // The same address local-stack.ts puts on the API's operator allowlist (ADM-25).
+      KE2E_PLATFORM_ADMIN_EMAIL: "allowlisted-operator@ke2e.kortix.test",
     });
   });
 
@@ -81,7 +85,7 @@ describe("ke2e local profile", () => {
 
   it("selects every local REST flow and explains every exclusion", () => {
     const local = registeredFlow("LOCAL-1", ["database"]);
-    const sandbox = registeredFlow("SBX-1", ["daytona", "funded"]);
+    const sandbox = registeredFlow("SBX-1", ["sandbox", "funded"]);
     const git = registeredFlow("GIT-1", ["managedGit"]);
     const unfinished = registeredFlow("TODO-1", [], "not implemented");
 
@@ -89,7 +93,7 @@ describe("ke2e local profile", () => {
 
     expect(plan.runnable).toEqual([local]);
     expect(plan.excluded).toEqual([
-      { id: "SBX-1", reason: "external capabilities: daytona, funded" },
+      { id: "SBX-1", reason: "external capabilities: sandbox, funded" },
       { id: "TODO-1", reason: "todo: not implemented" },
       { id: "GIT-1", reason: "external capabilities: managedGit" },
     ]);
@@ -145,6 +149,49 @@ describe("ke2e local profile", () => {
         ports: { web: 22000, api: 70_000, gateway: 22090 },
       }),
     ).toThrow("invalid local API port");
+  });
+
+  it("points a branch-database worktree at its own database, never 54322/postgres", () => {
+    const primary = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    const marker = (dbMode: "shared" | "branch") => ({
+      path: "/repo-feature",
+      branch: "feature-x",
+      dbMode,
+      ports: { web: 22000, api: 22008, gateway: 22090 },
+    });
+    const slots = { "feature-x": { path: "/repo-feature" } };
+    const branch = withWorktreeDatabase(
+      localTopology("/repo-feature", marker("branch"), slots),
+      { DB_URL: primary },
+    );
+    expect(branch.DB_URL).toBe("postgresql://postgres:postgres@127.0.0.1:54322/kortix_wt_feature_x");
+    expect(branch.DB_URL).not.toMatch(/\/postgres$/);
+    expect(
+      withWorktreeDatabase(localTopology("/repo-feature", marker("shared"), slots), { DB_URL: primary })
+        .DB_URL,
+    ).toBe(primary);
+    expect(() =>
+      withWorktreeDatabase(localTopology("/repo-feature", marker("branch")), { DB_URL: primary }),
+    ).toThrow("missing from the worktree registry");
+  });
+
+  it("re-syncs a branch database's auth from the primary database, and only for a branch database", () => {
+    const primary = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    const marker = (dbMode: "shared" | "branch") => ({
+      path: "/repo-feature",
+      branch: "feature-x",
+      dbMode,
+      ports: { web: 22000, api: 22008, gateway: 22090 },
+    });
+    const slots = { "feature-x": { path: "/repo-feature" } };
+    const branchTopology = localTopology("/repo-feature", marker("branch"), slots);
+    // The environment the runner holds: DB_URL already points at the branch database.
+    const branchEnv = withWorktreeDatabase(branchTopology, { DB_URL: primary });
+    expect(branchAuthSyncTarget(branchTopology, branchEnv)).toEqual({ primaryUrl: primary, worktreeName: "feature-x" });
+    expect(
+      branchAuthSyncTarget(localTopology("/repo-feature", marker("shared"), slots), { DB_URL: primary }),
+    ).toBeNull();
+    expect(branchAuthSyncTarget(localTopology("/repo", null), { DB_URL: primary })).toBeNull();
   });
 
   it("allows only unauthenticated loopback HTTP health targets", () => {

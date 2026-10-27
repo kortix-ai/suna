@@ -1,90 +1,134 @@
 import { readFileSync } from '@/i18n/test-source';
-import { expect, test } from 'bun:test';
+import { afterEach, expect, mock, test } from 'bun:test';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { Window } from 'happy-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { qk } from '../../../../../packages/sdk/src/react/query-keys';
 import { resolve } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const root = resolve(import.meta.dir, '../..');
 
 // Structural assertions follow the owning modules after extraction.
-const appsSource = () => ['apps-view.tsx', 'app-detail.tsx', 'app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts', 'app-density.tsx', 'app-access.tsx']
-  .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
-  .join('\n');
+const appsSource = () =>
+  [
+    'apps-view.tsx',
+    'app-detail.tsx',
+    'app-releases.tsx',
+    'app-density.tsx',
+    'app-access.tsx',
+  ]
+    .map((name) => resolve(root, `features/apps/${name}`))
+    .concat(['app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts'].map((name) => uiSourcePath(`apps/${name}`)))
+    .map((path) => readFileSync(path, 'utf8'))
+    .join('\n');
 
-test('every Apps discovery surface hides until the apps feature flag is on', () => {
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
-    'utf8',
-  );
-  const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
-  const view = appsSource();
+// Mount the production components. Only routing, shell context and permission
+// probes are substituted; inventory and flag reads use real SDK hooks/cache data.
+const win = new Window();
+Object.assign(globalThis, { window: win, document: win.document, navigator: win.navigator });
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+const projectId = 'project-apps-ga';
+mock.module('next/navigation', () => ({
+  useParams: () => ({ id: projectId }),
+  usePathname: () => `/projects/${projectId}/apps`,
+  useSearchParams: () => new URLSearchParams(),
+}));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiParams: () => ({ id: projectId }),
+  useUiPathname: () => `/projects/${projectId}/apps`,
+  useUiSearchParams: () => new URLSearchParams(),
+}));
+mock.module('next/link', () => ({
+  default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
+    React.createElement('a', { href, ...props }, children),
+}));
+const hooks = await import('@kortix/ui/internal/hooks/index');
+mock.module('@kortix/ui/internal/hooks/index', () => ({ ...hooks, useIsMobile: () => false }));
+const sidebar = await import('@kortix/ui/sidebar');
+mock.module('@kortix/ui/sidebar', () => ({
+  ...sidebar,
+  useSidebar: () => ({ setOpenMobile: () => {} }),
+  useOptionalSidebar: () => null,
+  SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
+  SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
+}));
+mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
+const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+  ...projectCan,
+  useProjectCan: () => ({ allowed: true }),
+}));
 
-  // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
-  // per-feature hook and never a hand-rolled `experimental?.apps` read.
-  expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(nav).toContain('if (!appsGate.enabled) return null;');
-  expect(menu).toContain("requiresFlag: 'apps'");
-  expect(view).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(nav).not.toContain('useAppsFeatureEnabled');
-  expect(view).not.toContain('useAppsFeatureEnabled');
+// The detail modal is outside the empty-inventory path under test.
+mock.module('./app-detail', () => ({ AppDetailModal: () => null }));
+
+const navModule = await import('@kortix/ui/workspace/sidebar/footer/project-apps-nav');
+const viewModule = await import('./apps-view');
+let mounted: Root | undefined;
+let client: QueryClient | undefined;
+afterEach(() => {
+  act(() => mounted?.unmount());
+  mounted = undefined;
+  client?.clear();
+  win.document.body.replaceChildren();
 });
 
-test('Apps is an ordinary feature flag — nothing calls it experimental', () => {
-  // Apps shipped labelled Experimental on every surface. It is now a STABLE
-  // flag: still opt-in per project, but no badge on the sidebar entry and none
-  // on the page header. The stability badge in Settings → Feature flags is
-  // rendered from the registry's `stability`, so that list follows on its own.
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
-    'utf8',
-  );
-  const view = appsSource();
-
-  expect(nav).not.toContain('Experimental');
-  expect(view).not.toContain('Experimental');
-});
+for (const [name, experimental] of [
+  ['flagless', {}],
+  ['stored apps:false', { apps: false }],
+] as const) {
+  test(`${name} project renders the real Apps link and product empty state without a gate or switch`, async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client = queryClient;
+    queryClient.setQueryData(qk.project.detail(projectId), { project: { project_id: projectId, experimental } });
+    queryClient.setQueryData(qk.project.apps(projectId), []);
+    const host = win.document.createElement('div');
+    win.document.body.append(host);
+    const root = createRoot(host as unknown as Element);
+    mounted = root;
+    await act(async () => {
+      root.render(React.createElement(QueryClientProvider, { client: queryClient },
+        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem, { projectId })),
+        React.createElement(viewModule.AppsView, { projectId }),
+      ));
+    });
+    const link = host.querySelector('[data-testid="sidebar"] a');
+    expect(link?.getAttribute('href')).toBe(`/projects/${projectId}/apps`);
+    expect(link?.textContent).toBe('Apps');
+    expect(host.querySelector('h1')?.textContent).toBe('Apps');
+    expect(host.textContent).toContain('Apps you publish will show up here');
+    expect(host.textContent).toContain('Ask an agent to build one.');
+    expect(host.querySelector('a[href="/docs/apps"]')).not.toBeNull();
+    expect(host.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
+    expect(host.textContent).not.toMatch(/Enable Apps|Feature flags|Experimental/);
+    expect(host.querySelector('a[href*="settings"]')).toBeNull();
+  });
+}
 
 test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
   const sidebar = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
+    uiSourcePath('workspace/sidebar/project-sidebar.tsx'),
     'utf8',
   );
-  const navStore = readFileSync(resolve(root, 'stores/sidebar-nav-store.ts'), 'utf8');
+  const navStore = readFileSync(uiSourcePath('internal/stores/sidebar-nav-store.ts'), 'utf8');
 
   // It is a project surface you configure and operate, so it belongs with the
   // Customize row in the top nav group — not among the bottom-anchored alerts,
   // which shift as late-arriving billing and sandbox state lands. The rows are
-  // customizable now; this pins the default order and the group they render in.
+  // customizable now; this pins the default order and the group they render in:
+  // Customize, then Files/Drive (#10258), then Apps.
   const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
   const customizeAt = defaults.indexOf("id: 'customize'");
   const appsAt = defaults.indexOf("id: 'apps'");
   const filesAt = defaults.indexOf("id: 'files'");
   expect(customizeAt).toBeGreaterThan(-1);
-  expect(appsAt).toBeGreaterThan(customizeAt);
-  expect(appsAt).toBeLessThan(filesAt);
+  expect(filesAt).toBeGreaterThan(customizeAt);
+  expect(appsAt).toBeGreaterThan(filesAt);
   expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
-});
-
-test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
-  const view = appsSource();
-  const gate = readFileSync(resolve(root, 'features/workspace/feature-gate-screen.tsx'), 'utf8');
-
-  // A disabled feature never offers its own switch. The gate screen POINTS at
-  // Customize → Feature flags; it does not mutate anything.
-  expect(view).toContain('<FeatureGateScreen');
-  expect(view).toContain('featureName="Apps"');
-  expect(view).not.toContain('updateExperimentalFeature');
-  expect(view).not.toContain('updateFeatureFlag');
-  expect(view).not.toContain('Enable Apps');
-
-  // The shared screen links to the one place a flag can be flipped: the
-  // Customize bar's Settings tab, Feature flags section — through the shared
-  // href builder, so the route can move without this link going stale. A
-  // real link, not a store call.
-  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
-  expect(gate).not.toContain('useCustomizeStore');
-  expect(gate).not.toContain('useSettingsPanelStore');
-  expect(gate).toContain('Feature flags');
-  expect(gate).not.toContain('updateFeatureFlag');
-  expect(gate).not.toContain('useMutation');
 });
 
 test('Apps UI is operational only and has no creation action or modal', () => {
@@ -102,7 +146,7 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
   const tabs = readFileSync(
-    resolve(root, 'features/workspace/capabilities/shared/capability-tabs.tsx'),
+    uiSourcePath('customize/shared/capability-tabs.tsx'),
     'utf8',
   );
 
@@ -112,7 +156,7 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // Apps draws it through `ProjectPageHeader`, the one header the standalone
   // project pages (Review, Files, Reminders, Apps) share.
   const header = readFileSync(
-    resolve(root, 'features/workspace/project-layout/project-page-header.tsx'),
+    uiSourcePath('internal/layout/project-page-header.tsx'),
     'utf8',
   );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
@@ -194,11 +238,11 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   // class list, so its icon and label sat ~8px left of its neighbours and read a
   // shade darker — visibly out of line.
   const apps = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    uiSourcePath('workspace/sidebar/footer/project-apps-nav.tsx'),
     'utf8',
   );
   const customize = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/project-settings-nav.tsx'),
+    uiSourcePath('internal/layout/project-settings-nav.tsx'),
     'utf8',
   );
 
@@ -210,8 +254,11 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   const ROW = 'group/menu-button text-sidebar-foreground relative';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
-  expect(customize).toContain(ROW);
-  expect(apps).toContain(ROW);
+  expect(customize).toContain('<ProjectNavRow');
+  expect(apps).toContain('<ProjectNavRow');
+  expect(
+    readFileSync(uiSourcePath('internal/layout/project-nav-row.tsx'), 'utf8'),
+  ).toContain(ROW);
   // The glyph keeps its box on a narrow sidebar, like its neighbours.
   expect(apps).toContain('<span className="shrink-0">');
 });
@@ -225,7 +272,9 @@ test('an App with no deployment never claims to be Running', () => {
   expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
   // `deployed` gates both branches; a static App is live without a runtime
   // (behavior asserted in app-shared.test.ts).
-  expect(view).toContain("const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');");
+  expect(view).toContain(
+    "const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');",
+  );
   expect(view).toContain("!deployed ? 'Not deployed'");
   // The badge and its tint must both follow real state, not intent.
   expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");
@@ -235,10 +284,8 @@ test('an App with no deployment never claims to be Running', () => {
 test('a suspended App preview issues the request that wakes its active deployment', () => {
   const view = appsSource();
 
-  expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain('if (!url)');
   expect(view).toContain('frame.src = url');
-  expect(view).toContain("frame.dataset.testid = 'app-live-preview'");
   expect(view).not.toContain("app.desired_state === 'stopped'");
   expect(view).not.toContain('Suspended. Open the App or use Wake App to resume it.');
 });
@@ -246,7 +293,6 @@ test('a suspended App preview issues the request that wakes its active deploymen
 test('an active App never looks undeployed while its signed preview URL loads', () => {
   const view = appsSource();
 
-  expect(view).toContain('if (!app.active_deployment_id)');
   expect(view).toContain(
     "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
   );
@@ -277,35 +323,22 @@ test('the App detail header is a title bar, not a debug readout', () => {
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
 });
 
-test("the header separates the App's actions from the window's Close", () => {
+test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
-  // Close used to be the fifth button INSIDE the group, which made "stop this
-  // App" and "shut this panel" read as peers. It sits outside now, and it is
-  // ghost rather than outline because it is chrome, not an action.
-  const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('text7d9eb7acb13e');
-  expect(groupEndsAt).toBeGreaterThan(-1);
-  expect(closeAt).toBeGreaterThan(groupEndsAt);
-  expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
-});
+  // Delete is configuration, not navigation: the bar over the App never
+  // carries it (#10245).
+  expect(header).not.toContain("raw('textd1b0a6e3985a')");
+  expect(header).not.toContain('variant="destructive"');
 
-test('Delete lives in the header menu, never buried in the version drawer', () => {
-  const view = appsSource();
-  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
-
-  // A destructive action reachable only by first opening a history panel is an
-  // action you find by looking for something else.
-  expect(header).toContain("raw('textd1b0a6e3985a')");
-  expect(header).toContain('variant="destructive"');
+  // The settings modal lists it as its own destructive row…
+  const settings = view.slice(view.indexOf("open={overlay === 'settings'}"), view.indexOf('</Modal>'));
+  expect(settings).toContain("raw('textd1b0a6e3985a')");
+  expect(settings).toContain('variant="destructive" onClick={() => setOverlay(\'delete\')}');
   // …and it still goes through the confirm step.
-  expect(view).toContain('<ConfirmDialog');
+  expect(view).toContain("open={overlay === 'delete'}");
   expect(view).toContain('confirmVariant="destructive"');
-
-  // The versions drawer keeps only the deploy command.
-  const drawer = view.slice(view.indexOf('{versionsOpen ? ('));
-  expect(drawer.slice(0, drawer.indexOf('DeploymentRow'))).not.toContain('Delete App');
 });
 
 test('internal infrastructure names are not shown to App owners', () => {

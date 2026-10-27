@@ -3,20 +3,21 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
-import { Separator } from '@/components/ui/separator';
-import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
-import { cn } from '@/lib/utils';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
-import { m } from 'motion/react';
+import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
+import { CopyRow } from '@/features/marketing/kit/copy-row';
+import { Band, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
+import { cn } from '@kortix/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useState, type ReactNode } from 'react';
+import { Fragment, Suspense, useState, type ReactNode } from 'react';
+
+import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
 const LEGAL_LAST_UPDATED = 'September 29, 2026';
 
-type LegalTab = 'privacy' | 'imprint';
+type LegalTab = 'imprint' | 'terms' | 'privacy';
 
 function isLegalTab(value: string | null): value is LegalTab {
-  return value === 'privacy' || value === 'imprint';
+  return value === 'imprint' || value === 'terms' || value === 'privacy';
 }
 
 /**
@@ -31,17 +32,18 @@ function isLegalTab(value: string | null): value is LegalTab {
  */
 const PROSE = 'text-muted-foreground text-base leading-7 text-pretty';
 
+// Hover takes the ring colour, like the contact rows (`kit/copy-row.tsx`).
 const LINK =
-  'text-foreground decoration-foreground/25 hover:decoration-foreground/60 wrap-break-word underline underline-offset-4 transition-colors';
+  'text-foreground decoration-foreground/25 hover:text-ring hover:decoration-ring/60 wrap-break-word underline underline-offset-4 transition-colors duration-normal ease-out';
 
 // ---------------------------------------------------------------------------
 // Prose atoms
 // ---------------------------------------------------------------------------
 
-/** A titled block of a legal document. `scroll-mt-28` clears the fixed navbar. */
+/** A titled block of a legal document. `scroll-mt-24` clears the fixed navbar. */
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-28">
+    <section id={id} className="scroll-mt-24">
       <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">{title}</h2>
       <div className="mt-3 space-y-4">{children}</div>
     </section>
@@ -54,7 +56,7 @@ function P({ children }: { children: ReactNode }) {
 
 function Bullets({ children }: { children: ReactNode }) {
   return (
-    <ul className={cn(PROSE, 'marker:text-muted-foreground/40 list-disc space-y-2 pl-5')}>
+    <ul className={cn(PROSE, 'marker:text-muted-foreground list-disc space-y-2 pl-5')}>
       {children}
     </ul>
   );
@@ -142,13 +144,16 @@ function Imprint() {
       </Section>
 
       <Section id="imprint-contact" title={t.raw('i18nComplete.text2b5c3d26721a')}>
-        <P>
-          {t.raw('i18nComplete.text969ccbd3cf63')}{' '}
-          <a href="mailto:info@kortix.com" className={LINK}>
-            {t.raw('appLegalPage.line130JsxTextInfoKortixCom')}
-          </a>
-          .
-        </P>
+        {/* The same click-to-copy rows as /contact; they carry the address
+            the sentence used to repeat. */}
+        <ul className="divide-y border-y">
+          <li>
+            <CopyRow label="General" value="info@kortix.com" />
+          </li>
+          <li>
+            <CopyRow label="Privacy" value={PRIVACY_EMAIL} />
+          </li>
+        </ul>
       </Section>
 
       <Section
@@ -181,10 +186,26 @@ function MailLink({ address }: { address: string }) {
   );
 }
 
+/** Section ids and titles of the privacy policy, shared with the contents rail. */
+const PRIVACY_TITLES = {
+  privacy: 'Who we are',
+  'information-gathering': 'Information we collect',
+  'information-use': 'How we use it and our legal bases',
+  cookies: 'Cookies and analytics',
+  'information-sharing': 'Who we share it with',
+  'international-transfers': 'International transfers',
+  retention: 'How long we keep it',
+  'information-protection': 'How we protect it',
+  'your-rights': 'Your rights',
+  children: 'Children',
+  changes: 'Changes to this policy',
+  'privacy-contact': 'Contact',
+} as const;
+
 function PrivacyPolicy() {
   return (
     <div className="space-y-10">
-      <Section id="privacy" title="Who we are">
+      <Section id="privacy" title={PRIVACY_TITLES['privacy']}>
         <P>
           Kortix AI Corp, a Delaware corporation at 701 Tillery Street Unit 12-2521, Austin, Texas
           78702, United States (&quot;Kortix&quot;, &quot;we&quot;), is the controller of the
@@ -203,7 +224,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="information-gathering" title="Information we collect">
+      <Section id="information-gathering" title={PRIVACY_TITLES['information-gathering']}>
         <Clause lead="Information you give us">
           <Bullets>
             <li>Account and contact details: name, email address, organization, and role.</li>
@@ -242,7 +263,7 @@ function PrivacyPolicy() {
         </Clause>
       </Section>
 
-      <Section id="information-use" title="How we use it and our legal bases">
+      <Section id="information-use" title={PRIVACY_TITLES['information-use']}>
         <Bullets>
           <li>
             To provide the Services, including running agents on your instructions, and to support
@@ -273,7 +294,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="cookies" title="Cookies and analytics">
+      <Section id="cookies" title={PRIVACY_TITLES['cookies']}>
         <P>
           We use cookies that the Services need to work, such as the sign-in session. On our
           marketing website we also use analytics (PostHog, Vercel Analytics) and, through Google
@@ -284,7 +305,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="information-sharing" title="Who we share it with">
+      <Section id="information-sharing" title={PRIVACY_TITLES['information-sharing']}>
         <Bullets>
           <li>
             Service providers that process data for us, listed on our{' '}
@@ -303,7 +324,7 @@ function PrivacyPolicy() {
         <P>We do not sell personal information.</P>
       </Section>
 
-      <Section id="international-transfers" title="International transfers">
+      <Section id="international-transfers" title={PRIVACY_TITLES['international-transfers']}>
         <P>
           We host the Services mainly in the United Kingdom and the European Union. We and our
           service providers also process personal information in the United States and other
@@ -314,7 +335,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="retention" title="How long we keep it">
+      <Section id="retention" title={PRIVACY_TITLES['retention']}>
         <Bullets>
           <li>Account information: while your account exists.</li>
           <li>
@@ -330,7 +351,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="information-protection" title="How we protect it">
+      <Section id="information-protection" title={PRIVACY_TITLES['information-protection']}>
         <P>
           We encrypt data in transit with TLS and at rest, restrict access to people who need it,
           require multi-factor authentication for administrative access, run agents in isolated
@@ -339,7 +360,7 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="your-rights" title="Your rights">
+      <Section id="your-rights" title={PRIVACY_TITLES['your-rights']}>
         <P>
           Depending on where you live, you can ask to access, correct, delete, restrict, or receive
           a copy of your personal information, object to our processing, and withdraw consent at any
@@ -354,21 +375,21 @@ function PrivacyPolicy() {
         </P>
       </Section>
 
-      <Section id="children" title="Children">
+      <Section id="children" title={PRIVACY_TITLES['children']}>
         <P>
           The Services are not directed to children under 16, and we do not knowingly collect their
           personal information.
         </P>
       </Section>
 
-      <Section id="changes" title="Changes to this policy">
+      <Section id="changes" title={PRIVACY_TITLES['changes']}>
         <P>
           We post changes on this page and update the date above. We notify you by email or in the
           Services before a material change takes effect.
         </P>
       </Section>
 
-      <Section id="privacy-contact" title="Contact">
+      <Section id="privacy-contact" title={PRIVACY_TITLES['privacy-contact']}>
         <P>
           Privacy questions and requests, including for our Data Protection Officer:{' '}
           <MailLink address={PRIVACY_EMAIL} />. Post: Kortix AI Corp, Attn: Data Protection Officer,
@@ -379,13 +400,141 @@ function PrivacyPolicy() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Terms of Service — rendered from `terms-of-service.ts`
+// ---------------------------------------------------------------------------
+
+type TermsBlock = { kind: 'p'; text: string } | { kind: 'ul' | 'ol'; items: string[] };
+
+type TermsSection = { id: string; title: string; blocks: TermsBlock[] };
+
+/**
+ * The Markdown the Terms use, and nothing more: `##` sections, paragraphs,
+ * `-` bullets and `1.` lists. Items are separated by blank lines in the source,
+ * so consecutive items of one kind are merged into one list.
+ */
+function parseTerms(source: string): { intro: TermsBlock[]; sections: TermsSection[] } {
+  const intro: TermsBlock[] = [];
+  const sections: TermsSection[] = [];
+  for (const raw of source.split(/\n\s*\n/)) {
+    const chunk = raw.trim();
+    if (!chunk) continue;
+    if (chunk.startsWith('## ')) {
+      const title = chunk.slice(3).trim();
+      const slug = title
+        .replace(/^\d+\.\s*/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+      sections.push({ id: `terms-${slug}`, title, blocks: [] });
+      continue;
+    }
+    const blocks = sections.at(-1)?.blocks ?? intro;
+    const kind = /^-\s/.test(chunk) ? 'ul' : /^\d+\.\s/.test(chunk) ? 'ol' : 'p';
+    if (kind === 'p') {
+      blocks.push({ kind, text: chunk.replace(/\s*\n\s*/g, ' ') });
+      continue;
+    }
+    const item = chunk.replace(/^(-|\d+\.)\s+/, '').replace(/\s*\n\s*/g, ' ');
+    const last = blocks.at(-1);
+    if (last && last.kind === kind) last.items.push(item);
+    else blocks.push({ kind, items: [item] });
+  }
+  return { intro, sections };
+}
+
+const TERMS = parseTerms(TERMS_OF_SERVICE);
+
+/** `**Defined term**` reads in the foreground; an address is a mail link. */
+function TermsInline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*|[a-z]+@kortix\.com)/g).map((part, index) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <strong key={index} className="text-foreground font-medium">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        if (/^[a-z]+@kortix\.com$/.test(part)) return <MailLink key={index} address={part} />;
+        return <Fragment key={index}>{part}</Fragment>;
+      })}
+    </>
+  );
+}
+
+function TermsBlocks({ blocks }: { blocks: TermsBlock[] }) {
+  return blocks.map((block, index) =>
+    block.kind === 'p' ? (
+      <P key={index}>
+        <TermsInline text={block.text} />
+      </P>
+    ) : block.kind === 'ul' ? (
+      <Bullets key={index}>
+        {block.items.map((item) => (
+          <li key={item}>
+            <TermsInline text={item} />
+          </li>
+        ))}
+      </Bullets>
+    ) : (
+      <ol
+        key={index}
+        className={cn(PROSE, 'marker:text-muted-foreground list-decimal space-y-2 pl-6')}
+      >
+        {block.items.map((item) => (
+          <li key={item}>
+            <TermsInline text={item} />
+          </li>
+        ))}
+      </ol>
+    ),
+  );
+}
+
+/** English only, like the privacy policy. The text lives in `terms-of-service.ts`. */
+function TermsOfService() {
+  return (
+    <div className="space-y-10">
+      <div className="space-y-4">
+        <TermsBlocks blocks={TERMS.intro} />
+      </div>
+      {TERMS.sections.map((section) => (
+        <Section key={section.id} id={section.id} title={section.title}>
+          <TermsBlocks blocks={section.blocks} />
+        </Section>
+      ))}
+    </div>
+  );
+}
+
+/** Rail links: the active document, the others muted (Buio's legal nav). */
+function railItem(active: boolean) {
+  return cn(
+    'outline-ring flex min-h-11 shrink-0 items-center text-left text-sm whitespace-nowrap focus-visible:outline-2',
+    'duration-moderate transition-colors lg:min-h-9 lg:whitespace-normal',
+    active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+  );
+}
+
+/** The landing hero's header, shared with the Suspense fallback so nothing jumps. */
+function LegalHeading() {
+  return (
+    <PageHero
+      title="Legal information."
+      titleMuted="Imprint, terms and privacy."
+      sub="Company details, how we handle your data, and the terms that govern Kortix."
+    />
+  );
+}
+
 function LegalContent() {
   const t = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Terms moved to an external Drive folder (see lib/legal-terms-redirect.ts)
-  // and is a link out of this page rather than a tab.
+  // `/legal/terms` redirects here with `?tab=terms` (lib/legal-terms-redirect.ts).
   const urlTab: LegalTab = isLegalTab(searchParams.get('tab'))
     ? (searchParams.get('tab') as LegalTab)
     : 'imprint';
@@ -415,101 +564,105 @@ function LegalContent() {
 
   const tabs: { id: LegalTab; label: string }[] = [
     { id: 'imprint', label: t.raw('i18nComplete.textd198ed30d09b') },
+    { id: 'terms', label: t.raw('i18nComplete.text4afa55bf7aec') },
     { id: 'privacy', label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy') },
   ];
 
+  const toc: TocItem[] = (
+    activeTab === 'imprint'
+      ? [
+          ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
+          ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
+          ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
+          ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
+        ]
+      : activeTab === 'terms'
+        ? TERMS.sections.map((section) => [section.id, section.title])
+        : Object.entries(PRIVACY_TITLES)
+  ).map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
+
   return (
-    <main className="bg-background min-h-screen">
-      {/* Same container and header rhythm as /changelog and /blog: max-w-6xl,
-          px-6, and top padding that clears the fixed navbar in (seo)/layout. */}
-      <div className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
-        <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-            {t.raw('appLegalPage.line48JsxTextLegalInformation')}
-          </h1>
-          <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty">
-            {t.raw('appLegalPage.line93JsxTextInformationAccordingToLegalRequirements')}
-            {' — '}
-            {t.raw('i18nComplete.text5f7ba416b298')}
-          </p>
-        </header>
+    <PageFrame>
+      <LegalHeading />
 
-        <Separator />
+      {/* The landing page's frame (`kit/page-frame.tsx`), like /security:
+          one band holds the document rail (a scrolling row below `lg`), the
+          document, and its contents, split by hairlines. */}
+      <section className="pb-20 lg:pb-28">
+        <Band>
+          <div className="grid grid-cols-1 lg:grid-cols-12">
+            <nav
+              aria-label={t.raw('i18nComplete.text02881bb0fe83')}
+              className="scrollbar-hide flex gap-x-6 overflow-x-auto border-b px-6 py-2 lg:sticky lg:top-24 lg:col-span-2 lg:flex-col lg:self-start lg:overflow-visible lg:border-b-0 lg:px-8 lg:py-10"
+            >
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleTabChange(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  aria-controls="legal-document"
+                  className={railItem(activeTab === tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <Link href="/legal/subprocessors" className={railItem(false)}>
+                Subprocessors
+              </Link>
+            </nav>
 
-        <div className={DOC_GRID}>
-          {/* Same rail component /support uses — horizontal scroller below
-              `lg`, sticky vertical list above it. Here the entries switch
-              documents; on /support they are in-page anchors. */}
-          <DocRail label={t.raw('i18nComplete.text02881bb0fe83')}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                aria-current={activeTab === tab.id ? 'true' : undefined}
-                aria-controls="legal-document"
-                className={docRailItem(activeTab === tab.id, 'cursor-pointer')}
-              >
-                {tab.label}
-              </button>
-            ))}
+            <article
+              id="legal-document"
+              className="min-w-0 px-6 py-10 lg:col-span-7 lg:border-x lg:px-11 lg:py-12"
+            >
+              <div className="mb-10">
+                <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
+                  {activeTab === 'imprint'
+                    ? 'Imprint'
+                    : activeTab === 'terms'
+                      ? t.raw('i18nComplete.text4afa55bf7aec')
+                      : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
+                </h2>
+                {activeTab === 'imprint' ? null : (
+                  <p className="text-muted-foreground mt-2 text-sm tabular-nums">
+                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
+                    {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
+                  </p>
+                )}
+              </div>
 
-            {/* /legal/terms 308s to the Drive-hosted PDF from middleware. */}
-            <Link href="/legal/terms" className={docRailItem()}>
-              {t.raw('i18nComplete.text4afa55bf7aec')}
-              <ArrowUpRightIcon className="size-3.5 shrink-0 opacity-60" />
-            </Link>
-          </DocRail>
+              {activeTab === 'imprint' ? (
+                <Imprint />
+              ) : activeTab === 'terms' ? (
+                <TermsOfService />
+              ) : (
+                <PrivacyPolicy />
+              )}
+            </article>
 
-          {/* Keyed so switching documents replays the enter animation. */}
-          <m.article
-            key={activeTab}
-            id="legal-document"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-            className={DOC_BODY}
-          >
-            <div className="mb-8">
-              <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance">
-                {activeTab === 'imprint'
-                  ? 'Imprint'
-                  : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
-              </h2>
-              {activeTab === 'privacy' ? (
-                <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-                  {t.raw('appLegalPage.line1534JsxTextLastUpdated')} {LEGAL_LAST_UPDATED}
-                </p>
-              ) : null}
-            </div>
-
-            {activeTab === 'imprint' ? <Imprint /> : <PrivacyPolicy />}
-          </m.article>
-        </div>
-      </div>
-    </main>
+            {/* Keyed by document so the scroll-spy starts at its first section. */}
+            <aside className="hidden px-8 py-12 lg:sticky lg:top-24 lg:col-span-3 lg:block lg:self-start">
+              <UseCaseToc key={activeTab} items={toc} />
+            </aside>
+          </div>
+        </Band>
+      </section>
+    </PageFrame>
   );
 }
 
 /**
  * The fallback mirrors the real header box so the page does not jump when
- * `useSearchParams()` resolves.
+ * `useSearchParams()` resolves. Its heading is the same h1 the page renders.
  */
 export default function LegalPage() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Suspense
       fallback={
-        <main className="bg-background min-h-screen">
-          <div className="mx-auto max-w-6xl px-6">
-            <header className="pt-28 pb-12 sm:pt-36 sm:pb-16">
-              {/* A placeholder, not the page heading: the loaded page owns the one h1. */}
-              <p className="text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                {tI18nComplete.raw('textcad20810fc2d')}
-              </p>
-            </header>
-          </div>
-        </main>
+        <PageFrame>
+          <LegalHeading />
+        </PageFrame>
       }
     >
       <LegalContent />

@@ -4,21 +4,25 @@
  *
  * Two headers, on purpose:
  *
- * - `Content-Security-Policy` (enforced) holds only directives that no page
- *   needs to break: `frame-ancestors` (this origin and the Kortix extension), `object-src 'none'`
- *   (no page embeds plugins) and `base-uri 'self'` (no page sets `<base>`).
+ * - `Content-Security-Policy` (enforced) holds `frame-ancestors` (this origin
+ *   and the Kortix extension, whose side panel frames the app),
+ *   `object-src 'none'`, `base-uri 'self'` and the `script-src` allowlist.
  *
- * - `Content-Security-Policy-Report-Only` holds the `script-src` allowlist.
- *   The app renders several inline bootstrap scripts from the root layout, and
- *   GTM, Stripe, PostHog, Vercel and the visitor pixel each load scripts from
- *   their own hosts. An enforced allowlist that misses one host or inline hash
- *   breaks sign-in, checkout or the whole app, and no local check can prove it
- *   complete. Report-only collects the violations real pages produce at
- *   `/api/csp-report`; once those reports are clean for a release cycle, move
- *   `script-src` into the enforced header (with nonces for the inline scripts).
+ * - `Content-Security-Policy-Report-Only` carries the same `script-src`
+ *   allowlist plus `report-uri`, so a host that a page needs but the allowlist
+ *   misses still lands in `/api/csp-report` instead of failing silently.
+ *
+ * `script-src` was report-only for one release cycle so the reports could
+ * prove the allowlist complete. A pentest (2026-10-22) pointed out the cost of
+ * leaving it there: report-only blocks nothing, so a third-party script added
+ * to a page — or a compromised tag manager — still executed. The list below is
+ * the set of hosts the app actually loads scripts from today; `'unsafe-inline'`
+ * is still required by the root layout's inline bootstrap, so this does not
+ * yet protect against injected inline script, only against unlisted hosts.
+ * Moving to nonces is the next step.
  */
 
-import { KORTIX_EXTENSION_ID } from '../../features/chrome/extension';
+import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const CSP_REPORT_PATH = '/api/csp-report';
 
@@ -43,17 +47,13 @@ export const SCRIPT_SRC_HOSTS = [
   'https://vercel.live',
 ] as const;
 
-export function enforcedContentSecurityPolicy(): string {
-  // The Kortix Chrome extension frames the app in its side panel. X-Frame-Options
-  // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
-  return [
-    `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`,
-    "object-src 'none'",
-    "base-uri 'self'",
-  ].join('; ') + ';';
+/** This origin and the Kortix extension's side panel, shared by both headers. */
+function frameAncestorsDirective(): string {
+  return `frame-ancestors 'self' chrome-extension://${KORTIX_EXTENSION_ID}`;
 }
 
-export function reportOnlyContentSecurityPolicy(): string {
+/** The complete `script-src` value, shared by the enforced and report-only headers. */
+function scriptSourceDirective(): string {
   const scriptSrc = [
     "'self'",
     // Inline bootstrap scripts in the root layout; see the file comment.
@@ -64,9 +64,39 @@ export function reportOnlyContentSecurityPolicy(): string {
     'blob:',
     ...SCRIPT_SRC_HOSTS,
   ];
+  return `script-src ${scriptSrc.join(' ')}`;
+}
+
+export function enforcedContentSecurityPolicy(): string {
+  // The Kortix Chrome extension frames the app in its side panel. X-Frame-Options
+  // cannot allowlist an origin, so the app sends no XFO and this directive is the only gate.
   return (
     [
-      `script-src ${scriptSrc.join(' ')}`,
+      scriptSourceDirective(),
+      frameAncestorsDirective(),
+      "object-src 'none'",
+      "base-uri 'self'",
+      `report-uri ${CSP_REPORT_PATH}`,
+    ].join('; ') + ';'
+  );
+}
+
+/** Session embeds reuse authentication and allow only Kortix-owned same-site hosts. */
+export function embedContentSecurityPolicy(): string {
+  return (
+    [
+      "frame-ancestors 'self' https://kortix.com https://*.kortix.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+    ].join('; ') + ';'
+  );
+}
+
+export function reportOnlyContentSecurityPolicy(): string {
+  return (
+    [
+      scriptSourceDirective(),
+      frameAncestorsDirective(),
       "object-src 'none'",
       "base-uri 'self'",
       `report-uri ${CSP_REPORT_PATH}`,

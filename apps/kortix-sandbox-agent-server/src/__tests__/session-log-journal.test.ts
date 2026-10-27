@@ -8,8 +8,11 @@
  * the 3 s bound before the turn-end relay, and the flush on the daemon's stop.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { randomBytes } from 'node:crypto'
-import { fromV1, toV1 } from '@kortix/api-contract/session-log'
+import { createHash, randomBytes } from 'node:crypto'
+import { rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fromV1, SessionLogJournalRequestSchema, toV1 } from '@kortix/api-contract/session-log'
 import type {
   AdapterCapabilities,
   ExportCursor,
@@ -23,11 +26,13 @@ import { __resetRelayedTurnSignatures, relayTurnEndToApi } from '@/harness/open-
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   JOURNAL_MAX_BATCH_BYTES,
+  JOURNAL_TRUNCATION_MARK,
   JOURNAL_UNACKED_RETRIES,
   SessionLogJournal,
   resetSessionLogJournalForTests,
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
+import { reconcileSessionLog } from '@/harness/shared/session-log-boot'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
 import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
@@ -149,10 +154,10 @@ function fakeAdapter() {
         }
         cursors.push(cursor)
       }
-      return cursors
+      return { cursors, dropped: {} }
     },
-    async fingerprint() {
-      return sha(JSON.stringify([...native]))
+    async held() {
+      return new Set(native.keys())
     },
     live: (_thread: string, id: string) => (liveSeqs.has(id) ? { seq: liveSeqs.get(id)! } : null),
   }
@@ -333,7 +338,7 @@ describe('session-log journal', () => {
       pending: { questions: [], permissions: [] },
       threads: [{ schema: 'kortix.session/2', v: 1, thread_id: 'thr_root', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '2026-10-11T00:00:00.000Z', messages: [restored] }],
     }
-    const cursors = await fake.port.restore(log)
+    const { cursors } = await fake.port.restore(log)
     fake.put('n1', 2, 'new after restore')
     const journal = new SessionLogJournal(fake.port, { generation: 2, cursors })
 
@@ -504,6 +509,38 @@ describe('session-log journal', () => {
     expect(await journal.flush()).toBe(true)
     expect(putIds(api.received.slice(1))).toEqual(['m2'])
     expect((journal as unknown as { live: Map<string, unknown> }).live.size).toBe(0)
+    await journal.stop(0)
+  })
+
+  test('live turn: a codemode part puts when a call in its metadata.calls starts or ends, never per repeated frame', async () => {
+    resetKortixEventBusForTests()
+    fakeApi()
+    const fake = fakeAdapter()
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    fake.liveSeq('m5', 5)
+    bus.publish('message.updated', { sessionID: T, info: { id: 'm5', sessionID: T, role: 'assistant', parentID: 'u4', time: { created: 5_000 }, modelID: 'fake-1', providerID: 'fake' } }, T)
+    const script = (calls: Array<{ name: string; status: string }>) => ({
+      messageID: 'm5', sessionID: T, type: 'tool', id: 'm5-cm', callID: 'c-cm', tool: 'codemode',
+      state: { status: 'running', input: { code: 'await tools.bash({})' }, metadata: { calls }, time: { start: 5_100 } },
+    })
+    const steps = [
+      script([]),
+      script([{ name: 'bash', status: 'running' }]),
+      script([{ name: 'bash', status: 'running' }]), // the same frame again: no put
+      script([{ name: 'bash', status: 'ok' }]),
+      script([{ name: 'bash', status: 'ok' }, { name: 'read', status: 'running' }]),
+    ]
+    for (const part of steps) bus.publish('message.part.updated', { sessionID: T, part }, T)
+    const calls = frames
+      .filter((f) => f.type === 'log.message')
+      .map((f) => (f.payload.message as SessionLogMessage).blocks.length)
+    // message.updated, the new part, then one put per call start or end.
+    expect(calls).toEqual([0, 1, 1, 1, 1])
     await journal.stop(0)
   })
 
@@ -816,5 +853,376 @@ describe('session-log journal', () => {
   test('no control plane: the journal does not start, and the turn-end flush is a no-op', async () => {
     delete process.env.KORTIX_API_URL
     expect(startSessionLogJournal(fakeAdapter().port, { generation: 1 })).toBeNull()
+  })
+})
+
+describe('attachment bytes (P2.13)', () => {
+  const shaOf = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+  const PNG = randomBytes(64)
+  const BIG = randomBytes(256)
+  const THIRD = randomBytes(128)
+  const digest = shaOf(PNG)
+  const own = (sha: string) => `kortix-attachment://project-1/session-1/obj-${sha}`
+  /** A store with one message per image (`msg_0`, `msg_1`, …); `blob` serves their bytes. */
+  function imageAdapter(images: Buffer[] = [PNG]) {
+    const base = fakeAdapter()
+    images.forEach((_, i) => base.put(`msg_${i}`, i + 1, `image ${i}`))
+    const changes = base.port.changes.bind(base.port)
+    const port: SessionLogPort = {
+      ...base.port,
+      async changes(cursors) {
+        const out = await changes(cursors)
+        for (const { message } of out.messages) {
+          const bytes = images[Number(message.message_id.slice(4))]!
+          message.blocks.push({ type: 'attachment', id: 'img', ref: `blob:${shaOf(bytes)}`, mime: 'image/png', bytes: bytes.length, sha256: shaOf(bytes) })
+        }
+        return out
+      },
+      blob: (sha256) => images.find((b) => shaOf(b) === sha256) ?? null,
+    }
+    return { ...base, port }
+  }
+  /** A fake API: the blob routes answer by `blob(method, sha256)` (a status, or 'store'), the journal acknowledges. */
+  function blobApi(blob: (method: string, sha256: string) => number | 'store' | Promise<number | 'store'>) {
+    const posted: SessionLogJournalRequest[] = []
+    const calls: string[] = []
+    const objects = new Map<string, Buffer>()
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname.endsWith('/log/journal')) {
+          const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(await request.arrayBuffer())))) as SessionLogJournalRequest
+          posted.push(body)
+          return ack(body)
+        }
+        const sha256 = url.pathname.split('/').at(-1)!
+        const name = sha256 === digest ? 'PNG' : sha256 === shaOf(BIG) ? 'BIG' : sha256 === shaOf(THIRD) ? 'THIRD' : sha256
+        calls.push(`${request.method} ${name}${request.method === 'PUT' ? ` ${request.headers.get('content-type')}` : ''}`)
+        const answer = await blob(request.method, name)
+        if (answer !== 'store') return new Response('no', { status: answer })
+        if (request.method === 'GET') return Response.json({ ref: objects.has(sha256) ? own(sha256) : null })
+        const bytes = Buffer.from(await request.arrayBuffer())
+        if (shaOf(bytes) !== sha256) return new Response('mismatch', { status: 400 })
+        objects.set(sha256, bytes)
+        return Response.json({ ref: own(sha256) })
+      },
+    })
+    servers.push(server)
+    process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
+    return { posted, calls, objects }
+  }
+  const refsOf = (body: SessionLogJournalRequest) => body.puts.flatMap((p) => p.message.blocks.flatMap((b) => (b.type === 'attachment' ? [b.ref] : [])))
+  const lastRef = (api: ReturnType<typeof blobApi>, id: string) =>
+    api.posted.flatMap((b) => b.puts).filter((p) => p.message.message_id === id).map((p) => p.message.blocks.find((b) => b.type === 'attachment')!).at(-1)?.ref
+
+  test('the journal uploads the bytes before the record goes out, and the record names the stored object', async () => {
+    const api = blobApi(() => 'store')
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
+    expect(api.objects.get(digest)).toEqual(PNG)
+    expect(refsOf(api.posted[0]!)).toEqual([own(digest)])
+    // Asked once per boot: a later collection that re-exports the message sends nothing more.
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
+  })
+
+  test('a failed upload sends the record with blob: at once; the next collection retries and re-sends it with the stored ref', async () => {
+    let puts = 0
+    const api = blobApi((method) => (method === 'PUT' && ++puts === 1 ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0, retryMs: 1 })
+    expect(await journal.flush()).toBe(true)
+    expect(refsOf(api.posted[0]!)).toEqual([`blob:${digest}`])
+    expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png', 'GET PNG', 'PUT PNG image/png'])
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`], [own(digest)]])
+    expect(api.posted[1]!.puts[0]!.rev).toBeGreaterThan(api.posted[0]!.puts[0]!.rev)
+  })
+
+  test('one sha256 whose upload always fails starves no other: it is tried 3 times, then keeps blob: for the boot', async () => {
+    const api = blobApi((method, name) => (method === 'PUT' && name === 'BIG' ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG]).port, { generation: 0 })
+    for (let i = 0; i < 5; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls.filter((c) => c.startsWith('PUT')).sort()).toEqual(['PUT BIG image/png', 'PUT BIG image/png', 'PUT BIG image/png', 'PUT PNG image/png'])
+    expect(lastRef(api, 'msg_1')).toBe(own(digest))
+    expect(lastRef(api, 'msg_0')).toBe(`blob:${shaOf(BIG)}`)
+    // Given up: no record of BIG is sent again.
+    const posts = api.posted.length
+    expect(await journal.flush()).toBe(true)
+    expect(api.posted.length).toBe(posts)
+  })
+
+  test('an outage (every lookup 503) asks at most once per sha256 per collection, counts nothing, and uploads once the API is back', async () => {
+    let down = true
+    const api = blobApi(() => (down ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG]).port, { generation: 0 })
+    for (let i = 0; i < 4; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls.filter((c) => c.startsWith('PUT'))).toEqual([])
+    expect(api.calls.length).toBeLessThanOrEqual(8)
+    expect(api.posted.flatMap(refsOf).every((r) => r!.startsWith('blob:'))).toBe(true)
+    down = false
+    expect(await journal.flush()).toBe(true)
+    expect([lastRef(api, 'msg_0'), lastRef(api, 'msg_1')]).toEqual([own(shaOf(BIG)), own(digest)])
+  })
+
+  test('a 413 (and an API without the route, 404) keep blob: for the boot at once', async () => {
+    const api = blobApi((method) => (method === 'PUT' ? 413 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    for (let i = 0; i < 3; i++) expect(await journal.flush()).toBe(true)
+    expect(api.calls).toEqual(['GET PNG', 'PUT PNG image/png'])
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`]])
+    const old = blobApi(() => 404)
+    const second = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+    expect(await second.flush()).toBe(true)
+    expect(await second.flush()).toBe(true)
+    expect(old.calls).toEqual(['GET PNG'])
+  })
+
+  const puts = (api: ReturnType<typeof blobApi>) => api.calls.filter((c) => c.startsWith('PUT')).length
+  const allStored = (api: ReturnType<typeof blobApi>) => [lastRef(api, 'msg_0'), lastRef(api, 'msg_1'), lastRef(api, 'msg_2')]
+
+  test('a Storage outage (every upload 503) stops each collection after 2 uploads, counts none, and every sha256 uploads after recovery', async () => {
+    let down = true
+    const api = blobApi((method) => (method === 'PUT' && down ? 503 : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG, THIRD]).port, { generation: 0 })
+    for (let i = 1; i <= 4; i++) {
+      expect(await journal.flush()).toBe(true)
+      expect(puts(api)).toBe(2 * i)
+    }
+    down = false
+    expect(await journal.flush()).toBe(true)
+    expect(allStored(api)).toEqual([own(shaOf(BIG)), own(digest), own(shaOf(THIRD))])
+  })
+
+  test('a 429 or 401 on an upload counts nothing: after 4 refused collections every sha256 still uploads', async () => {
+    let answer: number | 'store' = 429
+    const api = blobApi((method) => (method === 'PUT' ? answer : 'store'))
+    const journal = new SessionLogJournal(imageAdapter([BIG, PNG, THIRD]).port, { generation: 0 })
+    for (let i = 1; i <= 3; i++) {
+      expect(await journal.flush()).toBe(true)
+      expect(puts(api)).toBe(i)
+    }
+    answer = 401
+    expect(await journal.flush()).toBe(true)
+    expect(puts(api)).toBe(4)
+    answer = 'store'
+    expect(await journal.flush()).toBe(true)
+    expect(allStored(api)).toEqual([own(shaOf(BIG)), own(digest), own(shaOf(THIRD))])
+  })
+
+  test('a slow upload holds the records at most the budget; the pass goes on, and the next collection sends the stored ref without a second upload', async () => {
+    const api = blobApi(async (method) => (method === 'PUT' ? Bun.sleep(400).then(() => 'store' as const) : 'store'))
+    const journal = new SessionLogJournal(imageAdapter().port, { generation: 0, blobBudgetMs: 50 })
+    const started = performance.now()
+    expect(await journal.flush()).toBe(true)
+    expect(performance.now() - started).toBeLessThan(350)
+    expect(api.posted.map(refsOf)).toEqual([[`blob:${digest}`]])
+    // A collection while the pass still runs starts no second one.
+    expect(await journal.flush()).toBe(true)
+    await Bun.sleep(500)
+    expect(await journal.flush()).toBe(true)
+    expect(lastRef(api, 'msg_0')).toBe(own(digest))
+    expect(puts(api)).toBe(1)
+  })
+
+  test('the dump directory keeps blob: and asks nothing', async () => {
+    const api = blobApi(() => 'store')
+    process.env.KORTIX_SESSION_LOG_DUMP_DIR = join(tmpdir(), `journal-dump-${randomBytes(4).toString('hex')}`)
+    try {
+      const journal = new SessionLogJournal(imageAdapter().port, { generation: 0 })
+      expect(await journal.flush()).toBe(true)
+      expect(api.calls).toEqual([])
+    } finally {
+      rmSync(process.env.KORTIX_SESSION_LOG_DUMP_DIR, { recursive: true, force: true })
+      delete process.env.KORTIX_SESSION_LOG_DUMP_DIR
+    }
+  })
+})
+
+// ── No batch is dropped (422, 413, 400) ─────────────────────────────────────
+
+/**
+ * The API's write rules in miniature, for thread `thr_root`: rows by message id with their seq,
+ * the whole batch rolled back on a seq another message holds (422 `seq_conflict` with the
+ * thread's `seq_max`), the route's 413 caps, and the route's 400 on a body the schema rejects.
+ */
+function storeApi(held: Array<[id: string, seq: number]> = [], caps = { gzip: 2 * 1024 * 1024, raw: 16 * 1024 * 1024 }) {
+  const rows = new Map<string, { seq: number; text: string }>(held.map(([id, seq]) => [id, { seq, text: `stored ${id}` }]))
+  const statuses: number[] = []
+  const answer = (status: number, body: unknown) => {
+    statuses.push(status)
+    return Response.json(body, { status })
+  }
+  const api = fakeApi((body, n) => {
+    const raw = Buffer.byteLength(JSON.stringify(body))
+    if (api.received[n - 1]!.gzippedBytes > caps.gzip || raw > caps.raw) return answer(413, { error: 'Journal body exceeds the cap' })
+    const parsed = SessionLogJournalRequestSchema.safeParse(body)
+    if (!parsed.success) return answer(400, { error: 'Invalid journal body', issues: parsed.error.issues.slice(0, 5) })
+    const next = new Map(rows)
+    for (const p of body.puts) {
+      const m = p.message
+      for (const [id, row] of next) {
+        if (row.seq !== m.seq || id === m.message_id) continue
+        const seq_max = Math.max(...[...rows.values()].map((r) => r.seq))
+        return answer(422, { error: 'seq_conflict', message_id: m.message_id, rev: p.rev, thread_id: m.thread_id, seq: m.seq, seq_max })
+      }
+      next.set(m.message_id, { seq: m.seq, text: m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') })
+    }
+    rows.clear()
+    for (const [id, row] of next) rows.set(id, row)
+    statuses.push(200)
+    return ack(body)
+  })
+  /** The stored ids in seq order: what `GET …/log` serves. */
+  const order = () => [...rows].sort((a, b) => a[1].seq - b[1].seq).map(([id]) => id)
+  return { ...api, rows, statuses, order }
+}
+
+describe('no batch is dropped', () => {
+  let stateDir = ''
+  beforeEach(() => {
+    stateDir = join(tmpdir(), `journal-state-${randomBytes(4).toString('hex')}`)
+    process.env.KORTIX_RUNTIME_STATE_DIR = stateDir
+  })
+  afterEach(() => {
+    rmSync(stateDir, { recursive: true, force: true })
+    delete process.env.KORTIX_RUNTIME_STATE_DIR
+    delete process.env.KORTIX_SESSION_LOG_RESTORE
+  })
+
+  test('422: a box that lost its store reuses seqs the log holds; its messages move above the log, in order, and none is dropped', async () => {
+    // The log holds turns 1-2 at seqs 1, 2, 4, 5 (3 is a gap). The new store numbers from 1 again.
+    const api = storeApi([['old1', 1], ['old2', 2], ['old4', 4], ['old5', 5]])
+    const fake = fakeAdapter()
+    fake.put('new3', 3, 'turn 3 question')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+    // seq 3 is free: the API takes it, inside the old history.
+    expect(await journal.flush()).toBe(true)
+    fake.put('new4', 4, 'turn 3 answer')
+
+    expect(await journal.flush(5_000)).toBe(true)
+
+    expect(api.statuses).toContain(422)
+    expect(api.order()).toEqual(['old1', 'old2', 'old4', 'old5', 'new3', 'new4'])
+    expect(api.rows.get('new4')!.seq - api.rows.get('new3')!.seq).toBe(1)
+    expect(journal.clean).toBe(true)
+  })
+
+  test('422: the live turn after a re-sequence streams at the moved seqs; a restarted daemon keeps them (restore off) and posts no 422', async () => {
+    resetKortixEventBusForTests()
+    const api = storeApi([['old1', 1], ['old2', 2]])
+    const fake = fakeAdapter()
+    fake.put('new1', 1, 'turn 3 question')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+    expect(await journal.flush(5_000)).toBe(true)
+    const moved = api.rows.get('new1')!.seq
+    expect(moved).toBeGreaterThan(2)
+
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    fake.liveSeq('new2', 2)
+    kortixEventBus().publish('message.updated', { sessionID: 'thr_root', info: { id: 'new2', sessionID: 'thr_root', role: 'assistant', parentID: 'new1', time: { created: 3_000 }, modelID: 'fake-1', providerID: 'fake' } }, 'thr_root')
+    expect(frames.map((f) => f.payload.message?.seq)).toEqual([moved + 1])
+    await journal.stop(0)
+
+    // The daemon restarts on the same store, restore off: the boot hands the journal the offsets.
+    const boot = await reconcileSessionLog(fake.port)
+    const before = api.statuses.length
+    const restarted = new SessionLogJournal(fake.port, boot!)
+    fake.put('new2', 2, 'turn 3 answer')
+    expect(await restarted.flush(5_000)).toBe(true)
+    expect(api.statuses.slice(before)).toEqual([200])
+    expect(api.order()).toEqual(['old1', 'old2', 'new1', 'new2'])
+  })
+
+  test('413: one message over the API cap is saved with its longest text cut to a preview and a marker; the rest of the dirty set lands', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('small', 1, 'before')
+    // ~4 MB of base64, ~3 MB gzipped: over the route's 2 MB gzipped cap on its own.
+    fake.put('huge', 2, randomBytes(3 * 1024 * 1024).toString('base64'))
+    fake.put('after', 3, 'after')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(15_000)).toBe(true)
+
+    expect(api.order()).toEqual(['small', 'huge', 'after'])
+    const text = api.rows.get('huge')!.text
+    expect(text.length).toBeLessThan(64 * 1024)
+    expect(text).toContain(JOURNAL_TRUNCATION_MARK)
+    expect(api.statuses).not.toContain(413)
+  })
+
+  test('413: a dirty set over 16 MB raw that gzips small goes in batches the route takes', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    const ids = Array.from({ length: 20 }, (_, i) => `m${String(i).padStart(2, '0')}`)
+    ids.forEach((id, i) => fake.put(id, i + 1, 'a'.repeat(1024 * 1024)))
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(15_000)).toBe(true)
+
+    expect(api.order()).toEqual(ids)
+    expect(api.statuses).not.toContain(413)
+    expect([...api.rows.values()].every((r) => r.text.length === 1024 * 1024)).toBe(true)
+  })
+
+  test('413 from a smaller cap than the route\'s: the journal halves its batches until they land', async () => {
+    const api = storeApi([], { gzip: 100 * 1024, raw: 16 * 1024 * 1024 })
+    const fake = fakeAdapter()
+    const ids = ['m1', 'm2', 'm3']
+    ids.forEach((id, i) => fake.put(id, i + 1, randomBytes(45_000).toString('base64')))
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush(10_000)).toBe(true)
+
+    expect(api.statuses).toContain(413)
+    expect(api.order()).toEqual(ids)
+  })
+
+  test('403 (the credential lost access) keeps the batch and backs off; it lands once access returns', async () => {
+    let allowed = false
+    const api = fakeApi((body) => (allowed ? ack(body) : Response.json({ error: 'The session log takes the session sandbox credential' }, { status: 403 })))
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10, maxRetryMs: 20 })
+
+    expect(await journal.flush(300)).toBe(false)
+    expect(journal.clean).toBe(false)
+    allowed = true
+    await until(() => journal.clean)
+
+    expect(putIds(api.received).filter((id) => id === 'm1').length).toBeGreaterThan(1)
+    await journal.stop(0)
+  })
+
+  test('recovery: a daemon restart (restore off) re-sends every message of the native store, also one an older daemon dropped', async () => {
+    const api = storeApi([['old1', 1], ['old2', 2]])
+    const fake = fakeAdapter()
+    // An older daemon dropped new1 on a 422: the store holds it, the log does not.
+    fake.put('new1', 1, 'turn 3 question')
+    const restarted = new SessionLogJournal(fake.port, (await reconcileSessionLog(fake.port))!)
+    expect(await restarted.flush(5_000)).toBe(true)
+    expect(api.order()).toEqual(['old1', 'old2', 'new1'])
+  })
+
+  test('400: the batch minus the invalid put is saved, and the invalid put is not posted again', async () => {
+    const api = storeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    fake.put('bad', 1.5, 'a seq the schema rejects')
+    fake.put('m2', 2, 'two')
+    const journal = new SessionLogJournal(fake.port, { generation: 0, retryMs: 10 })
+
+    expect(await journal.flush()).toBe(true)
+
+    expect(api.statuses[0]).toBe(400)
+    expect(api.order()).toEqual(['m1', 'm2'])
+    expect(journal.clean).toBe(true)
+    const posts = api.received.length
+    expect(await journal.flush()).toBe(true)
+    expect(api.received).toHaveLength(posts)
   })
 })

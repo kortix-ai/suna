@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -78,7 +79,17 @@ esac
   stub(bin, 'cloudflared', `#!/bin/sh
 n=$(cat "$STUB_STATE/cloudflared-n" 2>/dev/null || echo 0)
 n=$((n+1)); echo "$n" > "$STUB_STATE/cloudflared-n"
+# Real cloudflared takes a moment before the URL reaches its log: the delay
+# (when CLOUDFLARED_URL_DELAY is set) makes the script's wait poll a few times
+# instead of finding the URL on the first grep.
+[ -n "\${CLOUDFLARED_URL_DELAY:-}" ] && /bin/sleep "$CLOUDFLARED_URL_DELAY"
 echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
+# Real cloudflared is a daemon: it prints the URL and keeps running (the
+# watchdog rotates it later). A one-shot stub that exits right after the echo
+# turns the script's early-exit check (kill -0) into a scheduling race under
+# load — the stub could die between the script's grep and its kill -0. Sleep
+# like the daemon would; the script's own kill/pkill cleans it up.
+exec /bin/sleep 120
 `);
 
   const pnpmLog = join(state, 'pnpm.log');
@@ -90,7 +101,7 @@ echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
     PNPM_LOG: pnpmLog,
     PORT: API_PORT,
     WEB_PORT: '3000',
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
     KORTIX_DEV_GATEWAY: '0',
     KORTIX_STRIPE_LISTEN: '0',
     SUPABASE_URL: 'https://supabase.example.test',
@@ -105,12 +116,14 @@ echo "[stub] tunnel up: https://stub-tunnel-\$n.trycloudflare.com"
     timeout: 60_000,
   });
   let pnpmCalls = [];
-  try {
-    pnpmCalls = readFileSync(pnpmLog, 'utf8').trim().split('\n');
-  } finally {
-    rmSync(scriptCopy, { force: true });
-    rmSync(bin, { recursive: true, force: true });
-  }
+  // The stub pnpm creates the log on its first call. A subject that exits
+  // before any pnpm call (a real regression in the script) must surface as an
+  // assertion failure with the script's real output, not as a harness ENOENT
+  // that hides the cause (2026-10-14: the lane's parallel wave starved the
+  // tunnel wait past its poll cap; the ENOENT then masked the actual branch).
+  if (existsSync(pnpmLog)) pnpmCalls = readFileSync(pnpmLog, 'utf8').trim().split('\n').filter(Boolean);
+  rmSync(scriptCopy, { force: true });
+  rmSync(bin, { recursive: true, force: true });
   return {
     status: r.status,
     stdout: r.stdout ?? '',
@@ -151,6 +164,23 @@ test('preset healthy KORTIX_URL: the API starts with that URL instead of an unbo
     '--filter kortix-api dev|KORTIX_URL=https://preset.example.test',
   ]);
   assert.doesNotMatch(output, /DEAD\/MISSING/);
+});
+
+test('SECONDS already at 40: a fresh wait still gets its own 30s budget', () => {
+  // SECONDS counts from shell start, not from a wait loop's start. The env
+  // seeds it at 40 and the stub delays the URL, so the tunnel wait must poll
+  // several times before it can succeed: a deadline anchored to script
+  // uptime instead of the loop gives up after the first poll and fails.
+  const r = runDevLocal({ PGREP_ALIVE: '0', SECONDS: '40', CLOUDFLARED_URL_DELAY: '0.3' });
+  const output = r.stdout + r.stderr;
+  assert.doesNotMatch(output, /timed out waiting for the Cloudflare tunnel URL/);
+  assert.match(output, /Cloud sandbox callback ready/);
+  assert.equal(r.status, 0, output);
+  const urls = apiStarts(r).map((line) => line.split('KORTIX_URL=')[1]);
+  assert.deepEqual(urls, [
+    'https://stub-tunnel-1.trycloudflare.com',
+    'https://stub-tunnel-2.trycloudflare.com',
+  ]);
 });
 
 test('started quick tunnel: the watchdog still rotates a dead tunnel and bounces the API', () => {

@@ -54,9 +54,10 @@
  * Generic fixtures only (`example-org`, `example.test`); no customer names.
  */
 import { randomUUID } from 'node:crypto';
-import type { Client } from '../core/client';
+import { mintAccountToken, type Client } from '../core/client';
 import type { FlowContext, Principal } from '../core/types';
 import { sleep } from '../core/poll';
+import { withTransientGitRetry } from './git-transient';
 
 export interface Db {
   query<R = any>(sql: string, params?: unknown[]): Promise<{ rows: R[]; rowCount: number | null }>;
@@ -171,10 +172,9 @@ export class AgentPrincipalsWorld {
     if (local) {
       remote = local;
     } else {
-      const minted = await this.owner.post('/v1/accounts/tokens', { name: this.ctx.fixtures.name('agp-manifest-writer') });
-      minted.status(201);
-      const { token_id: tokenId, secret_key: secret } = minted.json<{ token_id: string; secret_key: string }>();
-      this.tokens.push(tokenId);
+      const credential = await mintAccountToken(this.owner, this.ctx.fixtures.name('agp-manifest-writer'));
+      this.tokens.push(credential.token_id);
+      const secret = credential.secret_key;
       remote = `${this.ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${this.projectId}`;
       extraEnv = {
         GIT_CONFIG_COUNT: '1',
@@ -320,11 +320,7 @@ export class AgentPrincipalsWorld {
     const userId = opts.launcher?.userId ?? this.ownerUserId;
     const serviceAccountId = await this.serviceAccountId(opts.agent);
     const mint = async (label: string) => {
-      const minted = await this.owner.post('/v1/accounts/tokens', {
-        name: `AGP ${label} ${sessionId.slice(0, 8)}`,
-      });
-      minted.status(201);
-      const credential = minted.json<{ token_id: string; secret_key: string }>();
+      const credential = await mintAccountToken(this.owner, `AGP ${label} ${sessionId.slice(0, 8)}`);
       this.tokens.push(credential.token_id);
       return credential;
     };
@@ -499,11 +495,14 @@ export async function git(
   const { promisify } = await import('node:util');
   const exec = promisify(execFile);
   try {
-    const result = await exec('git', args, {
-      cwd: opts.cwd,
-      timeout: 60_000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
-    });
+    const run = () =>
+      exec('git', args, {
+        cwd: opts.cwd,
+        timeout: 60_000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env ?? {}) },
+      });
+    // A command expected to be rejected is never repeated: the rejection is the answer.
+    const result = opts.expectFailure ? await run() : await withTransientGitRetry(args, run);
     if (opts.expectFailure) throw new Error(`git ${args[0]}: expected a rejection, got success`);
     return result.stdout + result.stderr;
   } catch (error: any) {

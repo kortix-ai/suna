@@ -4,6 +4,9 @@ import {
   getProjectGitConnection,
   getProjectGitRemote,
 } from './git';
+import { accountTokens, projects, connectors, projectSessionConnectorBindings } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { db } from '../../shared/db';
 import type { ProjectGitConnectionRow, ProjectRow } from './serializers';
 
 export interface ProjectDeletionDeps {
@@ -28,4 +31,53 @@ export async function deleteManagedProjectRepo(
   const backend = deps.getBackend(remote.provider);
   await backend.deleteRepo(buildConnectionRef(project, remote));
   return true;
+}
+
+/**
+ * Delete a project's connector rows. Called by the project-delete route BEFORE
+ * the archive: after it the project answers 404, so a failed purge could never
+ * be retried. Without this, the rows outlived the purged project — the project
+ * row survives its archive as an internal tombstone, so the
+ * `connectors.project_id` FK cascade never fires, and the connectors list kept
+ * serving rows for projects that no longer exist.
+ *
+ * The database cascades the rest of the connector family (connections,
+ * credentials, policies, actions); `connector_calls` and event-subscription
+ * references keep their rows with the connector reference nulled. Connector
+ * state keyed by the PROJECT instead (project policies, settings, sync
+ * fences) is archive-surviving by design — it cascades only when the
+ * tombstone row itself goes.
+ *
+ * Session connector bindings RESTRICT on the connector, so they go first —
+ * both deletes in one transaction, because a connectors delete without the
+ * bindings delete would leave the project purged but half its connector
+ * family behind.
+ */
+export async function purgeProjectConnectors(projectId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(projectSessionConnectorBindings)
+      .where(eq(projectSessionConnectorBindings.projectId, projectId));
+    await tx.delete(connectors).where(eq(connectors.projectId, projectId));
+  });
+}
+
+/** Archive and revoke atomically; a transfer during external cleanup must win intact. */
+export async function archiveProjectAndRevokeTokens(projectId: string, accountId: string) {
+  return db.transaction(async (tx) => {
+    // The ownership CAS also locks against transfers and concurrent token mints.
+    const [archived] = await tx.update(projects)
+      .set({ status: 'archived', updatedAt: new Date() })
+      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+      .returning();
+    if (!archived) return undefined;
+    await tx.update(accountTokens)
+      .set({ status: 'revoked', revokedAt: new Date() })
+      .where(and(
+        eq(accountTokens.projectId, projectId),
+        eq(accountTokens.accountId, archived.accountId),
+        eq(accountTokens.status, 'active'),
+      ));
+    return archived;
+  });
 }

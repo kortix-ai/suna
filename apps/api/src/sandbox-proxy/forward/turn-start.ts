@@ -5,7 +5,6 @@ import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-gran
 import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
-  convergeBeforeTurnStart,
   convergeModelCatalogForTurnStart,
   scheduleAssetConvergence,
 } from '../../projects/lib/turn-start-convergence';
@@ -41,6 +40,9 @@ import {
   releasePromptDelivery,
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
+import { isMemoryTurnRoute, memoryChannelsOn, withMemoryTurn, withoutClientSystem } from '../../memory/turn-body';
+import { logger } from '../../lib/logger';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -183,9 +185,12 @@ export function claimPromptDeliveryOnce(input: {
 }
 
 /**
- * C9: converge a box that is behind before a user turn runs on it, and start
- * the first attempt's ingress resolve alongside. `refusal` is set when the
- * model-catalog repair definitively did not land.
+ * Repair the box before a user turn when THIS turn's model is missing from it,
+ * and start the first attempt's ingress resolve alongside. `refusal` is set when
+ * the model-catalog repair definitively did not land.
+ *
+ * Config is not converged here: a box that is behind converges after its turn
+ * ends (`convergeConfigIfBehind`, projects/lib/turn-start-convergence.ts).
  */
 export async function convergeTurnStartRuntime(input: {
   record: SandboxRecord;
@@ -201,14 +206,10 @@ export async function convergeTurnStartRuntime(input: {
 }> {
   const { record, ingressRequest, isSseEventStreamRequest, requestBody, incomingHeaders, ptl, origin } = input;
   let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
-  // R2 — config-converge, model-catalog-converge and the ingress resolve
-  // read/act on three independent surfaces (the session's config release,
-  // the box's managed-model map, this box's provider network address) and
-  // none consumes another's result before the upstream fetch is built. They
-  // used to run back to back — measured ~40 ms each on a warm box, ~120 ms
-  // stacked for nothing. They now start together and are joined where each
-  // result is first actually needed, exactly like `Promise.all` on the
-  // pre-flight reads the spec calls out (§3, R2).
+  // The model-catalog gate and the ingress resolve act on independent surfaces
+  // (the box's managed-model map, this box's provider network address) and
+  // neither consumes the other's result before the upstream fetch is built, so
+  // they start together (R2).
   //
   // EXCLUDED: the SSE stall-recovery path just below
   // (`isSseEventStreamRequest`) decides whether to INVALIDATE the cached
@@ -226,27 +227,12 @@ export async function convergeTurnStartRuntime(input: {
     prefetchedIngress.catch(() => undefined);
   }
   const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-  const convergedPromise = convergeBeforeTurnStart(record.sessionId);
-  const modelCatalogPromise = convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
-
-  const converged = await convergedPromise;
-  ptl.mark('config-converge');
-  // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
-  // awaits because config changes what the agent IS; the daemon, the CLI, the
-  // overlay and OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB and a box
-  // one turn behind on them is the state that exists today. This call returns
-  // synchronously, never throws, and adds no network call at all to a box the
-  // API last saw current — it reads two in-process maps, and its only probe is
-  // the health GET the gate above already made. Do not await it.
+  // The BINARIES must not block either: the daemon, the CLI, the overlay and
+  // OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB. This returns
+  // synchronously, never throws, and adds no network call to a box the API last
+  // saw current — it reads two in-process maps; a cold memo fires a detached
+  // health read. Do not await it.
   scheduleAssetConvergence(record.sessionId);
-  if (converged.decision !== 'current' && converged.decision !== 'skipped') {
-    console.log('[PREVIEW] turn-start config convergence', {
-      session_id: record.sessionId,
-      decision: converged.decision,
-      outcome: converged.outcome,
-      ms: converged.ms,
-    });
-  }
   // A third case, neither CONFIG nor BINARIES: the box's `kortix` provider
   // map is missing the ONE model this turn asks for. AWAITED — unlike the
   // asset lane just above — because the alternative is `Model not found:
@@ -254,7 +240,7 @@ export async function convergeTurnStartRuntime(input: {
   // (2026-09-26). Any provider: a `codex/…` or BYOK id the box's image
   // catalog predates fails the same way (2026-10-01, codex/gpt-6.1-sol).
   // A model the box already confirmed costs one in-process map read.
-  const modelCatalog = await modelCatalogPromise;
+  const modelCatalog = await convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
   ptl.mark('model-catalog-converge');
   if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
     console.log('[PREVIEW] turn-start model-catalog convergence', {
@@ -357,7 +343,48 @@ export async function syncEnvBeforeTurnStart(
     }
     return refusal;
   }
+  await addMemoryTurnLayers(req, state);
   return null;
+}
+
+/**
+ * `system` on a Kortix prompt body (`project_channels`): the list of the
+ * memory files the thread reads, at its mount paths, for the turn's system
+ * prompt. The first turn records the list ("Used memory"). A `system` the
+ * client sent is always dropped: only the API sets it. Flag off, no space, or
+ * any failure: the body goes on without memory. `/steer` never passes here
+ * (the API posts it to the box directly and never sets `system`).
+ */
+async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Promise<void> {
+  // Once per request: a retry attempt keeps the body the first attempt built.
+  if (state.memoryLayersChecked || !isMemoryTurnRoute(req.method, req.remainingPath)) return;
+  state.memoryLayersChecked = true;
+  state.requestBody = withoutClientSystem(state.requestBody);
+  const sessionId = req.record.sessionId;
+  try {
+    // Flag off: the memory and drives services are never loaded on this path.
+    if (!(await memoryChannelsOn(req.record.projectId))) return;
+    const { memoryTurnContext } = await import('../../memory/turn-context');
+    // The prompter decides whether the thread's personal layer is listed (its owner only).
+    const turn = await memoryTurnContext(req.record.projectId, sessionId, req.userId);
+    if (!turn) return;
+    state.requestBody = withMemoryTurn(state.requestBody, turn);
+    // "Used memory" is the first turn's list, recorded only when the list went out.
+    // ponytail: recorded before delivery; a refused prompt or a daemon older than the `system` field still records it.
+    if (!turn.firstTurn || turn.system.length > MEMORY_TURN_SYSTEM_MAX_CHARS) return;
+    // Off the turn's path: a lost record only hides the "Used memory" chip.
+    void import('../../memory/thread-loads').then(({ recordThreadLoad }) => recordThreadLoad(sessionId, turn.loaded)).catch((error: unknown) =>
+      logger.warn('[memory] the thread load was not recorded', {
+        session_id: sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  } catch (error) {
+    logger.warn('[memory] turn start forwarded without memory', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

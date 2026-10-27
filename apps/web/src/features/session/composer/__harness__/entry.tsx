@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { ComposerEditor, type ComposerEditorHandle } from '../editor/composer-editor';
+import { ComposerEditor, type ComposerEditorHandle } from '@kortix/ui/composer';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -81,6 +81,23 @@ function Harness() {
   // sits on screen is the whole variable this reproduces.
   const bottom = new URLSearchParams(location.search).get('bottom') === '1';
 
+  const editor = (
+    <ComposerEditor
+      ref={ref}
+      placeholder="Type a command..."
+      onSubmit={() => push('submit')}
+      onEmptyChange={(empty) => push(`empty:${empty}`)}
+      agents={AGENTS}
+      sessions={SESSIONS}
+      currentSessionId="ses_current"
+      commands={COMMANDS}
+      slashDockSelector="#slash-dock"
+      onSelectCommand={(c) => push(`command:${c.name}`)}
+      onSelectAction={(a) => push(`action:${a.id}`)}
+      onMenuOpenChange={(open) => push(`menu:${open}`)}
+    />
+  );
+
   if (bottom) {
     return (
       <div className="flex h-screen flex-col overflow-hidden">
@@ -99,20 +116,7 @@ function Harness() {
                 rather than only the floating `@` case. */}
             <div id="slash-dock" />
             <div id="composer-shell" className="bg-popover w-full rounded-2xl border p-3">
-              <ComposerEditor
-                ref={ref}
-                placeholder="Type a command..."
-                onSubmit={() => push('submit')}
-                onEmptyChange={(empty) => push(`empty:${empty}`)}
-                agents={AGENTS}
-                sessions={SESSIONS}
-                currentSessionId="ses_current"
-                commands={COMMANDS}
-                slashDockSelector="#slash-dock"
-                onSelectCommand={(c) => push(`command:${c.name}`)}
-                onSelectAction={(a) => push(`action:${a.id}`)}
-                onMenuOpenChange={(open) => push(`menu:${open}`)}
-              />
+              {editor}
             </div>
           </div>
         </div>
@@ -124,20 +128,7 @@ function Harness() {
     <div style={{ padding: 24, fontFamily: 'system-ui' }}>
       <div id="slash-dock" />
       <div id="composer-shell">
-        <ComposerEditor
-          ref={ref}
-          placeholder="Type a command..."
-          onSubmit={() => push('submit')}
-          onEmptyChange={(empty) => push(`empty:${empty}`)}
-          agents={AGENTS}
-          sessions={SESSIONS}
-          currentSessionId="ses_current"
-          commands={COMMANDS}
-          slashDockSelector="#slash-dock"
-          onSelectCommand={(c) => push(`command:${c.name}`)}
-          onSelectAction={(a) => push(`action:${a.id}`)}
-          onMenuOpenChange={(open) => push(`menu:${open}`)}
-        />
+        {editor}
       </div>
       <pre id="harness-log">{log.join('\n')}</pre>
     </div>

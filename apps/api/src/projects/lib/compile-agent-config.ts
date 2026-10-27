@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
+import { orderPermissionRules } from '@kortix/api-contract/permission-rules';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -53,7 +54,14 @@ import {
   validateAgentMdFrontmatter,
   validateManifest,
   type AgentBlockV2,
+  type AgentBlockV3,
+  type CommandV3,
+  type ExtensionV3,
   type GrantSetV2,
+  KORTIX_SKILL_NAMES,
+  type ManifestV3,
+  OPENCODE_BUILTIN_AGENTS_V3,
+  resolveGrantSet,
   type ManifestIssue,
   type ManifestV2,
   type PermissionActionV2,
@@ -247,6 +255,7 @@ export function compileAgentConfig(
       `Unsupported compiler runtime "${runtime}" — only "opencode" is implemented today.`,
     );
   }
+  if (manifestSchemaVersion(manifest) === 3) return compileManifestV3(manifest, agentMdFiles);
 
   const v2 = manifest as unknown as ManifestV2;
   const rawAgents =
@@ -254,10 +263,8 @@ export function compileAgentConfig(
 
   const agent: Record<string, CompiledAgentEntry> = {};
   for (const [name, block] of Object.entries(rawAgents)) {
-    const md = manifestSchemaVersion(manifest) === 3 ? null : suppliedAgentMarkdown(manifest, name, agentMdFiles);
-    agent[name] = md
-      ? compileAgentBlock(name, block, md.path, md.content)
-      : compileYamlAgentBlock(name, block, agentMdFiles);
+    const md = suppliedAgentMarkdown(manifest, name, agentMdFiles);
+    agent[name] = compileAgentBlock(name, block, md.path, md.content);
   }
 
   const defaultAgentName = typeof v2.default_agent === 'string' ? v2.default_agent : undefined;
@@ -309,6 +316,8 @@ export function compileSelectedAgentConfig(
     );
   }
 
+  if (manifestSchemaVersion(manifest) === 3) return compileManifestV3(manifest, agentMdFiles, agentName);
+
   const v2 = manifest as unknown as ManifestV2;
   const rawAgents =
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents)
@@ -322,13 +331,8 @@ export function compileSelectedAgentConfig(
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
 
-  let compiledAgent: CompiledAgentEntry;
-  if (manifestSchemaVersion(manifest) === 3) {
-    compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
-  } else {
-    const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
-    compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
-  }
+  const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
+  const compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
   return {
     ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
     agent: { [agentName]: compiledAgent },
@@ -337,50 +341,12 @@ export function compileSelectedAgentConfig(
 }
 
 /**
- * Compile one agent: parse its `.md` (if supplied), copy every recognized
+ * Compile one v2 agent: parse its `.md` (if supplied), copy every recognized
  * behavioral frontmatter field through unchanged, then overlay Kortix
- * governance — `enabled: false` forces `disable: true` (the one field where
- * governance always wins over whatever the `.md` itself says; there is no
- * other precedence to document since behavior lives ONLY in the `.md`), and
- * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
- * secrets/kortix_permissions/repository_access) are never copied: no runtime representation.
+ * governance — `enabled: false` forces `disable: true`, and `skills` folds
+ * onto `permission.skill`. Pure governance fields (connectors/secrets/
+ * kortix_permissions/workspace) have no runtime representation and are never copied.
  */
-function compileYamlAgentBlock(
-  name: string,
-  block: AgentBlockV2,
-  files: Record<string, string>,
-): CompiledAgentEntry {
-  const raw = block as Record<string, unknown>;
-  const issues: ManifestIssue[] = [];
-  // `tools` is governance here (tool access), not the retired frontmatter field.
-  validateAgentMdFrontmatter({ ...raw, tools: undefined }, `agents.${name}`, issues);
-  if (raw.prompt !== undefined && typeof raw.prompt !== 'string') {
-    issues.push({ path: `agents.${name}.prompt`, message: 'must be a string.', severity: 'error' });
-  }
-  if (raw.file !== undefined || raw.opencode !== undefined || raw.disable !== undefined) {
-    issues.push({ path: `agents.${name}`, message: 'v3 does not accept native agent config fields.', severity: 'error' });
-  }
-  if (raw.prompt_file !== undefined &&
-      (!safeAgentFile(raw.prompt_file) || typeof raw.prompt_file !== 'string' || !(raw.prompt_file in files) || raw.prompt !== undefined)) {
-    issues.push({ path: `agents.${name}.prompt_file`, message: 'prompt file must be a safe, readable repo-relative .md file and cannot conflict with inline prompt.', severity: 'error' });
-  }
-  if (issues.some((issue) => issue.severity === 'error')) {
-    throw new CompileAgentConfigError(issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
-  }
-  const compiled: CompiledAgentEntry = {};
-  for (const key of BEHAVIOR_FRONTMATTER_KEYS) {
-    if (raw[key] !== undefined) (compiled as Record<string, unknown>)[key] = raw[key];
-  }
-  const prompt = typeof raw.prompt_file === 'string' ? files[raw.prompt_file] : raw.prompt;
-  if (typeof prompt === 'string') compiled.prompt = prompt;
-  if (block.enabled === false) compiled.disable = true;
-  const tools = resolveAgentTools(block.tools);
-  if (tools) compiled.tools = tools;
-  if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
-  if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
-  return compiled;
-}
-
 function compileAgentBlock(
   name: string,
   block: AgentBlockV2,
@@ -422,7 +388,7 @@ function compileAgentBlock(
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
   }
-  if (out.permission !== undefined) out.permission = denyToolsBehindDeniedPermission(out.permission);
+  if (out.permission !== undefined) out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(out.permission));
 
   return out;
 }
@@ -491,9 +457,8 @@ const OTHER_PERMISSION_KEYS: readonly string[] = [
 function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
   if (skills === 'all') return 'allow';
   if (skills === 'none' || skills.length === 0) return 'deny';
-  const rule: Record<string, PermissionActionV2> = {};
+  const rule: Record<string, PermissionActionV2> = { '*': 'deny' };
   for (const name of skills) rule[name] = 'allow';
-  rule['*'] = 'deny';
   return rule;
 }
 
@@ -514,19 +479,171 @@ function applySkillsGovernance(
   base: PermissionConfigV2 | undefined,
   skills: GrantSetV2,
 ): PermissionConfigV2 {
-  const skillRule = skillsGrantToPermissionRule(skills);
-  if (base === undefined) return { skill: skillRule };
+  return withPermissionRule(base, 'skill', skillsGrantToPermissionRule(skills));
+}
+
+/**
+ * Set one capability's rule on a permission config. A bare whole-agent action
+ * (`permission: allow`) applies to every capability, so it expands into an
+ * explicit object first: setting one key must not drop the author's intent for
+ * everything else.
+ */
+function withPermissionRule(
+  base: PermissionConfigV2 | undefined,
+  key: string,
+  rule: PermissionRuleV2,
+): PermissionConfigObjectV2 {
+  if (base === undefined) return { [key]: rule };
   if (typeof base === 'string') {
-    // A bare whole-agent action (e.g. `permission: allow`) applies to every
-    // capability including `skill` — expand it into an explicit object so
-    // overriding `skill` doesn't silently drop the author's intent for
-    // everything else.
     const expanded: PermissionConfigObjectV2 = {};
-    for (const key of OTHER_PERMISSION_KEYS) expanded[key] = base as PermissionActionV2;
-    expanded.skill = skillRule;
+    for (const other of OTHER_PERMISSION_KEYS) expanded[other] = base as PermissionActionV2;
+    expanded[key] = rule;
     return expanded;
   }
-  return { ...base, skill: skillRule };
+  return { ...base, [key]: rule };
+}
+
+// ─── kortix_version 3 ──────────────────────────────────────────────────────
+//
+// The project registers skills, tools, commands and extensions; each agent is
+// one block of behavior that enables registered things by name. Every grant
+// compiles to something a harness enforces: `skills` and `subagents` own
+// `permission.skill` / `permission.task`, `commands` becomes each command's
+// `agents`, `extensions` the agent's list. Only declared agents run.
+
+/** Behavior keys a v3 agent block copies onto its compiled agent. */
+const BEHAVIOR_KEYS_V3 = BEHAVIOR_FRONTMATTER_KEYS.filter((key) => key !== 'disable' && key !== 'permission');
+
+function mapOf<T>(value: unknown): Record<string, T> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, T>) : {};
+}
+
+/** The names a grant set selects from `universe` (`all`), or as listed. Omitted is none. */
+function grantedNames(value: unknown, universe: string[]): string[] {
+  const grant = resolveGrantSet(value, 'none');
+  return grant === 'all' ? universe : grant === 'none' ? [] : grant;
+}
+
+/** An allowlist rule: everything `deny`, then each name `allow`. No names: `deny`. */
+function allowlistRule(names: string[]): PermissionRuleV2 {
+  if (names.length === 0) return 'deny';
+  return { '*': 'deny', ...Object.fromEntries(names.map((name) => [name, 'allow' as const])) };
+}
+
+/** The text of a repo file the caller read, or a compile error naming the key. */
+function promptText(files: Record<string, string>, path: string, where: string, name?: string): string {
+  if (!safeAgentFile(path) || !(path in files)) {
+    throw new CompileAgentConfigError(`${where}: prompt file "${path}" is not a readable repository .md file.`, name);
+  }
+  return files[path]!;
+}
+
+/** The declared agents `name` may start as subagents: enabled, mode `subagent` or `all`, not itself. */
+function subagentUniverse(blocks: Record<string, AgentBlockV3>, name: string): string[] {
+  return Object.entries(blocks)
+    .filter(([other, block]) => other !== name && block.enabled !== false && (block.mode ?? 'all') !== 'primary')
+    .map(([other]) => other);
+}
+
+/**
+ * Compile a v3 manifest. `selected` compiles one agent for a restricted
+ * session: that agent, the subagents it may start (transitively), and only the
+ * commands and extensions those agents enable.
+ */
+function compileManifestV3(manifest: Record<string, unknown>, files: Record<string, string>, selected?: string): CompiledAgents {
+  const m = manifest as unknown as ManifestV3;
+  const blocks = mapOf<AgentBlockV3>(m.agents);
+  const skills = mapOf<string>(m.skills);
+  const commands = mapOf<CommandV3>(m.commands);
+  const extensions = mapOf<ExtensionV3>(m.extensions);
+  const skillNames = [...KORTIX_SKILL_NAMES, ...Object.keys(skills)];
+
+  let names = Object.keys(blocks);
+  if (selected !== undefined) {
+    if (!blocks[selected]) throw new CompileAgentConfigError(`Agent "${selected}" is not declared.`, selected);
+    if (blocks[selected]!.enabled === false) throw new CompileAgentConfigError(`Agent "${selected}" is disabled.`, selected);
+    const reach = new Set([selected]);
+    for (const name of reach) {
+      for (const sub of grantedNames(blocks[name]!.subagents, subagentUniverse(blocks, name))) reach.add(sub);
+    }
+    names = names.filter((name) => reach.has(name));
+  }
+
+  const agent: Record<string, CompiledAgentEntry> = {};
+  for (const name of names) {
+    agent[name] = compileAgentV3(name, blocks[name]!, files, {
+      skills: skillNames,
+      subagents: subagentUniverse(blocks, name),
+      extensions: Object.keys(extensions),
+    });
+  }
+  // Only declared agents run: OpenCode's own build/plan/general/explore are off.
+  for (const builtin of OPENCODE_BUILTIN_AGENTS_V3) {
+    if (!blocks[builtin]) agent[builtin] = { disable: true };
+  }
+
+  const compiledCommands: NonNullable<CompiledAgentSet['commands']> = {};
+  for (const [command, entry] of Object.entries(commands)) {
+    const runners = names.filter((name) => grantedNames(blocks[name]!.commands, Object.keys(commands)).includes(command));
+    if (runners.length === 0) continue;
+    compiledCommands[command] = {
+      ...(entry.description ? { description: entry.description } : {}),
+      template: entry.prompt ?? promptText(files, entry.prompt_file ?? '', `commands.${command}.prompt_file`),
+      agents: runners,
+    };
+  }
+
+  const used = new Set(names.flatMap((name) => agent[name]!.extensions ?? []));
+  const compiledExtensions = Object.fromEntries(Object.entries(extensions).filter(([name]) => used.has(name)));
+  const projectTools = compileTools(mapOf<unknown>(m.tools)).project_tools ?? {};
+
+  const primary = selected ?? (typeof m.default_agent === 'string' ? m.default_agent : undefined);
+  const primaryAgent = primary ? agent[primary] : undefined;
+  const runnable = primaryAgent && !primaryAgent.disable && primaryAgent.mode !== 'subagent';
+  return {
+    schema: 3,
+    ...(primaryAgent?.model ? { model: primaryAgent.model } : {}),
+    ...(runnable && selected === undefined ? { default_agent: primary } : {}),
+    agent,
+    ...(Object.keys(projectTools).length > 0 ? { project_tools: projectTools } : {}),
+    ...(Object.keys(skills).length > 0 ? { skills } : {}),
+    ...(Object.keys(compiledCommands).length > 0 ? { commands: compiledCommands } : {}),
+    ...(Object.keys(compiledExtensions).length > 0 ? { extensions: compiledExtensions } : {}),
+  };
+}
+
+function compileAgentV3(
+  name: string,
+  block: AgentBlockV3,
+  files: Record<string, string>,
+  universe: { skills: string[]; subagents: string[]; extensions: string[] },
+): CompiledAgentEntry {
+  const issues: ManifestIssue[] = [];
+  validateAgentMdFrontmatter({ ...block, tools: undefined }, `agents.${name}`, issues);
+  const errors = issues.filter((issue) => issue.severity === 'error');
+  if (errors.length > 0) {
+    throw new CompileAgentConfigError(errors.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
+  }
+
+  const out: CompiledAgentEntry = {};
+  for (const key of BEHAVIOR_KEYS_V3) {
+    if (block[key] !== undefined) (out as Record<string, unknown>)[key] = block[key];
+  }
+  if (block.prompt !== undefined) out.prompt = block.prompt;
+  else if (block.prompt_file !== undefined) out.prompt = promptText(files, block.prompt_file, `agents.${name}.prompt_file`, name);
+  if (block.enabled === false) out.disable = true;
+  const tools = resolveAgentTools(block.tools);
+  if (tools) out.tools = tools;
+
+  // Omitted permission is `allow`: a tool never waits for an answer unless the agent says `ask`.
+  let permission = withPermissionRule(block.permission ?? 'allow', 'skill', allowlistRule(grantedNames(block.skills, universe.skills)));
+  permission = withPermissionRule(permission, 'task', allowlistRule(grantedNames(block.subagents, universe.subagents)));
+  out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(permission));
+
+  const extensions = grantedNames(block.extensions, universe.extensions);
+  if (extensions.length > 0) out.extensions = extensions;
+  if (block.codemode !== undefined) out.codemode = block.codemode;
+  return out;
 }
 
 /**
@@ -560,42 +677,7 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
-/**
- * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
- *
- * Null means "could not tell" (no manifest, not v2, read/parse failure) and
- * always falls back to the OpenCode path — the same fail-open-to-legacy
- * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
- * well-formed `runtime: pi` can move a session onto the worker.
- */
-/**
- * The harness a session boots, from the two inputs that can ask for pi:
- * the project's `pi_harness` feature flag (on ⇒ pi, whatever the manifest
- * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
- * off). Everything else is OpenCode. `runtime: null` is "no readable v2
- * manifest", which counts as opencode.
- *
- * pi calls models only through the Kortix LLM gateway (kortixd
- * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
- * gateway URL, so it always boots OpenCode, which calls providers directly.
- */
-export function selectSessionHarness(input: {
-  piHarnessFlag: boolean;
-  runtime: RuntimeV2 | null;
-  llmGateway: boolean;
-}): 'opencode' | 'pi' {
-  if (!input.llmGateway) return 'opencode';
-  if (input.piHarnessFlag) return 'pi';
-  return input.runtime === 'pi' ? 'pi' : 'opencode';
-}
-
-/** The harness a parsed manifest selects. `runtime` is a v2 field; anything but `pi` is OpenCode. */
-export function manifestRuntime(raw: unknown): RuntimeV2 {
-  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return 'opencode';
-  return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
-}
-
-type PiHarness = { pi?: { packages?: unknown; exclude?: unknown } } | undefined;
+type PiHarness = { pi?: { packages?: unknown; exclude?: unknown; codemode?: unknown } } | undefined;
 
 function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
   const value = harnesses?.pi?.[key];
@@ -610,6 +692,16 @@ function piPackageKey(entry: unknown): string | null {
   return npm ? npm[1]! : source;
 }
 
+/** A v2/v3 manifest and the agent a session runs: `default` (or none) means `default_agent`. Null for anything else. */
+function manifestAgentHarnesses(raw: unknown, agentName?: string | null): { manifest: Record<string, unknown>; agent: { harnesses?: PiHarness } | undefined } | null {
+  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return null;
+  const manifest = raw as Record<string, unknown>;
+  const requested = agentName?.trim();
+  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
+  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
+  return { manifest, agent: (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name] };
+}
+
 /**
  * An agent's pi packages, entries as written (pi's own settings shape): the
  * top-level `harnesses.pi.packages` minus the agent's `exclude`, then the
@@ -618,12 +710,10 @@ function piPackageKey(entry: unknown): string | null {
  * The manifest validator gated every entry at merge; anything else reads as none.
  */
 export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
-  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return [];
-  const manifest = raw as Record<string, unknown>;
-  const requested = agentName?.trim();
-  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
-  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
-  const agent = (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name];
+  const resolved = manifestAgentHarnesses(raw, agentName);
+  if (!resolved) return [];
+  if (manifestSchemaVersion(resolved.manifest) === 3) return manifestPiPackagesV3(resolved.manifest, resolved.agent as AgentBlockV3 | undefined);
+  const { manifest, agent } = resolved;
   const excluded = new Set(piList(agent?.harnesses, 'exclude'));
   const own = new Map(piList(agent?.harnesses, 'packages').map((entry) => [piPackageKey(entry), entry]));
   const merged = piList(manifest.harnesses as PiHarness, 'packages')
@@ -636,6 +726,29 @@ export function manifestPiPackages(raw: unknown, agentName?: string | null): unk
       return replacement;
     });
   return [...merged, ...own.values()];
+}
+
+/** A v3 pi source in pi's settings shape: a repository path gets the `./` pi reads as "repo-local". */
+function piSettingsSource(source: string): string {
+  return source.startsWith('npm:') ? source : `./${source}`;
+}
+
+/** A v3 agent's pi packages: each extension it enables that has a pi implementation, in registry order. */
+function manifestPiPackagesV3(manifest: Record<string, unknown>, agent: AgentBlockV3 | undefined): unknown[] {
+  const extensions = mapOf<ExtensionV3>(manifest.extensions);
+  const enabled = new Set(grantedNames(agent?.extensions, Object.keys(extensions)));
+  return Object.entries(extensions).flatMap(([name, entry]) => {
+    if (!enabled.has(name) || entry.pi === undefined) return [];
+    return [typeof entry.pi === 'string' ? piSettingsSource(entry.pi) : { ...entry.pi, source: piSettingsSource(entry.pi.source) }];
+  });
+}
+
+/** The agent's `harnesses.pi.codemode`, else the top-level one; null when neither sets it (the daemon's default, `on`). */
+export function manifestPiCodemode(raw: unknown, agentName?: string | null): 'off' | 'on' | 'only' | null {
+  const resolved = manifestAgentHarnesses(raw, agentName);
+  if (resolved && manifestSchemaVersion(resolved.manifest) === 3) return (resolved.agent as AgentBlockV3 | undefined)?.codemode ?? null;
+  const value = resolved?.agent?.harnesses?.pi?.codemode ?? (resolved?.manifest.harnesses as PiHarness)?.pi?.codemode;
+  return value === 'off' || value === 'on' || value === 'only' ? value : null;
 }
 
 /** Every distinct non-empty package list the manifest's agents resolve to: what a merge builds. */
@@ -685,6 +798,22 @@ interface CompileReadOptions {
   forceRefresh?: MirrorRefresh;
 }
 
+/**
+ * Every prompt file a v3 manifest names (agents and commands), read at `ref`.
+ * Any read failure throws: a v3 session never compiles with a missing prompt.
+ */
+async function readPromptFilesV3(project: GitBackedProject, raw: Record<string, unknown>, ref: string): Promise<Record<string, string>> {
+  const paths = new Set<string>();
+  for (const block of [...Object.values(mapOf<{ prompt_file?: unknown }>(raw.agents)), ...Object.values(mapOf<{ prompt_file?: unknown }>(raw.commands))]) {
+    if (typeof block?.prompt_file === 'string') paths.add(block.prompt_file);
+  }
+  const files: Record<string, string> = {};
+  await Promise.all([...paths].map(async (path) => {
+    files[path] = await readRepoFile(project, path, ref);
+  }));
+  return files;
+}
+
 export async function resolveCompiledAgentConfigForSession(
   project: GitBackedProject,
   /**
@@ -725,14 +854,14 @@ export async function resolveCompiledAgentConfigForSession(
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
+    if (manifestVersion === 3) {
+      const compiled = compileAgentConfig(raw, 'opencode', await readPromptFilesV3(project, raw, ref));
+      return JSON.stringify(compiled);
+    }
+
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
-        if (manifestSchemaVersion(raw) === 3) {
-          const promptFile = (agents[name] as Record<string, unknown>).prompt_file;
-          if (typeof promptFile === 'string') agentMdFiles[promptFile] = await readRepoFile(project, promptFile, ref);
-          return;
-        }
         // A MISSING file is an expected client condition: the manifest may
         // declare an agent that carries no behavior file, and that agent
         // simply compiles without one.
@@ -747,11 +876,7 @@ export async function resolveCompiledAgentConfigForSession(
         const md = await readAgentMarkdownFile(project, raw, name, ref);
         if (md.content !== null) {
           agentMdFiles[md.path] = md.content;
-          return;
         }
-        console.warn(
-          `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${md.path}"`,
-        );
       }),
     );
 
@@ -801,15 +926,12 @@ export async function resolveSelectedAgentConfigForSession(
     );
   }
 
-  const agentMdFiles: Record<string, string> = {};
   if (manifestSchemaVersion(raw) === 3) {
-    const agents = raw.agents as Record<string, Record<string, unknown>>;
-    const promptFile = agents?.[agentName]?.prompt_file;
-    if (typeof promptFile === 'string') agentMdFiles[promptFile] = await readRepoFile(project, promptFile, ref);
-  } else {
-    const md = await readAgentMarkdownFile(project, raw, agentName, ref);
-    if (md.content !== null) agentMdFiles[md.path] = md.content;
+    return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', await readPromptFilesV3(project, raw, ref)));
   }
+  const agentMdFiles: Record<string, string> = {};
+  const md = await readAgentMarkdownFile(project, raw, agentName, ref);
+  if (md.content !== null) agentMdFiles[md.path] = md.content;
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
 }

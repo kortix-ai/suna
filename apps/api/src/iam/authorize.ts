@@ -5,7 +5,7 @@
  * REPLACES `iam/engine-v2.ts` (authorizeV2, resolveActorV2, loadProjectRoleRows,
  * deriveEffectiveProjectRole, customPolicyAllows, computeTokenScope,
  * agentGrantGates, listAccessibleProjectsV2, filterAccessibleProjectResources),
- * `projects/access.ts` (effectiveProjectRole, roleAllows,
+ * `projects/access.ts` (effectiveProjectRole, the retired roleAllows,
  * foldEffectiveProjectAccess) and `iam/resource-grants.ts`'s fold
  * (isProjectResourceUsableByMember, isResourceAccessible, …) — four independent
  * copies of the max-role fold and three parallel permission vocabularies.
@@ -467,6 +467,10 @@ export async function filterAccessibleObjects(
   objectIds: readonly string[],
 ): Promise<string[]> {
   if (objectIds.length === 0) return [];
+  // Step 1, as in `authorize`: act-as runs every agent of the target account,
+  // and nothing anywhere else. Checked before the principal memo.
+  if (isImpersonatingAccount(actor.userId, actor.accountId)) return [...objectIds];
+  if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return [];
   const principal = actingPrincipal(actor);
   const rec = await resolvePrincipal(principal, actor.accountId);
   if (!rec) return [];
@@ -668,7 +672,7 @@ async function resolvePrincipalUncached(
         ssoRequired: sql<boolean>`EXISTS (
           SELECT 1
             FROM kortix.account_sso_providers enforcing
-            JOIN auth.users person ON person.id::text = ${pid}
+            JOIN auth.users person ON person.id = ${pid}::uuid
            WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
              AND enforcing.enforce_sso
              AND enforcing.domain_verified_at IS NOT NULL

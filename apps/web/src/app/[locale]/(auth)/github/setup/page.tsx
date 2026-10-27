@@ -1,15 +1,15 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useEffectEvent, useRef, useState } from 'react';
 
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
 import { GitHubSetupView, type GitHubSetupState } from '@/features/auth/github-setup-view';
 import { useAuth } from '@/features/providers/auth-provider';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { requestGitHubUserProof } from '@/lib/github-user-proof';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
+import { requestGitHubUserProof } from '@kortix/ui/internal/lib/github-user-proof';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import {
   linkGitHubInstallation,
   listLinkableGitHubInstallations,
@@ -59,7 +59,7 @@ function GitHubSetup() {
   const [message, setMessage] = useState(
     'Confirm that your GitHub user owns this account or administers this organization.',
   );
-  const [githubUserToken, setGitHubUserToken] = useState('');
+  const githubUserToken = useRef('');
   const [installations, setInstallations] = useState<LinkableGitHubInstallation[]>([]);
   const [installUrl, setInstallUrl] = useState<string | null>(null);
 
@@ -97,6 +97,8 @@ function GitHubSetup() {
     }
   }, [user, isLoading, router]);
 
+  const goHome = useEffectEvent(() => router.replace(appHome));
+
   useEffect(() => {
     if (isLoading || !user) return;
 
@@ -109,7 +111,7 @@ function GitHubSetup() {
     if (setupAction === 'uninstall') {
       setState('done');
       setMessage('GitHub App removed from your account.');
-      redirectTimer.current = window.setTimeout(() => router.replace(appHome), 900);
+      redirectTimer.current = window.setTimeout(() => goHome(), 900);
       return;
     }
 
@@ -163,7 +165,7 @@ function GitHubSetup() {
           account_id: accountId,
           github_user_token: userToken,
         });
-        setGitHubUserToken(userToken);
+        githubUserToken.current = userToken;
         setInstallations(result.installations);
         setInstallUrl(result.install_url);
         const available = result.installations.filter((installation) => !installation.linked);
@@ -202,7 +204,7 @@ function GitHubSetup() {
   }
 
   async function handleLink(installation: LinkableGitHubInstallation) {
-    if (!githubUserToken || !accountId) {
+    if (!githubUserToken.current || !accountId) {
       setState('verify');
       setMessage('Continue with GitHub again before you link this installation.');
       return;
@@ -213,7 +215,7 @@ function GitHubSetup() {
       const status = await linkGitHubInstallation({
         account_id: accountId,
         installation_id: installation.installation_id,
-        github_user_token: githubUserToken,
+        github_user_token: githubUserToken.current,
       });
       finishConnection(status.owner_login, status.account_id ?? null);
     } catch (error) {
@@ -266,7 +268,8 @@ function GitHubSetup() {
 function peekGitHubSetupReturn(): string | null {
   try {
     const value = window.localStorage.getItem('kortix:github_setup_return');
-    if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+    // `\` reads as `/` and tab/CR/LF are dropped, so either could leave the origin.
+    if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
     return value;
   } catch {
     return null;

@@ -28,6 +28,7 @@ import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
   describeRegistry,
+  isPrivateRegistryHost,
   loadItem,
   loadRegistry,
   parseRegistryAddress,
@@ -38,6 +39,7 @@ import {
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
+import { config } from "../config";
 import { safeEgressFetch } from "../shared/ssrf-guard";
 import { mapWithConcurrency } from "../shared/map-with-concurrency";
 
@@ -309,10 +311,14 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   };
 }
 
-function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
+/** The catalog's one order: bundles first, then by name, then by id. Two
+ *  sources can publish the same name; without the id, ties kept the order in
+ *  which sources finished resolving, so `offset` paging skipped or repeated
+ *  rows between requests (KRTX-3284). Ids are unique, so the order is total. */
+export function compareCatalogItems(a: CatalogItem, b: CatalogItem): number {
   if (a.type === "registry:bundle" && b.type !== "registry:bundle") return -1;
   if (b.type === "registry:bundle" && a.type !== "registry:bundle") return 1;
-  return a.name.localeCompare(b.name);
+  return a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 function readmeOf(item: RegistryItem): string | null {
@@ -679,7 +685,7 @@ function getBaseCatalog(): Catalog {
       items.push(entryToCatalogItem(entry));
     }
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   BASE = { items, byId };
   return BASE;
 }
@@ -893,34 +899,13 @@ export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
 // metadata, localhost, RFC-1918). `local` is dev-only behind an opt-in flag.
 const ALLOW_LOCAL_SOURCES = process.env.KORTIX_MARKETPLACE_ALLOW_LOCAL === "1";
 
-function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (!h || h === "localhost" || h.endsWith(".localhost")) return true;
-  if (
-    h === "127.0.0.1" ||
-    h === "0.0.0.0" ||
-    h === "::1" ||
-    h.startsWith("127.")
-  )
-    return true;
-  if (h.startsWith("169.254.")) return true; // link-local incl. 169.254.169.254 cloud metadata
-  if (
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-  )
-    return true;
-  if (h.endsWith(".internal") || h.endsWith(".local")) return true;
-  return false;
-}
-
 function isAllowedSourceRef(ref: RegistryRef): boolean {
   if (ref.kind === "github" || ref.kind === "namespace") return true;
   if (ref.kind === "local") return ALLOW_LOCAL_SOURCES;
   if (ref.kind === "url") {
     try {
       const u = new URL(ref.url);
-      return u.protocol === "https:" && !isPrivateHost(u.hostname);
+      return u.protocol === "https:" && !isPrivateRegistryHost(u.hostname);
     } catch {
       return false;
     }
@@ -1009,19 +994,23 @@ export function assertAllowedEndpointUrl(address: string): void {
       `Connector endpoint must be an absolute https URL: "${address}"`,
     );
   }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must not embed credentials.",
+    );
+  }
+  // A host the operator listed (self-host internal APIs, the local test stack's
+  // loopback) passes, as it does for the connector egress fetch itself.
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  if (config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.some((h) => h.toLowerCase() === host)) return;
   if (parsed.protocol !== "https:") {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
     );
   }
-  if (isPrivateHost(parsed.hostname)) {
+  if (isPrivateRegistryHost(parsed.hostname)) {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
-    );
-  }
-  if (parsed.username || parsed.password) {
-    throw new AllowedSourceValidationError(
-      "Connector endpoints must not embed credentials.",
     );
   }
 }
@@ -1153,7 +1142,7 @@ function progressiveMerge(): Catalog {
     if (!byName.has(it.name)) byName.set(it.name, e);
     items.push(it);
   }
-  items.sort(bundlesFirst);
+  items.sort(compareCatalogItems);
   CACHE.merged = { items, byId, byName };
   CACHE.mergedGen = CACHE.gen;
   return CACHE.merged;
@@ -1398,6 +1387,13 @@ export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
     label: "Claude SEO",
     owner: "AgricIDaniel",
     description: "Technical SEO, schema, GEO/AEO",
+    license: "MIT",
+  },
+  {
+    address: "CosmoBlk/email-marketing-bible",
+    label: "Email Marketing Bible",
+    owner: "CosmoBlk",
+    description: "Email marketing: flows, deliverability, copy, ESP via MCP",
     license: "MIT",
   },
   {

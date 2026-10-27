@@ -18,6 +18,7 @@ import {
   projectSecrets,
   projectSessionRuntimeContexts,
   projectSessions,
+  projectSpaces,
   projects,
   sessionLifecycleCommands,
   sessionSandboxes,
@@ -47,7 +48,7 @@ const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
@@ -202,6 +203,8 @@ function resetState() {
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -307,6 +310,17 @@ mock.module('../projects/lib/fast-boot-git-hint', () => ({
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
+// The desired-release base check (`sharedBaseTip`) asks the upstream through a
+// real mirror clone. Against this fixture's fake repo URL it always fails, after
+// ~2.5 s of git retries per `/start`. Fail it at once: the same path, no git.
+const realBaseTip = await import('../config-releases/base-tip');
+mock.module('../config-releases/base-tip', () => ({
+  ...realBaseTip,
+  sharedBaseTip: async () => {
+    throw new Error('no upstream in this unit test');
+  },
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test
@@ -395,7 +409,7 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -636,7 +650,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: 1_000_000,
-    billingModel: 'credits',
+    tier: 'credits',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
@@ -770,6 +784,7 @@ mock.module('../shared/db', () => ({
     // matching the auth admin mock above.
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
+    selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => {
         // The `/start` prologue and every long-poll tick read session + sandbox
@@ -793,9 +808,22 @@ mock.module('../shared/db', () => ({
             }),
             limit: async () => pairRows(),
           }),
+          // A fork or child reads its source's private channel
+          // (`inheritedPrivateSpace`): no session of this fake is in one.
+          // Any other join stays unsupported, as before.
+          innerJoin: (joined: unknown) => {
+            if (joined !== projectSpaces) throw new TypeError('innerJoin is not supported by this fake');
+            return {
+              where: (_predicate?: unknown) => ({
+                then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                  Promise.resolve([]).then(resolve, reject),
+                limit: async () => [],
+              }),
+            };
+          },
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
+            Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
           },
           orderBy: () => {
             if (table === sessionLifecycleCommands) {
@@ -950,6 +978,8 @@ mock.module('../shared/db', () => ({
             parentSessionId: values.parentSessionId ?? null,
             initiatorType: values.initiatorType ?? null,
             initiatorId: values.initiatorId ?? null,
+            spaceId: values.spaceId ?? null,
+            groupId: values.groupId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -1265,7 +1295,7 @@ describe('project session runtime guards', () => {
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1309,7 +1339,7 @@ describe('project session runtime guards', () => {
       const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+        body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
       });
       // The create still answers; the failure is in the detached provision work.
       expect(response.status).toBe(201);
@@ -1381,7 +1411,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1406,7 +1436,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1432,7 +1462,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1446,12 +1476,39 @@ describe('project session runtime guards', () => {
     expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
   });
 
+  test('a human explicit parent groups the session without inheriting sharing or automation identity', async () => {
+    const parentId = SESSION_ID;
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: parentId }),
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(parentId);
+    expect(created.visibility).toBe('private');
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.initiator).toMatchObject({ type: 'member' });
+  });
+
+  test('a bound session ignores a body-selected parent', async () => {
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SESSION_BOUND_PAT}` },
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main', parent_session_id: '00000000-0000-4000-a000-000000000999' }),
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()).parent_session_id).toBe(SESSION_ID);
+  });
+
   test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
     const app = createApp();
     const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(web.status).toBe(201);
     const webSession = await web.json();
@@ -1463,7 +1520,7 @@ describe('project session runtime guards', () => {
     const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(cli.status).toBe(201);
     expect((await cli.json()).metadata?.source).toBe('ui');
@@ -1615,7 +1672,7 @@ describe('project session runtime guards', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -1678,7 +1735,7 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         opencode_model: 'anthropic/claude-opus-4-8',
         agent_name: 'default',
@@ -1697,10 +1754,9 @@ describe('project session runtime guards', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
-    // Native mode (llm_gateway off — the default): the pin is stored and
-    // delivered as OpenCode's own `provider/model` ref, never rebadged
-    // `kortix/…`.
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    // The pin is validated by the gateway and stored in OpenCode's ref form:
+    // every model is the `kortix` provider's.
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 
@@ -1711,7 +1767,7 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         agent_name: 'reviewer',
       }),
@@ -1731,17 +1787,17 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         model: 'anthropic/claude-opus-4-8',
       }),
     });
     expect(res.status).toBe(201);
     expect(((await res.json()) as { metadata: Record<string, unknown> }).metadata.opencode_model).toBe(
-      'anthropic/claude-opus-4-8',
+      'kortix/anthropic/claude-opus-4-8',
     );
     await flushUntil(() => sandboxProvisionCalls === 1);
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
@@ -1774,7 +1830,7 @@ describe('project session runtime guards', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -2393,6 +2449,73 @@ describe('project session runtime guards', () => {
     expect(sessionRow?.runtimeSessionId).toBe('ses_root_existing');
   });
 
+  // 2026-10-16: an open page on a lost session sent /start ~2.8 times a second.
+  // Each pass re-checked Platinum and re-wrote the row, and each write sent the
+  // page a frame that re-read /start. The next /start answers from the row.
+  test('the next start on a lost session answers from the row: no provider call, no write', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      runtimeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-deleted',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+
+    const contactsAfterFirst = runtimeContactCalls;
+    const rowAfterFirst = structuredClone(sessionSandboxRows[0]);
+
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+    expect(runtimeContactCalls).toBe(contactsAfterFirst);
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toEqual(rowAfterFirst);
+  });
+
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
     const app = createApp();
     sessionRow = {
@@ -2724,6 +2847,7 @@ describe('project session runtime guards', () => {
   // The warm create runs `createProjectSession` with an empty body: no prompt,
   // so no title source. The first real prompt titles the session later.
   test('a warm session is created without a prompt or a title source', async () => {
+    projectRow.metadata = { ...projectRow.metadata, experimental: { warm_sessions: true } };
     const app = createApp();
     sessionRow = null;
 
@@ -2772,7 +2896,7 @@ describe('project session runtime guards', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         agent_name: 'default',
       }),
@@ -2784,11 +2908,9 @@ describe('project session runtime guards', () => {
     expect(lastProvisionInput).not.toBeNull();
 
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    // Native mode (llm_gateway off — the default): a provider key IS the box's
-    // credential. It is stored `broker`/`llm_gateway` (defaultToGateway) but
-    // DELIVERS plaintext so OpenCode's native provider management can
-    // auto-connect. Gateway mode withholds it — see
-    // secret-delivery-withholding.test.ts.
+    // Written with no consumer, the row takes the column default `sandbox`:
+    // the project's own secret, delivered even under a provider-key name. A
+    // `llm_gateway` row is withheld — see secret-delivery-withholding.test.ts.
     expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
     expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
@@ -2829,7 +2951,7 @@ describe('project session runtime guards', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         name: 'Contract session',
         agent_name: 'reviewer',
         initial_prompt: 'Review the repo',
@@ -2843,7 +2965,7 @@ describe('project session runtime guards', () => {
     expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.session_id).toBe(body.sandbox_id);
     expect(body.session_id).toBe(body.branch_name);
-    expect(body.sandbox_provider).toBe('daytona');
+    expect(body.sandbox_provider).toBe('platinum');
     expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
     expect(body.opencode_session_id).toBeNull();

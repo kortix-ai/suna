@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
-import { resolveWorkingTurn } from '@kortix/sdk';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
 import {
@@ -38,12 +37,11 @@ describe('/debug/session-fixture seed', () => {
     for (const id of fixtureSessionIds()) expect(state.getMessages(id)).toEqual([]);
   });
 
-  test("turns match the fixture's user messages and the SDK's working-turn resolver", () => {
-    const turns = fixtureTurns();
+  test("turns match the fixture's user messages and the SDK's working turn", () => {
+    const turns = fixtureTurns({ busy: true });
     const userIds = SESSION_FIXTURE.messages.filter((m) => m.info.role === 'user').map((m) => m.info.id);
-    expect(turns.map((t) => t.userMessage.info.id)).toEqual(userIds);
-    const resolved = resolveWorkingTurn({ turns, hintMessageId: null });
-    expect(resolved.workingTurnId).toBe(SESSION_FIXTURE.working.userMessageId);
-    expect([...fixturePendingTurnIds()]).toEqual([...resolved.pendingTurnIds]);
+    expect(turns.map((t) => t.id)).toEqual(userIds);
+    expect(turns.filter((t) => t.live).map((t) => t.id)).toEqual([SESSION_FIXTURE.working.userMessageId]);
+    expect([...fixturePendingTurnIds()]).toEqual(turns.filter((t) => t.queued).map((t) => t.id));
   });
 });

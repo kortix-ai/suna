@@ -9,7 +9,6 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { exponentialBackoffMs } from '../../shared/backoff';
@@ -25,6 +24,7 @@ import {
 } from '../lib/session-sandbox-metadata';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import type { StartCallLog } from '../session-lifecycle/start-envelope';
 import {
@@ -55,6 +55,8 @@ export async function allocateRuntimeOnOpen(
     sandboxProvider: string;
     baseRef: string | null;
     agentName: string | null;
+    /** `null`: no box ever ran a turn, so the initial prompt is still owed. */
+    runtimeSessionId?: string | null;
     metadata?: Record<string, unknown> | null;
   },
   projectId: string,
@@ -71,6 +73,13 @@ export async function allocateRuntimeOnOpen(
   const runtimeMetadata = { opened_at: new Date().toISOString(), ...(extraRuntimeMetadata ?? {}) };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
+  // The daemon claims the initial prompt only from a `delivering` turn on the
+  // sandbox row. A box that replaces one that never ran carries it again, or
+  // the session boots idle with no message (same rule as a restart).
+  const initialTurn =
+    session.runtimeSessionId === null && typeof session.metadata?.initial_prompt === 'string' && session.metadata.initial_prompt.trim()
+      ? prepareInitialSandboxTurn()
+      : null;
 
   allocateSessionRuntime({
     sessionId,
@@ -88,6 +97,7 @@ export async function allocateRuntimeOnOpen(
     sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
     runtimeMetadata,
     sessionMetadata,
+    initialTurn,
     buildEnvVars: () =>
       buildSessionSandboxEnvVars({
         accountId: loaded.row.accountId,
@@ -100,7 +110,6 @@ export async function allocateRuntimeOnOpen(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),
@@ -393,12 +402,11 @@ async function claimFailedProvisionRow(row: typeof sessionSandboxes.$inferSelect
 }
 
 /**
- * A provision (a new session, or an ephemeral wake) that failed for a reason a
+ * A provision (a new session, or a retired row's wake) that failed for a reason a
  * later attempt can clear — the provider at capacity, rate limited, a transient
  * 5xx — is re-attempted by `/start` itself, with backoff, instead of replaying
  * the failure until someone presses Restart. Nothing is lost: the failed row
- * never had a box, and an ephemeral session's state stays on its volume, which
- * the fresh box mounts.
+ * never had a box.
  *
  * Three answers, each with a `retriable` its message agrees with: waiting
  * (`starting`, retriable, "retrying automatically"), re-provisioning

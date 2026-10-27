@@ -1,327 +1,179 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import Link from '@/components/site-link';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
-import { CapabilityHero } from '@/features/marketing/component/capability-hero';
-import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
-import { cn } from '@/lib/utils';
 import {
-  PackageIcon as Box,
-  BuildingsIcon as Building2,
-  UsersIcon as FaUsers,
-  GitBranchIcon as GitBranch,
-  KeyIcon as KeyRound,
-  ShieldIcon as MdShield,
-  HardDrivesIcon as Server,
-} from '@phosphor-icons/react';
+  controlsSummary,
+  deploymentSummary,
+  enterpriseSpecs,
+  governanceSummary,
+  isolationSummary,
+} from '@/features/marketing/enterprise/summary';
+import { splitTitle } from '@/features/marketing/kit/blocks';
+import { BrandGlyph } from '@/features/marketing/kit/brand-glyph';
+import { DitherGlyph } from '@/features/marketing/kit/dither-glyph';
+import { ExchangeVisual } from '@/features/marketing/kit/exchange-visual';
+import { FeatureSplit } from '@/features/marketing/kit/feature-split';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { Band, PageFrame, PageHero, SpecGrid } from '@/features/marketing/kit/page-frame';
+import { Seal } from '@/features/marketing/kit/seal';
 import { useTranslations } from '@/i18n/use-translations';
+import { BuildingsIcon, CloudIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
-const DIFFERENTIATORS = [
-  {
-    icon: KeyRound,
-    eyebrowKey: 'differentiatorAgentGovernanceEyebrow',
-    titleKey: 'differentiatorAgentGovernanceTitle',
-    descriptionKey: 'differentiatorAgentGovernanceDescription',
-  },
-  {
-    icon: MdShield,
-    eyebrowKey: 'differentiatorConnectorEyebrow',
-    titleKey: 'differentiatorConnectorTitle',
-    descriptionKey: 'differentiatorConnectorDescription',
-  },
-  {
-    icon: GitBranch,
-    eyebrowKey: 'differentiatorGitEyebrow',
-    titleKey: 'differentiatorGitTitle',
-    descriptionKey: 'differentiatorGitDescription',
-  },
-] as const;
-
 /**
- * Copy for these keys lives in `translations/*.json` under
- * `hardcodedUi.appHomeEnterprisePage`.
+ * `/enterprise`. The hero reads its strings from
+ * `hardcodedUi.appHomeEnterprisePage`, so it stays translated. The sections
+ * show the condensed English in `features/marketing/enterprise/summary.ts`.
  *
- * ACCURACY GATE on `checklistSecretsDescription`: do NOT restore "never visible
- * to the model". A granted runtime secret is a real env value inside the
- * session, readable by any command the agent runs. The two true, narrower claims are the
- * ones in the string today: CONNECTOR credentials are brokered server-side and
- * never enter the machine, and delivery of a runtime secret is gated by the
- * role of the person who started the session intersected with the agent grant.
- * Do NOT restore "scoped per person / per group" either — retired by migration
- * `20260706_secrets_v2_identifier_model.sql`.
+ * ACCURACY GATE (the security page's header has the sources):
+ *  - Do NOT restore "never visible to the model" for secrets. Only CONNECTOR
+ *    credentials never enter the machine. A runtime secret reaches a session
+ *    through the starter's role intersected with the agent's grant.
+ *  - Do NOT restore "scoped per person / per group" for secrets (retired by
+ *    `20260706_secrets_v2_identifier_model.sql`).
+ *  - Isolation is "its own isolated machine". "microVM" is only true on Platinum.
+ *  - Approval gates are opt-in (`default_mode` falls back to `allow_all`), so
+ *    write "an Ask rule pauses the call", never "risky calls pause by default".
+ *  - SOC 2: Type I is held, Type II is in progress. No ISO, no HIPAA.
+ *  - Dropped from the old page because nothing measures them: "rotated
+ *    instantly", "audited forever", "full observability", "hundreds of
+ *    teammates". ("Thousands of agents in parallel" is allowed by claims.md;
+ *    it is simply not on this page.)
+ *  - Scope the change-request rule to session work: dashboard config edits
+ *    can commit straight to the default branch.
  *
- * Same rule for isolation copy on this page: the default sandbox provider runs
- * containers, not microVMs, so write "its own isolated machine". "microVM" is
- * only accurate where the provider is Platinum.
+ * Layout matches /security and /self-hosted: the landing page's frame,
+ * `FeatureSplit` sections, split layouts where a visual earns it, dither art
+ * in the hero. No closing section: the footer carries the call to action, and
+ * the hero opens the demo modal.
  */
-const CHECKLIST = [
-  {
-    titleKey: 'checklistSamlTitle',
-    descriptionKey: 'checklistSamlDescription',
-  },
-  {
-    titleKey: 'checklistScimTitle',
-    descriptionKey: 'checklistScimDescription',
-  },
-  {
-    titleKey: 'checklistRbacTitle',
-    descriptionKey: 'checklistRbacDescription',
-  },
-  {
-    titleKey: 'checklistAuditTitle',
-    descriptionKey: 'checklistAuditDescription',
-  },
-  {
-    titleKey: 'checklistSecretsTitle',
-    descriptionKey: 'checklistSecretsDescription',
-  },
-  {
-    titleKey: 'checklistGatewayTitle',
-    descriptionKey: 'checklistGatewayDescription',
-  },
-] as const;
-
-const ARCHITECTURE = [
-  {
-    icon: Box,
-    titleKey: 'architectureSandboxTitle',
-    descriptionKey: 'architectureSandboxDescription',
-  },
-  {
-    icon: GitBranch,
-    titleKey: 'architectureBranchTitle',
-    descriptionKey: 'architectureBranchDescription',
-  },
-  {
-    icon: Building2,
-    titleKey: 'architectureTenantTitle',
-    descriptionKey: 'architectureTenantDescription',
-  },
-] as const;
-
-const DEPLOYMENT = [
-  {
-    labelKey: 'deploymentManagedCloudTitle',
-    detailKey: 'deploymentManagedCloudDescription',
-  },
-  {
-    labelKey: 'deploymentPrivateVpcTitle',
-    detailKey: 'deploymentPrivateVpcDescription',
-  },
-  {
-    labelKey: 'deploymentOnPremTitle',
-    detailKey: 'deploymentOnPremDescription',
-  },
-] as const;
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
-const EnterprisePage = () => {
+export default function EnterprisePage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`);
+  const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`) as string;
   const [calOpen, setCalOpen] = useState(false);
+  const [heroTitle, heroTitleMuted] = splitTitle(t('heroTitle'));
 
   return (
     <>
-      <div className="bg-background relative">
-        <CapabilityHero
-          eyebrow={t('heroEyebrow')}
-          title={t('heroTitle')}
-          sub={t('heroDescription')}
-          ctaPrimary={t('talkToSalesCta')}
-          onCtaPrimaryClick={() => setCalOpen(true)}
-          ctaSecondary={t('comparePlansCta')}
-          ctaSecondaryHref="/pricing"
-          visual={<EnterpriseHeroVisual />}
+      <PageFrame>
+        <section id="hero">
+          <PageHero
+            title={heroTitle}
+            titleMuted={heroTitleMuted}
+            sub={t('heroDescription')}
+            aside={<DitherGlyph src="/media/enterprise/buildings.svg" className="aspect-[15/13] w-80 xl:w-88" />}
+            actions={
+              <>
+                <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
+                  <Link href="/pricing">{t('comparePlansCta')}</Link>
+                </MarketingButton>
+                <MarketingButton size="md" className="hit-area-y-1" onClick={() => setCalOpen(true)}>
+                  {t('talkToSalesCta')}
+                </MarketingButton>
+              </>
+            }
+          />
+          <Band>
+            <SpecGrid items={enterpriseSpecs} cols="lg:grid-cols-4" />
+          </Band>
+        </section>
+
+        <FeatureSplit
+          id="governance"
+          {...governanceSummary}
+          layout="split"
+          visual={
+            <ExchangeVisual
+              cards={[
+                {
+                  mark: <BrandGlyph slug="stripe" />,
+                  markPlain: true,
+                  label: 'An Ask rule paused the call',
+                  title: 'stripe.refunds.create',
+                  detail: 'Waiting for a person to approve',
+                  tag: 'ask',
+                },
+                {
+                  mark: 'kortix',
+                  title: 'Approved by an admin',
+                  detail: 'Recorded in the audit log',
+                  tag: 'logged',
+                },
+              ]}
+            />
+          }
         />
 
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('whyTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('whyDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="border-border bg-card grid overflow-hidden rounded-sm border lg:grid-cols-12">
-              <article className="border-border group border-b p-8 transition-colors duration-200 lg:col-span-7 lg:border-r">
-                <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <MdShield weight="fill" className="size-4" />
-                  {t('moatEyebrow')}
-                </div>
-                <p className="text-foreground mt-5 max-w-2xl text-2xl leading-tight font-medium tracking-tight text-balance">
-                  {t('moatTitle')}
-                </p>
-              </article>
+        <FeatureSplit id="isolation" {...isolationSummary} cols="lg:grid-cols-3" />
 
-              {DIFFERENTIATORS.map(
-                ({ icon: Icon, eyebrowKey, titleKey, descriptionKey }, index) => (
-                  <article
-                    key={titleKey}
-                    className={cn(
-                      'border-border group p-8 transition-colors duration-200',
-                      index < 2 && 'border-b',
-                      index === 0 ? 'lg:col-span-5' : 'lg:col-span-6',
-                      index === 1 && 'lg:border-r lg:border-b-0',
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon className="text-foreground size-4" />
-                      <span
-                        className="animate-kortix-bullet-flow bg-size-[100%_300%] bg-clip-text font-mono text-xs font-semibold tracking-wider text-transparent uppercase"
-                        style={{
-                          backgroundImage: KORTIX_BULLET_GRADIENT,
-                          animationDelay: `${index * 0.3}s`,
-                        }}
-                      >
-                        {t(eyebrowKey)}
-                      </span>
-                    </div>
-                    <h3 className="text-foreground mt-5 text-lg leading-tight font-medium">
-                      {t(titleKey)}
-                    </h3>
-                    <p className="text-muted-foreground group-hover:text-foreground mt-3 text-sm leading-relaxed font-medium transition-colors duration-200">
-                      {t(descriptionKey)}
-                    </p>
-                  </article>
-                ),
-              )}
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('architectureTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('architectureDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {ARCHITECTURE.map(({ icon: Icon, titleKey, descriptionKey }) => (
-                <div
-                  key={titleKey}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-                >
-                  <Icon className="text-foreground size-5" />
-                  <h3 className="text-foreground mt-5 text-lg leading-tight font-medium">
-                    {t(titleKey)}
-                  </h3>
-                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-                    {t(descriptionKey)}
+        <FeatureSplit
+          id="controls"
+          {...controlsSummary}
+          cols="lg:grid-cols-5"
+          after={
+            <div className="grid grid-cols-1 items-center gap-10 px-8 pt-12 lg:grid-cols-12 lg:px-28">
+              <div className="flex flex-col items-start gap-6 lg:col-span-5">
+                <div>
+                  <h3 className="text-foreground text-base font-medium">SOC 2 and GDPR</h3>
+                  <p className="text-muted-foreground mt-2 text-sm text-pretty">
+                    SOC 2 Type I is held. SOC 2 Type II is in progress. GDPR is a posture we run, with a DPA on
+                    Enterprise.
                   </p>
                 </div>
-              ))}
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('securityTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('securityDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-                <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <FaUsers weight="fill" className="size-4" />
-                  {t('identityAccessEyebrow')}
-                </div>
-                <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
-                  {t('identityAccessTitle')}
-                </h3>
-                <ul className="mt-6 space-y-3">
-                  {CHECKLIST.slice(0, 3).map(({ titleKey, descriptionKey }, index) => (
-                    <li
-                      key={titleKey}
-                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                    >
-                      <KortixAsterisk index={index} />
-                      <span>
-                        <span className="text-foreground font-medium">{t(titleKey)}.</span>{' '}
-                        {t(descriptionKey)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
+                  <Link href="/security">Read the security page</Link>
+                </MarketingButton>
               </div>
+              <ul className="flex flex-wrap items-center gap-4 lg:col-span-7 lg:justify-end">
+                <li>
+                  <Seal name="SOC 2" detail="Type I" ornament="double" />
+                </li>
+                <li>
+                  <Seal name="SOC 2" detail="Type II" note="In progress" ornament="ticks" />
+                </li>
+                <li>
+                  <Seal name="GDPR" detail="Operated" ornament="stars" />
+                </li>
+              </ul>
+            </div>
+          }
+        />
 
-              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8">
-                <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <Server className="size-4" />
-                  {t('runtimeAuditEyebrow')}
-                </div>
-                <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
-                  {t('runtimeAuditTitle')}
-                </h3>
-                <ul className="mt-6 space-y-3">
-                  {CHECKLIST.slice(3).map(({ titleKey, descriptionKey }, index) => (
-                    <li
-                      key={titleKey}
-                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                    >
-                      <KortixAsterisk index={index + 3} />
-                      <span>
-                        <span className="text-foreground font-medium">{t(titleKey)}.</span>{' '}
-                        {t(descriptionKey)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('deploymentTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('deploymentDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-10 sm:grid-cols-3 md:gap-16">
-              {DEPLOYMENT.map(({ labelKey, detailKey }) => (
-                <div key={labelKey} className="flex flex-col space-y-6">
-                  <span className="shrink-0">
-                    <Server className="size-5" />
-                  </span>
-                  <span className="text-foreground text-lg">
-                    <span className="font-semibold">{t(labelKey)}.</span>{' '}
-                    <span className="text-muted-foreground leading-relaxed font-medium">
-                      {t(detailKey)}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Reveal>
-        </section>
-      </div>
+        <FeatureSplit
+          id="deployment"
+          {...deploymentSummary}
+          layout="split"
+          visual={
+            <ExchangeVisual
+              cards={[
+                {
+                  mark: <CloudIcon className="size-4" />,
+                  title: 'Managed cloud',
+                  detail: 'We run it. You own the config and the data.',
+                  tag: 'cloud',
+                },
+                {
+                  mark: <HardDrivesIcon className="size-4" />,
+                  title: 'Private VPC',
+                  detail: 'The full platform in your own cloud account',
+                  tag: 'vpc',
+                },
+                {
+                  mark: <BuildingsIcon className="size-4" />,
+                  title: 'On-prem',
+                  detail: 'Your own network, scoped with us',
+                  tag: 'on-prem',
+                },
+              ]}
+            />
+          }
+        />
+      </PageFrame>
 
       <DemoQualifierModal
         open={calOpen}
@@ -332,6 +184,4 @@ const EnterprisePage = () => {
       />
     </>
   );
-};
-
-export default EnterprisePage;
+}

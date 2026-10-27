@@ -276,10 +276,10 @@ describe('classifyDaemonHealth', () => {
 });
 
 describe('relaunchStrategyFor', () => {
-  test('platinum relaunches in place; daytona/e2b converge at next start; unknown unsupported', () => {
+  test('platinum relaunches in place; daytona converges at next start; legacy e2b and unknown unsupported', () => {
     expect(relaunchStrategyFor('platinum')).toBe('pt-app');
     expect(relaunchStrategyFor('daytona')).toBe('next-start');
-    expect(relaunchStrategyFor('e2b')).toBe('next-start');
+    expect(relaunchStrategyFor('e2b')).toBeNull();
     expect(relaunchStrategyFor('local')).toBeNull();
   });
 });
@@ -316,7 +316,6 @@ describe('decideDeadDaemonOnOpen', () => {
 
   test('providers that relaunch on their own start keep parking', () => {
     expect(decideDeadDaemonOnOpen({ provider: 'daytona', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
-    expect(decideDeadDaemonOnOpen({ provider: 'e2b', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
   });
 });
 
@@ -399,6 +398,10 @@ function makeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown[]; sta
     patchMetadata: async (p) => {
       calls.patches.push(p);
     },
+    claimRun: async (p) => {
+      calls.patches.push(p);
+      return true;
+    },
     audit: async (e) => {
       calls.audits.push(e);
     },
@@ -447,13 +450,29 @@ describe('bootstrapLegacyRuntime', () => {
     expect(r.outcome).toBe('not-legacy');
     expect(calls.execs).toHaveLength(0);
     expect(calls.patches).toHaveLength(1);
-    expect((calls.patches[0][LEGACY_CHECK_METADATA_KEY] as { klass: string }).klass).toBe('current');
+    expect(calls.patches[0][LEGACY_CHECK_METADATA_KEY]).toMatchObject({ klass: 'current', manifestBuild: 1788044234, externalId: 'sbx_1' });
+  });
+
+  test('a current check from another manifest build or another box does not gate the probe', async () => {
+    const clock = { t: Date.parse('2026-09-01T12:00:00Z') };
+    const at = new Date(clock.t - 60_000).toISOString();
+    for (const check of [
+      { at, klass: 'current', manifestBuild: 1788044233, externalId: 'sbx_1' },
+      { at, klass: 'current', manifestBuild: 1788044234, externalId: 'sbx_older' },
+      { at, klass: 'current' },
+    ]) {
+      let probed = false;
+      const deps = makeDeps({ fetchHealth: async () => { probed = true; return CURRENT_HEALTH; } }, { patches: [], audits: [], execs: [] }, clock);
+      const r = await bootstrapLegacyRuntime(input({ [LEGACY_CHECK_METADATA_KEY]: check }), deps);
+      expect(r.outcome).toBe('not-legacy');
+      expect(probed).toBe(true);
+    }
   });
 
   test('recently checked current box is not probed again inside the TTL', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
     const clock = { t: Date.parse('2026-09-01T12:00:00Z') };
-    const meta = { [LEGACY_CHECK_METADATA_KEY]: { at: new Date(clock.t - LEGACY_CHECK_TTL_MS / 2).toISOString(), klass: 'current' } };
+    const meta = { [LEGACY_CHECK_METADATA_KEY]: { at: new Date(clock.t - LEGACY_CHECK_TTL_MS / 2).toISOString(), klass: 'current', manifestBuild: 1788044234, externalId: 'sbx_1' } };
     let probed = false;
     const deps = makeDeps({ fetchHealth: async () => { probed = true; return CURRENT_HEALTH; } }, calls, clock);
     const r = await bootstrapLegacyRuntime(input(meta), deps);
@@ -464,6 +483,19 @@ describe('bootstrapLegacyRuntime', () => {
     const forced = await bootstrapLegacyRuntime({ ...input(meta), force: true }, deps);
     expect(forced.outcome).toBe('converged');
     expect(probed).toBe(true);
+  });
+
+  test('the reaper never relaunches a box whose only staleness is its own pending update', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const selfUpdating = {
+      ...CURRENT_HEALTH,
+      runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true },
+      runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 1, cause: null } } },
+    };
+    const r = await bootstrapLegacyRuntime(input(), makeDeps({ health: [selfUpdating] }, calls));
+    expect(r.outcome).toBe('skipped-self-updating');
+    expect(calls.execs).toHaveLength(0);
+    expect(calls.audits).toHaveLength(0);
   });
 
   test('busy OpenCode is never touched', async () => {
@@ -625,6 +657,22 @@ describe('bootstrapLegacyRuntime', () => {
     const forced = await bootstrapLegacyRuntime({ ...input(), force: true }, makeDeps({ health: [pinned] }, calls));
     expect(forced.outcome).toBe('skipped-blocked');
     expect(calls.execs).toHaveLength(0);
+  });
+
+  test('an operator --unpin repairs a pinned box once: the script runs and the daemon converges', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const pinned = {
+      daemon: 'ok',
+      opencode: 'ok',
+      uptime_s: 300,
+      runtime: { build: 1790538288, components: { agent: 'skipped' }, pinned: true },
+    };
+    const r = await bootstrapLegacyRuntime(
+      { ...input(), force: true, unpin: true },
+      makeDeps({ health: [pinned, CURRENT_HEALTH] }, calls),
+    );
+    expect(calls.execs).toHaveLength(1);
+    expect(r.outcome).toBe('converged');
   });
 });
 

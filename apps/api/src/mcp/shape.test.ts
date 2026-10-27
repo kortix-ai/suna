@@ -93,6 +93,10 @@ describe('shapeTranscript', () => {
     const parsed = JSON.parse(shapeTranscript({}, { source: 'live', messages: [msg(0)] }));
     expect(parsed.omitted_older).toBeUndefined();
   });
+  test('the stored copy is named the session log, not the v1 mirror', () => {
+    expect(JSON.parse(shapeTranscript({}, { source: 'mirror', messages: [msg(0)] })).transcript_source).toBe('log');
+    expect(JSON.parse(shapeTranscript({}, { source: 'live', messages: [msg(0)] })).transcript_source).toBe('live');
+  });
   test('error is name + message; last_turn_error is the newest assistant error; no header dump', () => {
     const error = { name: 'APIError', data: { message: 'requires a paid plan', statusCode: 400, responseHeaders: { 'cf-ray': 'x' }, responseBody: '{}' } };
     const parsed = JSON.parse(shapeTranscript({ error: null }, { messages: [msg(1), msg(2, { error })] }));
@@ -100,6 +104,22 @@ describe('shapeTranscript', () => {
     expect(parsed.messages[1].error).toEqual({ name: 'APIError', message: 'requires a paid plan' });
     expect(JSON.stringify(parsed)).not.toContain('responseHeaders');
     expect(JSON.parse(shapeTranscript({}, { messages: [msg(1)] })).last_turn_error).toBeNull();
+  });
+  test('assistant text carries generative UI as markdown: MCP clients render no UI', () => {
+    const block = '```openui\nroot = Stack([a, b])\na = Badge("kept")\nb = Callout("info", "unfin';
+    const parsed = JSON.parse(
+      shapeTranscript({}, {
+        messages: [
+          { id: 'u', role: 'user', text: 'Show ```openui\nroot = Stack([b])\n```' },
+          { id: 'a1', role: 'assistant', text: `Done.\n\n${block}\n\`\`\``, completed: '2026-01-01T00:00:00.000Z' },
+          { id: 'a2', role: 'assistant', text: block, completed: null },
+        ],
+      }),
+    );
+    expect(parsed.messages[0].text).toBe('Show ```openui\nroot = Stack([b])\n```');
+    expect(parsed.messages[1].text).toBe('Done.\n\n[kept]\n\n*Response was cut off.*');
+    // A turn still running shows what is finished, without the cut-off note.
+    expect(parsed.messages[2].text).toBe('[kept]');
   });
 });
 
@@ -116,3 +136,4 @@ describe('requestBodyShape', () => {
     expect(requestBodyShape(undefined)).toBeUndefined();
   });
 });
+

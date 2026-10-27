@@ -6,14 +6,14 @@
  * loads none of them.
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
-import { escapeLike } from '../shared/sql-like';
+import { LEGACY_PAID_PLAN_KEYS } from '../billing/services/tier-facts';
 import type { AdminAccountsListQuery } from './accounts-query';
 import type { AdminProjectsListQuery } from './projects-query';
 
 /** One page of `GET /api/accounts` plus the filtered total. Throws the driver error as-is. */
 export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   const { db } = await import('../shared/db');
-  const { accounts, creditAccounts } = await import('@kortix/db');
+  const { accounts, creditAccounts, enterpriseContracts } = await import('@kortix/db');
   const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
     await import('drizzle-orm');
   const { UNPAID_TIERS } = await import('./accounts-query');
@@ -53,7 +53,21 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
     const { adminAccountsSearchCondition } = await import('./accounts-search');
     conds.push(adminAccountsSearchCondition(search));
   }
-  if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
+  // A stored legacy key is a `credits` row until the tier rewrite runs.
+  // `enterprise` and `enterprise_demo` are the Enterprise layer, not a stored
+  // tier: Licensed (enterprise_entitled, or a legacy tier='enterprise') and Demo.
+  if (tierValues.length) {
+    const plans = tierValues.filter((t) => t !== 'enterprise' && t !== 'enterprise_demo');
+    const stored = plans.flatMap((t) => (t === 'credits' ? ['credits', ...LEGACY_PAID_PLAN_KEYS] : [t]));
+    const anyOf = [
+      ...(stored.length ? [inArray(creditAccounts.tier, stored)] : []),
+      ...(tierValues.includes('enterprise')
+        ? [or(eq(creditAccounts.enterpriseEntitled, true), eq(creditAccounts.tier, 'enterprise'))]
+        : []),
+      ...(tierValues.includes('enterprise_demo') ? [eq(creditAccounts.demoEnterprise, true)] : []),
+    ];
+    if (anyOf.length) conds.push(or(...anyOf));
+  }
   // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
   if (paidOnly) {
     conds.push(and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])));
@@ -86,33 +100,36 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       nonExpiringCredits: creditAccounts.nonExpiringCredits,
       dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
       tier: creditAccounts.tier,
+      // The Enterprise layer, read by resolveBillingFromRow for the row's state.
+      enterpriseEntitled: creditAccounts.enterpriseEntitled,
+      demoEnterprise: creditAccounts.demoEnterprise,
       paymentStatus: creditAccounts.paymentStatus,
       provider: creditAccounts.provider,
       planType: creditAccounts.planType,
       stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-      // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-      // subscription outranks a stale non-paid `tier`). Not rendered.
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-      billingModel: creditAccounts.billingModel,
+      planMonthlyUsd: creditAccounts.planMonthlyUsd,
+      // Read only by planMonthlyUsd()'s fallback for a per-seat row not yet backfilled.
       seatCount: creditAccounts.seatCount,
-      trialStatus: creditAccounts.trialStatus,
-      trialTier: creditAccounts.trialTier,
-      trialSeats: creditAccounts.trialSeats,
-      trialStartedAt: creditAccounts.trialStartedAt,
-      trialEndsAt: creditAccounts.trialEndsAt,
-      trialNote: creditAccounts.trialNote,
-      managedModelsOverride: creditAccounts.managedModelsOverride,
-      demoEnterprise: creditAccounts.demoEnterprise,
-      enterpriseEntitled: creditAccounts.enterpriseEntitled,
-      // The resolver takes ONE row and reads the JSONB overrides FIRST,
-      // so a projection without them reports the legacy columns' answer
-      // for an account whose real answer expired.
+      // The resolver applies the per-feature overrides; a projection without
+      // them would report a different answer than the gates enforce.
       entitlementOverrides: creditAccounts.entitlementOverrides,
+      // The active Enterprise contract, if any (at most one per account).
+      contractId: enterpriseContracts.id,
+      contractLicenseUsd: enterpriseContracts.licenseUsd,
+      contractCreditsUsd: enterpriseContracts.creditsUsd,
+      contractCollection: enterpriseContracts.collection,
+      contractEndsAt: enterpriseContracts.endsAt,
+      contractAutoRenews: enterpriseContracts.autoRenews,
       ownerEmail,
       memberCount,
     })
     .from(accounts)
     .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+    .leftJoin(
+      enterpriseContracts,
+      and(eq(enterpriseContracts.accountId, accounts.accountId), eq(enterpriseContracts.status, 'active')),
+    )
     .where(where)
     .orderBy(dir(sortCol))
     .limit(limit)
@@ -171,11 +188,12 @@ export async function listAdminAccountProjects(accountId: string) {
 
 /** One page of `GET /api/projects` across every account, plus the filtered total. */
 export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
+  const { adminProjectsSearchCondition } = await import('./projects-search');
   const { db } = await import('../shared/db');
   const { accounts, projects, projectSessions } = await import('@kortix/db');
-  const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
+  const { and, eq, inArray, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
-  const { accountHasMemberEmailLikeSql, accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
+  const { accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
 
   const { search, accountId, statusValues, sortBy, sortDir, limit, offset } = query;
 
@@ -202,16 +220,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
       SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
   const conds: any[] = [];
-  if (search) {
-    const term = `%${escapeLike(search)}%`;
-    conds.push(
-      or(
-        ilike(projects.name, term),
-        ilike(accounts.name, term),
-        accountHasMemberEmailLikeSql(qualifiedColumn(projects.accountId), term),
-      ),
-    );
-  }
+  if (search) conds.push(adminProjectsSearchCondition(search));
   if (accountId) conds.push(eq(projects.accountId, accountId));
   if (statusValues.length) conds.push(inArray(projects.status, statusValues));
   const where = conds.length ? and(...conds) : undefined;

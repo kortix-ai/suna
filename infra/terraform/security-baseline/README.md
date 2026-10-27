@@ -17,15 +17,19 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
   `kortix-root-login-failures` delivers to the same topic (DCF-90)
 - EBS default encryption in all 17 opted-in commercial regions (DCF-54)
 - S3 account-level public access block (DCF-55/78/406 backstop)
-- AWS Backup vault + daily plan + selection + service role (DCF-99)
+- AWS Backup vault, daily plan, selection and service role in eu-west-2 (DCF-99).
+  The plan backs up the eu-west-2 Terraform state bucket and keeps 35 days.
+  It ran in us-west-2 on the old lock table until 2026-10-14.
 - VPC Flow Logs delivery role (DCF-406). `compliance-monitoring` adds flow logs
   for the dev (us-east-2) and staging (eu-west-2) VPCs. The us-west-2 log group
   and its CMK were removed on 2026-10-12 with the last us-west-2 VPC.
 - Regional Terraform state buckets, each with its own CMK, versioning and
   365-day noncurrent retention: `kortix-terraform-state-eu-west-2-935064898258`
-  (`terraform-state-euw2.tf`) and `kortix-terraform-state-us-east-2-935064898258`
-  (`terraform-state-use2.tf`). The drift role `kortix-gha-tf-plan` may decrypt
-  with these two keys through S3 and with no other key.
+  (`terraform-state-euw2.tf`), `kortix-terraform-state-us-east-2-935064898258`
+  (`terraform-state-use2.tf`) and `kortix-terraform-state-us-east-1-935064898258`
+  (`terraform-state-use1.tf`, for the external vps-demo root). The drift role
+  `kortix-gha-tf-plan` may decrypt with the eu-west-2 and us-east-2 keys through
+  S3 and with no other key.
 - IAM groups, attachments, memberships + 4 customer-managed policies (DCF-776)
 - Weekly SSM security-patch installation and reboot-if-needed for every current
   and replacement dev/prod EKS worker, serialized one node at a time

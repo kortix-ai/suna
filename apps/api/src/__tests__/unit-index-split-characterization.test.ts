@@ -97,7 +97,7 @@ describe('API entrypoint characterization', () => {
     expect(failure.headers.get('retry-after')).toBe('10');
     expect(await failure.json()).toEqual({
       error: true,
-      message: 'temporarily unavailable',
+      message: 'Internal server error',
       status: 503,
     });
 

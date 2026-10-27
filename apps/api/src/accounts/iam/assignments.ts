@@ -28,6 +28,7 @@ import {
   type PrincipalKind,
 } from '../../iam/assignments';
 import { loadPermissionCatalog, type ObjectType, type ScopeType } from '../../iam/catalog';
+import { hiddenIamActionsForAccount } from '../../feature-flags/account-flags';
 import { iamRouter, AccountIdParam } from './app';
 import { requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
@@ -283,6 +284,7 @@ export function registerIamAssignmentsRoutes(): void {
           : {}),
         expiresAt,
         source: 'manual',
+        exclusive: principalType === 'user' && scopeType === 'project' && !objectType,
       });
       resyncSecretAudience(row);
       return c.json(serialize(row), 201);
@@ -345,8 +347,10 @@ export function registerIamAssignmentsRoutes(): void {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       const scopeType = oneOf(SCOPE_TYPES, c.req.query('scope_type'));
       const catalog = await loadPermissionCatalog();
+      // An action of a feature flag that is off in every project of the account is not offered.
+      const hidden = await hiddenIamActionsForAccount(accountId);
       const rows = catalog.all
-        .filter((p) => !scopeType || p.scopeType === scopeType)
+        .filter((p) => (!scopeType || p.scopeType === scopeType) && !hidden.has(p.action))
         .sort((a, b) => a.action.localeCompare(b.action))
         .map((p) => ({
           action: p.action,

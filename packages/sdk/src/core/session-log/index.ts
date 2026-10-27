@@ -40,5 +40,15 @@ export {
 // todo and the turn tool kind), so the session-log ones carry the record prefix.
 export type { Todo as SessionLogTodo, ToolKind as SessionLogToolKind } from './types';
 
+// One page of the stored log: `getSessionLogPage` / `kortix.session(p, s).log(query)`.
+export type { SessionLogPage, SessionLogPageQuery } from './source';
+
 // Transitional bridge for hosts that render blocks while their rows are v1 (`./tool-call.ts`).
 export { toolCallBlock, toolCallMetadata } from './tool-call';
+// What a host draws a call with: its status, raw output and error text (block-native, not transitional).
+export { toolCallError, toolCallRawOutput, toolCallStatus } from './tool-call';
+// The same bridge for rows a host reads without a `useSession` (a sub-agent's chat): the
+// `fromV1` live view `useSessionLogThread` serves on v1 (`./v1-view.ts`).
+export { sessionLogOfV1Rows } from './v1-view';
+// The block turn layer (`./turns`): the turn model a transcript renders blocks from.
+export * from './turns';

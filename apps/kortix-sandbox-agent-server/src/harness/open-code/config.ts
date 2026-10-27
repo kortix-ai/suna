@@ -3,6 +3,8 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import { readProjectManifest, extractNestedString, type Config as HostConfig } from '@/lib/config/config'
 import { loadConfig } from '../harness'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { opencodeConfigDirCandidates, projectSkillDirs } from './project-layout'
 
 type Config = OpenCodeConfig
@@ -15,8 +17,11 @@ type Config = OpenCodeConfig
  * Falls back to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR when none does — that's
  * what keeps a freshly provisioned sandbox bootable before a project has been
  * cloned.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
-export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
+export async function resolveOpencodeConfigDir(cfg: Config, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  // kortix.yaml v3 reads no harness folder: the compiled set is the only input.
+  if (compiledSetV3(compiledAgentConfigFromEnv(env))) return cfg.defaultOpencodeConfigDir
   const fs = await import('node:fs/promises')
   const manifestDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
   for (const relConfigDir of opencodeConfigDirCandidates(manifestDir)) {
@@ -75,11 +80,13 @@ const EnvironmentSchema = z.object({
  * Does apps/api ask this box to create the session's root? `KORTIX_BOOTSTRAP_RUNTIME_SESSION`
  * is the harness-neutral name (D3); `KORTIX_BOOTSTRAP_OPENCODE_SESSION` is what an
  * older API sets, and the API sets both for one release.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function bootstrapRuntimeSessionRequested(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpenCodeEnvironment {
   opencodeInternalPort: number
   /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */
@@ -87,6 +94,7 @@ export interface OpenCodeEnvironment {
   defaultOpencodeConfigDir: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function loadOpenCodeEnvironment(env: NodeJS.ProcessEnv): OpenCodeEnvironment {
   const parsed = EnvironmentSchema.parse(env)
   return {
@@ -96,7 +104,10 @@ export function loadOpenCodeEnvironment(env: NodeJS.ProcessEnv): OpenCodeEnviron
   }
 }
 
-/** Authored/native skill locations, in existing fallback order. */
+/**
+ * Authored/native skill locations, in existing fallback order.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function resolveOpenCodeSkillDirectories(cfg: Config): Promise<string[]> {
   const directories: string[] = []
   try { directories.push(join(await resolveOpencodeConfigDir(cfg), "skills")) } catch {}
@@ -105,12 +116,16 @@ export async function resolveOpenCodeSkillDirectories(cfg: Config): Promise<stri
   return directories
 }
 
-/** Complete configuration visible only inside the OpenCode implementation. */
+/**
+ * Complete configuration visible only inside the OpenCode implementation.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export type OpenCodeConfig = HostConfig & OpenCodeEnvironment
 
 /**
  * Narrow the selected adapter's flat configuration without cloning or reading
  * process.env again. The host never needs to inspect these native fields.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function requireOpenCodeConfig(cfg: HostConfig): OpenCodeConfig {
   if (
@@ -123,7 +138,10 @@ export function requireOpenCodeConfig(cfg: HostConfig): OpenCodeConfig {
   return cfg as OpenCodeConfig
 }
 
-/** Re-read all session environment values during native warm adoption. */
+/**
+ * Re-read all session environment values during native warm adoption.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function loadOpenCodeConfig(env: NodeJS.ProcessEnv = process.env): OpenCodeConfig {
   return requireOpenCodeConfig(loadConfig(env))
 }

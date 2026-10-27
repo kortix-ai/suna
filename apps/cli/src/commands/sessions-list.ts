@@ -9,6 +9,9 @@ export interface SessionListFlags {
   children?: string;
   /** Sessions carrying every one of these labels. */
   labels?: string[];
+  /** Only your pinned or only your archived sessions; or Recently deleted:
+   *  the deleted sessions you may restore (`kortix sessions restore`). */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** Consume the `sessions ls` list flags from argv. Throws a usage message. */
@@ -25,14 +28,22 @@ export function takeSessionListFlags(rest: string[]): SessionListFlags {
   const children = takeFlagValue(rest, ['--children']);
   if (children && picked.length) throw new Error('--children cannot be combined with --mine, --shared or --automated');
   const labels = takeFlagValues(rest, ['--label']);
-  return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}) };
+  const pinned = takeFlagBool(rest, ['--pinned']);
+  const archived = takeFlagBool(rest, ['--archived']);
+  const deleted = takeFlagBool(rest, ['--deleted']);
+  if ([pinned, archived, deleted].filter(Boolean).length > 1) {
+    throw new Error(deleted ? 'pass only one of --pinned, --archived, --deleted' : 'pass only one of --pinned, --archived');
+  }
+  const view = pinned ? 'pinned' : archived ? 'archived' : deleted ? 'deleted' : undefined;
+  return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}), ...(view ? { view } : {}) };
 }
 
 /**
  * Query string for `GET /projects/:id/sessions`. No flag = the flat list of
  * every session, parents and children (the unchanged default: a coordinator
  * agent lists its workers with it). A starter filter lists top-level sessions;
- * `--children` lists one session's children.
+ * `--children` lists one session's children. The server leaves out the
+ * caller's archived sessions unless `--archived` asks for only them.
  */
 export function sessionListQuery(flags: SessionListFlags, parentId?: string): string {
   const params = new URLSearchParams();
@@ -41,6 +52,7 @@ export function sessionListQuery(flags: SessionListFlags, parentId?: string): st
   if (flags.startedBy) params.set('started_by', flags.startedBy);
   if (flags.search) params.set('q', flags.search);
   for (const label of flags.labels ?? []) params.append('label', label);
+  if (flags.view) params.set(flags.view, 'only');
   return params.size > 0 ? `?${params}` : '';
 }
 

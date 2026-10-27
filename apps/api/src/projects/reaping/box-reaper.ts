@@ -34,8 +34,8 @@
  */
 
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
-import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { type SandboxProvider, type SandboxStatus, getProvider, isProviderName } from '../../platform/providers';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
@@ -341,6 +341,12 @@ interface ReapPass {
 /** One candidate row: ask the provider its real state, then act on it. */
 async function reapOneSandbox(pass: ReapPass, row: ReapCandidate): Promise<void> {
   try {
+    // A legacy `e2b` row (E2B support is discontinued) has no provider to ask:
+    // reconcile it locally as removed so its row and billing close.
+    if (!isProviderName(row.provider)) {
+      await reconcileNotRunningSandbox(pass, row, 'removed');
+      return;
+    }
     const provider = getProvider(row.provider);
     const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
 
@@ -377,7 +383,9 @@ async function reapRunningSandbox(
   // update itself; give it a supervisor and a current daemon from here.
   // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
   // one health probe per box per 6 h on a converged fleet, never under
-  // a busy OpenCode, bounded attempts per API build.
+  // a busy OpenCode, bounded attempts per API build. A box that installs its
+  // own pending update (`updatesItself`) is probed every pass, never
+  // relaunched, until it converges or ~6 h of ticks pass without it.
   dependencies.scheduleLegacyRuntimeBootstrap({
     sandboxId: row.sandboxId,
     sessionId: row.sessionId ?? null,
@@ -471,8 +479,7 @@ async function reapRunningSandbox(
   // arithmetic, and nothing the box itself can influence upward.
   if (row.deadlineAt.getTime() > now.getTime()) {
     // Keep the PROVIDER'S own timer subordinate to Kortix's deadline.
-    // E2B has an absolute one-hour timeout; Daytona and Platinum have
-    // native idle timers. Without this provider-neutral renewal, any
+    // Platinum and Daytona have native idle timers. Without this provider-neutral renewal, any
     // one of them can stop a box while the Kortix deadline still says a
     // live agent turn owns it. The sandbox cannot call this method.
     await provider.renewLifecycle(row.externalId);
@@ -1100,7 +1107,7 @@ async function reconcileNotRunningSandbox(
       // Preserve the established identity; never turn this signal into a
       // fresh, empty sandbox for the same session.
       await preserveEstablishedRuntime(row, 'provider_reported_removed', 'provider_removed', now);
-      invalidateProviderCache(row.externalId);
+      invalidateSandbox(row.externalId);
       result.reconciled += 1;
       result.billingClosed += 1;
       break;

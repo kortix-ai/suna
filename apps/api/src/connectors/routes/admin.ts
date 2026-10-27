@@ -1,12 +1,31 @@
 /** Admin routes: list, create, delete a connector and set or bind its credential. */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { UpdateConnectionCredentialInputSchema } from '@kortix/api-contract';
+import { OAuth2ClientCredentialsSchema, UpdateConnectionCredentialInputSchema } from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { INVALID_SOURCE_ADDRESS_CODE, isAllowedSourceValidationError } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { UnsafeEgressError } from '../../shared/ssrf-guard';
 import type { ConnectorAuthDiscovery } from '../auth-discovery';
+import { discoverProtectedResourceOAuth2, mcpSignInCheck } from '../oauth2-resource-discovery';
 import type { ConnectorRouterDeps, CrudOutcome } from '../router';
+import { connectorIdentity } from '../catalog-install';
+
+/** The CLI's `kortix connectors credential --oauth2-client-credentials` body. */
+const OAuth2ConnectionBody = z
+  .object({
+    token_url: z.string().openapi({ description: 'The token endpoint, https only.' }),
+    client_id: z.string(),
+    client_secret: z.string().optional().openapi({ description: 'Sent once, stored encrypted, never returned.' }),
+    token_endpoint_auth_method: z
+      .enum(['none', 'client_secret_post', 'client_secret_basic', 'client_secret_jwt', 'private_key_jwt'])
+      .optional()
+      .openapi({ description: 'Default: client_secret_basic.' }),
+    private_key: z.string().optional(),
+    scopes: z.array(z.string()).optional(),
+    audience: z.string().optional(),
+    resource: z.string().optional(),
+  })
+  .passthrough();
 import {
   AdminConnectorsResponseSchema,
   AuthDiscoverySchema,
@@ -33,7 +52,7 @@ import {
  * response when the error matches, otherwise `null` so the caller re-throws /
  * falls through to the generic handler for a genuine server failure.
  */
-function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
+export function allowedSourceValidationResponse(c: Context, err: unknown): Response | null {
   if (isAllowedSourceValidationError(err)) {
     return c.json(
       {
@@ -100,6 +119,58 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
           ? connectors
           : connectors.map((connector) => ({ ...connector, secretIdentifier: null })),
       });
+    },
+  );
+
+  // ── Admin: can an MCP server be signed in to in one click ───────────────
+  // Install asks this before it offers an app's MCP server instead of its
+  // managed app: OAuth metadata plus dynamic client registration is one click.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/connectors/mcp-sign-in-check',
+      tags: ['connector'],
+      summary: 'Check whether an MCP server supports one-click OAuth sign-in',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        body: {
+          content: {
+            'application/json': { schema: z.object({ url: z.string().url() }) },
+          },
+        },
+      },
+      responses: {
+        200: json(
+          z.object({ requires_sign_in: z.boolean(), one_click: z.boolean() }),
+          'Whether the server needs a sign-in, and whether Kortix can run it in one click',
+        ),
+        ...errors(400, 403),
+      },
+    }),
+    async (c) => {
+      const { projectId } = c.req.valid('param');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      const { url } = c.req.valid('json');
+      try {
+        return c.json(
+          mcpSignInCheck(await discoverProtectedResourceOAuth2({ resourceUrl: url, provider: 'mcp' })),
+          200,
+        );
+      } catch (err) {
+        // The egress guard refused the URL (private, local, non-https): the
+        // user's input, never a server defect.
+        if (!(err instanceof UnsafeEgressError)) throw err;
+        return c.json(
+          {
+            error: INVALID_SOURCE_ADDRESS_CODE,
+            code: INVALID_SOURCE_ADDRESS_CODE,
+            message: `MCP server rejected: ${err.message}`,
+          },
+          400,
+        );
+      }
     },
   );
 
@@ -207,6 +278,8 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         );
       }
       delete body.allow_legacy_pipedream;
+      const refused = await customSourceRefusal(c, deps, projectId, body);
+      if (refused) return c.json(refused, 403);
       let authDiscovery: ConnectorAuthDiscovery | undefined;
       if (body.auth === undefined && deps.discoverConnectorAuth) {
         // `discoverConnectorAuth` → `discoverConnectorAuthFromSource` calls
@@ -283,7 +356,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         },
       },
       responses: {
-        200: json(OkSchema, 'Credential set'),
+        200: json(CrudOkSchema, 'Credential set, with the MCP re-sync it ran'),
         ...errors(400, 403, 404, 409, 501),
       },
     }),
@@ -320,9 +393,63 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       } catch (error) {
         return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
       }
+      // An MCP connector re-syncs on a credential write: return that run, so
+      // the caller sees whether the tools load with the new credential.
       return result.ok
-        ? c.json({ ok: true })
+        ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 400 | 404 | 409);
+    },
+  );
+
+  // ── Admin: OAuth2 client credentials for the shared account ─────────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/oauth2/connection',
+      tags: ['connector'],
+      summary: 'Set OAuth2 client credentials on a connector\'s shared account',
+      description:
+        'The API trades `client_id` + `client_secret` at `token_url` for an access token now, stores the client credentials encrypted, and refreshes the token before each call needs it. Nothing is stored when the token request fails (503 `oauth2_token_failed`). The secret is never returned.',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OAuth2ConnectionBody } } },
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Client credentials stored; the first token was issued'),
+        ...errors(400, 403, 404, 409, 501, 503),
+      },
+    }),
+    async (c: Context) => {
+      const projectId = c.req.param('projectId')!;
+      const slug = c.req.param('slug')!;
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorCredential) return featureNotSupportedResponse(c, 'connector_credential_set');
+      const body = await c.req.json().catch(() => null);
+      const parsed = OAuth2ClientCredentialsSchema.safeParse({
+        type: 'oauth2_client_credentials',
+        token_endpoint_auth_method: 'client_secret_basic',
+        ...(body && typeof body === 'object' ? body : {}),
+      });
+      if (!parsed.success) {
+        return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid OAuth2 client credentials', code: 'invalid_oauth2' }, 400);
+      }
+      let result: Awaited<ReturnType<NonNullable<ConnectorRouterDeps['setConnectorCredential']>>>;
+      try {
+        result = await deps.setConnectorCredential(projectId, slug, { oauth2: parsed.data });
+      } catch (error) {
+        const detail = (error as Error).message || 'the token request failed';
+        // 503, not 502: the edge never sends a 502 (Cloudflare replaces its body; http-middleware.ts).
+        return c.json({ error: 'oauth2_token_failed', code: 'oauth2_token_failed', detail }, 503);
+      }
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
+      return c.json({
+        ok: true,
+        slug,
+        account: result.account ?? null,
+        expires_at: result.oauth2ExpiresAt ? new Date(result.oauth2ExpiresAt).toISOString() : null,
+      });
     },
   );
 
@@ -341,7 +468,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         },
       },
       responses: {
-        200: json(OkSchema, 'Binding updated'),
+        200: json(CrudOkSchema, 'Binding updated, with the MCP re-sync it ran'),
         ...errors(400, 403, 404, 409, 501),
       },
     }),
@@ -371,7 +498,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         parsed.data.secret_identifier,
       );
       return result.ok
-        ? c.json({ ok: true })
+        ? c.json({ ok: true, ...(result.sync ? { sync: result.sync } : {}) })
         : c.json({ error: result.error }, result.status as 404 | 409);
     },
   );
@@ -403,4 +530,40 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
         : c.json({ error: result.error }, result.status as 404 | 409);
     },
   );
+}
+
+/** The remote address a draft points calls at, or null (a toolkit, a repo file). */
+function remoteSourceOf(draft: Record<string, unknown>): string | null {
+  for (const key of ['url', 'endpoint', 'baseUrl', 'spec'] as const) {
+    const value = draft[key];
+    if (typeof value === 'string' && /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim())) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * An agent session adds only servers the project already has, or catalogue
+ * apps (`discover/install`): a prompt can then never point the project's
+ * tools at a server nobody chose. A person confirms a custom server on the
+ * page `setup_url` opens. A `baseUrl` from an agent always needs a person: it
+ * redirects every call of an existing profile.
+ */
+async function customSourceRefusal(
+  c: Context,
+  deps: ConnectorRouterDeps,
+  projectId: string,
+  draft: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const source = remoteSourceOf(draft);
+  if (!source || !deps.isAgentCaller?.(c)) return null;
+  const identity = connectorIdentity(draft as Parameters<typeof connectorIdentity>[0]);
+  const known = identity
+    ? ((await deps.listConnectorIdentities?.(projectId)) ?? []).some((p) => p.identity === identity)
+    : false;
+  if (known && draft.baseUrl === undefined) return null;
+  return {
+    error: `An agent cannot add the custom server ${source}. A person adds it at setup_url, or the agent installs a catalogue app (add_connector with app).`,
+    code: 'custom_connector_needs_human',
+    setup_url: deps.customConnectorSetupUrl?.(projectId, draft) ?? null,
+  };
 }

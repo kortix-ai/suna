@@ -27,6 +27,7 @@ import { logger } from '@/lib/log/logger';
  * sidecars cost only a `git` warning.
  *
  * Never throws: a repair failure must not stop a session from booting.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function pruneAppleDoubleFiles(dir: string): Promise<number> {
   let removed = 0;
@@ -53,7 +54,10 @@ export async function pruneAppleDoubleFiles(dir: string): Promise<number> {
   return removed;
 }
 
-/** Prune a config dir and log only when it was actually poisoned. */
+/**
+ * Prune a config dir and log only when it was actually poisoned.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function repairOpencodeConfigDir(dir: string): Promise<void> {
   const removed = await pruneAppleDoubleFiles(dir);
   if (removed > 0) {

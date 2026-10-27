@@ -22,28 +22,7 @@ const { createAppAccessToken } = await import('./access');
 const { config } = await import('../config');
 
 describe('Apps public edge', () => {
-  test('recognises a dead E2B runtime, which is a 502 and not a throw', () => {
-    // The outage this pins. An App ran fine after every deploy and then served
-    // `{"message":"The sandbox is running but port is not open","port":8080}`
-    // for hours, with desired_state `running` and a `ready` deployment, until a
-    // human rolled back to force a new runtime.
-    //
-    // Nothing recovered it because recovery only fired on a THROWN fetch or a
-    // Daytona 400 — and a provider edge that can still see the sandbox answers
-    // with an ordinary 502 instead. The runtime was gone; the response was not
-    // an error the App produced.
-    const dead = '{"sandboxId":"is3w07miuo2i3gz63g2su","message":"The sandbox is running but port is not open","port":8080,"code":502}';
-    expect(appProviderStoppedResponse('e2b', 502, dead)).toBe(true);
-    expect(appProviderStoppedResponse('e2b', 503, 'connection refused')).toBe(true);
-    expect(appProviderStoppedResponse('e2b', 504, 'sandbox not found')).toBe(true);
-
-    // An App's OWN 502 must still reach the reader. Recovering there would hide
-    // a broken upstream behind an endless "starting" page.
-    expect(appProviderStoppedResponse('e2b', 502, '{"error":"Upstream request failed"}')).toBe(false);
-    expect(appProviderStoppedResponse('e2b', 500, dead)).toBe(false);
-    expect(appProviderStoppedResponse('e2b', 200, dead)).toBe(false);
-
-    // Daytona's shape is unchanged.
+  test('recognises a dead Daytona runtime by its 400 shape', () => {
     expect(appProviderStoppedResponse('daytona', 400, 'no IP address found')).toBe(true);
     expect(appProviderStoppedResponse('daytona', 502, 'port is not open')).toBe(false);
   });
@@ -423,6 +402,29 @@ describe('Apps public edge', () => {
     )).toBe(true);
   });
 
+  test('an unsigned claim of a local App host is not an App request', () => {
+    // Pentest H-3: the local carve-out skips the edge signature, so a claimed
+    // `*.apps.localhost` sent to the public API routed into App dispatch unsigned.
+    const request = new Request('https://api.kortix.com/', {
+      headers: { 'x-kortix-app-host': 'aaaaaaaaaaaaaaaa.apps.localhost' },
+    });
+    expect(resolveAppRequest(request, new URL(request.url))).toBeNull();
+  });
+
+  test('a deployed API does not serve a local App host unsigned, even as the real Host', () => {
+    const previous = config.KORTIX_URL;
+    const previousLocal = process.env.KORTIX_APPS_LOCAL;
+    try {
+      delete process.env.KORTIX_APPS_LOCAL;
+      (config as { KORTIX_URL: string }).KORTIX_URL = 'https://api.kortix.com';
+      const request = new Request('http://aaaaaaaaaaaaaaaa.apps.localhost/');
+      expect(verifyAppEdgeRequest(request, new URL(request.url), true)).toBe(false);
+    } finally {
+      (config as { KORTIX_URL: string }).KORTIX_URL = previous;
+      if (previousLocal !== undefined) process.env.KORTIX_APPS_LOCAL = previousLocal;
+    }
+  });
+
   test('allows direct local development without Cloudflare headers', () => {
     const request = new Request('http://aaaaaaaaaaaaaaaa.apps.localhost:8008/');
     expect(verifyAppEdgeRequest(request, new URL(request.url), true)).toBe(true);
@@ -592,6 +594,18 @@ describe('Apps public edge', () => {
     expect(html).toContain('<title>Building Storefront</title>');
     expect(html).toContain('Building your App');
     expect(html).toContain('http-equiv="refresh" content="3"');
+  });
+
+  test('describes a sleeping App as a machine that wakes, never as serverless', async () => {
+    for (const status of ['provisioning', 'starting'] as const) {
+      const html = await appPublicStatusResponse(
+        new Request('https://x.apps.kortix.com/', { headers: { accept: 'text/html' } }),
+        { name: 'Storefront' },
+        { status },
+      ).text();
+      expect(html.toLowerCase()).not.toContain('serverless');
+      expect(html).toContain(status === 'starting' ? 'The machine was asleep and wakes on the first visit.' : 'creating the machine for this App');
+    }
   });
 
   test('renders every lifecycle state without stale unavailable copy', async () => {

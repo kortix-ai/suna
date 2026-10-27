@@ -7,6 +7,7 @@ import {
   SecretSchema as ContractSecretSchema,
   SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionDeleteResultSchema as ContractSessionDeleteResultSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
@@ -20,12 +21,20 @@ import {
   SessionTranscriptSyncEnvelopeSchema as ContractSessionTranscriptSyncEnvelopeSchema,
   SessionTurnStatusSchema as ContractSessionTurnStatusSchema,
   TriggerListSchema as ContractTriggerListSchema,
+  TriggerRunListSchema as ContractTriggerRunListSchema,
+  TriggerRunSchema as ContractTriggerRunSchema,
+  TriggerFireRequestSchema as ContractTriggerFireRequestSchema,
+  TriggerDryRunResultSchema as ContractTriggerDryRunResultSchema,
+  TriggerReplayRequestSchema as ContractTriggerReplayRequestSchema,
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 
 export const projectsApp = makeOpenApiApp<AppEnv>();
 
 export const projectWebhooksApp = makeOpenApiApp<AppEnv>();
+
+/** `/v1/sessions`: one session by id, in any project (routes/project-sessions.ts). */
+export const sessionsApp = makeOpenApiApp<AppEnv>();
 
 // ─── Reusable OpenAPI schemas (these power the docs, not runtime response
 // validation). Core project-domain surfaces come from @kortix/api-contract —
@@ -41,6 +50,8 @@ export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi
 export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
 
 export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
+
+export const SessionDeleteResultSchema = ContractSessionDeleteResultSchema.openapi('SessionDeleteResult');
 
 export const WarmProjectSessionResultSchema =
   ContractWarmProjectSessionResultSchema.openapi('WarmProjectSessionResult');
@@ -58,6 +69,16 @@ export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
 export const TriggerListSchema = ContractTriggerListSchema.openapi('TriggerList');
 
+export const TriggerRunSchema = ContractTriggerRunSchema.openapi('TriggerRun');
+
+export const TriggerRunListSchema = ContractTriggerRunListSchema.extend({ runs: TriggerRunSchema.array() }).openapi('TriggerRunList');
+
+export const TriggerFireRequestSchema = ContractTriggerFireRequestSchema.openapi('TriggerFireRequest');
+
+export const TriggerDryRunResultSchema = ContractTriggerDryRunResultSchema.openapi('TriggerDryRunResult');
+
+export const TriggerReplayRequestSchema = ContractTriggerReplayRequestSchema.openapi('TriggerReplayRequest');
+
 /** A manual fire or a webhook delivery: the run was queued (a session will
  *  start) or fired, or the same delivery was already queued. */
 export const TriggerFireResultSchema = z
@@ -67,6 +88,8 @@ export const TriggerFireResultSchema = z
     session_id: z.string().nullable(),
     reason: z.string().nullable().optional(),
     deduped: z.boolean(),
+    /** The run this fire wrote to the trigger's history (KRTX-1743). */
+    run_id: z.string().nullable().optional(),
   })
   .openapi('TriggerFireResult');
 

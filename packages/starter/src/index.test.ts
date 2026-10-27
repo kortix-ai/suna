@@ -165,6 +165,15 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
+  test('every starter agent declares its project repository explicitly', () => {
+    const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
+    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
+    // One explicit, uncommented line per agent: v3 defaults it to false.
+    expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
+  });
+
   test('ships scheduled starter automation disabled by default', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
       'kortix.yaml',
@@ -293,20 +302,29 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-apps',
+      'kortix-artifacts',
+      'kortix-channel-memory',
       'kortix-chrome',
       'kortix-computer',
       'kortix-connectors',
       'kortix-drives',
+      'kortix-genui',
+      'kortix-goals',
       'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',
+      'kortix-rooms',
       'kortix-slack',
       'kortix-system',
       'kortix-teams',
+      'kortix-ui',
+      'kortix-user-memory',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
+    // @kortix/ui's skill (packages/ui/skills/kortix-ui mirrored here): every session loads it.
+    expect(isKortixManagedSkillName('kortix-ui')).toBe(true);
     expect(isKortixManagedSkillName('agent-browser')).toBe(false);
     expect(isKortixManagedSkillName('kortix')).toBe(false);
     expect(isKortixManagedSkillName('harness-reflector')).toBe(false);

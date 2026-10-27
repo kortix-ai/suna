@@ -28,11 +28,11 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 
-export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function GrepTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const { enabled: navigationEnabled, openFile } = useToolNavigation();
   const path = (input.path as string) || (streamingInput.path as string);
   const pattern = input.pattern || streamingInput.pattern;
@@ -46,7 +46,7 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={{ title: trigger.title, subtitle: trigger.subtitle, args: trigger.args }}
       defaultOpen={defaultOpen}

@@ -4,7 +4,7 @@
 import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { log } from '../core/log';
 import type { FlowContext } from '../core/types';
 
@@ -170,11 +170,9 @@ flow(
       if (!managed || managed.can_use !== false) throw new Error('owner could not see ungranted resource metadata');
       (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: id } })).status(200);
     });
-    await ctx.step('enable gateway and pool flags; select two keys', async () => {
-      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-        (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-          { params: { projectId: project.id } })).status(200);
-      }
+    await ctx.step('enable the pool flag; select two keys', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+        { params: { projectId: project.id } })).status(200);
       const selected = await owner.put(poolPath, { secret_ids: ids }, { params: poolParams });
       if (selected.statusCode !== 200) throw new Error(`pool selection returned ${selected.statusCode}: ${selected.text()}`);
       selected.body().has('$.configured', true).has('$.secret_ids', ids);
@@ -428,10 +426,8 @@ flow('SEC-POOL-4', {
   await ctx.step('flag off rejects a project-scoped credential', async () => {
     (await owner.post(path, input, { params })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-      { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+    { params: { projectId: project.id } })).status(200);
   let secretId = '';
   await ctx.step('new key defaults to everyone in the project', async () => {
     const created = await owner.post(path, input, { params });
@@ -444,10 +440,8 @@ flow('SEC-POOL-4', {
     const other = await owner.get(`${path}?project_id=${otherProject.id}`, { params });
     other.status(200);
     if ((other.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('key leaked into another project');
-    for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-      (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-        { params: { projectId: otherProject.id } })).status(200);
-    }
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+      { params: { projectId: otherProject.id } })).status(200);
     (await owner.post('/v1/projects/:projectId/sessions', {
       agent_name: 'kortix', provider_secret_pools: { anthropic: [secretId] },
     }, { params: { projectId: otherProject.id } })).status(403)
@@ -523,9 +517,7 @@ flow('SEC-POOL-5', {
     (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
       { params: startParams })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
 
   await ctx.step('a member cannot share a ChatGPT account with the project or another member', async () => {
     (await asMember.post(startPath, { resource_label: 'Team ChatGPT', sharing: { mode: 'project' } }, { params: startParams }))
@@ -621,9 +613,7 @@ flow('SEC-POOL-6', {
   await team.grantProjectRole(project.id, member.userId!, 'user');
   const owner = ctx.client.as(ctx.P.OWNER);
   const asMember = ctx.client.as(member);
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
   const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
   const minted = await asMember.post('/v1/accounts/tokens', { name: 'ChatGPT reconnection', account_id: team.id });
   minted.status(201);
@@ -738,9 +728,7 @@ flow('SEC-POOL-3', {
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
   const sibling = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
   const minted = await owner.post('/v1/accounts/tokens', { name: 'Pool session isolation', account_id: team.id });
   minted.status(201);
   const credential = minted.json<{ token_id: string; secret_key: string }>();
@@ -1024,6 +1012,140 @@ flow("SEC-3A", {
   await ctx.step("a link minted after the unset still works", async () => {
     const token = await mint("TOMBSTONE_KEY2");
     (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY2: "fresh-value" } }, { params: { token } })).status(200);
+  });
+});
+
+// SEC-10 — a stored value the API cannot decrypt reads as `undecryptable`,
+// never as set or missing (KRTX-1719). A changed API_KEY_SECRET and a damaged
+// row fail the same AES-GCM check, so the flow damages the stored ciphertext.
+flow("SEC-10", {
+  domain: "secrets",
+  requires: ["database"],
+  routes: [
+    "POST /v1/projects/:projectId/secrets",
+    "GET /v1/projects/:projectId/secrets",
+    "DELETE /v1/projects/:projectId/secrets/:name",
+    "PUT /v1/projects/:projectId/secrets/:name/personal",
+    "DELETE /v1/projects/:projectId/secrets/:name/personal",
+    "POST /v1/accounts/:accountId/secret-resources",
+    "GET /v1/accounts/:accountId/secret-resources",
+    "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+    "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
+  ],
+}, async (ctx) => {
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const project = await ctx.fixtures.project();
+  const team = await ctx.fixtures.team();
+  const projectParams = { projectId: project.id };
+  const accountPath = "/v1/accounts/:accountId/secret-resources";
+  const accountParams = { accountId: team.id };
+  const NAME = "KE2E_UNDECRYPTABLE";
+  const plaintext = `ke2e-plain-${crypto.randomUUID()}`;
+  let accountSecretId = "";
+
+  /** Flip one character of the stored ciphertext: the GCM tag no longer matches. */
+  const damage = async (table: "project_secrets" | "account_secret_resources", where: string, values: string[]) => {
+    const { Client } = await import("pg");
+    const databaseUrl = ctx.env.databaseUrl!;
+    const db = new Client({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    try {
+      const updated = await db.query(
+        `UPDATE kortix.${table}
+            SET value_enc = split_part(value_enc, ':', 1) || ':' || split_part(value_enc, ':', 2) || ':' ||
+                split_part(value_enc, ':', 3) || ':' ||
+                (CASE WHEN left(split_part(value_enc, ':', 4), 1) = 'A' THEN 'B' ELSE 'A' END) ||
+                substr(split_part(value_enc, ':', 4), 2)
+          WHERE ${where}`,
+        values,
+      );
+      if (updated.rowCount !== 1) throw new Error(`damaged ${updated.rowCount} ${table} rows, expected 1`);
+    } finally {
+      await db.end();
+    }
+  };
+  const listedProjectSecret = async () => {
+    const listed = await owner.get("/v1/projects/:projectId/secrets", { params: projectParams });
+    listed.status(200);
+    if (listed.text().includes(plaintext)) throw new Error("the secrets list leaked the value");
+    const item = listed.json<{ items: Array<Record<string, unknown>> }>().items.find((i) => i.name === NAME);
+    if (!item || "value" in item || "value_enc" in item) throw new Error(`list leaked or missed ${NAME}: ${JSON.stringify(item)}`);
+    return item;
+  };
+  const listedAccountSecret = async () => {
+    const listed = await owner.get(accountPath, { params: accountParams });
+    listed.status(200);
+    const item = listed.json<{ secrets: Array<Record<string, unknown>> }>().secrets.find((s) => s.secret_id === accountSecretId);
+    if (!item || "value" in item || "value_enc" in item) throw new Error(`list leaked or missed ${accountSecretId}: ${JSON.stringify(item)}`);
+    return item;
+  };
+
+  await ctx.step("a project secret the API can decrypt lists with status ok", async () => {
+    (await owner.post("/v1/projects/:projectId/secrets", { name: NAME, value: plaintext }, { params: projectParams }))
+      .status(200)
+      .body()
+      .has("$.status", "ok");
+    const item = await listedProjectSecret();
+    if (item.status !== "ok") throw new Error(`expected status ok, got ${JSON.stringify(item)}`);
+  });
+
+  await ctx.step("a damaged stored value lists as configured with status undecryptable and no value", async () => {
+    await damage("project_secrets", "project_id = $1::uuid AND identifier = $2 AND owner_user_id IS NULL", [project.id, NAME]);
+    const item = await listedProjectSecret();
+    if (item.status !== "undecryptable" || item.configured !== true) {
+      throw new Error(`expected configured + undecryptable, got ${JSON.stringify(item)}`);
+    }
+  });
+
+  await ctx.step("entering the value again lists the secret with status ok", async () => {
+    (await owner.post("/v1/projects/:projectId/secrets", { name: NAME, value: `${plaintext}-again` }, { params: projectParams }))
+      .status(200)
+      .body()
+      .has("$.status", "ok");
+    const item = await listedProjectSecret();
+    if (item.status !== "ok") throw new Error(`expected status ok after re-entry, got ${JSON.stringify(item)}`);
+  });
+
+  await ctx.step("a damaged personal override lists on mine.status while the shared value stays ok; deleting it restores the shared value", async () => {
+    const personalParams = { params: { ...projectParams, name: NAME } };
+    (await owner.put("/v1/projects/:projectId/secrets/:name/personal", { value: `${plaintext}-mine` }, personalParams))
+      .status(200)
+      .body()
+      .has("$.mine.status", "ok");
+    await damage("project_secrets", "project_id = $1::uuid AND identifier = $2 AND owner_user_id IS NOT NULL", [project.id, NAME]);
+    const item = await listedProjectSecret();
+    const mine = item.mine as { active?: boolean; status?: string } | null;
+    if (item.status !== "ok" || item.effective_source !== "mine" || mine?.status !== "undecryptable") {
+      throw new Error(`expected shared ok + mine undecryptable, got ${JSON.stringify(item)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name/personal", personalParams)).status(200);
+    const after = await listedProjectSecret();
+    if (after.mine !== null || after.effective_source !== "shared" || after.status !== "ok") {
+      throw new Error(`expected the shared value back, got ${JSON.stringify(after)}`);
+    }
+    (await owner.del("/v1/projects/:projectId/secrets/:name", personalParams)).status(200);
+  });
+
+  await ctx.step("an account secret: ok when created, undecryptable once damaged, ok after a new value", async () => {
+    const created = await owner.post(accountPath, {
+      label: "Undecryptable probe", provider_id: "anthropic", name: "ANTHROPIC_API_KEY",
+      value: plaintext, consumer: "llm_gateway", strategy: "broker",
+    }, { params: accountParams });
+    created.status(201).body().has("$.status", "ok");
+    accountSecretId = created.json<{ secret_id: string }>().secret_id;
+    try {
+      await damage("account_secret_resources", "secret_id = $1::uuid", [accountSecretId]);
+      const item = await listedAccountSecret();
+      if (item.status !== "undecryptable") throw new Error(`expected undecryptable, got ${JSON.stringify(item)}`);
+      (await owner.put(`${accountPath}/:secretId/value`, { value: `${plaintext}-again` }, { params: { ...accountParams, secretId: accountSecretId } }))
+        .status(200)
+        .body()
+        .has("$.status", "ok");
+      const after = await listedAccountSecret();
+      if (after.status !== "ok") throw new Error(`expected ok after a new value, got ${JSON.stringify(after)}`);
+    } finally {
+      (await owner.del(`${accountPath}/:secretId`, { params: { ...accountParams, secretId: accountSecretId } })).status(200);
+    }
   });
 });
 
@@ -1500,6 +1622,28 @@ flow(
       const url = r.json<{ url: string }>().url;
       token = url.split("/").pop() ?? "";
       if (!token) throw new Error(`could not extract token from mint url: ${url}`);
+    });
+
+    await ctx.step("re-mint retires the old link, including an already-open form", async () => {
+      const unrelated = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secret-requests", { names: ["SEC7_UNRELATED_KEY"] }, { params: { projectId: p.id } },
+      );
+      unrelated.status(200);
+      const unrelatedToken = unrelated.json<{ url: string }>().url.split("/").pop() ?? "";
+      const previous = token;
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: previous } })).status(200);
+      const minted = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secret-requests",
+        { names: ["SEC7_TEST_KEY"] }, { params: { projectId: p.id } },
+      );
+      minted.status(200);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: unrelatedToken } })).status(200);
+      token = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: previous } })).status(409);
+      (await ctx.client.as(ctx.P.ANON).post(
+        "/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "retired-value" } },
+        { params: { token: previous } },
+      )).status(409);
     });
 
     await ctx.step("mint rejects a KORTIX_* reserved name → 400", async () => {

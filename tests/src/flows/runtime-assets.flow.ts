@@ -501,6 +501,27 @@ async function bootBox(ctx: FlowContext, project: CreatedProject): Promise<Boote
   };
 }
 
+/**
+ * Read the box until it is current. A new box reports its snapshot's CLI until
+ * the first convergence pass (~20 s after start) swaps it; the API allows 300 s
+ * for that (FIRST_CONVERGENCE_GRACE_S). Release gates 37933459772 (RTA-6) and
+ * 37943505676 (RTA-5) read at 19 s.
+ */
+async function waitUntilCurrent(ctx: FlowContext, booted: BootedBox): Promise<RunningAssets> {
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    const runtime = await booted.runtimeBlock();
+    if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
+    try {
+      await assertBoxIsCurrent(ctx, runtime.running);
+      return runtime.running;
+    } catch (err) {
+      if (Date.now() > deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+    }
+  }
+}
+
 /** Every component both sides state must agree, sha-to-sha where a sha exists. */
 async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Promise<void> {
   const manifest = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
@@ -537,7 +558,7 @@ flow(
     domain: 'runtime-assets',
     // NOT `funded`. Nothing here runs a model turn, so this half is the one that
     // can run in every preview — which is the only place a real box exists.
-    requires: ['database', 'daytona'],
+    requires: ['database', 'sandbox'],
     timeoutMs: 900_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -574,7 +595,7 @@ flow(
     });
 
     await ctx.step('a freshly booted box IS current — every digest equals the deploy`s', async () => {
-      await assertBoxIsCurrent(ctx, running);
+      running = await waitUntilCurrent(ctx, booted);
     });
 
     await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
@@ -596,7 +617,7 @@ flow(
   {
     domain: 'runtime-assets',
     // `funded`: every step below runs a real model turn. Operator-run.
-    requires: ['database', 'funded', 'daytona'],
+    requires: ['database', 'funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -620,10 +641,7 @@ flow(
       );
       created!.status(200);
       conversationId = String(created!.json<{ id: string }>().id);
-      const runtime = await booted.runtimeBlock();
-      if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
-      before = runtime.running;
-      await assertBoxIsCurrent(ctx, before);
+      before = await waitUntilCurrent(ctx, booted);
     });
 
     await ctx.step('the lane costs the send nothing: a second prompt is no slower', async () => {
@@ -658,7 +676,7 @@ flow(
     // THE SECRETS-GATE PARITY HALF, on a real box.
     //
     // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
-    // rewrites 4096 → 8000 upstream and Daytona passes it through. Before this
+    // rewrites 4096 → 8000 upstream and the legacy Daytona provider passes it through. Before this
     // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
     // DIFFERENT port variables for that one request, so the prompt got the
     // config convergence and the undeclared-agent drop but no secret refresh and
@@ -797,7 +815,7 @@ flow(
     // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
     // true of two binaries compiled by the SAME Bun and false of what we ship:
     // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
-    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.4.3), so they
     // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
     // shared, first MiB already different. Requiring overlap would have pinned a
     // build coincidence rather than a contract — and would go red on a green

@@ -74,11 +74,10 @@ describe('harness ownership boundary', () => {
     // facts ride in `details`) and one readiness verdict (E19).
     expect(await response.json()).toMatchObject({
       daemon: 'ok',
-      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
+      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'session.subagents'],
       status: 'ok',
       runtimeReady: true,
       boot_error: null,
-      workload: 'session',
       harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
       // The pre-W3 flat names, composed from the block for an older API.
       opencode: 'ok',

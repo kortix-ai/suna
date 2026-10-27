@@ -83,6 +83,28 @@ export async function personPrompterOf(
   return person ?? null;
 }
 
+/**
+ * The lifecycle source (`telegram`, `ui`, `trigger:reminder`, …) of the prompt the
+ * turn with this wire message id answers: the newest `continue_session` row the
+ * id names. Null when the turn names no message or no row matches.
+ */
+export async function turnPromptSource(sessionId: string, messageId: string | null | undefined): Promise<string | null> {
+  if (!messageId) return null;
+  const [row] = await db
+    .select({ source: sessionLifecycleCommands.source })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(1);
+  return row?.source ?? null;
+}
+
 /** The person who prompted the session's running turn (the newest live turn). */
 export async function runningTurnPrompter(sessionId: string, accountId: string): Promise<string | null> {
   const [box] = await db

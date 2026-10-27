@@ -148,11 +148,14 @@ export interface ManifestStartState {
   exp: number;
 }
 
+// The dedicated state key first: SUPABASE_JWT_SECRET also signs every login
+// session, so a leak of either one should not forge the other (pentest M-5).
 function manifestStateSecret(): string {
-  const secret = process.env.SUPABASE_JWT_SECRET;
+  const { KORTIX_GITHUB_APP_STATE_SECRET, SUPABASE_JWT_SECRET } = process.env;
+  const secret = KORTIX_GITHUB_APP_STATE_SECRET || SUPABASE_JWT_SECRET;
   if (!secret)
     throw new Error(
-      'SUPABASE_JWT_SECRET is not configured — cannot sign GitHub App manifest state',
+      'KORTIX_GITHUB_APP_STATE_SECRET (or SUPABASE_JWT_SECRET) is not configured — cannot sign GitHub App manifest state',
     );
   return secret;
 }

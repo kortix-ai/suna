@@ -39,6 +39,12 @@ import { removeSeeded, seedProject, seedSession, type SeededProject } from './he
 // any git, model or sandbox step; the `transient-refusal` trigger's by a busy
 // provider (a 503 the cron retries).
 const realSessions = await import('../projects/lib/sessions');
+// The managed lineup is what Platinum Inference lists; tests never call
+// Platinum, so seed the synthetic lineup (fixtures/managed-lineup.ts).
+const { __setManagedLineupForTest } = await import('../llm-gateway/models/managed-models');
+const { TEST_MANAGED_LINEUP } = await import('./fixtures/managed-lineup');
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+
 mock.module('../projects/lib/sessions', () => ({
   ...realSessions,
   createProjectSession: async (input: { project: { accountId: string }; metadata?: Record<string, unknown> }) => {
@@ -173,7 +179,7 @@ beforeAll(async () => {
   // A paid plan with an empty wallet: the billing gate refuses every run.
   await db.execute(sql`
     INSERT INTO kortix.credit_accounts (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-    VALUES (${project.account_id}::uuid, 0, 0, 0, 0, 'tier_2_20')`);
+    VALUES (${project.account_id}::uuid, 0, 0, 0, 0, 'credits')`);
   config.KORTIX_BILLING_INTERNAL_ENABLED = true;
   setTriggerAlertNotifierForTest({
     pushEnabled: true,

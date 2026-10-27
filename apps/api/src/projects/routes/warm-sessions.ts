@@ -29,6 +29,7 @@ import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-pro
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { warmClaimFiling } from '../lib/project-spaces';
 import { GitOperationError } from '../git/mirror';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
 
@@ -40,8 +41,7 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  * connector connection, an unreadable repo.
  *
  * 409 rather than 5xx because none of those are server faults, and a 5xx on
- * every page view of a repo-less project is both wrong and noisy enough to fail
- * `08-accounts-project-access.spec.ts` (which asserts no 5xx on /v1/projects).
+ * every page view of a repo-less project is both wrong and noisy.
  */
 /**
  * `workspace_refresh` is a required field of the published
@@ -52,7 +52,10 @@ import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-reg
  */
 const NO_REFRESH = { status: 'skipped' as const };
 
-const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+// Not tombstoned too: a `genui` flag change deletes warm sessions with the
+// marker kept (retireWarmProjectSessions), and neither adoption CAS may revive one.
+const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
+  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
 // Platinum's default/home compute placement; unrelated to Kortix deployment geography.
 const PLATINUM_HOME_REGION = 'eu-west';
 const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;
@@ -306,7 +309,7 @@ export function registerWarmSessionsRoutes(): void {
 
       const view = {
         viewerId: loaded.userId,
-        canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+        canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
       };
       const existing = await findWarmProjectSession({
         accountId: loaded.row.accountId,
@@ -457,7 +460,12 @@ export function registerWarmSessionsRoutes(): void {
       if (conversion?.error) {
         return c.json({ error: `pending_prompt: ${conversion.error}` }, 400);
       }
-      const pendingPrompt = conversion ? { pending_prompt: conversion.metadataPicks } : {};
+      // `project_channels` on: the claimed session is a new `#general` thread.
+      const filing = await warmClaimFiling(loaded.row, rawPendingPrompt?.text);
+      const pendingPrompt = {
+        ...(conversion ? { pending_prompt: conversion.metadataPicks } : {}),
+        ...filing.metadata,
+      };
       const claimed = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(projectSessions)
@@ -465,6 +473,7 @@ export function registerWarmSessionsRoutes(): void {
             metadata: sql`(${projectSessionMetadataMerge(
             pendingPrompt,
           )}) - ${WARM_SESSION_METADATA_KEY}::text`,
+            ...filing.columns,
             updatedAt: new Date(),
           })
           .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER))
@@ -507,6 +516,15 @@ export function registerWarmSessionsRoutes(): void {
           409,
         );
       }
+      // Filed into `#general` after its box booted: rewrite /drives/README.md so
+      // it names the channel's folders. Best effort, off the response path.
+      if (filing.defaultSpaceId && claimed.spaceId) {
+        void import('../../drives/service')
+          .then(async ({ refreshDriveNotes, sessionDrivesEnabled }) => {
+            if (await sessionDrivesEnabled(projectId)) await refreshDriveNotes(sessionId);
+          })
+          .catch(() => undefined);
+      }
       // The box is warm and running — nudge the drain so the first prompt goes
       // out now instead of on the next scheduler tick.
       if (conversion?.rowValues?.idempotencyKey) {
@@ -517,7 +535,7 @@ export function registerWarmSessionsRoutes(): void {
       return c.json(
         serializeSession(claimed, {
           viewerId: loaded.userId,
-          canManageProject: callerHasManagerStanding(loaded.effectiveRole, callerKortixSessionId(c)),
+          canManageProject: await callerHasManagerStanding(loaded, callerKortixSessionId(c)),
         }),
         200,
       );

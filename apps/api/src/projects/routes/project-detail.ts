@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { type SQL, eq } from 'drizzle-orm';
+import { type SQL, eq, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
@@ -8,8 +8,11 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
+import { disconnectedProjectConfig } from '../git/config';
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
 import {
+  agentSessionWorkspaceAllowsRepository,
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
@@ -19,10 +22,13 @@ import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
+import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
 import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
+import { featureFlagsEnvValue } from '../lib/feature-flag-env';
+import { managedSkillFeatureFlag } from '../../skills/catalog';
 import {
   normalizeString,
   serializeProject,
@@ -60,13 +66,17 @@ export function registerProjectDetailRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const requestedProjectId = c.req.param('projectId');
+      const projectId = requestedProjectId === 'current'
+        ? c.get('tokenProjectId')
+        : requestedProjectId;
+      if (!projectId) return c.json({ error: 'Not found' }, 404);
 
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-      // A page view: serve the warm git mirror, refresh it behind the response.
-      allowStaleMirrorReads();
+      // The record is name, flags and role: a session without repository
+      // access reads it too (its CLI needs the flags), minus every repository field.
+      const repositoryVisible = await agentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
       // The open stamp is a page-view counter: the project selector and the
       // command palette sort by it, and nothing in this request reads it back.
@@ -86,11 +96,14 @@ export function registerProjectDetailRoutes(): void {
           });
         });
 
+      const project = serializeProject(loaded.row, {
+        projectRole: loaded.projectRole,
+        effectiveRole: loaded.effectiveRole,
+      });
       return c.json(
-        serializeProject(loaded.row, {
-          projectRole: loaded.projectRole,
-          effectiveRole: loaded.effectiveRole,
-        }),
+        repositoryVisible
+          ? project
+          : { ...project, repo_url: '', git_origin_url: '', default_branch: '', manifest_path: '' },
       );
     },
   );
@@ -117,19 +130,31 @@ export function registerProjectDetailRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+      // A page view: serve the warm git mirror, refresh it behind the response.
+      allowStaleMirrorReads();
 
-      const gitProject = await withProjectGitAuth(loaded.row);
+      // A disconnected repository still renders the project shell: no files,
+      // and a config whose `manifest_version.unknown_reason` names the cause.
+      // `git_connection` below carries the reason and the fix.
+      const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+        if (isRepositoryDisconnectedError(error)) return null;
+        throw error;
+      });
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-      try {
-        files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
-      } catch (error) {
-        console.warn('[projects] repo detail listing unavailable', {
-          projectId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        c.header('X-Kortix-Repo-Status', 'unavailable');
+      if (!gitProject) {
+        c.header('X-Kortix-Repo-Status', 'disconnected');
+      } else {
+        try {
+          files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+        } catch (error) {
+          console.warn('[projects] repo detail listing unavailable', {
+            projectId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          c.header('X-Kortix-Repo-Status', 'unavailable');
+        }
       }
-      const rawConfig = await loadProjectConfig(gitProject, files);
+      const rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       // Per-resource scoping: hide agents/skills this member isn't granted (owner/
       // admins/SAs see everything). No-op when the project has no resource grants.
       const denierCtx = {
@@ -142,9 +167,19 @@ export function registerProjectDetailRoutes(): void {
       // The platform coordinator appears in the agent list (and becomes the
       // default) only for projects that opted into the `meta_agent` experimental
       // feature. Flag off: the config is exactly the repo-declared surface.
-      const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
+      const withAgents = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
         ? addPlatformMetaAgent(filteredConfig)
         : filteredConfig;
+      // A Kortix skill behind a feature flag is listed only while the flag is on: the box does
+      // not have it either (feature-flag-env.ts → kortixd).
+      const enabledFlags = new Set(featureFlagsEnvValue(loaded.row.metadata).split(','));
+      const config = {
+        ...withAgents,
+        skills: withAgents.skills.filter((skill) => {
+          const flag = managedSkillFeatureFlag(skill.name);
+          return !flag || enabledFlags.has(flag);
+        }),
+      };
       // …and hide the raw FILES of those resources from the file list (visibility
       // isolation). Reuses the config already loaded — no extra git round-trip.
       const denier = await denierFromConfig(rawConfig, denierCtx);
@@ -226,13 +261,13 @@ export function registerProjectDetailRoutes(): void {
       },
       responses: {
         200: json(ProjectSchema, 'The updated project'),
-        ...errors(404),
+        ...errors(400, 404, 409),
       },
     }),
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Editing project config (name / default_branch / manifest_path) is a
       // customize-write capability. manifest_path is especially sensitive: it
@@ -306,6 +341,15 @@ export function registerProjectDetailRoutes(): void {
         if (iconGlyphPresent && body.icon_glyph === null) deleteKeys.push('icon_glyph');
         if (iconPresent && body.icon === null) deleteKeys.push('icon');
         if (deleteKeys.length > 0) metadataExpr = metadataMerge({}, deleteKeys);
+      }
+
+      // kortix.yaml owns project.name: commit the rename first; a refused commit renames nothing.
+      if (name && name !== loaded.row.name) {
+        const declared = await commitProjectName(loaded.row, name);
+        if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status as 400 | 409);
+        metadataExpr = metadataExpr
+          ? sql`${metadataExpr} || ${JSON.stringify({ [MANIFEST_PROJECT_NAME_KEY]: name })}::jsonb`
+          : metadataMerge({ [MANIFEST_PROJECT_NAME_KEY]: name });
       }
 
       const [row] = await db

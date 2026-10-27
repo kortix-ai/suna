@@ -30,17 +30,17 @@ import { useState } from 'react';
 
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/chart';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   useAdminActivityAnalytics,
   useAdminUsageAnalytics,
@@ -52,11 +52,11 @@ import { AdminPanel, AdminSection } from '../_components/admin-panel';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
 import {
   deltaTone,
-  formatAxisUsd,
+  formatAxisCredits,
   formatCount,
+  formatCredits,
   formatDay,
   formatDelta,
-  formatUsd,
 } from './analytics-format';
 
 const RANGES = [
@@ -169,7 +169,14 @@ export default function AdminAnalyticsPage() {
             />
             <StatTile
               label={tI18nComplete('textfd537cf32a82', { value0: days })}
-              value={formatUsd(usageSummary?.totalUsd ?? 0)}
+              value={
+                <>
+                  {formatCredits(usageSummary?.totalUsd ?? 0)}{' '}
+                  <span className="text-muted-foreground text-sm font-normal">
+                    {tI18nComplete.raw('textbe379a30f1aa')}
+                  </span>
+                </>
+              }
               hint={tI18nComplete('textec58b394f1e2', {
                 value0: formatCount(usageSummary?.payingAccountsLast7d ?? 0),
               })}
@@ -288,10 +295,10 @@ export default function AdminAnalyticsPage() {
               title={tI18nComplete.raw('text8fd4602d9483')}
               description={
                 usageSummary
-                  ? tI18nComplete('text8e643cba1dff', {
-                      value0: formatUsd(usageSummary.llmUsd),
-                      value1: formatUsd(usageSummary.computeUsd),
-                      value2: formatUsd(usageSummary.otherUsd),
+                  ? tI18nComplete('textc6813a9e41ac', {
+                      value0: formatCredits(usageSummary.llmUsd),
+                      value1: formatCredits(usageSummary.computeUsd),
+                      value2: formatCredits(usageSummary.otherUsd),
                     })
                   : undefined
               }
@@ -317,8 +324,8 @@ export default function AdminAnalyticsPage() {
                         tickLine={false}
                         axisLine={false}
                         tickMargin={8}
-                        width={48}
-                        tickFormatter={formatAxisUsd}
+                        width={56}
+                        tickFormatter={(value: number) => formatAxisCredits(value)}
                       />
                       <ChartTooltip
                         content={
@@ -326,7 +333,7 @@ export default function AdminAnalyticsPage() {
                             labelFormatter={(value) => formatDay(String(value))}
                             formatter={(value) => (
                               <span className="text-foreground font-medium tabular-nums">
-                                {formatUsd(Number(value))}
+                                {formatCredits(Number(value))}
                               </span>
                             )}
                           />

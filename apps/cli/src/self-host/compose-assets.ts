@@ -212,7 +212,25 @@ export interface RenderCaddyfileOptions {
    * path proxy (`/v1/p/{sandbox}/{port}/`), which needs no extra hostname.
    */
   previewHostingConfigured?: boolean;
+  /**
+   * Whether Kortix Capture uses an EXTERNAL object store
+   * (KORTIX_CAPTURE_STORE=external) instead of the bundled on-box MinIO. When
+   * true, the Caddyfile's `@capture` handler is dropped: devices upload
+   * straight to the external store, so no request ever reaches the box on
+   * `/kortix-capture/*`. When false (the default), the base file is returned
+   * unchanged with the `@capture` handler intact.
+   */
+  captureStoreExternal?: boolean;
 }
+
+/**
+ * The base Caddyfile's `@capture` matcher + handler (with its comment), served
+ * only when Capture uses the bundled on-box store. Matched by regex rather than
+ * an exact literal so an incidental whitespace change does not silently defeat
+ * removal; the guard in renderCaddyfile throws if it is ever absent in external
+ * mode, the same loud-failure contract as CADDY_GLOBAL_CLOSE.
+ */
+const CAPTURE_CADDY_BLOCK = /\n\t# Kortix Capture:[\s\S]*?\n\t@capture path[\s\S]*?\n\t\}\n/;
 
 /**
  * The Caddyfile actually written for an instance: the base reverse proxy, plus
@@ -220,17 +238,24 @@ export interface RenderCaddyfileOptions {
  * configured.
  */
 export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
+  let caddyfile = kortixCaddyfile;
+  if (options.captureStoreExternal) {
+    if (!CAPTURE_CADDY_BLOCK.test(caddyfile)) {
+      throw new Error('Caddyfile @capture block changed; cannot drop it for an external capture store');
+    }
+    caddyfile = caddyfile.replace(CAPTURE_CADDY_BLOCK, '');
+  }
   const blocks = [
     options.appsHostingConfigured ? APPS_SITE_BLOCK : null,
     options.previewHostingConfigured ? PREVIEW_SITE_BLOCK : null,
   ].filter((block): block is string => block !== null);
-  if (blocks.length === 0) return kortixCaddyfile;
-  if (!kortixCaddyfile.includes(CADDY_GLOBAL_CLOSE)) {
+  if (blocks.length === 0) return caddyfile;
+  if (!caddyfile.includes(CADDY_GLOBAL_CLOSE)) {
     throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
   }
   // on_demand_tls is GLOBAL-only and Caddy allows one global block, so the
   // `ask` is injected once no matter how many wildcard families are served.
-  const withOnDemand = kortixCaddyfile.replace(
+  const withOnDemand = caddyfile.replace(
     CADDY_GLOBAL_CLOSE,
     `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${EDGE_TLS_CHECK_URL}\n\t}\n}`,
   );
@@ -255,7 +280,7 @@ export interface RenderComposeOptions {
   /**
    * Whether "tunnel" reachability mode is selected (see reachabilityMode() in
    * self-host/tunnel.ts). When true, the `cloudflared` service is included so
-   * cloud (Daytona) sandboxes can call back to this instance with no public
+   * cloud sandboxes can call back to this instance with no public
    * domain/DNS at all. When false, it is omitted entirely — not merely
    * disabled — so an instance not using it never runs the container.
    */
@@ -271,7 +296,47 @@ export interface RenderComposeOptions {
    * container because the official cloudflared image ships no shell at all.
    */
   namedTunnelConfigured?: boolean;
+  /**
+   * Whether Kortix Capture uses an EXTERNAL object store
+   * (KORTIX_CAPTURE_STORE=external) instead of the bundled on-box MinIO. When
+   * true: the `capture-store` service is removed (and with it its memory
+   * limit and the kortix-api dependency on it), and the bundled MinIO wiring
+   * is stripped from kortix-api's `environment` so the operator's
+   * KORTIX_CAPTURE_S3_* / KORTIX_CAPTURE_STS_* values flow through from .env
+   * via `env_file`. The operator (or Terraform) owns the bucket, so the API is
+   * pinned to never create it. When false (the default), the bundled store is
+   * rendered exactly as before.
+   */
+  captureStoreExternal?: boolean;
 }
+
+/**
+ * The external-store Capture wiring on kortix-api: it reads the operator's own
+ * KORTIX_CAPTURE_S3_* / KORTIX_CAPTURE_STS_* values (set durably in .env, which
+ * `docker compose` auto-loads for `${...}` interpolation) instead of the bundled
+ * MinIO. Every optional key uses the `${KEY:-}` form so an unset one substitutes
+ * blank with no Compose warning — blank then falls through to the API's own
+ * defaults (us-east-1 region, the SDK endpoint/credential chain for AWS). Keys:
+ * - ENDPOINT / STS_ENDPOINT: blank for AWS (regional endpoint); set for R2/MinIO.
+ * - ACCESS_KEY_ID / SECRET_ACCESS_KEY: blank on AWS to use the box instance role.
+ * - FORCE_PATH_STYLE: false for AWS; true for path-style providers.
+ * - PUBLIC_ENDPOINT: blank for AWS; the provider's public endpoint otherwise.
+ * CREATE_BUCKET is pinned off: the operator (or Terraform) owns the bucket.
+ * PROXY_TARGET has no external analogue — devices upload straight to the store,
+ * never through the box — so it is deleted, not rewritten.
+ */
+const EXTERNAL_CAPTURE_API_ENV: Readonly<Record<string, string>> = {
+  KORTIX_CAPTURE_S3_BUCKET: '${KORTIX_CAPTURE_S3_BUCKET:-}',
+  KORTIX_CAPTURE_S3_REGION: '${KORTIX_CAPTURE_S3_REGION:-us-east-1}',
+  KORTIX_CAPTURE_S3_ENDPOINT: '${KORTIX_CAPTURE_S3_ENDPOINT:-}',
+  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: '${KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT:-}',
+  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: '${KORTIX_CAPTURE_S3_FORCE_PATH_STYLE:-false}',
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: '${KORTIX_CAPTURE_S3_ACCESS_KEY_ID:-}',
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: '${KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY:-}',
+  KORTIX_CAPTURE_STS_ROLE_ARN: '${KORTIX_CAPTURE_STS_ROLE_ARN:-}',
+  KORTIX_CAPTURE_STS_ENDPOINT: '${KORTIX_CAPTURE_STS_ENDPOINT:-}',
+  KORTIX_CAPTURE_S3_CREATE_BUCKET: 'false',
+};
 
 /**
  * The stateless app-tier services the auto-updater rolls start-first. Kept in
@@ -483,6 +548,13 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // instance never even has the option of a port clash on 80/443.
   if (!options.domainConfigured) {
     delete services.caddy;
+  } else {
+    // Domain mode: Caddy serves the Capture store's path prefix itself (see
+    // assets/Caddyfile.txt), so uploads do not depend on the API. Every other
+    // mode has no Caddy and the API forwards the prefix.
+    const api = services['kortix-api'];
+    const apiEnv = asRecord(api?.environment);
+    delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
   }
 
   // The Cloudflare tunnel service is likewise opt-in: only present when
@@ -499,6 +571,31 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     if (cloudflared) {
       cloudflared.command = ['tunnel', '--no-autoupdate', 'run'];
       cloudflared.environment = { TUNNEL_TOKEN: '${CLOUDFLARE_TUNNEL_TOKEN}' };
+    }
+  }
+
+  // External Capture object store (KORTIX_CAPTURE_STORE=external): no on-box
+  // MinIO. Devices upload straight to the operator-owned S3-compatible store,
+  // so the `capture-store` service, its memory limit (applyMemLimits skips an
+  // absent service), the kortix-api dependency on it, and the `/kortix-capture`
+  // passthrough all go away. The bundled MinIO env is stripped from kortix-api
+  // so the operator's KORTIX_CAPTURE_S3_* / KORTIX_CAPTURE_STS_* values reach it
+  // from .env via `env_file`; the API is pinned to never create the bucket
+  // (the operator/Terraform owns it). See references/self-host.md.
+  if (options.captureStoreExternal) {
+    delete services['capture-store'];
+    const api = services['kortix-api'];
+    if (api) {
+      // Replace the bundled MinIO wiring with the external-store interpolation
+      // set; drop PROXY_TARGET, which has no external analogue.
+      const apiEnv = { ...asRecord(api.environment), ...EXTERNAL_CAPTURE_API_ENV } as Record<string, string>;
+      delete apiEnv.KORTIX_CAPTURE_S3_PROXY_TARGET;
+      api.environment = apiEnv;
+      if (isRecord(api.depends_on)) {
+        const dependencies = { ...api.depends_on };
+        delete dependencies['capture-store'];
+        api.depends_on = dependencies;
+      }
     }
   }
 
@@ -660,6 +757,7 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   // first thing the kernel OOM-killer should reach for.
   'supabase-analytics': { limit: '640m', reservation: '256m', oomScoreAdj: 500 },
   'supabase-vector': { limit: '192m', reservation: '64m', oomScoreAdj: 500 },
+  'capture-store': { limit: '${KORTIX_CAPTURE_STORE_MEMORY_LIMIT:-1024m}', reservation: '128m' },
   caddy: { limit: '256m', reservation: '64m' },
   cloudflared: { limit: '128m', reservation: '32m' },
 };

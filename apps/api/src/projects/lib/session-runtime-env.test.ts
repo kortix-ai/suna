@@ -1,8 +1,40 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  COMPILED_AGENT_CONFIG_ENV,
+  COMPILED_AGENT_CONFIG_GZ_PARTS_ENV,
+  MAX_ENV_STRING_BYTES,
+  envStringBytes,
+  readCompiledAgentConfigEnv,
+} from '@kortix/api-contract/compiled-agent-config-env';
+import { agentConfigEtag } from './compile-agent-config';
+import {
   auditRelayEnvPassthrough,
   buildSessionRuntimeEnv,
 } from './session-runtime-env';
+
+/**
+ * Compiled agent config JSON whose `KORTIX_COMPILED_AGENT_CONFIG=<json>\0` is
+ * exactly `envBytes` long: agents with prompt-length prose, the last one
+ * trimmed to land on the size.
+ */
+function oversizedCompiledConfig(envBytes: number): string {
+  const words = 'agent reads the repository plans then edits files and reports what changed with a short summary'.split(' ');
+  const prose = (seed: number, chars: number) => {
+    let out = '';
+    for (let i = seed; out.length < chars; i = (i * 1103515245 + 12345) % 2147483648) out += `${words[i % words.length]} `;
+    return out.slice(0, chars);
+  };
+  const config = { default_agent: 'build', agent: {} as Record<string, { mode: string; prompt: string; permission: unknown }> };
+  const size = () => envStringBytes(COMPILED_AGENT_CONFIG_ENV, JSON.stringify(config));
+  let index = 0;
+  while (size() < envBytes - 20_000) {
+    config.agent[`agent-${index}`] = { mode: 'subagent', prompt: prose(index + 1, 15_000), permission: { bash: 'ask' } };
+    index++;
+  }
+  config.agent.build = { mode: 'primary', prompt: '', permission: { edit: 'allow' } };
+  config.agent.build.prompt = prose(7, envBytes - size());
+  return JSON.stringify(config);
+}
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -25,15 +57,11 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 });
 
 describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
-  test('omits the key for an OpenCode session (default and explicit) — byte-for-byte unchanged', () => {
-    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_HARNESS');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode' })).not.toHaveProperty('KORTIX_HARNESS');
-  });
-
-  test('sets KORTIX_HARNESS=pi for a pi session, next to the same model and compiled config keys', () => {
+  test('every new box runs pi: KORTIX_HARNESS=pi, next to the same model and compiled config keys', () => {
+    // An unset KORTIX_HARNESS boots OpenCode in kortixd, so the key is never left out.
+    expect(buildSessionRuntimeEnv(BASE_INPUT).KORTIX_HARNESS).toBe('pi');
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      harness: 'pi',
       opencodeModel: 'kortix/claude-sonnet-5',
       compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
     });
@@ -51,24 +79,30 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
   const packages = ['npm:pi-web-access@0.30.0', { source: './.kortix/pi/audit.ts' }];
 
   test('a pi session carries the project packages as JSON', () => {
-    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages });
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages });
     expect(JSON.parse(env.KORTIX_PI_PACKAGES!)).toEqual(packages);
   });
 
   test('a built bundle travels as its URL and digest, to a pi session only', () => {
     const bundle = { digest: 'a'.repeat(64), url: 'https://bucket.example/pi-packages/x.tar.gz?sig=1', fallbackUrl: 'https://bucket.example/pi-packages/x.node_modules.tar.gz?sig=2' };
-    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: bundle });
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages, piPackagesBundle: bundle });
     expect(env.KORTIX_PI_PACKAGES_BUNDLE_URL).toBe(bundle.url);
     expect(env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST).toBe(bundle.digest);
     expect(env.KORTIX_PI_PACKAGES_FALLBACK_URL).toBe(bundle.fallbackUrl);
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackagesBundle: bundle })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: packages, piPackagesBundle: null })).not.toHaveProperty('KORTIX_PI_PACKAGES_BUNDLE_URL');
   });
 
-  test('no key for an OpenCode session, or a pi session without packages', () => {
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piPackages: packages })).not.toHaveProperty('KORTIX_PI_PACKAGES');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
-    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi' })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+  test('no key for a session without packages', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piPackages: [] })).not.toHaveProperty('KORTIX_PI_PACKAGES');
+    expect(buildSessionRuntimeEnv(BASE_INPUT)).not.toHaveProperty('KORTIX_PI_PACKAGES');
+  });
+});
+
+describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
+  test('a pi session carries the manifest value; none leaves the daemon default', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
   });
 });
 
@@ -98,6 +132,35 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  // Platinum prod, 2026-10-14: every create whose `KORTIX_COMPILED_AGENT_CONFIG=…\0`
+  // was over 131,072 bytes failed to exec in the guest (kortix-ai/platinum#1569).
+  test.each([131_734, 269_979])(
+    'a %d-byte config leaves the create with no env string over the exec limit, and the etag names the JSON',
+    (envBytes) => {
+      const compiled = oversizedCompiledConfig(envBytes);
+      expect(envStringBytes(COMPILED_AGENT_CONFIG_ENV, compiled)).toBe(envBytes);
+
+      const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+
+      for (const [name, value] of Object.entries(env)) {
+        expect(envStringBytes(name, value), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES);
+      }
+      expect(env).not.toHaveProperty(COMPILED_AGENT_CONFIG_ENV);
+      expect(env[COMPILED_AGENT_CONFIG_GZ_PARTS_ENV]).toBe('1');
+      expect(readCompiledAgentConfigEnv(env)).toBe(compiled);
+      // The etag stays the hash of the JSON, so the box reports the same
+      // identity whichever form the config travelled in.
+      expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(agentConfigEtag(compiled)!);
+    },
+  );
+
+  test('a config at the exec limit still travels raw, for a daemon that predates the gzip form', () => {
+    const compiled = oversizedCompiledConfig(MAX_ENV_STRING_BYTES);
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(Object.keys(env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ'))).toEqual([]);
   });
 
   test('ignores legacy attribution input and emits no attribution variables', () => {

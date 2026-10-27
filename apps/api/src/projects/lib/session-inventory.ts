@@ -6,17 +6,13 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
+import { spaceVisibleFor } from '../../shared/space-access';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
-import { ACTIVE_SESSION_STATUSES } from './session-status';
 import { isWarmProjectSession } from './warm-sessions';
+import { sessionRestoreUntil } from '../session-log-purge';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
-
-/** `ACTIVE_SESSION_STATUSES.includes(row.status)` does not typecheck against
- *  the wider status union; the Set is the no-cast membership test the fold
- *  needs per row. */
-const ACTIVE_SESSION_STATUSES_SET: ReadonlySet<string> = new Set(ACTIVE_SESSION_STATUSES);
 
 export type ProjectSessionListScope = 'visible' | 'project';
 
@@ -112,6 +108,12 @@ export function selectSessionRowsForViewer(input: {
    * never the launcher's other private or restricted ones.
    */
   agentPrincipal?: boolean;
+  /** Recently deleted (KRTX-2853): `SessionListFilter.deleted`. */
+  deleted?: boolean;
+  /** Now, for the restore window. */
+  now?: number;
+  /** The private channels the caller may not see (`hiddenSpaceIds`): their sessions are never listed. */
+  hiddenSpaceIds: ReadonlySet<string>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
@@ -141,13 +143,32 @@ export function selectSessionRowsForViewer(input: {
         initiatorType: row.initiatorType,
         canManageProject: input.canManageProject,
         accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
+        spaceVisible: spaceVisibleFor(input.hiddenSpaceIds, row.spaceId),
       },
     );
     const access = input.agentPrincipal
-      ? agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
+      ? spaceVisibleFor(input.hiddenSpaceIds, row.spaceId) &&
+        agentSessionStanding(input.boundCredentialSessionId, row, canAccess).visible
       : canAccess;
     return { row, canAccess: access, runtimeStatus, deletedAt, deletedBy };
   });
+
+  if (input.deleted) {
+    // Recently deleted: what `POST …/restore` would still take back for this
+    // caller. A session they can open, deleted inside its restore window,
+    // that they started or manage (`canManageLifecycle`). A deleted warm
+    // draft was never prompted, so there is nothing to restore.
+    const now = input.now ?? Date.now();
+    return {
+      authorized: true,
+      items: items.filter((item) => {
+        if (!item.deletedAt || !item.canAccess || isWarmProjectSession(item.row.metadata)) return false;
+        const until = sessionRestoreUntil(item.deletedAt);
+        if (!until || until.getTime() <= now) return false;
+        return input.canManageProject || item.row.createdBy === input.subject.userId;
+      }),
+    };
+  }
 
   if (input.scope === 'project') {
     // A list row is a disclosure. Keep manager-only lifecycle coverage for
@@ -173,27 +194,25 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
-      // A warm session the user never prompted holds no work of theirs, so
-      // while it is not actively coming up or running it stays hidden — a
-      // project visit must not litter the sidebar with rows the user never
-      // started. The marker is dropped by the first prompt, and from that
-      // moment the row lists like any other session. See lib/warm-sessions.ts.
+      // A warm session the user never prompted holds no work of theirs, so it
+      // stays hidden — a project visit must not litter the sidebar with rows
+      // the user never started. The marker is dropped by the first prompt, and
+      // from that moment the row lists like any other session. See
+      // lib/warm-sessions.ts.
       //
-      // A warm row whose session is provisioning or running is different: its
-      // box bills compute from creation (sandbox-deadline-policy.ts
-      // warmPoolGrantMs) until the reaper or the user stops it. A billed
-      // session the list hides is money its owner cannot see, open or stop, so
-      // it lists in the `visible` scope like any other running session. The
-      // session row's own status is the predicate, not the sandbox row: sandbox
-      // provisioning is fire-and-forget (session-create.ts), so the sandbox row
-      // can lag seconds behind a session that is already up and billing.
+      // This holds even while the warm box bills compute from creation
+      // (sandbox-deadline-policy.ts warmPoolGrantMs): KRTX-1068 briefly listed
+      // a billing warm row here so its owner could see and stop it, and that
+      // traded one bad state for another — every project visit painted an
+      // untitled "New session" row that spins for the whole grant on the one
+      // list the user reads constantly. The money stays visible where
+      // lifecycle work happens: the manager `project` scope keeps a live warm
+      // row listed for inspection, and open/stop/delete by id never consulted
+      // the marker.
       //
       // `visible` scope only. The `project` scope keeps accessible warm rows for
       // lifecycle inspection, but it also applies the access filter above.
-      if (
-        isWarmProjectSession(item.row.metadata) &&
-        !ACTIVE_SESSION_STATUSES_SET.has(item.row.status)
-      ) {
+      if (isWarmProjectSession(item.row.metadata)) {
         return false;
       }
       // A stopped session lists whatever its runtime row says: a terminal turn

@@ -21,10 +21,96 @@ export function bindProjectOperationsReview(projectId: string) {
         P.claimWarmProjectSession(projectId, input),
     },
 
+    /** Channels and the caller's DMs (`project_channels` flag). A session joins one with `sessions.create({ space_id })`. */
+    spaces: {
+      list: () => P.listProjectSpaces(projectId),
+      create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),
+      update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
+      /** The caller's DM with an agent, created on the first call. */
+      dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
+      apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
+      /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */
+      links: {
+        list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
+        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
+        /** `pin(spaceId, linkId, pinned)`: the link; unpinning never removes it (null only from an older server). */
+        pin: (...a: DropFirst<Parameters<typeof P.pinProjectSpaceLink>>) => P.pinProjectSpaceLink(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
+      },
+      /** A channel's people: the same list for every viewer. `#general` lists every project member. */
+      members: {
+        list: (spaceId: string) => P.listProjectSpaceMembers(projectId, spaceId),
+        /** `add(spaceId, userIds)`: in one request; only project members (else 400 `not_project_member`). */
+        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceMembers>>) => P.addProjectSpaceMembers(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceMember>>) => P.removeProjectSpaceMember(projectId, ...a),
+        join: (spaceId: string) => P.joinProjectSpace(projectId, spaceId),
+        leave: (spaceId: string) => P.leaveProjectSpace(projectId, spaceId),
+      },
+      /** `#general`'s "turned on again" line, or null. */
+      generalNotice: () => P.getProjectSpaceGeneralNotice(projectId),
+      /** Whether this deployment allows private channels. */
+      privateChannelsAvailable: () => P.getPrivateChannelsAvailable(projectId),
+      /** Project managers: the private channels they are not in (name, member count, creator; no content). */
+      privateChannelsNotIn: () => P.listPrivateChannelsNotIn(projectId),
+      /** The caller's Channels onboarding: the intro dialog and the `#general` "Get started" rows. */
+      onboarding: {
+        get: () => P.getChannelsOnboarding(projectId),
+        /** Record one mark for the caller. Idempotent. */
+        mark: (mark: P.ChannelsOnboardingMark) => P.markChannelsOnboarding(projectId, mark),
+      },
+    },
+
+    /**
+     * Session groups (`session_groups` flag): named folders of the project's
+     * sessions, shared by every member, in one order. List a group's sessions
+     * with `sessions.listPage({ group })` (`'none'`: the sessions in no group).
+     */
+    sessionGroups: {
+      list: () => P.listProjectSessionGroups(projectId),
+      /** Last in the order. A taken name (any case) rejects with 409 `group_name_taken`. */
+      create: (input: Parameters<typeof P.createProjectSessionGroup>[1]) => P.createProjectSessionGroup(projectId, input),
+      rename: (groupId: string, name: string) => P.renameProjectSessionGroup(projectId, groupId, name),
+      /** Every group id, once, in the new order; an out-of-date list rejects with 409 `group_order_stale`. */
+      reorder: (groupIds: readonly string[]) => P.reorderProjectSessionGroups(projectId, groupIds),
+      /** Its sessions stay, in no group. */
+      delete: (groupId: string) => P.deleteProjectSessionGroup(projectId, groupId),
+      /** `file(sessionId, groupId)`: into that group; `null` takes it out. Keeps its `updated_at`. */
+      file: (sessionId: string, groupId: string | null) => P.setProjectSessionGroup(projectId, sessionId, groupId),
+    },
+
+    /** Memory: the Markdown files of the project's Drive (`drives` flag). A layer key is `company` or a channel's or DM's space id. */
+    memory: {
+      /** One layer: its Drive folder and page counts. */
+      layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
+      pages: {
+        /** One page per Markdown file, newest first; `{ type }` filters. */
+        list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
+        get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
+        delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
+        history: (pageId: string) => P.listProjectMemoryHistory(projectId, pageId),
+      },
+      /** Remember-box sentences, appended to the layer's `Notes.md`. */
+      notes: {
+        add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
+      },
+      /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
+      search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
+      /** A thread's "Used memory": the files listed to its agent at the first turn. */
+      usage: (sessionId: string) => P.getSessionMemoryUsage(projectId, sessionId),
+    },
+
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
     review: {
+      recoverChangeRequest: (...args: DropFirst<Parameters<typeof P.recoverChangeRequest>>) =>
+        P.recoverChangeRequest(projectId, ...args),
+      /** One page of the inbox. Walk the rest with `next_cursor` → `cursor`. */
       list: (params?: Parameters<typeof P.listReviewItems>[1]) =>
         P.listReviewItems(projectId, params),
+      /** The needs-you counts, in total and by session. For a badge, not the list. */
+      summary: () => P.getReviewSummary(projectId),
       get: (reviewItemId: string) => P.getReviewItem(projectId, reviewItemId),
       submit: (input: Parameters<typeof P.submitReviewItem>[1]) =>
         P.submitReviewItem(projectId, input),

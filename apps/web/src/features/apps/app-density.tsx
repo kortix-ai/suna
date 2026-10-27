@@ -1,12 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
 
-import Hint from '@/components/ui/hint';
+import Hint from '@kortix/ui/hint';
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/product-catalog-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -205,11 +205,12 @@ export function AppGridColumnsControl({
           <Hint key={key} side="bottom" label={option.label}>
             <Button
               type="button"
-              variant={active ? 'secondary' : 'outline'}
+              variant="secondary"
               size="icon-sm"
               aria-pressed={active}
               aria-label={option.label}
               onClick={() => onChange(key)}
+              className={active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}
             >
               <Glyph className="size-4" />
             </Button>

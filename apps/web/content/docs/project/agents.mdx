@@ -139,7 +139,13 @@ kortix agents config support --set behavior.temperature=0.2
 - Any other key is a tool name and passes through to the harness.
 - A tool with no rule is allowed.
 
-A pattern is matched against the command line for `bash`, the skill name for `skill`, and the file path for the file tools. `*` matches any text and `?` matches one character. The longest matching pattern wins, so `"*"` is the fallback. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+A pattern is matched against the command line for `bash`, the skill name for `skill`, the subagent name for `task`, and the file's path relative to the workspace for the file tools: `./secrets/a`, `x/../secrets/a` and `/workspace/secrets/a` are all `secrets/a`. `*` matches any text and `?` matches one character. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+
+**The most specific rule wins, on OpenCode and on pi, whatever order the keys are written in.**
+
+- The longest matching pattern wins, so `"*"` is the fallback wherever it sits. Two patterns of equal length: the later one in code-unit order wins.
+- The same rule picks between keys: `bash: ask` outranks `"*": allow`. A tool whose pattern map matches nothing falls back to the `"*"` key.
+- An agent's own `permission` outranks the project-wide one in `opencode.jsonc`.
 
 This agent asks before any shell command, runs read-only git commands freely, and never deletes recursively:
 
@@ -156,6 +162,8 @@ permission:
 ```
 
 - The starter agents use `permission: allow`. Each session runs in its own sandbox on its own branch.
+- `external_directory` decides a file tool call whose path is outside the workspace. Its pattern is the directory, for example `/tmp/*`.
+- A path rule governs the file tools, not the shell: `cat secrets/a` is a `bash` command. To keep a path closed, restrict `bash` too.
 - `bash: deny` also denies the terminal tools (`pty_*`), and `edit: deny` also denies `memory`, unless the agent sets a rule for those tools.
 - On OpenCode, `harnesses/opencode/opencode.jsonc` can set a project-wide `permission`. The starter sets `"permission": "allow"`.
 
@@ -225,28 +233,30 @@ Each grant in `agents.<name>` unlocks one kind of resource:
 | `skills` | skill names | the agent file decides | Loading those skills. See [Skills](#skills). |
 | `apps` | App slugs | none | Opening those [Apps](/docs/apps#agents-and-apps) when their access is restricted or private. The agent also needs `project.app.read`. |
 | `kortix_permissions` | `project.*` permissions | none | Kortix CLI, API and git actions. See [What an agent may do](#what-an-agent-may-do). |
+| `policy_sets` | connector slug → set name | the base rules | Its own rule set on those connectors. See [Policy sets](/docs/connect/connectors#policy-sets). |
 | `tools` | tool names, or `exclude: [...]` | every tool | The harness, Kortix and project [tools](/docs/project/tools#give-each-agent-its-tools) the agent may call. |
 
-The first five take the same values:
+The first five take the same values (`policy_sets` is a map, not a grant set):
 
 - `all` or `"*"`, or a list that contains `"*"`: everything.
 - `none`, `""` or `[]`: nothing.
 - A list: only those entries.
 
-Set grants in one of three ways. Each one commits `kortix.yaml` on the default branch and needs `project.agent.write`. The dashboard and CLI paths need a `kortix_version: 2` manifest. On v3, use a change request.
+Set grants in one of three ways. Each one commits `kortix.yaml` on the default branch and needs `project.agent.write`. A change to `policy_sets` also needs `project.connector.write`. The dashboard and CLI paths need a `kortix_version: 2` manifest. On v3, use a change request.
 
 <Tabs>
 
 <Tab title="Dashboard">
-Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. **Apps** shows only when the project has the Apps feature flag on. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
+Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
 </Tab>
 
 <Tab title="CLI">
-`kortix agents scope` sets secrets, connectors and Apps. Each flag replaces the whole list. `kortix agents config` changes any key of the block: `--set` merges single dotted keys (a value is parsed as JSON when it parses), and `--file` replaces the whole block with a JSON file (`-` reads stdin).
+`kortix agents scope` sets secrets, connectors, Apps and policy sets. Each list flag replaces the whole list. `--policy-set <slug>=<name>` merges per connector. `kortix agents config` changes any key of the block: `--set` merges single dotted keys (a value is parsed as JSON when it parses), and `--file` replaces the whole block with a JSON file (`-` reads stdin).
 
 ```bash
 kortix agents scope support --secrets HELPDESK_API_KEY --connectors helpdesk
 kortix agents scope support --apps none
+kortix agents scope support --policy-set helpdesk=read_only   # merges per connector; helpdesk=base removes it
 kortix agents config support --set 'kortix_permissions=["project.session.read","project.review.submit"]'
 kortix agents config support --set 'skills=["kortix-cli","triage"]'
 kortix agents config support --json
@@ -281,7 +291,7 @@ A session runs one agent. The request picks it, else the project's `default_agen
 | Key | Default | Effect |
 | --- | --- | --- |
 | `enabled` | `true` | `false`: no session can start the agent, and it cannot be `default_agent`. |
-| `repository_access` | `true` | `false`: new sessions of this agent start without a checkout of the project repository. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. |
+| `workspace.project_repository` | v2 `true`, v3 `false` | `true`: new sessions of this agent check out the project repository. `false`: they start without one. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. See [`workspace`](/docs/project/manifest#agent-workspace). |
 | `sandbox` | the project default | The sandbox template for this agent's sessions. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates). |
 | `harnesses` | none | Per-agent pi packages and OpenCode plugins. See [`kortix.yaml`](/docs/project/manifest#harnesses-opencode-and-pi). |
 
@@ -369,7 +379,7 @@ A shared session, a trigger, an email session, a Slack or Teams session with no 
 
 1. Merging a change request needs `project.gitops.merge`.
 2. A merge that changes `agents` or `default_agent` also needs `project.agent.write`. A merge that adds, changes or removes a trigger needs `project.trigger.create`, `project.trigger.update` or `project.trigger.delete`.
-3. An agent grants only what it holds. When an agent session writes any agent's grant (the agent editor, the scope routes, or a change request it merges), every permission, connector, secret and App it adds must be in its own effective grant. Narrowing a grant is always allowed.
+3. An agent grants only what it holds. When an agent session writes any agent's grant (the agent editor, the scope routes, or a change request it merges), every permission, connector, secret and App it adds must be in its own effective grant. Narrowing a grant is always allowed. To add, change or remove any `policy_sets` entry, its own included, the agent needs `project.connector.write` in its own grant: a set is not ranked tighter or looser than another, so every change counts. An agent session whose own agent has a policy set, or lacks `project.connector.write`, cannot push straight to the default branch: it opens a change request.
 4. A session pushes only its own branch unless its agent holds `project.gitops.ref.any`. A push straight to the default branch also needs `project.agent.write` and the three trigger permissions. See [Who can clone and push](/docs/git#who-can-clone-and-push).
 
 A project on the legacy v1 manifest with no agents declared runs ungoverned: its sessions act as the person who started them.
@@ -397,20 +407,11 @@ When an agent session merges and Kortix cannot read the manifest, the merge answ
 
 ## Harnesses: OpenCode and pi
 
-A harness is the agent runtime inside a session's sandbox. It runs the model loop, calls tools and writes the transcript. Kortix has two: **OpenCode**, the default, and **pi**. Both read the same `agents/`, `skills/`, root `AGENTS.md` and `kortix.yaml`, and every client reads both through the same session API.
+A harness is the agent runtime inside a session's sandbox. It runs the model loop, calls tools and writes the transcript. Every new session runs **pi**. **OpenCode** is deprecated: since 2026-10-23 no new session starts on it, and Kortix will remove it. Both read the same `agents/`, `skills/`, root `AGENTS.md` and `kortix.yaml`, and every client reads both through the same session API.
 
-Kortix picks the harness when a session starts, restarts or resumes. A running session keeps its harness until then.
+A session keeps the harness it started on: a restart keeps the session's sandbox, so a session that already runs OpenCode keeps OpenCode and its history. There is no setting that starts a new session on OpenCode. `runtime:` in `kortix.yaml` selects nothing, and `runtime: opencode` validates with a deprecation warning.
 
-| Rule, in order | Harness |
-| --- | --- |
-| The project's `llm_gateway` feature flag is off | OpenCode |
-| The project's `pi_harness` feature flag is on | pi |
-| `kortix.yaml` sets `runtime: pi` (`kortix_version` 2 or 3) | pi |
-| Anything else | OpenCode |
-
-- pi calls models only through the Kortix [LLM gateway](/docs/project/models), so row 1 overrides the flag and the manifest.
-- `pi_harness` is off by default. See [Feature flags](/docs/project#feature-flags).
-- The session daemon's `GET /kortix/health` reports `harness.id` (`opencode` or `pi`) and the `capabilities` the session serves. From the SDK, call `kortix.session(projectId, sessionId).health()`. A client hides a control whose capability is missing: `runtimeSupports` in the SDK, `useRuntimeSupports` in React.
+- The session daemon's `GET /kortix/health` reports `harness.id` (`pi`, or `opencode` for a session that started before 2026-10-23) and the `capabilities` the session serves. From the SDK, call `kortix.session(projectId, sessionId).health()`. A client hides a control whose capability is missing: `runtimeSupports` in the SDK, `useRuntimeSupports` in React.
 
 ### What each harness supports
 
@@ -429,7 +430,7 @@ The optional features are capabilities:
 | --- | --- | --- | --- |
 | `session.subagents` | Subagents through the `task` tool | Yes | Yes |
 | `session.compact` | Summarize the conversation, on demand and near the context window | Yes | Yes |
-| `session.commands` | Project slash commands | Yes, from `commands/` | Yes, from `prompts/` and pi packages |
+| `session.commands` | Project slash commands | Yes, from `commands/` (v1, v2) or `kortix.yaml` `commands` (v3) | Yes, from `prompts/` and pi packages (v1, v2) or `kortix.yaml` `commands` (v3) |
 | `session.steer` | A message sent during a turn is read at the turn's next step | OpenCode 1.18.15 or later | Yes |
 | `session.log.v2` | The event stream serves the session log as `log.*` frames (`?schema=v2`) | Yes | Yes |
 | `session.rewind` | Rewind to a message; edit and resend | Yes | No |
@@ -442,9 +443,11 @@ The optional features are capabilities:
 
 A pi session answers a request for a feature it does not serve with `501` and `code: "feature_not_supported"`, and `/global/config` with `404`. pi also refuses message part edits with `501`. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. pi subagents are `general`, `explore` (read-only) and every agent with `mode: subagent` or `all`. A pi subagent cannot start another subagent.
 
+pi has one tool OpenCode does not: `codemode`. The model writes a script that calls the other tools, and only the script's output returns to it, so one step can run several calls and filter their output. It is on by default; [`harnesses.pi.codemode`](/docs/project/manifest#harnesses-opencode-and-pi) turns it off or makes it the only tool. The session view shows a script as its calls, its code and its output. A subagent does not get `codemode`.
+
 ### Harness-only files
 
-Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here.
+Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here. A `kortix_version: 3` project reads neither directory: declare its slash commands in [`kortix.yaml`](/docs/project/manifest#commands-v3) and its plugins under `extensions`.
 
 | | OpenCode | pi |
 | --- | --- | --- |

@@ -24,7 +24,7 @@
  *   above the keyboard, so the symbol never sits under the composer. It is
  *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
+ *   bottom: `max(insets.bottom, 12)`, the card on the safe-area line (KRTX-2930).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  *
  * The draft lives in `HomeComposer`, not here: a keystroke re-renders the
@@ -46,7 +46,7 @@ import {
   type PastedContent,
 } from '@kortix/shared';
 import { Keyboard, Pressable, View, type TextInput } from 'react-native';
-import { useIsFocused } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
@@ -54,10 +54,14 @@ import {
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
+
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { NotificationsButton } from '@/components/session/NotificationsButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
@@ -128,6 +132,12 @@ export interface ProjectHomeProps {
   onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
   /**
+   * The bell at the top right (KRTX-1742): the caller's unread count and the
+   * move to the Notifications page. Omitted while the project's
+   * `notification_center` flag is off: no bell.
+   */
+  notifications?: { unreadCount: number; onOpen: () => void };
+  /**
    * Read-and-clear the draft text and files to seed the composer with, if any
    * — e.g. a project-home send the user cancelled from `SessionConnecting`
    * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
@@ -144,9 +154,11 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  notifications,
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
@@ -242,7 +254,7 @@ export function ProjectHome({
   // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
   // provider defaults. A pick equal to the default is no pick
   // (`selectComposerModel`): the session keeps following the default.
-  const { gatewayEnabled, providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+  const { providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
     useComposerModels(projectId);
   const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
   // The pick persists in the store the thread reads (`agentModels`, per
@@ -290,10 +302,9 @@ export function ProjectHome({
     }),
     [levels, variant, variantKey, setStoredVariant],
   );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  // A project that offers no model: the chip asks to connect one, and Send
+  // opens the connect sheet instead of starting a session (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: gatewayEnabled,
     loading: modelsLoading,
     modelCount: offeredModelCount(models),
   });
@@ -321,7 +332,9 @@ export function ProjectHome({
     [defaultModel, models, setModelForAgent, agentSlot],
   );
 
-  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
+  // The card rests on the safe-area line, as in the thread (KRTX-2930): the
+  // inset already holds the home indicator's clearance, so the 12pt is not stacked on it.
+  const restingGap = Math.max(insets.bottom, COMPOSER_BOTTOM_GAP);
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
@@ -398,10 +411,20 @@ export function ProjectHome({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Floating menu button — opens the left drawer. */}
-      {/* No header controls: the agent is picked in the model sheet's Agent
-          tab (Jay, 2026-09-23). */}
-      <FloatingMenuButton onPress={onOpenDrawer} />
+      {/* Floating menu button — opens the left drawer. The one header control
+          is the Notifications bell, top right (Jay, 2026-10-16); the agent is
+          picked in the model sheet's Agent tab (Jay, 2026-09-23). */}
+      <FloatingMenuButton onPress={onOpenDrawer}>
+        {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
+        {__DEV__ ? (
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/debug')}>
+            <Text>Debug</Text>
+          </Button>
+        ) : null}
+        {notifications ? (
+          <NotificationsButton unreadCount={notifications.unreadCount} onPress={notifications.onOpen} />
+        ) : null}
+      </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">

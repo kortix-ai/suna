@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import * as tar from 'tar'
@@ -113,6 +113,7 @@ export function releaseDir(root: string, releaseId: string): string {
 /**
  * The release root `path` is in (a release is a checkout of the repository at
  * one commit), or null when `path` is not inside a release in the store.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function releaseRootOf(path: string, root: string = bootConfigRoot()): string | null {
   const rel = relative(resolve(root), resolve(path))
@@ -121,7 +122,10 @@ export function releaseRootOf(path: string, root: string = bootConfigRoot()): st
   return isReleaseId(first) ? join(resolve(root), first) : null
 }
 
-/** The release's files under its OpenCode config dir, relative to that dir. */
+/**
+ * The release's files under its OpenCode config dir, relative to that dir.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function configDirFiles(files: readonly ConfigReleaseFile[], configDir: string | null): ConfigReleaseFile[] {
   if (!configDir) return []
   const prefix = `${configDir}/`
@@ -148,7 +152,10 @@ async function managedSkillNames(dir: string | undefined): Promise<Set<string>> 
   return new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
 }
 
-/** Is `dir` a release in the store (the platform's own copy)? */
+/**
+ * Is `dir` a release in the store (the platform's own copy)?
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isInReleaseStore(dir: string, root: string = bootConfigRoot()): boolean {
   return insideRoot(root, dir)
 }
@@ -298,11 +305,15 @@ export async function extractConfigArchive(
   for (const [target, linkText] of symlinks) await symlink(linkText.toString('utf8'), target)
 }
 
-export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+async function writeStoreJson(root: string, name: string, value: unknown, destination = () => join(root, name)): Promise<void> {
   await mkdir(root, { recursive: true })
-  const staged = join(root, `${manifest.release_id}.json.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(manifest)}\n`, { mode: 0o644 })
-  await rename(staged, manifestPath(root, manifest.release_id))
+  const staged = join(root, `${name}.${randomUUID()}.tmp`)
+  await writeFile(staged, `${JSON.stringify(value)}\n`, { mode: 0o644 })
+  await rename(staged, destination())
+}
+
+export async function writeReleaseManifest(root: string, manifest: ReleaseManifest): Promise<void> {
+  await writeStoreJson(root, `${manifest.release_id}.json`, manifest, () => manifestPath(root, manifest.release_id))
 }
 
 /** The manifest of a release in the store, or null when it is missing or malformed. */
@@ -347,30 +358,28 @@ export async function materializeRelease(input: {
 }
 
 /**
- * Build `<root>/<release_id>` from a directory that holds the release's files
- * at their repository paths: the session's own checkout (`copy`), or an
- * extracted project snapshot (`move`). Only the listed files are taken, and
- * each is verified against its blob ID where it lands, so a dirty checkout or
- * a snapshot with extra entries (`.git`, paths the release leaves out) never
- * becomes the release. Neither source has a size cap of its own.
+ * Build `<root>/<release_id>` from a directory that holds the release's
+ * commit at its repository paths: an extracted project snapshot, or a fetch
+ * of the commit. Only the listed files are taken, and each is verified
+ * against its blob ID where it lands, so extra entries (`.git`, paths the
+ * release leaves out) never become the release. Neither source has a size cap
+ * of its own.
  */
 export async function materializeReleaseFromTree(input: {
   root?: string
   manifest: ReleaseManifest
   source: string
-  take: 'copy' | 'move'
+  transport: 'snapshot' | 'git'
   prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
 }): Promise<{ dir: string }> {
-  return install(input, input.take === 'copy' ? 'workspace' : 'snapshot', (staged) =>
-    stageFromTree(input.source, input.manifest.files, staged, input.take),
-  )
+  return install(input, input.transport, (staged) => stageFromTree(input.source, input.manifest.files, staged))
 }
 
 /** Stage, prepare, seal, rename into place, write the manifest. */
 async function install(
   input: { root?: string; manifest: ReleaseManifest; prepare?: (stagedDir: string) => Promise<void>; managedSkillsDir?: string },
-  transport: 'archive' | 'workspace' | 'snapshot',
+  transport: 'archive' | 'snapshot' | 'git',
   stage: (staged: string) => Promise<void>,
 ): Promise<{ dir: string }> {
   const root = input.root ?? bootConfigRoot()
@@ -435,16 +444,11 @@ async function fileBlobId(path: string, idLength: number): Promise<string | null
 }
 
 /**
- * Take every listed file from `source` into `staged` and verify it there.
- * Hashing the staged copy, not the source, leaves no gap between the check
+ * Move every listed file from `source` into `staged` and verify it there.
+ * Hashing the staged file, not the source, leaves no gap between the check
  * and the use: nothing else writes into a staging directory.
  */
-async function stageFromTree(
-  source: string,
-  files: readonly ConfigReleaseFile[],
-  staged: string,
-  take: 'copy' | 'move',
-): Promise<void> {
+async function stageFromTree(source: string, files: readonly ConfigReleaseFile[], staged: string): Promise<void> {
   assertFileList(files)
   await mkdir(staged, { recursive: true })
   const symlinks: Array<[string, string]> = []
@@ -461,8 +465,7 @@ async function stageFromTree(
       continue
     }
     try {
-      if (take === 'move') await rename(from, target)
-      else await copyFile(from, target, constants.COPYFILE_FICLONE)
+      await rename(from, target)
     } catch (err) {
       throw new Error(`boot config: ${path} is not in ${source}: ${(err as Error).message}`)
     }
@@ -678,6 +681,7 @@ export async function readBootConfigPointer(root: string = bootConfigRoot()): Pr
  * the link is repointed to the chosen config before the workspace gate opens.
  * OpenCode reads the directory at Instance init, on the first
  * directory-scoped request, so the repointed target is what it loads.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function bootLinkPath(root: string = bootConfigRoot()): string {
   return join(root, 'boot')
@@ -689,6 +693,7 @@ export function bootLinkPath(root: string = bootConfigRoot()): string {
  * `OPENCODE_CONFIG_DIR` is the link and only the link, so this is how anything
  * asks "which config dir does OpenCode read?" without keeping a second copy of
  * the answer in memory.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function readBootLinkTarget(root: string = bootConfigRoot()): Promise<string | null> {
   try {
@@ -698,10 +703,35 @@ export async function readBootLinkTarget(root: string = bootConfigRoot()): Promi
   }
 }
 
-/** Point the boot link at `target` with one atomic rename. Returns the link path. */
-export async function pointBootLink(target: string, root: string = bootConfigRoot()): Promise<string> {
+/**
+ * `<root>/boot-release`: the release the boot link's config dir comes from,
+ * where project tools load from. Absent when no release is served. A release
+ * with no OpenCode config dir serves the image default, so the boot link
+ * alone cannot name it.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
+  return join(root, 'boot-release')
+}
+
+/**
+ * The release root the boot link serves from, or null.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
+  try {
+    return resolve(await readlink(bootReleaseLinkPath(root)))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Point the boot link at `target` with one atomic rename. Returns the link path.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
   await mkdir(root, { recursive: true })
-  const link = bootLinkPath(root)
   const staged = `${link}.${randomUUID()}.tmp`
   await symlink(resolve(target), staged)
   try {
@@ -716,10 +746,7 @@ export async function pointBootLink(target: string, root: string = bootConfigRoo
 
 /** Written only after a proven promotion. */
 export async function activateBootConfig(root: string, pointer: BootConfigPointer): Promise<void> {
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${POINTER_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(pointer)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, POINTER_FILE))
+  await writeStoreJson(root, POINTER_FILE, pointer)
 }
 
 export async function deactivateBootConfig(root: string = bootConfigRoot()): Promise<void> {
@@ -748,10 +775,7 @@ export async function quarantineRelease(root: string, releaseId: string, reason:
   if (!isReleaseId(releaseId)) return
   const entries = await readQuarantine(root)
   entries[releaseId] = { reason: reason.slice(0, 500), at: new Date().toISOString() }
-  await mkdir(root, { recursive: true })
-  const staged = join(root, `${QUARANTINE_FILE}.${randomUUID()}.tmp`)
-  await writeFile(staged, `${JSON.stringify(entries)}\n`, { mode: 0o644 })
-  await rename(staged, join(root, QUARANTINE_FILE))
+  await writeStoreJson(root, QUARANTINE_FILE, entries)
 }
 
 async function removeTree(dir: string): Promise<void> {

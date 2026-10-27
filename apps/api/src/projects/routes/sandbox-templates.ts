@@ -98,7 +98,7 @@ export function registerSandboxTemplatesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -194,7 +194,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -225,6 +225,8 @@ export function registerSandboxTemplatesRoutes(): void {
     const existing = await getTemplateById(templateId);
     if (!existing) return c.json({ error: 'Not found' }, 404);
     if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+    // kortix.yaml owns a declared template: an edit here would be reverted by the next sync.
+    if (existing.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       const updated = await updateTemplate(templateId, patch, projectId);
@@ -274,7 +276,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -285,6 +287,7 @@ export function registerSandboxTemplatesRoutes(): void {
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     if (row.isShared) return c.json({ error: 'Shared platform templates cannot be deleted.' }, 409);
+    if (row.source === 'toml') return c.json({ error: 'kortix.yaml declares this template. Change it under sandbox.templates in kortix.yaml.', code: 'template_declared_in_manifest' }, 409);
 
     try {
       // Best-effort: clear this content identity from every enabled provider.
@@ -324,7 +327,7 @@ export function registerSandboxTemplatesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const templateId = c.req.param('templateId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: building a sandbox template provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the

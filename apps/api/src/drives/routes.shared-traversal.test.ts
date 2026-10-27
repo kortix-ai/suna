@@ -69,13 +69,8 @@ mock.module('../projects/lib/access', () => ({
     return { row: { projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: {} } };
   },
 }));
-const realBootMode = await import('../platform/services/boot-mode-setting');
-mock.module('../platform/services/boot-mode-setting', () => ({
-  ...realBootMode,
-  volumesEnabledFor: () => true,
-  volumesEnabledForFresh: async () => true,
-  ensureBootModePolicyFresh: async () => undefined,
-}));
+const realForProject = await import('../feature-flags/for-project');
+mock.module('../feature-flags/for-project', () => ({ ...realForProject, projectFeatureFlagEnabled: async () => true }));
 const realGate = await import('../feature-flags/gate');
 mock.module('../feature-flags/gate', () => ({ ...realGate, requireFeatureFlag: () => null }));
 const realService = await import('./service');
@@ -91,6 +86,12 @@ mock.module('./service', () => ({
   openConflictRows: async () => [],
   readDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
   writeDriveVolume: async (_drive: unknown, op: (volume: string) => Promise<unknown>) => op('vol-1'),
+}));
+// A project with no private channel: no folder under `/Channels` is reserved.
+const realSpaceAccess = await import('../shared/space-access');
+mock.module('../shared/space-access', () => ({
+  ...realSpaceAccess,
+  privateChannelAccess: async () => ({ all: new Set<string>(), hidden: new Set<string>() }),
 }));
 const realConflicts = await import('./conflicts');
 mock.module('./conflicts', () => ({ ...realConflicts, noteDriveWrite: () => undefined }));

@@ -199,6 +199,7 @@ flow(
   "OAU-5",
   {
     domain: "oauth",
+    tags: ["deployed"],
     routes: [
       "GET /.well-known/oauth-authorization-server",
       "GET /v1/oauth/.well-known/oauth-authorization-server",
@@ -629,6 +630,9 @@ flow(
       "POST /v1/projects/:projectId/cli-token",
       "POST /v1/accounts/:accountId/iam/service-accounts",
       "POST /v1/projects/:projectId/gateway/keys",
+      "PATCH /v1/auth/user",
+      "POST /v1/auth/password/update",
+      "POST /v1/account/request-deletion",
       "GET /v1/accounts/me",
       "GET /v1/oauth/authorize/consent/:requestId",
     ],
@@ -678,6 +682,14 @@ flow(
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret", {}, { params: { ...params, clientId }, headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/service-accounts", { name: "OAU-9-oat" }, { params, headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/gateway/keys", { name: "OAU-9-oat" }, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+    });
+
+    await ctx.step("nor change the user's sign-in state or delete the account: PATCH /auth/user, POST /auth/password/update, POST /account/request-deletion → 403 insufficient_scope; the user's metadata is unchanged", async () => {
+      const headers = { Authorization: `Bearer ${access}` };
+      (await ctx.client.as(ctx.P.ANON).patch("/v1/auth/user", { data: { custom_claims: { groups: ["Admins"] } } }, { headers })).status(403).body().matches("$.message", /insufficient_scope/);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/auth/password/update", { password: "OAU-9-not-a-password-Aa1!" }, { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/account/request-deletion", {}, { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers })).status(200);
     });
 
     await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {

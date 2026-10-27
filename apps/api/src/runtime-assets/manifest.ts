@@ -33,7 +33,7 @@ import {
   managedSkillOverlayHash,
   type ManagedSkillOverlayFile,
 } from './managed-skills';
-import { RUNTIME_MANAGED_MODELS } from '../llm-gateway/models/managed-models';
+import { managedLineup } from '../llm-gateway/models/managed-models';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -206,7 +206,10 @@ export interface RuntimeComponents {
    * make a box read as behind. Absent when the API image carries no copy.
    */
   entrypoint?: RuntimeBinaryComponent;
-  /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
+  /**
+   * Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencode: { version: string; source: 'npm' };
   'managed-skills': { hash: string; count: number };
   /**
@@ -214,11 +217,11 @@ export interface RuntimeComponents {
    * added for the incident this closes: a box's `kortix` provider map is
    * learned once, at OpenCode process start, and nothing before this made
    * "the managed lineup moved" a fact the control plane could read per box.
-   * `ids` is `RUNTIME_MANAGED_MODELS`' current id list — config-derived
-   * (`LLM_GATEWAY_MANAGED_MODELS`), fixed for the life of this process, so it
-   * belongs beside the binary digests rather than beside `policy`. Empty on a
-   * self-host deploy with the managed provider off; `runningAssetsVerdict`
-   * then has nothing to converge a box on, same as an unbuilt CLI.
+   * `ids` is the managed lineup's current id list — what Platinum Inference
+   * offers, refreshed while the process runs, so it is read per call like
+   * `policy`. Empty on a self-host deploy with the managed provider off;
+   * `runningAssetsVerdict` then has nothing to converge a box on, same as an
+   * unbuilt CLI.
    */
   'managed-catalog': { ids: readonly string[] };
 }
@@ -355,7 +358,7 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   const components: RuntimeComponents = {
     opencode: { version: OPENCODE_VERSION, source: 'npm' },
     'managed-skills': { hash: overlay.hash, count: overlay.files.length },
-    'managed-catalog': { ids: RUNTIME_MANAGED_MODELS.map((model) => model.id) },
+    'managed-catalog': { ids: [] },
   };
   if (agent) {
     components.agent = {
@@ -413,11 +416,20 @@ async function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
   return manifestMemo.promise;
 }
 
+/** The managed lineup's ids, read live: it refreshes from Platinum while the process runs. */
+const liveManagedIds = (): string[] => managedLineup().map((model) => model.id);
+
 export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
   // Assembled per call so `policy` is read live: the kill switch must never
   // cost an extra deploy. Everything expensive comes from the memo, so the
   // marginal cost of a call is one object spread.
-  return { ...(await runtimeAssetsDigests()), policy: { agent_self_update: agentSelfUpdateEnabled() } };
+  // The managed lineup is read live for the same reason: it refreshes from Platinum.
+  const digests = await runtimeAssetsDigests();
+  return {
+    ...digests,
+    components: { ...digests.components, 'managed-catalog': { ids: liveManagedIds() } },
+    policy: { agent_self_update: agentSelfUpdateEnabled() },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -430,8 +442,8 @@ export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
 // `KORTIX_CLI_VERSION` share 100 of 102 chunks (98.0%), and the CLI and the
 // daemon share 89 of 102 (87.3%) — but ONLY when both were compiled by the
 // same Bun. The shipped API image uses two (`SANDBOX_AGENT_BUN_VERSION=1.3.11`
-// for the daemon, `BUN_VERSION=1.2` for the CLI), and measured against a
-// deployed preview those two share 0 of 111 chunks. Same-artifact reuse, which
+// for the daemon, `BUN_VERSION` (1.4.3) for the CLI). With the CLI on 1.2,
+// measured against a deployed preview, those two shared 0 of 111 chunks. Same-artifact reuse, which
 // is what a CLI update actually is, is unaffected.
 //
 // FIXED-SIZE, and content-defined chunking is NOT the next increment. The
@@ -624,13 +636,12 @@ export function _resetRuntimeAssetsCache(): void {
 // ---------------------------------------------------------------------------
 // "Is this box running what this deploy serves?"
 //
-// THE ASYMMETRY THAT DECIDES THIS WHOLE LANE, stated once where every later
-// reader will find it: CONFIG blocks the turn, because config changes what the
-// agent IS — `convergeBeforeTurnStart` awaits, and a stale box pays
-// 10,287-10,907 ms. BINARIES MUST NOT BLOCK. A box one turn behind on the CLI
-// is the state that already exists today; a box that makes the user wait for
-// ~100 MB is a regression. So everything below DETECTS and SCHEDULES. It never
-// applies and it is never awaited on the send path.
+// THE RULE THAT DECIDES THIS WHOLE LANE: BINARIES MUST NOT BLOCK A TURN (and
+// since 2026-10-13 config does not either: `convergeConfigIfBehind` runs after
+// a turn ends). A box one turn behind on the CLI is the state that already
+// exists today; a box that makes the user wait for ~100 MB is a regression. So
+// everything below DETECTS and SCHEDULES. It never applies and it is never
+// awaited on the send path.
 // ---------------------------------------------------------------------------
 
 /** What a daemon says it is running, from the health `runtime.running` block. */
@@ -699,7 +710,7 @@ export async function manifestFingerprint(): Promise<string> {
     c['managed-skills'].hash,
     c.opencode.version,
     c.entrypoint?.sha256 ?? '',
-    c['managed-catalog'].ids.length > 0 ? managedCatalogFingerprint(c['managed-catalog'].ids) : '',
+    liveManagedIds().length > 0 ? managedCatalogFingerprint(liveManagedIds()) : '',
     // Not a digest — the comparison's SHAPE. See above.
     agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
   ].join('|');
@@ -738,7 +749,7 @@ export async function manifestFingerprint(): Promise<string> {
  * does not mean "an older daemon with no such field" the way it does for a
  * missing sha — every daemon in the field reports this key once this ships.
  * It means UNCONFIRMED: no live fetch has ever succeeded, so the box is
- * running the baked/bundled managed set with no proof it matches this
+ * running the baked catalog with no proof it matches this
  * deploy's lineup. Reading that as `unknown` (skip) is exactly the silent
  * staleness a real dev box hit 2026-09-26 — woken, healthy, cli/skills/
  * opencode all current, and STILL serving a month-old managed lineup because
@@ -757,7 +768,7 @@ export async function runningAssetsVerdict(
     compared += 1;
     return want !== have;
   };
-  const managedCatalogIds = components['managed-catalog'].ids;
+  const managedCatalogIds = liveManagedIds();
   const managedCatalogDiffers = ((): boolean | null => {
     if (managedCatalogIds.length === 0) return null; // nothing to converge on
     if (running.managed_model_ids == null) {

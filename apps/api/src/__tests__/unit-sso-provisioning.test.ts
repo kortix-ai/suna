@@ -33,7 +33,7 @@ describe('registerSupabaseSamlProvider', () => {
   test('rejects when both metadata forms are given', async () => {
     const r = await registerSupabaseSamlProvider({
       metadataXml: '<x/>',
-      metadataUrl: 'https://x',
+      metadataUrl: 'https://1.1.1.1/x',
       domains: ['acme.com'],
     });
     expect(r.ok).toBe(false);
@@ -79,7 +79,7 @@ describe('registerSupabaseSamlProvider', () => {
     }) as typeof fetch;
 
     await registerSupabaseSamlProvider({
-      metadataUrl: 'https://idp/meta',
+      metadataUrl: 'https://1.1.1.1/meta',
       domains: ['acme.com'],
       groupClaimName: 'memberOf',
     });
@@ -87,6 +87,24 @@ describe('registerSupabaseSamlProvider', () => {
       keys: { memberOf: { name: 'memberOf', array: true } },
     });
   });
+});
+
+describe('metadata_url egress', () => {
+  // Pentest: GoTrue fetches metadata_url from inside the deployment.
+  test.each(['https://169.254.169.254/latest/meta-data', 'https://127.0.0.1/meta', 'http://1.1.1.1/meta', 'https://10.0.0.5/meta'])(
+    'refuses %s before calling GoTrue',
+    async (metadataUrl) => {
+      let called = false;
+      globalThis.fetch = (async () => {
+        called = true;
+        return new Response('{}', { status: 201 });
+      }) as unknown as typeof fetch;
+      const r = await registerSupabaseSamlProvider({ metadataUrl, domains: ['acme.com'] });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status).toBe(400);
+      expect(called).toBe(false);
+    },
+  );
 });
 
 describe('buildSamlAttributeMapping', () => {
@@ -105,7 +123,7 @@ describe('buildSamlAttributeMapping', () => {
   test('maps a 422 (domain already claimed) to a 409', async () => {
     respond(422, { error: 'domain already registered' });
     const r = await registerSupabaseSamlProvider({
-      metadataUrl: 'https://idp/meta',
+      metadataUrl: 'https://1.1.1.1/meta',
       domains: ['acme.com'],
     });
     expect(r.ok).toBe(false);
@@ -115,7 +133,7 @@ describe('buildSamlAttributeMapping', () => {
   test('maps a 404 (SAML not enabled) to a 501 with a hint', async () => {
     respond(404, 'not found');
     const r = await registerSupabaseSamlProvider({
-      metadataUrl: 'https://idp/meta',
+      metadataUrl: 'https://1.1.1.1/meta',
       domains: ['acme.com'],
     });
     expect(r.ok).toBe(false);
@@ -130,7 +148,7 @@ describe('buildSamlAttributeMapping', () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
     const r = await registerSupabaseSamlProvider({
-      metadataUrl: 'https://idp/meta',
+      metadataUrl: 'https://1.1.1.1/meta',
       domains: ['acme.com'],
     });
     expect(r.ok).toBe(false);

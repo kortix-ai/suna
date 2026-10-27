@@ -32,6 +32,7 @@ flow(
   "MCP-1",
   {
     domain: "mcp",
+    tags: ["deployed"],
     routes: [
       "POST /v1/mcp",
       "GET /.well-known/oauth-protected-resource/v1/mcp",
@@ -276,13 +277,13 @@ flow(
       const d = await ctx.client.as(ctx.P.ANON).del("/v1/mcp", { headers: { Authorization: `Bearer ${token}` } });
       d.status(405);
     });
-    await ctx.step("tools/list → the thirteen session/API tools, the nine connector tools and `kortix`", async () => {
+    await ctx.step("tools/list → the thirteen session/API tools, the ten connector tools and `kortix`", async () => {
       const r = await mcp(rpc(2, "tools/list"));
       r.status(200);
       const names = r.json<any>().result.tools.map((t: { name: string }) => t.name).sort();
       const want = [
-        "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action", "kortix",
-        "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
+        "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action", "get_connector_app", "kortix",
+        "list_connector_accounts", "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
         "remove_connector", "run_command", "search_api", "search_connector_actions", "search_connector_apps",
         "send_message", "start_session", "upload_connector_attachment", "write_file",
       ];
@@ -579,6 +580,7 @@ flow(
   "MCP-4",
   {
     domain: "mcp",
+    tags: ["deployed"],
     routes: ["POST /v1/accounts/tokens", "POST /v1/mcp", "GET /v1/accounts", "GET /v1/projects", "GET /v1/projects/:projectId/files"],
   },
   async (ctx) => {
@@ -703,11 +705,11 @@ flow(
           else outsiderPat = created.json<{ secret_key: string }>().secret_key;
         }
       });
-      await ctx.step("tools/list carries the nine connector tools with titles and honest annotations", async () => {
+      await ctx.step("tools/list carries the ten connector tools with titles and honest annotations", async () => {
         const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "tools/list"), { headers: { Authorization: `Bearer ${pat}` } });
         const tools = r.json<any>().result.tools as Array<{ name: string; title?: string; description: string; annotations: Record<string, boolean>; inputSchema: { additionalProperties?: boolean } }>;
         const by = (n: string) => tools.find((t) => t.name === n)!;
-        const readOnly = ["list_connectors", "search_connector_actions", "describe_connector_action", "search_connector_apps"];
+        const readOnly = ["list_connectors", "list_connector_accounts", "search_connector_actions", "describe_connector_action", "search_connector_apps", "get_connector_app"];
         const writes = ["call_connector", "upload_connector_attachment", "connect_connector", "add_connector", "remove_connector"];
         for (const n of [...readOnly, ...writes]) {
           if (!by(n)?.title || by(n).description.length < 80 || by(n).inputSchema.additionalProperties !== false) throw new Error(`${n}: ${JSON.stringify(by(n))?.slice(0, 200)}`);

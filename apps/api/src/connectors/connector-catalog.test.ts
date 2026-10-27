@@ -18,7 +18,6 @@ const item = (id: string, kind: string, name: string, domain: string, descriptio
 
 const INDEX = [
   item('autumn-mcp', 'mcp', 'useautumn.com', 'useautumn.com', 'Billing on top of Stripe'),
-  item('stripe-cli', 'cli', 'Stripe', 'stripe.com'),
   item('autumn-api', 'openapi', 'useautumn.com', 'useautumn.com', 'Billing on top of Stripe'),
   item('stripe-api', 'openapi', 'Stripe', 'stripe.com'),
   item('stripe-mcp', 'mcp', 'Stripe', 'stripe.com'),
@@ -71,7 +70,6 @@ describe('connector catalogue sections', () => {
             data: [
               { ...item('a-mcp', 'mcp', 'A', 'a.example'), categories: ['cloud'] },
               { ...item('a-api', 'openapi', 'A', 'a.example'), categories: ['cloud'] },
-              { ...item('a-cli', 'cli', 'A', 'a.example'), categories: ['cloud'] },
               { ...item('b-mcp', 'mcp', 'B', 'b.example'), categories: ['cloud'] },
             ],
           }),
@@ -93,5 +91,35 @@ describe('connector catalogue direct ids', () => {
     const ids = await catalog().directIds();
     expect(ids.get('stripe')).toBe('stripe-mcp');
     expect(ids.get('stripesync')).toBe('stripe-sync');
+  });
+});
+
+describe('connector catalogue direct MCP URLs', () => {
+  const mcp = (id: string, name: string, extra: Record<string, unknown>) => ({
+    ...item(id, 'mcp', name, `${id}.example`),
+    ...extra,
+  });
+
+  test('each app maps to its hosted MCP server URL, curated OAuth servers first', async () => {
+    const index = [
+      mcp('linear-discovered', 'Linear', { connectUrl: 'https://mirror.example/linear/mcp' }),
+      mcp('linear-curated', 'Linear', {
+        connectUrl: 'https://mcp.linear.app/mcp',
+        feeds: ['curated'],
+        auth: { kind: 'oauth' },
+      }),
+      mcp('no-url', 'Mural', {}),
+      mcp('local', 'Local', { connectUrl: 'http://localhost:3000/mcp' }),
+    ];
+    const urls = await createConnectorCatalog({
+      fetch: (async () =>
+        new Response(JSON.stringify({ data: index }), {
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch,
+    }).directMcpUrls();
+    expect(urls.get('linear')).toBe('https://mcp.linear.app/mcp');
+    expect(urls.has('mural')).toBe(false);
+    // Only https: Install never sends a user to a plain-http server.
+    expect(urls.has('local')).toBe(false);
   });
 });

@@ -29,12 +29,13 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
   type SandboxWorkloadType,
   getProvider,
+  isProviderName,
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
@@ -50,31 +51,11 @@ import {
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { ledgerRequestKeyExists } from '../repositories/ledger-keys';
-import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import {
-  DEFAULT_COMPUTE_RATE_MULTIPLIER,
-  clampComputeRateMultiplier,
-} from './entitlement-overrides';
-import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
-
-/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
-const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
-
-/**
- * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
- * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
- * NULL, which would drop a row the TypeScript predicate meters.
- */
-const accountRowMetersComputeSql = () =>
-  or(
-    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
-    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
-  );
 
 // Match the project-maintenance cadence so active compute appears on Billing
 // without waiting for a stop hook or a full hour.
@@ -105,68 +86,41 @@ export interface StartComputeOpts {
 }
 
 /**
- * Compute the cost (in USD, pre-balance-deduction) for a window.
- * All supported providers use one public customer rate.
- *
- * `rateMultiplier` is the account's custom compute price
- * (`ResolvedBilling.compute.rateMultiplier`). It defaults to 1 — list price,
- * which is what every account bills at unless an operator set an override — and
- * is clamped into `[0, MAX_COMPUTE_RATE_MULTIPLIER]` here as well as at the
- * resolver, because this function is also called directly (pricing pages,
- * tests) with a number that never passed through the resolver. 0 is a
- * deliberate value: free compute.
+ * Compute the cost (in USD, pre-balance-deduction) for a window: the reserved
+ * spec times the list rates (`compute-rates.ts`). Every account pays list price.
  */
 export function calculateComputeCost(
   spec: SandboxSpec,
   durationSeconds: number,
-  provider: ProviderName = 'daytona',
-  rateMultiplier: number = DEFAULT_COMPUTE_RATE_MULTIPLIER,
+  provider: string = 'platinum',
 ): number {
   if (durationSeconds <= 0) return 0;
   const rate = getProviderComputeRateCard(provider);
   const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
   const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
   const diskCost = spec.diskGb * rate.diskPerGbSecond * durationSeconds;
-  return (cpuCost + memCost + diskCost) * clampComputeRateMultiplier(rateMultiplier);
-}
-
-/**
- * The account's compute rate multiplier, resolved through the 30s billing
- * cache (one cached row read per account, not a query per settle).
- *
- * FAILS OPEN TO LIST PRICE. A resolver or database hiccup must never stop a
- * window from being billed, and 1.0 is what the account would have paid before
- * custom pricing existed — the safe direction is "bill normally", not "bill
- * nothing" and not "throw away the window".
- */
-async function computeRateMultiplierFor(accountId: string): Promise<number> {
-  try {
-    const resolved = await resolveAccountBilling(accountId);
-    return clampComputeRateMultiplier(resolved.compute.rateMultiplier);
-  } catch (err) {
-    console.warn(
-      `[compute-metering] could not resolve the compute rate multiplier for ${accountId}; billing at list price:`,
-      err instanceof Error ? err.message : String(err),
-    );
-    return DEFAULT_COMPUTE_RATE_MULTIPLIER;
-  }
+  return cpuCost + memCost + diskCost;
 }
 
 /**
  * Open a metering row when a sandbox transitions to `active`.
- * No-op for a legacy PAID plan only (see `accountRowMetersCompute`). Every
- * other account, free and trial included, pays for compute from its wallet.
+ *
+ * Metering is observability and runs in EVERY environment (KRTX-1832); only
+ * charging may stay disabled. While charging is on, every account with a
+ * credit row, free and trial included, pays for compute from its wallet (no
+ * credit account → nothing to debit → not metered). With charging off — a
+ * local or self-hosted deploy — every box meters, no credit row required, and
+ * `settleComputeWindow` never debits a wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has a metered billing_model (stale data).
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
-  const account = await getCreditAccount(opts.accountId);
-  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
-  // defaults to 'legacy', so a model-only gate hands free compute to every
-  // account that never completed a checkout — free accounts and admin trials.
-  // Only a legacy PAID plan is exempt. See tier-facts.ts.
-  if (!accountRowMetersCompute(account)) return null;
+  // The credit-row rule is a CHARGING rule, not a metering switch: read the row
+  // only when charging can actually debit it.
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    const account = await getCreditAccount(opts.accountId);
+    // Every account with a credit row pays for compute. No credit account →
+    // nothing to debit → not metered.
+    if (!account) return null;
+  }
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -181,7 +135,7 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     sandboxId: opts.sandboxId,
     sessionId: opts.sessionId ?? null,
     actorUserId: opts.actorUserId ?? null,
-    provider: opts.provider ?? 'daytona',
+    provider: opts.provider ?? 'platinum',
     cpuCores: opts.spec.cpuCores,
     memoryGb: opts.spec.memoryGb,
     diskGb: opts.spec.diskGb,
@@ -243,17 +197,7 @@ async function settleComputeWindow(
     diskGb: row.diskGb,
     gpuCount: row.gpuCount,
   };
-  // Resolved BEFORE the CAS claim so the amount that is claimed, debited, and
-  // (on a failed debit) released is one number. Reading it after the claim
-  // would let a mid-settle override change make the release arithmetic differ
-  // from the claim.
-  const rateMultiplier = await computeRateMultiplierFor(row.accountId);
-  const windowCost = calculateComputeCost(
-    spec,
-    durationSeconds,
-    row.provider as ProviderName,
-    rateMultiplier,
-  );
+  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider);
   // CLAIM BEFORE DEBITING. The order is the whole fix.
   //
   // This used to debit first and move the cursor afterwards, with the update
@@ -276,6 +220,11 @@ async function settleComputeWindow(
 
   if (windowCost <= 0) return 'settled';
 
+  // Charging off: the claimed window IS the meter record — the CAS claim above
+  // already accrued the cost on the row and moved the cursor. Observability
+  // without money: nothing moves in any wallet, no ledger row is written.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return 'settled';
+
   // Settle the wallet. These seconds are already consumed — the sandbox ran —
   // so this is a SETTLEMENT, not an admission, and it records even when the
   // wallet cannot cover it (see wallet.settle). Auto-topup still fires.
@@ -293,12 +242,7 @@ async function settleComputeWindow(
     await settleAndCheckAutoTopup({
       accountId: row.accountId,
       amount: windowCost,
-      // The multiplier is named in the description only when it is not list
-      // price, so a custom-priced debit is self-explaining in the ledger and an
-      // ordinary one reads exactly as it always has.
-      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
-        rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
-      }`,
+      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
       kind: 'compute_debit',
       // Derived from WHAT is billed — this session and this window end — so a
       // retry after a lost response produces the same key and replays instead
@@ -357,7 +301,6 @@ async function settleComputeWindow(
  * scripts/reimburse-compute-leak.ts). Omitted → `now`, the original behaviour.
  */
 export async function pauseComputeSession(sandboxId: string, windowEnd?: Date): Promise<void> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
   const row = await getOpenComputeSession(sandboxId);
   if (!row) return;
 
@@ -413,7 +356,6 @@ async function closeComputeWindow(
  * the correct direction to fail.
  */
 export async function markComputeSessionAlive(sandboxId: string, at = new Date()): Promise<void> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
   await db
     .update(sandboxComputeSessions)
     .set({
@@ -431,9 +373,10 @@ export async function markComputeSessionAlive(sandboxId: string, at = new Date()
  * Reopen metering for a hibernated sandbox being resumed in place (the
  * stopped→active wake path). Reuses the spec from the sandbox's most recent
  * window so the resumed compute bills exactly like the original run, without
- * re-resolving the project manifest on the hot reopen path. No-op when billing
- * is disabled / the account does not meter compute / a row is already open
- * (startComputeSession is idempotent on an open row).
+ * re-resolving the project manifest on the hot reopen path. No-op when the
+ * account does not meter compute (charging on only — see
+ * `startComputeSession`) / a row is already open (startComputeSession is
+ * idempotent on an open row).
  */
 export async function reopenComputeForSandbox(
   sandboxId: string,
@@ -442,7 +385,6 @@ export async function reopenComputeForSandbox(
   actorUserId?: string | null,
   provider?: ProviderName,
 ): Promise<string | null> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const last = await getLatestComputeSession(sandboxId);
   const spec: SandboxSpec = last
     ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
@@ -452,7 +394,7 @@ export async function reopenComputeForSandbox(
     accountId,
     sessionId,
     actorUserId,
-    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'daytona',
+    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'platinum',
     spec,
   });
 }
@@ -461,7 +403,6 @@ export async function reopenComputeForSandbox(
  * Sandbox is being permanently removed (restart / delete). Finalize the row.
  */
 export async function endComputeSession(sandboxId: string): Promise<void> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
   const row = await getOpenComputeSession(sandboxId);
   if (!row) return;
 
@@ -487,8 +428,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `accountRowMetersCompute` gate (no-op for a legacy paid plan — never reimplemented
- * here) and reuses the sandbox's last known spec so a reconciled window bills
+ * credit-row gate in `startComputeSession` and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
  * and this call. Bounded per pass. Deliberately does NOT back-bill — the
@@ -499,13 +439,12 @@ export interface ReconcileMissingComputeResult {
 /**
  * Candidate query.
  *
- * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
- * paid plan can NEVER be metered (`startComputeSession` returns early), so every
- * active box on one matches "no open window" permanently. Without this filter an
- * unordered `LIMIT` fills with those rows on every pass and the metered rows
- * this sweep exists for are never reached — a no-op that costs a round-trip per
- * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
+ * While charging is on, the credit-row predicate is load-bearing, not
+ * defence-in-depth: `startComputeSession` cannot meter a box whose account has
+ * no credit row, so without it an unordered `LIMIT` could fill with rows that
+ * never open a window. With charging off the predicate drops out entirely:
+ * metering is observability for every account, including one with no credit
+ * row (a left join keeps those sandboxes instead of silently dropping them).
  */
 function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -517,15 +456,7 @@ function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
       externalId: sessionSandboxes.externalId,
     })
     .from(sessionSandboxes)
-    .innerJoin(
-      creditAccounts,
-      and(
-        eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        // Mirrors accountRowMetersCompute(). An account missing here silently
-        // stops being charged.
-        accountRowMetersComputeSql(),
-      ),
-    )
+    .leftJoin(creditAccounts, eq(creditAccounts.accountId, sessionSandboxes.accountId))
     .leftJoin(
       sandboxComputeSessions,
       and(
@@ -533,7 +464,11 @@ function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
         isNull(sandboxComputeSessions.endedAt),
       ),
     )
-    .where(and(eq(sessionSandboxes.status, 'active'), isNull(sandboxComputeSessions.id)))
+    .where(and(
+      eq(sessionSandboxes.status, 'active'),
+      isNull(sandboxComputeSessions.id),
+      config.KORTIX_BILLING_INTERNAL_ENABLED ? isNotNull(creditAccounts.accountId) : undefined,
+    ))
     // Oldest sandbox first — an unordered LIMIT lets the planner's scan order
     // crowd the same rows out of every batch forever (maintenance.ts:147 fixed
     // exactly this once already; five sweeps still carried the bug).
@@ -568,13 +503,7 @@ function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE)
         eq(apps.activeDeploymentId, appDeployments.deploymentId),
       ),
     )
-    .innerJoin(
-      creditAccounts,
-      and(
-        eq(creditAccounts.accountId, appRuntimes.accountId),
-        accountRowMetersComputeSql(),
-      ),
-    )
+    .leftJoin(creditAccounts, eq(creditAccounts.accountId, appRuntimes.accountId))
     .leftJoin(
       sandboxComputeSessions,
       and(
@@ -587,6 +516,10 @@ function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE)
       eq(apps.desiredState, 'running'),
       isNull(apps.deletedAt),
       isNull(sandboxComputeSessions.id),
+      // Same charging-conditional credit-row predicate as
+      // selectMissingComputeCandidates(): a left join keeps a local deploy
+      // (charging off) sweeping App runtimes with no credit row too.
+      config.KORTIX_BILLING_INTERNAL_ENABLED ? isNotNull(creditAccounts.accountId) : undefined,
     ))
     .orderBy(asc(appRuntimes.createdAt))
     .limit(limit);
@@ -595,14 +528,14 @@ function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE)
 export async function reconcileMissingAppComputeSessions(
   limit = RECONCILE_MISSING_BATCH_SIZE,
 ): Promise<ReconcileMissingComputeResult> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { checked: 0, reconciled: 0, errors: 0 };
-
   const rows = await selectMissingAppComputeCandidates(limit);
   let reconciled = 0;
   let errors = 0;
   for (const row of rows) {
+    // A legacy `e2b` row (E2B support is discontinued) never runs: skip it.
+    if (!isProviderName(row.provider)) continue;
     try {
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
       const opened = await startComputeSession({
         sandboxId: row.sandboxId,
@@ -633,8 +566,6 @@ export async function reconcileMissingAppComputeSessions(
 export async function reconcileMissingComputeSessions(
   limit = RECONCILE_MISSING_BATCH_SIZE,
 ): Promise<ReconcileMissingComputeResult> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { checked: 0, reconciled: 0, errors: 0 };
-
   const rows = await selectMissingComputeCandidates(limit);
 
   let reconciled = 0;
@@ -649,8 +580,8 @@ export async function reconcileMissingComputeSessions(
       // `reconcileOrphanComputeSessions` — which settles such rows back down and
       // pages via the BILLING INVARIANT VIOLATED monitor. Only reopen for a box the
       // provider still reports as running.
-      if (!row.externalId) continue;
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      if (!row.externalId || !isProviderName(row.provider)) continue;
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
 
       const opened = await reopenComputeForSandbox(
@@ -689,7 +620,6 @@ export async function reconcileMissingComputeSessions(
  * in the same pass — the natural periodic hook for both safety nets.
  */
 export async function tickRunningComputeCharges(): Promise<{ settled: number; reconciled: number }> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { settled: 0, reconciled: 0 };
   const cutoff = new Date(Date.now() - PARTIAL_BILL_INTERVAL_MS);
   const stale = await findStaleActiveSessions(cutoff);
   let settled = 0;

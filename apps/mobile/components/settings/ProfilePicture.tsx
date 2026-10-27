@@ -1,5 +1,7 @@
 import * as React from "react";
 import { Image, View } from "react-native";
+import { AVATAR_INK, avatarFill } from "@kortix/shared";
+
 import { Text } from "@/components/ui/text";
 import { resolveLocalUrl } from "@/lib/utils/resolve-local-url";
 
@@ -8,8 +10,10 @@ interface ProfilePictureProps {
   /** Tailwind spacing units: the rendered size is `size * 4` points. */
   size?: number;
   fallbackText?: string;
+  /** Seeds the fill, as web's `UserAvatar`: one person, one colour. */
+  email?: string | null;
 }
-export const ProfilePicture = ({ imageUrl, size = 32, fallbackText }: ProfilePictureProps) => {
+export const ProfilePicture = ({ imageUrl, size = 32, fallbackText, email }: ProfilePictureProps) => {
   const url = imageUrl?.trim() ?? '';
   const points = size * 4;
   // A photo that fails to load shows the initial, not an empty circle.
@@ -32,9 +36,12 @@ export const ProfilePicture = ({ imageUrl, size = 32, fallbackText }: ProfilePic
           onError={() => setFailedUrl(url)}
         />
       ) : (
-        <View className="size-full items-center justify-center bg-primary/10">
+        // Avatar v2: a solid fill and a white initial, no tint.
+        <View
+          className="size-full items-center justify-center"
+          style={{ backgroundColor: avatarFill(email || fallbackText || '') }}>
           {/* The initial scales with the circle: an 80pt avatar gets an h3 letter. */}
-          <Text variant={points >= 64 ? 'h3' : 'large'}>
+          <Text variant={points >= 64 ? 'h3' : 'large'} style={{ color: AVATAR_INK }}>
             {fallbackText ? fallbackText.charAt(0).toUpperCase() : '?'}
           </Text>
         </View>

@@ -3,6 +3,7 @@ import {
   RUNTIME_AGENT_ROSTER_TTL_MS,
   parseRuntimeAgentNames,
   resolveDeliverableAgent,
+  promptAgent,
   runtimeAgentRoster,
 } from './agent-availability';
 
@@ -113,5 +114,22 @@ describe('runtimeAgentRoster', () => {
     expect(await runtimeAgentRoster('sbx_b', async () => ['plan'], 1_000)).toEqual({
       names: ['plan'],
     });
+  });
+});
+
+describe('promptAgent', () => {
+  test("a prompt that names no agent runs under the session's own agent", () => {
+    for (const requested of [null, undefined, '', '  ']) {
+      expect(promptAgent(requested, 'support')).toBe('support');
+    }
+  });
+
+  test("an explicit pick wins over the session's agent", () => {
+    expect(promptAgent('plan', 'support')).toBe('plan');
+  });
+
+  test('no pick and no session agent sends no agent', () => {
+    expect(promptAgent(null, null)).toBeNull();
+    expect(promptAgent(undefined, '')).toBeNull();
   });
 });

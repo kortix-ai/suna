@@ -35,7 +35,6 @@ mock.module('./hosting', () => ({
     }
     async stop(_provider: string, externalId: string) { calls.push(`stop ${externalId}`); }
     async start(_provider: string, externalId: string) { calls.push(`start ${externalId}`); }
-    effectiveMachine(_provider: string, machine: unknown) { return machine; }
   },
 }));
 const realProviders = await import('../platform/providers');
@@ -49,6 +48,7 @@ mock.module('./volume-store', () => ({
     open: async (name: string) => { calls.push(`volume open ${name}`); },
     detach: async (externalId: string, path: string) => { calls.push(`detach ${externalId} ${path}`); },
     tag: async (_name: string, tag: string) => ({ name: tag, commit_id: 'c1', created_at: new Date().toISOString() }),
+    info: async () => ({ size_gb: 50, used_bytes: 1024, last_commit_at: null }),
     tags: async () => [],
     untag: async () => {},
     restore: async () => {},
@@ -71,6 +71,7 @@ const { db } = await import('../shared/db');
 const { AppHostingProvider } = await import('./hosting');
 const machines = await import('./machines');
 const volumes = await import('./volumes');
+const fleet = await import('./fleet');
 
 const confirmed = Boolean(
   process.env.TEST_DATABASE_URL &&
@@ -260,6 +261,32 @@ withDb('machines and volumes — real PostgreSQL', () => {
     const env = (await machines.releaseEnvironment(await appRow(), await release(1, stateless))).env;
     expect(env.KORTIX_USES_URL_CRM_DATA).toContain('f2f2f2f2f2f2f2f2');
     expect(env.KORTIX_USES_URL_OLD_DB).toBeUndefined();
+  });
+
+  test('scale: a group with a volume runs one machine unless new_volumes accepts one new, empty volume per machine', async () => {
+    await seedApp();
+    await deploy(stateful, 1);
+    await expect(fleet.setAppScale(await appRow(), { app: 2 })).rejects.toMatchObject({ status: 409, code: 'volume_single_machine' });
+    expect((await appRow()).scale).toEqual({});
+    expect(await fleet.setAppScale(await appRow(), { app: 2 }, { newVolumes: true })).toEqual({ app: 2 });
+    expect(await fleet.setAppScale(await appRow(), { app: 1 })).toEqual({ app: 1 });
+  });
+
+  test('scale: a group without a volume scales freely', async () => {
+    await seedApp();
+    await deploy(stateless, 1);
+    expect(await fleet.setAppScale(await appRow(), { app: 3 })).toEqual({ app: 3 });
+  });
+
+  test('extend: a volume is the size the provider allots; a larger size is refused, never recorded', async () => {
+    await seedApp();
+    await deploy(stateful, 1);
+    const [volume] = await db.select().from(appVolumes).where(eq(appVolumes.appId, APP_ID));
+    expect(volume!.sizeGb).toBe(10);
+    await expect(volumes.updateAppVolume(APP_ID, volume!.volumeId, { sizeGb: 60 })).rejects.toMatchObject({ status: 400, code: 'volume_fixed_size' });
+    expect((await db.select().from(appVolumes).where(eq(appVolumes.volumeId, volume!.volumeId)))[0]!.sizeGb).toBe(10);
+    expect((await volumes.updateAppVolume(APP_ID, volume!.volumeId, { sizeGb: 20 })).sizeGb).toBe(50);
+    expect((await volumes.updateAppVolume(APP_ID, volume!.volumeId, { retentionDays: 30 })).snapshotRetentionDays).toBe(30);
   });
 
   test('scaling back up reuses an unattached volume of a gone machine before creating a new one', async () => {

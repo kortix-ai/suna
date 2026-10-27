@@ -3,8 +3,14 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useRef } from 'react';
 
-import { ChatMinimap } from '@/features/session/chat-minimap';
-import type { Part, Turn } from '@/ui';
+import { ChatMinimap } from '@kortix/ui/session';
+import {
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  sessionLogTurns,
+  type SessionLogBlock,
+  type SessionLogMessage,
+} from '@kortix/sdk';
 
 /**
  * /debug/minimap
@@ -23,37 +29,38 @@ import type { Part, Turn } from '@/ui';
 let n = 0;
 const nextId = () => `prt_dbg_${(n += 1)}`;
 
-function text(value: string): Part {
-  return {
-    id: nextId(),
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'text',
-    text: value,
-  } as unknown as Part;
+function text(value: string): SessionLogBlock {
+  return { type: 'text', id: nextId(), text: value };
 }
 
-function file(filename: string): Part {
-  return {
-    id: nextId(),
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'file',
-    mime: 'text/plain',
-    filename,
-    url: '',
-  } as unknown as Part;
+function file(filename: string): SessionLogBlock {
+  return { type: 'attachment', id: nextId(), mime: 'text/plain', name: filename };
 }
 
-function turn(id: string, parts: Part[]): Turn {
+function turn(id: string, blocks: SessionLogBlock[]): SessionLogMessage {
   return {
-    userMessage: { info: { id, role: 'user' }, parts },
-    assistantMessages: [],
-  } as unknown as Turn;
+    schema: SESSION_LOG_SCHEMA,
+    v: SESSION_LOG_MINOR,
+    message_id: id,
+    thread_id: 'ses_dbg',
+    seq: 0,
+    role: 'user',
+    kind: 'turn',
+    status: 'complete',
+    in_context: true,
+    model: null,
+    usage: null,
+    finish: null,
+    error: null,
+    created_at: '',
+    completed_at: null,
+    producer: { harness: 'debug', harness_version: '', adapter_version: '' },
+    blocks,
+  };
 }
 
 /** Shapes drawn from real transcripts: mentions, attachments, and plain asks. */
-const TURNS: Turn[] = [
+const PROMPTS: SessionLogMessage[] = [
   turn('u1', [
     text(
       '@Gpt Taste @Make Interfaces Feel Better\nReady for review.\nLinear project: Kortix Marketing Update\n<agent_ref name="Gpt Taste" />\n<agent_ref name="Make Interfaces Feel Better" />\n<file_ref path="data/content-timestamps.json" name="content-timestamps.json" />',
@@ -83,6 +90,19 @@ const TURNS: Turn[] = [
   turn('u8', [text('ship it')]),
 ];
 
+/** The prompts as the session-log turns `ChatMinimap` reads. */
+const LOG_TURNS = sessionLogTurns({
+  schema: SESSION_LOG_SCHEMA,
+  v: SESSION_LOG_MINOR,
+  thread_id: 'ses_dbg',
+  parent_thread_id: null,
+  spawned_by: null,
+  agent: null,
+  title: null,
+  created_at: '',
+  messages: PROMPTS,
+});
+
 export default function DebugMinimapPage() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -100,14 +120,14 @@ export default function DebugMinimapPage() {
       <div className="relative min-h-0 flex-1">
         <div ref={scrollRef} className="h-full overflow-y-auto">
           <div ref={contentRef} className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
-            {TURNS.map((t) => (
+            {LOG_TURNS.map((t) => (
               <div
-                key={t.userMessage.info.id}
-                data-turn-id={t.userMessage.info.id}
+                key={t.id}
+                data-turn-id={t.id}
                 className="flex h-64 shrink-0 items-center justify-end"
               >
                 <div className="bg-sidebar text-foreground max-w-[80%] rounded-lg px-3 py-2.5 text-sm">
-                  {t.userMessage.info.id}
+                  {t.id}
                 </div>
               </div>
             ))}
@@ -115,7 +135,7 @@ export default function DebugMinimapPage() {
         </div>
 
         <ChatMinimap
-          turns={TURNS}
+          turns={LOG_TURNS}
           scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
           contentRef={contentRef as React.RefObject<HTMLDivElement>}
         />

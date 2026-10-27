@@ -14,10 +14,14 @@ import type { SupabaseGrant } from "./supabase-session";
 
 const SUPABASE_TIMEOUT_MS = Number(process.env.KE2E_SUPABASE_TIMEOUT_MS ?? 15_000);
 
-async function supaFetch(url: string, init: RequestInit): Promise<Response> {
+async function supaFetch(url: string, init: RequestInit, retried = false): Promise<Response> {
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(SUPABASE_TIMEOUT_MS) });
   } catch (err) {
+    // One retry on a dropped keep-alive socket (release gate 37933459772, PACC-1).
+    if (!retried && /socket connection was closed|ECONNRESET/i.test(String(err))) {
+      return supaFetch(url, init, true);
+    }
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new Error(
         `Supabase request timed out after ${SUPABASE_TIMEOUT_MS}ms: ${url} — is KE2E_SUPABASE_URL reachable from CI?`,
@@ -94,6 +98,34 @@ export interface AdminUser {
   email: string;
 }
 
+/**
+ * One Supabase admin ceremony: the callers guard their own inputs, this does
+ * the service-role call and the throw. The four admin calls below differ only
+ * in method, path and body; `json` parses the success body, `tolerate404` lets
+ * a delete of an already-gone user succeed.
+ */
+async function adminCall<T = undefined>(
+  env: Env,
+  what: string,
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { json?: (res: Response) => Promise<T>; tolerate404?: boolean },
+): Promise<T | undefined> {
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/${path}`, {
+    method,
+    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey!, {
+      anonKey: env.supabaseAnonKey ?? undefined,
+      json: body !== undefined,
+    }),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok && !(opts?.tolerate404 && res.status === 404)) {
+    throw new Error(`${what} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
+  }
+  return opts?.json ? await opts.json(res) : undefined;
+}
+
 export async function ssoFixtureToken(
   env: Env,
   user: { userId?: string; email?: string },
@@ -104,19 +136,11 @@ export async function ssoFixtureToken(
     throw new Error('SSO fixture requires a synthetic user and Supabase admin credentials');
   }
   const password = `Ke2e-${crypto.randomUUID()}-Aa1!`;
-  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${user.userId}`, {
-    method: 'PUT',
-    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey ?? undefined,
-      json: true,
-    }),
-    body: JSON.stringify({
-      password,
-      app_metadata: { sso_provider_id: providerId },
-      user_metadata: { custom_claims: { memberOf: groups } },
-    }),
+  await adminCall(env, 'SSO fixture metadata update', 'PUT', `users/${user.userId}`, {
+    password,
+    // A server-written source: the API never trusts user_metadata for groups.
+    app_metadata: { sso_provider_id: providerId, memberOf: groups },
   });
-  if (!res.ok) throw new Error(`SSO fixture metadata update failed: ${res.status}`);
   return passwordGrant(env, user.email, password);
 }
 
@@ -124,39 +148,34 @@ export async function adminCreateUser(env: Env, email: string, password: string)
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) {
     throw new Error("Supabase service-role + anon keys required to create test users");
   }
-  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users`, {
-    method: "POST",
-    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey ?? undefined,
-      json: true,
-    }),
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  });
-  if (!res.ok) throw new Error(`admin create user ${email} failed: ${res.status} ${await res.text()}`);
-  const data = (await res.json()) as { id: string; email: string };
-  return { id: data.id, email: data.email ?? email };
+  const user = await adminCall<AdminUser>(
+    env,
+    `admin create user ${email}`,
+    'POST',
+    'users',
+    { email, password, email_confirm: true },
+    {
+      json: async (res) => {
+        const data = (await res.json()) as { id: string; email: string };
+        return { id: data.id, email: data.email ?? email };
+      },
+    },
+  );
+  return user!;
 }
 
 /** Move a synthetic user to a new address, freeing the old one for another user. */
 export async function adminUpdateUserEmail(env: Env, userId: string, email: string): Promise<void> {
   if (!env.supabaseServiceRoleKey) throw new Error("Supabase service-role key required to change a user email");
-  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: "PUT",
-    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, { anonKey: env.supabaseAnonKey ?? undefined, json: true }),
-    body: JSON.stringify({ email, email_confirm: true }),
+  await adminCall(env, `admin email update for ${userId}`, 'PUT', `users/${userId}`, {
+    email,
+    email_confirm: true,
   });
-  if (!res.ok) throw new Error(`admin email update for ${userId} failed: ${res.status}`);
 }
 
 export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) return;
-  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: "DELETE",
-    headers: supabaseAdminHeaders(env.supabaseServiceRoleKey, {
-      anonKey: env.supabaseAnonKey ?? undefined,
-    }),
+  await adminCall(env, `admin delete user ${userId}`, 'DELETE', `users/${userId}`, undefined, {
+    tolerate404: true,
   });
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`admin delete user ${userId} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
-  }
 }

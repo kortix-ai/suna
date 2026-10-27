@@ -11,7 +11,7 @@ import { inboxOrderBy } from './inbox-order';
 import { transitionSession } from './status-transitions';
 import { type CommandLease, logLeaseLost, ownedByLease } from './command-lease';
 import { withNextDeliveryAttempt } from './prompt-payload';
-import { notHeldSql, stopPausedOnDeliverySql } from './delivery-state';
+import { heldSql, notHeldSql, notStopPausedSql, stopPausedOnDeliverySql } from './delivery-state';
 
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
@@ -211,7 +211,13 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   if (!next) return null;
   await db
     .update(sessionLifecycleCommands)
-    .set({ availableAt: new Date(), updatedAt: new Date() })
+    // A woken row starts the backoff curve again, so it never sits out the
+    // stale-wait minute (`INBOX_STALE_ORDER_BACKOFF_MS`) after its kick.
+    .set({
+      availableAt: new Date(),
+      result: sql`${sessionLifecycleCommands.result} - 'admission_refusals'`,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(sessionLifecycleCommands.commandId, next.commandId),
@@ -451,6 +457,13 @@ export async function markCommandFailed(
   if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
   }
+
+  // A dead-lettered head opens no turn, so no turn end wakes the prompt behind
+  // it. Make that row due now; the worker tick drains it within ~1 s.
+  if (row.commandType === 'continue_session' && row.sessionId) {
+    await promoteNextInboxRow(row.sessionId).catch((err) =>
+      logger.warn('[session-lifecycle] wake after dead-letter failed', { sessionId: row.sessionId, error: err }));
+  }
   return 'dead_lettered';
 }
 
@@ -600,7 +613,16 @@ export async function parkPromptForUnreachableRuntime(
  * (`result.delivery_blocked`) are re-armed — a row queued for any other reason
  * already has its own schedule.
  *
- * Returns the number of rows re-armed.
+ * ONE HELD KIND IS RELEASED: the continuation of a turn a runtime loss
+ * nobody asked for cut short (`resumeIfInterrupted`, `resumesTurn`). The
+ * stop held it only so the drain would not wake the box the provider had just
+ * stopped, and this wake is what it waited for (KRTX-1732). A stop-paused row
+ * stays held. ponytail: a Stop on a QUEUED row only writes `held`, which this
+ * row already has, so it leaves no mark here. Every wake releases the row
+ * first, so a turn to stop and a held continuation meet only after a failed
+ * release; add a Stop mark on queued rows if that shows up.
+ *
+ * Returns the number of rows re-armed or released.
  */
 export async function reArmRuntimeBlockedPrompts(
   sessionId: string,
@@ -618,11 +640,32 @@ export async function reArmRuntimeBlockedPrompts(
       ),
     )
     .returning({ commandId: sessionLifecycleCommands.commandId });
-  if (rows.length > 0) {
+  const continuations = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      availableAt: now,
+      result: sql`${sessionLifecycleCommands.result} - 'held'`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        eq(sessionLifecycleCommands.status, 'queued'),
+        heldSql,
+        notStopPausedSql,
+        sql`NOT ${stopPausedOnDeliverySql}`,
+        sql`(${sessionLifecycleCommands.payload}->>'resumeIfInterrupted' = 'true'
+             OR ${sessionLifecycleCommands.payload} ? 'resumesTurn')`,
+      ),
+    )
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  if (rows.length + continuations.length > 0) {
     logger.info('[session-lifecycle] runtime back — re-arming prompts parked on it', {
       session_id: sessionId,
       prompts: rows.length,
+      continuations: continuations.length,
     });
   }
-  return rows.length;
+  return rows.length + continuations.length;
 }

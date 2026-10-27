@@ -64,13 +64,13 @@ export async function startSupabaseFullStack(name: string, ports: Ports): Promis
   return run([supabaseBin(), '--workdir', supaWorkdir(name), 'start']);
 }
 
-export function hasKortixSchema(ports: Ports): boolean {
+export function slotDbUrl(ports: Pick<Ports, 'sbDb'>): string {
+  return `postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres`;
+}
+
+export function hasKortixSchema(db: string | Pick<Ports, 'sbDb'>): boolean {
   const sql = "select 1 from information_schema.tables where table_schema='kortix' limit 1";
-  return sh([
-    'bash',
-    '-lc',
-    `psql "postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres" -tAc ${JSON.stringify(sql)} 2>/dev/null`,
-  ]).stdout.trim() === '1';
+  return sh(['psql', typeof db === 'string' ? db : slotDbUrl(db), '-XtAc', sql]).stdout.trim() === '1';
 }
 
 export function supa(name: string, args: string[], opts: { stream?: boolean } = {}): ShResult | Promise<number> {

@@ -1,7 +1,6 @@
 # kortixd
 
-Thin sandbox-side daemon that runs inside every Kortix project-session sandbox
-— and, in a second boot mode, inside every project **monitor box**.
+Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 The compiled binary is a single, installable app named **`kortixd`**. Running
 it with no arguments (or `kortixd serve`) starts the daemon described below.
@@ -14,22 +13,6 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
 > snapshot bake COPYs it, and the API serves it as the runtime-assets `/agent`
 > artifact for already-deployed boxes. Renaming that on-disk path is a fleet
 > migration, not a build change, so both names ship from one compile.
-
-**Boot modes** (decided by `KORTIX_WORKLOAD` at startup):
-
-- _(default)_ **session** — everything under "Scope" below.
-- **`monitor`** — the box supervises the project's monitor processes instead
-  of a session harness (`src/services/monitor/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
-  injected by the API — the daemon never parses `kortix.yaml` itself), spawns
-  one process per enabled monitor (`poll` on an interval / `stream`
-  long-running, restart budget + backoff), captures stdout line-by-line
-  (8 KiB truncation), batches ~200 ms, and POSTs batches to
-  `POST /projects/:id/monitors/ingest` with the box's sandbox token and
-  `KORTIX_MONITOR_BOX_EPOCH`. Lifecycle events (`exited`,
-  `restart_budget_exhausted`, `silent`) are synthesized into the same stream.
-  No harness starts; its routes 503 honestly. `GET /kortix/health`
-  reports `workload: "monitor"` — the API's reconciler uses that field to
-  detect (and recycle) a box whose baked agent binary predates monitor mode.
 
 **Scope:**
 
@@ -93,17 +76,24 @@ import rules, and where new code goes; `bun run lint` enforces them.
    failure except an authorization denial or a cancellation; `require-s3`
    fails closed. Nothing runs git on that boot path. Off it, the daemon
    refreshes the index and imports the tip's blob pack (`git index-pack`),
-   reported as `config_provider.hydration` (`pending` → `ok` | `failed`; a
+   reported as `workspace_provider.hydration` (`pending` → `ok` | `failed`; a
    failed import leaves lazy blob fetches through the proxy). The outcome —
    provider, expected vs actual SHA, extractor, classified S3 failure,
-   fallback, hydration — is on `GET /kortix/health` (`config_provider`) and in
-   the boot timeline marks (`config-provider:*`); both wire names predate the
-   rename to workspace-provider and stay. A prepared-S3 start defers
+   fallback, hydration, per-stage timings — is on `GET /kortix/health`
+   (`workspace_provider`). The workspace writes nothing into `boot_timeline`:
+   it is not config. The config release the runtime boots from is downloaded
+   in parallel by the config provider (`src/services/config-provider/`), from
+   the S3 project snapshot first and the API archive second, and never from
+   `/workspace`. A prepared-S3 start defers
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
 4. Inject managed system skills into the project's skills dir: root `skills/`
    (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
+   A `kortix_version: 3` session takes its agents, registered skill folders,
+   commands and extensions only from the compiled set
+   (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
+   `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
 5. Resolve `OPENCODE_CONFIG_DIR`.
 6. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
@@ -242,6 +232,42 @@ curl -s http://localhost:9999/kortix/health
 
 The daemon should boot and report `opencode: "starting"` (or `"down"` if the
 binary is genuinely missing) without crashing.
+
+## Run it on your machine (`scripts/local.ts`)
+
+`scripts/local.ts` runs a whole session on your computer and gives you a chat
+REPL in the terminal. It needs no Kortix API and no sandbox provider. The model
+is your ChatGPT Plus/Pro subscription.
+
+```
+bun apps/kortix-sandbox-agent-server/scripts/local.ts login      # once: ChatGPT sign-in in the browser
+cd ~/some/project
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts                      # pi
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts --harness opencode   # OpenCode
+```
+
+Options: `--model codex/<id>` (default `codex/gpt-5.5`; `/models` in the REPL
+lists them), `--workspace <dir>` (default: the current directory), `--fresh`
+(drop the previous conversation of this workspace). In the REPL, `/model <id>`
+switches the model, Ctrl-C aborts the turn, and Ctrl-D quits.
+
+What it starts:
+
+1. A local LLM gateway on `127.0.0.1`: `packages/llm-gateway` with local hooks.
+   It sends every request to ChatGPT's Codex backend with the token `login`
+   stored in `~/.kortix/local/codex-auth.json`, and refreshes that token.
+2. kortixd from source, pointed at that gateway (`KORTIX_LLM_BASE_URL`), with
+   `HOME=~/.kortix/local/home` so it never writes your own git or OpenCode
+   config. State, `daemon.log` and `gateway.log` live in
+   `~/.kortix/local/workspaces/<harness>-<hash>/`, so the next run in the same
+   directory continues the same conversation.
+3. A REPL over the Runtime API: `POST /kortix/runtime/sessions/:id/prompt` and
+   the `GET /kortix/runtime/events` stream. It shows text, reasoning (dim), tool
+   calls, questions and permission requests.
+
+The agent's tools run as your user in the workspace directory. This is not a
+sandbox. Tools that call the Kortix API (`web_search`, `scrape_webpage`, …) fail
+without one.
 
 ## Management CLI
 

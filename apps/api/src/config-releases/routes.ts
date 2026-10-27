@@ -36,8 +36,9 @@ import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-sessi
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
-import { CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
-import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
+import { buildConfigRelease, CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
+import { BaseRefUnresolvedError, governanceForDaemon, resolveDesiredRelease } from './desired';
+import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
 import { configReleaseSnapshot } from './snapshot';
@@ -65,14 +66,23 @@ interface SessionRow {
  * `{"accept":[..."config-release-v3"...]}`. Any other body, or none, is v2, so
  * a daemon built before v3 keeps the exact answer it always had.
  */
-async function requestedFormat(c: Context): Promise<ConfigReleaseFormat> {
+/**
+ * The descriptor format, and the base tip a booting box was created on
+ * (`base_sha`). The tip only lets the route skip a redundant mirror fetch
+ * (`DesiredReleaseInput.bootTip`); it never chooses the release.
+ */
+async function readDescriptorRequest(c: Context): Promise<{ format: ConfigReleaseFormat; bootTip: string | null; capabilities: string[] }> {
   try {
-    const body = (await c.req.json()) as { accept?: unknown } | null;
-    if (Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3)) return CONFIG_RELEASE_FORMAT_V3;
+    const body = (await c.req.json()) as { accept?: unknown; base_sha?: unknown; capabilities?: unknown } | null;
+    const format =
+      Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3) ? CONFIG_RELEASE_FORMAT_V3 : CONFIG_RELEASE_FORMAT_V2;
+    const bootTip = typeof body?.base_sha === 'string' && HEX40.test(body.base_sha) ? body.base_sha : null;
+    const capabilities = Array.isArray(body?.capabilities) ? body.capabilities.filter((item): item is string => typeof item === 'string') : [];
+    return { format, bootTip, capabilities };
   } catch {
     // Not JSON: v2.
+    return { format: CONFIG_RELEASE_FORMAT_V2, bootTip: null, capabilities: [] };
   }
-  return CONFIG_RELEASE_FORMAT_V2;
 }
 
 type Resolved<T> = { ok: true; value: T } | { ok: false; status: 400 | 403 | 404; error: string };
@@ -217,10 +227,11 @@ export function registerConfigReleaseRoutes(): void {
 
       // The request has no inputs. The desired release is the base branch's
       // current tip for this session's variant, full stop: nothing the caller
-      // sends can change which config it is assigned. The body only picks the
-      // descriptor format; any other body is ignored, so a daemon built
+      // sends can change which config it is assigned. The body picks the
+      // descriptor format, and a booting box's `base_sha` can only spare a
+      // redundant mirror fetch; any other body is ignored, so a daemon built
       // against an older shape of this route still converges.
-      const format = await requestedFormat(c);
+      const { format, bootTip, capabilities } = await readDescriptorRequest(c);
       //
       // EVERY session of this project is served, including one created before
       // the project replaced its repository. A release is the project's CURRENT
@@ -244,13 +255,15 @@ export function registerConfigReleaseRoutes(): void {
           ownerUserId: session.createdBy,
         };
         const isDaemon = isSessionSandboxCredential(c);
+        const repositoryAccess = repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles;
         const desired = await resolveDesiredRelease({
           project: gitProject(project),
           baseRef,
           sessionAgent: session.agentName,
-          repositoryAccess: repositoryAccessFromSessionMetadata(session.metadata) && humanMayReadFiles,
+          repositoryAccess,
           // Only the daemon's own request is an assignment. A human read is not.
           recordAssignment: isDaemon,
+          bootTip: isDaemon ? bootTip : null,
           ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
           ...(isDaemon
             ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }
@@ -258,12 +271,15 @@ export function registerConfigReleaseRoutes(): void {
           format,
         });
         const { descriptor } = desired;
+        // A push made directly on the upstream reaches the API only through a read like this one.
+        if (isDaemon) notePublishedTip(projectId, baseRef, desired.baseSha);
         if (format === CONFIG_RELEASE_FORMAT_V3) {
-          descriptor.snapshot = descriptor.files
+          // The snapshot is the whole commit: never for a tools-only release.
+          descriptor.snapshot = descriptor.files && repositoryAccess
             ? await configReleaseSnapshot(project, baseRef, descriptor.source_commit)
             : null;
         }
-        return c.json(descriptor);
+        return c.json(isDaemon ? governanceForDaemon(descriptor, capabilities) : descriptor);
       } catch (error) {
         if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
         throw error;
@@ -301,13 +317,21 @@ export function registerConfigReleaseRoutes(): void {
       if (isSessionSandboxCredential(c)) {
         const resolved = await sandboxSession(c, projectId, null);
         if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
-        // A session without repository access never receives a config archive.
-        // A previous-repository session DOES: the archive is the project's
-        // config dir, which is what every session of the project runs.
-        if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
-          return c.json({ error: 'repository access withheld' }, 403);
-        }
+        // A session without repository access receives only its agent's
+        // tools-only release (`toolsRelease`), and no other tree.
+        // A previous-repository session receives every archive: it is the
+        // project's config, which is what every session of the project runs.
         project = resolved.value.project;
+        if (!repositoryAccessFromSessionMetadata(resolved.value.session.metadata)) {
+          const agent = resolved.value.session.agentName;
+          const commit = c.req.query('commit') ?? '';
+          const release = agent && c.req.query('agent') === agent && HEX40.test(commit)
+            ? await buildConfigRelease(gitProject(project), commit, `agent:${agent}`).catch(() => null)
+            : null;
+          if (!release?.tools_only || release.config_tree_id !== configTreeId) {
+            return c.json({ error: 'repository access withheld' }, 403);
+          }
+        }
       } else {
         const loaded = await loadProjectForUser(c, projectId, 'read');
         if (!loaded) return c.json({ error: 'Not found' }, 404);

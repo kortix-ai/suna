@@ -17,6 +17,9 @@ const Empty = () => null;
 const renders = { mark: 0, children: 0 };
 let childrenProps: any[] = [];
 let navPills: any[] = [];
+// The IAM leaves the caller holds; null = every leaf (a project manager).
+let held: string[] | null = null;
+let appCount = 0;
 let paged: Record<string, any> = {};
 const VirtualList = (props: any) => {
   // A virtualised list renders each cell as a PureComponent: a cell re-renders
@@ -48,6 +51,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   '@/components/ui/text': { Text: host('Text') },
+  '@/components/ui/button': { Button: host('Button') },
+  '@/components/kortix/kortix-loader': { KortixLoader: host('Loader') },
   './DrawerNavRows': { NavPill: (props: any) => { navPills.push(props); return null; } },
   '@/components/session/SessionStatusMark': { SessionStatusMark: () => { renders.mark++; return null; } },
   '@/components/session/SessionTreeParts': {
@@ -56,7 +61,15 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/projects/hooks': {
     useProject: () => ({ data: { name: 'Project', account_id: 'a-1' } }),
     useAccounts: () => ({ data: [] }),
-    useProjectSessionsPaged: (_: string, options: { startedBy: string }) => paged[options.startedBy],
+    // The Pinned query is keyed by its view, the three sections by their
+    // starter. A test that sets no Pinned page gets an empty one.
+    useProjectSessionsPaged: (_: string, options: { startedBy?: string; view?: string }) =>
+      paged[options.view ?? options.startedBy ?? ''] ?? page([]),
+  },
+  '@kortix/sdk/react': {
+    useCans: (_: unknown, actions: string[]) =>
+      Object.fromEntries(actions.map((a) => [a, { allowed: held === null || held.includes(a), isLoading: false }])),
+    useProjectApps: () => ({ data: Array.from({ length: appCount }) }),
   },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   '@/hooks/useProfileEditor': { useProfileEditor: () => profile },
@@ -79,6 +92,7 @@ const real = new Set([
   '@/lib/session/session-tree',
   '@/lib/session/session-pages',
   '@/lib/session/project-stack',
+  '@/lib/session/nav-access',
   '@/stores/session-tree-store',
   '@/components/session/SessionSubsessionTree',
 ]);
@@ -97,8 +111,8 @@ for (const [name, keys] of named) {
   for (const key of keys) if (!(key in values)) values[key] = Empty;
   mock.module(name, () => values);
 }
-// SessionSubsessionTree (real) imports these; the drawer does not.
-mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (_: string, o: any) => o.defaultValue_other }) }));
+// The drawer's Pinned title and SessionSubsessionTree (real): the key, or the plural default.
+mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, o?: any) => o?.defaultValue_other ?? key }) }));
 
 let Drawer: typeof import('./ProjectLeftDrawer');
 beforeAll(async () => {
@@ -123,11 +137,14 @@ beforeEach(() => {
   renders.mark = renders.children = 0;
   childrenProps = [];
   navPills = [];
+  held = null;
+  appCount = 0;
   // `p-1` is expanded below: its children block shows.
   paged = {
     me: page([row('s-1'), row('s-2'), row('p-1', { child_count: 2 })]),
     others: page([row('o-1', { initiator: { type: 'member', id: 'u-2', label: 'Ana' } })]),
     automated: page([]),
+    pinned: page([]),
   };
 });
 afterEach(async () => {
@@ -214,44 +231,167 @@ describe('ProjectLeftDrawer renders', () => {
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
   });
 
-  test('notification_center off: the pills from before KRTX-1742, no Notifications', async () => {
+  test('the nav pills are Search, Files, Review and Apps: Notifications is the home bell', async () => {
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsUnreadCount: 3 })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
     expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Apps']);
   });
 
-  test('the Notifications pill shows the unread count and opens the inbox', async () => {
-    navigated.length = 0;
+  test('a plain member sees neither Review nor Apps; an existing App brings Apps back', async () => {
+    held = ['project.review.read'];
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, {
-          projectId: 'proj',
-          ...handlers,
-          open: true,
-          notificationsEnabled: true,
-          notificationsUnreadCount: 3,
-        })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
-    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Notifications', 'Apps']);
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications, 3 unread');
-    expect(pill.trailing.props.count).toBe(3);
-    await act(async () => pill.onPress());
-    expect(navigated).toEqual([['inbox']]);
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files']);
+    appCount = 1;
+    navPills = [];
+    await act(async () => {
+      tree.unmount();
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Apps']);
   });
 
-  test('with nothing unread the pill reads its name alone', async () => {
+});
+
+// KRTX-1727: the server drops rows the viewer may not see after a bounded
+// scan, so a page can come back empty with a cursor. That is not an empty list.
+describe('ProjectLeftDrawer past page one', () => {
+  const textOf = (node: any): string =>
+    (node.children ?? []).map((child: any) => (typeof child === 'string' ? child : textOf(child))).join('');
+  const emptyFlower = () =>
+    tree.root.findAll((node: any) => typeof node.type === 'string' && node.props.accessibilityLabel === 'No sessions yet');
+  const header = (title: string) =>
+    tree.root.findAll((node: any) => node.type === 'Pressable' && String(node.props.accessibilityLabel).startsWith(`${title}, `));
+  const buttons = (label: string) => tree.root.findAll((node: any) => node.type === 'Button' && textOf(node) === label);
+  const mount = async () => {
     await act(async () => {
-      tree = create(
-        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsEnabled: true })
-      );
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
     });
-    const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
-    expect(pill.accessibilityLabel).toBe('Notifications');
-    expect(pill.trailing.props.count).toBe(0);
+  };
+
+  test('Shared stays while it has a next page, even with no row yet', async () => {
+    paged.others = { ...page([]), hasNextPage: true };
+    await mount();
+    expect(header('Shared')).toHaveLength(1);
+  });
+
+  test('Shared with no row and no next page has no header', async () => {
+    paged.others = page([]);
+    await mount();
+    expect(header('Shared')).toHaveLength(0);
+  });
+
+  test('no row anywhere but a next page: Show more, never "No sessions yet"', async () => {
+    let fetched = 0;
+    paged = {
+      me: { ...page([]), hasNextPage: true, fetchNextPage: async () => void fetched++ },
+      others: page([]),
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(buttons('Show more')).toHaveLength(1);
+    await act(async () => buttons('Show more')[0].props.onPress());
+    expect(fetched).toBe(1);
+  });
+
+  // The render between two scan pages: no page fetch runs, the scan is not over.
+  test('while the list reads past empty pages on its own: a loader, no button', async () => {
+    paged = {
+      me: { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: false },
+      others: page([]),
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(buttons('Show more')).toHaveLength(0);
+    expect(tree.root.findAll((node: any) => node.type === 'Loader').length).toBeGreaterThan(0);
+  });
+
+  test('Shared between two scan pages: its row reads Loading…, not Show more', async () => {
+    const { useSessionTreeStore, sectionKey } = await import('@/stores/session-tree-store');
+    useSessionTreeStore.getState().setChoice(sectionKey('proj', 'shared'), true);
+    paged.others = { ...page([]), hasNextPage: true, isScanning: true, isFetchingNextPage: false };
+    await mount();
+    expect(buttons('Show more')).toHaveLength(0);
+    expect(buttons('Loading…')).toHaveLength(1);
+    expect(buttons('Loading…')[0].props.disabled).toBe(true);
+  });
+
+  // COR-146: a failed own list is an error with a retry, also while Shared
+  // has a next page. Shared and Automated never decide that verdict.
+  test('the own list failed and Shared has a next page: the error and Try again', async () => {
+    paged = {
+      me: { ...page([]), isError: true },
+      others: { ...page([]), hasNextPage: true },
+      automated: page([]),
+    };
+    await mount();
+    const texts = tree.root.findAll((node: any) => node.type === 'Text').map(textOf);
+    expect(texts).toContain("Couldn't load sessions");
+    expect(buttons('Try again')).toHaveLength(1);
+    expect(emptyFlower()).toHaveLength(0);
+  });
+
+  test('no own row and no own next page, but Shared has one: no empty flower, no error', async () => {
+    paged = {
+      me: page([]),
+      others: { ...page([]), hasNextPage: true },
+      automated: page([]),
+    };
+    await mount();
+    expect(emptyFlower()).toHaveLength(0);
+    expect(header('Shared')).toHaveLength(1);
+    expect(buttons('Try again')).toHaveLength(0);
+  });
+
+  test('no row and no next page anywhere: the empty flower as before', async () => {
+    paged = { me: page([]), others: page([]), automated: page([]) };
+    await mount();
+    expect(emptyFlower()).toHaveLength(1);
+  });
+
+  // KRTX-2418: the viewer's pinned sessions, above the three sections.
+  test('a pinned session shows once, under Pinned at the top, not again under Sessions', async () => {
+    paged.pinned = page([row('s-2', { pinned_at: at, archived_at: null })]);
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels: string[] = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    const pinnedHeader = labels.indexOf('sessions.pinnedSection, collapse');
+    const sessionsHeader = labels.indexOf('Sessions, collapse');
+    expect(pinnedHeader).toBeGreaterThanOrEqual(0);
+    expect(sessionsHeader).toBeGreaterThan(pinnedHeader);
+    const s2 = labels.filter((label) => label.startsWith('s-2, '));
+    expect(s2).toHaveLength(1);
+    expect(labels.indexOf(s2[0])).toBe(pinnedHeader + 1);
+    expect(labels.some((label) => label.startsWith('s-1, '))).toBe(true);
+  });
+
+  test('no pinned session: no Pinned header', async () => {
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    expect(labels.some((label: string) => label.startsWith('sessions.pinnedSection'))).toBe(false);
+  });
+
+  // A server without the feature ignores `pinned=only` and answers the whole list.
+  test('rows without a pin stamp never fill Pinned', async () => {
+    paged.pinned = page([row('s-1'), row('s-2')]);
+    await act(async () => {
+      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+    });
+    const labels = tree.root
+      .findAll((node: any) => node.type === 'Pressable' && typeof node.props.accessibilityLabel === 'string')
+      .map((node: any) => node.props.accessibilityLabel);
+    expect(labels.some((label: string) => label.startsWith('sessions.pinnedSection'))).toBe(false);
+    expect(labels.filter((label: string) => label.startsWith('s-1, '))).toHaveLength(1);
   });
 });

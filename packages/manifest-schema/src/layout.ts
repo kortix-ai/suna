@@ -27,7 +27,10 @@ export const AGENTS_DIR = 'agents';
 export const SKILLS_DIR = 'skills';
 export const MEMORY_DIR = 'memory';
 export const HARNESSES_DIR = 'harnesses';
-/** Default OpenCode config dir (`opencode.config_dir`). */
+/**
+ * Default OpenCode config dir (`opencode.config_dir`).
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_CONFIG_DIR = `${HARNESSES_DIR}/opencode`;
 /** OpenCode config dir of the pre-2026-09 layout; it also held agents/ and skills/. */
 export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode';
@@ -89,11 +92,18 @@ export function manifestOpencodeConfigDir(manifest: unknown): string | null {
   return safeRepoPath(table(table(manifest)?.opencode)?.config_dir);
 }
 
+/** A kortix_version 3 manifest: it reads no harness config folder. */
+function isV3(manifest: unknown): boolean {
+  return Number(table(manifest)?.kortix_version) === 3;
+}
+
 /**
  * OpenCode config dirs to try, in order. The first one that ships an
- * `opencode.json[c]` is the project's OpenCode config dir.
+ * `opencode.json[c]` is the project's OpenCode config dir. None for v3.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export function opencodeConfigDirCandidates(manifest: unknown): string[] {
+  if (isV3(manifest)) return [];
   const explicit = manifestOpencodeConfigDir(manifest);
   return explicit ? [explicit] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
 }
@@ -102,8 +112,10 @@ export function opencodeConfigDirCandidates(manifest: unknown): string[] {
  * pi config dirs to try, in order: the manifest's own `pi.config_dir` alone,
  * else `harnesses/pi` then `.kortix/pi`. The first one that exists is the
  * project's (the daemon's `resolvePiProjectConfigDir` applies the same rule).
+ * None for v3.
  */
 export function piConfigDirCandidates(manifest: unknown): string[] {
+  if (isV3(manifest)) return [];
   const explicit = safeRepoPath(table(table(manifest)?.pi)?.config_dir);
   return explicit ? [explicit] : [PI_CONFIG_DIR, LEGACY_PI_CONFIG_DIR];
 }

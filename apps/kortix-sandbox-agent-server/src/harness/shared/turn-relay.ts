@@ -23,6 +23,7 @@ import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-cont
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
 import { flushSessionLogJournal } from './session-log-journal'
+import { runOnIdleHook } from './on-idle-hook'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -45,7 +46,10 @@ let claimedInitialTurn: InitialTurnClaim | null = null
 let claimedRootPin: string | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
-/** The first turn this process claimed, once `claimInitialTurn` resolved one. */
+/**
+ * The first turn this process claimed, once `claimInitialTurn` resolved one.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function initialTurnClaim(): InitialTurnClaim | null {
   return claimedInitialTurn
 }
@@ -54,6 +58,7 @@ export function initialTurnClaim(): InitialTurnClaim | null {
  * The runtime root the control plane has pinned for this session, as the
  * initial-turn claim reported it. Null before the claim, when no root is
  * pinned, or from an API that predates the field.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function claimedRuntimeSessionPin(): string | null {
   return claimedRootPin
@@ -94,7 +99,7 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
       throw new Error(`initial turn claim rejected: ${response.status} ${text.slice(0, 200)}`)
     }
     const body = (await response.json()) as {
-      initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+      initial_turn?: { prompt?: unknown; context?: unknown; turn_token?: unknown; message_id?: unknown } | null
       runtime_session_id?: unknown
     }
     const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
@@ -103,7 +108,12 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null
     }
-    claimedInitialTurn = { prompt: turn.prompt, turnToken: turn.turn_token, messageId: turn.message_id }
+    claimedInitialTurn = {
+      prompt: turn.prompt,
+      ...(typeof turn.context === 'string' && turn.context ? { context: turn.context } : {}),
+      turnToken: turn.turn_token,
+      messageId: turn.message_id,
+    }
     return claimedInitialTurn
   })().finally(() => {
     claimInFlight = null
@@ -131,7 +141,10 @@ export async function relayTurnAccepted(runtimeSessionId: string, messageId: str
   return ((await response.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
 
-/** Remove only a pre-created initial-turn record the runtime never accepted. */
+/**
+ * Remove only a pre-created initial-turn record the runtime never accepted.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function relayTurnAbandoned(turnToken: string): Promise<boolean> {
   const response = await postTurnStream({ kind: 'turn_abandoned', turn_token: turnToken })
   if (!response) throw new Error('initial turn abandonment relay context is unavailable')
@@ -200,6 +213,25 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
       logger.warn('[turn-relay] turn-begin relay fetch failed', { err: (err as Error).message, attempt })
     }
     if (attempt < 2) await Bun.sleep(1_000)
+  }
+}
+
+/**
+ * A turn's end waits for its begin relay, at most `waitMs`: an end that lands first lets the late
+ * begin adopt a turn that nothing ends (a refused pi `/summarize` ends within milliseconds). The
+ * bound keeps a hung begin (2 attempts of a 30 s request) from delaying the end.
+ */
+export function turnEndAfterBegin(waitMs = 5_000) {
+  const begins = new Map<string, Promise<unknown>>()
+  return {
+    begin(messageId: string, relay: Promise<unknown>): void {
+      begins.set(messageId, relay)
+    },
+    async end(messageId: string): Promise<void> {
+      const begun = begins.get(messageId)
+      begins.delete(messageId)
+      if (begun) await Promise.race([begun, Bun.sleep(waitMs)])
+    },
   }
 }
 
@@ -320,6 +352,8 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          runOnIdleHook(current)
           return true
         }
         logger.warn('[turn-relay] turn-end relay was not settled', {

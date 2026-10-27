@@ -1,28 +1,17 @@
-import type { ManagedModel } from '@kortix/llm-catalog';
 import { config } from '../../config';
 import { managedTransportAvailable } from '../resolution/descriptors';
-import {
-  RUNTIME_MANAGED_MODELS,
-  resolvePlatformDefaultModelId,
-  servedManagedModels,
-} from './managed-models';
+import { managedLineup, resolvePlatformDefaultModelId, type ManagedModel } from './managed-models';
 
 /**
- * Config (`RUNTIME_MANAGED_MODELS`) joined with credentials (`descriptors`).
+ * The managed lineup this deployment can serve now: Platinum's list, when the
+ * Platinum key is present. Read live: the lineup refreshes in the background.
  *
- * Kept in its own module rather than in `managed-models.ts` so the config-only
- * registry never has to import the resolution layer — `descriptors.ts` already
- * imports `ManagedModel` from it, and a runtime edge back the other way would
- * make that a cycle.
- *
- * Both values are deployment constants: `RUNTIME_MANAGED_MODELS` is parsed once
- * at module load and every credential `managedTransportAvailable` reads comes
- * from validated config, so nothing here changes at runtime.
+ * Kept apart from `managed-models.ts` so the lineup never imports the
+ * resolution layer (`descriptors.ts` imports `ManagedModel` from it).
  */
-export const SERVED_MANAGED_MODELS: readonly ManagedModel[] = servedManagedModels(
-  RUNTIME_MANAGED_MODELS,
-  managedTransportAvailable,
-);
+export function servedManagedModels(): readonly ManagedModel[] {
+  return managedLineup().filter(managedTransportAvailable);
+}
 
 /**
  * The platform default model this deployment can actually serve. Read this
@@ -31,20 +20,13 @@ export const SERVED_MANAGED_MODELS: readonly ManagedModel[] = servedManagedModel
  * directly, which is only what the operator asked for.
  */
 export function platformDefaultModelId(): string {
-  return resolvePlatformDefaultModelId(
-    config.LLM_GATEWAY_DEFAULT_MODEL ?? '',
-    SERVED_MANAGED_MODELS,
-  );
+  return resolvePlatformDefaultModelId(config.LLM_GATEWAY_DEFAULT_MODEL ?? '', servedManagedModels());
 }
 
-/**
- * Whether a bare managed model id is this deployment's platform default — the
- * ONE managed model every tier may use, free included. `/model-defaults`
- * advertises that default alongside `freeTier: true`, so hiding it from the
- * picker and refusing it at resolution time left every fresh free account a
- * dead composer (KRTX-1067). Every other managed model keeps its plan gates.
- */
-export function isPlatformDefaultModelId(id: string): boolean {
-  const platform = platformDefaultModelId();
-  return platform.length > 0 && id === platform;
+/** The platform vision model: the configured one when served, else the first served model that reads images. */
+export function platformVisionModelId(): string {
+  const configured = (config.LLM_GATEWAY_VISION_MODEL ?? '').trim();
+  const served = servedManagedModels();
+  if (configured && (configured.includes('/') || served.some((m) => m.id === configured && m.vision))) return configured;
+  return served.find((m) => m.vision)?.id ?? configured;
 }

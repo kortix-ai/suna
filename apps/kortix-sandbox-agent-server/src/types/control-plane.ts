@@ -5,6 +5,12 @@
  */
 export interface InitialTurnClaim {
   prompt: string
+  /**
+   * Harness context stored beside the prompt at create (e.g. the CLI's worker
+   * contract). OpenCode delivers it as a synthetic (model-only) message part;
+   * pi still appends it to the prompt text. Absent on APIs predating the field.
+   */
+  context?: string
   turnToken: string
   messageId: string
 }

@@ -16,9 +16,9 @@
  *   preview             '{"presentation_name":"my-deck"}'
  */
 
-import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, rmSync, unlinkSync, statSync } from "fs";
-import { resolve, join, dirname, extname } from "path";
-import { execSync } from "child_process";
+import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, rmSync, unlinkSync } from "fs";
+import { resolve, join, dirname, extname, sep } from "path";
+import { execFileSync } from "child_process";
 
 const PRESENTATIONS_DIR = "presentations";
 const SKILL_DIR = dirname(new URL(import.meta.url).pathname);
@@ -108,11 +108,8 @@ function generateViewer(presPath: string, metadata: PresentationMetadata): void 
 }
 
 function runPythonScript(script: string, args: string[], timeoutMs = 300_000): string {
-  const shellArg = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-  const scriptArgs = [script, ...args].map(shellArg).join(" ");
-  const cmd = `python3 ${scriptArgs}`;
   try {
-    return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+    return execFileSync("python3", [script, ...args], { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch (e: unknown) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
     const stdout = err.stdout?.trim() ?? "";
@@ -283,11 +280,16 @@ function serveMime(filePath: string): string {
   return SERVE_MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
-function serveFile(filePath: string, downloadName?: string): Response {
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-    return new Response("Not found: " + filePath, { status: 404 });
+// Serves a file only when it resolves inside `root`; the request path is decoded, so it can carry `..`.
+function serveFile(root: string, filePath: string, downloadName?: string): Response {
+  const full = resolve(filePath);
+  let data: Buffer;
+  try {
+    if (!full.startsWith(resolve(root) + sep)) throw new Error("outside root");
+    data = readFileSync(full); // one read, no exists/stat check before it: a directory or a missing file throws
+  } catch {
+    return new Response("Not found", { status: 404 });
   }
-  const data = readFileSync(filePath);
   const headers: Record<string, string> = { "Content-Type": serveMime(filePath), "Cache-Control": "no-cache" };
   if (downloadName) headers["Content-Disposition"] = `attachment; filename="${downloadName.replace(/"/g, "")}"`;
   return new Response(data, {
@@ -352,7 +354,7 @@ function doServe(base: string, port: number) {
       const presMatch = pathname.match(/^\/presentations\/([^/]+)\/?(.*)$/);
       if (presMatch) {
         const presName = presMatch[1];
-        if (!presName) {
+        if (!presName || presName === "." || presName === "..") {
           return new Response("Presentation not found", { status: 404, headers: corsHeaders });
         }
         const rest = presMatch[2] || "";
@@ -376,27 +378,27 @@ function doServe(base: string, port: number) {
           if (!exported.success || !exported.path || !exported.filename) {
             return new Response(exported.error || `Failed to export ${format.toUpperCase()}`, { status: 500, headers: corsHeaders });
           }
-          return serveFile(exported.path, exported.filename);
+          return serveFile(presRoot, exported.path, exported.filename);
         }
 
         // ../images/ references from within slide iframes
         if (rest.startsWith("../images/") || rest.startsWith("%2E%2E/images/")) {
           const imgName = rest.replace(/^(\.\.\/|%2E%2E\/)images\//, "");
-          return serveFile(join(presRoot, "images", imgName));
+          return serveFile(presRoot, join(presRoot, "images", imgName));
         }
 
         // images/ relative to presentation dir
         if (rest.startsWith("images/")) {
-          return serveFile(join(presRoot, "images", rest.slice("images/".length)));
+          return serveFile(presRoot, join(presRoot, "images", rest.slice("images/".length)));
         }
 
         // Any file inside the presentation dir
-        return serveFile(join(presDir, rest));
+        return serveFile(presRoot, join(presDir, rest));
       }
 
       // /images/<name> — shared images
       if (pathname.startsWith("/images/")) {
-        return serveFile(join(presRoot, "images", pathname.slice("/images/".length)));
+        return serveFile(presRoot, join(presRoot, "images", pathname.slice("/images/".length)));
       }
 
       return new Response("Not found", { status: 404, headers: corsHeaders });

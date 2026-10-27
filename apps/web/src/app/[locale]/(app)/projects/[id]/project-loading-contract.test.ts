@@ -9,14 +9,14 @@ const LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/loading.
 const SESSION_LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/loading.tsx');
 
 /**
- * Modules too heavy to sit in the loading boundary's payload. ProjectHome is on
+ * Modules too heavy to sit in the loading boundary's payload. The workspace module (ProjectHome) is on
  * the list because it pulls the composer, SessionWelcome and the billing stack —
  * the whole point of this boundary is a payload small enough to prefetch.
  */
 const HEAVY = [
-  '@/features/project-files',
-  '@/features/file-viewer',
-  '@/features/workspace/project-layout/project-home',
+  '@kortix/ui/files',
+  '@kortix/ui/file-viewer',
+  '@kortix/ui/workspace',
 ];
 
 /** Matches import specifiers rather than raw text, so a doc comment ABOUT an

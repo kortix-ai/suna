@@ -139,10 +139,10 @@ export function threadAgents(config: ProjectConfigSummary): Agent[] {
  * The agent of a thread's latest assistant message: web defaults the thread's
  * agent picker to it, and a thread's pick falls back to it after a reload.
  */
-export function latestAssistantAgent(messages: ReadonlyArray<{ info: { role: string; agent?: string } }>): string | null {
+export function latestAssistantAgent(messages: ReadonlyArray<{ role: string; agent?: string | null }>): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const info = messages[i].info;
-    if (info.role === 'assistant' && info.agent) return info.agent;
+    const message = messages[i];
+    if (message.role === 'assistant' && message.agent) return message.agent;
   }
   return null;
 }

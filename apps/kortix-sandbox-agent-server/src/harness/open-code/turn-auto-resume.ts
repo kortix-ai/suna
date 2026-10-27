@@ -101,7 +101,10 @@ const PERMANENT_ERROR_NAMES = new Set(['MessageAbortedError', 'ProviderAuthError
 const TRANSIENT_MESSAGE =
   /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|temporarily unavailable|gateway.?time.?out|timed out|stream (closed|error|disconnected)|stream ended (without|before)|other side closed|terminated|json pars(e|ing)|unable to parse json/i;
 
-/** Is this turn failure a transient provider/stream error worth one more try? */
+/**
+ * Is this turn failure a transient provider/stream error worth one more try?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function isTransientTurnError(error?: OpencodeTurnError): boolean {
   if (!error) return false;
   if (error.name && PERMANENT_ERROR_NAMES.has(error.name)) return false;
@@ -124,6 +127,7 @@ function describeError(error: OpencodeTurnError): string {
   return msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // ── KRTX-1746: name the interrupted subagent in the resume prompt ───────────
 //
 // When a root turn dies while a `task` (subagent) call was in flight, the bare
@@ -150,7 +154,10 @@ export interface InterruptedSubagent {
   failed: boolean;
 }
 
-/** Row shape of opencode's `GET /session/{id}/message`. */
+/**
+ * Row shape of opencode's `GET /session/{id}/message`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export interface MessageRows
   extends Array<{
     info?: { role?: string; error?: unknown; time?: { completed?: number } };
@@ -170,6 +177,7 @@ const SESSION_ID_IN_ERROR = /\btask_id:\s*(ses_[A-Za-z0-9]+)/;
  * legacy delegate twins (agent_spawn, session_spawn, …) spawn worker sessions
  * no task tool can resume. Dispatches that finished (`completed`) are not
  * interrupted and are skipped.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function interruptedSubagents(rows: MessageRows): InterruptedSubagent[] {
   const last = rows[rows.length - 1];
@@ -235,6 +243,7 @@ const RUNTIME_FAULT_PROMPT =
 /** The instance is healed before a runtime-fault resume; wait only briefly. */
 const RUNTIME_FAULT_BACKOFF_MS = 500;
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface MaybeResumeOptions {
   /**
    * `runtime-fault`: the turn aborted before it reached the model while nobody
@@ -244,6 +253,7 @@ export interface MaybeResumeOptions {
   cause?: 'runtime-fault';
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface TurnAutoResumerDeps {
   opencode: Pick<Opencode, 'getInternalUrl'>;
   cfg: Pick<Config, 'workspace'>;
@@ -254,6 +264,7 @@ export interface TurnAutoResumerDeps {
   now?: () => number;
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface TurnAutoResumer {
   /**
    * Try to auto-resume an errored turn. Resolves true when a resume prompt was
@@ -273,6 +284,7 @@ interface LastMessageView {
   subagents: InterruptedSubagent[];
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResumer {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -338,10 +350,13 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     try {
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(deps.cfg.workspace)}`;
       // No `model` — the session continues on whatever model it was already using.
+      // `synthetic` marks harness context: the transcript renders this prompt as
+      // a notice, never as a user bubble (KRTX-2597), the same flag the initial
+      // prompt's context part carries (initial-prompt.ts).
       const res = await fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
+        body: JSON.stringify({ parts: [{ type: 'text', text, synthetic: true }] }),
         signal: AbortSignal.timeout(15_000),
       });
       return res.ok;

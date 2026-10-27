@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
@@ -15,6 +15,8 @@ import { createPiConfigReleases, type PiConfigReleases } from '@/harness/pi/conf
 import { createPiControlService } from '@/harness/pi/control'
 import { readBootConfigPointer, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
 import { ConvergeBusyError } from '@/services/config-provider/release'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
+import { MAX_ENV_STRING_BYTES, envStringBytes } from '@kortix/api-contract/compiled-agent-config-env'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { createEnvRouter } from '@/routes/kortix/env'
 import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
@@ -23,6 +25,7 @@ import {
   buildRelease,
   commitAll,
   initRepo,
+  publishRelease,
   serveRelease,
   serveSnapshot,
   startFakeApi,
@@ -141,30 +144,108 @@ describe('pi config releases: boot', () => {
     expect(api.descriptorRequests.length).toBe(requests)
   })
 
-  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
-    const one = release('deploy', 'from the checkout')
+  test('the config never comes from the checkout: a box at the release commit still downloads it', async () => {
+    const one = release('deploy', 'from the archive')
     serveRelease(api, one)
+    // `repo` is the release commit, checked out: exactly what /workspace holds on a fresh box.
     const { releases } = create(undefined, {}, { projectTarget: repo, baseSha: one.descriptor.source_commit! })
+    const marks: string[] = []
 
-    await releases.boot(undefined, Promise.resolve(null))
+    await releases.boot((label) => marks.push(label))
 
     const id = one.descriptor.release_id!
     expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
-    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
-    expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
+    expect(api.archiveRequests).toHaveLength(1)
+    expect(marks).toEqual(['config-release-fetched', 'config-release-archive', 'config-release-proven'])
+    // The boot names the tip it was created on, so the API can skip a redundant mirror fetch.
+    expect((api.descriptorRequests[0]!.body as { base_sha?: string }).base_sha).toBe(one.descriptor.source_commit!)
+    // A convergence never does: it is how a box learns of a push the API has not fetched.
+    await releases.converge(fakeRuntime())
+    expect((api.descriptorRequests.at(-1)!.body as { base_sha?: string }).base_sha).toBeUndefined()
   })
 
-  test('a box with no base pin builds a release with no archive from its checkout', async () => {
-    const one = release('deploy', 'from the checkout, no pin')
+  test('a published release boots from the store alone: no API request', async () => {
+    const one = release('deploy', 'published')
+    const { releases, env } = create(undefined, {}, { configRelease: publishRelease(api, one) })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, desired_release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(governance('published'))
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(marks).toEqual(['config-release-published', 'config-release-archive', 'config-release-proven'])
+    expect(api.descriptorRequests).toHaveLength(0)
+    expect(api.archiveRequests).toHaveLength(0)
+    // The descriptor and the archive, from signed URLs: the sandbox token never reaches storage.
+    expect(api.storageRequests.map((r) => r.path).sort()).toEqual([`/releases/${id}.json`, `/signed/${one.descriptor.config_tree_id}`])
+    expect(api.storageRequests.every((r) => r.authorization === null)).toBe(true)
+  })
+
+  test('an expired or unreadable published release: the box asks the route, as before', async () => {
+    const one = release('deploy', 'from the route')
+    serveRelease(api, one)
+    const expired = create(undefined, {}, { configRelease: publishRelease(api, one, { expiresInMs: 10_000 }) })
+    const marks: string[] = []
+    await expired.releases.boot((label) => marks.push(label))
+    expect(marks[0]).toBe('config-release-fetched')
+    expect(api.descriptorRequests).toHaveLength(1)
+    expect(expired.releases.report()).toMatchObject({ release_id: one.descriptor.release_id, proven: true })
+
+    // The store lost the descriptor.
+    const lost = publishRelease(api, one)
+    api.storageObjects.clear()
+    root = join(tmp, 'store-2') // A new box: nothing on disk.
+    const unreadable = create(undefined, {}, { configRelease: lost })
+    await unreadable.releases.boot()
+    expect(api.descriptorRequests).toHaveLength(2)
+    expect(unreadable.releases.report()).toMatchObject({ release_id: one.descriptor.release_id, proven: true })
+  })
+
+  test('a published archive the store cannot deliver is downloaded through the API', async () => {
+    const one = release('deploy', 'archive through the API')
+    const configRelease = publishRelease(api, one)
+    // The signed archive URL answers the wrong bytes; the API archive route has the right ones.
+    api.storageObjects.set(`/signed/${one.descriptor.config_tree_id}`, Buffer.from('not the archive'))
+    const { releases } = create(undefined, {}, { configRelease })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true })
+    expect(marks).toEqual(['config-release-published', 'config-release-archive', 'config-release-proven'])
+    expect(api.descriptorRequests).toHaveLength(0)
+    expect(api.archiveRequests).toHaveLength(1)
+  })
+
+  test('a release with no archive and no snapshot yet is fetched from the project remote, into its own directory', async () => {
+    const one = release('deploy', 'from git')
+    api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const { releases } = create(undefined, {}, { repoUrl: repo })
+    const marks: string[] = []
+
+    await releases.boot((label) => marks.push(label))
+
+    const id = one.descriptor.release_id!
+    expect(releases.report()).toMatchObject({ release_id: id, source: 'release', proven: true, fallback_reason: null })
+    expect(marks).toContain('config-release-git')
+    expect(existsSync(join(releaseDir(root, id), DIR, 'skills', 'deploy', 'SKILL.md'))).toBe(true)
+    expect(existsSync(join(releaseDir(root, id), '.git'))).toBe(false)
+    expect(readdirSync(root).filter((name) => name.endsWith('.git'))).toEqual([])
+  })
+
+  test('a release no source holds runs the image default and says why', async () => {
+    const one = release('deploy', 'no source')
     api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
     const { releases } = create(undefined, {}, { projectTarget: repo })
 
-    await releases.boot(undefined, Promise.resolve(null))
+    await releases.boot()
 
-    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true, fallback_reason: null })
+    expect(releases.report()).toMatchObject({ release_id: null, desired_release_id: one.descriptor.release_id, source: 'image-default', proven: true })
+    expect(releases.report().fallback_reason).toContain('the API has no project snapshot of this commit yet')
+    expect(releases.report().fallback_reason).toContain('this box has no project remote')
     expect(api.archiveRequests).toEqual([])
-    expect(api.storageRequests).toEqual([])
   })
 
   test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {
@@ -582,6 +663,23 @@ describe('pi config releases: the compiled governance belongs to the release', (
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
+    for (const name of Object.keys(process.env)) if (name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ')) delete process.env[name]
+  })
+
+  test('an oversized governance push is kept gzip-encoded, never raw in the env every child inherits', async () => {
+    const oversized = governance('x'.repeat(140_000))
+    const res = await envApp({ governanceOwned: () => false, inFlight: () => false, converge: async () => { throw new Error('unused') } }).request('/kortix/env', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${GOV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: 'rev-1', env: {}, names: [], runtimeEnv: { KORTIX_COMPILED_AGENT_CONFIG: oversized }, refreshModels: true }),
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { runtime_env_names: string[] }).runtime_env_names).toEqual(['KORTIX_COMPILED_AGENT_CONFIG'])
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+    const gzNames = Object.keys(process.env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ'))
+    expect(gzNames.sort()).toEqual(['KORTIX_COMPILED_AGENT_CONFIG_GZ_0', 'KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS'])
+    for (const name of gzNames) expect(envStringBytes(name, process.env[name]!), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES)
+    expect(compiledAgentConfigFromEnv(process.env)).toBe(oversized)
   })
 
   test('a /kortix/env push of the governance is dropped while a release owns it', async () => {

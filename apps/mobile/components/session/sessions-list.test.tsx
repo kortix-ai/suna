@@ -15,6 +15,7 @@ const Empty = () => null;
 
 let list: any;
 let paged: any;
+let pagedOptions: any;
 const haptic = { count: 0 };
 const fakes: Record<string, Record<string, unknown>> = {
   'react-native': {
@@ -26,14 +27,17 @@ const fakes: Record<string, Record<string, unknown>> = {
       const rows = props.data.map((item: any, index: number) =>
         React.createElement(React.Fragment, { key: props.keyExtractor(item, index) }, props.renderItem({ item, index }))
       );
-      return React.createElement('List', null, rows);
+      return React.createElement('List', null, rows.length > 0 ? rows : props.ListEmptyComponent);
     },
   },
   '@/components/ui/text': { Text: host('Text') },
+  '@/components/ui/button': { Button: host('Button') },
+  '@/components/kortix/search-list-header': { SearchListHeader: host('Search') },
   '@/components/kortix/settings-list': {
     SettingsGroup: host('Group'),
     SettingsGroupItem: host('GroupItem'),
-    SettingsRow: (props: any) => React.createElement('Row', { label: props.label, value: props.value }),
+    SettingsRow: (props: any) =>
+      React.createElement('Row', { label: props.label, value: props.value, accessibilityLabel: props.accessibilityLabel }),
   },
   '@/components/kortix/page-content': { PageContent: host('Content') },
   '@/components/kortix/pinned-bar': { PinnedBar: Empty, usePinnedBarInset: () => 0 },
@@ -41,8 +45,19 @@ const fakes: Record<string, Record<string, unknown>> = {
     useProjectRoute: () => route,
     useCoveringRoute: () => openSession,
   },
-  '@/lib/projects/hooks': { useProjectSessionsPaged: () => paged },
-  '@/lib/review/use-review': { useReviewItems: () => review },
+  '@/lib/projects/hooks': {
+    useProjectSessionsPaged: (_projectId: string, options: unknown) => {
+      pagedOptions = options;
+      return paged;
+    },
+  },
+  '@/lib/review/use-review': { useReviewNeedsYou: () => review },
+  '@kortix/sdk/react': {
+    useSessionsNeedingInput: (_projectId: string, options: unknown) => {
+      needsInputOptions = options;
+      return needsInput;
+    },
+  },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'me' } }) },
   'expo-router/react-navigation': { useIsFocused: () => true },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
@@ -53,7 +68,8 @@ const fakes: Record<string, Record<string, unknown>> = {
   'react-i18next': {
     useTranslation: () => ({
       // i18next's plural defaults: `defaultValue_one` for 1, `defaultValue_other` otherwise (English rules).
-      t: (_key: string, options: Record<string, unknown>) =>
+      // No default: the key itself (the Archived view's strings).
+      t: (key: string, options: Record<string, unknown> = { defaultValue: key }) =>
         String(options[options.count === 1 ? 'defaultValue_one' : 'defaultValue_other'] ?? options.defaultValue).replace(
           /\{\{(\w+)\}\}/g,
           (_, name) => String(options[name])
@@ -63,7 +79,9 @@ const fakes: Record<string, Record<string, unknown>> = {
 };
 const route = { projectId: 'p-1', openDrawer() {}, newSession() {}, openSessionActions() {}, isDrawerOpen: false };
 const openSession = () => {};
-const review = { data: [] };
+const review = { total: 0, items: [] };
+const needsInput: { data?: { total: number; sessions: Record<string, number> } } = {};
+let needsInputOptions: unknown;
 // Real: the list logic under test. Everything else is a stub.
 const real = new Set([
   'react',
@@ -189,6 +207,21 @@ describe('Sessions page list', () => {
     expect(list.data.some((item: any) => item.first)).toBe(false);
   });
 
+  // KRTX-1739: GET needs-input lists a session whose agent waits on a question.
+  test('a session whose agent waits on a question reads Needs you; the poll is ProjectScreen\'s', async () => {
+    paged = pagedOf([session('asked', Date.now()), session('quiet', Date.now() - 1000)]);
+    needsInput.data = { total: 1, sessions: { asked: 1 } };
+    try {
+      await render(React.createElement(Page.ProjectSessionsPage));
+      const labels = tree.root.findAll((node: any) => node.type === 'Row').map((node: any) => node.props.accessibilityLabel);
+      expect(labels[0]).toStartWith('asked, Needs you,');
+      expect(labels[1]).not.toContain('Needs you');
+      expect(needsInputOptions).toEqual({ enabled: false });
+    } finally {
+      needsInput.data = undefined;
+    }
+  });
+
   test('sessionListItems keeps titles out when showHeaders is false', () => {
     const rows = [session('x', 0), session('y', 0)];
     const items = Page.sessionListItems(
@@ -199,6 +232,41 @@ describe('Sessions page list', () => {
       false
     );
     expect(items.map((item) => [item.key, item.first])).toEqual([['x', false], ['y', true]]);
+  });
+});
+
+// KRTX-1727: the server drops rows the viewer may not see after a bounded
+// scan, so the first pages can be empty and still carry a cursor.
+describe('Sessions page past page one', () => {
+  const byLabel = (label: string) =>
+    tree.root.findAll((node: any) => typeof node.type === 'string' && node.props.accessibilityLabel === label);
+  const buttons = (label: string) => tree.root.findAll((node: any) => node.type === 'Button' && textOf(node) === label);
+
+  test('no row but a next page: Show older sessions and the search, never "No sessions yet"', async () => {
+    let fetched = 0;
+    paged = { ...pagedOf([]), hasNextPage: true, fetchNextPage: async () => void fetched++ };
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(byLabel('No sessions yet')).toHaveLength(0);
+    expect(tree.root.findAll((node: any) => node.type === 'Text' && textOf(node) === 'No matching sessions')).toHaveLength(0);
+    expect(buttons('Show older sessions')).toHaveLength(1);
+    expect(tree.root.findAll((node: any) => node.type === 'Search')).toHaveLength(1);
+    await act(async () => buttons('Show older sessions')[0].props.onPress());
+    expect(fetched).toBe(1);
+  });
+
+  test('while the list reads past empty pages on its own: the search loader, no button', async () => {
+    paged = { ...pagedOf([]), hasNextPage: true, isScanning: true };
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(byLabel('No sessions yet')).toHaveLength(0);
+    expect(buttons('Show older sessions')).toHaveLength(0);
+    expect(byLabel('Searching sessions')).toHaveLength(1);
+  });
+
+  test('no row and no next page: "No sessions yet" as before', async () => {
+    paged = pagedOf([]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(byLabel('No sessions yet')).toHaveLength(1);
+    expect(buttons('Show older sessions')).toHaveLength(0);
   });
 });
 
@@ -354,5 +422,66 @@ describe('useSessionStarterOf', () => {
     // Another viewer re-derives the label.
     await act(async () => tree.update(React.createElement(Probe, { viewerId: 'other' })));
     expect(starterOf(row)).toEqual({ type: 'member', label: 'Jay', icon: null });
+  });
+});
+
+// KRTX-2418: the filter sheet's Archived row swaps the list for the viewer's
+// archived sessions.
+describe('Sessions page Archived view', () => {
+  const texts = () => tree.root.findAll((node: any) => node.type === 'Text').map(textOf);
+  // Inside act: the page is still mounted when this runs (before the file's unmount).
+  afterEach(async () => {
+    await act(async () => useSessionFilterStore.getState().reset());
+  });
+  let useSessionFilterStore: typeof import('@/stores/session-filter-store').useSessionFilterStore;
+  beforeAll(async () => {
+    ({ useSessionFilterStore } = await import('@/stores/session-filter-store'));
+  });
+
+  test('the list asks for top-level sessions; Archived asks for every archived one, sub-agent ones too', async () => {
+    paged = pagedOf([session('a', Date.now())]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(pagedOptions).toMatchObject({ parent: 'root' });
+    expect(pagedOptions.view).toBeUndefined();
+
+    await act(async () => useSessionFilterStore.getState().toggleArchived('p-1'));
+    expect(pagedOptions).toMatchObject({ view: 'archived' });
+    expect(pagedOptions.parent).toBeUndefined();
+  });
+
+  test('archived rows list with the chip naming the view; rows without the stamp do not', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    const at = new Date().toISOString();
+    paged = pagedOf([
+      session('arch', Date.now(), { archived_at: at, pinned_at: null }),
+      session('arch-child', Date.now() - 1000, { archived_at: at, pinned_at: null, parent_session_id: 'arch' }),
+      session('legacy', Date.now() - 2000),
+    ]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(list.data.map((item: any) => item.key)).toEqual(['arch', 'arch-child']);
+    expect(texts()).toContain('sessions.archivedView');
+  });
+
+  test('nothing archived: the short empty state and Reset back to the list', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    paged = pagedOf([]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    expect(texts()).toContain('sessions.archivedEmpty');
+    expect(texts()).not.toContain('No matching sessions');
+    const reset = tree.root.findAll((node: any) => node.type === 'Button' && textOf(node) === 'Reset');
+    expect(reset).toHaveLength(1);
+    await act(async () => reset[0].props.onPress());
+    expect(useSessionFilterStore.getState().byProject['p-1']).toBeUndefined();
+  });
+
+  test('Archived with a search that finds nothing reads "No matching sessions"', async () => {
+    useSessionFilterStore.getState().toggleArchived('p-1');
+    useSessionFilterStore.getState().setQuery('p-1', 'zzz');
+    paged = pagedOf([]);
+    await render(React.createElement(Page.ProjectSessionsPage));
+    // The debounce has not run yet: a loader, then the verdict.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+    expect(texts()).toContain('No matching sessions');
+    expect(texts()).not.toContain('sessions.archivedEmpty');
   });
 });

@@ -241,4 +241,62 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
     expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
   });
+
+  test('reads workspace.project_repository, default true; a typo withholds the repository', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'agents:',
+        '  support:',
+        '    workspace: { project_repository: false }',
+        '  engineer:',
+        '    workspace: { project_repository: true }',
+        '  plain: {}',
+        '  aliased:',
+        '    repository_access: false',
+        '    workspace: { project_repository: false }',
+        '  conflict:',
+        '    repository_access: true',
+        '    workspace: { project_repository: false }',
+        '  typo:',
+        '    workspace: { project_repo: false }',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.errors.map((e) => e.name).sort()).toEqual(['conflict', 'typo']);
+    expect(repositoryAccessFromLoadedAgents('support', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('plain', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('aliased', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('conflict', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('typo', loaded)).toBe(false);
+  });
+
+  test('kortix_version 3 defaults workspace.project_repository to false', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 3',
+        'default_agent: engineer',
+        'agents:',
+        '  engineer:',
+        '    workspace: { project_repository: true }',
+        '  plain: {}',
+        '  empty:',
+        '    workspace: {}',
+        '',
+      ].join('\n'),
+    };
+
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(loaded.errors).toEqual([]);
+    expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('plain', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('empty', loaded)).toBe(false);
+  });
 });

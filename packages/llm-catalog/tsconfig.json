@@ -3,6 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2023", "DOM"],
     "types": ["@types/bun"],
+    "declaration": true,
     "noEmit": true
   },
   "include": ["src/**/*"],

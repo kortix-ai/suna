@@ -192,6 +192,7 @@ function sessionRow(overrides: Partial<SessionAccessRow> = {}): SessionAccessRow
     metadata: { name: 'Fix the build' },
     origin: 'user',
     initiatorType: 'member',
+    spaceId: null,
     ...overrides,
   };
 }

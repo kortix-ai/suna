@@ -99,6 +99,7 @@ Options:
   --admin-email <email>   Grant platform-admin to this account.
   --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
   --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
+  --disable-signup        Turn self sign-up off (DISABLE_SIGNUP=true); nobody can sign up, the admin included.
   --json                  Machine-readable output where supported.
   --yes                   Accept defaults non-interactively.
   -h, --help              Show this help.
@@ -111,7 +112,7 @@ Examples:
   kortix self-host update --channel latest
   kortix self-host init --version 0.10.1
   kortix self-host init --version dev-a1b2c3d --local-images
-  kortix self-host env set DAYTONA_API_KEY=dtn_...
+  kortix self-host env set PLATINUM_API_KEY=<key>
   kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@company.com   # grant platform admin later
   kortix self-host uninstall
   kortix hosts ls
@@ -153,7 +154,7 @@ interface SelfHostEnv {
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
-  // Reachability: how cloud (Daytona) sandboxes and other external callers
+  // Reachability: how cloud sandboxes and other external callers
   // reach this instance's API — see reachabilityMode() in self-host/tunnel.ts.
   // KORTIX_DOMAIN set always means "domain" mode regardless of this value;
   // otherwise it's the persisted tunnel-vs-local preference (default local,
@@ -314,6 +315,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const adminEmail = takeFlagValue(args, ['--admin-email']);
   const restrictAccountCreationOn = takeFlagBool(args, ['--restrict-account-creation']);
   const restrictAccountCreationOff = takeFlagBool(args, ['--no-restrict-account-creation']);
+  const disableSignup = takeFlagBool(args, ['--disable-signup']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -353,6 +355,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
       : restrictAccountCreationOff
         ? false
         : undefined,
+    disableSignup: disableSignup || undefined,
     yes,
     json,
   };
@@ -407,7 +410,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     await promptUpdatePolicyCompact(env, flags);
   }
 
-  // Required secrets — just the agent sandbox runtime (Daytona) now; see
+  // Required secrets — just the agent sandbox runtime (Platinum) now; see
   // missingRequiredSecrets(). Managed git and the LLM key are configured in
   // the dashboard after `start`, not gated here. Interactively this drives the
   // guided flow until satisfied; either way (interactive decline or
@@ -442,6 +445,10 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
   process.stdout.write('\n');
+  const signUp = openSignUpCheck(env);
+  if (signUp && !signUp.ok) {
+    process.stdout.write(`  ${C.yellow}warning${C.reset}  ${C.dim}Sign-up is open: ${signUp.detail}${C.reset}\n\n`);
+  }
   renderConnectionSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -477,8 +484,8 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
 
   if (!sandboxProviderConfigured(env)) {
-    const provider = sandboxProviders(env)[0] ?? 'daytona';
-    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
+    const provider = sandboxProviders(env)[0] ?? 'platinum';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'PLATINUM_API_KEY';
     process.stdout.write(
       `${C.yellow}  warning${C.reset}  ${C.dim}sandbox runtime not configured — agent sessions will fail to start.${C.reset}\n`,
     );
@@ -612,6 +619,19 @@ function selfHostDoctor(flags: GlobalFlags): number {
       detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
     });
   }
+  if (existsSync(composePath(flags.instance))) {
+    // Kortix Capture devices upload to the bundled store. A compose file
+    // rendered by an older CLI has none, so every device gets 503
+    // capture_credentials_unavailable until `update` re-renders it.
+    const hasStore = readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
+    checks.push({
+      name: 'capture-store',
+      ok: hasStore,
+      detail: hasStore
+        ? 'bundled Kortix Capture store present'
+        : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
+    });
+  }
   if (existsSync(envPath(flags.instance))) {
     // KORTIX_INSTANCE_DIR is recomputed on every writeEnv() (see
     // normalizeFullSupabaseEnv), so this can only be stale between writes —
@@ -684,30 +704,9 @@ function selfHostDoctor(flags: GlobalFlags): number {
     }
   }
   if (existsSync(envPath(flags.instance))) {
-    // KRTX-1715. The shipped auth defaults leave sign-up open with email
-    // autoconfirm on. On an instance the internet can reach, anyone can then
-    // create a CONFIRMED account for any address: the admin address in
-    // KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits
-    // for. Nothing in the running stack says so. Either fix closes it: an email
-    // provider makes GoTrue require confirmation (`env set EMAIL_URL=…` turns
-    // autoconfirm off), or DISABLE_SIGNUP stops self sign-up once the team is in.
-    // Not on a laptop instance, which strangers cannot reach.
     const env = loadEnv(flags.instance);
-    if (env && reachabilityMode(env) !== 'local') {
-      const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
-      const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
-      checks.push({
-        name: 'open-sign-up',
-        ok: !(signupOpen && autoconfirm),
-        detail: !signupOpen
-          ? 'self sign-up is off (DISABLE_SIGNUP=true)'
-          : !autoconfirm
-            ? 'new accounts must confirm their email'
-            : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
-              + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
-              + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
-      });
-    }
+    const signUp = env ? openSignUpCheck(env) : null;
+    if (signUp) checks.push({ name: 'open-sign-up', ...signUp });
   }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
@@ -753,7 +752,9 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
   // already set via `configure`/`env set`.
+  const beforeFlags = { ...env };
   applyFeatureFlags(env, flags);
+  const changedFlagKeys = Object.keys(env).filter((key) => env[key] !== beforeFlags[key]);
   applyReachabilityFlags(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
@@ -788,6 +789,23 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
       + `${C.dim}Details: ${C.reset}${C.cyan}kortix self-host status --instance ${flags.instance}${C.reset}${C.dim} (per-service outcome, drift, last error)${C.reset}\n`,
     );
     return rollout;
+  }
+
+  // Converge kortix-api onto the rendered environment. The rollout above only
+  // rolls a service whose IMAGE changed, and `up --no-recreate` never touches
+  // an existing container, so an instance rendered by an older CLI keeps an
+  // API without the Kortix Capture store wiring (every device gets 503) until
+  // its container is recreated. Without `--force-recreate`, compose recreates
+  // it only when its rendered configuration differs: a no-op on every later run.
+  const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
+  if (converge !== 0) return converge;
+
+  // The rollout recreates only the app services whose image moved. A flag this
+  // run changed reaches its readers through the same restart `env set` does:
+  // GoTrue reads DISABLE_SIGNUP only when supabase-auth is recreated.
+  if (changedFlagKeys.length > 0) {
+    const restart = restartServicesForKeys(flags.instance, env, changedFlagKeys);
+    if (restart !== 0) return restart;
   }
 
   // Tunnel reachability mode only, and deliberately AFTER the zero-downtime
@@ -996,6 +1014,32 @@ function warnNoAdminEmail(): void {
 }
 
 /**
+ * KRTX-1715. The shipped auth defaults leave sign-up open with email
+ * autoconfirm on. On an instance the internet can reach, anyone can then
+ * create a CONFIRMED account for any address: the admin address in
+ * KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits for.
+ * Either fix closes it: an email provider makes GoTrue require confirmation
+ * (`env set EMAIL_URL=…` turns autoconfirm off), or DISABLE_SIGNUP stops self
+ * sign-up once the team is in. `doctor` fails on it and `init` prints it.
+ * Null on a laptop instance, which strangers cannot reach.
+ */
+function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean; detail: string } | null {
+  if (reachabilityMode(env) === 'local') return null;
+  const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
+  const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+  return {
+    ok: !(signupOpen && autoconfirm),
+    detail: !signupOpen
+      ? 'self sign-up is off (DISABLE_SIGNUP=true)'
+      : !autoconfirm
+        ? 'new accounts must confirm their email'
+        : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
+          + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
+          + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
+  };
+}
+
+/**
  * Apply --enterprise-license onto env, non-interactively. Only overwrites
  * when the flag was actually passed (undefined = "not passed", never a
  * literal false — see parseGlobalFlags), so a bare `init`/`update` with no
@@ -1020,6 +1064,10 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
     env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
     env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION = value;
   }
+  // Nobody can sign up while it is on, the operator included: for an install
+  // that creates its accounts another way, or a team that already signed up.
+  // `env set DISABLE_SIGNUP=false` reopens it.
+  if (flags.disableSignup) env.DISABLE_SIGNUP = 'true';
 }
 
 /**
@@ -1473,6 +1521,7 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
 
   const changedKeys: string[] = [];
   const previousEmailUrl = env.EMAIL_URL ?? '';
+  const previousApiKeySecret = env.API_KEY_SECRET ?? '';
 
   // `env set KEY` (no '=') — prompt interactively for exactly one key.
   if (args.length === 1 && !args[0]!.includes('=')) {
@@ -1505,6 +1554,15 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     }
   }
 
+  if (
+    changedKeys.includes('API_KEY_SECRET') &&
+    previousApiKeySecret !== '' &&
+    env.API_KEY_SECRET !== previousApiKeySecret
+  ) {
+    const stop = await confirmApiKeySecretChange(flags);
+    if (stop !== null) return stop;
+  }
+
   // EMAIL_URL is the one email setting; everything else it implies (the GoTrue
   // send-email hook, its shared secret, the sender identity, and the auth
   // behavior flags) is derived here rather than typed by the operator.
@@ -1518,6 +1576,27 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
   }
   return restartServicesForKeys(flags.instance, env, changedKeys);
+}
+
+/**
+ * `env set API_KEY_SECRET=<new>` loses every stored credential: the same loss
+ * `env rotate` refuses (KRTX-1719). Warn, then require a yes at the prompt or
+ * `--yes` (the `uninstall` pattern). Returns the exit code to stop with, or
+ * null to go on. Nothing is written before it returns.
+ */
+async function confirmApiKeySecretChange(flags: GlobalFlags): Promise<number | null> {
+  process.stderr.write(`${status.warn(`API_KEY_SECRET is ${NON_ROTATABLE_GENERATED_REASONS.API_KEY_SECRET}`)}\n`);
+  if (shouldPrompt(flags)) {
+    if (await confirm('Replace API_KEY_SECRET anyway?', false)) return null;
+    process.stderr.write(`${status.err('API_KEY_SECRET is unchanged. Nothing was written.')}\n`);
+    return 1;
+  }
+  if (flags.yes) return null;
+  process.stderr.write(
+    `${status.err('Refusing to change API_KEY_SECRET non-interactively without --yes.')}\n` +
+      `  ${C.dim}Pass ${C.reset}${C.cyan}--yes${C.reset}${C.dim} to confirm. Nothing was written.${C.reset}\n`,
+  );
+  return 2;
 }
 
 // Generated secrets whose rotation cascades into a derived value elsewhere in
@@ -1549,6 +1628,7 @@ function freshTokenFor(key: string): string {
     case 'DASHBOARD_PASSWORD':
       return token(24);
     case 'S3_PROTOCOL_ACCESS_KEY_SECRET':
+    case 'CAPTURE_STORE_ROOT_PASSWORD':
     case 'GATEWAY_INTERNAL_TOKEN':
     case 'INTERNAL_SERVICE_KEY':
     case 'TUNNEL_SIGNING_SECRET':
@@ -1572,6 +1652,7 @@ const NON_ROTATABLE_GENERATED_REASONS: Record<string, string> = {
   LOGFLARE_PRIVATE_ACCESS_TOKEN: 'internal Supabase Logflare access token — not a user-facing credential, rotation unsupported.',
   SUPABASE_ANON_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
   SUPABASE_SERVICE_ROLE_KEY: 'derived from SUPABASE_JWT_SECRET — run `env rotate SUPABASE_JWT_SECRET` instead.',
+  CAPTURE_STORE_ROOT_USER: 'not a rotation target — rotate CAPTURE_STORE_ROOT_PASSWORD instead.',
   DASHBOARD_USERNAME: 'not a rotation target — use `env set DASHBOARD_USERNAME=<value>` to change it.',
   API_KEY_SECRET:
     'the encryption key of every stored secret, connector and OAuth credential and GitHub token, and the pepper of every API key, PAT and session token hash. A new value leaves all of them undecryptable, and the old value is not kept. There is no data-key rotation yet (KRTX-1719).',
@@ -1720,7 +1801,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   // Same ordering as `init`: reachability first (the decision that determines
   // whether agent sandboxes can work at all), then admin email, then feature
-  // flags, then connections (Daytona) — see selfHostInit() for the full
+  // flags, then connections (sandbox provider) — see selfHostInit() for the full
   // rationale. Admin email is asked here on EVERY `configure` (not only on a
   // fresh init the way selfHostInit gates it): an operator who skipped it at
   // init and later runs `configure` to fix that would otherwise find that
@@ -1739,6 +1820,8 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host connection config')}\n`);
   process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  // `configure` writes the files only; `start` recreates what they changed.
+  process.stdout.write(`  ${C.dim}Apply        ${C.reset}${C.cyan}kortix self-host start${flags.instance === DEFAULT_INSTANCE ? '' : ` --instance ${flags.instance}`}${C.reset}\n`);
   if (reachabilityMode(env) !== 'domain') {
     process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
   }
@@ -1818,7 +1901,9 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-const SANDBOX_PROVIDER_CHOICES = ['daytona', 'platinum', 'e2b'] as const;
+// Platinum is the reference provider. Daytona is a legacy fallback: its
+// removal is scheduled. E2B support is discontinued.
+const SANDBOX_PROVIDER_CHOICES = ['platinum', 'daytona'] as const;
 type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
 
 /**
@@ -1839,41 +1924,31 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
   const currentProvider = sandboxProviders(env)[0];
   const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
     ? (currentProvider as SandboxProviderChoice)
-    : 'daytona';
+    : 'platinum';
   let provider: SandboxProviderChoice = defaultProvider;
   if (shouldPrompt(flags)) {
     // Every choice, printed up front — a bare `selectFrom` prompt with no
-    // visible options left `daytona`/`e2b`/`platinum` undiscoverable unless
-    // the operator already knew the exact names to type (a real reported
+    // visible options left the non-default provider undiscoverable unless
+    // the operator already knew the exact name to type (a real reported
     // bug: the prompt rendered as a bare `Sandbox provider [daytona]:`).
     // Same one-provider-only shape as before (selectFrom, not selectMany) —
     // an instance runs on exactly one sandbox provider.
     process.stdout.write(
-      `  ${C.cyan}daytona${C.reset}      ${C.dim}https://app.daytona.io (default, recommended)${C.reset}\n` +
-        `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (recommended) — Kortix's own microVM sandbox provider${C.reset}\n` +
-        `  ${C.cyan}e2b${C.reset}          ${C.dim}https://e2b.dev (also supported)${C.reset}\n`,
+      `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (default, reference) — Kortix's own microVM sandbox provider; needs PLATINUM_API_KEY${C.reset}\n` +
+        `  ${C.cyan}daytona${C.reset}      ${C.dim}Daytona (legacy fallback, removal scheduled) — no new features, no support guarantee${C.reset}\n`,
     );
     provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
   }
   env.ALLOWED_SANDBOX_PROVIDERS = provider;
 
-  if (provider === 'daytona') {
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-  } else if (provider === 'e2b') {
-    env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
-    // The cluster this instance talks to. E2B Cloud is e2b.dev; a self-hosted
-    // E2B cluster has its own base domain. Both the template builds and the
-    // sandbox creates use this one value (apps/api platform/providers/e2b-domain).
-    env.E2B_DOMAIN = await prompt(
-      'E2B base domain (E2B Cloud: e2b.dev — a self-hosted E2B cluster uses its own)',
-      env.E2B_DOMAIN || 'e2b.dev',
-    );
-  } else if (provider === 'platinum') {
+  if (provider === 'platinum') {
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
+  } else if (provider === 'daytona') {
+    env.DAYTONA_API_KEY = await promptSecret('Daytona API key (legacy fallback)', env.DAYTONA_API_KEY);
+    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   }
   // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
   // this instance serves. When configured, the bundled Caddy proxy adds a
@@ -2000,9 +2075,8 @@ export function sandboxProviders(env: Record<string, string>): string[] {
 
 /** The key each sandbox provider needs to be considered ready. */
 const SANDBOX_PROVIDER_KEY: Record<string, string> = {
-  daytona: 'DAYTONA_API_KEY',
-  e2b: 'E2B_API_KEY',
   platinum: 'PLATINUM_API_KEY',
+  daytona: 'DAYTONA_API_KEY',
 };
 
 /** A configured sandbox provider is selected and has its required key. */
@@ -2031,6 +2105,7 @@ export function gitProviderConfigured(env: Record<string, string>): boolean {
 // fields is set". Skip them in the scalar pass; the composite checks report
 // the one accurate item instead.
 const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
+  'PLATINUM_API_KEY',
   'DAYTONA_API_KEY',
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
@@ -2044,7 +2119,8 @@ const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
  *  `KEY (Category label)`. */
 const REQUIRED_SECRET_LABELS: Record<string, string> = {
   OPENROUTER_API_KEY: 'OpenRouter API key (LLM)',
-  POSTGRES_PASSWORD: 'Postgres password (auto-generated — regenerate via `env rotate`)',
+  POSTGRES_PASSWORD:
+    'Postgres password (auto-generated — the database roles keep the value from the first start, so restore that value; `env rotate` refuses it)',
   SUPABASE_JWT_SECRET: 'Supabase JWT secret (auto-generated — regenerate via `env rotate`)',
   SUPABASE_ANON_KEY: 'Supabase anon key (auto-generated, derived from the JWT secret)',
   SUPABASE_SERVICE_ROLE_KEY: 'Supabase service role key (auto-generated, derived from the JWT secret)',
@@ -2065,7 +2141,7 @@ export interface MissingSecretItem {
 
 /**
  * Every required secret this instance is still missing. The CLI's init-time
- * gate is deliberately narrow now: ONLY the agent sandbox runtime (Daytona) is
+ * gate is deliberately narrow now: ONLY the agent sandbox runtime (Platinum) is
  * a "cannot proceed without it" secret — it's the one thing that genuinely
  * can't be set any other way (it's an env-only credential the API reads at
  * boot, there is no in-app settings surface for it). Managed git (GitHub) and
@@ -2074,7 +2150,7 @@ export interface MissingSecretItem {
  * as BYOK via the model picker — so neither blocks `init`/`start` here
  * anymore; see gitProviderConfigured()/renderConnectionSummary() for the
  * (non-blocking) status display. Reconciled against sandboxProviderConfigured
- * so a Daytona key configured via any accepted shape reports as satisfied.
+ * so a sandbox key configured via any accepted shape reports as satisfied.
  * Pure function of `env` — no filesystem/process access — so it's safe to
  * call from `init`/`start` before anything is written and to unit-test
  * directly.
@@ -2084,10 +2160,10 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
 
   if (!sandboxProviderConfigured(env)) {
     // Name whichever provider is actually configured (ALLOWED_SANDBOX_PROVIDERS),
-    // defaulting to Daytona's hint when nothing has been chosen yet (a bare
+    // defaulting to Platinum's hint when nothing has been chosen yet (a bare
     // `init --yes` with no prior .env) — matches the guided flow's own default.
-    const provider = sandboxProviders(env)[0] ?? 'daytona';
-    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'DAYTONA_API_KEY';
+    const provider = sandboxProviders(env)[0] ?? 'platinum';
+    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'PLATINUM_API_KEY';
     missing.push({
       label: `Agent sandbox runtime (${provider} API key)`,
       hint: `kortix self-host env set ${key}=<key>`,
@@ -2153,7 +2229,7 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
 }
 
 function connectionReviewNeeded(env: SelfHostEnv): boolean {
-  // The sandbox runtime (Daytona) is the only CLI-required connection left —
+  // The sandbox runtime (Platinum) is the only CLI-required connection left —
   // the API won't boot agent sessions without it, and there is no in-app
   // settings surface for it (unlike managed git/LLM, both configured in the
   // dashboard after `start`). A missing key always warrants the wizard, even
@@ -2178,7 +2254,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
     {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
-      hint: `${SANDBOX_PROVIDER_KEY[provider ?? 'daytona'] ?? 'DAYTONA_API_KEY'} (via kortix self-host configure)`,
+      hint: `${SANDBOX_PROVIDER_KEY[provider ?? 'platinum'] ?? 'PLATINUM_API_KEY'} (via kortix self-host configure)`,
     },
   ];
 
@@ -2421,6 +2497,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     LOGFLARE_PRIVATE_ACCESS_TOKEN: token(24),
     S3_PROTOCOL_ACCESS_KEY_ID: token(16),
     S3_PROTOCOL_ACCESS_KEY_SECRET: token(32),
+    // Kortix Capture's bundled object store (the `capture-store` service). The
+    // API holds this pair to issue per-device credentials; devices never see it.
+    CAPTURE_STORE_ROOT_USER: token(8),
+    CAPTURE_STORE_ROOT_PASSWORD: token(32),
     PGRST_DB_SCHEMAS: 'public',
     PGRST_DB_MAX_ROWS: '1000',
     PGRST_DB_EXTRA_SEARCH_PATH: 'public',
@@ -2440,14 +2520,11 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    // Sandboxes run on a real provider, just like Kortix Cloud — Daytona,
-    // E2B, or Kortix's own Platinum (SandboxProviderName in
-    // apps/api/src/config.ts); `kortix self-host configure` asks which one
-    // and collects only that provider's key(s).
+    // Sandboxes run on a real provider, just like Kortix Cloud — Kortix's own
+    // Platinum (the reference) or the legacy Daytona fallback
+    // (SandboxProviderName in apps/api/src/config.ts); `kortix self-host
+    // configure` asks which one and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
-    E2B_API_KEY: '',
-    // E2B Cloud by default; a self-hosted E2B cluster sets its own base domain.
-    E2B_DOMAIN: 'e2b.dev',
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',
@@ -2496,9 +2573,14 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   // site block to the Caddyfile. Gated on KORTIX_APPS_BASE_DOMAIN, the single
   // signal that turns it on; Caddy itself only runs in domain mode, so the
   // block is inert without a domain.
+  // Kortix Capture object store: the bundled on-box MinIO (default) or an
+  // operator-owned external S3-compatible store. A durable .env switch that
+  // survives `update` (which only moves image tags).
+  const captureStoreExternal = env.KORTIX_CAPTURE_STORE?.trim() === 'external';
   writeKortixRuntimeAssets(root, {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
     previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
+    captureStoreExternal,
   });
   writeFileSync(
     composePath(instance),
@@ -2506,6 +2588,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
+      captureStoreExternal,
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2556,6 +2639,16 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // write so `env set` changes stay synchronized.
   env.KORTIX_PUBLIC_CONNECTORS_ENABLED = connectorAuthConfigured(env) ? 'true' : 'false';
 
+  // External Capture object store: the bundled on-box MinIO is not rendered, so
+  // its generated root pair is dead weight. Drop it so it never persists in an
+  // external instance's .env — defaultEnv() generates the pair for every fresh
+  // instance (bundled is the default), and this is where an external instance
+  // sheds it, on init and on every later `env set`/`configure`/`update`.
+  if (env.KORTIX_CAPTURE_STORE?.trim() === 'external') {
+    delete env.CAPTURE_STORE_ROOT_USER;
+    delete env.CAPTURE_STORE_ROOT_PASSWORD;
+  }
+
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real
   // domain instead of a loopback port. api.<domain> is the default API host;
@@ -2576,7 +2669,7 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // renderFullDockerCompose() uses to decide the Compose-side topology.
   env.KORTIX_APP_REPLICAS = String(env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS);
 
-  // KORTIX_URL — the PUBLIC origin cloud (Daytona) sandboxes and other
+  // KORTIX_URL — the PUBLIC origin cloud sandboxes and other
   // external callers (webhooks, Slack/Teams OAuth, git-proxy clone) reach this
   // instance on. Computed per reachability mode (see reachabilityMode() in
   // self-host/tunnel.ts):

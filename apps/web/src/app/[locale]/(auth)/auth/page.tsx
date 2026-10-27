@@ -30,15 +30,83 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
+
+/**
+ * The entry form's SSR HTML is typeable before React hydrates it. An Enter or
+ * a Continue click inside that window (a cold visit spends seconds there on a
+ * deployed env — chunk fetches at real-network latency) submits the form
+ * natively: a full-page GET to /auth?email=… that discards what the visitor
+ * typed, and React 19 additionally resets the field to its server-rendered
+ * value the moment hydration lands, so early typing vanishes either way.
+ *
+ * This inline guard runs at parse time, before React exists. While it is
+ * armed it prevents native submissions of the entry form, records the
+ * intent in sessionStorage and stashes the typed address on every
+ * keystroke, so nothing navigates and nothing typed is lost. React 19
+ * attaches no reliably-timed props to DOM nodes, so the guard cannot tell
+ * when hydration landed — instead the page itself disarms it: the auth
+ * component's mount effect runs only once React is live, and it dispatches
+ * `kortix:auth-hydrated` after restoring the stashed address and replaying
+ * a recorded intent through the real submit handler. Until then every
+ * guarded submit is prevented (a second Enter included); after it React's
+ * own onSubmit drives the form unchanged.
+ *
+ * The inline script is CSP-clean (script-src is report-only; the root layout
+ * already ships inline bootstrap scripts), inert on every page without a
+ * guarded form, and degrades to nothing when sessionStorage is unavailable.
+ */
+const ENTRY_HYDRATION_GUARD = `
+(function () {
+  if (window.__kortixAuthHydrationGuard) return;
+  window.__kortixAuthHydrationGuard = true;
+  var SUBMIT_KEY = 'kortix:auth-entry-submit';
+  var EMAIL_KEY = 'kortix:auth-entry-email';
+  var armed = true;
+  var isGuardedForm = function (node) {
+    return !!(node && node.nodeType === 1 && node.matches && node.matches('form[data-hydrate-guard]'));
+  };
+  var stashEmail = function (event) {
+    if (!armed) return;
+    var input = event.target;
+    if (!input || !input.matches || !input.matches('form[data-hydrate-guard] input[name="email"]')) return;
+    try {
+      // Timestamped: a stash left behind by a navigation must not refill the
+      // field on a visit hours later. Same TTL as the submit intent.
+      if (input.value) window.sessionStorage.setItem(EMAIL_KEY, JSON.stringify({ t: Date.now(), v: input.value }));
+      else window.sessionStorage.removeItem(EMAIL_KEY);
+    } catch (error) {}
+  };
+  var holdSubmit = function (event) {
+    if (!armed) return;
+    if (!isGuardedForm(event.target)) return;
+    var recorded = false;
+    try {
+      window.sessionStorage.setItem(SUBMIT_KEY, String(Date.now()));
+      recorded = true;
+    } catch (error) {}
+    if (!recorded) return; // sessionStorage unavailable: the intent cannot be handed over, so keep the pre-guard native behavior.
+    // No React handler yet: a native GET here would reload /auth and discard
+    // the typed address. Record the intent; the page replays it on mount.
+    event.preventDefault();
+  };
+  document.addEventListener('submit', holdSubmit, true);
+  document.addEventListener('input', stashEmail, true);
+  window.addEventListener('kortix:auth-hydrated', function () {
+    if (!armed) return;
+    armed = false;
+    document.removeEventListener('submit', holdSubmit, true);
+    document.removeEventListener('input', stashEmail, true);
+  }, { once: true });
+})();
+`;
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   armPkceResumeGuard,
@@ -47,7 +115,7 @@ import {
   seedPkceVerifierForResume,
   stashBrowserPkceVerifier,
 } from '@/lib/auth/pkce-resume';
-import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { resolveNewAccountReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
@@ -57,7 +125,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
@@ -75,6 +143,47 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 // sessionStorage key holding the address a stale-bundle recovery is handing
 // back to the form with. Consumed by the prefill effect on the next mount.
 const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
+
+// Browser-wide method preference only; never store the address or credentials.
+const AUTH_METHOD_KEY = 'kortix:auth-method';
+function prefersPassword(): boolean {
+  try {
+    return window.localStorage.getItem(AUTH_METHOD_KEY) === 'password';
+  } catch {
+    return false;
+  }
+}
+function rememberAuthMethod(method: 'password' | 'magic') {
+  try {
+    window.localStorage.setItem(AUTH_METHOD_KEY, method);
+  } catch {
+    // Sign-in still works when browser storage is unavailable.
+  }
+}
+
+// sessionStorage keys for the pre-hydration entry-submit guard (see the
+// ENTRY_HYDRATION_GUARD script): the intent flag it sets when it prevents a
+// native submit of the entry form, the address it stashes while the visitor
+// types, and how long a recorded intent stays worth replaying.
+const ENTRY_SUBMIT_FLAG_KEY = 'kortix:auth-entry-submit';
+const ENTRY_EMAIL_STASH_KEY = 'kortix:auth-entry-email';
+const ENTRY_SUBMIT_TTL_MS = 60_000;
+
+// The guard stashes the typed address as `{ t, v }`; an unparseable or stale
+// entry is no recovery at all.
+function parseEntryStash(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { t, v } = parsed as { t?: unknown; v?: unknown };
+    if (typeof t !== 'number' || typeof v !== 'string') return null;
+    if (!v || Date.now() - t > ENTRY_SUBMIT_TTL_MS) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Next 16 rejects a server-action call whose id the running server does not
@@ -113,6 +222,23 @@ function recoverStaleBundle(email: string): boolean {
   return true;
 }
 
+/**
+ * Whether a session is `email`'s SAML identity. Mirrors the API's
+ * `nonSsoIdentitySql` (apps/api/src/shared/auth-identity.ts): `is_sso_user`, an
+ * explicit `sso_provider_id`/`provider_id`, or an `sso:<id>` provider tag.
+ */
+function isSsoIdentityOf(
+  user: { email?: string | null; is_sso_user?: boolean; app_metadata?: Record<string, unknown> },
+  email: string,
+): boolean {
+  if ((user.email ?? '').trim().toLowerCase() !== email.trim().toLowerCase()) return false;
+  if (user.is_sso_user) return true;
+  const meta = user.app_metadata ?? {};
+  if (meta.sso_provider_id || meta.provider_id) return true;
+  const tags = [meta.provider, ...(Array.isArray(meta.providers) ? meta.providers : [])];
+  return tags.some((tag) => typeof tag === 'string' && tag.startsWith('sso:'));
+}
+
 /* ─── Small shared pieces ──────────────────────────────────────────────── */
 
 function PasswordInput({
@@ -122,6 +248,7 @@ function PasswordInput({
   autoComplete,
   autoFocus,
   invalid,
+  describedBy,
 }: {
   id: string;
   name: string;
@@ -129,6 +256,7 @@ function PasswordInput({
   autoComplete: string;
   autoFocus?: boolean;
   invalid?: boolean;
+  describedBy?: string;
 }) {
   const t = useTranslations('auth.unified');
   const [show, setShow] = useState(false);
@@ -144,6 +272,7 @@ function PasswordInput({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         className="pr-10"
       />
       <button
@@ -165,7 +294,9 @@ function AuthCardForm({
   returnUrl,
   mobileCallbackState,
   mobileSsoEmail,
+  callbackError,
 }: {
+  callbackError: boolean;
   returnUrl: string;
   mobileCallbackState: string | null;
   /** Address the mobile app sent with `sso=1`: SSO starts for it on mount. */
@@ -187,7 +318,7 @@ function AuthCardForm({
   // SSO interstitial state: the IdP redirect URL from the signInWithSSO probe,
   // plus what the existence check said the escape hatches should do.
   const [ssoUrl, setSsoUrl] = useState<string | null>(null);
-  const [ssoFallbackMode, setSsoFallbackMode] = useState<EmailFlowMode>('unknown');
+  const ssoFallbackMode = useRef<EmailFlowMode>('unknown');
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
@@ -197,9 +328,15 @@ function AuthCardForm({
   // Ref, not state: the double-submit guard must hold even for the click that
   // races the re-render (state alone still reads stale `pending`).
   const submitInFlight = useRef(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(callbackError ? tI18nComplete.raw('text301fe0058472') : null);
+  const [code, setCode] = useState('');
+  const emailCodeReturnUrl = useRef<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
+  // The flow mode the send action resolved — which email GoTrue minted: the
+  // signup confirmation for a new address, the sign-in link otherwise. Drives
+  // the link step's copy so it names the mail the mailbox receives (KRTX-2195).
+  const [linkMode, setLinkMode] = useState<EmailFlowMode>('unknown');
   const [resendIn, setResendIn] = useState(0);
   const emailRef = useRef<HTMLInputElement>(null);
 
@@ -211,13 +348,18 @@ function AuthCardForm({
   });
 
   useEffect(() => {
-    if (step !== 'link' || resendIn <= 0) return;
+    // The cooldown ticks on every step, not just the link step: a rate-limited
+    // send cools the button that fired it (the password form's and the SSO
+    // interstitial's "Email me a link instead" — KRTX-1882), so the countdown
+    // must keep running wherever the visitor is.
+    if (resendIn <= 0) return;
     const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
-  }, [step, resendIn]);
+  }, [resendIn]);
 
   // A stale-bundle recovery reloaded the document mid-submit; put the address
-  // back so the retried submit is one click away.
+  // back so the retried submit is one click away. The controlled field
+  // repaints from state.
   useEffect(() => {
     try {
       const stashed = window.sessionStorage.getItem(STALE_BUNDLE_EMAIL_KEY);
@@ -259,11 +401,10 @@ function AuthCardForm({
     setInfo(null);
   };
 
-  // Keep sign-in failures visible after the toast expires. Clearing the
-  // message before each attempt lets the field shake replay.
+  // Sign-in failures render inline under the field, never as a banner or
+  // toast. Clearing the message before each attempt lets the field shake replay.
   const failWith = (msg: string) => {
     setErrorMessage(msg);
-    errorToast(msg);
   };
 
   // The bounded layers answer with submit-auth's English sentinel messages
@@ -288,8 +429,9 @@ function AuthCardForm({
   const goToEntry = () => {
     clearNotices();
     setSentEmail(null);
+    setCode('');
     setSsoUrl(null);
-    setSsoFallbackMode('unknown');
+    ssoFallbackMode.current = 'unknown';
     setStep('entry');
   };
 
@@ -356,6 +498,7 @@ function AuthCardForm({
     submitInFlight.current = true;
     clearNotices();
     setPendingAction(source);
+    if (source === 'link') rememberAuthMethod('magic');
 
     try {
       const formData = buildBaseFormData(target);
@@ -368,17 +511,30 @@ function AuthCardForm({
       // is a fresh fetch rather than a call queued behind the hung one.
       const outcome = await submitAuthForm('/api/auth/send-code', formData);
       if (!outcome.ok) {
+        // A refused send is rate-limited, not broken: re-firing it seconds
+        // later fails the same way (the dogfood run clicked through five
+        // doomed attempts — KRTX-1882). Arm the same cooldown the link step
+        // already shows, so the button that fired this send sits out the
+        // window instead of hammering the refused action.
+        if (outcome.status === 429) setResendIn(RESEND_COOLDOWN_SECONDS);
         failWith(noticeFor(outcome));
         return;
       }
       const result = outcome.result as {
         success?: boolean;
+        redirectTo?: string;
         email?: string;
         message?: string;
+        mode?: EmailFlowMode;
       };
 
       if (result.success) {
+        setCode('');
+        emailCodeReturnUrl.current = result.redirectTo
+          ? sanitizeAuthReturnUrl(result.redirectTo)
+          : resolveNewAccountReturnUrl(returnUrl);
         setSentEmail(result.email || target);
+        setLinkMode(result.mode ?? 'unknown');
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
         // The action's Set-Cookie does not always reach this browser (on the
@@ -448,7 +604,7 @@ function AuthCardForm({
           window.location.href = data.url;
           return 'handled';
         }
-        setSsoFallbackMode(resolved);
+        ssoFallbackMode.current = resolved;
         setSsoUrl(data.url);
         setStep('sso');
         return 'handled';
@@ -507,11 +663,20 @@ function AuthCardForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on the handoff address
   }, [mobileSsoEmail]);
 
-  const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const runEntrySubmit = async () => {
     if (submitInFlight.current) return;
     submitInFlight.current = true;
-    const trimmed = email.trim();
+    // The entry field is controlled (value={email} below): what the visitor
+    // typed before React attached was wiped by the hydration reset — React 19
+    // sets the field back to the rendered value the moment hydration lands —
+    // and the mount effect above has just restored it into state. Read the
+    // DOM value first so a last-keystroke race (onChange scheduled, not yet
+    // committed) never drops a character, and fall back to state — including
+    // environments without a DOM (unit tests).
+    const domValue = emailRef.current?.value;
+    const typed = typeof domValue === 'string' ? domValue : email;
+    if (typed !== email) setEmail(typed);
+    const trimmed = typed.trim();
     if (!trimmed) {
       submitInFlight.current = false;
       return;
@@ -537,30 +702,9 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // Magic link is the default path: Continue emails a link and lands the
-      // user on the link step (the link signs in existing accounts and
-      // registers new ones — no mode needed). One exception: an EXISTING
-      // account opens the password form directly — the link stays one
-      // explicit choice away ("Email me a link instead") and no auth email is
-      // sent until the customer asks for it. (Whether the account's password
-      // is one the visitor still knows is not observable server-side — GoTrue
-      // stores a random hash for passwordless users too — so the existence
-      // check is the signal we act on, and the password screen itself carries
-      // both escape hatches: "Forgot your password?" and the link.) New
-      // accounts and a degraded existence check keep the magic-link default
-      // (the link action re-checks closed/SSO server-side). Password-only
-      // deployments go through the existence check below, so the password
-      // step opens already knowing whether this is a sign-in or a
-      // registration.
-      if (magicLinkEnabled && passwordEnabled) {
-        const { mode: resolved } = await resolveAuthMode(trimmed);
-        if (resolved === 'signin') {
-          setCredMode('signin');
-          setStep('credentials');
-          return;
-        }
-      }
-      if (magicLinkEnabled) {
+      // Keep email-first unless this browser explicitly chose password.
+      // The remembered choice still passes the server's SSO/signup gates.
+      if (magicLinkEnabled && !(passwordEnabled && prefersPassword())) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
         submitInFlight.current = false;
@@ -589,13 +733,71 @@ function AuthCardForm({
     }
   };
 
-  // Escape hatch off the link step for people who'd rather type a password.
+  const handleEntryContinue = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void runEntrySubmit();
+  };
+
+  // An Enter (or a Continue click) pressed while the page was still hydrating
+  // never reached React: the inline pre-hydration guard prevented the native
+  // GET and recorded the intent in sessionStorage. And React 19 resets the
+  // entry field to its defaultValue when it hydrates, so typing that happened
+  // during the gap vanishes from the DOM even without a submit. This effect
+  // runs exactly when React is live, so it is both the guard's disarm point
+  // and the recovery point: restore the guarded typing (the guard stashed
+  // every keystroke — after a mid-gap reload the DOM field starts empty too)
+  // and, when the guard recorded a submit intent, replay it through the real
+  // handler — so the one press the visitor made lands in the app's submit
+  // path. A stale intent is dropped; one recorded while the entry form is not
+  // on screen yet stays for the effect's next run on the step change that
+  // reveals it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the replay must run only on hydration and on the step change that reveals the entry form — it reads the live DOM value through the ref, and re-running on every prefill would double-fire the submit.
+  useEffect(() => {
+    // The guard disarms itself when the app's own effects start running;
+    // environments without DOM events (unit tests) have no guard to disarm.
+    try {
+      window.dispatchEvent(new CustomEvent('kortix:auth-hydrated'));
+    } catch {}
+    try {
+      const stashRaw = window.sessionStorage.getItem(ENTRY_EMAIL_STASH_KEY);
+      const stash = parseEntryStash(stashRaw);
+      const flaggedAt = Number(window.sessionStorage.getItem(ENTRY_SUBMIT_FLAG_KEY));
+      if (!flaggedAt || Date.now() - flaggedAt > ENTRY_SUBMIT_TTL_MS || !stash) {
+        window.sessionStorage.removeItem(ENTRY_SUBMIT_FLAG_KEY);
+        window.sessionStorage.removeItem(ENTRY_EMAIL_STASH_KEY);
+        // Typing without a submit: put back what hydration wiped so the
+        // visitor's next Enter or click submits the address they typed. The
+        // DOM write lands before React's re-render from setEmail, so a
+        // submit in the same task cannot read the wiped field.
+        if (stash && step === 'entry' && emailRef.current && !emailRef.current.value) {
+          emailRef.current.value = stash;
+          setEmail(stash);
+        }
+        return;
+      }
+      // The mobile handoff owns this page's address and its own submit; a
+      // stale intent from an earlier visit must not double-fire under it.
+      if (step !== 'entry' || !emailRef.current || mobileSsoEmail) return;
+      window.sessionStorage.removeItem(ENTRY_SUBMIT_FLAG_KEY);
+      window.sessionStorage.removeItem(ENTRY_EMAIL_STASH_KEY);
+      const domValue = emailRef.current.value;
+      const value = domValue || stash;
+      if (value && !domValue) emailRef.current.value = value;
+      if (value) setEmail(value);
+      if (value.trim()) void runEntrySubmit();
+    } catch {
+      // sessionStorage unavailable — the guard had nothing to hand over.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- replay on hydration and when the entry step appears; the submit path reads refs, not stale state
+  }, [step]);
+  // Password entry from either the entry or link step, without sending email.
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
   // Resolves existence on the way so the step opens in the right mode.
   const goToPassword = async () => {
-    const target = (email || sentEmail || '').trim();
+    if (step === 'entry' && emailRef.current && !emailRef.current.reportValidity()) return;
+    const target = (emailRef.current?.value || email || sentEmail || '').trim();
     if (!target) {
       emailRef.current?.focus();
       return;
@@ -613,6 +815,7 @@ function AuthCardForm({
         failWith(t('errors.ssoRequired'));
         return;
       }
+      rememberAuthMethod('password');
       setCredMode(resolved);
       setStep('credentials');
     } catch (err) {
@@ -704,6 +907,44 @@ function AuthCardForm({
     }
   };
 
+  const handleVerifyCode = async () => {
+    if (submitInFlight.current || !sentEmail || !/^\d{6}$/.test(code)) return;
+    submitInFlight.current = true;
+    clearNotices();
+    setPendingAction('continue');
+    try {
+      const { data, error } = await createBrowserSupabaseClient().auth.verifyOtp({
+        email: sentEmail,
+        token: code,
+        type: 'email',
+      });
+      if (error || !data.session?.access_token || !data.session.refresh_token) {
+        failWith(t('errors.invalidCode'));
+        return;
+      }
+      // The send action resolves the httpOnly bounce owner before sending.
+      // Never reconstruct that policy from the raw query in the browser.
+      await establishSessionAndRedirect({
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        redirectTo: emailCodeReturnUrl.current ?? resolveNewAccountReturnUrl(returnUrl),
+        mobileHandoffUrl: mobileCallbackState
+          ? buildMobileSessionHandoffUrl({
+              origin: window.location.origin,
+              state: mobileCallbackState,
+              accessToken: data.session.access_token,
+              refreshToken: data.session.refresh_token,
+            })
+          : null,
+      });
+    } catch {
+      failWith(t('errors.networkFailed'));
+    } finally {
+      submitInFlight.current = false;
+      setPendingAction(null);
+    }
+  };
+
   const handleResend = async () => {
     if (!sentEmail || pending || resendIn > 0) return;
     await sendMagic(sentEmail, 'resend');
@@ -712,13 +953,15 @@ function AuthCardForm({
   // Password escape off the SSO interstitial. The existence check already ran
   // when the interstitial opened, so this is a synchronous relabel + step move.
   const usePasswordFromSso = () => {
-    if (ssoFallbackMode === 'closed') {
+    const fallbackMode = ssoFallbackMode.current;
+    if (fallbackMode === 'closed') {
       failWith(t('errors.signupsClosed'));
       return;
     }
+    rememberAuthMethod('password');
     clearNotices();
     setCredMode(
-      ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',
+      fallbackMode === 'signin' || fallbackMode === 'signup' ? fallbackMode : 'unknown',
     );
     setStep('credentials');
   };
@@ -753,6 +996,11 @@ function AuthCardForm({
           >
             {t('sso.continue')}
           </Button>
+          {errorMessage && (
+            <div className="mt-3">
+              <FieldError id="sso-error" message={errorMessage} />
+            </div>
+          )}
 
           <div className="text-muted-foreground mt-6 space-y-2 text-sm">
             <p className="flex flex-wrap items-center gap-2">
@@ -761,7 +1009,7 @@ function AuthCardForm({
                   type="button"
                   onClick={usePasswordFromSso}
                   disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {t('usePasswordInstead')}
                 </button>
@@ -775,18 +1023,21 @@ function AuthCardForm({
                 <button
                   type="button"
                   onClick={() => sendMagic(email, 'link')}
-                  disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  disabled={pending || resendIn > 0}
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {pendingAction === 'link' ? t('sending') : t('emailLinkInstead')}
                 </button>
               )}
             </p>
+            {magicLinkEnabled && resendIn > 0 && (
+              <p>{t('link.resendIn', { seconds: resendIn })}</p>
+            )}
             <p>
               <button
                 type="button"
                 onClick={goToEntry}
-                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+                className="hover:text-foreground -my-2 py-2 transition-colors"
               >
                 {t('useDifferentEmail')}
               </button>
@@ -800,7 +1051,12 @@ function AuthCardForm({
   if (step === 'link') {
     return (
       <EmailLinkStep
+        code={code}
+        onCodeChange={setCode}
+        onVerify={() => void handleVerifyCode()}
         sentEmail={sentEmail}
+        mode={linkMode}
+        errorMessage={errorMessage}
         info={info}
         resendIn={resendIn}
         pending={pending}
@@ -876,7 +1132,9 @@ function AuthCardForm({
                 autoComplete={copy.passwordAutoComplete}
                 autoFocus
                 invalid={!!errorMessage}
+                describedBy={errorMessage ? 'password-error' : undefined}
               />
+              {errorMessage && <FieldError id="password-error" message={errorMessage} />}
             </div>
 
             <Button type="submit" size="lg" disabled={pending} className="w-full">
@@ -886,19 +1144,26 @@ function AuthCardForm({
           </form>
 
           {magicLinkEnabled && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              className="mt-3 w-full"
-              onClick={() => sendMagic()}
-              disabled={pending}
-            >
-              {pendingAction === 'link' ? (
-                <Loading className="text-foreground! size-4 shrink-0" />
-              ) : null}
-              {t('emailLinkInstead')}
-            </Button>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                onClick={() => sendMagic()}
+                disabled={pending || resendIn > 0}
+              >
+                {pendingAction === 'link' ? (
+                  <Loading className="text-foreground! size-4 shrink-0" />
+                ) : null}
+                {t('emailLinkInstead')}
+              </Button>
+              {resendIn > 0 && (
+                <p className="text-muted-foreground mt-2 text-center text-sm">
+                  {t('link.resendIn', { seconds: resendIn })}
+                </p>
+              )}
+            </div>
           )}
         </m.div>
       </>
@@ -914,7 +1179,6 @@ function AuthCardForm({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
-        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {googleEnabled && (
           <div className="mb-8">
@@ -927,7 +1191,11 @@ function AuthCardForm({
           </div>
         )}
 
-        <form onSubmit={handleEntryContinue} className="space-y-5">
+        <form onSubmit={handleEntryContinue} className="space-y-5" data-hydrate-guard>
+          <script
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: an inline bootstrap script — it must execute at parse time, before React hydrates; the root layout ships the same class of inline script
+            dangerouslySetInnerHTML={{ __html: ENTRY_HYDRATION_GUARD }}
+          />
           <div className="space-y-3">
             <FieldLabel htmlFor="email">{t('email')}</FieldLabel>
             <Input
@@ -937,6 +1205,13 @@ function AuthCardForm({
               type="email"
               size="md"
               placeholder={t('emailPlaceholder')}
+              // Controlled: React owns the value. The one exception is the
+              // hydration moment — React 19 resets the field to the rendered
+              // value then, discarding pre-hydration typing — and the mount
+              // effect above restores the guard's stash (and replays an
+              // intercepted submit) right after — see ENTRY_HYDRATION_GUARD.
+              // The submit handler reads the DOM value first, so a
+              // last-keystroke race before a commit never drops a character.
               value={email}
               onChange={(e) => {
                 if (errorMessage) setErrorMessage(null);
@@ -946,13 +1221,28 @@ function AuthCardForm({
               autoComplete="email"
               autoFocus
               aria-invalid={!!errorMessage || undefined}
+              aria-describedby={errorMessage ? 'email-error' : undefined}
             />
+            {errorMessage && <FieldError id="email-error" message={errorMessage} />}
           </div>
           <Button type="submit" size="lg" disabled={pending} className="w-full">
             {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
             {t('continue')}
           </Button>
         </form>
+
+        {passwordEnabled && magicLinkEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void goToPassword()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
+            </button>
+          </p>
+        )}
 
         {/* Explicit SSO entry — the discoverable counterpart of the silent
             home-realm discovery Continue already performs. Same dialect as the
@@ -964,7 +1254,7 @@ function AuthCardForm({
               type="button"
               onClick={() => void handleSsoContinue()}
               disabled={pending}
-              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+              className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
             >
               {pendingAction === 'sso' ? t('sso.lookingUp') : t('sso.use')}
             </button>
@@ -1043,7 +1333,6 @@ function AuthContent() {
     window.location.assign(target.toString());
   }, [pkceResumeCode, isLoading, returnUrl]);
 
-
   // `useAuth()`'s `user` can be stale: it's seeded from whatever session the
   // client already had cached, and only gets corrected once something
   // (an ambient refresh timer, another API call) happens to notice it died.
@@ -1056,7 +1345,15 @@ function AuthContent() {
   const sessionExpired = isSessionExpired(session);
 
   const [forceForm, setForceForm] = useState(false);
-  const trustedUser = !!user && !sessionExpired && !forceForm;
+  // The app asked for SSO (`sso=1`), usually after the API refused its session
+  // with `sso_required` (KRTX-1716). Any session here other than this person's
+  // SSO identity is that refused one: handing it back looped the app. It is
+  // signed out on this browser, and SSO starts once that has finished — a
+  // sign-out also clears the PKCE verifier SSO stores.
+  const refusedForMobileSso = !!mobileSsoEmail && !!user && !isSsoIdentityOf(user, mobileSsoEmail);
+  const [mobileSsoCleared, setMobileSsoCleared] = useState(false);
+  const hasClearedForMobileSso = useRef(false);
+  const trustedUser = !!user && !sessionExpired && !forceForm && !refusedForMobileSso;
 
   // A failed sign-out says so, ONCE, on the document it lands on. The
   // sign-out ends on a document load to `/auth`, so `runSignOut` cannot raise
@@ -1091,6 +1388,13 @@ function AuthContent() {
       return;
     }
 
+    if (refusedForMobileSso) {
+      if (hasClearedForMobileSso.current) return;
+      hasClearedForMobileSso.current = true;
+      void supabase.auth.signOut({ scope: 'local' }).finally(() => setMobileSsoCleared(true));
+      return;
+    }
+
     if (!trustedUser) return;
 
     if (mobileCallbackState) {
@@ -1117,6 +1421,7 @@ function AuthContent() {
   }, [
     isLoading,
     mobileCallbackState,
+    refusedForMobileSso,
     returnUrl,
     router,
     session,
@@ -1161,11 +1466,14 @@ function AuthContent() {
   return (
     <AuthFrame footerVariant="continue">
       <AuthCardForm
+        callbackError={searchParams.get('expired') === 'true' || searchParams.has('error') || searchParams.has('error_code')}
         returnUrl={returnUrl}
         mobileCallbackState={mobileCallbackState}
         // Wait for the session check: an existing session goes to the app
         // through the handoff effect above, not through a fresh SSO round trip.
-        mobileSsoEmail={isLoading ? null : mobileSsoEmail}
+        mobileSsoEmail={
+          isLoading || (refusedForMobileSso && !mobileSsoCleared) ? null : mobileSsoEmail
+        }
       />
     </AuthFrame>
   );

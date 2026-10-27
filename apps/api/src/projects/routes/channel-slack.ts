@@ -120,7 +120,7 @@ export function registerChannelSlackRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Same gate as the manual connect route: installing a Slack app is a
       // connector-write capability.
@@ -168,7 +168,7 @@ export function registerChannelSlackRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Connecting a Slack workspace is a connector-write capability — a custom
       // role can withhold it and a scoped agent must hold it (central fold).
@@ -252,7 +252,7 @@ export function registerChannelSlackRoutes(): void {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Disconnecting Slack tears down the connector — same connector-write gate.
       await assertProjectCapability(
@@ -275,6 +275,9 @@ export function registerChannelSlackRoutes(): void {
   // `slack download` once the token is out of the box (KORTIX-206 Phase C2).
   // 403: the file is shared only outside this project's conversations.
   // 413: the file is past the 50 MB download limit.
+  // 429: Slack rate-limited the download and its Retry-After was too long to
+  // hold the request. 502: the files host failed or was unreachable after the
+  // bounded retries — the error names the upstream status and body.
   projectsApp.openapi(
     createRoute({
       method: 'get',
@@ -291,7 +294,7 @@ export function registerChannelSlackRoutes(): void {
           description: 'File bytes',
           content: { 'application/octet-stream': { schema: z.any() } },
         },
-        ...errors(400, 403, 404, 413),
+        ...errors(400, 403, 404, 413, 429, 502),
       },
     }),
     async (c: any) => {
@@ -299,7 +302,7 @@ export function registerChannelSlackRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
-      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 413);
+      if (!result.ok) return c.json({ error: result.error }, result.status);
       c.header('Content-Type', result.contentType);
       return c.body(result.body);
     },

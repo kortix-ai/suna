@@ -47,6 +47,9 @@ const Schema = z.object({
   KORTIX_BRANCH_NAME: z.string().optional(),
   KORTIX_SESSION_FRESH: z.string().optional(),
   KORTIX_SESSION_BRANCH_RESTORE: z.string().optional(),
+  // `1`: /workspace is a Platinum volume the API mounted, the only copy of the
+  // session's files. The workspace provider never clears it.
+  KORTIX_WORKSPACE_VOLUME: z.string().optional(),
   KORTIX_BASE_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
   KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
@@ -61,6 +64,10 @@ const Schema = z.object({
   // the API at session create. Optional: absent or expired → the daemon
   // fetches one from the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: z.string().optional(),
+  // The published config release (base64 JSON: release ID and signed store
+  // URLs), signed by the API at session create. Absent or expired → the
+  // daemon asks the config-release route.
+  KORTIX_CONFIG_RELEASE: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -88,19 +95,6 @@ const Schema = z.object({
   // slower than a full one and defers cost into unpredictable mid-session
   // stalls. Kept for remotes where shallow is unavailable.
   KORTIX_CLONE_FILTER: z.string().default(''),
-  // ── Monitor box ────────────────────────────────────────────────────────
-  // `monitor` selects the daemon's monitor mode: it clones the repo, skips
-  // opencode entirely, and supervises the project's monitor processes instead.
-  // Anything else (including unset) is the normal session daemon.
-  KORTIX_WORKLOAD: z.string().default(''),
-  // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
-  // JSON. The daemon deliberately does not parse the manifest: one parser means
-  // the box can never disagree with the platform about what a monitor is.
-  KORTIX_MONITORS: z.string().default(''),
-  // This boot's epoch, minted by the reconciler and stored on the box row. The
-  // ingest route rejects any batch stamped with another value, so events from a
-  // superseded boot can never fire.
-  KORTIX_MONITOR_BOX_EPOCH: z.string().default(''),
   // ── Harness selection ────────────────────────────────────────────────────
   // Which agent runtime this session boots: `opencode` (the default, and what
   // an unset value means) or `pi`. apps/api sets it from the manifest's
@@ -130,6 +124,8 @@ export type Config = {
   branchName: string | undefined
   sessionFresh: boolean
   sessionBranchRestore?: boolean
+  /** /workspace is a volume (KORTIX_WORKSPACE_VOLUME=1): never cleared. */
+  workspaceVolume?: boolean
   baseSha: string | undefined
   gitDeltaBundleBase64?: string
   gitDeltaParentSha?: string
@@ -142,6 +138,8 @@ export type Config = {
   projectSnapshotPin?: string
   /** Presigned download descriptor for that pin (base64 JSON), when the API signed one at create. */
   projectSnapshotDescriptor?: string
+  /** The published config release (base64 JSON), when the API signed one at create. */
+  configRelease?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -149,12 +147,6 @@ export type Config = {
   gitUserEmail: string
   cloneFilter: string
   cloneDepth: number
-  /** `'monitor'` selects monitor mode; '' (the default) is the session daemon. */
-  workload: string
-  /** Raw `KORTIX_MONITORS` JSON; parsed by monitor-runner.parseMonitorSpecs. */
-  monitorsJson: string
-  /** The box epoch this boot must stamp on every ingest batch. */
-  monitorBoxEpoch: string
 }
 
 /**
@@ -177,6 +169,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
     KORTIX_SESSION_BRANCH_RESTORE: env.KORTIX_SESSION_BRANCH_RESTORE,
+    KORTIX_WORKSPACE_VOLUME: env.KORTIX_WORKSPACE_VOLUME,
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
@@ -185,14 +178,12 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
+    KORTIX_CONFIG_RELEASE: env.KORTIX_CONFIG_RELEASE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
     KORTIX_CLONE_DEPTH: env.KORTIX_CLONE_DEPTH,
-    KORTIX_WORKLOAD: env.KORTIX_WORKLOAD,
-    KORTIX_MONITORS: env.KORTIX_MONITORS,
-    KORTIX_MONITOR_BOX_EPOCH: env.KORTIX_MONITOR_BOX_EPOCH,
     KORTIX_HARNESS: env.KORTIX_HARNESS,
   })
 
@@ -213,6 +204,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     branchName: parsed.KORTIX_BRANCH_NAME,
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',
     sessionBranchRestore: parsed.KORTIX_SESSION_BRANCH_RESTORE === '1',
+    workspaceVolume: parsed.KORTIX_WORKSPACE_VOLUME === '1',
     baseSha: parsed.KORTIX_BASE_SHA,
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
     gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
@@ -221,14 +213,12 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,
+    configRelease: parsed.KORTIX_CONFIG_RELEASE?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
     cloneDepth: parsed.KORTIX_CLONE_DEPTH,
-    workload: parsed.KORTIX_WORKLOAD.trim(),
-    monitorsJson: parsed.KORTIX_MONITORS,
-    monitorBoxEpoch: parsed.KORTIX_MONITOR_BOX_EPOCH.trim(),
   }
 }
 

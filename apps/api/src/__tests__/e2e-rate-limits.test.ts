@@ -11,7 +11,7 @@ mock.module('../config', () => ({
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
     KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN: 1,
-    KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: 1,
+    KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN: 1,
   },
 }));
 
@@ -29,7 +29,7 @@ const {
   createCheckEmailRateLimitMiddleware,
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
-  createPublicSessionShareRateLimitMiddleware,
+  createPublicResponseRateLimitMiddleware,
   createProjectWebhookRateLimitMiddleware,
   resetRateLimiters,
 } = await import('../middleware/rate-limit');
@@ -103,41 +103,39 @@ describe('audited rate limits', () => {
     });
   });
 
-  test('limits anonymous public session-share reads by shareId, not by IP', async () => {
+  test('limits shared-response reads per share, with Retry-After and no audit row', async () => {
     const app = new Hono();
-    app.use('/v1/public/session-shares/:shareId', createPublicSessionShareRateLimitMiddleware());
-    app.use('/v1/public/session-shares/:shareId/messages', createPublicSessionShareRateLimitMiddleware());
-    app.get('/v1/public/session-shares/:shareId', (c) => c.json({ ok: true }));
-    app.get('/v1/public/session-shares/:shareId/messages', (c) => c.json({ ok: true }));
+    app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
+    app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
 
-    const shareA = '11111111-1111-4111-a111-111111111111';
-    const shareB = '22222222-2222-4222-a222-222222222222';
+    const tokenA = 'kps_11111111111141118111111111111111';
+    const tokenB = 'kps_22222222222242228222222222222222';
+    const headers = { 'X-Forwarded-For': '203.0.113.21' };
 
-    const first = await app.request(`/v1/public/session-shares/${shareA}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(first.status).toBe(200);
+    expect((await app.request(`/v1/public/responses/${tokenA}`, { headers })).status).toBe(200);
+    const denied = await app.request(`/v1/public/responses/${tokenA}`, { headers });
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get('Retry-After')).toBe('60');
+    // Another share from the same IP is its own bucket.
+    expect((await app.request(`/v1/public/responses/${tokenB}`, { headers })).status).toBe(200);
+    // A flood must not become a write amplifier, and the token is a bearer secret.
+    expect(auditRows).toEqual([]);
+  });
 
-    const second = await app.request(`/v1/public/session-shares/${shareA}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(second.status).toBe(429);
-
-    // A DIFFERENT share id from the exact same IP is a separate bucket — every
-    // visitor to one shared link is legitimately behind the same limiter, but
-    // one caller shouldn't be able to starve every other share from the same
-    // (possibly shared) IP. Ids must be well-formed uuids: anything else keys
-    // on client IP instead (the anti-OOM fallback).
-    const otherShare = await app.request(`/v1/public/session-shares/${shareB}`, {
-      headers: { 'X-Forwarded-For': '203.0.113.20' },
-    });
-    expect(otherShare.status).toBe(200);
-
-    expect(auditRows.at(-1)).toMatchObject({
-      resourceType: 'public_session_share',
-      resourceId: shareA,
-      metadata: { limiter: 'public_session_share' },
-    });
+  test('the per-share shared-response limit defaults to 3000 per minute', async () => {
+    const { config } = await import('../config');
+    const configured = Reflect.get(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN');
+    Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', undefined);
+    try {
+      const app = new Hono();
+      app.use('/v1/public/responses/:token', createPublicResponseRateLimitMiddleware());
+      app.get('/v1/public/responses/:token', (c) => c.json({ ok: true }));
+      const res = await app.request('/v1/public/responses/kps_33333333333343338333333333333333');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-RateLimit-Limit')).toBe('3000');
+    } finally {
+      Reflect.set(config, 'KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN', configured);
+    }
   });
 
   test('limits public check-email probes by client IP and writes an audit event on hit', async () => {
@@ -199,9 +197,12 @@ describe('audited rate limits', () => {
     expect(otherProject.status).toBe(200);
   });
 
-  test('scales session LLM router policy by tier', () => {
+  test('session LLM router policy: free budget, or paid x12 for any credits-plan key', () => {
     expect(sessionLlmPolicyForTier('free').limit).toBe(1);
-    expect(sessionLlmPolicyForTier('pro').limit).toBe(2);
-    expect(sessionLlmPolicyForTier('tier_12_100').limit).toBe(6);
+    // Every paid plan is x12 the paid budget (2/min here), whatever its key:
+    // legacy keys resolve to `credits`.
+    expect(sessionLlmPolicyForTier('credits').limit).toBe(24);
+    expect(sessionLlmPolicyForTier('pro').limit).toBe(24);
+    expect(sessionLlmPolicyForTier('tier_12_100').limit).toBe(24);
   });
 });

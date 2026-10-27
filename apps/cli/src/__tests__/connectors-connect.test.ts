@@ -39,7 +39,11 @@ beforeEach(() => {
     requests.push({ url: String(input), method: init?.method ?? 'GET', body });
     return new Response(
       JSON.stringify(
-        String(input).endsWith('/connect-requests')
+        String(input).endsWith('/revoke')
+          ? { ok: true }
+          : String(input).endsWith('/connections') && (init?.method ?? 'GET') === 'GET'
+          ? { connections: [{ connection_id: '11111111-1111-4111-8111-111111111111', status: 'revoked' }] }
+          : String(input).endsWith('/connect-requests')
           ? { url: 'https://kortix.test/connect/req_1', app: 'github', expires_at: '2026-10-08T12:00:00Z' }
           : String(input).endsWith('/connect/finalize')
           ? {
@@ -330,6 +334,45 @@ describe('kortix connectors connections', () => {
     });
   });
 
+  // KRTX-2991: `/connections/all` returns identity + status only (no label,
+  // connected_as, is_default or shared_with). The table printed "—", "no"
+  // and "everyone" for every row — the last one false for a private account.
+  test('the --all roster prints the fields the route returns, nothing invented', async () => {
+    globalThis.fetch = (async () =>
+      Response.json({
+        connections: [
+          {
+            connection_id: '11111111-1111-4111-8111-111111111111',
+            connector_alias: 'github',
+            owner_type: 'member',
+            owner_id: '99999999-9999-4999-8999-999999999999',
+            status: 'active',
+          },
+          {
+            connection_id: '22222222-2222-4222-8222-222222222222',
+            connector_alias: 'slack',
+            owner_type: 'project',
+            owner_id: 'project-1',
+            status: 'revoked',
+          },
+        ],
+      })) as unknown as typeof fetch;
+
+    expect(await runConnectors(['connections', 'ls', '--all'])).toBe(0);
+
+    const out = stripAnsi(stdout);
+    const lines = out.split('\n');
+    expect(lines.some((l) => l.includes('OWNER ID'))).toBe(true);
+    for (const absent of ['LABEL', 'CONNECTED AS', 'WHO CAN USE', 'DEFAULT', 'everyone', 'owner only']) {
+      expect(out).not.toContain(absent);
+    }
+    const github = lines.find((l) => l.includes('github')) ?? '';
+    expect(github).toContain('member');
+    expect(github).toContain('99999999-9999-4999-8999-999999999999');
+    expect(github).toContain('active');
+    expect(lines.find((l) => l.includes('slack'))).toContain('revoked');
+  });
+
   test('derives member ownership through the protected --mine route', async () => {
     expect(
       await runConnectors([
@@ -387,6 +430,11 @@ describe('kortix connectors connections', () => {
         url: `https://api.test/v1/projects/project-1/connections/${connectionId}/revoke`,
         method: 'PUT',
         body: {},
+      },
+      {
+        url: 'https://api.test/v1/projects/project-1/connections',
+        method: 'GET',
+        body: undefined,
       },
       {
         url: `https://api.test/v1/projects/project-1/connections/${connectionId}/activate`,

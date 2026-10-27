@@ -72,7 +72,7 @@ export async function bootstrapPersonalAccount(
       try {
         await initializeFreeTierAccount(userId);
       } catch (err) {
-        console.warn(`[accounts] Failed to initialize free tier for ${userId}:`, err);
+        console.warn('[accounts] Failed to initialize free tier for %s:', userId, err);
       }
     }
 
@@ -80,7 +80,7 @@ export async function bootstrapPersonalAccount(
     // that reach resolveAccount with an existing account never get here.
     // Fire-and-forget: Mailtrap being down must never affect signup.
     void syncSignupContactToMailtrap(email).catch((err) =>
-      console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
+      console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
     );
     // Same contract for the sales factory's signup webhook (inert when unset).
     if (email) void sendSignupWebhook({ userId, email, name: profile });

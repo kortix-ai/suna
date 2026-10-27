@@ -1,5 +1,5 @@
 ---
-title: Kortix
+title: Docs
 description: "The open-source AI Operating System: agents, skills, memory and connectors live in a git repo you own, and every session runs on its own cloud computer."
 ---
 
@@ -57,7 +57,7 @@ Each part of an operating system maps to a Kortix feature.
 | Kortix MCP server | Your MCP client starts sessions, reads files and calls connectors as you, through `/v1/mcp` on the API. | [Kortix MCP server](/docs/connect/mcp) |
 | REST API | The HTTP API under `/v1`. Its interactive reference is at [api.kortix.com/v1/docs](https://api.kortix.com/v1/docs). | [REST API](/docs/api) |
 | SDK | `@kortix/sdk` is the typed TypeScript client for the API and each session's runtime. | [SDK](/docs/sdk) |
-| Slack, Teams and email | Mention the bot in Slack or Microsoft Teams with a task, and it starts a session. An email to the agent's inbox starts a session too. Email is experimental. Turn on the **AgentMail Email** flag in **Customize → Settings → Feature flags**. | [Slack, Teams & email](/docs/connect/channels) |
+| Slack, Teams and email | Mention the bot in Slack or Microsoft Teams with a task, and it starts a session. An email to the agent's inbox starts a session too (experimental: the `email_channel` flag). | [Slack, Teams & email](/docs/connect/channels) |
 | Self-hosting | The `kortix self-host` commands install and run the full stack on your own infrastructure. | [Self-hosting](/docs/host) |
 
 ## Security and data
@@ -76,7 +76,7 @@ Each part of an operating system maps to a Kortix feature.
   <Card icon="file-code" title="kortix.yaml reference" href="/docs/project/manifest">Every key of the file that configures a project.</Card>
   <Card icon="play" title="Sessions" href="/docs/work/sessions">Start, steer, stop and share agent runs.</Card>
   <Card icon="plug" title="Connectors" href="/docs/connect/connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
-  <Card icon="app-window" title="Apps" href="/docs/apps">Deploy sites, services and backends from a project. Kortix turns Apps on per project, on request.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/apps">Deploy sites, services and backends from a project. Apps are available in every project.</Card>
   <Card icon="code" title="SDK" href="/docs/sdk">Build on Kortix from TypeScript.</Card>
   <Card icon="server" title="Self-hosting" href="/docs/host">Install and operate Kortix on your own infrastructure.</Card>
 </CardGroup>

@@ -53,6 +53,22 @@ export interface CreatedSession {
   projectId: string;
 }
 
+/**
+ * The options every fixture project creation accepts — one type for
+ * TeamFixture.project, Fixtures.project and the world's createProject impl
+ * (which is the only one with `accountId`; the team always owns its own).
+ */
+export interface ProjectFixtureOptions {
+  name?: string;
+  accountId?: string;
+  seed?: boolean;
+  managedGit?: boolean;
+  allowAllSecrets?: boolean;
+  /** Seeded manifest grants the default agent every connector. */
+  allowAllConnectors?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 /** A team account with member/role provisioning, for IAM + access flows. */
 export interface TeamFixture {
   /** The team account id (OWNER is its owner). */
@@ -62,15 +78,7 @@ export interface TeamFixture {
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
-  project(opts?: {
-    name?: string;
-    seed?: boolean;
-    managedGit?: boolean;
-    allowAllSecrets?: boolean;
-    /** Seeded manifest grants the default agent every connector. */
-    allowAllConnectors?: boolean;
-    metadata?: Record<string, unknown>;
-  }): Promise<CreatedProject>;
+  project(opts?: Omit<ProjectFixtureOptions, 'accountId'>): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
@@ -82,16 +90,7 @@ export interface Fixtures {
    * `seed: true` implies managed Git and seeds the starter so a sandbox can
    * materialize the repository.
    */
-  project(opts?: {
-    name?: string;
-    accountId?: string;
-    seed?: boolean;
-    managedGit?: boolean;
-    allowAllSecrets?: boolean;
-    /** Seeded manifest grants the default agent every connector. */
-    allowAllConnectors?: boolean;
-    metadata?: Record<string, unknown>;
-  }): Promise<CreatedProject>;
+  project(opts?: ProjectFixtureOptions): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
    * this in flows that only READ a project (never mutate its manifest/name/state),
@@ -101,11 +100,9 @@ export interface Fixtures {
   sharedProject(): Promise<CreatedProject>;
   /**
    * A single seeded project for flows that create isolated sessions but do not
-   * mutate the project's base branch or project-wide Git configuration. One per
-   * harness: the `pi` project has the `pi_harness` feature flag on, so every
-   * session in it boots pi.
+   * mutate the project's base branch or project-wide Git configuration.
    */
-  sharedSeededProject(harness?: Harness): Promise<CreatedProject>;
+  sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
@@ -155,19 +152,10 @@ export interface FlowMeta {
   /** Registers as a tracked skip (yellow in the report) instead of running. */
   todo?: string;
   /**
-   * The spec id this flow implements when it is a harness variant of another
-   * flow (`harnessFlow`): `RUN-1-pi` implements `RUN-1`. Absent: the flow id.
+   * The spec id this flow implements when it is a variant of another flow
+   * (`SESS-31-log` implements `SESS-31`). Absent: the flow id.
    */
   specId?: string;
-  /**
-   * Quarantined: registered and reported, never run — the API-flow mirror of
-   * the browser lane's `@quarantine` tag. Only for a flow whose failure is a
-   * NAMED pre-existing defect that cannot be fixed from this tree (edge infra,
-   * a product defect with its own tracked follow-up). The string must say what
-   * the defect is and where it is tracked. `--require-all` accepts it (unlike
-   * `todo`, which is an unimplemented contract and stays a failure).
-   */
-  quarantine?: string;
 }
 
 export interface FlowContext {
@@ -186,5 +174,5 @@ export interface FlowContext {
 
 export type FlowFn = (ctx: FlowContext) => Promise<void>;
 
-/** The session runtime a flow boots. `KORTIX_HARNESS` in kortixd. */
-export type Harness = 'opencode' | 'pi';
+/** The session runtime a flow boots (`KORTIX_HARNESS` in kortixd): pi, since OpenCode was sunset (2026-10-23). */
+export type Harness = 'pi';

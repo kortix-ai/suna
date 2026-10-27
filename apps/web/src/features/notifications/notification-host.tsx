@@ -34,24 +34,22 @@
  * relayed completions still arrive and obey the person's choice.
  */
 
-import { Button } from '@/components/ui/button';
-import { dismissToast, infoToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { softNavigate } from '@/lib/navigation/router-bridge';
 import {
   isTabHidden,
   isViewingSession,
   sendWebNotification,
   setServerPushPreferences,
-} from '@/lib/web-notifications';
-import { projectIdFromPathname } from '@/stores/project-switch-store';
-import { useTurnAttentionStore } from '@/stores/turn-attention-store';
-import { useWebNotificationStore } from '@/stores/web-notification-store';
+  showInAppNotification,
+} from '@kortix/ui/internal/lib/web-notifications';
+import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
+import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import type { InboxNotification } from '@kortix/sdk';
 import { useNotificationInbox, useNotificationPreferences } from '@kortix/sdk/react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { createElement, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   NOTIFICATION_PARAM,
   isNotificationId,
@@ -63,8 +61,8 @@ import {
   rowDestination,
   webNotificationType,
   withoutNotificationParam,
-} from './notification-rows';
-import { useNotificationHostGate } from './use-notification-center';
+} from '@kortix/ui/internal/notifications/notification-rows';
+import { useNotificationHostGate } from '@kortix/ui/internal/hooks/use-notification-center';
 import {
   detectWebPush,
   ensureWebPush,
@@ -73,12 +71,13 @@ import {
   syncWebPush,
   wantsWebPush,
   webPushSupported,
-} from './web-push';
+} from '@kortix/ui/internal/notifications/web-push';
 
 /** The inbox check of a hidden window, the SDK poll's interval. */
 const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
+  room: 'arrival.openConversation',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',
   triggers: 'arrival.openTriggers',
@@ -201,52 +200,35 @@ function NotificationCenterHost({ userId }: { userId: string }) {
         Notification.permission === 'granted' &&
         !hasWebPushSubscription(),
     });
-    const open = (row: InboxNotification) => {
-      markRead.current([row.id]).catch(() => {});
-      softNavigate(withoutNotificationParam(row.url));
-    };
     const label = (row: InboxNotification) => t(ARRIVAL_LABEL[rowDestination(row)]);
     const kindLine = (row: InboxNotification) =>
       row.project_name
         ? t('arrival.inProject', { kind: t(`kind.${row.kind}`), project: row.project_name })
         : t(`kind.${row.kind}`);
 
-    for (const row of plan.toast) {
-      const id = `notification-${row.id}`;
-      infoToast(row.title, {
-        id,
-        description: kindLine(row),
-        button: createElement(
-          Button,
-          {
-            size: 'sm',
-            variant: 'outline',
-            onClick: () => {
-              dismissToast(id);
-              open(row);
-            },
-          },
-          label(row),
-        ),
-      });
-    }
+    // One payload for both paths. The OS notification shows title + body; the
+    // in-app toast leads with the kind line and names the subject in its entity
+    // row (a session, or a trigger with its clock).
+    const payloadOf = (row: InboxNotification) => ({
+      type: webNotificationType(row),
+      title: row.title,
+      body: row.body || kindLine(row),
+      inAppTitle: kindLine(row),
+      entityLabel: row.title,
+      preview: row.body || undefined,
+      tag: notificationTag(row),
+      sessionId: row.session_id ?? undefined,
+      projectId: row.project_id,
+      href: row.session_id ? undefined : withoutNotificationParam(row.url),
+      actionLabel: label(row),
+      onClick: () => {
+        markRead.current([row.id]).catch(() => {});
+      },
+      fromInbox: true,
+    });
+    for (const row of plan.toast) showInAppNotification(payloadOf(row));
     // The OS path toasts and plays the sound itself (`sendWebNotification`).
-    for (const row of plan.os) {
-      sendWebNotification({
-        type: webNotificationType(row),
-        title: row.title,
-        body: row.body || kindLine(row),
-        tag: notificationTag(row),
-        sessionId: row.session_id ?? undefined,
-        projectId: row.project_id,
-        href: row.session_id ? undefined : withoutNotificationParam(row.url),
-        actionLabel: label(row),
-        onClick: () => {
-          markRead.current([row.id]).catch(() => {});
-        },
-        fromInbox: true,
-      });
-    }
+    for (const row of plan.os) sendWebNotification(payloadOf(row));
   }, [rows, t]);
 
   const params = useSearchParams();

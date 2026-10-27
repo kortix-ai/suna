@@ -1,3 +1,4 @@
+import { wellKnownResponse } from '@kortix/shared/well-known';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from './config';
 import { auth, errors, json } from './openapi';
@@ -45,7 +46,7 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes, registerSessionLookupRoutes, sessionsApp } from './projects';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -60,6 +61,7 @@ import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
+import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -70,6 +72,9 @@ export { app };
 
 installHttpMiddleware(app);
 
+for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+  app.get(path, (c) => wellKnownResponse(c.req.path) ?? c.notFound());
+}
 registerSystemRoutes(app);
 registerClientRoutes(app);
 
@@ -77,6 +82,19 @@ registerClientRoutes(app);
 registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
+
+// /<capture bucket>/* — the Capture store's S3 path prefix, only when
+// KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
+registerCaptureStoreProxy(app);
+
+// /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
+// device credential endpoint (device token), the approval reads and the agent
+// tool's /v1/capture/me reads (per-route supabaseAuth). The account-scoped
+// Capture routes live under /v1/accounts/:accountId/capture.
+import { createCaptureRouter } from './capture/device-routes';
+app.route('/v1/capture', createCaptureRouter());
+import { createCliDeviceRouter } from './cli/device-routes';
+app.route('/v1/cli/device', createCliDeviceRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -171,9 +189,7 @@ app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedbac
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 // Same wiring, same reason, for the daemon's runtime-projection push. A route
 // mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
-// every fire-and-forget push, in silence. That is the exact defect
-// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
-// pins this route too.
+// every fire-and-forget push, in silence.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 // A project's sign-in token issuer: public OpenID configuration and key set
@@ -181,8 +197,14 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 // supabaseAuth would otherwise 401 an anonymous verifier.
 import { tokenIssuerApp } from './apps/token-issuer-routes';
 app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
+// App events: authenticated by the App's own token, so also before projectsApp.
+import { appEventsApp, registerAppEventRoutes } from './apps/event-routes';
+registerAppEventRoutes();
+app.route('/v1/projects', appEventsApp); // POST /v1/projects/:projectId/apps/:appId/events
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+registerSessionLookupRoutes();
+app.route('/v1/sessions', sessionsApp); // GET /v1/sessions/:sessionId — one session by id, in any project
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
 // dispatchInProcess takes the assembled app as its second argument (it
@@ -241,7 +263,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 registerEmailWebhookRoutes();
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend — Resend inbound inbox email (Svix-signed)
 registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
@@ -283,14 +305,21 @@ import { approvalLinksApp } from './setup-links/approval-app';
 app.use('/v1/approval-links/*', supabaseAuth);
 app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
 
-// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
-// session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); exposed through the SDK's
-// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
-// no page for it. No auth, no client-side sandbox access — the API reads the
-// sandbox's OpenCode daemon server-side.
-import { publicSessionSharesApp } from './public-session-shares';
-app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+// Shared responses — PUBLIC, token-gated. One assistant response a member
+// published as a stored text snapshot (the authenticated half is
+// /v1/projects/:id/sessions/:sid/turns/:turnId/share). No auth, no sandbox.
+import { publicResponsesApp, registerPublicResponseRoutes } from './public-responses';
+registerPublicResponseRoutes();
+app.route('/v1/public/responses', publicResponsesApp); // GET /v1/public/responses/:token
+
+// Artifact content — PUBLIC, capability-gated. A signed view token (minted by
+// /v1/projects/:id/artifacts*) or a public artifact's id is the capability;
+// every page is served as a CSP sandbox. See artifacts/content-routes.ts.
+import { artifactContentApp, registerArtifactContentRoutes } from './artifacts/content-routes';
+registerArtifactContentRoutes();
+app.route('/v1/artifacts', artifactContentApp); // GET /v1/artifacts/{s/:token,p/:artifactId}/*
+
+
 
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin

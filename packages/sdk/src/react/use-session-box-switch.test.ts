@@ -4,12 +4,13 @@ import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
+import { noteSessionDeleted } from '../core/http/session-stopped';
 import { getCurrentRuntimeSandboxId, setCurrentRuntime } from '../core/session/current-runtime';
 import { useSession } from './opencode';
 
 /**
- * An ephemeral session keeps its `sandbox_id` (the session id) while its box
- * changes: Stop deletes the box, the next message boots a new one. The view must
+ * A session keeps its `sandbox_id` (the session id) while its box changes: a
+ * restored or re-provisioned session boots a new one. The view must
  * follow the new box as soon as `/start` names it. It used to key the switch on
  * `sandbox_id`, so it stayed bound to the deleted box ("Lost contact") until a
  * reload.
@@ -84,5 +85,33 @@ describe('useSession follows the session to a new box', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(getCurrentRuntimeSandboxId()).toBe('sbx_new');
+  });
+});
+
+describe('useSession after its session is deleted', () => {
+  test('stops /start and leaves the box, so nothing reads the deleted session', async () => {
+    queryClient.setQueryData(sessionStartKey(PROJECT_ID, SESSION_ID), readyOn('sbx_live'));
+    const seen: boolean[] = [];
+    function Host() {
+      seen.push(useSession(PROJECT_ID, SESSION_ID, { chatEngine: false, replayStartStash: false }).switched);
+      return null;
+    }
+    mount(createElement(Host));
+    expect(seen.at(-1)).toBe(true);
+    const start = () => queryClient.getQueryCache().find({ queryKey: sessionStartKey(PROJECT_ID, SESSION_ID) });
+    expect(start()?.isDisabled()).toBe(false);
+
+    await act(async () => {
+      noteSessionDeleted('kses_other');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(seen.at(-1)).toBe(true);
+
+    await act(async () => {
+      noteSessionDeleted(SESSION_ID);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(seen.at(-1)).toBe(false);
+    expect(start()?.isDisabled()).toBe(true);
   });
 });

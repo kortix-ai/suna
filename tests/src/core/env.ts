@@ -11,8 +11,8 @@
 export type TargetName = 'local' | 'dev' | 'staging' | 'prod' | 'custom';
 
 export interface Capabilities {
-  /** Real Daytona sandbox provisioning available. */
-  daytona: boolean;
+  /** Real cloud sandbox provisioning available (Platinum, the reference provider). */
+  sandbox: boolean;
   /** Managed GitHub repository provisioning available. */
   managedGit: boolean;
   /** Managed repo-scoped push-token export available for CLI ship flows. */
@@ -84,6 +84,13 @@ export interface Env {
    * staging lacks would fail `--require-all` on the prod release gate.
    */
   mailpitUrl: string | null;
+  /**
+   * The address on the target API's operator allowlist
+   * (`KORTIX_PLATFORM_ADMIN_EMAILS`) that no principal holds. The local
+   * profile sets it; a cloud target has no allowlist. Not a capability, for
+   * the same reason as `mailpitUrl`.
+   */
+  platformAdminEmail: string | null;
 }
 
 function pick(...names: string[]): string | null {
@@ -168,7 +175,7 @@ export function loadEnv(): Env {
   const gatewayUrl = stripTrailingSlash(pick('KE2E_GATEWAY_URL') || defaultGatewayUrl(target));
 
   const capabilities: Capabilities = {
-    daytona: pick('KE2E_CAP_DAYTONA') !== '0',
+    sandbox: pick('KE2E_CAP_SANDBOX') !== '0',
     managedGit: pick('KE2E_CAP_MANAGED_GIT') !== '0',
     managedGitPush: pick('KE2E_CAP_MANAGED_GIT_PUSH') === '1',
     stripe: stripeSecretKey != null,
@@ -200,6 +207,7 @@ export function loadEnv(): Env {
     capabilities,
     testEmailDomain: pick('KE2E_EMAIL_DOMAIN') || 'ke2e.kortix.test',
     mailpitUrl: pick('KE2E_MAILPIT_URL', 'E2E_MAILPIT_URL'),
+    platformAdminEmail: pick('KE2E_PLATFORM_ADMIN_EMAIL')?.toLowerCase() ?? null,
   };
   return cached;
 }

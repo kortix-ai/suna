@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ConnectorSpec } from '../projects/connectors';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 import type { GitBackedProject } from '../projects/git';
 import {
   catalogPersistenceState,
@@ -340,6 +341,22 @@ describe('MCP catalog materialization', () => {
     ).toEqual({ value: 'project-default-token', member: false });
   });
 
+  // `kortix connectors secret <slug> <ID>` stores the binding on the connector
+  // row only. Sync ignored it and sent tools/list with no Authorization (401).
+  test('a bound project secret loads the catalog: after the project account, before any member', async () => {
+    const none = async () => null;
+    const bound = async () => 'bound-secret-token';
+    expect(
+      await resolveMcpCatalogCredential('connector-1', undefined, none, async () => 'member-token', bound),
+    ).toEqual({ value: 'bound-secret-token', member: false });
+    expect(
+      await resolveMcpCatalogCredential('connector-1', undefined, async () => 'project-default-token', none, bound),
+    ).toEqual({ value: 'project-default-token', member: false });
+    expect(
+      await resolveMcpCatalogCredential('connector-1', undefined, none, async () => 'member-token', none),
+    ).toEqual({ value: 'member-token', member: true });
+  });
+
   test('credential-resolution errors retain safe OAuth codes and redact unknown messages', () => {
     expect(
       mcpCatalogCredentialError(new Error('OAuth2 token request failed (401): invalid_client')),
@@ -349,5 +366,11 @@ describe('MCP catalog materialization', () => {
     expect(
       mcpCatalogCredentialError(new Error('secret catalog-access-token failed to decrypt')),
     ).toBe('MCP catalog credential resolution failed');
+  });
+
+  test('an undecryptable stored credential names its connector, never a value', () => {
+    const error = new SecretUndecryptableError('The credential of connector records');
+    expect(mcpCatalogCredentialError(error)).toBe(`MCP catalog credential resolution failed: ${error.message}`);
+    expect(mcpCatalogCredentialError(error)).toContain('connector records cannot be decrypted');
   });
 });

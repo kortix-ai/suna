@@ -478,6 +478,18 @@ describe('qk.accounts — a real cache cannot serve one user another user\'s lis
   });
 });
 
+describe('qk.project.sessionsPaged pinned / archived view (KRTX-2418)', () => {
+  test('each view gets its own cache slot; no view keeps the plain key', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    const archived = qk.project.sessionsPaged('P1', 'visible', { view: 'archived' });
+    expect(pinned).not.toEqual(plain);
+    expect(archived).not.toEqual(pinned);
+    expect(qk.project.sessionsPaged('P1', 'visible', {})).toEqual(plain);
+    expect(pinned.slice(0, plain.length)).toEqual([...plain]);
+  });
+});
+
 describe('qk.project.sessionsPaged label filter', () => {
   test('labels get their own cache slot, independent of label order', () => {
     const plain = qk.project.sessionsPaged('P1');
@@ -485,6 +497,39 @@ describe('qk.project.sessionsPaged label filter', () => {
     expect(labeled).not.toEqual(plain);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: ['eu', 'bug'] })).toEqual(labeled);
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: [] })).toEqual(plain);
+  });
+});
+
+describe('qk.project.sessionsPaged space filter', () => {
+  test('each space gets its own cache slot; no space keeps the plain key', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    expect(inSpace).not.toEqual(plain);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S2' })).not.toEqual(inSpace);
+    expect(qk.project.sessionsPaged('P1', 'visible', { spaceId: undefined })).toEqual(plain);
+    expect(inSpace.slice(0, plain.length)).toEqual([...plain]);
+  });
+});
+
+describe('qk.project.sessionsPaged thread filters', () => {
+  test('createdBy, agent and updatedAfter each get their own slot; unset keeps the space key', () => {
+    const inSpace = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1' });
+    const byPerson = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: 'U1' });
+    const byAgent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', agent: 'researcher' });
+    const recent = qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', updatedAfter: '2026-10-18T00:00:00.000Z' });
+    for (const key of [byPerson, byAgent, recent]) expect(key).not.toEqual(inSpace);
+    expect(new Set([byPerson, byAgent, recent].map((key) => JSON.stringify(key))).size).toBe(3);
+    expect(
+      qk.project.sessionsPaged('P1', 'visible', { spaceId: 'S1', createdBy: undefined, agent: undefined, updatedAfter: undefined }),
+    ).toEqual(inSpace);
+  });
+});
+
+describe('qk.project.spaces', () => {
+  test('nests under the project scope, so a project invalidation reaches it', () => {
+    const scope = qk.project.scope('P1');
+    expect(qk.project.spaces('P1').slice(0, scope.length)).toEqual([...scope]);
+    expect(qk.project.spaces('P1')).not.toEqual([...qk.project.spaces('P2')] as never);
   });
 });
 

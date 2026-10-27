@@ -1,5 +1,6 @@
 // Main exports
-export { createDb, instrumentSql, type Database, type DbHooks } from './client';
+export { createDb, connectRetry, instrumentSql, type Database, type DbHooks } from './client';
+export { requiresTls } from './tls';
 export * as schema from './schema';
 
 // Re-export frequently used schemas and types for convenience
@@ -7,6 +8,7 @@ export {
   // Schema namespace
   kortixSchema,
   usedRefreshTokens,
+  cliDeviceGrants,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,
@@ -37,6 +39,8 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewaySpendDaily,
+  gatewaySpendPendingDays,
   gatewayOtelConfigs,
   // Kortix tables
   projects,
@@ -45,10 +49,13 @@ export {
   projectSnapshotArchives,
   configReleases,
   configReleaseFailures,
+  configReleaseHeads,
+  baseTipChecks,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
   projectSecretTombstones,
+  projectSecretRequests,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
@@ -60,6 +67,7 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerEventSubscriptions,
+  projectTriggerEventPolls,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
   projectMonitorEvents,
@@ -78,12 +86,22 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSessionGroups,
+  projectSpaces,
+  projectSpaceLinks,
+  projectSpaceMembers,
+  projectSpaceKindEnum,
+  projectSpaceVisibilityEnum,
+  // Memory ("Used memory" records)
+  memoryThreadLoads,
+  projectUserMarks,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
   projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
+  projectSessionUserStates,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   providerTransitions,
@@ -99,6 +117,7 @@ export {
   sessionLogMessages,
   sessionLogBlobs,
   sessionContentPurges,
+  sessionLogBackfillState,
   accountSubscriptionEnds,
   sessionRuntimeProjections,
   providerEvents,
@@ -122,6 +141,7 @@ export {
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,
+  enterpriseContracts,
   creditAccounts,
   creditLedger,
   creditUsage,
@@ -141,6 +161,13 @@ export {
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Rooms: agent-to-agent messaging (flag agent_rooms)
+  rooms,
+  roomMessages,
+  roomMembers,
+  sessionIdleWatches,
+  // Artifacts: published HTML pages (flag artifacts)
+  artifacts,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Kortix in Chrome (apps/api/src/chrome)
@@ -263,12 +290,23 @@ export {
   connectorActions,
   connectionPolicies,
   connectorPolicies,
+  connectorPolicySets,
   connectorProjectPolicies,
   connectorProjectSettings,
   connectorSyncFences,
   connectorCalls,
   connectorAttachments,
   promptAttachments,
+  jobQueue,
+  captureDeviceGrants,
+  captureDevices,
+  captureEnrollmentTokens,
+  captureEnrollments,
+  captureWorkspaces,
+  timelineChunks,
+  timelineFrames,
+  timelineActions,
+  timelineAudio,
   promptAttachmentReferences,
   sessionToolApprovals,
   connectorsRelations,
@@ -280,6 +318,7 @@ export {
 export type { AgentGrant, StoredAgentGrant } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord } from './schema/kortix';
+export type { MemoryThreadLoadLayer } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
@@ -336,6 +375,8 @@ export type {
   NewGatewayApiKey,
   GatewayBudget,
   NewGatewayBudget,
+  MemoryThreadLoad,
+  NewMemoryThreadLoad,
 } from './types';
 
 export { userProviderConnections, projectUserProviderConnections, sessionUserProviderConnections } from './schema/kortix';

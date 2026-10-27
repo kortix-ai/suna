@@ -10,6 +10,10 @@
  * the handler now answers first and the write lands behind it — the same rule
  * the audit-pool learning fixed for POST /internal/gateway/trace (KRTX-609).
  *
+ * Restored (KRTX-470 re-verification): the original test added in 58555ae was
+ * deleted by the #10058 testing reset while the fix itself is live on the
+ * trunk. This is the enforcer that keeps the stamp OFF the response path.
+ *
  * The test drives the REAL handler with the write's promise unresolved: the
  * response must settle while the write is still pending, and the write must
  * still be issued with both columns set. `mock.module` is process-global in
@@ -46,7 +50,7 @@ let releaseWrite: (() => void) | null = null;
 let rejectWrite = false;
 
 mock.module('../../shared/db', () => ({
-  hasDatabase: () => true,
+  hasDatabase: true,
   db: {
     update: () => ({
       set: (values: Record<string, unknown>) => {
@@ -66,12 +70,15 @@ mock.module('../../shared/db', () => ({
 const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async () => ({
-    userId: USER_ID,
-    row: projectRow(),
-    projectRole: 'manager',
-    effectiveRole: 'manager',
-  }),
+  loadProjectForUser: async (_context: unknown, projectId: string) => {
+    expect(projectId).toBe(PROJECT_ID);
+    return {
+      userId: USER_ID,
+      row: projectRow(),
+      projectRole: 'manager',
+      effectiveRole: 'manager',
+    };
+  },
   assertAgentSessionWorkspaceAllowsRepository: async () => {},
   assertProjectCapability: async () => {},
   projectCapabilityAllowed: async () => true,
@@ -81,6 +88,10 @@ mock.module('../lib/access', () => ({
 // projects.ts (which attaches the `supabaseAuth` middleware) is deliberately
 // NOT imported, so this request needs no Authorization header.
 const { projectsApp } = await import('../lib/app');
+projectsApp.use('/*', async (c, next) => {
+  if (c.req.header('x-test-project-bound')) c.set('tokenProjectId', PROJECT_ID);
+  await next();
+});
 (await import('./project-detail')).registerProjectDetailRoutes();
 
 function get() {
@@ -135,4 +146,17 @@ describe('GET /:projectId — the last-opened stamp', () => {
     // rejected promise is already handled there.
     releaseWrite?.();
   });
+});
+
+test('current resolves the credential project before authorization and serialization', async () => {
+  const response = await projectsApp.request('/current', { headers: { 'x-test-project-bound': 'yes' } });
+  expect(response.status).toBe(200);
+  expect((await response.json()).project_id).toBe(PROJECT_ID);
+  releaseWrite?.();
+});
+
+test('current without a project binding is not found', async () => {
+  const response = await projectsApp.request('/current');
+  expect(response.status).toBe(404);
+  expect(setCalls).toHaveLength(0);
 });

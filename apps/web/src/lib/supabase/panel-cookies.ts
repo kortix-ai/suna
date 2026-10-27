@@ -13,7 +13,7 @@
  * panel request, and every auth cookie the server sets or deletes uses the same
  * options.
  */
-import { KORTIX_EXTENSION_ID } from '@/features/chrome/extension';
+import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const PANEL_MARKER_COOKIE = 'kortix_panel';
 export const PANEL_AUTH_PATH = '/auth/panel';

@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   deltaTone,
-  formatAxisUsd,
+  formatAxisCredits,
   formatCount,
+  formatCredits,
   formatDay,
   formatDelta,
-  formatUsd,
 } from './analytics-format';
 
 describe('formatDay', () => {
@@ -33,48 +33,62 @@ describe('formatCount', () => {
   });
 });
 
-describe('formatUsd', () => {
-  test('renders exact zero as $0, not $0.0000', () => {
-    expect(formatUsd(0)).toBe('$0');
+describe('formatCredits', () => {
+  test('renders exact zero as 0', () => {
+    expect(formatCredits(0)).toBe('0');
   });
 
-  test('keeps four decimals below a dollar so sub-cent burn is not rounded away', () => {
-    expect(formatUsd(0.02)).toBe('$0.0200');
-    expect(formatUsd(0.4016872)).toBe('$0.4017');
-    // The failure this guards: two decimals would print $0.00 for real money.
-    expect(formatUsd(0.0003)).toBe('$0.0003');
+  test('keeps two decimals below 10 credits so sub-cent burn is not rounded away', () => {
+    expect(formatCredits(0.02)).toBe('2');
+    expect(formatCredits(0.004016872)).toBe('0.4');
+    // The failure this guards: a whole-credit round would print 0 for real spend.
+    expect(formatCredits(0.0003)).toBe('0.03');
+    expect(formatCredits(0.00000003)).toBe('<0.01');
   });
 
-  test('uses two decimals and thousands separators at or above a dollar', () => {
-    expect(formatUsd(1)).toBe('$1');
-    expect(formatUsd(1234.5)).toBe('$1,234.5');
-    expect(formatUsd(1234.567)).toBe('$1,234.57');
+  test('uses whole credits and thousands separators from 10 credits up', () => {
+    expect(formatCredits(1)).toBe('100');
+    expect(formatCredits(1234.5)).toBe('123,450');
+    expect(formatCredits(1234.567)).toBe('123,457');
+  });
+
+  test('formats in the viewer locale when given one', () => {
+    expect(formatCredits(1234.5, 'de-DE')).toBe('123.450');
   });
 });
 
-describe('formatAxisUsd', () => {
-  test('rounds to whole dollars at or above $10 so ticks stay narrow', () => {
-    expect(formatAxisUsd(0)).toBe('$0');
-    expect(formatAxisUsd(10)).toBe('$10');
-    expect(formatAxisUsd(1234.5)).toBe('$1,235');
+describe('formatAxisCredits', () => {
+  test('rounds to whole credits at or above 10 so ticks stay narrow', () => {
+    expect(formatAxisCredits(0)).toBe('0');
+    expect(formatAxisCredits(0.1)).toBe('10');
+    expect(formatAxisCredits(1234.5)).toBe('123,450');
   });
 
-  test('keeps two decimals below $10 so a small-value axis is uniform and honest', () => {
-    // The regression this pins: rounding from $1 up rendered the real recharts
-    // tick set 0 / 0.45 / 0.90 / 1.35 / 1.80 as $0 / $0.45 / $0.90 / $1 / $2 —
-    // two labels off by up to 26%, on an axis that looked non-uniform.
-    expect(formatAxisUsd(0.25)).toBe('$0.25');
-    expect(formatAxisUsd(0.45)).toBe('$0.45');
-    expect(formatAxisUsd(0.9)).toBe('$0.90');
-    expect(formatAxisUsd(1.35)).toBe('$1.35');
-    expect(formatAxisUsd(1.8)).toBe('$1.80');
-    expect(formatAxisUsd(9.99)).toBe('$9.99');
+  test('keeps two decimals below 10 credits so a small-value axis is uniform and honest', () => {
+    // The regression this pins: rounding a small tick set 0 / 0.45 / 0.90 /
+    // 1.35 / 1.80 to whole units rendered labels off by up to 26%.
+    expect(formatAxisCredits(0.0025)).toBe('0.25');
+    expect(formatAxisCredits(0.0045)).toBe('0.45');
+    expect(formatAxisCredits(0.009)).toBe('0.90');
+    expect(formatAxisCredits(0.0135)).toBe('1.35');
+    expect(formatAxisCredits(0.018)).toBe('1.80');
+    expect(formatAxisCredits(0.0999)).toBe('9.99');
   });
 
   test('every tick in a real small-value axis renders a distinct label', () => {
-    const ticks = [0, 0.45, 0.9, 1.35, 1.8].map(formatAxisUsd);
+    const ticks = [0, 0.0045, 0.009, 0.0135, 0.018].map((usd) => formatAxisCredits(usd));
     expect(new Set(ticks).size).toBe(ticks.length);
-    expect(ticks).toEqual(['$0', '$0.45', '$0.90', '$1.35', '$1.80']);
+    expect(ticks).toEqual(['0', '0.45', '0.90', '1.35', '1.80']);
+  });
+
+  test('a USD tick set from the burn chart reads as whole credits', () => {
+    expect([0, 0.45, 0.9, 1.35, 1.8].map((usd) => formatAxisCredits(usd))).toEqual([
+      '0',
+      '45',
+      '90',
+      '135',
+      '180',
+    ]);
   });
 });
 

@@ -10,11 +10,15 @@ import { opencodeSessionInFlight } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
+import { runOnIdleHook } from '../shared/on-idle-hook'
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
 const relayedTurnSignatures = new Set<string>()
 
-/** Test-only: clear the per-turn dedup set between cases. */
+/**
+ * Test-only: clear the per-turn dedup set between cases.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function __resetRelayedTurnSignatures(): void {
   relayedTurnSignatures.clear()
 }
@@ -25,7 +29,10 @@ export function __resetRelayedTurnSignatures(): void {
 // status frames it emits. Per-process, like `relayedTurnSignatures`.
 const turnBeginRelaysInFlight = new Set<string>()
 
-/** Test-only: clear the per-turn begin dedup between cases. */
+/**
+ * Test-only: clear the per-turn begin dedup between cases.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function __resetRelayedTurnBegins(): void {
   resetTurnBeginRelaysForTests()
   turnBeginRelaysInFlight.clear()
@@ -37,6 +44,7 @@ export function __resetRelayedTurnBegins(): void {
  * now, not on the next reconcile tick. While that record is unsettled,
  * `turn_begin` must not run: the ledger has no row for the first message yet,
  * so the API would adopt it under a second token beside the pending one.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function relayTurnBeginAfterInitialAcceptance(input: {
   initialAcceptancePending: () => boolean
@@ -63,6 +71,7 @@ export async function relayTurnBeginAfterInitialAcceptance(input: {
  * status frames and names the newest user message; apps/api adopts it only
  * when no open turn exists and the message was never seen — so relaying for
  * an ordinary delivered prompt is a cheap no-op.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function relayTurnBeginToApi(
   opencodeSessionId: string,
@@ -107,6 +116,16 @@ export async function relayTurnBeginToApi(
   }
 }
 
+let relayRetryStepMs = 1_000
+/**
+ * Tests shorten the turn-end retry backoff (1 s, 2 s, 3 s in the product).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export function setRelayRetryStepMsForTests(ms: number): void {
+  relayRetryStepMs = ms
+}
+
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function relayTurnEndToApi(
   opencodeSessionId: string,
   status: 'idle' | 'error',
@@ -220,7 +239,7 @@ export async function relayTurnEndToApi(
               error = eventError ?? turn.error
               effectiveStatus = error ? 'error' : status
             }
-            await new Promise((r) => setTimeout(r, 1_000 * attempt))
+            await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
           }
           continue
         }
@@ -229,6 +248,7 @@ export async function relayTurnEndToApi(
         // later observation of the same completed turn is a safe no-op to skip.
         if (dedupSig) relayedTurnSignatures.add(dedupSig)
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
+        runOnIdleHook({ status: effectiveStatus, messageId: turn.parentMessageId ?? null })
         return
       }
       const bodyText = await res.text().catch(() => '')
@@ -241,12 +261,15 @@ export async function relayTurnEndToApi(
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
-    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+    if (attempt < 4) await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
   }
   logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId: ctx.sessionId, status: effectiveStatus })
 }
 
-/** Settle an orphan by its own message identity even when OpenCode never stamped completion. */
+/**
+ * Settle an orphan by its own message identity even when OpenCode never stamped completion.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function relayOrphanedTurnEndToApi(opencodeSessionId: string, turnMessageId: string): Promise<void> {
   const dedupSig = `orphan:${opencodeSessionId}:${turnMessageId}`
   if (relayedTurnSignatures.has(dedupSig)) return
@@ -328,6 +351,7 @@ async function readRootTurnState(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Reconcile-on-subscribe backstop for the fast-boot event-loss race. When the
 export async function reconcileFinishedFirstTurn(
   opencode: Pick<Opencode, 'getInternalUrl'>,
@@ -349,6 +373,7 @@ export async function reconcileFinishedFirstTurn(
   await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Is this opencode session the ROOT turn session (not a subagent child)? A root
 export async function isRootOpencodeSession(
   opencodeSessionId: string,

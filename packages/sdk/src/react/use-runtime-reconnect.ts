@@ -460,8 +460,8 @@ export function useRuntimeReconnect() {
             failed = true;
             immediateOffline = outcome.immediateOffline;
             hop = outcome.hop;
-            // The box behind this URL was deleted (an ephemeral stop, then a
-            // wake on a new box). Probing it again cannot succeed; the owner of
+            // The box behind this URL was deleted (a replaced box, then a
+            // wake on a new one). Probing it again cannot succeed; the owner of
             // the session's `/start` re-reads it and moves to the new box.
             if (isRuntimeGoneResponse(result.status, result.body)) noteRuntimeGone(url);
             break;

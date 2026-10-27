@@ -22,7 +22,7 @@ const machine = {
 };
 const volume = {
   volume_id: VOLUME, name: 'data', process_group: 'app', machine_id: MACHINE, size_gb: 10, status: 'ready',
-  attached: true, snapshot_retention_days: 5, created_at: 't',
+  attached: true, snapshot_retention_days: 5, created_at: 't', used_bytes: 1_610_612_736, last_commit_at: '2026-10-14T16:00:00.000Z',
 };
 
 function writeConfig(apiBase: string): string {
@@ -62,6 +62,7 @@ function startServer(): string {
       if (path === `${appBase}/volumes/${VOLUME}/snapshots` && req.method === 'GET') return Response.json({ snapshots: [{ snapshot_id: 'daily-20261010', kind: 'daily', commit_id: 'c1', created_at: 't' }] });
       if (path === `${appBase}/volumes/${VOLUME}/restore`) return Response.json(volume, { status: 202 });
       if (path === `${appBase}/volumes/${VOLUME}/fork`) return Response.json({ ...volume, name: 'copy', attached: false }, { status: 201 });
+      if (path === `${appBase}/volumes/${VOLUME}` && req.method === 'PATCH') return Response.json({ ...volume, ...(body as object) });
       if (path === `${appBase}/volumes/${VOLUME}` && req.method === 'DELETE') return Response.json({ volume_id: VOLUME, status: 'destroying' });
       return Response.json({ error: `unexpected ${req.method} ${path}` }, { status: 404 });
     },
@@ -120,6 +121,13 @@ describe('kortix apps machines | scale | exec | volumes | labels', () => {
     expect(calls.length).toBe(before);
   });
 
+  test('scale count --new-volumes accepts one new, empty volume per machine of a group with a volume', async () => {
+    const config = writeConfig(startServer());
+    const up = await runCli(['apps', 'scale', 'count', 'db', '2', '--new-volumes', '--project', PROJECT], config);
+    expect(up.code).toBe(0);
+    expect(last('PUT')?.body).toEqual({ count: { app: 2 }, new_volumes: true });
+  });
+
   test('exec passes everything after -- verbatim (flags included) and exits with the command\'s code', async () => {
     const config = writeConfig(startServer());
     const ok = await runCli(['apps', 'exec', 'db', '--project', PROJECT, '--', 'ls', '-la', '--json', '/data'], config);
@@ -136,7 +144,11 @@ describe('kortix apps machines | scale | exec | volumes | labels', () => {
   test('volumes: ls, create, snapshots, restore, fork; destroy needs --yes and sends confirm=<name>', async () => {
     const config = writeConfig(startServer());
     const ls = await runCli(['apps', 'volumes', 'ls', 'db', '--project', PROJECT], config);
-    expect(ls.stdout).toMatch(/bbbbbbbb\s+data\s+app\s+10 GB\s+yes\s+ready\s+5 days/);
+    expect(ls.stdout).toMatch(/bbbbbbbb\s+data\s+app\s+1\.5 GB\s+10 GB\s+yes\s+ready\s+5 days/);
+    const retention = await runCli(['apps', 'volumes', 'set', 'db', 'data', '--retention', '30', '--project', PROJECT], config);
+    expect(retention.code).toBe(0);
+    expect(last('PATCH')?.body).toEqual({ snapshot_retention_days: 30 });
+    expect(retention.stdout).toContain('keeps daily snapshots 30 days');
     const created = await runCli(['apps', 'volumes', 'create', 'db', 'uploads', '--size', '20', '--project', PROJECT], config);
     expect(created.code).toBe(0);
     expect(last('POST')?.body).toEqual({ name: 'uploads', size_gb: 20 });

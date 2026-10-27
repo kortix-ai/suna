@@ -136,7 +136,7 @@ export async function getKortixPtyWebSocketUrl(
 // ── Attach-side rules, shared by every host that owns a PTY socket ─────────
 //
 // Both of these ran on raw bytes and raw close frames in three places at once —
-// `apps/web/src/features/session/pty-connection.ts`,
+// `packages/ui/src/terminal/pty-connection.ts`,
 // `apps/cli/src/commands/sessions-shell.ts`, and
 // `apps/tui/src/features/terminal/pty-session.ts` — because the SDK owned the
 // REST half of the terminal and none of the socket half. Three copies of a

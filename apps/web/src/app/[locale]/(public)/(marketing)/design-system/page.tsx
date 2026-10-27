@@ -2,9 +2,8 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import {
-  WarningCircleIcon as AlertCircle,
   WarningIcon as AlertTriangle,
   ArrowRightIcon as ArrowRight,
   TextBIcon as Bold,
@@ -32,14 +31,13 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from '@/components/ui/accordion';
+} from '@kortix/ui/accordion';
 import {
   Alert,
   AlertContent,
   AlertDescription,
-  AlertMedia,
   AlertTitle,
-} from '@/components/ui/alert';
+} from '@kortix/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,8 +48,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+} from '@kortix/ui/alert-dialog';
+import { Badge } from '@kortix/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -59,12 +57,13 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { CheckboxGroup, CheckboxGroupItem } from '@/components/ui/checkbox-group';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { DefinitionList, DefinitionRow } from '@/components/ui/definition-list';
+} from '@kortix/ui/breadcrumb';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { Calendar } from '@kortix/ui/calendar';
+import { CheckboxGroup, CheckboxGroupItem } from '@kortix/ui/checkbox-group';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
+import { DefinitionList, DefinitionRow } from '@kortix/ui/definition-list';
 import {
   Dialog,
   DialogContent,
@@ -73,20 +72,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { type GlyphSelection } from '@/components/ui/glyph-picker';
-import { glyphComponent } from '@/components/ui/glyph-registry';
-import { glyphForeground, glyphTint, glyphTintHover } from '@/components/ui/glyph-tint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { Input } from '@/components/ui/input';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dialog';
+import { EmojiPicker, type EmojiSelection } from '@kortix/ui/emoji-picker';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { type GlyphSelection } from '@kortix/ui/glyph-picker';
+import { glyphComponent } from '@kortix/ui/glyph-registry';
+import { glyphForeground, glyphTint, glyphTintHover } from '@kortix/ui/glyph-tint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { Input } from '@kortix/ui/input';
+import { Kbd, KbdGroup } from '@kortix/ui/kbd';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -96,15 +95,15 @@ import {
   ModalHeader,
   ModalTitle,
   ModalTrigger,
-} from '@/components/ui/modal';
-import { PageSearchBar } from '@/components/ui/page-search-bar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Progress } from '@/components/ui/progress';
-import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Section as BrandSection } from '@/components/ui/section';
-import { Separator } from '@/components/ui/separator';
+} from '@kortix/ui/modal';
+import { PageSearchBar } from '@kortix/ui/page-search-bar';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
+import { Progress } from '@kortix/ui/progress';
+import { ProjectIconPicker } from '@kortix/ui/project-icon-picker';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Section as BrandSection } from '@kortix/ui/section';
+import { Separator } from '@kortix/ui/separator';
 import {
   Sheet,
   SheetContent,
@@ -112,12 +111,12 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Slider } from '@/components/ui/slider';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { DiffStat, StatusBadge, StatusDot } from '@/components/ui/status';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/sheet';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Slider } from '@kortix/ui/slider';
+import { SpotlightCard } from '@kortix/ui/spotlight-card';
+import { DiffStat, StatusBadge, StatusDot } from '@kortix/ui/status';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -125,7 +124,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from '@kortix/ui/table';
 import {
   Tabs,
   TabsContent,
@@ -133,21 +132,21 @@ import {
   TabsListCompact,
   TabsTrigger,
   TabsTriggerCompact,
-} from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+} from '@kortix/ui/tabs';
+import { Textarea } from '@kortix/ui/textarea';
 import {
   errorToast,
   infoToast,
   loadingToast,
   successToast,
   warningToast,
-} from '@/components/ui/toast';
-import { Toggle } from '@/components/ui/toggle';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/toast';
+import { Toggle } from '@kortix/ui/toggle';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@kortix/ui/tooltip';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { DESIGN_SYSTEM_TRANSLATION_KEYS } from '@/i18n/design-system-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { WALLPAPER_DOWNLOADS, type WallpaperDownload } from '@/lib/wallpaper-downloads';
 import {
   PlugsConnectedIcon as Cable,
@@ -170,7 +169,7 @@ import {
   TypeRow,
 } from './live-tokens';
 import { DropdownDemos, SelectDemos } from './menu-demos';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 // Filtered once at module load — the catalog is a static constant, so the
 // per-render filter().map() chain in the JSX collapses to a single map.
@@ -494,6 +493,7 @@ const TOC_SECTIONS = [
     label: 'Components',
     children: [
       { id: 'comp-button', label: 'Button' },
+      { id: 'comp-button-group', label: 'Button Group' },
       { id: 'comp-badge', label: 'Badge' },
       { id: 'comp-card', label: 'Card' },
       { id: 'comp-input', label: 'Input' },
@@ -1707,7 +1707,7 @@ export default function BrandPage() {
                           <Button size="sm">
                             {tI18nHardcoded.raw('i18nComplete.text5263293fc202')}
                           </Button>
-                          <Button size="icon">
+                          <Button size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                             <Settings className="size-4" />
                           </Button>
                         </div>
@@ -1723,10 +1723,10 @@ export default function BrandPage() {
                           <Button size="xs" variant="muted">
                             {tI18nHardcoded.raw('i18nComplete.text35542ace70ce')}
                           </Button>
-                          <Button size="icon-sm" variant="ghost">
+                          <Button size="icon-sm" variant="ghost" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                             <Settings className="size-3.5" />
                           </Button>
-                          <Button size="icon-xs" variant="ghost">
+                          <Button size="icon-xs" variant="ghost" aria-label={tI18nHardcoded.raw('i18nComplete.text7d9eb7acb13e')}>
                             <X className="size-3" />
                           </Button>
                         </div>
@@ -1779,6 +1779,94 @@ export default function BrandPage() {
                             <Loading className="size-4" />{' '}
                             {tI18nHardcoded.raw('i18nComplete.textdc380888c4e2')}
                           </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </DemoContainer>
+                </div>
+
+                <div id="comp-button-group" className="mb-12">
+                  <ComponentLabel>{tI18nHardcoded.raw('i18nComplete.text7193a9579bbc')}</ComponentLabel>
+                  <ComponentDesc>
+                    {tI18nHardcoded.raw('i18nComplete.text07b547d6911c')}{' '}
+                    <code className="bg-muted rounded-sm px-1 font-mono text-xs">
+                      orientation=&quot;vertical&quot;
+                    </code>
+                    .
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.text0abba441f16e')}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'muted', 'ghost', 'outline', 'default'] as const).map(
+                            (variant) => (
+                              <ButtonGroup key={variant}>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.text8f2364e11b8b')}
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.texte78041ab51a8')}
+                                </Button>
+                                <Button variant={variant} size="sm">
+                                  {tI18nHardcoded.raw('i18nComplete.text310ca503ef36')}
+                                </Button>
+                              </ButtonGroup>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.texteae96e02bbc4')}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant}>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}>
+                                <Search />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte21f935f11d7')}>
+                                <Copy />
+                              </Button>
+                              <Button variant={variant} size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}>
+                                <Trash2 />
+                              </Button>
+                            </ButtonGroup>
+                          ))}
+                          <ButtonGroup>
+                            <Button variant="secondary" size="sm">
+                              <Plus /> {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
+                            </Button>
+                            <Button variant="secondary" size="icon-sm" aria-label={tI18nHardcoded.raw('i18nComplete.textbc79cdffbaa8')}>
+                              <ChevronsUpDown />
+                            </Button>
+                          </ButtonGroup>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                          {tI18nHardcoded.raw('i18nComplete.text727cd3a64d79')}
+                        </p>
+                        <div className="flex flex-wrap items-start gap-6">
+                          {(['secondary', 'ghost', 'outline'] as const).map((variant) => (
+                            <ButtonGroup key={variant} orientation="vertical" className="w-60">
+                              <Button variant={variant} className="justify-start">
+                                <Mail /> {tI18nHardcoded.raw('i18nComplete.textcecd0c56d299')}
+                                <Badge variant="new" className="ml-auto">
+                                  {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
+                                </Badge>
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Users /> {tI18nHardcoded.raw('i18nComplete.texte85663498c96')}
+                              </Button>
+                              <Button variant={variant} className="justify-start">
+                                <Settings /> {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
+                              </Button>
+                            </ButtonGroup>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -2554,7 +2642,7 @@ export default function BrandPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline" size="icon">
+                            <Button variant="outline" size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.textb79cac926e0b')}>
                               <HelpCircle className="size-4" />
                             </Button>
                           </TooltipTrigger>
@@ -2570,7 +2658,7 @@ export default function BrandPage() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline" size="icon">
+                            <Button variant="outline" size="icon" aria-label={tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}>
                               <Settings className="size-4" />
                             </Button>
                           </TooltipTrigger>
@@ -2661,9 +2749,6 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-3">
                       <Alert>
-                        <AlertMedia>
-                          <Info className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tHardcodedUi.raw(
@@ -2678,9 +2763,6 @@ export default function BrandPage() {
                         </AlertContent>
                       </Alert>
                       <Alert variant="destructive">
-                        <AlertMedia>
-                          <AlertCircle className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tI18nHardcoded.raw('i18nComplete.textc3e58a73609d')}
@@ -2693,9 +2775,6 @@ export default function BrandPage() {
                         </AlertContent>
                       </Alert>
                       <Alert variant="warning">
-                        <AlertMedia>
-                          <TriangleAlert className="size-4" />
-                        </AlertMedia>
                         <AlertContent>
                           <AlertTitle>
                             {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
@@ -4044,7 +4123,6 @@ export default function BrandPage() {
                   <div>
                     <p className="text-muted-foreground mb-4 text-xs font-medium">
                       {tI18nHardcoded.raw('i18nComplete.text24b6bef25e6e')}
-                      {"'"}t
                     </p>
                     {[
                       tI18nHardcoded.raw('i18nComplete.textb2a0575f2c15'),

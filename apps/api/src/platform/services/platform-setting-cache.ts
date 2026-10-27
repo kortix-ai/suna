@@ -19,12 +19,6 @@ export interface CachedPlatformSetting<T> {
   read(): T;
   /** Force a fresh database read into the cache. Never throws. */
   refresh(): Promise<void>;
-  /**
-   * Async read straight from the database, for an answer that must not rest on
-   * this instance's stale or cold cache (another instance may have just written
-   * the row). Also refreshes the cache. Never throws.
-   */
-  readFresh(): Promise<T>;
   /** Overwrite the row, then await a cache refresh. */
   write(value: unknown): Promise<void>;
   /** Delete the row, then await a cache refresh. */
@@ -109,7 +103,6 @@ export function createCachedPlatformSetting<T>(
       return cache ? cache.value : parse(undefined);
     },
     refresh,
-    readFresh: load,
     write: (value: unknown) => persist(value),
     clear: () => persist(null),
     __setForTests(value: unknown): void {

@@ -4,8 +4,16 @@ import { contextToolTrigger } from '../turns/tools/tool-meta';
 import { partOutcome } from '../turns/tools/tool-outcome';
 import { getChildSessionId, shouldShowToolPart } from '../turns/parts';
 import { toToolView } from '../turns/classify';
-import { toolCallBlock, toolCallMetadata } from './tool-call';
-import type { ToolCallBlock } from './types';
+import { getToolPrimaryArg } from '../turns/tools/tool-meta';
+import { isEmptyShowPart } from '../turns/segments/session-activity-groups';
+import { createArtifactKind, familyForTool, narrateFailedStep, narrateStep } from '../turns/segments/narration';
+import { groupSteps } from '../turns/segments/group-steps';
+import { stepLabel } from '../turns/segments/step-label';
+import { subAgentCalls } from './turns';
+import { toolCallBlock, toolCallError, toolCallMetadata, toolCallRawOutput, toolCallStatus, toolPartOf } from './tool-call';
+import type { SessionLog, SessionLogThread, ToolCallBlock } from './types';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fromV1, type V1Row } from './v1';
 
 // Synthetic tool parts: every id and value is invented.
@@ -77,6 +85,15 @@ describe('toolCallMetadata: the full state.metadata of the v1 part', () => {
     const native: ToolCallBlock = { type: 'tool_call', id: 'b1', call_id: 'c1', name: 'bash', kind: 'shell', input: { command: 'ls' }, status: 'complete', result: { content: [{ type: 'text', text: 'a' }], is_error: false, exit_code: 2 } };
     expect(toolCallMetadata(native)).toEqual({ exit: 2 });
   });
+
+  test('a native record: the details its adapter keeps (pi: ext.pi.data.details; else result.details) are the metadata', () => {
+    const base: ToolCallBlock = { type: 'tool_call', id: 'b2', call_id: 'c2', name: 'task', kind: 'task', input: { prompt: 'p' }, status: 'complete', result: { content: [{ type: 'text', text: 'done' }], is_error: false } };
+    const pi: ToolCallBlock = { ...base, ext: { pi: { version: '1.0.3', native_id: 'r2', data: { details: { sessionId: CHILD } } } } };
+    expect(toolCallMetadata(pi)).toEqual({ sessionId: CHILD });
+    expect(getChildSessionId(pi)).toBe(CHILD);
+    const neutral: ToolCallBlock = { ...base, id: 'b3', result: { ...base.result!, details: { answers: [['A']] } } };
+    expect(toolCallMetadata(neutral)).toEqual({ answers: [['A']] });
+  });
 });
 
 describe('the part helpers read a block the way they read its part', () => {
@@ -102,5 +119,111 @@ describe('the part helpers read a block the way they read its part', () => {
   test('shouldShowToolPart', () => {
     expect(shouldShowToolPart(toolCallBlock(PARTS.todoread!))).toBe(false);
     for (const p of each) expect(shouldShowToolPart(toolCallBlock(p))).toBe(shouldShowToolPart(p));
+  });
+});
+
+describe('the step helpers read blocks the way they read their parts', () => {
+  const extra = {
+    shown: part('prt_show', 'show', { status: 'completed', input: { path: '/w/report.pdf', title: 'Report' }, output: 'ok', title: '', metadata: {}, time: { start: T0 + 130, end: T0 + 131 } }),
+    emptyShow: part('prt_show0', 'show', { status: 'completed', input: {}, output: 'Error: path or url required', title: '', metadata: {}, time: { start: T0 + 140, end: T0 + 141 } }),
+    image: part('prt_img', 'image_gen', { status: 'completed', input: { action: 'generate', prompt: 'a cat' }, output: '{"path":"/w/cat.png"}', title: '', metadata: {}, time: { start: T0 + 150, end: T0 + 160 } }),
+    bash2: part('prt_bash2', 'bash', { status: 'completed', input: { command: 'pwd' }, output: '/w', title: 'pwd', metadata: { exit: 0 }, time: { start: T0 + 170, end: T0 + 175 } }),
+  };
+  const each = [...Object.values(PARTS), ...Object.values(extra)];
+
+  test('getToolPrimaryArg, isEmptyShowPart, createArtifactKind', () => {
+    for (const p of each) {
+      const call = toolCallBlock(p);
+      expect(getToolPrimaryArg(call)).toBe(getToolPrimaryArg(p));
+      expect(isEmptyShowPart(call)).toBe(isEmptyShowPart(p));
+      expect(createArtifactKind(call)).toBe(createArtifactKind(p));
+    }
+    expect(isEmptyShowPart(toolCallBlock(extra.emptyShow))).toBe(true);
+    expect(createArtifactKind(toolCallBlock(extra.image))).toBe('image');
+  });
+
+  test('stepLabel', () => {
+    for (const p of each) expect(stepLabel(toolCallBlock(p))).toEqual(stepLabel(p));
+  });
+
+  test('narrateStep and narrateFailedStep', () => {
+    for (const p of each) {
+      const family = familyForTool(p.tool);
+      if (family === 'hidden') continue;
+      expect(narrateStep(family, [toolCallBlock(p)])).toBe(narrateStep(family, [p]));
+      expect(narrateFailedStep(family, [toolCallBlock(p)])).toBe(narrateFailedStep(family, [p]));
+    }
+  });
+
+  test('groupSteps: the same steps, holding the blocks it was given', () => {
+    const calls = each.map((p) => toolCallBlock(p));
+    const fromParts = groupSteps(each);
+    const fromCalls = groupSteps(calls);
+    expect(fromCalls.map(({ parts: _p, ...s }) => s)).toEqual(fromParts.map(({ parts: _p, ...s }) => s));
+    expect(fromCalls.map((s) => s.parts.map((c) => c.id))).toEqual(fromParts.map((s) => s.parts.map((p) => p.id)));
+    for (const step of fromCalls) for (const c of step.parts) expect(calls).toContain(c);
+  });
+});
+
+describe('a call the closure rule closed, reopened, reads as its stored v1 part', () => {
+  // The host rule (apps/web call-liveness.ts): a closure-rule block is open again,
+  // `running` when it started, else `pending`, with no result. Its residual was taken
+  // against the closed block, and still rebuilds the stored part.
+  const rest = atRest();
+  for (const name of ['task', 'pending'] as const) {
+    test(name, () => {
+      const stored = PARTS[name]!;
+      const closed = rest.get(stored.id)!;
+      expect(closed).toMatchObject({ status: 'error', result: { synthetic: true, error: { code: 'interrupted' } } });
+      const { result: _result, ...open } = closed;
+      const reopened: ToolCallBlock = { ...open, status: closed.started_at ? 'running' : 'pending' };
+      expect(reopened.status).toBe(stored.state.status as ToolCallBlock['status']);
+      expect(toolCallMetadata(reopened)).toEqual(toolCallMetadata(toolCallBlock(stored)));
+      expect(toToolView(reopened)).toEqual(toToolView(stored));
+      expect(getChildSessionId(reopened)).toBe(getChildSessionId(stored));
+    });
+  }
+});
+
+describe('block readers a host draws a call with: toolCallStatus, toolCallRawOutput, toolCallError, subAgentCalls', () => {
+  const blocks = atRest();
+  const live = (p: ToolPart) => toolCallBlock(p);
+
+  test('toolCallStatus names the status in the words a renderer compares', () => {
+    expect(toolCallStatus(blocks.get('prt_bash')!)).toBe('completed');
+    expect(toolCallStatus(live(PARTS.task!))).toBe('running');
+    expect(toolCallStatus(live(PARTS.pending!))).toBe('pending');
+    expect(toolCallStatus(blocks.get('prt_err')!)).toBe('error');
+  });
+
+  test('toolCallRawOutput is a completed call\'s text as the tool returned it, one string per call object', () => {
+    const bash = blocks.get('prt_bash')!;
+    expect(toolCallRawOutput(bash)).toBe('a\nb\n');
+    expect(toolCallRawOutput(bash)).toBe(toolCallRawOutput(bash));
+    expect(toolCallRawOutput(live(PARTS.task!))).toBe('');
+    expect(toolCallRawOutput(blocks.get('prt_err')!)).toBe('');
+  });
+
+  test('toolCallError is a failed call\'s error: the semantic error, else the result text, as `toV1` gives `state.error`', () => {
+    expect(toolCallError(blocks.get('prt_err')!)).toBe('File not found');
+    expect(toolCallError(blocks.get('prt_bash')!)).toBeUndefined();
+    // Native exports close a failed call with `is_error` and its text, no `error`: the body is never empty.
+    for (const [name, text] of [['claude-code', 'Exit code 1'], ['golden', 'exit code 1']] as const) {
+      const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, `../../../../api-contract/src/__tests__/fixtures/session-log/${name}.v2.json`), 'utf8'));
+      const failed = log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).find((b): b is ToolCallBlock => b.type === 'tool_call' && b.status === 'error')!;
+      expect(failed.result?.error).toBeUndefined();
+      expect(toolCallError(failed)).toBe(text);
+      expect(toolCallError(failed)).toBe((toolPartOf(failed).state as { error?: string }).error);
+    }
+  });
+
+  test('subAgentCalls lists the shown calls of a thread\'s replies, in order; the same array per thread', () => {
+    const reply = { role: 'assistant', blocks: [...blocks.values()] };
+    const thread = { thread_id: CHILD, messages: [{ role: 'user', blocks: [blocks.get('prt_bash')!] }, reply] } as unknown as SessionLogThread;
+    const calls = subAgentCalls(thread);
+    expect(calls.map((c) => c.id)).toEqual([...blocks.values()].filter((b) => shouldShowToolPart(b)).map((b) => b.id));
+    expect(calls.map((c) => c.id)).not.toContain('prt_todo');
+    expect(subAgentCalls(thread)).toBe(calls);
+    expect(subAgentCalls(null)).toEqual([]);
   });
 });

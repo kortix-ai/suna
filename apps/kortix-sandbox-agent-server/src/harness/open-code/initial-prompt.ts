@@ -1,14 +1,8 @@
 import { relayTurnAbandoned, relayTurnAccepted } from '../shared/turn-relay'
-import { hasKortixLlmGateway, type Opencode } from './lifecycle'
+import type { Opencode } from './lifecycle'
 import { observeOpencodeDelivery } from './opencode-turn-state'
 
-const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
-  'deepseek-v4-flash-free',
-  'mimo-v2.5-free',
-  'nemotron-3-ultra-free',
-  'north-mini-code-free',
-])
-
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
   workspace: string,
@@ -19,6 +13,7 @@ export async function createInitialOpenCodeSession(
   return { id: session.id }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function deliverInitialOpenCodePrompt(
   opencode: Opencode,
   sessionId: string,
@@ -39,6 +34,7 @@ export async function deliverInitialOpenCodePrompt(
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
@@ -46,6 +42,7 @@ export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unk
  * before boot calls it abandoned. Matches the control plane's delivery grace
  * (`KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES`, 15 min): the `delivering`
  * record expires on that grace anyway, so a longer wait buys nothing.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
 
@@ -56,6 +53,7 @@ export const INITIAL_TURN_PICKUP_GRACE_MS = 15 * 60_000
  * A restart can reuse a root that already contains an older prompt. Root-level
  * `hasMessages` evidence is therefore insufficient: it would promote a new
  * token for work that the daemon deliberately did not rerun.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function reconcileInitialTurnAcceptanceToApi(
   opencodeBaseUrl: string,
@@ -114,15 +112,23 @@ export async function reconcileInitialTurnAcceptanceToApi(
  * own impatience. The 20s outer deadline is unchanged and still bounds the whole
  * loop.
  */
-const SESSION_CREATE_ATTEMPT_TIMEOUT_MS = 10_000
+let sessionCreateAttemptTimeoutMs = 10_000
+/**
+ * Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export function setSessionCreateAttemptTimeoutMsForTests(ms: number): void {
+  sessionCreateAttemptTimeoutMs = ms
+}
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
   const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
   const deadline = Date.now() + 20_000
   let lastError = 'opencode session create timed out'
   while (Date.now() < deadline) {
     // Never let one attempt outlive the outer deadline.
-    const attemptMs = Math.max(500, Math.min(SESSION_CREATE_ATTEMPT_TIMEOUT_MS, deadline - Date.now()))
+    const attemptMs = Math.max(500, Math.min(sessionCreateAttemptTimeoutMs, deadline - Date.now()))
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -147,29 +153,25 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   throw new Error(lastError)
 }
 
-
-
+/**
+ * The session model from KORTIX_OPENCODE_MODEL on the one OpenCode provider,
+ * `kortix`. The model id is the complete gateway wire ref (`codex/gpt-5.6-sol`),
+ * never split into an OpenCode provider and model.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
-  if (!raw) return undefined
-  if (hasKortixLlmGateway(process.env)) {
-    const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-    return modelID ? { providerID: 'kortix', modelID } : undefined
-  }
-  if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
-  // A pin stored while the gateway was ON can survive a live toggle to native
-  const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-  const slash = ref.indexOf('/')
-  if (slash <= 0 || slash === ref.length - 1) return undefined
-  const providerID = ref.slice(0, slash)
-  const modelID = ref.slice(slash + 1)
-  return { providerID, modelID }
+  const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+  return modelID ? { providerID: 'kortix', modelID } : undefined
 }
 
-/** Build the first-turn request from the session-bound runtime environment. */
-export function buildInitialPromptBody(prompt: string, claimedMessageId?: string): {
+/**
+ * Build the first-turn request from the session-bound runtime environment.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
+export function buildInitialPromptBody(prompt: string, claimedMessageId?: string, context?: string): {
   messageID?: string
-  parts: Array<{ type: 'text'; text: string }>
+  parts: Array<{ type: 'text'; text: string; synthetic?: boolean }>
   model?: { providerID: string; modelID: string }
   agent?: string
 } {
@@ -179,7 +181,14 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
   const messageID = claimedMessageId
   return {
     ...(messageID ? { messageID } : {}),
-    parts: [{ type: 'text', text: prompt }],
+    parts: [
+      { type: 'text', text: prompt },
+      // Harness context: a synthetic part the transcript never renders (see
+      // the create contract's `initial_context`).
+      // `as const` is load-bearing: contextual typing does not flow through the
+      // conditional spread, and without it `type` widens to `string` (TS2322).
+      ...(context ? [{ type: 'text', text: context, synthetic: true } as const] : []),
+    ],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),
   }

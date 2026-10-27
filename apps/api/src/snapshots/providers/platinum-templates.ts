@@ -1,7 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from '../../shared/platinum';
 import type { BuildLogTap } from './index';
-import { shortLivedObservation } from '../observation-cache';
 import { classifyPlatinumPollError, isTerminalPollError, retryAfterMsFromError } from './platinum-poll-classify';
 import { exponentialBackoffMs } from '../../shared/backoff';
 
@@ -248,11 +247,6 @@ export async function fetchAllTemplates(
   const { all } = await paginateTemplates(() => undefined, client);
   return all;
 }
-
-export const observeTemplates = shortLivedObservation(
-  () => fetchAllTemplates(),
-  process.env.NODE_ENV === 'test' ? 0 : 2_000,
-);
 
 /**
  * Resolve a template by NAME across the FULL paginated list, early-exiting the

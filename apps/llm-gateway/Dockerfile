@@ -19,7 +19,10 @@
 # next gateway change and then blocked that deploy. If you add a @kortix/* dep to
 # the gateway or any package it pulls in, add its COPY to BOTH stages here.
 
-ARG BUN_VERSION=1.2
+# The gateway runs on the same Bun as every test lane (`bun-version` in
+# .github/workflows/tests.yml). tests/unit/image-bun.test.ts fails when the two
+# differ.
+ARG BUN_VERSION=1.4.3
 
 # ---- Deps Stage ----
 # A MINIMAL synthetic workspace (only the gateway + its two packages) so we don't
@@ -51,15 +54,18 @@ ARG KORTIX_COMMIT=unknown
 ENV KORTIX_VERSION=${KORTIX_VERSION}
 ENV KORTIX_COMMIT=${KORTIX_COMMIT}
 
-# Hoisted deps + the workspace package sources the app imports as
-# @kortix/llm-gateway (→ @kortix/shared). package.json "main"
-# points at src, so bun runs the TypeScript directly — no separate build step.
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/packages/shared ./packages/shared
-COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
-COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
-COPY --from=deps /app/apps/llm-gateway ./apps/llm-gateway
+# The whole install in ONE layer: node_modules (the bun store) + the workspace
+# sources whose node_modules links point into it. package.json "main" points
+# at src, so bun runs the TypeScript directly — no separate build step.
+# Separate COPY layers let the build cache reuse a stale store next to fresh
+# links: 2026-10-26, `hono` linked to 4.13.14 while a cached store from
+# 2026-10-23 held 4.13.13, and every gateway task exited with ENOENT.
+COPY --from=deps /app ./
+
+# Fail the build when any direct dependency link dangles in the final image.
+RUN for dir in apps/llm-gateway packages/llm-gateway; do \
+      (cd "$dir" && bun -e "for (const d of Object.keys(require('./package.json').dependencies ?? {})) require('fs').realpathSync(Bun.resolveSync(d, process.cwd()))") || exit 1; \
+    done
 
 WORKDIR /app/apps/llm-gateway
 

@@ -1,34 +1,6 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-/**
- * The Sessions tab — what a running session is allowed to do to get your
- * attention: browser notifications, the per-kind choices, and sounds.
- *
- * KRTX-1742, behind the `notification_center` flag (`useNotificationCenter`):
- * - Flag off (the default): the tab as before the notification center. Four
- *   per-browser kind switches (task completions, errors, questions,
- *   permission requests) under "Enable notifications".
- * - Flag on: "Notification types" is the person's server-side record
- *   (`useNotificationPreferences`): one Push and one Email switch per kind,
- *   the same choices the phone and Web Push read. The four per-browser
- *   switches are hidden; they still gate the projects with the flag off.
- *   "Enable notifications" stays per browser: it turns on Web Push here and
- *   the in-page OS notifications.
- *
- * Split out of Preferences on 2026-09-02 (Jay: "use a section for the
- * sessions"). Both settings answer one question — "how does a session tell me
- * it needs me?" — and they had been two of seven headings on a pane that also
- * held theme, wallpaper, shortcuts and language.
- *
- * `NotificationToggle` is reused from
- * `features/accounts/settings/notifications-tab.tsx`. Every store call is a
- * live import (`useSoundStore`, `useWebNotificationStore`), not a copy.
- *
- * `SessionsTabView` is the pure, props-only half — it renders under
- * `renderToStaticMarkup` with no store (see `sessions-tab.test.tsx`).
- * `SessionsTab` is the container; it only mounts while this tab is active.
- */
 
 import {
   BellIcon as BellSolid,
@@ -42,29 +14,29 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
-import Hint from '@/components/ui/hint';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldContent, FieldDescription, FieldTitle } from '@kortix/ui/field';
+import Hint from '@kortix/ui/hint';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { Separator } from '@kortix/ui/separator';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Slider } from '@kortix/ui/slider';
+import { Switch } from '@kortix/ui/switch';
 import { NotificationToggle } from '@/features/accounts/settings/notifications-tab';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { useNotificationCenter } from '@/features/notifications/use-notification-center';
-import { webPushSupported } from '@/features/notifications/web-push';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
+import { webPushSupported } from '@kortix/ui/internal/notifications/web-push';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isDesktop } from '@/lib/desktop';
-import { previewSound } from '@/lib/sounds';
-import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
-import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
+import { previewSound } from '@kortix/ui/internal/lib/sounds';
+import { isNotificationSupported, sendWebNotification } from '@kortix/ui/internal/lib/web-notifications';
+import { useSoundStore, type SoundEvent, type SoundPack } from '@kortix/ui/internal/stores/sound-store';
 import {
   useWebNotificationStore,
   type WebNotificationPermission,
   type WebNotificationPreferences,
-} from '@/stores/web-notification-store';
+} from '@kortix/ui/internal/stores/web-notification-store';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES as DEFAULT_KIND_PREFERENCES,
   INBOX_NOTIFICATION_KINDS,
@@ -72,19 +44,19 @@ import {
   type NotificationPreferences,
 } from '@kortix/sdk';
 import { useNotificationPreferences } from '@kortix/sdk/react';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
-const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
-  { id: 'off', label: 'Off', description: 'All sounds disabled' },
-  { id: 'opencode', label: 'Default', description: 'Default sound pack' },
-  { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin' },
+const SOUND_PACKS: { id: SoundPack }[] = [
+  { id: 'off' },
+  { id: 'opencode' },
+  { id: 'kortix' },
 ];
 
-const SOUND_EVENTS: { id: SoundEvent; label: string; description: string }[] = [
-  { id: 'completion', label: 'Task Completion', description: 'When AI finishes a task' },
-  { id: 'error', label: 'Error', description: 'When a session encounters an error' },
-  { id: 'notification', label: 'Notification', description: 'Questions and permission requests' },
-  { id: 'send', label: 'Message Sent', description: 'When you send a message' },
+const SOUND_EVENTS: { id: SoundEvent }[] = [
+  { id: 'completion' },
+  { id: 'error' },
+  { id: 'notification' },
+  { id: 'send' },
 ];
 
 type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
@@ -103,170 +75,39 @@ interface LabelDescription {
   description: string;
 }
 
-export interface SessionsTabCopy {
-  notifications: string;
-  notificationsDescription: string;
-  unsupported: string;
-  enableNotifications: string;
-  enableDescription: Record<NotificationReach, string>;
-  permissionGranted: string;
-  permissionDenied: string;
-  permissionDefault: string;
-  notificationTypes: string;
-  notificationTypesDescription: string;
-  /** The four per-browser kind switches (flag off). */
-  notificationTypesCopy: Record<NotificationTypeKey, LabelDescription>;
-  kinds: Record<InboxNotificationKind, LabelDescription>;
-  push: string;
-  email: string;
-  /** The accessible name of one switch: the kind and the channel. */
-  channelSwitch: (kind: string, channel: string) => string;
-  preferencesLoadError: string;
-  retry: string;
-  behavior: string;
-  sendTestNotification: string;
-  notificationBehaviorCopy: Record<NotificationBehaviorKey, LabelDescription>;
-  sounds: string;
-  soundsDescription: string;
-  soundPacks: Record<SoundPack, LabelDescription>;
-  volume: string;
-  preview: string;
-  soundEvents: Record<SoundEvent, LabelDescription>;
-  testNotificationTitle: string;
-  testNotificationBody: string;
-}
-
-export const DEFAULT_SESSIONS_TAB_COPY: SessionsTabCopy = {
-  notifications: 'Browser notifications',
-  notificationsDescription: 'Browser notifications for what happens in your sessions.',
-  unsupported: 'Your browser does not support notifications.',
-  enableNotifications: 'Enable notifications',
-  enableDescription: {
-    push: 'Shows notifications in this browser, also with every Kortix tab closed.',
-    desktop: 'Shows notifications from the desktop app while its window is open.',
-    browser: 'Shows notifications in this browser while a Kortix tab is open.',
-  },
-  permissionGranted: 'Browser permission granted',
-  permissionDenied: 'Blocked by browser — update in browser site settings',
-  permissionDefault: 'Will request browser permission when enabled',
-  notificationTypes: 'Notification types',
-  notificationTypesDescription:
-    'These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The bell lists every notification of a project with Notification Center on.',
-  notificationTypesCopy: {
-    onCompletion: { label: 'Task completions', description: 'When a session finishes its task' },
-    onError: { label: 'Errors', description: 'When a session encounters an error' },
-    onQuestion: { label: 'Questions', description: 'When Kortix needs your input to continue' },
-    onPermission: {
-      label: 'Permission requests',
-      description: 'When Kortix needs permission to use a tool',
-    },
-  },
-  kinds: {
-    turn_done: { label: 'Turn finished', description: 'A turn ends.' },
-    turn_error: { label: 'Turn failed', description: 'A turn ends with an error.' },
-    question: {
-      label: 'Question',
-      description: 'The agent asks a question and waits for the answer.',
-    },
-    permission: {
-      label: 'Permission request',
-      description: 'The agent asks for permission to run a tool.',
-    },
-    shared: { label: 'Shared with you', description: 'Someone shares a session with you.' },
-    automation_failed: {
-      label: 'Failure alert',
-      description: 'A trigger or a reminder starts failing.',
-    },
-    automation_recovered: {
-      label: 'Recovery alert',
-      description: 'A failing trigger or reminder works again.',
-    },
-  },
-  push: 'Push',
-  email: 'Email',
-  channelSwitch: (kind, channel) => `${kind}: ${channel}`,
-  preferencesLoadError: 'Could not load your notification settings',
-  retry: 'Try again',
-  behavior: 'Behavior',
-  sendTestNotification: 'Send test notification',
-  notificationBehaviorCopy: {
-    onlyWhenHidden: {
-      label: 'Only when tab is hidden',
-      description: "Only notify when you're on another tab",
-    },
-    playSound: {
-      label: 'Notification sound',
-      description: 'Play a sound when a notification is sent',
-    },
-  },
-  sounds: 'Sounds',
-  soundsDescription: 'Sound pack played for session events.',
-  soundPacks: {
-    off: { label: 'Off', description: 'All sounds disabled' },
-    opencode: { label: 'Default', description: 'Default sound pack' },
-    kortix: { label: 'Seshion Pack', description: "Whistlin'" },
-  },
-  volume: 'Volume',
-  preview: 'Preview',
-  soundEvents: {
-    completion: { label: 'Task Completion', description: 'When AI finishes a task' },
-    error: { label: 'Error', description: 'When a session encounters an error' },
-    notification: { label: 'Notification', description: 'Questions and permission requests' },
-    send: { label: 'Message Sent', description: 'When you send a message' },
-  },
-  testNotificationTitle: 'Test Notification',
-  testNotificationBody: 'Notifications are working correctly!',
-};
-
 const NOTIFICATION_TYPE_TOGGLES: {
   key: NotificationTypeKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onCompletion',
     icon: CheckCircleSolid,
-    label: 'Task completions',
-    description: 'When a session finishes its task',
   },
   {
     key: 'onError',
     icon: DangerTriangleSolid,
-    label: 'Errors',
-    description: 'When a session encounters an error',
   },
   {
     key: 'onQuestion',
     icon: QuestionCircleSolid,
-    label: 'Questions',
-    description: 'When Kortix needs your input to continue',
   },
   {
     key: 'onPermission',
     icon: ShieldCheckSolid,
-    label: 'Permission requests',
-    description: 'When Kortix needs permission to use a tool',
   },
 ];
 
 const NOTIFICATION_BEHAVIOR_TOGGLES: {
   key: NotificationBehaviorKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onlyWhenHidden',
     icon: EyeOffSolid,
-    label: 'Only when tab is hidden',
-    description: "Only notify when you're on another tab",
   },
   {
     key: 'playSound',
     icon: Volume2,
-    label: 'Notification sound',
-    description: 'Play a sound when a notification is sent',
   },
 ];
 
@@ -289,6 +130,7 @@ export interface SessionsTabViewProps {
   soundEvents?: Partial<Record<SoundEvent, boolean>>;
   onSoundEventToggle?: (event: SoundEvent, enabled: boolean) => void;
   onSoundPreview?: (event: SoundEvent) => void;
+  onEnableCompletionSound?: () => void;
 
   // Browser notifications (this browser)
   notificationsSupported?: boolean;
@@ -308,6 +150,8 @@ export interface SessionsTabViewProps {
   notificationKinds?: NotificationPreferences['kinds'];
   /** False when the deployment sends no email: the Email column is hidden. */
   emailAvailable?: boolean;
+  /** Kinds that cannot reach this person now (their feature is off everywhere): no row. */
+  hiddenKinds?: readonly InboxNotificationKind[];
   notificationKindsState?: 'loading' | 'error' | 'ready';
   onNotificationKindChange?: (
     kind: InboxNotificationKind,
@@ -315,7 +159,7 @@ export interface SessionsTabViewProps {
     value: boolean,
   ) => void;
   onRetryNotificationKinds?: () => void;
-  copy?: SessionsTabCopy;
+  copy?: ReturnType<typeof useSessionCopy>;
 }
 
 /** Presentational only — no hooks, no store read. Every prop is optional with
@@ -328,6 +172,7 @@ export function SessionsTabView({
   soundEvents = {},
   onSoundEventToggle = () => {},
   onSoundPreview = () => {},
+  onEnableCompletionSound = () => {},
   notificationsSupported = true,
   notificationReach = 'push',
   notificationPermission = 'default',
@@ -338,11 +183,15 @@ export function SessionsTabView({
   notificationCenter = false,
   notificationKinds = DEFAULT_KIND_PREFERENCES,
   emailAvailable = true,
+  hiddenKinds = [],
   notificationKindsState = 'ready',
   onNotificationKindChange = () => {},
   onRetryNotificationKinds = () => {},
-  copy = DEFAULT_SESSIONS_TAB_COPY,
+  copy: copyOverride,
 }: SessionsTabViewProps) {
+  const tRecovery = useTranslations('settings.sessions.recovery');
+  const translatedCopy = useSessionCopy();
+  const copy = copyOverride ?? translatedCopy;
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="sessions" />
@@ -382,13 +231,31 @@ export function SessionsTabView({
               />
             </div>
 
+            {notificationPermission === 'denied' && (
+              <div className="space-y-3">
+                <details className="text-muted-foreground text-xs">
+                  <summary>{tRecovery('instructions')}</summary>
+                  <ul className="mt-2 space-y-2">
+                    {(['chrome', 'edge', 'firefox', 'safari'] as const).map((browser) => (
+                      <li key={browser}>{tRecovery(browser)}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2">{tRecovery('afterChange')}</p>
+                </details>
+                <p className="text-muted-foreground text-xs">{tRecovery('fallback')}</p>
+                <Button variant="outline" size="sm" onClick={onEnableCompletionSound}>
+                  {tRecovery('enableSound')}
+                </Button>
+              </div>
+            )}
+
             {notificationPreferences.enabled && (
               <>
                 {!notificationCenter && (
                   <div className="flex flex-col space-y-3">
-                    <label className="text-muted-foreground text-sm font-medium">
+                    <p className="text-muted-foreground text-sm font-medium">
                       {copy.notificationTypes}
-                    </label>
+                    </p>
                     <div className="divide-y rounded-md border">
                       {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                         <NotificationToggle
@@ -406,9 +273,9 @@ export function SessionsTabView({
                 )}
 
                 <div className="flex flex-col space-y-3">
-                  <label className="text-muted-foreground text-sm font-medium">
+                  <p className="text-muted-foreground text-sm font-medium">
                     {copy.behavior}
-                  </label>
+                  </p>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
@@ -460,12 +327,15 @@ export function SessionsTabView({
               // (tab-content-width.test.ts). Each switch carries the kind and the
               // channel in its name, so the column labels are visual only.
               <div className="divide-y rounded-md border">
-                <div aria-hidden className="text-muted-foreground flex items-center gap-4 px-4 py-2 text-xs">
+                <div
+                  aria-hidden
+                  className="text-muted-foreground flex items-center gap-4 px-4 py-2 text-xs"
+                >
                   <span className="flex-1" />
                   <span className={CHANNEL_COLUMN}>{copy.push}</span>
                   {emailAvailable && <span className={CHANNEL_COLUMN}>{copy.email}</span>}
                 </div>
-                {INBOX_NOTIFICATION_KINDS.map((kind) => {
+                {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
                   const label = copy.kinds[kind].label;
                   const channelCell = (channel: NotificationChannel) => (
                     <span className={CHANNEL_COLUMN}>
@@ -478,7 +348,9 @@ export function SessionsTabView({
                             channel === 'push' ? copy.push : copy.email,
                           )}
                           checked={notificationKinds[kind][channel]}
-                          onCheckedChange={(value) => onNotificationKindChange(kind, channel, value)}
+                          onCheckedChange={(value) =>
+                            onNotificationKindChange(kind, channel, value)
+                          }
                         />
                       )}
                     </span>
@@ -565,6 +437,7 @@ export function SessionsTabView({
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={copy.preview}
                           className="text-muted-foreground duration-moderate opacity-0 transition-opacity group-hover:opacity-100"
                           onClick={() => onSoundPreview(event.id)}
                         >
@@ -599,13 +472,90 @@ function notificationReach(): NotificationReach {
  *  `/settings` route: the flag then reads any cached project. */
 export function SessionsTab({ projectId }: { projectId?: string }) {
   const t = useTranslations('settings.sessions');
+  const soundPreferences = useSoundStore((s) => s.preferences);
+  const setSoundPack = useSoundStore((s) => s.setPack);
+  const setSoundVolume = useSoundStore((s) => s.setVolume);
+  const setSoundEventEnabled = useSoundStore((s) => s.setEventEnabled);
+
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
+  const notificationPreferences = useWebNotificationStore((s) => s.preferences);
+  const toggleNotificationsEnabled = useWebNotificationStore((s) => s.toggleEnabled);
+  const setNotificationPreference = useWebNotificationStore((s) => s.setPreference);
+  const syncNotificationPermission = useWebNotificationStore((s) => s.syncPermission);
+  useEffect(() => {
+    syncNotificationPermission();
+  }, [syncNotificationPermission]);
+
+  const { user } = useAuth();
+  const notificationCenter = useNotificationCenter(projectId);
+  const kindPreferences = useNotificationPreferences({
+    userId: user?.id,
+    enabled: notificationCenter,
+  });
+
+  const handleSendTestNotification = () => {
+    sendWebNotification(
+      {
+        type: 'completion',
+        title: t('testNotificationTitle'),
+        body: t('testNotificationBody'),
+        tag: 'test',
+      },
+      true,
+    );
+  };
+
+  return (
+    <SessionsTabView
+      soundPack={soundPreferences.pack}
+      onSoundPackChange={setSoundPack}
+      soundVolume={soundPreferences.volume}
+      onSoundVolumeChange={setSoundVolume}
+      soundEvents={soundPreferences.events}
+      onSoundEventToggle={setSoundEventEnabled}
+      onSoundPreview={previewSound}
+      onEnableCompletionSound={() => {
+        if (soundPreferences.pack === 'off') setSoundPack('opencode');
+        if (soundPreferences.volume <= 0) setSoundVolume(0.5);
+        setSoundEventEnabled('completion', true);
+        setNotificationPreference('playSound', true);
+        previewSound('completion');
+      }}
+      notificationsSupported={isNotificationSupported()}
+      notificationReach={notificationReach()}
+      notificationPermission={notificationPermission}
+      notificationPreferences={notificationPreferences}
+      onToggleNotificationsEnabled={() => void toggleNotificationsEnabled()}
+      onNotificationPreferenceChange={setNotificationPreference}
+      onSendTestNotification={handleSendTestNotification}
+      notificationCenter={notificationCenter}
+      notificationKinds={kindPreferences.data?.kinds}
+      emailAvailable={kindPreferences.data?.email_available ?? true}
+      // Room messages exist only with a project's `agent_rooms` flag on: an API
+      // that does not say so hides the row rather than show a dead switch.
+      hiddenKinds={kindPreferences.data?.hidden_kinds ?? ['message']}
+      notificationKindsState={
+        kindPreferences.data ? 'ready' : kindPreferences.isError ? 'error' : 'loading'
+      }
+      onNotificationKindChange={(kind, channel, value) => {
+        // The API's error toast reports a failure; the switch flips back.
+        kindPreferences.update({ kinds: { [kind]: { [channel]: value } } }).catch(() => {});
+      }}
+      onRetryNotificationKinds={() => void kindPreferences.refetch()}
+    />
+  );
+}
+
+function useSessionCopy() {
+  const t = useTranslations('settings.sessions');
+  const browserCopy = useTranslations('hardcodedUi.i18nComplete');
   const tNotifications = useTranslations('notifications');
   const kindCopy = (kind: InboxNotificationKind): LabelDescription => ({
     label: tNotifications(`kind.${kind}`),
     description: tNotifications(`kindDescription.${kind}`),
   });
-  const copy: SessionsTabCopy = {
-    notifications: t('notifications'),
+  const copy = {
+    notifications: browserCopy('text7761b572aba8'),
     notificationsDescription: t('notificationsDescription'),
     unsupported: t('unsupported'),
     enableNotifications: t('enableNotifications'),
@@ -638,11 +588,13 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       },
     },
     kinds: Object.fromEntries(
-      INBOX_NOTIFICATION_KINDS.map((kind) => [kind, kindCopy(kind)]),
-    ) as SessionsTabCopy['kinds'],
+      INBOX_NOTIFICATION_KINDS.map((kind: InboxNotificationKind) => [kind, kindCopy(kind)]),
+    ) as Record<InboxNotificationKind, LabelDescription>,
     push: t('push'),
     email: t('email'),
-    channelSwitch: (kind, channel) => t('channelSwitch', { kind, channel }),
+    // `kind` and `channel` arrive as the already-localized labels the switch
+    // row renders next to, not the raw enum values.
+    channelSwitch: (kind: string, channel: string) => t('channelSwitch', { kind, channel }),
     preferencesLoadError: t('preferencesLoadError'),
     retry: t('retry'),
     behavior: t('behavior'),
@@ -696,67 +648,5 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
     testNotificationTitle: t('testNotificationTitle'),
     testNotificationBody: t('testNotificationBody'),
   };
-  const soundPreferences = useSoundStore((s) => s.preferences);
-  const setSoundPack = useSoundStore((s) => s.setPack);
-  const setSoundVolume = useSoundStore((s) => s.setVolume);
-  const setSoundEventEnabled = useSoundStore((s) => s.setEventEnabled);
-
-  const notificationPermission = useWebNotificationStore((s) => s.permission);
-  const notificationPreferences = useWebNotificationStore((s) => s.preferences);
-  const toggleNotificationsEnabled = useWebNotificationStore((s) => s.toggleEnabled);
-  const setNotificationPreference = useWebNotificationStore((s) => s.setPreference);
-  const syncNotificationPermission = useWebNotificationStore((s) => s.syncPermission);
-  useEffect(() => {
-    syncNotificationPermission();
-  }, [syncNotificationPermission]);
-
-  const { user } = useAuth();
-  const notificationCenter = useNotificationCenter(projectId);
-  const kindPreferences = useNotificationPreferences({
-    userId: user?.id,
-    enabled: notificationCenter,
-  });
-
-  const handleSendTestNotification = () => {
-    sendWebNotification(
-      {
-        type: 'completion',
-        title: copy.testNotificationTitle,
-        body: copy.testNotificationBody,
-        tag: 'test',
-      },
-      true,
-    );
-  };
-
-  return (
-    <SessionsTabView
-      soundPack={soundPreferences.pack}
-      onSoundPackChange={setSoundPack}
-      soundVolume={soundPreferences.volume}
-      onSoundVolumeChange={setSoundVolume}
-      soundEvents={soundPreferences.events}
-      onSoundEventToggle={setSoundEventEnabled}
-      onSoundPreview={previewSound}
-      notificationsSupported={isNotificationSupported()}
-      notificationReach={notificationReach()}
-      notificationPermission={notificationPermission}
-      notificationPreferences={notificationPreferences}
-      onToggleNotificationsEnabled={() => void toggleNotificationsEnabled()}
-      onNotificationPreferenceChange={setNotificationPreference}
-      onSendTestNotification={handleSendTestNotification}
-      notificationCenter={notificationCenter}
-      notificationKinds={kindPreferences.data?.kinds}
-      emailAvailable={kindPreferences.data?.email_available ?? true}
-      notificationKindsState={
-        kindPreferences.data ? 'ready' : kindPreferences.isError ? 'error' : 'loading'
-      }
-      onNotificationKindChange={(kind, channel, value) => {
-        // The API's error toast reports a failure; the switch flips back.
-        kindPreferences.update({ kinds: { [kind]: { [channel]: value } } }).catch(() => {});
-      }}
-      onRetryNotificationKinds={() => void kindPreferences.refetch()}
-      copy={copy}
-    />
-  );
+  return copy;
 }

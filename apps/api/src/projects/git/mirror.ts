@@ -20,7 +20,7 @@ import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
 const lastRefreshAt = new Map<string, number>();
 /** projectId → branch → when that branch was last proven to be at the remote's tip. */
 // replica-local: each API replica refreshes its own bare mirror on local disk
@@ -81,7 +81,7 @@ interface ResolvedMirrorAccess {
   headers: Record<string, string>;
 }
 
-async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
+export async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
   if (project.gitAuthToken || Object.keys(project.gitAuthHeaders ?? {}).length > 0) {
     return {
       repoUrl: project.repoUrl,
@@ -194,19 +194,21 @@ export function stripGitProgress(text: string): string {
  * a retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
  * / request-deadline de-noise pattern), since the mirror's own retry usually
  * clears them and they are upstream/network noise, not a code bug.
+ * `kind: 'busy'` means base moves exhausted the bounded freshness retries;
+ * it uses the same retryable 503 without ever returning an invalidated mirror.
  * `kind: 'failed'` is a real non-zero exit (auth, missing repo, bad ref) —
  * still surfaced to Sentry, but now with a meaningful `fatal:` message instead
  * of progress noise.
  */
 export class GitOperationError extends Error {
-  readonly kind: 'timeout' | 'failed';
+  readonly kind: 'timeout' | 'failed' | 'busy';
   readonly gitArgs: readonly string[];
   readonly signal: string | null;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   constructor(opts: {
-    kind: 'timeout' | 'failed';
+    kind: 'timeout' | 'failed' | 'busy';
     message: string;
     gitArgs: readonly string[];
     signal?: string | null;
@@ -340,7 +342,7 @@ const REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN =
 
 export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
   if (!isGitOperationError(err)) return false;
-  if (err.kind === 'timeout') return true;
+  if (err.kind === 'timeout' || err.kind === 'busy') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
   if (err.gitArgs[0] === 'push' && REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN.test(text)) return true;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
@@ -592,7 +594,7 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
-function refreshIntervalMs() {
+export function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
@@ -836,12 +838,18 @@ export async function refreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
   opts?: {
-    /** Freshness is only needed for THIS branch: prove it with one `ls-remote`
-     *  and skip the whole-mirror fetch when it has not moved. Ignored unless
-     *  `force` is set. */
+    /** Freshness is only needed for THIS ref. Forced: prove a branch with one
+     *  `ls-remote` and skip the whole-mirror fetch when it has not moved.
+     *  Unforced, a full commit SHA the mirror already holds skips the fetch:
+     *  nothing at a commit can change. */
     freshRef?: string;
   },
+  epochRetries = 0,
 ) {
+  if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
+    const held = await mirrorHoldingCommit(project, opts.freshRef);
+    if (held) return held;
+  }
   if (!force && staleMirrorReadsAllowed()) {
     const warm = viewableWarmMirror(project);
     if (warm) {
@@ -856,13 +864,34 @@ export async function refreshMirror(
       return warm;
     }
   }
-  return lockedRefreshMirror(project, force, opts);
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const repoPath = await lockedRefreshMirror(project, force, opts, epochRetries);
+  // A base move can land while a fetch (including one shared with another
+  // reader) is finishing. Dropping its proof is not enough: this reader must
+  // not ground a new session on the checkout that the move invalidated.
+  if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
+    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+    return refreshMirror(project, force, opts, epochRetries + 1);
+  }
+  return repoPath;
+}
+
+/** The mirror path when it already holds `commit`, else null. */
+async function mirrorHoldingCommit(project: GitBackedProject, commit: string): Promise<string | null> {
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || !looksLikeBareMirror(repoPath)) return null;
+  const held = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repoPath).catch(() => null);
+  if (held?.exitCode !== 0) return null;
+  const now = new Date();
+  void utimes(repoPath, now, now).catch(() => {});
+  return repoPath;
 }
 
 async function lockedRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh,
   opts?: { freshRef?: string },
+  epochRetries = 0,
 ): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
@@ -870,15 +899,21 @@ async function lockedRefreshMirror(
   const lockForced = !!force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
-    if (!force || current.forced) return current.promise;
+    if (!force || current.forced) {
+      const repoPath = await current.promise;
+      if (current.epoch === (invalidations.get(project.projectId) ?? 0)) return repoPath;
+      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+      return refreshMirror(project, force, opts, epochRetries + 1);
+    }
     // The in-flight refresh belongs to another caller, often with another
     // credential: create-repo's template prebuild clones with the token it
     // held. Its failure is not this caller's. Wait for it to settle, then run
     // this caller's own forced refresh — rethrowing it failed the first
     // session on a new project with 503 git_mirror_unavailable.
     await current.promise.catch(() => {});
-    return refreshMirror(project, force, opts);
+    return refreshMirror(project, force, opts, epochRetries);
   }
+  const epoch = invalidations.get(project.projectId) ?? 0;
   const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -893,7 +928,7 @@ async function lockedRefreshMirror(
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced, epoch });
   return next;
 }
 

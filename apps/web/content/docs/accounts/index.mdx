@@ -55,7 +55,7 @@ Open the project menu → **Switch Project** → **Account settings**.
 
 | Sidebar group | Section | What it holds |
 | --- | --- | --- |
-| — | **Settings** | The account name. The **Security** group: Require MFA, session lifetime and idle timeout, live member sessions, and **Admins can open every session**. |
+| — | **Settings** | The account name. The **Security** group: Require MFA, session lifetime and idle timeout, live member sessions, and **Admins can open every session**. The **Automations** group: **Pause all automations**; see [Pause and limits](/docs/connect/triggers#pause-and-limits). |
 | — | **Branding** | Logo, icon, favicon and product name. See [Branding](#branding). |
 | — | **Git** | GitHub App installations. See [Git](/docs/git). |
 | — | **API keys** | Service-account keys and key rules. See [Sign-in, SSO & API keys](/docs/accounts/identity). |
@@ -74,11 +74,11 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 
 | Role | Can do |
 | --- | --- |
-| `owner` | Everything an admin can do, plus: change the plan and payment method (`billing.write`), delete the account (`account.delete`), grant or revoke super-admin, and grant or change the `owner` role. |
-| `admin` | Rename the account and change its security settings, except **Admins can open every session**. Invite, remove and change the role of members. Manage groups, roles, assignments and service-account keys. Create projects. Read the audit log and the plan. |
-| `member` | See the account, its members, its groups and its plan. Create and revoke their own personal access keys. Work only in the projects a grant gives them. |
+| `owner` | Everything an admin can do, plus: delete the account (`account.delete`), grant or revoke super-admin (`member.super_admin.grant`), and grant or change the `owner` role. |
+| `admin` | Rename the account and change its security settings, except **Admins can open every session**. Change the plan and payment method (`billing.write`). Invite, remove and change the role of members. Manage groups, roles, assignments, service-account keys and OAuth clients. Create projects. Read the audit log and the plan. |
+| `member` | See the account, its plan and its billing ledger (`billing.read`). In the member list they see only themselves, and they see no groups (see [Who sees the member list](#who-sees-the-member-list)). Create, list and revoke their own personal access keys. Work only in the projects a grant gives them. |
 
-- **Members cannot create projects** and cannot change billing. Only an owner holds `billing.write` and `account.delete`.
+- **Members cannot create projects** and cannot change billing. Owners and admins hold `billing.write`. Only an owner holds `account.delete`.
 - **Owners and admins are manager on every project** in the account. This is a rule of the account role, not a grant, and a project grant cannot lower it. To limit an owner or admin on one project, change their account role to `member` first.
 - **Promotion removes project grants.** When a person becomes owner or admin, Kortix deletes their direct project grants because the account role already covers every project.
 - **Only an owner touches owners.** An admin who tries to remove an owner gets `403`. Only an owner can grant the `owner` role or change an owner's role.
@@ -86,6 +86,25 @@ Each person holds exactly one account role: `owner`, `admin` or `member`.
 - **An account role belongs to a person.** Binding `owner`, `admin` or `member` to a group returns `400`. Give a group a project role or a custom role instead.
 
 Opening another person's private session is a separate, owner-controlled setting. See [Who can open a session](/docs/work/sessions#who-can-open-a-session).
+
+### Who sees the member list
+
+Owners and admins see every member and every group. A `member` sees nobody else:
+
+- **Members** lists only themselves, not even the owners. `kortix members` does the same.
+- They see no group, not even their own. **Groups** is hidden, `kortix groups` lists none, and reading any group answers `404`.
+- A project's access list shows only themselves. A `member` who manages that project also sees the people and groups with access to it, so they can manage them, and still nobody without access.
+- The Files share dialog names only themselves.
+- **Session costs** list only their own sessions. Asking for another person's costs answers `403`, and another person's session answers `404`.
+- In a project they do not manage, branches, change requests, the review inbox, gateway logs and spend show only their own work and the sessions they may open. Another member's private session leaves no trace there.
+- SSO group mappings list none.
+- **Usage by project** lists only the projects they can read.
+- **API keys** (`GET /v1/accounts/tokens`) list only their own keys and their sessions' tokens. Only a caller with `token.revoke` lists every key in the account.
+- Service accounts and OAuth clients answer `403`: reading them needs `token.create`, the same leaf that creates them.
+
+Another member's access details (**View access**, `GET .../iam/members/:userId/...`) and the MFA enforcement preview stay with owners and admins. People you work with in a shared session or project still appear where their work does: as the author of a message, the owner of a session, or a person a secret is shared with.
+
+To show the whole directory to more people, create a custom account role with `member.read` (every member) and `group.read` (every group), and assign it to those people or to a group. See [Custom roles](#custom-roles).
 
 ## Members and invites
 
@@ -100,6 +119,8 @@ What happens next depends on the address:
 
 - **The address has a Kortix login.** Kortix adds the person at once, with the project roles you picked.
 - **The address has no login.** Kortix emails an invite link. The invite is valid for 14 days. The project roles apply when the person accepts.
+
+A self-hosted instance with no email provider confirms sign-ups without an email, so a password login does not prove its address there. Kortix adds such a login at once only when it is already a member of the account. Otherwise it creates an invite, and the login with that address accepts it from the project chooser or the **Switch Project** menu. That login is whoever signed up first with the address. See [Unconfirmed email addresses](/docs/host#unconfirmed-email-addresses).
 
 Project roles in an invite apply to `member` invites only. Kortix ignores them on an `admin` invite, because an admin already reaches every project. To make someone owner, invite them as admin or member, then change their role.
 
@@ -120,17 +141,29 @@ In the mobile app, the project switcher lists pending invites under **Invites**.
 
 - **Pending invites** show on **Members**. Resending one sends the email again and starts a new 14-day window. Cancelling one revokes the link.
 - **Edit access** in a member's row menu changes their account role. To change several members at once, select their rows and select **Change role**.
-- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once.
+- **Remove from account** removes the person's role, project grants and group memberships. It revokes their personal access keys and the tokens of their running sessions at once. See [When a person leaves](#when-a-person-leaves).
+
+### When a person leaves
+
+Removal, [Leave](#leave) and SCIM deactivation (`active: false` or `DELETE`, see [SCIM provisioning](/docs/accounts/identity#scim-provisioning)) end the same things in the account, at once:
+
+- the person's roles, project grants and group memberships;
+- their personal access keys and the tokens of their running sessions;
+- their notifications and follows in the account's projects;
+- every computer account in the account that reaches a machine they own. This covers a computer they shared with a project and a computer they paired for themselves. The account becomes `revoked`, with `metadata.revokedReason: owner_left`. The computer stays theirs and keeps working in their other Kortix accounts;
+- every reminder they set in the account's projects. The reminder becomes `paused`. A reminder that a session's agent set keeps firing;
+- their seat on a per-seat plan. Their personal drive folders pass to an owner.
+
+The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`. A count is `0` when the person had nothing of that kind, and `null` when that step failed.
 
 ### Errors
 
 | Code | Status | Cause |
 | --- | --- | --- |
-| `trial_seat_limit_reached` | `403` | A trial account has used every seat it includes. The body carries `limit` and `members`. |
 | `account_identity_ambiguous` | `409` | More than one identity in the account uses the email address. |
 | — | `409` | The person is already a member. |
 
-On a per-seat plan, every member is a seat. See [Seats and plan changes](/docs/credits#seats-and-plan-changes).
+Members are unlimited and cost nothing extra. The account shares one credit wallet. See [Plan changes](/docs/credits#plan-changes).
 
 ### Members from the CLI
 
@@ -281,7 +314,7 @@ The API route is `POST /v1/accounts/:accountId/iam/assignments`. The permission 
 
 ### Check why someone has access
 
-- **In the web app:** open the member's menu on **Members** and select **View access**.
+- **In the web app:** open the member's menu on **Members** and select **View access**. Without `member.read`, it opens only on your own row.
 - **Over the API:** `GET /v1/accounts/:accountId/iam/members/:userId/effective?action=project.secret.write&resourceType=project&resourceId=<project_id>` returns `allowed` and a `reason`, such as `project_role_insufficient` or `resource_scope_insufficient`. `POST .../effective:batch` checks up to 64 actions in one call. Asking about yourself answers with your real credential; asking about someone else answers from their roles.
 
 ### Per-feature access settings
@@ -401,6 +434,8 @@ Kortix does not record health probes, CORS preflights, or anonymous visitors to 
 
 Open **Account settings** → **Audit log**. Reading needs `audit.read` (owners and admins) and the entitlement.
 
+The **Session** filter searches the selected project's sessions that you can open, by name or session-id prefix, on the server. It lists 20 matches at a time: **Load more** reads the next 20. To filter by any other session, paste its full session id into the search field and pick it. A pasted id works with no project selected, for a session you cannot open, and for a deleted session.
+
 ```bash
 kortix audit ls --since 24h
 kortix audit ls --outcome denied --since 7d
@@ -427,6 +462,26 @@ The API route is `GET /v1/accounts/:accountId/audit` with the same filters as qu
 
 - **Project log:** `GET /v1/projects/:projectId/audit` needs `project.members.manage` and the entitlement.
 - **Session timeline:** `GET /v1/projects/:projectId/sessions/:sessionId/audit` needs `project.session.read`. Without the entitlement it returns only the unresolved pending approvals.
+
+### Who was active, and how often
+
+The audit log names an identity, not a person. A sandbox, the CLI, or a script that holds a person's token writes rows as that person, and those rows can outnumber the rows of what the person did in a browser by 100 to 1 or more. To ask "who used this project, and on which days", read the activity rollup instead of counting log rows.
+
+```bash
+kortix audit activity --project <project_id> --since 6w
+kortix audit activity --project <project_id> --since 6w --client browser
+kortix audit activity --actor <user_id> --since 2026-09-01 --until 2026-09-30 --json
+```
+
+Each user gets one line: the days with activity, the distinct UTC hours with activity, the number of events, the last day, and one character per day (taller means more active hours).
+
+| Flag | Filters on |
+| --- | --- |
+| `--since`, `--until` | UTC days, inclusive. A date, an ISO-8601 instant, or a span such as `6w`. Default: the last 28 days. At most 400 days. |
+| `--client <c>` | `browser`: a person in a web page (a `Mozilla/` user agent). `program`: the CLI, the SDK, a sandbox, or a script acting as the user. |
+| `--project`, `--actor`, `--actor-type`, `--credential-kind` | As for `kortix audit ls` |
+
+The API route is `GET /v1/accounts/:accountId/audit/activity`, with `since`, `until`, `project_id`, `actor`, `client`, `actor_type` and `credential_kind`. It needs the same `audit.read` permission and entitlement as the log. A background job adds each closed 15-minute window of the log to the rollup about 2 hours after it closes. `rolled_through` in the response is the instant the counts reach. The rollup covers the last 90 days of the log.
 
 ### Retention and export
 
@@ -517,7 +572,7 @@ A permission is one action, such as `project.secret.write`. Roles are sets of pe
 | `policy.read` | roles | view | yes | View which principals hold which roles. |
 | `policy.create` | roles | edit | no | Assign a role to a person, group or agent identity. |
 | `policy.delete` | roles | edit | no | Revoke a role assignment. |
-| `token.read` | tokens | view | yes | View the account's personal access keys. |
+| `token.read` | tokens | view | yes | List your own personal access keys. With `token.revoke`, the list holds every key in the account. |
 | `token.create` | tokens | edit | no | Mint account keys: service-account keys and OAuth apps. |
 | `token.revoke` | tokens | edit | no | Revoke account keys and other people's personal access keys. |
 | `token.personal.create` | tokens | edit | yes | Mint a personal access key that acts as you, for example for `kortix login`. |
@@ -545,7 +600,7 @@ Every project permission can go in a custom role.
 | `project.skill.read` | customize | view | View the project's skills. |
 | `project.skill.write` | customize | edit | Add, edit and remove skills. |
 | `project.command.read` | customize | view | View the project's slash commands. |
-| `project.command.write` | customize | edit | Add, edit and remove slash commands. |
+| `project.command.write` | customize | edit | Shows **Edit** on a slash command, which opens a session that changes it. The command file itself changes through a git push, so the write needs `project.gitops.push`. |
 | `project.connector.read` | customize | view | View the project's connectors. |
 | `project.connector.write` | customize | edit | Add, edit and remove connectors. |
 | `project.connector.connections.manage` | customize | edit | Manage everyone's connector accounts, not only your own. |
@@ -574,10 +629,10 @@ Every project permission can go in a custom role.
 | `project.gateway.keys.manage` | spend | edit | Create, list and revoke the project's LLM gateway keys (`kortix_gw_`). |
 | `project.usage.read` | spend | view | View usage and costs for this project. |
 | `project.app.read` | apps | view | View the project's Apps. |
-| `project.app.write` | apps | edit | Create, edit and remove Apps. |
-| `project.app.deploy` | apps | edit | Deploy an App and manage its live version. |
+| `project.app.write` | apps | edit | Create, edit and remove Apps. Read and set an App's access policy. |
+| `project.app.deploy` | apps | edit | Deploy an App and manage its live version. Read its deployments, deployment events, runtime logs, machines, volumes and snapshots. |
 | `project.app.admin` | apps | edit | Run commands in an App, restore and destroy its volumes, delete an App that has volumes, and reach its admin-only services. |
-| `project.credentials.issue` | tokens | admin | Mint or revoke a project credential: a CLI token or a git token. |
+| `project.credentials.issue` | tokens | admin | List, mint or revoke a project credential: a CLI token or a git token. |
 
 `project.credentials.issue` is human-only. No role or grant gives it to an agent.
 
@@ -585,7 +640,7 @@ Every project permission can go in a custom role.
 
 ### Leave
 
-Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. The last owner cannot leave (`409`): make another member owner first.
+Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. Your computers stop serving the account, and your reminders in its projects pause. See [When a person leaves](#when-a-person-leaves). The last owner cannot leave (`409`): make another member owner first.
 
 ### Delete
 

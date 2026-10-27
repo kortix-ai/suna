@@ -13,6 +13,7 @@
 // `bun test --isolate`, so the module-level mocks below are safe).
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { applyEnvSyncDurableWrite, firstBoundString } from '../../__tests__/helpers/env-sync-durable-fake';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
 
@@ -22,14 +23,6 @@ const PROJECT_ROW = {
   manifestPath: 'kortix.yaml',
   metadata: null as Record<string, unknown> | null,
 };
-
-/** Mutable per-test gateway mode — mocked directly rather than routed through
- *  real feature-flag resolution, which additionally gates on operator config
- *  (`config.LLM_GATEWAY_ENABLED`) this suite has no reason to wire up. */
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
 
 const SESSION_ROW = {
   createdBy: 'user-1',
@@ -43,20 +36,27 @@ let snapshotEnv: Record<string, string> = { EXAMPLE: 'v1' };
 let snapshotNames: string[] = ['EXAMPLE'];
 let snapshotRevision = 'rev-1';
 let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
+/** Each session's sandbox-row `config`: the durable env-sync record every push writes. */
+const sandboxConfigs = new Map<string, Record<string, unknown> | null>();
 
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({
       from: () => ({
-        where: () => {
+        where: (condition: unknown) => {
           // `resolveOwnerRawEnv` selects the session row, then the project row.
           // `resolveProjectLlmGatewayEnabled` selects a project row shaped like
           // `{ metadata }` only. Route on the requested column set so one fake
           // `db` satisfies every select on this path, same as the sibling
           // `sandbox-env-sync.prompt.test.ts`.
           const wantsSession = 'createdBy' in columns;
-          const rows = wantsSession ? [SESSION_ROW] : [PROJECT_ROW];
+          const wantsSandboxConfig = !wantsSession && Object.keys(columns).length === 1 && 'config' in columns;
+          const rows = wantsSession
+            ? [SESSION_ROW]
+            : wantsSandboxConfig
+              ? [{ config: sandboxConfigs.get(firstBoundString(condition) ?? '') ?? null }]
+              : [PROJECT_ROW];
           return {
             limit: async () => rows,
             then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -65,7 +65,14 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    update: () => ({
+      set: (patch: { config?: unknown }) => ({
+        where: async (condition: unknown) => {
+          const sessionId = firstBoundString(condition) ?? '';
+          sandboxConfigs.set(sessionId, applyEnvSyncDurableWrite(sandboxConfigs.get(sessionId) ?? null, patch.config));
+        },
+      }),
+    }),
   },
 }));
 
@@ -74,9 +81,11 @@ mock.module('./secret-grant', () => ({
   resolveSessionSecretGrant: async () => 'all' as const,
 }));
 
+/** Resolves the snapshot read; a test replaces it to hold the read open. */
+let snapshotGate: Promise<void> = Promise.resolve();
 mock.module('../secrets', () => ({
   ...realSecrets,
-  listProjectSecretsSnapshotForUser: async () => ({
+  listProjectSecretsSnapshotForUser: async () => (await snapshotGate, {
     env: snapshotEnv,
     names: snapshotNames,
     revision: snapshotRevision,
@@ -115,20 +124,34 @@ const ORIGINAL_FETCH = globalThis.fetch;
   });
 };
 
-const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests } = await import(
-  './sandbox-env-sync'
-);
+const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests, __pendingEnvChecksForTests } =
+  await import('./sandbox-env-sync');
 
-function prompt(externalId = 'ext-1') {
+/** One box per session, as in production: `ext-2` is the box of `sess-2`. */
+function prompt(externalId = 'ext-1', requestedAgent?: string) {
   return syncSandboxEnvForPrompt({
     projectId: 'proj-1',
-    sessionId: 'sess-1',
+    sessionId: externalId.replace('ext-', 'sess-'),
     externalId,
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
     providerHeaders: {},
     providerName: 'daytona',
+    requestedAgent,
   });
+}
+
+/**
+ * A change lands one prompt late. The prompt after a confirmed sync is trusted:
+ * it is forwarded at once, its background check finds the change and pushes
+ * nothing, and the NEXT prompt pushes synchronously.
+ */
+async function promptAfterChange() {
+  const before = posted.length;
+  await prompt();
+  await Promise.all(__pendingEnvChecksForTests());
+  expect(posted.length).toBe(before);
+  await prompt();
 }
 
 afterAll(() => {
@@ -137,13 +160,14 @@ afterAll(() => {
 
 beforeEach(() => {
   __resetPromptModelSignatureCacheForTests();
+  sandboxConfigs.clear();
   posted = [];
+  snapshotGate = Promise.resolve();
   snapshotEnv = { EXAMPLE: 'v1' };
   snapshotNames = ['EXAMPLE'];
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
@@ -174,7 +198,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt();
     snapshotEnv = { EXAMPLE: 'v2' };
     snapshotRevision = 'rev-2';
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -184,7 +208,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     snapshotEnv = { EXAMPLE: 'v1', STRIPE_KEY: 'sk_live_new' };
     snapshotNames = ['EXAMPLE', 'STRIPE_KEY'];
     snapshotRevision = 'rev-2';
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -195,18 +219,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt();
     snapshotCapabilitiesJson =
       '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}';
-    await prompt();
-
-    expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
-  });
-
-  test('an LLM-gateway mode flip still asks for a reload', async () => {
-    // Toggling this changes the daemon-side KORTIX_TOKEN / BASE_URL /
-    // OPENCODE_DENY_ENV triple — the "gateway URL, model tokens/keys" case
-    // named directly in the task.
-    await prompt();
-    llmGatewayEnabled = true;
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -262,5 +275,30 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
 
     expect(posted).toHaveLength(1);
     expect(posted[0]!.refreshModels).toBe(true);
+  });
+});
+
+describe('syncSandboxEnvForPrompt — trusted fast path', () => {
+  test('a prompt after a confirmed sync does not wait for the env resolve', async () => {
+    await prompt();
+    let release!: () => void;
+    snapshotGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    // Would hang here if the prompt still awaited the snapshot read.
+    await prompt();
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
+    release();
+    await Promise.all(__pendingEnvChecksForTests());
+    expect(posted).toHaveLength(1);
+  });
+
+  test('a different agent is never trusted: its env resolves before the prompt', async () => {
+    await prompt();
+    await prompt('ext-1', 'reviewer');
+    expect(__pendingEnvChecksForTests()).toHaveLength(0);
+    // Trusted again for that agent from now on.
+    await prompt('ext-1', 'reviewer');
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
   });
 });

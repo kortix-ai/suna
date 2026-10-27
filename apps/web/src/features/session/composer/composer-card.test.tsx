@@ -15,9 +15,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
-import { ComposerCard } from './ComposerCard';
+import { ComposerCard } from '@kortix/ui/composer';
 
 const noop = () => {};
 const asyncNoop = async () => {};
@@ -33,7 +33,6 @@ function render(props?: {
   isDragOver?: boolean;
   commandAttachmentPlan?: { kind: 'refuse'; message: string; description: string };
   attachedFiles?: unknown[];
-  computerAwake?: { kind: 'stays' | 'stops'; minutes: number } | null;
 }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
@@ -82,6 +81,8 @@ function render(props?: {
               handleAttachClick={noop}
               primaryAgents={[] as never}
               availableSelectedModel={null}
+              agentMenuOpen={false}
+              setAgentMenuOpen={noop}
               modelMenuOpen={false}
               setModelMenuOpen={noop}
               reasoningMenuOpen={false}
@@ -105,7 +106,6 @@ function render(props?: {
               modelRequired={false}
               variants={[] as never}
               messages={[] as never}
-              computerAwake={props?.computerAwake ?? null}
             />
           </TooltipProvider>
         </AuthProvider>
@@ -140,17 +140,6 @@ describe('ComposerCard (the moved card subtrees)', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('A /command cannot carry attachments');
     expect(html).toContain('Detach the files or send without the command.');
-  });
-
-  // KRTX-1729: the "computer stays on" strip above owns the card's top corners.
-  test('under the computer-awake strip the card squares its top; without it the top stays round', () => {
-    // The card's own class tokens: it always carries the stack's CSS variant,
-    // whose text also contains `rounded-t-none`.
-    const cardClasses = (html: string) => (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
-    expect(cardClasses(render({ computerAwake: { kind: 'stays', minutes: 25 } }))).toContain(
-      'rounded-t-none',
-    );
-    expect(cardClasses(render())).not.toContain('rounded-t-none');
   });
 
   test('the hidden multi-file input keeps its accept list (the attach path)', () => {

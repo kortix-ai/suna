@@ -1,41 +1,62 @@
 /**
- * Retention purge (P2.8, decision D6). The legal page promises that customer
+ * Retention purge (P2.8, decisions D6 and D6b). The legal page promises that customer
  * content is "deleted within 90 days after it ends", files included. Two things
- * end content, each with its own windows:
+ * end content, each with its own window. Everything goes in the same tick:
  *
- * | what ended                | rows go          | objects go (rows + 7 days) | all gone |
- * | a session was deleted     | delete + 30 days | delete + 37 days           | day 37   |
- * | a subscription ended      | end + 80 days    | end + 87 days              | day 87   |
+ * | what ended                | all content gone |
+ * | a session was deleted     | delete + 30 days |
+ * | the account was closed    | close + 80 days  |
  *
- * "Rows" are the v2 `session_log*` rows and the v1 `session_transcript_*` rows.
+ * "Rows" are the v2 `session_log*` rows, the v1 `session_transcript_*` rows until
+ * the v1 mirror is drained (`mirrorDrained`), and every other table that holds the
+ * session's content (`purgeRows`). The session row itself stays as a shell of ids
+ * and dates: usage, billing and audit rows still name it.
  * "Objects" are everything under `<project_id>/<session_id>/` in the
  * `session-attachments` bucket: uploads, offloaded log texts (P2.3) and the
- * orphans a skipped capture batch leaves (P2.7b). Objects go after their rows,
- * 7 days later, because Supabase backups do not cover Storage: a restore of the
- * database inside that gap still finds its objects.
+ * orphans a skipped capture batch leaves (P2.7b), and the session's /workspace
+ * volume when it has one (platform/services/workspace-volume.ts). They go right after their rows;
+ * a failed removal is retried every tick. The session branch goes with them, in
+ * the branch sweep (`selectExpiredSessionBranches` in maintenance.ts).
  *
  * How an end is recorded today:
  * - a session delete stamps the ISO string `project_sessions.metadata.deletedAt`
- *   (`deleteSession`; the account deletion stamps it too). Nothing un-deletes.
- * - a subscription end is `credit_accounts.stripe_subscription_status` in
- *   `SUBSCRIPTION_END_STATUSES`. THAT SET IS EMPTY, so the subscription path is inert and
- *   only the session-delete path is live. Decision D6b (which signal ends a subscription)
- *   is open: `revertToFree` writes `tier free` + `canceled` and the account then runs as a
- *   free account, and an `unpaid` account still spends from its wallet while Stripe
- *   retries. Neither is an ended customer. The machinery below is kept and tested against
- *   a test set. `credit_accounts` keeps no date, so each tick records the first sight of
- *   an ended status in `account_subscription_ends`; when the status is live again it
- *   deletes that record and the account's `subscription_ended` markers (a reused session
- *   can then be purged again).
+ *   (`deleteSession`; the account deletion stamps it too). Until the rows go,
+ *   the session is in the trash: `restoreSession` strips the stamp, and this
+ *   purge then skips it. `SESSION_DELETE_ROWS_DAYS` is therefore also the
+ *   restore window (`sessionRestoreUntil`), and the done marker below ends it.
+ * - an account closure (D6b: the only signal that ends a subscription) is an
+ *   `account_deletion_requests` row with status `pending` or `processing`; the
+ *   account is closed at its `scheduled_for` (the end of the 14-day grace in which
+ *   `cancel-deletion` still works). Plan cancellation, a downgrade to free and payment
+ *   failure are not closures: `credit_accounts` is never read. Normally the
+ *   account-deletion worker erases the whole account at `scheduled_for` (the account
+ *   row cascades to every session row, `deleteAccountExternalStores` removes the
+ *   files), and `delete-immediately` erases at once. This window is the backstop for a
+ *   closure that does not erase: the worker leaves a request more than 2 days past its
+ *   date for a person (`MAX_OVERDUE` in `billing/repositories/account-deletion.ts`),
+ *   a run that keeps failing falls into that backlog, and `ACCOUNT_DELETION_SWEEP_PAUSED`
+ *   stops the worker. Such content goes here; the purge row's reason is
+ *   `subscription_ended`. A closing account that still acts as a live customer (a paid
+ *   tier whose payment is not cancelled, or any session created or turn started after
+ *   the close) is skipped whole and counted in the tick line (`liveClosed`): it is left
+ *   for a person. A cancelled request reopens the account: once a session's objects
+ *   are gone, the purge deletes its `subscription_ended` marker, so a session the
+ *   account reuses can be purged again. Not covered: a team account whose owner closed
+ *   their personal account (the deletion request names the personal account only).
  *
- * Known limits: an archived project stamps no session `deletedAt`; a RevenueCat end
- * writes stripe status null; a rows purge that runs late (worker off, backlog) moves its
- * objects phase past day 90 by the same delay; `deleteSession` already empties the
- * session's attachment folder at delete time, so the day-37 phase is a backstop.
+ * Known limits: an archived project stamps no session `deletedAt`; a purge that runs
+ * late (worker off, backlog) moves the end by the same delay. This purge is the only
+ * delete of a deleted session's attachment folder: `deleteSession` keeps it so a
+ * restore gets the files back (KRTX-1734). Storage has no backups, so a database
+ * restored from a backup taken before a purge brings back rows whose objects are
+ * gone; the session is still deleted and past its window, so the next tick purges
+ * the rows again.
+ * `kortix.account_subscription_ends` is unused since D6b: a later release drops it.
  *
  * A session is never touched while it is in use:
- * - a session that is not deleted, and whose account has no dead subscription;
- * - a session of an ended account that was created, or ran a turn, after the end;
+ * - a session that is not deleted, and whose account is not closed;
+ * - any session of a closed account that has a paid live plan, or that created a
+ *   session or ran a turn after the close;
  * - a session whose delete stamp is gone (restored) or unreadable.
  *
  * Each purged session keeps one `session_content_purges` row: the done marker
@@ -50,70 +71,115 @@
  * Ids go to debug logs only; the info line carries counts.
  */
 import {
+  chatTurnStreams,
+  connectorCalls,
+  gatewayRequestLogs,
+  notifications,
+  projectSessionPublicShares,
+  projectSessionRuntimeContexts,
+  projectSessions,
   sessionContentPurges,
+  sessionLifecycleCommands,
   sessionLogBlobs,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
+  sessionPendingQuestions,
+  sessionRuntimeProjections,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
+  voiceCallTurns,
 } from '@kortix/db';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { logger } from '../lib/logger';
+import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../platform/services/workspace-volume';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { sessionAttachmentStore } from './lib/session-attachments';
-
-const SESSION_DELETE_ROWS_DAYS = 30;
-const SUBSCRIPTION_END_ROWS_DAYS = 80;
-const OBJECTS_AFTER_ROWS_DAYS = 7;
-export const PURGE_BATCH_SIZE = 200;
+import { mirrorDrained } from './session-log-capture';
 
 /**
- * The `credit_accounts.stripe_subscription_status` values that end a subscription.
- * EMPTY until decision D6b names the signal: `canceled` is also what a downgrade to the
- * free tier writes, and `unpaid` accounts still run. Empty means no account is ever
- * marked ended and no session is purged by the subscription window.
+ * Days from a session delete to its rows purge: the restore window too. The SQL twin is
+ * `kortix.session_delete_due_at` (migration `20261022130858924_mirror_sessions_without_log.sql`),
+ * which the purge below and the backfill selection read.
  */
-export const SUBSCRIPTION_END_STATUSES: readonly string[] = [];
+export const SESSION_DELETE_ROWS_DAYS = 30;
+/** Days from an account closure to its purge: all gone by day 80 < 90. */
+const ACCOUNT_CLOSED_ROWS_DAYS = 80;
+export const PURGE_BATCH_SIZE = 200;
+/**
+ * The `project_sessions.metadata` keys a purged deleted session keeps: no content.
+ * `workspace_volume` names the session's /workspace volume, which the objects phase deletes.
+ */
+const SHELL_METADATA_KEYS = ['deletedAt', 'deletedBy', 'branch_gc', 'copiesPurgedAt', WORKSPACE_VOLUME_SESSION_KEY];
 
 const DAY_MS = 86_400_000;
-// What `deleteSession` and the account deletion write: an ISO instant. Anything else is skipped,
-// so one unreadable stamp cannot fail the query for every other session.
-const ISO_INSTANT =
-  '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$';
 
+/**
+ * The last instant a deleted session can be restored: its rows purge is due
+ * then. Null for a stamp that is not a date (the purge never takes those).
+ */
+export function sessionRestoreUntil(deletedAt: unknown): Date | null {
+  const at = typeof deletedAt === 'string' ? Date.parse(deletedAt) : Number.NaN;
+  return Number.isFinite(at) ? new Date(at + SESSION_DELETE_ROWS_DAYS * DAY_MS) : null;
+}
 // A raw `sql` parameter is not a Date: the driver takes a string.
 const instant = (at: Date) => sql`${at.toISOString()}::timestamptz`;
 
 type Store = Pick<ReturnType<typeof sessionAttachmentStore>, 'removeSession'>;
 type DueSession = { session_id: string; project_id: string; account_id: string; reason: string };
-export type PurgeResult = { sessions: number; objects: number; failed: number };
+/** `liveClosed`: closing accounts past their window that still act live, left for a person. */
+export type PurgeResult = { sessions: number; objects: number; failed: number; liveClosed: number };
 
 /**
- * Record each newly ended subscription once. Forget each one that is live again, and with
- * it the `subscription_ended` markers of that account: a session it reuses can then be
- * purged again, and objects written after a marker are not left behind forever.
+ * The closing accounts and their close date: an open request (`pending` or `processing`;
+ * a legacy row with `is_cancelled` set is a cancel), the earliest `scheduled_for` wins.
+ * `completed` needs nothing: the account row is gone. `cancelled` reopens the account.
+ * A request row outlives its account (no foreign key): only accounts that exist count.
  */
-async function syncSubscriptionEnds(now: Date, endStatuses: readonly string[]): Promise<void> {
-  if (endStatuses.length === 0) return;
-  const ended = sql.join(endStatuses.map((status) => sql`${status}`), sql`, `);
+const CLOSING = sql`
+  select r.account_id, min(r.scheduled_for) as closed_at
+  from kortix.account_deletion_requests r
+  join kortix.accounts a on a.account_id = r.account_id
+  where r.status in ('pending', 'processing') and not coalesce(r.is_cancelled, false)
+  group by r.account_id`;
+
+/**
+ * A closing account that still acts as a live customer: a paid tier whose payment is
+ * not cancelled, or any session created, or any turn started, after the close. The
+ * backstop leaves it for a person, like the account-deletion worker does.
+ */
+const LIVE = (k: string) => sql.raw(`(
+  exists (select 1 from kortix.credit_accounts c
+    where c.account_id = ${k}.account_id and coalesce(c.tier, 'free') <> 'free'
+      and coalesce(c.payment_status, '') not in ('canceled', 'cancelled', 'deleted'))
+  or exists (select 1 from kortix.project_sessions s2
+    where s2.account_id = ${k}.account_id and (s2.created_at > ${k}.closed_at
+      or exists (select 1 from kortix.session_turns t where t.session_id = s2.session_id and t.started_at > ${k}.closed_at))))`);
+
+/**
+ * Forget the `subscription_ended` markers of an account that is open again (its closure
+ * was cancelled), once that session's objects are gone too: a cancel between the two
+ * phases must not leave a half-erased session. A session the account reuses can then be
+ * purged again, and objects written after a marker are not left behind forever. A
+ * completed closure has no markers left: the account row cascades to them.
+ */
+// ponytail: scans session_content_purges for the reason each tick (no index on reason).
+// The table holds one row per purged session; index (reason, account_id) when a tick measures slow.
+async function forgetReopenedAccounts(): Promise<void> {
   await db.execute(sql`
-    insert into kortix.account_subscription_ends (account_id, ended_at)
-    select c.account_id, ${instant(now)}
-    from kortix.credit_accounts c
-    where c.stripe_subscription_status in (${ended})
-      and exists (select 1 from kortix.accounts a where a.account_id = c.account_id)
-    on conflict (account_id) do nothing`);
-  await db.execute(sql`
-    with live_again as (
-      delete from kortix.account_subscription_ends e
-      using kortix.credit_accounts c
-      where c.account_id = e.account_id
-        and coalesce(c.stripe_subscription_status, '') not in (${ended})
-      returning e.account_id)
     delete from kortix.session_content_purges p
-    using live_again l
-    where p.account_id = l.account_id and p.reason = 'subscription_ended'`);
+    where p.reason = 'subscription_ended' and p.objects_purged_at is not null
+      and not exists (select 1 from (${CLOSING}) k where k.account_id = p.account_id)`);
+}
+
+/** Closing accounts whose window is due but that still act live: left for a person. */
+async function liveClosedAccounts(now: Date): Promise<number> {
+  const [row] = await db.execute(sql`
+    select count(*)::int as n from (${CLOSING}) k
+    where k.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) <= ${instant(now)} and ${LIVE('k')}`);
+  return Number((row as { n: number }).n);
 }
 
 // ponytail: reads project_sessions whole each tick (no index on metadata.deletedAt). One
@@ -121,19 +187,18 @@ async function syncSubscriptionEnds(now: Date, endStatuses: readonly string[]): 
 /** The sessions whose rows are due, oldest due first. */
 async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
   const rows = await db.execute(sql`
+    with closed as (select k.* from (${CLOSING}) k where not ${LIVE('k')})
     select s.session_id, s.project_id::text as project_id, s.account_id::text as account_id, x.reason
     from kortix.project_sessions s
-    left join kortix.account_subscription_ends e on e.account_id = s.account_id
+    left join closed e on e.account_id = s.account_id
+    -- Null for a session that is not deleted, or whose stamp is not the ISO instant
+    -- deleteSession writes: one unreadable stamp cannot fail the query for every other session.
     cross join lateral (select
-      case when jsonb_typeof(s.metadata -> 'deletedAt') = 'string' and s.metadata ->> 'deletedAt' ~ ${ISO_INSTANT}
-        then (s.metadata ->> 'deletedAt')::timestamptz + make_interval(days => ${SESSION_DELETE_ROWS_DAYS}) end as deleted_due,
-      case when e.account_id is not null
-        and s.created_at <= e.ended_at
-        and not exists (select 1 from kortix.session_turns t where t.session_id = s.session_id and t.started_at > e.ended_at)
-        then e.ended_at + make_interval(days => ${SUBSCRIPTION_END_ROWS_DAYS}) end as ended_due) w
+      kortix.session_delete_due_at(s.metadata) as deleted_due,
+      e.closed_at + make_interval(days => ${ACCOUNT_CLOSED_ROWS_DAYS}) as closed_due) w
     cross join lateral (select
-      least(w.deleted_due, w.ended_due) as due_at,
-      case when w.deleted_due is not null and (w.ended_due is null or w.deleted_due <= w.ended_due)
+      least(w.deleted_due, w.closed_due) as due_at,
+      case when w.deleted_due is not null and (w.closed_due is null or w.deleted_due <= w.closed_due)
         then 'session_deleted' else 'subscription_ended' end as reason) x
     where x.due_at <= ${instant(now)}
       and not exists (select 1 from kortix.session_content_purges p where p.session_id = s.session_id)
@@ -142,16 +207,75 @@ async function dueSessions(now: Date, limit: number): Promise<DueSession[]> {
   return rows as unknown as DueSession[];
 }
 
-/** Every row of one session in both stores, then its done marker, in one transaction. */
-async function purgeRows(row: DueSession, now: Date): Promise<void> {
+/**
+ * Purged deleted sessions whose copies may remain: purged before this purge covered them
+ * (2026-10-23, no `copiesPurgedAt` stamp), or with metadata written after the purge.
+ * `purgeRows` runs again on them; the done marker keeps its first date.
+ */
+async function unshelledSessions(limit: number): Promise<DueSession[]> {
+  if (limit <= 0) return [];
+  const rows = await db.execute(sql`
+    select s.session_id, s.project_id::text as project_id, s.account_id::text as account_id, p.reason
+    from kortix.session_content_purges p
+    join kortix.project_sessions s on s.session_id = p.session_id
+    where p.reason = 'session_deleted'
+      and (not coalesce(s.metadata, '{}'::jsonb) ? 'copiesPurgedAt'
+        or exists (select 1 from jsonb_object_keys(s.metadata) k where k not in ${SHELL_METADATA_KEYS}))
+    order by p.rows_purged_at, s.session_id
+    limit ${limit}`);
+  return rows as unknown as DueSession[];
+}
+
+/**
+ * Every content row of one session, then its done marker, in one transaction. `drained`:
+ * the v1 mirror is drained (`mirrorDrained`), so its tables are not touched; the Release B2
+ * migration drops them with every row left in them.
+ *
+ * Content is the conversation in both stores, and everything else that copies it: model
+ * requests and responses, prompt commands, voice turns, questions and answers, runtime
+ * projections and contexts, Slack stream state, notifications, share links and connector
+ * result summaries. A row that usage, billing or audit counts (`gateway_request_logs`,
+ * `session_lifecycle_commands`, `connector_calls`) stays without its content columns.
+ * A deleted session's own row keeps only ids, dates and `SHELL_METADATA_KEYS`; a session
+ * of a closed account keeps its row as it is (the account deletion erases it whole).
+ */
+async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<void> {
   const id = row.session_id;
+  const inProject = (t: { projectId: PgColumn; sessionId: PgColumn }) =>
+    and(eq(t.projectId, row.project_id), sql`${t.sessionId}::text = ${id}`);
   await db.transaction(async (tx) => {
     await tx.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, id));
     await tx.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, id));
     await tx.delete(sessionLogBlobs).where(eq(sessionLogBlobs.sessionId, id));
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
-    await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
-    await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    if (!drained) {
+      await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
+      await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
+    }
+    await tx.delete(voiceCallTurns).where(eq(voiceCallTurns.sessionId, id));
+    await tx.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.sessionId, id));
+    await tx.delete(sessionRuntimeProjections).where(eq(sessionRuntimeProjections.sessionId, id));
+    await tx.delete(projectSessionRuntimeContexts).where(eq(projectSessionRuntimeContexts.sessionId, id));
+    await tx.delete(chatTurnStreams).where(eq(chatTurnStreams.sessionId, id));
+    await tx.delete(projectSessionPublicShares).where(eq(projectSessionPublicShares.sessionId, id));
+    await tx.delete(notifications).where(and(eq(notifications.accountId, row.account_id), eq(notifications.sessionId, id)));
+    await tx.update(gatewayRequestLogs).set({ request: null, response: null }).where(inProject(gatewayRequestLogs));
+    await tx.update(connectorCalls).set({ resultSummary: null }).where(inProject(connectorCalls));
+    await tx
+      .update(sessionLifecycleCommands)
+      .set({ payload: {}, result: {} })
+      .where(eq(sessionLifecycleCommands.sessionId, id));
+    if (row.reason === 'session_deleted') {
+      await tx
+        .update(projectSessions)
+        .set({
+          metadata: sql`(select coalesce(jsonb_object_agg(k, v), '{}'::jsonb) from jsonb_each(coalesce(${qualifiedColumn(projectSessions.metadata)}, '{}'::jsonb)) e(k, v) where k in ${SHELL_METADATA_KEYS})
+            || jsonb_build_object('copiesPurgedAt', ${now.toISOString()}::text)`,
+          labels: [],
+          error: null,
+        })
+        .where(eq(projectSessions.sessionId, id));
+    }
     await tx
       .insert(sessionContentPurges)
       .values({ sessionId: id, projectId: row.project_id, accountId: row.account_id, reason: row.reason, rowsPurgedAt: now })
@@ -160,16 +284,19 @@ async function purgeRows(row: DueSession, now: Date): Promise<void> {
 }
 
 export async function purgeSessionContent(
-  options: { now?: Date; batchSize?: number; store?: Store; endStatuses?: readonly string[] } = {},
+  options: { now?: Date; batchSize?: number; store?: Store } = {},
 ): Promise<PurgeResult> {
   const now = options.now ?? new Date();
   const batchSize = options.batchSize ?? PURGE_BATCH_SIZE;
-  const result: PurgeResult = { sessions: 0, objects: 0, failed: 0 };
+  const result: PurgeResult = { sessions: 0, objects: 0, failed: 0, liveClosed: 0 };
 
-  await syncSubscriptionEnds(now, options.endStatuses ?? SUBSCRIPTION_END_STATUSES);
-  for (const row of await dueSessions(now, batchSize)) {
+  await forgetReopenedAccounts();
+  result.liveClosed = await liveClosedAccounts(now);
+  const drained = await mirrorDrained();
+  const due = await dueSessions(now, batchSize);
+  for (const row of [...due, ...(await unshelledSessions(batchSize - due.length))]) {
     try {
-      await purgeRows(row, now);
+      await purgeRows(row, now, drained);
       result.sessions += 1;
       logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
     } catch (error) {
@@ -182,17 +309,23 @@ export async function purgeSessionContent(
     }
   }
 
-  const objectsDueBefore = new Date(now.getTime() - OBJECTS_AFTER_ROWS_DAYS * DAY_MS);
   const dueObjects = await db
     .select({ sessionId: sessionContentPurges.sessionId, projectId: sessionContentPurges.projectId })
     .from(sessionContentPurges)
-    .where(and(isNull(sessionContentPurges.objectsPurgedAt), lte(sessionContentPurges.rowsPurgedAt, objectsDueBefore)))
+    .where(and(isNull(sessionContentPurges.objectsPurgedAt), lte(sessionContentPurges.rowsPurgedAt, now)))
     .orderBy(sessionContentPurges.rowsPurgedAt)
     .limit(batchSize);
   const store = options.store ?? sessionAttachmentStore();
   for (const { sessionId, projectId } of dueObjects) {
     try {
       await store.removeSession(projectId, sessionId);
+      // The session's /workspace files, when they live on a Platinum volume.
+      const [session] = await db
+        .select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      await deleteSessionWorkspaceVolume(sessionId, session?.metadata);
       await db.update(sessionContentPurges).set({ objectsPurgedAt: now }).where(eq(sessionContentPurges.sessionId, sessionId));
       result.objects += 1;
     } catch (error) {
@@ -204,6 +337,6 @@ export async function purgeSessionContent(
     }
   }
 
-  if (result.sessions + result.objects + result.failed > 0) logger.info('[session-purge] tick', result);
+  if (result.sessions + result.objects + result.failed + result.liveClosed > 0) logger.info('[session-purge] tick', result);
   return result;
 }

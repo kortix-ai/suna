@@ -1,262 +1,35 @@
 /**
- * File Preview Renderers
- * Components for previewing different file types
+ * File Preview Renderers — the text half: markdown, code, JSON, HTML, text,
+ * CSV previews, the fallback screens, and the `FilePreview` dispatch that
+ * picks the renderer. The WebView plumbing and the shared `PreviewStatus`
+ * live in `./file-preview-webview`; the blob document renderers (image, PDF,
+ * DOCX) in `./file-preview-documents`.
  */
 
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { View, Image, ScrollView, Platform, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
-import { WebView } from 'react-native-webview';
-import type {
-  ShouldStartLoadRequest,
-  WebViewErrorEvent,
-  WebViewHttpErrorEvent,
-} from 'react-native-webview/lib/WebViewTypes';
+import React, { useMemo } from 'react';
+import { View, ScrollView, Platform } from 'react-native';
 import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { WarningCircleIcon as AlertCircle, FileTextIcon as FileText } from '@/lib/icons';
+import { FileTextIcon as FileText } from '@/lib/icons';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { autoLinkUrls } from '@kortix/shared';
-import * as FileSystem from 'expo-file-system/legacy';
-import { log } from '@/lib/logger';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { CSV_MAX_COLUMNS, JSON_PRETTY_PRINT_MAX_CHARS, TEXT_TRUNCATE_DISPLAY_BYTES, previewDecision, truncateForPreview } from '@/lib/files/preview-limits';
+import { generateHighlightedCodeHtml } from './file-preview-html';
+import { FilePreviewType, getLanguageFromFilename } from '@/lib/files/preview-type';
 import {
-  decidePreviewNavigation,
-  type PreviewNavigationOptions,
-} from '@/lib/utils/html-embed';
-import {
-  CSV_MAX_COLUMNS,
-  JSON_PRETTY_PRINT_MAX_CHARS,
-  TEXT_TRUNCATE_DISPLAY_BYTES,
-  previewDecision,
-  truncateForPreview,
-} from '@/lib/files/preview-limits';
-import { generateHighlightedCodeHtml, generatePdfJsHtml, generateDocxHtml } from './file-preview-html';
-import {
-  FilePreviewType,
-  getFilePreviewType,
-  getLanguageFromFilename,
-} from '@/lib/files/preview-type';
-import { openLink } from '@/lib/utils/open-link';
-
-// Classification moved to `@/lib/files/preview-type`; callers import it from
-// here (`./FilePreviewRenderers`) as before.
-export { FilePreviewType, getFilePreviewType, getLanguageFromFilename } from '@/lib/files/preview-type';
-
-/**
- * Constructs a preview URL for HTML files in the sandbox environment.
- * Properly handles URL encoding of file paths by encoding each path segment individually.
- */
-function constructHtmlPreviewUrl(
-  sandboxUrl: string | undefined,
-  filePath: string | undefined,
-): string | undefined {
-  if (!sandboxUrl || !filePath) {
-    return undefined;
-  }
-
-  // Remove /workspace/ prefix if present
-  const processedPath = filePath.replace(/^\/workspace\//, '');
-
-  // Split the path into segments and encode each segment individually
-  const pathSegments = processedPath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment));
-
-  // Join the segments back together with forward slashes
-  const encodedPath = pathSegments.join('/');
-
-  return `${sandboxUrl}/${encodedPath}`;
-}
-
-// File preview type enum
-
-/**
- * Space the host keeps clear at the bottom of a preview, for controls that float
- * over it (the session file sheet's pinned bar, the project drawer's approach).
- * Each renderer ends its content that far above the edge, so the last line of a
- * document rests above the controls. 0 (the default) changes nothing.
- */
-export const FilePreviewBottomInsetContext = React.createContext(0);
-
-interface FilePreviewProps {
-  content: string | Blob | null;
-  fileName: string;
-  previewType: FilePreviewType;
-  blobUrl?: string;
-  filePath?: string;
-  sandboxUrl?: string;
-  /** File size in bytes, when known. Files over the preview limits are not rendered. */
-  size?: number;
-}
-
-/**
- * onShouldStartLoadWithRequest handler for preview WebViews. Inline loads stay
- * in the WebView, web and mail links open outside the app, and every other
- * navigation is blocked.
- */
-function usePreviewNavigationGuard({
-  allowedOrigin,
-  allowFileUrls,
-  externalRequiresClick,
-}: Omit<PreviewNavigationOptions, 'isTopFrame' | 'navigationType'> = {}) {
-  return useCallback(
-    (request: ShouldStartLoadRequest) => {
-      const action = decidePreviewNavigation(request.url, {
-        allowedOrigin,
-        allowFileUrls,
-        externalRequiresClick,
-        isTopFrame: request.isTopFrame,
-        navigationType: request.navigationType,
-      });
-      if (action === 'open-external') {
-        openLink(request.url).catch((error) => {
-          log.warn('[FilePreview] Failed to open link:', error);
-        });
-      }
-      return action === 'allow';
-    },
-    [allowedOrigin, allowFileUrls, externalRequiresClick],
-  );
-}
-
-/**
- * Image Preview Component
- */
-
-/**
- * The preview WebView, minus the properties every preview sets identically.
- * Callers keep only their own source, guard and loading/error UI.
- */
-function PreviewWebView({
-  source,
-  onShouldStartLoadWithRequest,
-  scrollEnabled,
-  showsVerticalScrollIndicator,
-  scalesPageToFit,
-  bounces,
-  allowFileAccess,
-  mixedContentMode,
-  domStorageEnabled,
-  style,
-  contentInset,
-  loading,
-  onError,
-  onHttpError,
-}: {
-  source: { uri: string } | { html: string };
-  onShouldStartLoadWithRequest: (request: ShouldStartLoadRequest) => boolean;
-  /** Scroll props pass straight through; `undefined` keeps the WebView default. */
-  scrollEnabled?: boolean;
-  showsVerticalScrollIndicator?: boolean;
-  scalesPageToFit?: boolean;
-  bounces?: boolean;
-  allowFileAccess?: boolean;
-  mixedContentMode?: 'compatibility';
-  domStorageEnabled?: boolean;
-  /** The HTML preview uses an opaque page background and an iOS-only inset. */
-  style?: StyleProp<ViewStyle>;
-  contentInset?: { top?: number; bottom?: number; left?: number; right?: number };
-  loading: React.ReactElement;
-  onError?: (event: WebViewErrorEvent) => void;
-  onHttpError?: (event: WebViewHttpErrorEvent) => void;
-}) {
-  return (
-    <WebView
-      source={source}
-      style={[{ flex: 1, backgroundColor: 'transparent' }, style]}
-      originWhitelist={['*']}
-      onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-      javaScriptEnabled
-      domStorageEnabled={domStorageEnabled}
-      allowFileAccess={allowFileAccess}
-      mixedContentMode={mixedContentMode}
-      contentInset={contentInset}
-      scrollEnabled={scrollEnabled}
-      showsVerticalScrollIndicator={showsVerticalScrollIndicator}
-      scalesPageToFit={scalesPageToFit}
-      bounces={bounces}
-      startInLoadingState
-      renderLoading={() => loading}
-      onError={onError}
-      onHttpError={onHttpError}
-    />
-  );
-}
-
-function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  // Width/height ratio of the loaded image; the box follows the live window width.
-  const [aspectRatio, setAspectRatio] = useState(0);
-  const { width: screenWidth } = useWindowDimensions();
-  const maxWidth = screenWidth - 32;
-  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
-
-  if (!blobUrl) {
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="small" />
-        <Text className="text-sm text-muted-foreground mt-4">
-          Loading image...
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ padding: 16, paddingBottom: 16 + bottomInset }}
-      showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
-    >
-      {hasError ? (
-        <View className="items-center justify-center p-8">
-          <Icon
-            as={AlertCircle}
-            size={48}
-            className="text-destructive mb-4"
-          />
-          <Text className="text-sm text-muted-foreground text-center">
-            Failed to load image
-          </Text>
-        </View>
-      ) : (
-        <View className="items-center">
-          {isLoading && (
-            <View className="absolute inset-0 items-center justify-center z-10">
-              <KortixLoader size="small" />
-            </View>
-          )}
-          <Image
-            source={{ uri: blobUrl }}
-            style={{
-              width: maxWidth,
-              height: aspectRatio ? maxWidth / aspectRatio : 300,
-            }}
-            resizeMode="contain"
-            onLoad={(event) => {
-              const { width, height } = event.nativeEvent.source;
-              setAspectRatio(width / height);
-              setIsLoading(false);
-            }}
-            onError={() => {
-              setIsLoading(false);
-              setHasError(true);
-            }}
-          />
-        </View>
-      )}
-    </ScrollView>
-  );
-}
+  constructHtmlPreviewUrl,
+  FilePreviewBottomInsetContext,
+  PreviewStatus,
+  PreviewWebView,
+  usePreviewNavigationGuard,
+} from './file-preview-webview';
+import { ImagePreview, PdfPreview, DocxPreview } from './file-preview-documents';
 
 /**
  * Markdown Preview Component
@@ -339,7 +112,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   );
 }
 /**
- * HTML Preview Component with Daytona iframe
+ * HTML Preview Component with a sandbox iframe
  */
 /**
  * JSON: pretty-printed below the pretty-print size limit, raw at or above it.
@@ -372,7 +145,7 @@ function HtmlPreview({
   const isDark = colorScheme === 'dark';
 
   const bottomInset = React.useContext(FilePreviewBottomInsetContext);
-  // If we have sandbox URL and file path, use Daytona iframe to preview
+  // If we have sandbox URL and file path, use the sandbox iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
   // Pages of the previewed site stay in the WebView. Another site opens outside
   // the app only for a user click, so a script redirect or an iframe in the
@@ -533,283 +306,6 @@ function CsvPreview({ content }: { content: string }) {
 }
 
 /**
- * PDF Preview Component using WebView
- * - iOS: Uses native WebView PDF support with file:// URLs
- * - Android: Uses pdf.js for rendering since Android WebView lacks native PDF support
- */
-function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [pdfFileUri, setPdfFileUri] = useState<string | null>(null);
-  const [pdfHtml, setPdfHtml] = useState<string | null>(null);
-  // The cleanup closure must read the latest temp file, not the value captured
-  // when the effect ran.
-  const pdfFileUriRef = useRef<string | null>(null);
-  
-  const isAndroid = Platform.OS === 'android';
-  const onShouldStartLoadWithRequest = usePreviewNavigationGuard({ allowFileUrls: !isAndroid });
-
-  // Process the PDF data based on platform
-  useEffect(() => {
-    if (!blobUrl) return;
-    let cancelled = false;
-
-    const processPdf = async () => {
-      try {
-        setIsLoading(true);
-        setHasError(false);
-
-        // Extract base64 data from data URL
-        const base64Match = blobUrl.match(/^data:[^;]+;base64,(.+)$/);
-        if (!base64Match) {
-          log.error('Invalid PDF data URL format');
-          setHasError(true);
-          setIsLoading(false);
-          return;
-        }
-
-        const base64Data = base64Match[1];
-
-        if (isAndroid) {
-          // Android: Generate HTML with pdf.js
-          const html = generatePdfJsHtml(base64Data, isDark);
-          setPdfHtml(html);
-          setIsLoading(false);
-        } else {
-          // iOS: Write to temp file for native WebView rendering
-          const tempFilePath = `${FileSystem.cacheDirectory}temp_${Date.now()}_${fileName}`;
-          await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          if (cancelled) {
-            FileSystem.deleteAsync(tempFilePath, { idempotent: true }).catch(() => {});
-            return;
-          }
-          pdfFileUriRef.current = tempFilePath;
-          setPdfFileUri(tempFilePath);
-          setIsLoading(false);
-        }
-      } catch (error) {
-        log.error('Failed to process PDF:', error);
-        setHasError(true);
-        setIsLoading(false);
-      }
-    };
-
-    processPdf();
-
-    // Delete the temp file when the PDF changes or the preview unmounts (iOS only)
-    return () => {
-      cancelled = true;
-      const tempFile = pdfFileUriRef.current;
-      pdfFileUriRef.current = null;
-      if (tempFile) {
-        FileSystem.deleteAsync(tempFile, { idempotent: true }).catch(() => {});
-      }
-    };
-  }, [blobUrl, fileName, isAndroid, isDark]);
-
-  if (!blobUrl) {
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="small" />
-        <Text className="text-sm text-muted-foreground mt-4">
-          Loading PDF...
-        </Text>
-      </View>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <KortixLoader size="small" />
-        <Text className="text-sm text-muted-foreground mt-4">
-          Preparing PDF...
-        </Text>
-      </View>
-    );
-  }
-
-  if (hasError || (!pdfFileUri && !pdfHtml)) {
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <Icon
-          as={AlertCircle}
-          size={48}
-          className="text-destructive mb-4"
-        />
-        <Text className="text-sm text-muted-foreground text-center mb-2">
-          Failed to load PDF
-        </Text>
-        <Text className="text-xs text-muted-foreground text-center">
-          Try downloading the file instead
-        </Text>
-      </View>
-    );
-  }
-
-  // Android: Use pdf.js HTML
-  if (isAndroid && pdfHtml) {
-    return (
-      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <PreviewWebView
-          source={{ html: pdfHtml }}
-          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-          allowFileAccess
-          mixedContentMode="compatibility"
-          domStorageEnabled
-          loading={            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-              <KortixLoader size="small" />
-              <Text className="text-sm text-muted-foreground mt-4">
-                Rendering PDF...
-              </Text>
-            </View>}
-          onError={(e) => {
-            log.error('WebView PDF error (Android):', e.nativeEvent);
-            setHasError(true);
-          }}
-        />
-      </View>
-    );
-  }
-
-  // iOS: Use native file:// URL rendering
-  return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-      <PreviewWebView
-        source={{ uri: pdfFileUri! }}
-        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        allowFileAccess
-        domStorageEnabled
-        loading={            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-              <KortixLoader size="small" />
-              <Text className="text-sm text-muted-foreground mt-4">
-                Rendering PDF...
-              </Text>
-            </View>}
-        onError={(e) => {
-          log.error('WebView PDF error (iOS):', e.nativeEvent);
-          setHasError(true);
-        }}
-        onHttpError={(e) => {
-          log.error('WebView PDF HTTP error:', e.nativeEvent);
-          setHasError(true);
-        }}
-      />
-    </View>
-  );
-}
-
-
-/**
- * DOCX Preview Component using WebView and mammoth.js
- * Converts DOCX to HTML for rendering
- */
-function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [docxHtml, setDocxHtml] = useState<string | null>(null);
-  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
-
-  useEffect(() => {
-    if (!blobUrl) return;
-
-    const processDocx = async () => {
-      try {
-        setIsLoading(true);
-        setHasError(false);
-
-        // Extract base64 data from data URL
-        const base64Match = blobUrl.match(/^data:[^;]+;base64,(.+)$/);
-        if (!base64Match) {
-          log.error('[DocxPreview] Invalid data URL format');
-          setHasError(true);
-          setIsLoading(false);
-          return;
-        }
-
-        const base64Data = base64Match[1];
-        const html = generateDocxHtml(base64Data, isDark);
-        setDocxHtml(html);
-        setIsLoading(false);
-      } catch (error) {
-        log.error('[DocxPreview] Failed to process DOCX:', error);
-        setHasError(true);
-        setIsLoading(false);
-      }
-    };
-
-    processDocx();
-  }, [blobUrl, isDark]);
-
-  if (!blobUrl) {
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="small" />
-        <Text className="text-sm text-muted-foreground mt-4">
-          Loading document...
-        </Text>
-      </View>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <KortixLoader size="small" />
-        <Text className="text-sm text-muted-foreground mt-4">
-          Preparing document...
-        </Text>
-      </View>
-    );
-  }
-
-  if (hasError || !docxHtml) {
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <Icon
-          as={AlertCircle}
-          size={48}
-          className="text-destructive mb-4"
-        />
-        <Text className="text-sm text-muted-foreground text-center mb-2">
-          Failed to load document
-        </Text>
-        <Text className="text-xs text-muted-foreground text-center">
-          Try downloading the file instead
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-      <PreviewWebView
-        source={{ html: docxHtml }}
-        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        mixedContentMode="compatibility"
-        domStorageEnabled
-        loading={          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-            <KortixLoader size="small" />
-            <Text className="text-sm text-muted-foreground mt-4">
-              Rendering document...
-            </Text>
-          </View>}
-        onError={(e) => {
-          log.error('[DocxPreview] WebView error:', e.nativeEvent);
-          setHasError(true);
-        }}
-      />
-    </View>
-  );
-}
-
-/**
  * Fallback Preview Component
  */
 function FallbackPreview({
@@ -915,6 +411,17 @@ function TextContentPreview({
   }
 }
 
+interface FilePreviewProps {
+  content: string | Blob | null;
+  fileName: string;
+  previewType: FilePreviewType;
+  blobUrl?: string;
+  filePath?: string;
+  sandboxUrl?: string;
+  /** File size in bytes, when known. Files over the preview limits are not rendered. */
+  size?: number;
+}
+
 /**
  * Main File Preview Component
  */
@@ -996,3 +503,4 @@ export function FilePreview({
 
   return preview;
 }
+

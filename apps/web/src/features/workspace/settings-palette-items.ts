@@ -33,9 +33,9 @@
 
 import { GearSixIcon } from '@phosphor-icons/react';
 
-import { railGroups, type SettingsRailTranslator } from '@/features/workspace/settings/rail';
-import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import type { RailItem } from '@/features/workspace/settings/type';
+import { railGroups, type SettingsRailTranslator } from '@kortix/ui/customize/settings/rail';
+import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import type { RailItem } from '@kortix/ui/customize/settings/type';
 
 /**
  * Mirrors `ACCOUNT_SCOPED_SETTINGS_TABS` (settings-panel.tsx) — the tabs that
@@ -52,6 +52,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'tokens',
   'credits',
   'plan',
+  'mcp',
 ];
 
 /**
@@ -144,7 +145,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // `balance` are gone from here — neither is rendered on this pane any more,
   // and a word that names a different row's subject is the defect this file's
   // header rule is about.
-  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment seat seats portal stripe',
+  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment portal stripe',
   // Copy for the two Workspace rows that came back on 2026-09-02 — the words
   // `proj-sandbox` and `proj-feature-flags` carry in `lib/menu-registry.ts`.
   sandbox:
@@ -152,6 +153,15 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   'feature-flags':
     'feature flags flag experimental beta preview labs toggles switches early access',
   upgrades: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
+  // The two connect tabs (KRTX-1997). PR #9992 added both tabs to
+  // `SettingsTab` but left this record without their keys, so the total
+  // `Record<SettingsTab, string>` below no longer described every tab. The
+  // rows' own rail copy already carries their vocabulary (title and
+  // description), and KRTX-2475 is about the Computer row's vocabulary being
+  // too greedy, not too thin — so the bags stay empty: the record is whole
+  // again and the rows search exactly the words they render.
+  mcp: '',
+  computer: '',
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
@@ -195,22 +205,11 @@ export interface SettingsPaletteParams {
 /**
  * Whether the palette may offer a tab at all.
  *
- * Mirrors the one flag-free clause of `isSettingsTabAllowed`
- * (settings-panel.tsx): a project-scoped tab is unreachable without a project.
- * The `billingEnabled` clause that used to sit beside it is gone with the
- * Billing tab, which now lives on `/accounts/[id]`. The remaining clause in
- * that function is an IAM probe keyed off `GATED_TAB_SECTION`, which is
- * module-private to `settings-panel.tsx`; the panel itself fail-opens on it
- * until it resolves and falls back to a visible tab when it denies, so an
- * offered-then-denied tab lands on a real pane rather than on nothing.
+ * Mirrors `isSettingsTabAllowed` (settings-panel-body.tsx): a project-scoped
+ * tab is unreachable without a project.
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
-  if (!params.hasProject && !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab)) return false;
-  // Sandbox templates and Feature flags also gate on a project capability
-  // (`PROJECT_GATED_TABS` in `settings-panel.tsx`). The palette offers them
-  // without probing — the panel hides a denied row and falls back to a visible
-  // tab, exactly the offered-then-denied path this function's header describes.
-  return true;
+  return params.hasProject || PALETTE_ACCOUNT_SCOPED_TABS.includes(tab);
 }
 
 function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem {

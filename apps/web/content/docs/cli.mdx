@@ -151,7 +151,7 @@ The agent works in its own sandbox, on its own branch.
 
 ```sh
 kortix chat <session_id>              # line chat, or -p "…" for one prompt
-kortix connect <session_id>           # the OpenCode TUI in your terminal
+kortix sessions shell <session_id>    # a shell in the session's sandbox
 kortix tui                            # the whole product as a terminal app
 kortix sessions wait-for <session_id> # block until the agent is done
 ```
@@ -183,7 +183,9 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `new … --with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt goes in. Repeatable. |
 | `new … --label <label>`, `--meta <key>=<value>` | Classify the session. Both are repeatable. |
 | `new … --connector <alias>=<connection-id>` | Bind a connection to the session. Repeatable. `--no-connectors` binds none. |
-| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. |
+| `ls` | List sessions with who started each. `--mine`, `--shared`, `--automated`, `--search <q>`, `--label <label>`, `--children <session_id>`. The list leaves out the sessions you archived and marks a pinned session `(pinned)`. `--pinned` lists only your pinned sessions, `--archived` only your archived ones. `--deleted` lists the deleted sessions you can restore, with their full IDs and the date each one stays restorable. |
+| `pin <session_id>…`, `unpin <session_id>…` | Pin sessions in your own list, or unpin them. Only your list changes. |
+| `archive <session_id>…`, `unarchive <session_id>…` | Take sessions out of your own list, or put them back. Archiving unpins a session and does not stop it. |
 | `status` | One line per active session with what its agent is doing now. `--all` adds stopped sessions. |
 | `info <session_id>` | One session. |
 
@@ -203,7 +205,7 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | --- | --- |
 | `log [<session_id>]` | The recent messages, read-only. A stopped session is read from its saved transcript and is not woken. `--limit <n>` (default 10). |
 | `wait-for <session_id>` | Block until the agent is done. Exit `0` done, `3` blocked on a question or permission, `124` timed out. `--timeout <seconds>` (default 300). |
-| `connect [<session_id>]` | Attach the OpenCode TUI. With no ID it shows a picker. A pi session has no TUI to attach: the command exits `1`. Details are on [TUI](/docs/tui). |
+| `connect [<session_id>]` | Deprecated with OpenCode. Attach the OpenCode TUI to a session that still runs OpenCode. With no ID it shows a picker. Every new session runs pi, which has no TUI to attach: the command exits `1`. Use `chat` or `shell` instead. Details are on [TUI](/docs/tui). |
 | `digest` | A short review of recent sessions. `--since 7d`. |
 
 ### Unblock
@@ -238,7 +240,8 @@ The commands below are `kortix sessions <subcommand>`. `chat` and `connect` also
 | `compact <session_id>` | Summarize the conversation and continue from the summary. |
 | `rename <session_id> <name>` | Set the name. `""` restores the automatic title. |
 | `update [<session_id>]` | Add or remove labels and metadata. |
-| `rm <session_id>…` | Stop and delete sessions. |
+| `rm <session_id>…` | Stop and delete sessions. Each one is restorable for 30 days; after that its messages, files and branch are deleted. Prints the `restore` command for each session. `--json` adds `restore_until` and `project_id`. |
+| `restore <session_id>` | Restore a deleted session within 30 days. Pass the full session ID (`ls --deleted` lists it), and `--project` when the session is not in the linked project. |
 
 ### Access
 
@@ -359,7 +362,7 @@ Commands an agent uses:
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
-| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, off by default: `kortix projects features enable reminders`. |
+| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/project/agents). These commands are refused for an agent session's token, whatever the grant:
@@ -424,7 +427,7 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `secrets` | Project secrets, their exposure and who can use them. | [Secrets](/docs/project/secrets) |
 | `env` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Secrets](/docs/project/secrets) |
 | `sandboxes` | Sandbox templates, builds, health and the provider pin. | [Sandboxes & previews](/docs/work/runtime) |
-| `connectors` | Add, connect, call and govern connectors. | [Connectors](/docs/connect/connectors) |
+| `connectors` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/connect/connectors) |
 | `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs/connect/channels) |
 | `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs/connect/triggers) |
 | `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs/connect/triggers) |

@@ -10,6 +10,60 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-25
+
+### D14 Empty states of a tab, folder or list draw `EmptyArt`
+- **Date:** 2026-10-25
+- **Decision:** The empty state of a tab, a folder or a list is `EmptyState` with `media={<EmptyArt icon={…} />}`: the stacked-card illustration (`packages/ui/src/primitives/empty-art.tsx`) with one Phosphor glyph on the front card (no glyph: a document, for an empty folder). Then one title, one sentence, and outline buttons with a leading icon (`Button variant="outline" size="sm"`). No other decorative tile, illustration or card.
+- **Why:** Jay, 2026-10-25: the channel tabs (Memory, Links, Triggers, Apps, Threads) and the Files folders draw one picture for "nothing here yet", so every empty tab reads the same. One muted line on a full-height tab read as a broken page.
+- **Where:** `visual/layout.md` (States), `verbal/voice-and-tone.md` section 4, `kortix-design-system` (Required primitives, Which component for which state, Dos and Don'ts). Shipped in `packages/ui/src/workspace/spaces/space-links.tsx`, `space-triggers.tsx`, `space-threads-tab.tsx`, `packages/ui/src/workspace/memory/memory-empty.tsx`, `apps/web/src/features/apps/space-apps-view.tsx`, `apps/web/src/features/drives/space-folder-view.tsx`, `packages/ui/src/files/project/components/drive-explorer.tsx`.
+- **Supersedes:** D4g ("one muted line, no icon tile") and Q4 ("the pixel mark as a sibling above `EmptyState size=\"sm\"`") for the empty state of a tab, a folder or a list.
+- **Source:** Jay Suthar, the `project-channels` branch.
+
+### R1 Role badges: one hue per rank, the owner purple
+- **Date:** 2026-10-25
+- **Decision:** Role badges read as a ladder: owner `royal` (`bg-kortix-purple/15`), account admin `info` (blue), project manager `success` (green), custom role `secondary` and member `default` (neutral ink), no access `muted`. Every role badge is borderless (`ring-0`) and sans (`normal-case`). `kortix-purple` gets its one meaning: the owner.
+- **Why:** Jay, 2026-10-25: a project member in muted text read as "no access", and the owner in grey did not read as the top of the hierarchy. "The owner should be royal."
+- **Where:** `packages/ui/src/primitives/badge.tsx` (`royal`), `ROLE_TONE` in `apps/web/src/features/accounts/hub/member-table.tsx`, `visual/color.md` (Accents and status).
+- **Supersedes:** the `kortix-purple` "Reserved" row in `visual/color.md`.
+- **Source:** Jay Suthar, account Members and project access tables.
+
+---
+
+## 2026-10-19
+
+### K9 `@kortix/ui`: the shared Tailwind v4 component library
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`) is the one React component library for `apps/web`, Kortix Apps and SDK hosts. Components are the `apps/web/src/components/ui` files, moved with the same Tailwind v4 class strings, under `packages/ui/src/primitives/`. `apps/web` imports `@kortix/ui/<name>` and the module entries directly; it keeps no re-export shims (`tests/unit/web-no-ui-shims.test.ts`). Styles ship as `@kortix/ui/tokens.css` (generated, `:root` and `.dark`), `@kortix/ui/theme.css` (the `@theme inline` keys, utilities and keyframes moved out of `apps/web/src/app/globals.css`), `@kortix/ui/styles.css` (prebuilt `dist/styles.css` for hosts without Tailwind) and `@kortix/ui/fonts.css` (Roobert, Kortix-owned surfaces only, D8). White-label hosts override the CSS variables and never fork a component. The kit-styled `Popover`, `OptionList`, `Select` and `FilterBar` of K8 are deleted. A host composes a filter bar from `popover` and `command`; `FilterBar` / `FilterBarItem` in `tabs` are the pill row. `kit.css` (`k-*`) stays the kit for plain HTML without React and is not part of `@kortix/ui`.
+- **Why:** two styling systems for one component set drift. One package keeps `apps/web`, the white-label demo and every SDK host on the same components.
+- **Where:** `packages/ui`, `packages/ui/README.md`, `packages/ui/skills/kortix-ui/SKILL.md` (the package skill, mirrored for Kortix sessions in `packages/starter/templates/managed/skills/kortix-ui/`), `packages/ui/src/session` (`@kortix/ui/session`), `apps/web/content/docs/sdk/ui.mdx`, `scripts/generate-tokens.ts`.
+- **Supersedes:** K8. `sync-kortix-brand` in `kortix-ai/company` copies only `visual/fonts.css`, `visual/tokens.css` and `visual/kit.css`, so no App copied the deleted K8 files.
+- **Source:** the `kortix-ui` branch.
+
+### K8 (SUPERSEDED by K9) `@kortix/ui`: the interactive components for Apps
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
+- **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.
+- **Where:** `packages/ui`, `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App filter bar in `kortix-ai/company`.
+
+### K7 `kit.css` adds the field
+- **Date:** 2026-10-19
+- **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.
+- **Why:** the sales App has forms, and an App without the field primitive writes its own field CSS.
+- **Where:** `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App refactor in `kortix-ai/company`.
+
+### K6 `kit.css`: the UI primitives as portable CSS classes
+- **Date:** 2026-10-19
+- **Decision:** `visual/kit.css` carries the `@/components/ui` primitives (Card, Button, Badge, status dot, banner, segmented control, table, list, stat, meter, popover, empty state) as `k-*` classes that read only `tokens.css` variables. HTML outside `apps/web` loads `fonts.css`, `tokens.css` and `kit.css` in that order and composes these classes before it writes its own CSS.
+- **Why:** every Kortix App and internal dashboard wrote its own palette and component CSS (the factory-status App shipped GitHub status hexes), so each read as a second product.
+- **Where:** `visual/kit.css`, `SKILL.md` Standalone HTML row.
+- **Supersedes:** none.
+- **Source:** the factory dashboard rebuild in `kortix-ai/company`.
+
 ## 2026-10-09
 
 ### D13 A backend is an App of kind `convex`
@@ -33,7 +87,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 ### D10 The category line is "AI Operating System"
 - **Decision:** The category is "AI Operating System", short form "AI OS". The tagline is "The open-source AI Operating System". The brand name stays "Kortix". "AI Management System" is retired. The comparative line, the manifesto line and the mission do not change. "Autonomous Company Operating System" stays retired for its word "Autonomous".
 - **Why:** The founder chose it on 2026-10-04 with the instruction to use it everywhere: git, marketing, product, CLI, email and the brand kit. An operating system is the layer that agents, skills, memory, connectors, computers, channels and triggers run on. The marketing site is rebuilt on this line in the same branch.
-- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `apps/web/src/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
+- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `packages/ui/src/internal/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
 - **Supersedes:** D1 (the category and tagline only; D1's retired-line list stays).
 - **Source:** founder decision, branch `webpage` (2026-10-04).
 

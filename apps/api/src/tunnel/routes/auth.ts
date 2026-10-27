@@ -7,7 +7,7 @@ import {
 } from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
+import { ACCOUNT_ACTIONS, actorOf, authorize } from '../../iam';
 
 /**
  * Tunnel auth model — which machines a caller may see and manage directly.
@@ -81,7 +81,7 @@ export async function getTunnelReadContext(c: any) {
 
   const own = eq(tunnelConnections.ownerUserId, userId);
   const manager =
-    userId === accountId || isAccountManagerRole(await accountRoleFor(accountId, userId));
+    userId === accountId || (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
   return { userId, accountId, ownerClause: manager ? or(own, teamMachines)! : own };
 }
 

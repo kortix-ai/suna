@@ -6,17 +6,15 @@
  *
  * Runs the PRODUCTION code paths (project-snapshot.ts, project-snapshot-store.ts,
  * project-snapshot-worker.ts) against a real bucket through the AWS SDK with an
- * endpoint override (local MinIO). Nothing is mocked. Assertions read the
+ * endpoint override. The db-suites lane points it at local Supabase Storage's
+ * S3 endpoint (`PROJECT_SNAPSHOT_SUITE` in tests/src/core/db-suites.ts). Nothing is mocked. Assertions read the
  * actual objects back (HeadObject / GetObject) and the actual ledger rows.
  *
  * Required environment (the run FAILS, never skips, when it is missing):
  *   DATABASE_URL                              local Postgres
  *   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/…       a reachable S3-compatible bucket
  *
- * Run:
- *   cd apps/api && KORTIX_PROJECT_SNAPSHOT_S3_BUCKET=kortix-project-snapshots-test \
- *     dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- \
- *     bun test --isolate src/__tests__/integration-project-snapshot.test.ts
+ * Run: `pnpm test -- --db-only integration-project-snapshot`
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -24,8 +22,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
-import { DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import { and, eq, lte, sql } from 'drizzle-orm';
+import { CreateBucketCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { accounts, projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { seedAccount } from './helpers/integration-fixtures';
@@ -79,10 +77,13 @@ function git(cwd: string, ...args: string[]): string {
 beforeAll(async () => {
   if (!process.env.DATABASE_URL) throw new Error('integration-project-snapshot: DATABASE_URL is required (local Postgres)');
   if (!projectSnapshotStorageConfigured()) {
-    throw new Error('integration-project-snapshot: KORTIX_PROJECT_SNAPSHOT_S3_BUCKET (+ endpoint/credentials) is required — start local MinIO and set the KORTIX_PROJECT_SNAPSHOT_S3_* variables');
+    throw new Error('integration-project-snapshot: KORTIX_PROJECT_SNAPSHOT_S3_BUCKET (+ endpoint/credentials) is required — run it through `pnpm test -- --db-only`, which supplies local Supabase Storage');
   }
   __resetProjectSnapshotS3ClientForTests();
-  await projectSnapshotS3Client().send(new HeadBucketCommand({ Bucket: projectSnapshotBucket() }));
+  const Bucket = projectSnapshotBucket();
+  await projectSnapshotS3Client()
+    .send(new HeadBucketCommand({ Bucket }))
+    .catch(() => projectSnapshotS3Client().send(new CreateBucketCommand({ Bucket })));
 
   accountId = await seedAccount('project-snapshot-test');
 
@@ -138,10 +139,23 @@ afterAll(async () => {
 
 async function drainWorker(maxPasses = 5): Promise<Awaited<ReturnType<typeof runProjectSnapshotWorkerOnce>>> {
   const all: Awaited<ReturnType<typeof runProjectSnapshotWorkerOnce>> = [];
-  for (let i = 0; i < maxPasses; i += 1) {
+  for (let pass = 0, waits = 0; pass < maxPasses; ) {
     const processed = await runProjectSnapshotWorkerOnce(WORKER, 10);
     all.push(...processed);
-    if (processed.length === 0) break;
+    if (processed.length > 0) {
+      pass += 1;
+      continue;
+    }
+    // An empty pass with a row still due: a cache miss's background enqueue
+    // (ON CONFLICT DO UPDATE locks the row) held it, and the claim skips a
+    // locked row. Let that statement commit, then claim again (up to 2 s).
+    const [due] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(projectSnapshotArchives)
+      .where(and(eq(projectSnapshotArchives.status, 'queued'), lte(projectSnapshotArchives.nextAttemptAt, sql`now()`)));
+    if (!due?.n || waits >= 40) break;
+    waits += 1;
+    await new Promise((r) => setTimeout(r, 50));
   }
   return all;
 }

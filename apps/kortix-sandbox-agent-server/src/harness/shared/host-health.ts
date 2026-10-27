@@ -65,12 +65,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
   const wantBranch = repoRequired ? wantedSessionBranch() : ''
   const repoReady = !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
   return {
-    // Which boot path this daemon took. An agent binary that predates
-    // monitor mode omits the field entirely, which is exactly what the
-    // monitor-box reconciler uses to detect a stale-agent box and recreate
-    // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
-    // booted the session path can never run monitors).
-    workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
     uptime_s: Math.floor((Date.now() - context.bootTime) / 1000),
     // Static web server (preview/static files). The bound port when up, else
     // null — surfaces "preview won't load because static-web never bound".
@@ -99,14 +93,14 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     // the two; this is only the box's own answer. A pure read — never
     // triggers a reconcile attempt, so polling health cannot itself cause work.
     runtime_truth: await runtimeTruthReport(),
-    // Which transport delivered the project this boot (git | s3), the
-    // expected vs actual SHA, and — when S3 was attempted and Git delivered
-    // instead — the classified reason. A successful fallback keeps the S3
-    // failure visible here; the same facts go to the boot timeline relay.
-    // The wire name predates the workspace-provider rename; health readers use it.
-    config_provider: bootState.workspaceProvider ?? null,
-    // In-container boot timeline (ms since process start) so the dashboard can
-    // attribute the post-create boot latency (clone vs runtime vs proxy).
+    // The `/workspace` checkout, reported on its own: which transport
+    // delivered it (git | s3), the expected vs actual SHA, per-stage timings,
+    // and — when S3 was attempted and Git delivered instead — the classified
+    // reason. The workspace is not config: none of this is in `boot_timeline`.
+    workspace_provider: bootState.workspaceProvider ?? null,
+    // In-container boot timeline (ms since process start): the daemon, the
+    // config release the runtime boots from (`config-release-*`), and the
+    // runtime. No workspace step is in it; `workspace_provider` has those.
     boot_timeline: bootState.timeline,
     // Visible auth posture so misconfiguration doesn't silently downgrade.
     auth: cfg.sandboxToken ? 'configured' : 'unconfigured',

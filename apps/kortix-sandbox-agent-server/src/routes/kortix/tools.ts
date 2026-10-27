@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { toolAllowed, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { hostedTool, runTool, sessionEnv, toolBridgeKey } from '@/services/tools/host'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { authorizeControl, bearerMatches } from './control-auth'
 
 /**
@@ -11,6 +12,7 @@ import { authorizeControl, bearerMatches } from './control-auth'
  * session is this box's (`KORTIX_SESSION_ID`).
  * Answers `{ output }`, or `{ error }`: 404 unknown tool, 403 the agent may not
  * use it, 422 the tool threw.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function createToolsRouter(cfg: Config, env: NodeJS.ProcessEnv = process.env): Hono {
   const app = new Hono()
@@ -24,8 +26,11 @@ export function createToolsRouter(cfg: Config, env: NodeJS.ProcessEnv = process.
     const tool = hostedTool(name)
     if (!tool) return c.json({ error: `no tool named ${name} is loaded` }, 404)
     const body = ((await c.req.json().catch(() => null)) ?? {}) as Record<string, unknown>
-    const agent = typeof body.agent === 'string' ? body.agent : ''
-    if (!toolAllowed(compiledAgents(env)?.agent?.[agent]?.tools, name)) {
+    const compiled = compiledAgents(env)
+    // No agent named = the session's default agent, as a session that picked
+    // none runs. Unnamed used to mean "no policy", which skipped its tools map.
+    const agent = (typeof body.agent === 'string' && body.agent) || compiled?.default_agent || ''
+    if (!toolAllowed(compiled?.agent?.[agent]?.tools, name)) {
       return c.json({ error: `agent ${agent} may not use ${name}` }, 403)
     }
     try {
@@ -47,7 +52,7 @@ export function createToolsRouter(cfg: Config, env: NodeJS.ProcessEnv = process.
 
 function compiledAgents(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null')
+    return JSON.parse(compiledAgentConfigFromEnv(env) ?? 'null')
   } catch {
     return null
   }

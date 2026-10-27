@@ -39,7 +39,7 @@ To create a project, open the project menu at the top of the sidebar and select 
 | Search | Opens the command palette. |
 | **New session** | Opens the project home with an empty composer. |
 | **Customize** | Every project setting. See [Where settings live](#where-settings-live). |
-| **Apps** | The project's Apps. Shown when the project has the `apps` flag on. See [Apps](/docs/apps). |
+| **Apps** | The project's Apps. Available in every project. See [Apps](/docs/apps). |
 | Session list | Your sessions, grouped and filtered. See below. |
 | **Review** | Work waiting on a person before it can continue, such as change requests. See [Git](/docs/git). |
 | **Reminders** | The project's reminders. Shown when the `reminders` flag is on and a reminder is not done. See [Triggers & reminders](/docs/connect/triggers). |
@@ -69,7 +69,7 @@ A session page shows the conversation, the composer below it, and a header above
 
 - **Agent picker**: the agent that runs the next turn.
 - **Model picker** and **effort picker**: the model and its reasoning effort for the next turn. See [Models](/docs/project/models).
-- **Attachments**: select the attach button, paste a file, or drag it into the composer.
+- **Attachments**: select the attach button, paste a file, or drop it anywhere on the session page or the project home. The file attaches to the composer. A drop on the side panel's **Files** uploads into the workspace instead.
 - `@` mentions an agent, another session, or a file in the repository.
 - `/` opens skills, commands and actions: **Switch model**, **Switch agent**, **Set reasoning effort**, **Attach file**, **Compact session** and **Show context**.
 - The ring next to the send button shows how much of the model's context window the session uses.
@@ -130,7 +130,7 @@ Select **Customize** in the sidebar. Every tab is at `/projects/<id>/customize/<
 | **Agents** | The project's agents and what each one may do | [Agents & permissions](/docs/project/agents) |
 | **Skills** | The project's skills | [Agents & permissions](/docs/project/agents) |
 | **Connectors** | Connectors and their accounts. The **Channels** scope holds Slack, Teams and email. | [Connectors](/docs/connect/connectors), [Slack, Teams & email](/docs/connect/channels) |
-| **Triggers** | Schedules, webhooks and app events | [Triggers & reminders](/docs/connect/triggers) |
+| **Triggers** | Schedules, webhooks, connector events and App events | [Triggers & reminders](/docs/connect/triggers) |
 | **Models** | Models, providers and provider keys | [Models](/docs/project/models) |
 | **Secrets** | Encrypted credentials and who can use them | [Secrets](/docs/project/secrets) |
 | **Files** | Shared folders. Shown when shared folders are on for the account. | See below |
@@ -198,6 +198,7 @@ The desktop app adds menu shortcuts:
 | Shortcut | Action |
 | --- | --- |
 | `Mod+N` | New session |
+| `Cmd+Shift+Space` (macOS), `Ctrl+Shift+Space` (Windows, Linux) | Open [Quick Entry](#quick-entry) from any app |
 | `Mod+Shift+W` | Close the window |
 | `Mod+L` | Copy the URL of the current page |
 | `Mod+0`, `Mod++`, `Mod+-` | Actual size, zoom in, zoom out |
@@ -227,6 +228,19 @@ To change the instance later, select **Kortix** → **Change Kortix Instance…*
 
 Sign-in opens your system browser. After you sign in, the browser returns you to the app. Connector sign-in popups open inside the app.
 
+### Quick Entry
+
+Press **Command+Shift+Space** (**Ctrl+Shift+Space** on Windows and Linux) while you work in any app. A prompt bar opens at the bottom of the screen and the screen behind it dims. Type the task and press Enter. Kortix starts a new session with that prompt and brings its window forward.
+
+- The session starts in the project the Kortix window shows, or in the project you opened last. Hover **New session** to see that project.
+- Under the prompt, the bar has the composer's agent picker for a new session. It starts on the same agent as project home, and a choice there is remembered the same way. The session uses the model and effort that agent has on project home.
+- To attach files, select the paperclip, paste, or drop them on the bar. On macOS, the camera button takes a screenshot: drag across a region, or press Space to pick a window. macOS asks once for Screen Recording access. If the selected model cannot read images, the prompt opens in the composer instead of sending, so you can pick another model.
+- To send the prompt to an existing session instead, open the picker on the right of the bar. It lists your 5 most recent sessions in that project, newest first, each with its status (the same dot as the sidebar) and when it was last active. The prompt goes to that session as if you typed it there: a running turn is steered. That session keeps its own agent and model. The next time the bar opens, it keeps that session while it is running, starting, or waiting for you; otherwise it starts a new session.
+- **Shift+Enter** adds a line. **Esc**, the shortcut again, or a click outside the bar closes it and keeps the text.
+- To open the bar from inside the app, select **File** → **Open Quick Entry**.
+- To change the shortcut or turn it off, open **Settings** → **Preferences** → **Keyboard shortcuts** → **Quick Entry**, or select **File** → **Quick Entry Shortcut**: **Command+Shift+Space**, **Option+Space**, **Option+Shift+Space**, or **Off** (Ctrl for Command and Alt for Option on Windows and Linux). A shortcut another app holds shows **(in use)**.
+- On Linux under Wayland there are no global shortcuts. Use the menu item.
+
 ### Updates
 
 The app updates itself from the stable channel. It checks at launch and every 6 hours, and downloads the update in the background. When the update is ready, an **Update ready** dialog offers **Restart now** and **Later**. If you select **Later**, the update installs when you quit. Select **Check for Updates…** (in the **Kortix** menu on macOS, the **View** menu elsewhere) to check now.
@@ -236,6 +250,8 @@ The app updates itself from the stable channel. It checks at launch and every 6 
 - On macOS, run the app from `/Applications`. A connected computer needs that fixed path.
 - With a connected computer, closing the last window keeps the app in the menu bar or tray. The computer agent runs as a separate service and stays connected after you quit. See [Computers](/docs/connect/computers).
 - The desktop app has no push service. While its window is open it polls for notifications and shows them as OS notifications. See [Where they appear](/docs/work/sessions#where-they-appear).
+- Right-click shows the menu a browser shows: spelling suggestions and **Add to Dictionary** on a misspelled word; Cut, Copy and Paste in a text field; **Copy Link** and **Open Link in Browser** on a link; **Copy Image** on an image.
+- A turn that finishes while the window is not in focus adds 1 to a count on the app icon. The count shows on the Dock icon on macOS, as a dot on the taskbar icon on Windows, and on the launcher icon on Linux desktops that support counts. Coming back to the session takes it off the count. The count does not need the `notification_center` flag.
 
 ## Mobile app
 

@@ -5,15 +5,15 @@ import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { ReactNode, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useInfiniteMarketplaceItems } from '@/hooks/marketplace';
-import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { translateUiCatalogText } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { ItemsPage, MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
-import Loading from '../../components/ui/loading';
+import { cn } from '@kortix/ui';
+import Loading from '@kortix/ui/loading';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import {
   buildMarketplaceGridRows,

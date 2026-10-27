@@ -19,11 +19,14 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
+import { SidebarGlyph as PanelLeftClose } from '@kortix/ui/icons';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
+import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { WALLPAPERS } from '@/lib/wallpapers';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import type { SettingsTabId } from '@kortix/ui/internal/lib/settings-tab-id';
+import { WALLPAPERS } from '@kortix/ui/theme';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import type { RuntimeCapability } from '@kortix/sdk';
 import {
@@ -45,6 +48,8 @@ import {
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
+  HardDrivesIcon as HardDrives,
+  CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -69,7 +74,6 @@ import {
   ImagesSquareIcon as WallpaperIcon,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
-import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Types
@@ -98,23 +102,13 @@ export type MenuItemKind =
   /**
    * Opens the account hub modal. NOT `navigate`: the hub has no route — it is
    * `?accountId=` on whatever page you are already on
-   * (`stores/account-panel-store.ts`), so there is no href to give. The
+   * (`packages/ui/src/internal/stores/account-panel-store.ts`), so there is no href to give. The
    * destination is `accountTab` below, and the account is whichever one is
    * selected at the moment the row is chosen.
    */
   | 'account';
 
-export type SettingsTabId =
-  | 'general'
-  | 'security'
-  | 'appearance'
-  | 'sounds'
-  | 'notifications'
-  | 'billing'
-  | 'transactions'
-  | 'referrals'
-  | 'tokens'
-  | 'shortcuts';
+export type { SettingsTabId };
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -176,7 +170,7 @@ export interface MenuItemDef {
   /**
    * For kind='account': which hub section to open (`?accountTab=`), or omitted
    * for the hub's account list. Values come from `VALID_TABS` in
-   * `features/accounts/hub/sections.ts`, which
+   * `packages/ui/src/internal/account-hub/sections.ts`, which
    * `menu-registry-destinations.test.ts` checks this against.
    */
   accountTab?: string;
@@ -190,7 +184,7 @@ export interface MenuItemDef {
   /** For kind='settings': which settings tab to open */
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
-  themeValue?: string;
+  themeValue?: InterfaceThemeId;
   /** For kind='wallpaper': which wallpaper to apply */
   wallpaperValue?: string;
   /** For kind='sandboxService': the container port */
@@ -221,8 +215,6 @@ export interface MenuItemDef {
   keywords?: string;
   /** If true, item is only shown when billing is enabled */
   requiresBilling?: boolean;
-  /** If true, item is only shown for admin users */
-  requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
@@ -231,10 +223,6 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
   /** If set, the item is only shown when the named per-project FEATURE FLAG is
    *  enabled (mirrors the Customize rail gating). A disabled feature's surface
    *  is invisible, so EVERY registry consumer must honour this — the command
@@ -418,8 +406,8 @@ export const menuRegistry: MenuItemDef[] = [
     // anything, which is why it read as a list rather than as the switcher it
     // opens. The verb stays; only the noun changed.
     //
-    // It said "Switch workspace" until the product settled on ONE noun
-    // (`features/workspace/workspace-vocabulary.test.ts`). "Project" won
+    // It said "Switch workspace" until the product settled on ONE noun.
+    // "Project" won
     // because it is the load-bearing one — the URL (`/projects/<id>`), the API
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
@@ -624,11 +612,8 @@ export const menuRegistry: MenuItemDef[] = [
   },
   // Agents and Skills are declared BEFORE Connectors here, unlike the tab bar
   // order in `CAPABILITY_TABS`. Declaration order is the palette's tie-break
-  // (`filteredNavItems` maps in registry order), and the Channels row carries
-  // the keyword `agentmail` — a product name it genuinely owns, but one that
-  // contains the substring "agent". With Channels declared first, the query
-  // "agent" listed it above the row that IS the Agents page. Ordering is free;
-  // dropping a real synonym is not.
+  // (`filteredNavItems` maps in registry order): the query "agent" must list
+  // the row that IS the Agents page first.
   {
     id: 'proj-connectors',
     label: 'Connectors',
@@ -657,7 +642,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'connections' stays off this bag — it names `proj-connectors`.
     href: '/projects/{projectId}/customize/connectors?scope=channels',
     requiresProject: true,
-    keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
+    keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
   {
     id: 'proj-connectors-policies',
@@ -694,6 +679,19 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
+    // The Customize Reminders tab (`remindersHref`, #10261). Gated in
+    // `command-palette.tsx` on the tab's own verdict (flag + trigger rule).
+    id: 'proj-reminders',
+    label: 'Reminders',
+    icon: Calendar,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/reminders',
+    requiresProject: true,
+    keywords: 'reminders reminder remind follow up later nudge calendar',
+  },
+  {
     id: 'proj-secrets',
     label: 'Secrets',
     icon: LockKey,
@@ -723,7 +721,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The roster half. 'invite' belongs to `proj-invite`, the verb row.
     keywords:
-      'members member workspace access collaborators people teammates roster who can see permissions grant share seats',
+      'members member workspace access collaborators people teammates roster who can see permissions grant share',
   },
   {
     id: 'proj-files',
@@ -737,18 +735,47 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
-    // The project's shared folders: the Files tab under Customize. Only for
-    // projects with the `drives` flag on, like the tab itself.
+    // The project's shared folders: the sidebar Drive row (`filesRow`). Only
+    // for projects with the `drives` flag on, like the row itself. The id
+    // predates the move from `/customize/files` to `/drive` (#10258).
     id: 'proj-shared-files',
-    label: 'Shared files',
-    icon: FolderOpen,
+    label: 'Drive',
+    icon: HardDrives,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/files',
+    href: '/projects/{projectId}/drive',
     requiresProject: true,
     requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
+  },
+  {
+    // The project's artifacts (flag `artifacts`): docs, slides, boards and
+    // dashboards published as pages. Only where the sidebar row shows.
+    id: 'proj-artifacts',
+    label: 'Artifacts',
+    icon: GalleryVerticalEnd,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/artifacts',
+    requiresProject: true,
+    requiresFlag: 'artifacts',
+    keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
+  },
+  {
+    // The repo browser under Customize → Repo, where it moves when the
+    // `drives` flag is on (#10258). `command-palette.tsx` gates the row on
+    // the tab's own verdict, so it shows exactly when the tab does.
+    id: 'proj-repo',
+    label: 'Repo',
+    icon: FolderGit2,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/repo',
+    requiresProject: true,
+    keywords: 'repo repository git files browser explorer code',
   },
   {
     id: 'proj-apps',
@@ -759,7 +786,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
@@ -798,8 +824,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Its own project page since 2026-10-02, outside Customize.
-    href: '/projects/{projectId}/review',
+    // The Customize Review tab (`reviewHref`).
+    href: '/projects/{projectId}/customize/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -840,18 +866,6 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'newTerminal',
   },
   {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Blocks,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
-    keywords: 'workspace agents skills commands tools build create',
-  },
-  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,
@@ -884,6 +898,17 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/scheduled-tasks',
+  },
+  {
+    // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
+    id: 'capture',
+    label: 'Kortix Capture',
+    icon: MonitorIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/capture',
+    keywords: 'capture recording screen devices install enrollment',
   },
   {
     id: 'running-services',
@@ -1019,9 +1044,9 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/support',
-    // "help" is the important one: this page absorbed /help, and that is still
-    // the word people reach for. Deliberately NOT "account", "delete" or
+    href: '/contact',
+    // "help" is the important one: it is still the word people reach for.
+    // Deliberately NOT "account", "delete" or
     // "billing" — those queries belong to the account sections and the
     // delete-account action, and a support row answering them would push the
     // real destination down the list (command-palette-search.test.ts pins the
@@ -1081,7 +1106,7 @@ export const menuRegistry: MenuItemDef[] = [
   // These eight rows are the palette's only route to the account-scoped
   // surfaces. They spent one release as settings tabs, derived from
   // `railGroups()` like every other tab; they are not settings tabs any more
-  // (`ACCOUNT_GRADUATED` in `features/workspace/settings/settings-tabs.ts`
+  // (`ACCOUNT_GRADUATED` in `packages/ui/src/customize/settings/settings-tabs.ts`
   // redirects every stale `/settings/<id>` bookmark onto this page), so the
   // derived list cannot produce them and they are hand-written here — the same
   // arrangement `proj-triggers` uses for the same reason.
@@ -1121,7 +1146,7 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins seats',
+    keywords: 'account members organization roster owners admins',
   },
   {
     id: 'account-billing',
@@ -1265,6 +1290,17 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   // THEME
   // ──────────────────────────────────────────────────────────────────────────
+  // Same rows, same order as INTERFACE_THEME_OPTIONS (features/layout/interface-theme.tsx).
+  {
+    id: 'theme-system',
+    label: 'System Theme',
+    icon: MonitorIcon,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: 'system',
+    keywords: 'theme system auto default os',
+  },
   {
     id: 'theme-light',
     label: 'Light Theme',
@@ -1274,6 +1310,16 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'theme',
     themeValue: 'light',
     keywords: 'theme light mode bright day',
+  },
+  {
+    id: 'theme-pure-light',
+    label: 'Pure Light Theme',
+    icon: Sun,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: 'pure-light',
+    keywords: 'theme light mode pure white',
   },
   {
     id: 'theme-dark',
@@ -1286,15 +1332,31 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'theme dark mode night',
   },
   {
-    id: 'theme-system',
-    label: 'System Theme',
-    icon: MonitorIcon,
+    id: 'theme-pure-dark',
+    label: 'Pure Dark Theme',
+    icon: Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
-    themeValue: 'system',
-    keywords: 'theme system auto default os',
+    themeValue: 'pure-dark',
+    keywords: 'theme dark mode pure black',
   },
+  // One row per generated terminal theme (`TERMINAL_THEMES`,
+  // `lib/kortix-themes.generated.json`) — 39 proper-noun palettes from
+  // terminalcolors.com, e.g. "Catppuccin Mocha", "Tokyo Night Storm". The
+  // label is a proper noun and MUST NOT be translated: `translateMenuText`
+  // looks it up in `MENU_TRANSLATION_KEYS` and, finding no entry, falls
+  // through to the label as written, which is the correct behaviour here.
+  ...TERMINAL_THEMES.map((theme): MenuItemDef => ({
+    id: `theme-${theme.id}`,
+    label: theme.name,
+    icon: theme.mode === 'dark' ? Moon : Sun,
+    group: 'theme',
+    showIn: ['commandPalette'],
+    kind: 'theme',
+    themeValue: theme.id,
+    keywords: `theme ${theme.mode} ${theme.familyName}`.toLowerCase(),
+  })),
 
   // ──────────────────────────────────────────────────────────────────────────
   // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's

@@ -63,6 +63,7 @@ jobs:
   version:
     name: Compute staging version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     outputs:
       sha: ${{ steps.v.outputs.sha }}
       sha8: ${{ steps.v.outputs.sha8 }}
@@ -101,6 +102,7 @@ jobs:
     name: Build API image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -169,8 +171,9 @@ jobs:
     name: Publish API manifest (staging)
     needs: [version, build-api]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-api-*
@@ -218,6 +221,7 @@ jobs:
     name: Build gateway image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -284,8 +288,9 @@ jobs:
     name: Publish gateway manifest (staging)
     needs: [version, build-gateway]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-gateway-*
@@ -336,6 +341,7 @@ jobs:
     name: Build frontend image (staging, ${{ matrix.arch }})
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -352,7 +358,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
           submodules: false
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -419,8 +425,9 @@ jobs:
     name: Publish frontend manifest (staging)
     needs: [version, build-frontend]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-frontend-*
@@ -468,6 +475,7 @@ jobs:
     needs: [version, merge-api, merge-gateway, merge-frontend]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Start Deploy Staging for completed manual build
         env:

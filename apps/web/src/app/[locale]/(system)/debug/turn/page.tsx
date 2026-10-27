@@ -4,11 +4,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState } from 'react';
 
-import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
-import { PlanCard } from '@/features/session/turn/plan-card';
-import { UserMessage } from '@/features/session/turn/user-message';
-import type { MessageWithParts, Part } from '@/ui';
+import { ToolActivateContext, ActivityBurst, PlanCard, UserMessage } from '@kortix/ui/session';
+import {
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  sessionLogOfV1Rows,
+  type ReasoningBlock,
+  type SessionLogBlock,
+  type SessionLogMessage,
+  type ToolCallBlock,
+} from '@kortix/sdk';
 import { beginOptimisticSend, runtimeKeys } from '@kortix/sdk/react';
 
 /**
@@ -25,27 +30,28 @@ import { beginOptimisticSend, runtimeKeys } from '@kortix/sdk/react';
  */
 
 // ---------------------------------------------------------------------------
-// Fixtures — loose typing on purpose, same convention as /debug/tools.
+// Fixtures — session-log blocks, as the transcript reads them.
 // ---------------------------------------------------------------------------
 let n = 0;
 const nextId = () => `prt_dbg_${(n += 1)}`;
+/** `ms` after the fixture's start, as a block timestamp. */
+const at = (ms: number) => new Date(1_000_000 + ms).toISOString();
 
-function tool(name: string, input: Record<string, unknown>, ms = 1200, output = ''): Part {
+// No reader reads a call's `kind`: the renderers key on `name`.
+function tool(name: string, input: Record<string, unknown>, ms = 1200, output = ''): ToolCallBlock {
   const id = nextId();
   return {
+    type: 'tool_call',
     id,
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'tool',
-    tool: name,
-    callID: `call_${id}`,
-    state: {
-      status: 'completed',
-      input,
-      output,
-      time: { start: 1_000_000, end: 1_000_000 + ms },
-    },
-  } as unknown as Part;
+    call_id: `call_${id}`,
+    name,
+    kind: 'other',
+    input,
+    status: 'complete',
+    result: { content: [{ type: 'text', text: output }], is_error: false },
+    started_at: at(0),
+    ended_at: at(ms),
+  };
 }
 
 /**
@@ -76,28 +82,13 @@ const SEARCH_OUTPUT = JSON.stringify({
   ],
 });
 
-function runningTool(name: string, input: Record<string, unknown>): Part {
+function runningTool(name: string, input: Record<string, unknown>): ToolCallBlock {
   const id = nextId();
-  return {
-    id,
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'tool',
-    tool: name,
-    callID: `call_${id}`,
-    state: { status: 'running', input, time: { start: 1_000_000 } },
-  } as unknown as Part;
+  return { type: 'tool_call', id, call_id: `call_${id}`, name, kind: 'other', input, status: 'running', started_at: at(0) };
 }
 
-function reasoning(text: string, done = true): Part {
-  return {
-    id: nextId(),
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'reasoning',
-    text,
-    time: done ? { start: 1_000_000, end: 1_000_400 } : { start: 1_000_000 },
-  } as unknown as Part;
+function reasoning(text: string): ReasoningBlock {
+  return { type: 'reasoning', id: nextId(), text };
 }
 
 /** Long enough (>4000 chars) to route through RawOutputBlock rather than the
@@ -183,9 +174,11 @@ const PATCH_FILES = [
   },
 ];
 
-function patchTool(): Part {
+/** `files` is display metadata, which the session log has no field for yet: the
+ *  block keeps it from its v1 part, as the session log converts one (`sessionLogOfV1Rows`). */
+function patchTool(): ToolCallBlock {
   const id = nextId();
-  return {
+  const part = {
     id,
     messageID: 'msg_dbg',
     sessionID: 'ses_dbg',
@@ -199,7 +192,9 @@ function patchTool(): Part {
       metadata: { files: PATCH_FILES },
       time: { start: 1_000_000, end: 1_000_900 },
     },
-  } as unknown as Part;
+  };
+  const row = { info: { id: 'msg_dbg', sessionID: 'ses_dbg', role: 'assistant', time: { created: 1 } }, parts: [part] };
+  return sessionLogOfV1Rows('dbg', 'ses_dbg', [row as never]).threads[0]!.messages[0]!.blocks[0] as ToolCallBlock;
 }
 
 /**
@@ -273,20 +268,23 @@ const SCRAPE_ALL_FAILED = JSON.stringify({
 });
 
 /** A tool call that THREW, as opposed to one that returned its error. */
-function erroredTool(name: string, input: Record<string, unknown>, error: string): Part {
+function erroredTool(name: string, input: Record<string, unknown>, error: string): ToolCallBlock {
   const id = nextId();
   return {
+    type: 'tool_call',
     id,
-    messageID: 'msg_dbg',
-    sessionID: 'ses_dbg',
-    type: 'tool',
-    tool: name,
-    callID: `call_${id}`,
-    state: { status: 'error', input, error, time: { start: 1_000_000, end: 1_000_900 } },
-  } as unknown as Part;
+    call_id: `call_${id}`,
+    name,
+    kind: 'other',
+    input,
+    status: 'error',
+    result: { content: [{ type: 'text', text: error }], is_error: true, error: { message: error } },
+    started_at: at(0),
+    ended_at: at(900),
+  };
 }
 
-const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
+const BURSTS: Array<{ label: string; blocks: SessionLogBlock[]; working: boolean }> = [
   {
     // The three shapes side by side. They used to render as three different
     // things — only the thrown call got a warning mark, while the two that
@@ -294,7 +292,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
     // closed on "Done". Same failure, so they must read the same.
     label: 'failure · thrown vs returned vs half-landed, and the cap that follows',
     working: false,
-    parts: [
+    blocks: [
       erroredTool(
         'bash',
         { command: 'pnpm build' },
@@ -316,12 +314,12 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'errors · summary + stack trace, inside the same card',
     working: false,
-    parts: [tool('file_probe', { path: '/workspace/src/missing.ts' }, 200, ERROR_WITH_TRACE)],
+    blocks: [tool('file_probe', { path: '/workspace/src/missing.ts' }, 200, ERROR_WITH_TRACE)],
   },
   {
     label: 'result cards · glob + apply_patch share the search list shape',
     working: false,
-    parts: [
+    blocks: [
       // 1. Specific pattern → the pattern is the label.
       tool('glob', { pattern: '**/*.tsx', path: '/workspace/src' }, 400, GLOB_OUTPUT),
       // 2. Catch-all pattern → falls back to the searched path, NOT `*`.
@@ -339,7 +337,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
     // Unregistered tool names on purpose: they fall through to GenericTool →
     // ToolOutputFallback → RawOutputBlock, which is the block under test. A
     // tool with its own renderer (bash, read) never reaches it.
-    parts: [
+    blocks: [
       tool('audit_report', { scope: 'locks' }, 2100, MARKDOWN_OUTPUT),
       tool('worker_probe', { target: 'enrich' }, 1200, RAW_LOG_OUTPUT),
       // SHORT and non-JSON: under the 4000-char bar, so it takes the branch
@@ -351,7 +349,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'bash · multi-line pipeline, highlighted, output under a hairline',
     working: false,
-    parts: [
+    blocks: [
       tool(
         'bash',
         {
@@ -373,7 +371,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'settled · reasoning supplies the title',
     working: false,
-    parts: [
+    blocks: [
       // Three consecutive fragments plus a memory write wedged between two of
       // them — must collapse to ONE thinking row, and the memory must not
       // split the run or appear at all.
@@ -396,7 +394,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'settled · title composed from verb counts',
     working: false,
-    parts: [
+    blocks: [
       tool('read', { filePath: '/workspace/a.ts' }),
       tool('read', { filePath: '/workspace/b.ts' }),
       tool('bash', { command: 'pnpm build' }, 8200),
@@ -405,8 +403,8 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'streaming · opens itself, live indicator',
     working: true,
-    parts: [
-      reasoning('Working through the retry path', false),
+    blocks: [
+      reasoning('Working through the retry path'),
       tool('read', { filePath: '/workspace/page-fetch.ts' }),
       runningTool('bash', { command: 'bun test --watch' }),
     ],
@@ -414,7 +412,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'clause cap · three clauses then +N more',
     working: false,
-    parts: [
+    blocks: [
       tool('read', { filePath: '/workspace/a.ts' }),
       tool('bash', { command: 'ls' }),
       tool('web_search', { query: 'x' }),
@@ -425,12 +423,12 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'plumbing only · renders NOTHING — no rows means no burst',
     working: false,
-    parts: [tool('get_mem', {}), tool('memory_search', {})],
+    blocks: [tool('get_mem', {}), tool('memory_search', {})],
   },
   {
     label: 'icon mix · read/bash/write vs glob/grep/list',
     working: false,
-    parts: [
+    blocks: [
       tool('read', { filePath: '/workspace/a.ts' }),
       tool('glob', { pattern: '**/*.ts' }),
       tool('bash', { command: 'ls -la' }),
@@ -448,7 +446,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
     // returns an `ActivatableToolRow` and the body never renders inline at all.
     label: 'result cards · pty/list/agent_spawn bodies must match bash',
     working: false,
-    parts: [
+    blocks: [
       tool('bash', { command: 'pnpm dev' }, 900, 'ready on :3000'),
       tool(
         'pty_spawn',
@@ -486,23 +484,34 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   },
 ];
 
-const userMessage = {
-  info: {
-    id: 'msg_dbg_user',
-    sessionID: 'ses_dbg',
+/** A user prompt, as the session-log message `UserMessage` reads. */
+function prompt(id: string, created: number, text: string): SessionLogMessage {
+  return {
+    schema: SESSION_LOG_SCHEMA,
+    v: SESSION_LOG_MINOR,
+    message_id: id,
+    thread_id: 'ses_dbg',
+    seq: 0,
     role: 'user',
-    time: { created: 1_000_000 },
-  },
-  parts: [
-    {
-      id: 'prt_dbg_user',
-      messageID: 'msg_dbg_user',
-      sessionID: 'ses_dbg',
-      type: 'text',
-      text: 'If inside tooltip content there is a `kbd` data slot, the right padding needs to collapse so the key cap sits flush. Check how the other slots handle it and keep it consistent.',
-    },
-  ],
-} as unknown as MessageWithParts;
+    kind: 'turn',
+    status: 'complete',
+    in_context: true,
+    model: null,
+    usage: null,
+    finish: null,
+    error: null,
+    created_at: new Date(created).toISOString(),
+    completed_at: null,
+    producer: { harness: 'debug', harness_version: '', adapter_version: '' },
+    blocks: [{ type: 'text', id: `prt${id.slice(3)}`, text }],
+  };
+}
+
+const userMessage = prompt(
+  'msg_dbg_user',
+  1_000_000,
+  'If inside tooltip content there is a `kbd` data slot, the right padding needs to collapse so the key cap sits flush. Check how the other slots handle it and keep it consistent.',
+);
 
 /**
  * The reported multi-attachment case: 11 screenshots + 4 documents + a two-word
@@ -536,66 +545,22 @@ const MANY_ATTACHMENT_TEXT = [
   ),
 ].join('\n');
 
-const manyAttachmentMessage = {
-  info: {
-    id: 'msg_dbg_attach',
-    sessionID: 'ses_dbg',
-    role: 'user',
-    time: { created: 1_000_001 },
-  },
-  parts: [
-    {
-      id: 'prt_dbg_attach',
-      messageID: 'msg_dbg_attach',
-      sessionID: 'ses_dbg',
-      type: 'text',
-      text: MANY_ATTACHMENT_TEXT,
-    },
-  ],
-} as unknown as MessageWithParts;
+const manyAttachmentMessage = prompt('msg_dbg_attach', 1_000_001, MANY_ATTACHMENT_TEXT);
 
-const fewAttachmentMessage = {
-  info: {
-    id: 'msg_dbg_attach_few',
-    sessionID: 'ses_dbg',
-    role: 'user',
-    time: { created: 1_000_002 },
-  },
-  parts: [
-    {
-      id: 'prt_dbg_attach_few',
-      messageID: 'msg_dbg_attach_few',
-      sessionID: 'ses_dbg',
-      type: 'text',
-      text: [
-        'can you look at these',
-        '',
-        fileTag('/workspace/uploads/shot.png', 'image/png', 'shot.png'),
-        fileTag('/workspace/uploads/notes.md', 'text/markdown', 'notes.md'),
-      ].join('\n'),
-    },
-  ],
-} as unknown as MessageWithParts;
+const fewAttachmentMessage = prompt(
+  'msg_dbg_attach_few',
+  1_000_002,
+  [
+    'can you look at these',
+    '',
+    fileTag('/workspace/uploads/shot.png', 'image/png', 'shot.png'),
+    fileTag('/workspace/uploads/notes.md', 'text/markdown', 'notes.md'),
+  ].join('\n'),
+);
 
 /** Same attachments, but registered with the store as an unconfirmed send —
  *  which is exactly what `isOptimisticMessage` keys the uploading state off. */
-const uploadingMessage = {
-  info: {
-    id: 'msg_dbg_uploading',
-    sessionID: 'ses_dbg',
-    role: 'user',
-    time: { created: 1_000_003 },
-  },
-  parts: [
-    {
-      id: 'prt_dbg_uploading',
-      messageID: 'msg_dbg_uploading',
-      sessionID: 'ses_dbg',
-      type: 'text',
-      text: MANY_ATTACHMENT_TEXT,
-    },
-  ],
-} as unknown as MessageWithParts;
+const uploadingMessage = prompt('msg_dbg_uploading', 1_000_003, MANY_ATTACHMENT_TEXT);
 
 const TODOS = [
   { content: 'Read the enrichment worker', status: 'completed' },
@@ -691,7 +656,7 @@ export default function DebugTurnPage() {
             {BURSTS.map((b) => (
               <Section key={b.label} label={b.label}>
                 <ActivityBurst
-                  parts={b.parts}
+                  blocks={b.blocks}
                   sessionId="ses_dbg"
                   working={b.working}
                   disableNavigation

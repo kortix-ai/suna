@@ -83,6 +83,7 @@ try/catching every call.
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
 | public transcript share (`{ transcript: true }`, one live link per session; `findActiveTranscriptShare`) + anonymous read (`getPublicSessionShare`, `getPublicSessionShareMessages`, by `share_id` or `kps_` token) | `POST .../sessions/:sid/public-shares` · `GET /v1/public/session-shares/:ref[/messages]` |
+| spaces: channels + the caller's DMs (experimental, `project_channels` flag) | `GET/POST /v1/projects/:id/spaces`, `PATCH .../spaces/:spaceId`, `POST .../spaces/dm` → `projects-client/spaces.ts`, facade `project(id).spaces.{list,create,update,dm}`, hooks `useProjectSpaces` / `useCreateProjectSpace` / `useUpdateProjectSpace` / `useOpenProjectDm`; a space's threads: `GET .../sessions?space_id=` (`listProjectSessions({ spaceId })`, `useProjectSessions(id, { spaceId })`) ✅ |
 
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |
@@ -161,13 +162,14 @@ turn it back into a direct upload.
 React hooks are still web-local (`features/files/`, + duplicated in `features/project-files/` — collapsing that twin remains open). **`useWorkspaceSearch` is alive and consumed (`features/workspace/command-palette.tsx`) — not dead.** `useLssSearch` / `useTextSearch` are already gone.
 
 ### 11. Git / versions / change-requests  🟡
-Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`useChangeRequests` in `@kortix/sdk/react` ✅; the rest of `features/project-files` is still web-local):
+Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`useChangeRequests` in `@kortix/sdk/react` ✅; the rest of `packages/ui/src/files/project` is still web-local):
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
 | branches | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
-| change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
+| change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]`. The list is one page (default 50, at most 500): `listChangeRequests(id, status, { limit, cursor })` → `next_cursor` |
+| review inbox | `GET /v1/projects/:id/review/items` (one page, default 50, at most 200: `listReviewItems(id, { segment, kind, sessionId, limit, cursor })`, `useReviewItemPages`), `GET .../review/summary` (needs-you counts: `getReviewSummary`, `useReviewSummary`, `project(id).review.summary()`) ✅ |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
 | **request-changes** (Review Center feedback) | `POST .../change-requests/:cr/request-changes` → client fn already existed (`requestChangesOnChangeRequest`), now also on the facade: `project(id).changeRequests.requestChanges(crId, feedback)` ✅ |
 | project files (git-backed) | `GET /v1/projects/:id/files`, `POST /files/{content,search}`, `GET /files/archive` |
@@ -219,7 +221,7 @@ value/credential. `projects-client/setup-links.ts` ✅; facade
 ### 13e. Manifest validate + git token  ✅
 Two small project-scoped mutations, added to `projects-client/projects.ts`:
 - `project(id).validateManifest(raw)` → `POST /v1/projects/:id/manifest/validate`
-  (validates a `kortix.yaml` — or legacy `kortix.toml` — manifest's raw text
+  (validates a `kortix.yaml` (`kortix_version: 3`; legacy v1/v2 and `kortix.toml` still validate) manifest's raw text
   server-side, format auto-resolved from the project's manifest path; same
   schema `kortix ship`/`kortix validate`/the CR-merge gate use; always
   resolves with `{valid, issues}`, never throws on an invalid manifest).
@@ -236,7 +238,7 @@ Two small project-scoped mutations, added to `projects-client/projects.ts`:
 Read surface — `kortix.billing.{accountState, accountStateMinimal,
 transactions, transactionsSummary, creditBreakdown, usageHistory, usageRollup,
 sessionCosts, tierConfigurations}` ✅. Hooks still web-local
-(`hooks/billing`) 🟡.
+(`packages/ui/src/internal/billing`) 🟡.
 | op | REST |
 |---|---|
 | account state (full / minimal) | `GET /v1/billing/account-state[/minimal]` |
@@ -252,19 +254,20 @@ pagination. Use `kortix.billing.sessionCosts.get(sessionId, options)` for model
 usage and mixed LLM/compute ledger entries.
 
 Mutations — a deliberately curated subset of `apps/api/src/billing/routes`
-(Stripe-webhook-only routes and legacy/per-seat-claim internals stay
+(Stripe-webhook-only routes and retired per-seat internals stay
 unwired) now live in `projects-client/billing.ts` and are grouped on the
-facade as `kortix.billing.{checkout, subscription, credits}`:
+facade as `kortix.billing.{setPlan, checkout, subscription, credits}`:
 | group | op | REST |
 |---|---|---|
+| (top level) | setPlan | `POST /v1/billing/plan` (`useSetBillingPlan()` hook) |
 | `checkout` | createSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `checkout` | confirmSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `subscription` | createPortalSession | `POST /v1/billing/create-portal-session` |
 | `subscription` | cancel | `POST /v1/billing/cancel-subscription` |
 | `subscription` | reactivate | `POST /v1/billing/reactivate-subscription` |
 | `subscription` | scheduleDowngrade | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
-| `subscription` | cancelScheduledChange | `POST /v1/billing/cancel-scheduled-change` |
-| `subscription` | prorationPreview | `GET /v1/billing/proration-preview` |
+| `subscription` | cancelScheduledChange | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
+| `subscription` | prorationPreview | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `credits` | purchase | `POST /v1/billing/purchase-credits` |
 | `credits` | autoTopupSettings | `GET /v1/billing/auto-topup/settings` |
 | `credits` | configureAutoTopup | `POST /v1/billing/auto-topup/configure` |
@@ -336,7 +339,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ⚠️ **Deprecated**: the sandbox daemon serves none of these routes, so every call answers 404. Client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Reachable from the root barrel like the rest of the runtime client; `@kortix/sdk/opencode-client` is a deprecated alias for the same names |
 
 ### To make the SDK the whole data layer
-1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
+1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `packages/ui/src/files/runtime` hooks in; **collapse the `packages/ui/src/files/project` twin** into it (backend-parameterized).
 2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests (`useChangeRequests` ✅ done; commits/branches/diff still web-local), triggers (`useProjectTriggers` ✅ done), gateway-observability, sandbox-admin, billing/account-state.
 3. ~~Framework-free event stream~~ — **done**: `openEventStream` (`@kortix/sdk` root barrel / `@kortix/sdk/event-stream`) is a framework-free connect/reconnect/heartbeat/coalescing primitive with zero React deps, and `session.stream()` is a thin facade over it (`ensureReady()` + the session's own runtime client). `@kortix/sdk/react`'s `useOpenCodeEventStream` is now just a React wrapper around the same primitive — a non-React host (server wrapper, worker, CLI) subscribes directly via `session.stream()` or `openEventStream()`.
 4. ~~Land + export the kortix-master daemon client~~ — **done**: the client (`opencode/kortix-master.ts`) is re-exported from `@kortix/sdk/opencode-client`, and its React Query layer lives in `@kortix/sdk/react` (`use-kortix-master.ts`, with the injectable `KortixMasterIdentity` seam); apps/web's six former hook files (`hooks/kortix/*` + `hooks/use-sandbox-services.ts`) are thin wrappers over it.

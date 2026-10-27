@@ -86,7 +86,10 @@ function previewDirectEdgeMode(): boolean {
  * So a claimed host counts only when the signature over it verifies.
  */
 export function resolvePreviewRequest(req: Request, url: URL): ResolvedPreviewRequest | null {
-  const claimedHost = previewDirectEdgeMode() ? null : req.headers.get(PREVIEW_EDGE_HEADERS.host);
+  const claimed = previewDirectEdgeMode() ? null : req.headers.get(PREVIEW_EDGE_HEADERS.host);
+  // A local `*.localhost` preview skips the signature below, so it is only ever
+  // the real Host: a claimed one would make any caller's request "verified".
+  const claimedHost = claimed && !resolvePreviewHost(claimed)?.local ? claimed : null;
   const publicHost = (claimedHost || req.headers.get('host') || url.hostname || '').toLowerCase();
   const target = resolvePreviewHost(publicHost);
   if (!target) return null;
@@ -118,7 +121,7 @@ export function isPreviewHost(req: Request, url: URL): boolean {
 }
 
 /** Query parameters that carry a one-shot credential, never forwarded upstream. */
-const CREDENTIAL_PARAMS = ['token', 'public_share'] as const;
+const CREDENTIAL_PARAMS = ['token', 'public_share', 'preview_ticket'] as const;
 
 function jsonError(status: number, message: string, origin: string): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -136,7 +139,7 @@ function jsonError(status: number, message: string, origin: string): Response {
 function gateResponse(
   req: Request,
   url: URL,
-  input: { status: 401 | 403 | 404; state: PreviewState; message: string; origin: string; publicHost: string },
+  input: { status: number; state: PreviewState; message: string; origin: string; publicHost: string },
 ): Response {
   if (!isDocumentNavigation(req)) {
     return jsonError(input.status, input.message, input.origin);
@@ -150,8 +153,8 @@ function gateResponse(
       frontendUrl: config.FRONTEND_URL || '',
     }),
     {
-      // 401/403/404 keep their real status: every intermediary passes those
-      // through, and a monitor should see them. Only the TRANSIENT states
+      // The status stays real: intermediaries pass 4xx through, and a crawler
+      // or monitor should see it. Only the TRANSIENT states
       // (see preview-state-page.ts) answer 200, because a 5xx gets replaced.
       status: input.status,
       headers: {
@@ -165,18 +168,24 @@ function gateResponse(
 }
 
 /**
- * Resolve a public-share token into a grant for THIS preview, or null. The
- * share must name this exact sandbox and port — a share for one port is not a
- * key to the box.
+ * Resolve a public-share token into a grant for THIS preview — or, when the
+ * token names a share that no longer exists (revoked, expired, deleted), a
+ * `dead` marker the caller turns into the unavailable page. A policy refusal
+ * (wrong sandbox, wrong port) still returns null: an owner's own credential
+ * must keep working, and the refusal is an authorization miss, not a dead
+ * link.
  */
 async function authenticatePublicShare(
   token: string | null,
   sandboxId: string,
   port: number,
-): Promise<{ shareId: string; mode: string; filePath: string | null } | null> {
+): Promise<{ shareId: string; mode: string; filePath: string | null } | { dead: { status: number } } | null> {
   if (!token) return null;
   const resolved = await resolvePublicShare(token);
-  if (!resolved.ok) return null;
+  if (!resolved.ok) {
+    if (resolved.status === 404 || resolved.status === 410) return { dead: { status: resolved.status } };
+    return null;
+  }
 
   const share = resolved.row;
   if (share.externalId !== sandboxId) return null;
@@ -219,9 +228,15 @@ export function sessionFromCookies(req: Request, target: ResolvedPreviewHost): P
   return null;
 }
 
-/** Why a preview could not be served, before it is rendered for anyone. */
+/**
+ * Why a preview could not be served, before it is rendered for anyone.
+ *
+ * `status` is whatever the truth is — 401 signed-out, 404 unknown address or
+ * dead share, 410 revoked share — it is carried to the page and to the JSON
+ * a non-navigation caller gets.
+ */
 export interface PreviewRefusal {
-  status: 401 | 404;
+  status: number;
   state: PreviewState;
   message: string;
 }
@@ -261,7 +276,7 @@ export async function establishPreviewSession(
   bindPreviewResource(sandboxId, target.port);
 
   const share = await authenticatePublicShare(shareToken, sandboxId, target.port);
-  if (share) {
+  if (share && 'shareId' in share) {
     return {
       session: {
         kind: 'public_share',
@@ -278,6 +293,20 @@ export async function establishPreviewSession(
 
   const principal = await authenticatePreviewPrincipalDetailed(previewToken, sandboxId);
   if (!principal?.userId) {
+    // The share token named a link that no longer exists (revoked, expired,
+    // deleted): that is why the visit fails, and it is what the visitor should
+    // read — not "unauthorized", which implies signing in would open the
+    // share. An owner riding their own credential past the dead param still
+    // gets in below; the dead share grants nothing their token does not.
+    if (share && 'dead' in share) {
+      return {
+        refusal: {
+          status: share.dead.status,
+          state: 'unavailable',
+          message: 'This share is no longer available',
+        },
+      };
+    }
     return { refusal: { status: 401, state: 'signed-out', message: 'Unauthorized' } };
   }
 
@@ -389,8 +418,9 @@ export async function handlePreviewOriginRequest(
   // there, which is what keeps the local iframe preview working.
   const secure = proto === 'https' || target.local;
 
-  let session = sessionFromCookies(req, target);
-  let setCookies: string[] = [];
+  const ticketSession = verifyPreviewSession(url.searchParams.get('preview_ticket'), target, 'ticket');
+  let session = ticketSession || sessionFromCookies(req, target);
+  let setCookies: string[] = ticketSession ? cookiesForSession(ticketSession, secure) : [];
 
   if (!session) {
     const established = await establishPreviewSession(req, url, target);
@@ -448,7 +478,22 @@ export async function handlePreviewOriginRequest(
     // the rest of the cookie's life — the path form re-checks on every request
     // and this must not be the weaker door.
     const still = await resolvePublicShare(publicShareTokenFor(session.shareId));
-    if (!still.ok) return jsonError(410, 'This share is no longer available', origin);
+    if (!still.ok) {
+      // A dead link must say why to the person reloading it — a page, like
+      // every other terminal preview state. Machines keep the JSON, now with
+      // the real status (404 not found, 410 revoked/expired). A refusal that
+      // is not a dead link keeps its historic 410 answer.
+      if (still.status === 404 || still.status === 410) {
+        return gateResponse(req, url, {
+          status: still.status,
+          state: 'unavailable',
+          message: 'This share is no longer available',
+          origin,
+          publicHost,
+        });
+      }
+      return jsonError(410, 'This share is no longer available', origin);
+    }
   }
 
   // Body (read once, before the retries inside forwardToSandbox).

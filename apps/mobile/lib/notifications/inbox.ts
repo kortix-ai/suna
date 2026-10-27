@@ -30,6 +30,9 @@ export const KIND_LABEL: Record<InboxNotificationKind, string> = {
   shared: 'Shared with you',
   automation_failed: 'Failure alert',
   automation_recovered: 'Recovery alert',
+  capture_device_down: 'Capture computer stopped',
+  capture_device_recovered: 'Capture computer recording again',
+  message: 'Message',
 };
 
 /** A kind a newer server sends that this app does not know yet. */

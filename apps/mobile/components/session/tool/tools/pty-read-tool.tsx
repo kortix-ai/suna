@@ -26,17 +26,18 @@ import { TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { ToneBadge } from './apply-patch-tool';
 
-export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
+export function PtyReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const parsed = useMemo(() => parsePtyReadOutput(output), [output]);
   const ptyId = parsed.id || (input.id as string) || '';
   const live = parsed.ptyStatus === 'running';
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalWindowIcon}
       trigger={{ title: PTY_TEXT.terminalOutput, subtitle: ptyId || undefined }}
       badge={

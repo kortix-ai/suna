@@ -312,6 +312,84 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, searched)).toEqual([]);
   });
 
+  test('a new session never lands in the pinned or archived view', () => {
+    const qc = new QueryClient();
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    const archived = qk.project.sessionsPaged('P1', 'visible', { view: 'archived' });
+    for (const key of [pinned, archived]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' }, pinned_at: null }),
+    );
+    expect(ids(qc, pinned)).toEqual([]);
+    expect(ids(qc, archived)).toEqual([]);
+  });
+
+  test('a new or updated live session never lands in the Recently deleted view (KRTX-2853)', () => {
+    const qc = new QueryClient();
+    const deleted = qk.project.sessionsPaged('P1', 'visible', { view: 'deleted' });
+    qc.setQueryData(deleted, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }));
+    expect(ids(qc, deleted)).toEqual([]);
+  });
+
+  test('a pinned session still lands in the pinned view', () => {
+    const qc = new QueryClient();
+    const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
+    qc.setQueryData(pinned, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('PIN', { pinned_at: '2026-10-16T00:00:00Z' }));
+    expect(ids(qc, pinned)).toEqual(['PIN']);
+  });
+
+  test('a new session lands only in its own space list, never in another space', () => {
+    const qc = new QueryClient();
+    const spaceA = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'A' });
+    const spaceB = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'B' });
+    for (const key of [spaceA, spaceB]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { space_id: 'A' }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('NO-SPACE', {}));
+    expect(ids(qc, spaceA)).toEqual(['IN-A']);
+    expect(ids(qc, spaceB)).toEqual([]);
+  });
+
+  test('a new session lands in a group list only when filed in that group; a no-group list takes only an unfiled one', () => {
+    const qc = new QueryClient();
+    const groupA = qk.project.sessionsPaged('P1', 'visible', { group: 'GA' });
+    const groupB = qk.project.sessionsPaged('P1', 'visible', { group: 'GB' });
+    const ungrouped = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: 'none' });
+    for (const key of [groupA, groupB, ungrouped]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { group_id: 'GA' }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('LOOSE', { group_id: null }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('OLDER-API', {}));
+    expect(ids(qc, groupA)).toEqual(['IN-A']);
+    expect(ids(qc, groupB)).toEqual([]);
+    expect(ids(qc, ungrouped).sort()).toEqual(['LOOSE', 'OLDER-API']);
+  });
+
+  test('a filtered list takes a session only when it matches the filter: labels, agent, starter and activity', () => {
+    const qc = new QueryClient();
+    const labelled = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', labels: ['urgent'] });
+    const byAgent = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', agent: 'shopper' });
+    const byPerson = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', createdBy: 'u1' });
+    const recent = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', updatedAfter: '2026-10-27T00:00:00.000Z' });
+    for (const key of [labelled, byAgent, byPerson, recent]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('PLAIN', {
+      group_id: 'GA', labels: [], agent_name: 'default', created_by: 'u2', updated_at: '2026-10-26T00:00:00.000Z',
+    }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('MATCH', {
+      group_id: 'GA', labels: ['urgent', 'ops'], agent_name: 'shopper', created_by: 'u1', updated_at: '2026-10-27T09:00:00.000Z',
+    }));
+    for (const key of [labelled, byAgent, byPerson, recent]) expect(ids(qc, key)).toEqual(['MATCH']);
+  });
+
+  test('the group filter is its own key segment, absent when unset', () => {
+    expect(qk.project.sessionsPaged('P1', 'visible', { group: 'GA' })).not.toEqual(qk.project.sessionsPaged('P1'));
+    expect(qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: undefined })).toEqual(
+      qk.project.sessionsPaged('P1', 'visible', { parent: 'root' }),
+    );
+  });
+
   test('an unfiltered legacy cache still receives every session', () => {
     const qc = new QueryClient();
     const legacy = qk.project.sessionsPaged('P1');

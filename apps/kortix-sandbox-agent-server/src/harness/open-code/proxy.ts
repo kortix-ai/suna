@@ -8,6 +8,7 @@ import { isRepoMaterialized } from '@/services/workspace-provider/checkout'
 import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
+import { commandRefusal, compiledV3 } from './manifest-v3'
 import {
   abortTargetOf,
   loopStartTargetOf,
@@ -52,6 +53,8 @@ const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 // the browser waits for. This only stops the daemon severing a live turn first.
 const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
 
+const COMMAND_PATH = /^\/session\/[^/]+\/command\/?$/
+
 const BLOCKING_TURN_PATH = new RegExp(`^/session/[^/]+/(?:${BLOCKING_TURN_VERBS.join('|')})(?:$|[/?#])`)
 
 /**
@@ -59,12 +62,16 @@ const BLOCKING_TURN_PATH = new RegExp(`^/session/[^/]+/(?:${BLOCKING_TURN_VERBS.
  * proxy (`isLongTurnCompletionRequest`) reads the same `BLOCKING_TURN_VERBS`:
  * the two layers must agree, or the inner one aborts what the outer one is
  * patiently waiting for.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function isBlockingTurnRequest(method: string, path: string): boolean {
   return method.toUpperCase() === 'POST' && BLOCKING_TURN_PATH.test(path)
 }
 
-/** Native readiness and upstream protocol handling, without route registration. */
+/**
+ * Native readiness and upstream protocol handling, without route registration.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function createOpenCodeProxyService(
   opencode: Opencode,
   instanceGuard: Pick<InstanceGuard, 'settled'>,
@@ -154,9 +161,28 @@ export function createOpenCodeProxyService(
       return { ready: true }
     },
     async forward(input) {
-      const upstreamUrl = `${opencode.getInternalUrl()}${input.path}${input.search}`
       const method = input.method.toUpperCase()
       const hasBody = method !== 'GET' && method !== 'HEAD'
+      let body: ReadableStream<Uint8Array> | string | null | undefined = input.body
+
+      // kortix.yaml v3: a command runs only on an agent that enables it.
+      const v3 = compiledV3()
+      if (v3 && method === 'POST' && COMMAND_PATH.test(input.path)) {
+        body = await new Response(input.body).text()
+        let parsed: unknown = null
+        try {
+          parsed = JSON.parse(body)
+        } catch {}
+        const refusal = commandRefusal(v3, process.env, parsed)
+        if (refusal) {
+          return {
+            status: 403,
+            statusText: 'Forbidden',
+            headers: new Headers({ 'content-type': 'application/json; charset=utf-8' }),
+            body: JSON.stringify(refusal),
+          }
+        }
+      }
 
       // Every client Stop (web, SDK, CLI, API) is this request. Record it
       // before OpenCode sees it: the abort frame that follows cannot say
@@ -169,6 +195,9 @@ export function createOpenCodeProxyService(
       // caches the daemon built.
       const loopTarget = loopStartTargetOf(method, input.path)
       if (loopTarget) await instanceGuard.settled(undefined, loopTarget)
+      // After the wait: a convergence may have promoted its candidate during
+      // it, moving the live port and killing the old process (CFG-12).
+      const upstreamUrl = `${opencode.getInternalUrl()}${input.path}${input.search}`
 
       // Bound only the wait for opencode's response (headers) — not the abort
       // controller's whole lifetime — so we can free-run a stream once it starts.
@@ -184,7 +213,7 @@ export function createOpenCodeProxyService(
         const fetchInit: RequestInit & { duplex?: 'half' } = {
           method,
           headers: input.headers,
-          body: hasBody ? input.body : undefined,
+          body: hasBody ? body : undefined,
           // duplex: 'half' is required by undici when piping a ReadableStream body;
           // Bun accepts the extra key too. Not in lib.dom RequestInit yet.
           duplex: 'half',
@@ -194,6 +223,27 @@ export function createOpenCodeProxyService(
         clearTimeout(responseTimer)
 
         const respHeaders = new Headers(upstream.headers)
+
+        // kortix.yaml v3: the command list is the compiled commands, each with
+        // the agents that may run it. OpenCode's own commands, MCP prompts and
+        // skills are no command of a v3 project.
+        if (v3 && method === 'GET' && upstream.ok && input.path === '/command') {
+          const commands = v3.commands ?? {}
+          const listed = (await upstream.json()) as Array<Record<string, unknown>>
+          respHeaders.delete('content-length')
+          respHeaders.delete('content-encoding')
+          respHeaders.set('content-type', 'application/json; charset=utf-8')
+          return {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: respHeaders,
+            body: JSON.stringify(
+              (Array.isArray(listed) ? listed : [])
+                .filter((command) => typeof command?.name === 'string' && Object.hasOwn(commands, command.name))
+                .map((command) => ({ ...command, agents: commands[command.name as string]!.agents })),
+            ),
+          }
+        }
 
         // The transcript list leaves this box WITHOUT its attachment bytes.
         //

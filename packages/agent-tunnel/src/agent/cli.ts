@@ -5,6 +5,7 @@ import { join } from 'path';
 
 import { PAIR_AGAIN_COMMAND, TunnelAgent } from './agent';
 import {
+  accessAfterPairing,
   accessFilePath,
   accessRequestPath,
   accessView,
@@ -16,7 +17,7 @@ import {
   type AccessView,
 } from './access';
 import { printStartupBanner } from './banner';
-import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
+import { createEnabledCapabilityRegistry, desktopUnavailableReason } from './capabilities/enabled-registry';
 import { loadConfig, type TunnelConfig } from './config';
 import { CONFIG_FILE, clearSavedCredentials, saveCredentials } from './credential-store';
 import { probeCredentials } from './credential-probe';
@@ -118,11 +119,8 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
   const registry = createEnabledCapabilityRegistry(config, undefined, {
     onPermissionMissing: restart?.permissionMissing,
   });
-  if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
-    console.error(
-      '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
-    );
-  }
+  const desktopReason = registry.unavailable.get('desktop');
+  if (desktopReason) console.error(`[agent-tunnel] Computer Use is approved but unavailable: ${desktopReason}`);
 
   if (options.service) {
     process.stdout.write(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}\n`);
@@ -149,8 +147,8 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
       reloadConfig: () => loadConfig({ apiUrl: config.apiUrl }),
     },
   );
-  agent.connect();
-
+  // Before connect(): connect() writes state.json, and a SIGTERM that lands
+  // before a handler exists kills the process with the state left `connecting`.
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
     agent?.disconnect();
@@ -158,6 +156,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  agent.connect();
 }
 
 // ── pairing ──────────────────────────────────────────────────────────────────
@@ -287,17 +286,9 @@ async function pairThisMachine(apiUrl: string, flags: Flags, lease?: { serviceWa
   }
 
   saveCredentials(outcome.tunnelId, outcome.token, apiUrl, outcome.capabilities);
-  // A1: a pairing made from the desktop app asks before each use; the app is
-  // what answers. A CLI-only machine has nobody to answer a prompt, so it is
-  // always allowed (a documented deviation from A1). A new pairing never
-  // inherits a grant or an `always` from the previous one; keep awake is a
-  // machine setting and stays.
-  writeAccess({
-    mode: existsSync(desktopAppPath()) ? 'ask' : 'always',
-    grantedUntil: null,
-    deniedUntil: null,
-    keepAwake: readAccess().keepAwake,
-  });
+  // A1: a re-pair keeps the owner's mode; a first pairing asks when the
+  // desktop app can answer, else always (see accessAfterPairing).
+  writeAccess(accessAfterPairing(agentTunnelHome(), existsSync(desktopAppPath())));
   if (jsonMode) {
     emit('approved', { tunnelId: outcome.tunnelId, capabilities: outcome.capabilities });
   } else {
@@ -435,6 +426,7 @@ function commandStatus(flags: Flags): void {
   const service = getServiceStatus();
   const paired = Boolean(config.token && config.tunnelId);
   const approved = new Set(config.enabledCapabilities ?? []);
+  const desktopReason = approved.has('desktop') ? desktopUnavailableReason() : null;
 
   if (isTruthyFlag(flags.json)) {
     console.log(JSON.stringify({
@@ -442,6 +434,7 @@ function commandStatus(flags: Flags): void {
       tunnelId: paired ? config.tunnelId : null,
       apiUrl: config.apiUrl,
       capabilities: [...approved],
+      unavailableCapabilities: desktopReason ? { desktop: desktopReason } : {},
       version: agentTunnelVersion(),
       home: agentTunnelHome(),
       serviceLabel: getServicePaths().label,

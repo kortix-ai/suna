@@ -5,6 +5,7 @@ import type { DropFirst } from './binding-types';
 export function bindProjectOperationsWorkspace(projectId: string) {
   return {
     files: {
+      write: (input: Parameters<typeof P.writeProjectFile>[1]) => P.writeProjectFile(projectId, input),
       list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
         P.listProjectFiles(projectId, options),
       /** One folder level, complete up to its entry cap (not cut at 1,000 recursive files). */
@@ -35,7 +36,9 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     },
 
     changeRequests: {
-      list: () => P.listChangeRequests(projectId),
+      /** One page, newest first. Walk the rest with `next_cursor` → `{ cursor }`. */
+      list: (...a: DropFirst<Parameters<typeof P.listChangeRequests>>) =>
+        P.listChangeRequests(projectId, ...a),
       get: (crId: string) => P.getChangeRequest(projectId, crId),
       /** Edit an open change request's title or description. */
       update: (...a: DropFirst<Parameters<typeof P.updateChangeRequest>>) =>

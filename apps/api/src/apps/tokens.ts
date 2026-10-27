@@ -17,7 +17,10 @@
  * Claims: `sub` (Kortix user id), `email`, `name`, `picture`, `groups` (group
  * names in the account), `group_ids`, `role` (account role), `account_id`,
  * `project_id`. A token for an agent session names the agent's service account,
- * carries `kind: "agent"`, no role and no groups.
+ * carries `kind: "agent"`, no role and no groups. A token an App's viewer got
+ * for an App that App uses carries `via_app_id`: the id of the App the viewer
+ * signed in to. The used App checks it to serve only the readers of the Apps
+ * it means to serve.
  *
  * Fifteen minutes: a token already handed out keeps working until it expires,
  * so its lifetime is how long a removed member can still reach an App. Clients
@@ -34,7 +37,7 @@ import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface'
 export const TOKEN_TTL_SECONDS = 15 * 60;
 
 export const TOKEN_CLAIMS = [
-  'iss', 'aud', 'sub', 'iat', 'exp', 'email', 'name', 'picture', 'groups', 'group_ids', 'role', 'account_id', 'project_id', 'kind',
+  'iss', 'aud', 'sub', 'iat', 'exp', 'email', 'name', 'picture', 'groups', 'group_ids', 'role', 'account_id', 'project_id', 'kind', 'via_app_id',
 ] as const;
 
 const b64url = (input: Buffer | string) => Buffer.from(input).toString('base64url');
@@ -145,6 +148,8 @@ export interface TokenTarget {
   issuer: string;
   accountId: string;
   projectId: string;
+  /** The App the viewer signed in to, when the token is for an App it uses (`via_app_id`). */
+  viaAppId?: string;
 }
 
 /** A JWT signed by `signer`, valid for TOKEN_TTL_SECONDS. */
@@ -172,6 +177,7 @@ export function signToken(
       account_id: target.accountId,
       project_id: target.projectId,
       ...(subject.kind ? { kind: subject.kind } : {}),
+      ...(target.viaAppId ? { via_app_id: target.viaAppId } : {}),
     }),
   );
   // JOSE wants the raw r||s signature, not DER.
@@ -182,15 +188,16 @@ export function signToken(
   return { token: `${header}.${payload}.${b64url(signature)}`, expiresAt: new Date(exp * 1000) };
 }
 
-/** A token for `app`'s project issuer with `app` as the audience. */
+/** A token for `app`'s project issuer with `app` as the audience; `viaAppId` names the App the viewer came through. */
 export async function mintAppToken(
   app: { appId: string; projectId: string; accountId: string },
   subject: TokenSubject,
+  viaAppId?: string,
 ): Promise<{ token: string; expiresAt: Date }> {
   const signer = await projectSigner(app.projectId);
   return signToken(
     signer,
-    { audience: app.appId, issuer: projectIssuer(app.projectId), accountId: app.accountId, projectId: app.projectId },
+    { audience: app.appId, issuer: projectIssuer(app.projectId), accountId: app.accountId, projectId: app.projectId, viaAppId },
     subject,
   );
 }

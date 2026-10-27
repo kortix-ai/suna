@@ -35,7 +35,7 @@ export function v1Seqs(v1: V1Transcript, options: FromV1Options = {}): Map<strin
 
 /**
  * `fromV1` of one message of the running turn (`live: true`): the message is `streaming` while
- * it is open or has an open call (pi completes a reply before its calls run), an open call keeps
+ * it is open or has an open call (pi completes a reply before its calls run; the rule is `fromV1`'s), an open call keeps
  * its v1 status (`pending`, else `running`) with no result, and a pending call that streams its
  * input carries the text so far as its `input`. The residual is taken against
  * those blocks, so a running call keeps its display metadata (task `sessionId`, bash `command`)
@@ -54,8 +54,5 @@ export function liveMessageFromV1(
     { session_id: thread, root_id: thread, rows: [{ runtime_session_id: thread, info: row.info, parts: row.parts }] },
     { harness, live: true },
   ).threads[0]!.messages[0]!;
-  // pi completes a reply before its calls run: while a call is open, the turn still streams.
-  // Only `status` changes: `toV1` does not read it, so the frames still round-trip.
-  if (message.blocks.some((b) => b.type === 'tool_call' && (b.status === 'pending' || b.status === 'running'))) message.status = 'streaming';
   return Object.assign(message, known);
 }

@@ -61,13 +61,20 @@ interface TurnPayload {
   turns?: SessionTurnObservation['turns'];
   last_ended?: SessionTurnObservation['last_ended'];
   recent_failures?: SessionTurnObservation['recent_failures'];
+  can_stop?: boolean;
   working?: SessionWorkingVerdict;
+}
+
+/** The open turns, as one comparable key: which run a `can_stop` answer is about. */
+function openTurnsKey(turns: SessionTurnObservation['turns'] | undefined): string {
+  return (turns ?? []).map((turn) => turn.turn_token).sort().join(',');
 }
 
 interface SessionPayload {
   known?: boolean;
   title?: string | null;
   secrets_rev?: string;
+  model_rev?: string;
 }
 
 interface RuntimePayload {
@@ -83,22 +90,34 @@ export function applySessionControlFrame(
   projectId: string,
   sessionId: string,
   frame: SessionControlFrame,
-  memory: { secretsRev?: string; runtimeKey?: string },
+  memory: { secretsRev?: string; runtimeKey?: string; modelRev?: string },
   nowMs: number = Date.now(),
 ): void {
   if (frame.type === 'kortix.control.turn') {
     const payload = frame.payload as TurnPayload;
     if (!payload?.known || !Array.isArray(payload.turns)) return;
+    const key = qk.project.sessionTurn(projectId, sessionId);
+    // The stream is one broadcast per session, so a frame may carry no
+    // per-caller `can_stop`. The last `/turn` answer still holds while the
+    // SAME turns are open; once they change it is about another run.
+    const previous = queryClient.getQueryData<SessionTurnObservation>(key);
+    const canStop =
+      typeof payload.can_stop === 'boolean'
+        ? payload.can_stop
+        : previous && openTurnsKey(previous.turns) === openTurnsKey(payload.turns)
+          ? previous.can_stop
+          : undefined;
     const observation: SessionTurnObservation = {
       turns: payload.turns,
       ...(payload.last_ended ? { last_ended: payload.last_ended } : {}),
       ...(payload.recent_failures ? { recent_failures: payload.recent_failures } : {}),
+      ...(canStop !== undefined ? { can_stop: canStop } : {}),
       ...(payload.working ? { working: payload.working } : {}),
       // This tab's clock at arrival. The server re-publishes an unchanged frame
       // every 20 s, so a live stream keeps the entry fresh.
       atMs: nowMs,
     };
-    queryClient.setQueryData(qk.project.sessionTurn(projectId, sessionId), observation);
+    queryClient.setQueryData(key, observation);
     return;
   }
   if (frame.type === 'kortix.control.session') {
@@ -113,6 +132,14 @@ export function applySessionControlFrame(
         invalidateProjectProviderQueries(queryClient, projectId);
       }
       memory.secretsRev = payload.secrets_rev;
+    }
+    // The model pin moved (a fallback took the session over, or handed it
+    // back): re-read the row so the composer shows and sends the new model.
+    if (typeof payload.model_rev === 'string') {
+      if (memory.modelRev !== undefined && memory.modelRev !== payload.model_rev) {
+        void queryClient.invalidateQueries({ queryKey: qk.project.session(projectId, sessionId) });
+      }
+      memory.modelRev = payload.model_rev;
     }
     return;
   }
@@ -240,7 +267,7 @@ export function useSessionStream(
   const enabled = options.enabled !== false && !!projectId && !!sessionId;
   useEffect(() => {
     if (!enabled) return;
-    const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean } = {};
+    const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean; modelRev?: string } = {};
     const stream = openSessionStream({
       projectId,
       sessionId,

@@ -311,6 +311,7 @@ function describeGrant(grant: AgentGrant | null): Record<string, unknown> {
     permissions: grant.permissions,
     env: grant.env ?? 'all',
     apps: grant.apps ?? [],
+    policySets: grant.policySets ?? {},
     manifestRevision: grant.manifestRevision ?? null,
     manifestCommit: grant.manifestCommit ?? null,
   };
@@ -476,6 +477,12 @@ export async function reconcileStoredSessionAgentGrant(input: {
    *  validated already carries the session's stored grant. Every /call saves
    *  one `account_tokens` round trip. */
   storedGrant?: AgentGrant | null;
+  /** The git columns of this project's row, read earlier in the SAME request
+   *  (the principal resolver loads the row to bind the token account). When
+   *  given, the reconcile skips its own projects read — the two reads answered
+   *  the same row. Per-request threading, not a cache: the next request reads
+   *  fresh again, so a manifest edit still applies from the very next call. */
+  projectRow?: Awaited<ReturnType<typeof loadGitProjectRow>>;
 }): Promise<AgentGrant | null> {
   const stored =
     input.storedGrant !== undefined ? input.storedGrant : await loadStoredSessionGrant(input.sessionId);
@@ -483,13 +490,16 @@ export async function reconcileStoredSessionAgentGrant(input: {
   // The git project row feeds both the launch check and the grant resolution;
   // read it once. A failed read is the manifest-unreadable path's twin: keep
   // the last-known-good grant when there is one, fail closed otherwise — the
-  // shared keep-stored block below serves both.
-  let project: Awaited<ReturnType<typeof loadGitProjectRow>> | null = null;
+  // shared keep-stored block below serves both. The caller's already-loaded
+  // row (same request) answers it without a second round trip.
+  let project: Awaited<ReturnType<typeof loadGitProjectRow>> | null = input.projectRow ?? null;
   let rowError: unknown = null;
-  try {
-    project = await loadGitProjectRow(input.projectId);
-  } catch (err) {
-    rowError = err;
+  if (input.projectRow === undefined) {
+    try {
+      project = await loadGitProjectRow(input.projectId);
+    } catch (err) {
+      rowError = err;
+    }
   }
 
   let runningAgent = stored?.agent?.trim() ?? '';

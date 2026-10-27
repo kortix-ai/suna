@@ -16,6 +16,7 @@ let turnState: unknown = { turns: [], last_ended: null };
 let inboxRows: unknown[] = [];
 let sandboxRow: Record<string, unknown> | null = null;
 let mirrorRow: Record<string, unknown> | null = null;
+let mirrorReads = 0;
 let turnReads = 0;
 let inboxReads = 0;
 // The audit watermark reads `connector_calls` twice: a pending COUNT, then the
@@ -86,7 +87,10 @@ mock.module('../../shared/db', () => ({
           if ('pending' in projection) return [{ pending: auditPending }];
           if ('latest' in projection)
             return [{ latest: auditLatestAt, latestResolved: auditLatestResolvedAt }];
-          if ('capturedAt' in projection) return mirrorRow ? [mirrorRow] : [];
+          if ('capturedAt' in projection) {
+            mirrorReads += 1;
+            return mirrorRow ? [mirrorRow] : [];
+          }
           if ('messages' in projection) return [{ messages: 0, newest: null }];
           return sandboxRow ? [sandboxRow] : [];
         };
@@ -97,6 +101,7 @@ mock.module('../../shared/db', () => ({
             }
             return stage;
           },
+          innerJoin: () => stage,
           limit: () => stage,
           then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows()).then(resolve),
         };
@@ -122,13 +127,20 @@ mock.module('../session-lifecycle/inbox-rows', () => ({
 mock.module('./session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
 }));
+const prompterReads: Array<{ sessionId: string; messageId: string | null | undefined }> = [];
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  turnPrompterOf: async (sessionId: string, messageId: string | null | undefined) => {
+    prompterReads.push({ sessionId, messageId });
+    return messageId === 'msg-a' ? 'user-a' : null;
+  },
+}));
 mock.module('../session-lifecycle/runtime-wake-fence', () => ({
   runtimeWakeInProgress: (metadata: Record<string, unknown> | null | undefined) =>
     Boolean(metadata?.runtimeWakeId),
 }));
 
 import type { ControlEvent } from './session-control-events';
-const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState } =
+const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState, TURN_FRAME_STOP_PROMPTER } =
   await import('./session-control-events');
 const {
   acquireControlReconciler,
@@ -147,8 +159,9 @@ beforeEach(() => {
   inboxReads = 0;
   turnState = { turns: [], last_ended: null };
   inboxRows = [];
-  sandboxRow = { status: 'active', externalId: 'box-1', provider: 'e2b', metadata: {}, deadlineAt: new Date(0) };
+  sandboxRow = { status: 'active', externalId: 'box-1', provider: 'platinum', metadata: {}, deadlineAt: new Date(0) };
   mirrorRow = null;
+  mirrorReads = 0;
   auditPending = 0;
   auditLatestAt = null;
   auditLatestResolvedAt = null;
@@ -174,7 +187,6 @@ describe('emission', () => {
       'kortix.control.turn',
       'kortix.control.queue',
       'kortix.control.runtime',
-      'kortix.control.mirror',
       'kortix.control.audit',
       'kortix.control.session',
     ]);
@@ -233,7 +245,7 @@ describe('emission', () => {
     const handle = acquireControlReconciler(SESSION);
     await handle.ready();
     const head = controlChannelState(SESSION).head_cseq;
-    expect(head).toBe(6);
+    expect(head).toBe(5);
 
     handle.poke();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -349,20 +361,14 @@ describe('emission', () => {
 });
 
 describe('the runtime control snapshot', () => {
-  test('mirror watermark reports absence and then the stored capture with empty message statistics', async () => {
-    const handle = acquireControlReconciler(`${SESSION}-mirror`);
-    await handle.ready();
-    expect(handle.snapshot().find((event) => event.type === 'kortix.control.mirror')?.payload).toEqual({
-      known: true, present: false, captured_at: null, head_complete: false,
-      opencode_session_id: null, message_count: 0, newest_message_at: null,
-    });
+  test('the mirror is not read and no mirror frame is sent (P8.2)', async () => {
     mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, opencodeSessionId: 'synthetic-session' };
-    handle.poke();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(handle.snapshot().find((event) => event.type === 'kortix.control.mirror')?.payload).toEqual({
-      known: true, present: true, captured_at: '2026-08-27T00:00:00.000Z', head_complete: true,
-      opencode_session_id: 'synthetic-session', message_count: 0, newest_message_at: null,
-    });
+    const handle = acquireControlReconciler(`${SESSION}-log`);
+    await handle.ready();
+    const types = handle.snapshot().map((event) => event.type);
+    expect(types).not.toContain('kortix.control.mirror');
+    expect(types).toContain('kortix.control.session');
+    expect(mirrorReads).toBe(0);
     handle.release();
   });
 
@@ -449,7 +455,7 @@ describe('reference counting', () => {
     const first = acquireControlReconciler(`${SESSION}-reconnect`);
     await first.ready();
     const head = controlChannelState(`${SESSION}-reconnect`).head_cseq;
-    expect(head).toBe(6);
+    expect(head).toBe(5);
     first.release();
 
     const second = acquireControlReconciler(`${SESSION}-reconnect`);
@@ -457,7 +463,7 @@ describe('reference counting', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(controlChannelState(`${SESSION}-reconnect`).head_cseq).toBe(head);
     // And the reconnecting stream still has the full snapshot to open with.
-    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4, 5]);
     second.release();
   });
 
@@ -623,7 +629,6 @@ describe('queue-only holders (`?channels=control`)', () => {
     expect(auditWhere).toHaveLength(2);
     expect(full.snapshot().map((event) => event.type).sort()).toEqual([
       'kortix.control.audit',
-      'kortix.control.mirror',
       'kortix.control.queue',
       'kortix.control.runtime',
       'kortix.control.session',
@@ -695,6 +700,20 @@ describe('R5.2: the server owns session state', () => {
     handle.release();
   });
 
+  // The stream turns this into each viewer's own `can_stop`; read once per turn.
+  test('the turn frame carries the running turn\'s prompter, read once per turn', async () => {
+    prompterReads.length = 0;
+    turnState = { turns: [{ ...liveTurn, message_id: 'msg-a' }] };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    pokeControlReconciler(SESSION);
+    await Bun.sleep(20);
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.turn');
+    expect((frame!.payload as Record<string, unknown>)[TURN_FRAME_STOP_PROMPTER]).toBe('user-a');
+    expect(prompterReads).toEqual([{ sessionId: SESSION, messageId: 'msg-a' }]);
+    handle.release();
+  });
+
   test('a queued prompt with no turn is working with pending delivery', async () => {
     inboxRows = [{ prompt_id: 'p1', state: 'queued', reason: null, client_sent_at_ms: null }];
     const handle = acquireControlReconciler(SESSION, 'project-owner');
@@ -727,6 +746,8 @@ describe('R5.2: the server owns session state', () => {
     expect(frame!.payload).toEqual({
       known: true,
       title: 'Mine',
+      // #10487: the frame names the session's model state (model:source:fallback_at).
+      model_rev: '::',
       secrets_rev: '2:2026-10-06T10:00:00.000Z',
     });
     handle.release();

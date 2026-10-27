@@ -4,7 +4,8 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
+/** Platinum is the reference App host. Daytona is a legacy fallback. */
+export type AppHostingProvider = 'platinum' | 'daytona';
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
@@ -150,7 +151,15 @@ export interface App {
   capabilities?: AppCapability[];
   slug: string;
   name: string;
+  /** Where the App is reached: its Kortix host, or `external_url` for an external App. */
   url: string;
+  /**
+   * Set: the App is hosted elsewhere at this https URL. Kortix lists and frames
+   * it and never deploys it. Its `capabilities` are `['preview']` when the site
+   * allows framing, else `[]` (open it in a new tab). Optional for wire
+   * compatibility with a server that predates it.
+   */
+  external_url?: string | null;
   access_mode: AppAccessMode;
   access_revision: number;
   desired_state: AppDesiredState;
@@ -183,7 +192,7 @@ export interface App {
    * targets. Older ones are retired. Optional for wire compatibility.
    */
   retained_deployments?: number;
-  /** Set on the create and update responses only. Empty today. */
+  /** Set on the create and update responses only: `app_external_not_frameable` when an external site refuses a frame. */
   warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
@@ -229,7 +238,7 @@ export interface App {
  * only: how the App runs and who may open it do not change.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an unlisted App sits under Background Apps. An App with a `parent` is a tab instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';
@@ -248,6 +257,8 @@ export interface CreateAppInput {
   always_on?: boolean;
   /** The Apps, by slug, this App uses. Each must exist. Default: none. */
   uses?: string[];
+  /** An https URL: create an external App that Kortix lists and frames, and never deploys. */
+  external_url?: string;
 }
 
 export interface UpdateAppInput {
@@ -263,6 +274,8 @@ export interface UpdateAppInput {
   labels?: string[];
   /** Replaces where Kortix shows the App. `{}` restores the defaults. */
   display?: AppDisplay;
+  /** Moves an external App to another https URL (`409 app_not_external` for an App Kortix runs). */
+  external_url?: string;
 }
 
 /**

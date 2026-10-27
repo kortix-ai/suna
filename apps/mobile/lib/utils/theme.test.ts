@@ -379,6 +379,24 @@ describe('THEME.accent carries the 6 brand accents, theme-invariant', () => {
   }
 });
 
+/**
+ * `--chart-1..5`, the one data-viz ramp, is declared byte-identical in both
+ * scopes, so THEME.chart is theme-invariant like THEME.accent. Index 0 is
+ * `--chart-1`.
+ */
+describe('THEME.chart carries the 5 chart tokens, theme-invariant', () => {
+  for (const step of [1, 2, 3, 4, 5]) {
+    it(`chart[${step - 1}] matches --chart-${step} in both :root and .dark:root`, () => {
+      const light = token(':root', `chart-${step}`);
+      expect(token('.dark:root', `chart-${step}`)).toBe(light);
+      expect(THEME.chart[step - 1] as string).toBe(light);
+    });
+  }
+  it('has exactly 5 steps', () => {
+    expect(THEME.chart).toHaveLength(5);
+  });
+});
+
 describe('NAV_THEME carries no untokened color', () => {
   it('contains no #rrggbb hex literals', () => {
     const all = JSON.stringify(NAV_THEME);
@@ -560,6 +578,10 @@ describe('toHexColor matches the real parser for every THEME colour', () => {
 
 const WEB_CSS_PATH = join(__dirname, '../../../web/src/app/globals.css');
 const webCss = readFileSync(WEB_CSS_PATH, 'utf8');
+// Web imports its `@theme inline` aliases (`--color-ring: var(--ring)`) from
+// @kortix/ui since #10257.
+const WEB_THEME_PATH = join(__dirname, '../../../../packages/ui/src/styles/theme.css');
+const webThemeCss = readFileSync(WEB_THEME_PATH, 'utf8');
 
 /** Max allowed difference per HSL component (degrees for H, points for S/L). */
 const HSL_TOLERANCE = 0.2;
@@ -608,7 +630,7 @@ function resolveWeb(scope: Map<string, string>, name: string, depth = 0): string
   if (depth > 8) throw new Error(`var() cycle resolving --${name}`);
   let raw = scope.get(name);
   if (raw === undefined) {
-    const alias = stripComments(webCss).match(
+    const alias = stripComments(`${webCss}\n${webThemeCss}`).match(
       new RegExp(`--${name}:\\s*var\\(--([a-z0-9-]+)\\)`)
     );
     if (!alias) throw new Error(`web token --${name} not found`);

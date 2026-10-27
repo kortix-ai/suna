@@ -6,7 +6,7 @@
  * OpenTUI's `<diff>` takes exactly one unified-diff string
  * (`docs/opentui-api-reference.md` §4.10), so the combined patch is split back
  * into per-file patches here and `n`/`p` step through them — the same split
- * `apps/web/src/features/changes/change-vocabulary.ts` does with
+ * `packages/ui/src/changes/change-vocabulary.ts` does with
  * `splitUnifiedPatch`.
  *
  * Scrolling: `<diff>` has no scroll offset of its own, so it sits inside a

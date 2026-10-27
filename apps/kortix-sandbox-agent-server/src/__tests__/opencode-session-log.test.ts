@@ -27,8 +27,9 @@ import {
   type SessionLogMessage,
   type V1Row,
 } from '@kortix/api-contract/session-log'
-import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog, startOpenCodeSessionLog, type SeqState } from '@/harness/open-code/session-log'
+import { createOpenCodeSessionLogPort, OPENCODE_CAPABILITIES, openCodeSessionLog, bootOpenCodeSessionLog, type SeqState } from '@/harness/open-code/session-log'
 import { OpencodeDb, type StoreSnapshot } from '@/harness/open-code/opencode-db'
+import { OFFLOAD_PLACEHOLDER_URL } from '@/harness/open-code/attachment-offload'
 import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
 import { readOpenCodeSessionPin, writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
 import type { Opencode } from '@/harness/open-code/lifecycle'
@@ -229,6 +230,26 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(image).toEqual({ type: 'attachment', id: part.id, mime: 'image/png', name: 'dot.png' })
   })
 
+  test('P2.13: blob() gives the bytes behind each blob: ref the last changes() exported, inline or offloaded to a sidecar', async () => {
+    const dbPath = join(dir, 'opencode.db')
+    const statePath = join(dir, 'state.json')
+    const store = structuredClone(after)
+    // A second image, offloaded: the row holds the placeholder and a marker naming the sidecar file.
+    const sidecar = join(dir, 'sidecar.bin')
+    const offloaded = Buffer.from('synthetic offloaded attachment bytes')
+    writeFileSync(sidecar, offloaded)
+    const image = store.parts.find((p) => JSON.parse(p.data).type === 'file')!
+    store.parts.push({ ...image, id: `${image.id}x`, data: JSON.stringify({ ...JSON.parse(image.data), url: OFFLOAD_PLACEHOLDER_URL, kortix: { offloaded: true, sidecar } }) })
+    writeStore(dbPath, store)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
+    const refs = (await port.changes([])).messages.flatMap((m) => m.message.blocks.flatMap((b) => (b.type === 'attachment' ? [b.ref] : [])))
+    const offloadedSha = new Bun.CryptoHasher('sha256').update(offloaded).digest('hex')
+    expect(refs).toEqual([`blob:${PNG_SHA}`, `blob:${offloadedSha}`])
+    expect(new Bun.CryptoHasher('sha256').update(port.blob!(PNG_SHA)!).digest('hex')).toBe(PNG_SHA)
+    expect(port.blob!(offloadedSha)).toEqual(offloaded)
+    expect(port.blob!('0'.repeat(64))).toBeNull()
+  })
+
   test('a corrupt seq file restarts the seqs at 1', async () => {
     const dbPath = join(dir, 'opencode.db')
     const statePath = join(dir, 'opencode-session-log.json')
@@ -258,7 +279,8 @@ describe('the seq rule: issued once per message, never reused, kept by a tombsto
     expect(await noPin.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
     const noStore = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath })
     expect(await noStore.changes(cursors)).toEqual({ messages: [], tombstones: [], threads: [] })
-    expect(await noStore.restore({} as SessionLog)).toEqual([])
+    // P6.3: a port without a restore target (binary, project directory) refuses to restore, as pi's does.
+    await expect(noStore.restore({} as SessionLog)).rejects.toThrow('needs a target')
   })
 })
 
@@ -296,7 +318,7 @@ describe('OpenCode session-log journal wiring', () => {
     const dbPath = join(dir, 'opencode.db')
     writeStore(dbPath, before)
     writeOpenCodeSessionPin(ROOT)
-    // The port `startOpenCodeSessionLog` builds, on a test path: the production
+    // The port `bootOpenCodeSessionLog` builds, on a test path: the production
     // one reads `OPENCODE_HOME` (`paths.ts`), bound to `homedir()` when the
     // module loads, and the hermetic test env does not point HOME at a test dir.
     const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: readOpenCodeSessionPin })
@@ -357,6 +379,37 @@ describe('OpenCode session-log journal wiring', () => {
     await journal.stop(0)
     bus.publish('message.part.delta', { sessionID: ROOT, messageID: part.message_id, partID: part.id, field: 'text', delta: 'late' }, ROOT)
     expect(frames.at(-1)!.payload).not.toMatchObject({ delta: 'late' })
+  })
+
+  test.each(['text', 'reasoning'])('OpenCode snapshot updates stream %s before the turn ends', async (type) => {
+    resetKortixEventBusForTests()
+    const frames: KortixEvent[] = []
+    sessionLogEventBus().subscribe((event) => void frames.push(event), {})
+    const dbPath = join(dir, 'opencode.db')
+    writeStore(dbPath, before)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath: join(dir, 's.json') })
+    startSessionLogJournal(port, { generation: 0 })
+    await flushSessionLogJournal()
+    const bus = kortixEventBus()
+    const id = 'msg_streaming_snapshot'
+    bus.publish('message.updated', { info: { id, sessionID: ROOT, role: 'assistant', time: { created: 1791729213580 } } }, ROOT)
+    const part = { id: 'prt_streaming_snapshot', messageID: id, sessionID: ROOT, type, text: '' }
+    bus.publish('message.part.updated', { part }, ROOT)
+    for (const text of ['1\n', '1\n2\n', '1\n2\n3\n']) {
+      bus.publish('message.part.updated', { part: { ...part, text } }, ROOT)
+      const puts = frames.filter((f) => f.type === 'log.message').map((f) => SESSION_LOG_EVENTS['log.message'].parse(f.payload)).filter((p) => 'message' in p)
+      const put = puts.filter((p) => p.message?.message_id === id).at(-1)
+      expect(put?.message?.status).toBe('streaming')
+      expect(put?.message?.blocks.find((b) => b.id === part.id)).toMatchObject({ type, text })
+    }
+    const count = frames.length
+    bus.publish('message.part.updated', { part: { ...part, text: '1\n2\n3\n' } }, ROOT)
+    expect(frames).toHaveLength(count)
+    bus.publish('message.part.delta', { sessionID: ROOT, messageID: id, partID: part.id, field: 'text', delta: '4\n' }, ROOT)
+    bus.publish('message.part.updated', { part: { ...part, text: '1\n2\n3\n4\n' } }, ROOT)
+    expect(frames).toHaveLength(count + 1)
+    expect(frames.at(-1)?.type).toBe('log.block.delta')
+    expect(part.text).toBe('')
   })
 
   test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
@@ -443,9 +496,9 @@ describe('OpenCode session-log journal wiring', () => {
     for (const p of dumped().flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
   })
 
-  test('without a control plane the boot start journals nothing', () => {
+  test('without a control plane the boot start journals nothing', async () => {
     delete process.env.KORTIX_SESSION_ID
-    startOpenCodeSessionLog()
+    expect(await bootOpenCodeSessionLog({ bin: 'opencode', cwd: dir })).toBe(false)
     expect(existsSync(dump)).toBe(false)
   })
 

@@ -14,8 +14,10 @@ import { classifySandboxProvisioningFailure } from '../../platform/services/sand
 import { serializeSessionSandboxConfig } from '../lib/serializers';
 import { repairInFlight } from '../session-lifecycle/readiness-clocks';
 import {
+  RUNTIME_IDENTITY_UNAVAILABLE,
   RUNTIME_START_MAX_FAILURES,
   RUNTIME_WAKE_GRACE_MS,
+  lostRuntimeCheckedRecently,
   runtimeStartFailureCount,
   runtimeStartRetryAtMs,
   runtimeWakeInProgress,
@@ -45,7 +47,8 @@ export function sessionRuntimeUrlPath(externalId: string): string {
   return `/p/${externalId}/8000`;
 }
 
-const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
+/** A first provisioning with no box after this long has no live create behind it. */
+export const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
 const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 
@@ -153,7 +156,8 @@ export function serializeSandboxRow(
     session_id: row.sessionId,
     project_id: row.projectId,
     account_id: row.accountId,
-    provider: row.provider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    provider: row.provider as ProjectSessionSandbox['provider'],
     external_id: row.externalId,
     base_url: row.baseUrl,
     status: row.status,
@@ -198,7 +202,21 @@ export function stoppedWakeResult(
       reason: 'runtime_waking',
     };
   }
-  if (metadata.runtimeIdentityState === 'unavailable') return null;
+  if (metadata.runtimeIdentityState === 'unavailable') {
+    // Checked under `LOST_RUNTIME_RECHECK_MS` ago: the verdict stands, from the
+    // row, with no provider call and no write. A write here would flip the row
+    // and send the open page a frame that re-reads `/start` at once.
+    if (!lostRuntimeCheckedRecently(metadata, now)) return null;
+    return {
+      stage: 'failed',
+      agent_name: agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
+      reason: RUNTIME_IDENTITY_UNAVAILABLE,
+    };
+  }
 
   // A STAMPED runtime-start failure — `runtime_wake_failed` from a wake that
   // ran out of budget, `runtime_boot_failed` from a park. It used to short

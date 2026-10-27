@@ -6,10 +6,9 @@ import { join } from 'node:path';
 
 /**
  * Terms-of-Service links must point at the stable `/legal/terms` path, which
- * the middleware permanently 308-redirects to the public Drive file. The
- * legacy `/legal?tab=terms` query form must not appear in any source link — it
- * only still works because the middleware redirects it, but new links should
- * use the stable path. Privacy and imprint stay local on `/legal?tab=…`.
+ * the middleware permanently 308-redirects to the Terms tab (`/legal?tab=terms`).
+ * The tab query form must not appear in any source link: new links use the
+ * stable path. Privacy and imprint link straight to `/legal?tab=…`.
  *
  * This is a static source scan (not a DOM test) so it catches every link site
  * at once — footer, user menu, auth footer, support page, site config —
@@ -19,7 +18,7 @@ import { join } from 'node:path';
 const WEB_ROOT = join(import.meta.dir, '..');
 
 type LinkSite = {
-  /** Repo-relative path under apps/web/src. */
+  /** A path under apps/web/src, or `packages/ui/src/…` for a @kortix/ui file. */
   file: string;
   /** Substrings that must each appear at least once. */
   expectPresent: string[];
@@ -39,17 +38,8 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href: '/legal?tab=terms'`],
   },
   {
-    file: 'features/auth/auth-card-shell.tsx',
+    file: 'packages/ui/src/internal/auth/auth-card-shell.tsx',
     expectPresent: [`href="/legal/terms"`, `href="/legal?tab=privacy"`],
-    expectAbsent: [`href="/legal?tab=terms"`],
-  },
-  {
-    file: 'app/[locale]/(public)/(marketing)/support/page.tsx',
-    expectPresent: [
-      `href="/legal/terms"`,
-      `href="/legal?tab=privacy"`,
-      `href="/legal?tab=imprint"`,
-    ],
     expectAbsent: [`href="/legal?tab=terms"`],
   },
   {
@@ -61,7 +51,9 @@ const LINK_SITES: LinkSite[] = [
 
 for (const site of LINK_SITES) {
   test(`${site.file}: Terms -> /legal/terms, privacy/imprint local`, () => {
-    const abs = join(WEB_ROOT, site.file);
+    const abs = site.file.startsWith('packages/')
+      ? join(WEB_ROOT, '../../..', site.file)
+      : join(WEB_ROOT, site.file);
     const src = readFileSync(abs, 'utf8');
 
     for (const needle of site.expectPresent) {
@@ -76,24 +68,19 @@ for (const site of LINK_SITES) {
   });
 }
 
-test('the legal page no longer renders a terms tab', () => {
+test('the legal page renders the Terms as a tab, with no link out', () => {
   const src = readFileSync(join(WEB_ROOT, 'app/[locale]/(public)/(seo)/legal/page.tsx'), 'utf8');
 
-  // The tab union is the contract: it names every tab the page can render, so
-  // it fails whether a terms tab comes back as a branch, a button, or a rail
-  // entry. Asserting individual call sites does not survive a rail rewrite.
+  // The tab union is the contract: it names every tab the page can render.
   expect(
-    src.includes(`type LegalTab = 'privacy' | 'imprint';`),
-    'legal tab union changed — the trailing semicolon is part of the match, so an added member fails here',
+    src.includes(`type LegalTab = 'imprint' | 'terms' | 'privacy';`),
+    'legal tab union changed',
   ).toBe(true);
-  expect(src.includes(`activeTab === 'terms'`), 'terms branch still in legal page').toBe(false);
-  expect(src.includes(`handleTabChange('terms')`), 'terms tab button still in legal page').toBe(
-    false,
-  );
-
-  // privacy + imprint remain reachable as tabs...
   expect(src.includes(`{ id: 'imprint'`), 'imprint tab missing from the rail').toBe(true);
+  expect(src.includes(`{ id: 'terms'`), 'terms tab missing from the rail').toBe(true);
   expect(src.includes(`{ id: 'privacy'`), 'privacy tab missing from the rail').toBe(true);
-  // ...and Terms is a link out of the page, not a tab.
-  expect(src.includes(`href="/legal/terms"`), 'legal page lost its Terms link').toBe(true);
+  expect(src.includes('<TermsOfService />'), 'terms document not rendered').toBe(true);
+  // The Terms no longer live in an external Drive file: no link out of the rail.
+  expect(src.includes(`href="/legal/terms"`), 'legal page still links Terms out').toBe(false);
+  expect(src, 'legal page still names the Drive file').not.toContain('drive.google.com');
 });

@@ -44,7 +44,6 @@ export const SERVICES = [
   'egress-shim',
   'event-bus',
   'llm-proxy',
-  'monitor',
   'resources',
   'runtime-assets',
   'sandbox-env',
@@ -57,12 +56,15 @@ export const SERVICES = [
 // tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
+const SSRF_GUARD = [resolve(import.meta.dirname, '../../packages/shared/src/ssrf-guard.ts').split(sep).join('/'), at('../../packages/shared/src/ssrf-guard.ts')]
 const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
-// The SDK's import-free message-id codec, reached the same way (pi mints ids with it).
+// The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
+  // How the compiled agent config is carried in env (`@kortix/api-contract/compiled-agent-config-env`).
+  'config-provider': API_CONTRACT,
   'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
   // MONITOR_INGEST_MAX_EVENTS and the ingest body.
   monitor: API_CONTRACT,
@@ -74,7 +76,9 @@ const SERVICE_EXTERNALS = {
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
   'open-code': ['bun:sqlite'],
-  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...SDK_WIRE_MESSAGE_ID],
+  // quickjs-wasi: codemode's VM, embedded as a file. The pi-coding-agent dist path: a setter pi does not export (pi/codemode.ts).
+  // photon-node: pi's image resizer wasm, embedded as a file (pi/images.ts).
+  pi: [...pkg('@earendil-works/*'), ...pkg('typebox'), ...pkg('quickjs-wasi'), ...pkg('@silvia-odwyer/photon-node'), at('node_modules/@earendil-works/pi-coding-agent/dist/config.*'), ...SDK_WIRE_MESSAGE_ID],
 }
 
 const lib = at('src/lib/**')
@@ -110,6 +114,7 @@ const independentModules = createIndependentModules({
     baseUrl: '.',
     paths: {
       '@/*': [at('src/*')],
+      '@kortix/shared/ssrf-guard': [at('../../packages/shared/src/ssrf-guard.ts')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
     },
@@ -142,8 +147,9 @@ const independentModules = createIndependentModules({
       'harness-core',
       harnessCore,
       [...harnessCore, ...services, SHARED],
-      // The daemon-to-API wire (`@kortix/api-contract/runtime-relay`) the shared relays post.
-      [...RUNTIME, ...API_CONTRACT],
+      // The daemon-to-API wire (`@kortix/api-contract/runtime-relay`) the shared relays post, and the
+      // message-id codec the session-log boot mints its restore note with.
+      [...RUNTIME, ...API_CONTRACT, ...SDK_WIRE_MESSAGE_ID],
       'Harness contract and shared code never import an adapter; only harness.ts does.',
     ),
     ...SERVICES.map((name) =>
@@ -159,7 +165,7 @@ const independentModules = createIndependentModules({
       'routes',
       at('src/routes/**'),
       [at('src/routes/**'), ...harnessCore, ...services, SHARED],
-      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
+      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT, ...SSRF_GUARD],
       'Routes import routes/, the harness contract, services and the shared layer. Never app/ or an adapter.',
     ),
     layer(
@@ -168,6 +174,13 @@ const independentModules = createIndependentModules({
       [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, SHARED, at('package.json')],
       [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
       'app/ composes routes, the harness contract, services and the shared layer. Never an adapter.',
+    ),
+    layer(
+      'codemode-worker',
+      at('src/extensions/codemode/worker.ts'),
+      [],
+      pkg('@earendil-works/pi-codemode'),
+      'The codemode worker entrypoint (scripts/build.sh) imports pi-codemode only.',
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).

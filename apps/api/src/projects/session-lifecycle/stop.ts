@@ -8,7 +8,8 @@ import { logger } from '../../lib/logger';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
-import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop } from '../reaping/stop-box';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { holdInboxPrompts } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
@@ -55,6 +56,8 @@ export async function stopSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
+  /** The person recorded on the stopped turn; null for an agent credential. Default `userId`. */
+  stoppedBy?: string | null;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { projectId, sessionId, accountId, userId } = input;
   const budgetEndsAt = Date.now() + stopSyncBudgetMs();
@@ -142,6 +145,14 @@ export async function stopSession(input: {
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
   if (!cancellingWake) {
+    // Stopping the computer stops its turn too, and that is a stop this person
+    // asked for. Stamp it on the open turns BEFORE the abort, as the turn's own
+    // Stop does: otherwise the abort's end frame, or the `runtime_gone` settle
+    // when the box dies first, reads as a failure nobody explained, and nobody
+    // sees who stopped it. Recovery is unchanged: a manual stop never resumes
+    // its turns (`sandbox-state-sync.ts` resumes provider stops only). The
+    // route already allowed only the owner or a manager. Never throws.
+    await markTurnStopRequested(sessionId, 'UserStop', {}, input.stoppedBy === undefined ? userId : input.stoppedBy);
     await abortLiveTurnBeforeStop({
       sandboxId: sandbox.sandboxId,
       externalId: sandbox.externalId,
@@ -162,9 +173,9 @@ export async function stopSession(input: {
     // maintained at every turn end, which runs fire-and-forget with the box
     // definitionally up; the only gap a stop can close is the turn that just
     // ended, and one bounded page covers it.
-    const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
+    const { captureJournallessSessionLog } = await import('../lib/session-transcript-capture');
     await within(
-      captureSessionTranscriptMirror(sessionId, undefined, {
+      captureJournallessSessionLog(sessionId, undefined, {
         scope: 'tail',
         actorUserId: userId,
       }),
@@ -181,25 +192,6 @@ export async function stopSession(input: {
     }
   };
   const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
-    // An ephemeral box commits its session volume and is deleted instead of
-    // stopped; its state lives on the volume.
-    if (!cancellingWake) {
-      const retired = await retireEphemeralOnStop({
-        sandboxId: sandbox.sandboxId,
-        sessionId,
-        externalId,
-        stopReason: 'manual',
-        now,
-        metadata: { stoppedBy: userId },
-      });
-      if (retired === 'retired') {
-        return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
-      }
-      if (retired === 'error') {
-        await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
-        return { status: 502, body: { error: 'Failed to stop sandbox' } };
-      }
-    }
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog

@@ -10,6 +10,7 @@ import { OpenAPIHono, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorEnvelopeSchema } from '@kortix/api-contract';
 import type { Env } from 'hono';
 import { Scalar } from '@scalar/hono-api-reference';
+import { computeEtag, etagMatches } from '../shared/http-cache';
 
 /** Permissive error envelope — matches the platform's `{error,message,status}` 404 shape. */
 export const ErrorSchema = ErrorEnvelopeSchema.openapi('Error');
@@ -121,12 +122,32 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
   // Serve the same document `doc31` would (getOpenAPI31Document is exactly what
   // doc31 delegates to) but with the internal-router paths stripped, so the
   // public spec never advertises admin/ops endpoints.
+  //
+  // Built once, lazily, then cached: the document is ~1 MB of JSON and every
+  // `/v1/docs` page load, SDK codegen and MCP client fetch asked for a fresh
+  // copy (973 KB, no ETag, no Cache-Control — pentest 2026-10-22). It cannot
+  // change at runtime: routes are registered before the first request, and the
+  // registry is frozen at that point. Revalidation is answered with a 304.
+  let cachedSpec: { body: string; etag: string } | undefined;
   app.get('/v1/openapi.json', (c) => {
-    const document = app.getOpenAPI31Document({
+    if (!cachedSpec) {
+      const body = JSON.stringify(filterSpecPaths(buildSpec(version)));
+      cachedSpec = { body, etag: computeEtag(body) };
+    }
+    c.header('ETag', cachedSpec.etag);
+    c.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+    if (etagMatches(c.req.header('if-none-match'), cachedSpec.etag)) {
+      return c.body(null, 304);
+    }
+    return c.body(cachedSpec.body, 200, { 'Content-Type': 'application/json' });
+  });
+
+  function buildSpec(specVersion: string) {
+    return app.getOpenAPI31Document({
       openapi: '3.1.0',
       info: {
         title: 'Kortix API',
-        version,
+        version: specVersion,
         description:
           'The Kortix platform REST API — typed schemas via @hono/zod-openapi. ' +
           'For application code, prefer the TypeScript SDK (`@kortix/sdk`), which wraps ' +
@@ -134,10 +155,12 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
           'one session-scoped client — ' +
           'docs at https://kortix.com/docs/sdk.',
       },
-      servers: [{ url: new URL(c.req.url).origin }],
+      // Relative: it resolves against the URL the client fetched this document
+      // from. The request origin the API sees behind the edge router is an
+      // internal host, which the spec must not publish (KRTX-2949).
+      servers: [{ url: '/' }],
     });
-    return c.json(filterSpecPaths(document));
-  });
+  }
 
   app.get('/v1/docs', Scalar({ url: '/v1/openapi.json', pageTitle: 'Kortix API' }));
 }

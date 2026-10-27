@@ -27,6 +27,8 @@ import { createEnvRouter } from '@/routes/kortix/env'
 import { createOpenCodeControlService } from '@/harness/open-code/control'
 import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
+import { MAX_ENV_STRING_BYTES, envStringBytes } from '@kortix/api-contract/compiled-agent-config-env'
 import {
   __resetRuntimeProjectionRelayForTests,
   registerRuntimeStateReader,
@@ -81,9 +83,6 @@ function baseConfig(): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
-    workload: '',
-    monitorsJson: '',
-    monitorBoxEpoch: '',
   }
 }
 
@@ -282,6 +281,24 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls).toEqual([{ mustRespawn: false }, { mustRespawn: false }])
   })
 
+  it('llmGatewayEnabled=false from an older API keeps the gateway env', async () => {
+    const { opencode } = fakeOpencode()
+    process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+
+    const { status, json } = await postEnv(app, {
+      revision: 'rev-gateway-false',
+      env: {},
+      names: [],
+      refreshModels: true,
+      llmGatewayEnabled: false,
+    })
+
+    expect(status).toBe(200)
+    expect(json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+  })
+
   it('the compiled agent config is live-updatable; an unknown KORTIX_* name is ignored', async () => {
     // Every runtime env name must be on the route's allowlist, or the API can
     // never change it on a running box. An unlisted name must not reach the
@@ -318,6 +335,42 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(applied.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_COMPILED_AGENT_CONFIG'] })
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG as string | undefined).toBe(compiled)
     expect(calls).toHaveLength(1)
+  })
+
+  it('an oversized compiled agent config is kept gzip-encoded, never raw in the env every child inherits', async () => {
+    // Over 128 KiB, a raw value in process.env makes every later exec fail
+    // with E2BIG: the OpenCode respawn this push asks for, git, every PTY.
+    const { opencode, calls } = fakeOpencode()
+    delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+    const app = buildTestApp(
+      opencode,
+      createProjectEnvStore({ KORTIX_PROJECT_SECRETS_REVISION: 'rev-1' } as NodeJS.ProcessEnv),
+    )
+    const pushConfig = (config: string) =>
+      postEnv(app, { revision: 'rev-1', env: {}, names: [], refreshModels: true, opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG: config } })
+    const configNames = () => Object.keys(process.env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ')).sort()
+    const oversized = JSON.stringify({ agent: { support: { mode: 'primary', prompt: 'Answer the ticket. '.repeat(14_000) } } })
+    expect(envStringBytes('KORTIX_COMPILED_AGENT_CONFIG', oversized)).toBeGreaterThan(MAX_ENV_STRING_BYTES)
+
+    const applied = await pushConfig(oversized)
+    expect(applied.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_COMPILED_AGENT_CONFIG'] })
+    expect(calls).toHaveLength(1)
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+    expect(configNames()).toEqual(['KORTIX_COMPILED_AGENT_CONFIG_GZ_0', 'KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS'])
+    for (const name of configNames()) {
+      expect(envStringBytes(name, process.env[name]!), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES)
+    }
+    expect(compiledAgentConfigFromEnv(process.env)).toBe(oversized)
+
+    // The same config again is no change, so no second reload.
+    expect((await pushConfig(oversized)).json).toMatchObject({ opencode_env_changed: false })
+    expect(calls).toHaveLength(1)
+
+    // A config that fits goes back to the raw form, with no part left behind.
+    const small = JSON.stringify({ agent: { support: { mode: 'primary' } } })
+    expect((await pushConfig(small)).json).toMatchObject({ opencode_env_changed: true })
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG as string | undefined).toBe(small)
+    expect(configNames()).toEqual([])
   })
 
   it('a byte-identical push (no change at all) does not reload opencode', async () => {

@@ -24,6 +24,38 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
+  test.each(['GET', 'HEAD'])('serves security.txt at the edge for %s without an origin', async (method) => {
+    globalThis.fetch = () => { throw new Error('security.txt must not fetch an origin'); };
+    const response = await worker.fetch(new Request('https://gateway-dev.kortix.com/.well-known/security.txt', { method }), {});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    const body = await response.text();
+    if (method === 'HEAD') {
+      expect(body).toBe('');
+    } else {
+      expect(body).toContain('Contact: mailto:security@kortix.com\n');
+      expect(body).toContain('Canonical: https://gateway-dev.kortix.com/.well-known/security.txt\n');
+      const expires = body.match(/^Expires: (.+)$/m)?.[1];
+      expect(Date.parse(expires)).toBeGreaterThan(Date.parse('2026-10-27T00:00:00Z'));
+    }
+  });
+
+  test.each([
+    ['POST', 'https://gateway-dev.kortix.com/.well-known/security.txt'],
+    ['GET', 'https://gateway-dev.kortix.com/.well-known/other.txt'],
+  ])('preserves origin routing for %s %s', async (method, url) => {
+    globalThis.fetch = async () => new Response('origin response', { status: 404 });
+    const response = await worker.fetch(new Request(url, { method }), env);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('origin response');
+  });
+
+  test('redirects HTTP security.txt requests to HTTPS', async () => {
+    const response = await worker.fetch(new Request('http://gateway-dev.kortix.com/.well-known/security.txt'), env);
+    expect(response.status).toBe(308);
+    expect(response.headers.get('Location')).toBe('https://gateway-dev.kortix.com/.well-known/security.txt');
+  });
+
   test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
     expect(workflow.on.push.branches).toEqual(['dev']);
@@ -173,7 +205,7 @@ describe('api-router worker', () => {
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
   });
 
-  test('keeps staging sized for the release gate, with an on-demand floor', () => {
+  test('keeps staging sized for the release gate, on-demand like prod', () => {
     const stagingTerraform = readFileSync(
       new URL('../../../terraform/environments/staging-eu-west-2/main.tf', import.meta.url),
       'utf8',
@@ -212,12 +244,13 @@ describe('api-router worker', () => {
     );
     expect(stagingFloor).toBeGreaterThanOrEqual(num(devApi, 'min_capacity'));
 
-    // A Spot-only service with no on-demand base goes to zero tasks on one
-    // reclaim, and the edge then reports that as MAINTENANCE_MODE.
-    expect(stagingApi).toMatch(/fargate_base_on_demand\s*=\s*1/);
+    // No Spot on staging, API or gateway: a reclaim killed in-flight requests
+    // and agent turns during the v0.13.57 release gate (2026-10-13).
+    expect(stagingApi).toMatch(/use_fargate_spot\s*=\s*false/);
     expect(stagingTerraform).toMatch(
-      /module "gateway"[\s\S]*?fargate_base_on_demand\s*=\s*1/,
+      /module "gateway"[\s\S]*?use_fargate_spot\s*=\s*false/,
     );
+    expect(stagingTerraform).not.toMatch(/use_fargate_spot\s*=\s*true/);
     // Without a NON-ZERO value the module never creates the
     // ALBRequestCountPerTarget policy (0 is its default and the module skips
     // it), and an I/O-bound gateway blocked on upstream models never moves
@@ -961,6 +994,38 @@ describe('api-router worker', () => {
     expect(body.error.message).toBe('Kortix API origin is unreachable: connection refused');
   });
 
+  test('a GET whose origin connection drops is sent once more; a POST never is', async () => {
+    // Staging release gate, 2026-10-13: a reset Cloudflare→ALB connection
+    // threw "Network connection lost" before any response. A GET or HEAD is
+    // safe to repeat; a POST may already have run at the origin.
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('Network connection lost.');
+      return Response.json({ ok: true }, { status: 200 });
+    };
+    const get = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(get.status).toBe(200);
+    expect(calls).toBe(2);
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('Network connection lost.');
+    };
+    const post = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', { method: 'POST', body: '{}' }),
+      env,
+    );
+    expect(post.status).toBe(503);
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const getTwice = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(getTwice.status).toBe(503);
+    expect(calls).toBe(2);
+  });
+
   test('a healthy origin response carries no origin-status header', async () => {
     globalThis.fetch = async () => Response.json({ ok: true }, { status: 200 });
 
@@ -1045,15 +1110,47 @@ describe('api-router worker', () => {
       expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
     });
 
-    test('gateway with the key is forwarded and the key is stripped', async () => {
+    test('gateway with the key is forwarded with the key, which the API checks again', async () => {
       const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
       expect(response.status).toBe(200);
-      expect(seen).toEqual([null]);
+      expect(seen).toEqual(['edge-key-1']);
     });
+
+    // The API routes the decoded path, so an encoded or case-shifted prefix is gated too.
+    test.each(['/%69nternal/gateway/refresh-credential', '/%49NTERNAL/gateway/x', '/Internal/gateway/x'])(
+      '%s without the key gets 404',
+      async (path) => {
+        const { response, seen } = await call(path);
+        expect(response.status).toBe(404);
+        expect(seen).toEqual([]);
+      },
+    );
 
     test('non-internal paths and an unset key are unaffected', async () => {
       expect((await call('/v1/health')).response.status).toBe(200);
       expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
+  });
+
+  describe('security headers', () => {
+    const call = (body, contentType) => {
+      globalThis.fetch = async () => new Response(body, { status: 200, headers: { 'Content-Type': contentType } });
+      return worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    };
+
+    test('a JSON response cannot be framed and names a referrer policy', async () => {
+      const response = await call('{}', 'application/json');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
+    test('an HTML response (a framed sandbox preview) keeps its own framing headers', async () => {
+      const response = await call('<p>hi</p>', 'text/html');
+      expect(response.headers.get('X-Frame-Options')).toBeNull();
+      expect(response.headers.get('Content-Security-Policy')).toBeNull();
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
     });
   });
 });

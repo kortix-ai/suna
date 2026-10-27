@@ -13,6 +13,7 @@ import { mrkdwnToTeamsMarkdown } from './markdown';
 import { STREAM_TTL_MS, STALE_AFTER_MS } from './app';
 import type { TeamsActivity, TeamsChannelRef, TeamsConversationRef, TeamsLiveTurn } from './types';
 import { conversationScope } from './util';
+import { sessionAgentName } from '../core/session-agent';
 
 const LIVE_PLAN_TITLE = 'Working on it…';
 
@@ -184,8 +185,14 @@ async function repaintPlan(handle: TeamsLiveTurn): Promise<void> {
     refOf(handle),
     handle.messageActivityId,
     // `sessionId` is what puts Stop on the card, and it is empty until the
-    // session exists — there is nothing to stop before then.
-    buildPlanCard(LIVE_PLAN_TITLE, handle.steps, handle.sessionId || undefined),
+    // session exists — there is nothing to stop before then. The agent line
+    // appears with it.
+    buildPlanCard(
+      LIVE_PLAN_TITLE,
+      handle.steps,
+      handle.sessionId || undefined,
+      await sessionAgentName(handle.sessionId).catch(() => null),
+    ),
   );
 }
 
@@ -385,7 +392,12 @@ export async function relayTurnStep(
     if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
     const activityId = await sendCard(
       refOf(handle),
-      buildPlanCard(LIVE_PLAN_TITLE, [firstStep], handle.sessionId || undefined),
+      buildPlanCard(
+        LIVE_PLAN_TITLE,
+        [firstStep],
+        handle.sessionId || undefined,
+        await sessionAgentName(handle.sessionId).catch(() => null),
+      ),
     );
     if (!activityId) return false;
     handle.messageActivityId = activityId;
@@ -506,12 +518,16 @@ export async function finalizeTurn(
   // decides that from the card's real size.
   const raw = opts.answer ?? opts.error ?? '';
   const body = raw.length > MAX_BODY_CHARS ? raw.slice(0, MAX_BODY_CHARS) : raw;
-  const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
+  // A finished run gets no title: the answer is the card. Failures, stops and
+  // waits keep theirs, because there the title is the news.
+  const title = opts.title ?? (opts.error ? 'Run failed' : undefined);
   const sessionUrl =
     handle.projectId && handle.sessionId
       ? sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId)
       : undefined;
   const ref = refOf(handle);
+  // Which Kortix agent answered: the first line of every card below.
+  const agent = await sessionAgentName(handle.sessionId).catch(() => null);
 
   // Did the answer reach the conversation? `updateCard` and `sendCard` report
   // a refusal by returning, not throwing — and a refused final card used to
@@ -523,7 +539,7 @@ export async function finalizeTurn(
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') last.status = opts.unfinished ? 'pending' : 'complete';
       const plan = handle.messageActivityId && handle.steps.length ? { title, steps: handle.steps } : undefined;
-      const answer = buildAnswerCard(body, sessionUrl, opts.card, plan);
+      const answer = buildAnswerCard(body, sessionUrl, opts.card, plan, agent);
       delivered = handle.messageActivityId
         ? await updateCard(ref, handle.messageActivityId, answer)
         : Boolean(await sendCard(ref, answer));
@@ -535,11 +551,11 @@ export async function finalizeTurn(
         // the user chose to end, or over a question waiting on them.
         last.status = opts.unfinished ? 'pending' : opts.error ? 'error' : 'complete';
       }
-      const render = (b: string) => buildFinalCard({ title, steps: handle.steps, body: b, sessionUrl });
+      const render = (b: string) => buildFinalCard({ title, steps: handle.steps, body: b, sessionUrl, agent });
       const fitted = fitBodyToCard(body, render);
       delivered = await updateCard(ref, handle.messageActivityId, render(fitted.body));
     } else if (hasContent) {
-      const render = (b: string) => buildAnswerCard(b, sessionUrl);
+      const render = (b: string) => buildAnswerCard(b, sessionUrl, undefined, undefined, agent);
       delivered = Boolean(await sendCard(ref, render(fitBodyToCard(body, render).body)));
     } else {
       delivered = true;
@@ -562,10 +578,11 @@ export async function finalizeTurn(
     await updateCard(
       ref,
       handle.messageActivityId,
-      buildFinalCard({ title, steps: handle.steps, body: 'The answer is in the next message.', sessionUrl }),
+      buildFinalCard({ title, steps: handle.steps, body: 'The answer is in the next message.', sessionUrl, agent }),
     ).catch(() => false);
   }
-  const text = fitTextMessage(body || 'The agent replied with a card Teams could not show.', sessionUrl);
+  const answerText = body || 'The agent replied with a card Teams could not show.';
+  const text = fitTextMessage(agent ? `**${agent}**\n\n${answerText}` : answerText, sessionUrl);
   const posted = await sendText(ref, text).catch(() => null);
   if (!posted) console.warn('[teams-webhook] answer could not be delivered as text either', { sessionId: handle.sessionId });
 }

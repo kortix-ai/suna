@@ -12,15 +12,23 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
-import { REAPER_TURN_CAUSES, settleOpenSandboxTurns } from '../session-turn-ledger';
-import { storedSandboxTurns } from '../session-turn-ledger';
-import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
+import {
+  REAPER_TURN_CAUSES,
+  type StoredSandboxTurn,
+  isRequestedStopName,
+  readNewestPromptTurn,
+  settleOpenSandboxTurns,
+  storedSandboxTurns,
+} from '../session-turn-ledger';
+import { INBOX_HOLD_MS } from '../session-lifecycle/inbox-rows';
+import { interruptedTurnContinuationParts, interruptedTurnContinuationText, requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { enqueueContinueSessionCommand } from '../session-lifecycle/store';
+import { mintWireMessageId } from '../wire-message-id';
 import {
   STOPPED_SANDBOX_CLEARED_KEYS,
   transitionSandbox,
@@ -207,13 +215,79 @@ export interface StoppedStateWrite {
   stopReason: StopReason;
   /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
-  /**
-   * An ephemeral box was deleted, not stopped: the row gives up its external
-   * id in the same write (the identity guard admits exactly this, keyed on the
-   * `ephemeralRetiredExternalId` marker the metadata carries).
-   */
-  retiredExternalId?: boolean;
   now?: Date;
+}
+
+/** The session a stop's continuation is written for. */
+interface ContinuationSession {
+  accountId: string;
+  projectId: string;
+  /** Authors the attended continuation. */
+  createdBy: string | null;
+}
+
+/**
+ * One continuation for a turn a provider stop cut short and no inbox row took
+ * over. Keyed by the turn, so every observer of the same stop (the reaper, the
+ * webhook, a second replica) writes it once. Delivering it marks the turn
+ * resumed (`resumesTurn`).
+ *
+ * Unattended: due now, as the automation, like the drain's other system
+ * prompts. Attended: an inbox row HELD in the member's queue, authored by the
+ * session's creator, so the box the provider just stopped stays stopped until
+ * it wakes, or they press Send now or send a message. It must be an inbox row:
+ * the drain never claims a held inbox row, and any other held row comes due by
+ * itself after `INBOX_HOLD_MS`.
+ *
+ * Both carry a wire id, so the turn the continuation starts is tracked: a
+ * second stop of it requeues this row and the drain continues it again,
+ * within `MAX_PROMPT_REDELIVERIES`.
+ *
+ * `false` when no one can send it, or when a person stopped the turn: the
+ * Stop's stamp is on the ledger row even when the abort never reached the
+ * dead box.
+ */
+async function enqueueTurnContinuation(input: {
+  sessionId: string;
+  turnToken: string;
+  messageId: string;
+  stoppedAt: Date;
+  session: ContinuationSession;
+  unattended: boolean;
+}): Promise<boolean> {
+  const { session } = input;
+  if (!input.unattended && !session.createdBy) return false;
+  const ledgerTurn = await readNewestPromptTurn(input.sessionId, [input.messageId]);
+  if (isRequestedStopName(ledgerTurn?.endError?.name)) return false;
+  const clientMessageId = `resume_${input.turnToken}`;
+  const interruptedAt = {
+    endedAt: input.stoppedAt,
+    cause: REAPER_TURN_CAUSES.boxStoppedMidTurn.message,
+  };
+  await enqueueContinueSessionCommand({
+    source: 'system:auto-recovery',
+    projectId: session.projectId,
+    accountId: session.accountId,
+    sessionId: input.sessionId,
+    idempotencyKey: `prompt:${input.sessionId}:${clientMessageId}`,
+    text: interruptedTurnContinuationText(interruptedAt),
+    // Harness context, not a user prompt (KRTX-2597): the transcript renders
+    // the continuation as a notice and never as a user bubble.
+    parts: interruptedTurnContinuationParts(interruptedAt),
+    resumesTurn: input.turnToken,
+    wireMessageId: mintWireMessageId({ nowMs: Date.now() }).id,
+    remintOnDelivery: true,
+    ...(input.unattended
+      ? { actorUserId: null }
+      : {
+          actorUserId: session.createdBy,
+          clientMessageId,
+          bindTurnIdentity: true,
+          held: true,
+          availableAt: new Date(Date.now() + INBOX_HOLD_MS),
+        }),
+  });
+  return true;
 }
 
 /**
@@ -263,7 +337,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // turns, every one needed the user to type "go on".
   const providerOriginated = write.stopReason === 'provider_reconcile';
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(
-    (turn) => !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
+    (turn): turn is StoredSandboxTurn & { messageId: string } =>
+      !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
   );
   // Nobody-is-watching recovery (2026-09-27 census, class B: `runtime_gone`
   // trigger/worker sessions dying silently for up to `INBOX_HOLD_MS` = 24h).
@@ -272,7 +347,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // resume a turn a human or the idle policy chose to end. Bounded and
   // idempotent claim: see `unattended-runtime-recovery.ts`.
   let unattendedRecoveryClaimed = false;
-  let recoverySessionRow: { accountId: string; projectId: string } | null = null;
+  let recoveryAttended = false;
+  let recoverySessionRow: ContinuationSession | null = null;
   if (providerOriginated && abandonedDeliveries.length > 0) {
     const [sessionRow] = await db
       .select({
@@ -280,6 +356,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
         metadata: projectSessions.metadata,
         accountId: projectSessions.accountId,
         projectId: projectSessions.projectId,
+        createdBy: projectSessions.createdBy,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, write.sessionId))
@@ -292,8 +369,13 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       },
     });
     unattendedRecoveryClaimed = outcome === 'claimed';
-    if (unattendedRecoveryClaimed && sessionRow) {
-      recoverySessionRow = { accountId: sessionRow.accountId, projectId: sessionRow.projectId };
+    recoveryAttended = outcome === 'skipped_attended';
+    if (sessionRow) {
+      recoverySessionRow = {
+        accountId: sessionRow.accountId,
+        projectId: sessionRow.projectId,
+        createdBy: sessionRow.createdBy,
+      };
     }
   }
   await pauseComputeSession(write.sandboxId).catch((err) =>
@@ -337,7 +419,6 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       {
         at: now,
         metadata: { strip: STOPPED_SANDBOX_CLEARED_KEYS, merge: patch },
-        ...(write.retiredExternalId ? { columns: { externalId: null, baseUrl: null } } : {}),
       },
       tx,
     );
@@ -355,16 +436,15 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     // `deadline_expired` are Kortix's own choice and already read clearly from
     // `end_reason` alone. `settleOpenSandboxTurnsQuery`'s CASE only ever fills
     // an EMPTY `end_error` — a real one (a memory-guard cause, a sandbox error
-    // frame that raced this settle) is never replaced.
+    // frame that raced this settle) is never replaced. Never the "resumed"
+    // cause here: the drain writes it once a continuation reaches the runtime
+    // (`markTurnResumed`). Written at the stop, it said "resumed" for workers
+    // whose continuation the drain then dropped (KRTX-1732).
     await settleOpenSandboxTurns(
       tx,
       write.sandboxId,
       'runtime_gone',
-      providerOriginated
-        ? unattendedRecoveryClaimed
-          ? REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering
-          : REAPER_TURN_CAUSES.boxStoppedMidTurn
-        : null,
+      providerOriginated ? REAPER_TURN_CAUSES.boxStoppedMidTurn : null,
     );
   }));
   // AFTER the commit: the requeued prompt must not race the authority it is
@@ -377,18 +457,22 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // scheduler tick, and `continueSession` would wake the runtime the stop just
   // shut down and bill the account for it, up to three times — so by default
   // the prompt is durable and visible in the composer's queue, and the user's
-  // next send, or "send now" on the row, releases it. `unattendedRecoveryClaimed`
+  // next send, or "send now" on the row, releases it. A provider stop's row
+  // (`resumable`) is also released by the box's next wake, which someone's
+  // use of the session caused (`reArmRuntimeBlockedPrompts`). `unattendedRecoveryClaimed`
   // is exactly the case where that default is wrong: nobody is watching the
   // composer, so nothing would ever release it. `requeueAbandonedPrompt` still
   // forces `held: true` when the row is stop-paused regardless of what this
   // passes — a genuine user Stop always wins.
-  // `requeueAbandonedPrompt` only ever finds a `continue_session` inbox row —
-  // the abandoned turn's OWN message. A session's very FIRST turn is
-  // delivered by a `create_session` command instead (no such row exists), so
-  // for that shape — the common one for a trigger firing into a brand-new
-  // session — every requeue below answers `no_prompt` and nothing is ever
-  // released. Track that so recovery can fall back to a synthetic prompt.
-  let anyPromptReleased = false;
+  //
+  // ONE CONTINUATION PER TURN. A requeued row carries its turn to the drain,
+  // which continues it when the stop cut it short and sends it again when it
+  // never ran (`resumable`, `findInterruptedTurn`). A turn no row took over
+  // gets a continuation of its own (`enqueueTurnContinuation`): the session's
+  // FIRST turn always (a `create_session` command delivered it, so the
+  // requeue answers `no_prompt`), and for an unattended session any turn the
+  // requeue could not hand back.
+  let syntheticContinuations = 0;
   for (const turn of abandonedDeliveries) {
     const outcome = await requeueAbandonedPrompt({
       sessionId: write.sessionId,
@@ -396,6 +480,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       turnToken: turn.token,
       endReason: 'runtime_gone',
       hold: !unattendedRecoveryClaimed,
+      // Nobody asked for a provider stop, and its runtime is gone.
+      resumable: providerOriginated,
     }).catch((err) => {
       console.warn(
         `[reaper] prompt redelivery failed after stopping ${write.sandboxId}:`,
@@ -403,35 +489,33 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       );
       return 'error' as const;
     });
-    if (outcome === 'requeued' && unattendedRecoveryClaimed) anyPromptReleased = true;
+    if (outcome === 'requeued' || !recoverySessionRow) continue;
+    // The shape follows the session, not this observer's claim. An unattended
+    // session whose claim another observer of the same stop won (`bounded`)
+    // writes nothing: its held row could take the turn's key first and wait
+    // for a member nobody is.
+    if (!unattendedRecoveryClaimed && !(recoveryAttended && outcome === 'no_prompt')) continue;
+    const enqueued = await enqueueTurnContinuation({
+      sessionId: write.sessionId,
+      turnToken: turn.token,
+      messageId: turn.messageId,
+      stoppedAt: now,
+      session: recoverySessionRow,
+      unattended: unattendedRecoveryClaimed,
+    }).catch((err) => {
+      console.warn(
+        `[reaper] synthetic continue-prompt enqueue failed after stopping ${write.sandboxId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return false;
+    });
+    if (enqueued) syntheticContinuations += 1;
   }
   if (unattendedRecoveryClaimed) {
-    // No `continue_session` row existed to release (the initial-prompt
-    // shape above): synthesize one, due now, so the drain's ordinary
-    // wake-and-deliver path (`continue-session.ts`) has something to act on.
-    // A session whose original prompt WAS released does not need this — that
-    // released row already carries a real user message.
-    if (!anyPromptReleased && recoverySessionRow) {
-      await enqueueContinueSessionCommand({
-        source: 'system:auto-recovery',
-        projectId: recoverySessionRow.projectId,
-        accountId: recoverySessionRow.accountId,
-        sessionId: write.sessionId,
-        actorUserId: null,
-        text:
-          '[auto-recovery] The sandbox stopped unexpectedly and has been restarted. ' +
-          'Please continue the previous task from where you left off.',
-      }).catch((err) =>
-        console.warn(
-          `[reaper] synthetic continue-prompt enqueue failed after stopping ${write.sandboxId}:`,
-          err instanceof Error ? err.message : err,
-        ),
-      );
-    }
     console.log('[reaper] unattended session recovering after runtime_gone; released the prompt', {
       sandboxId: write.sandboxId,
       sessionId: write.sessionId,
-      syntheticContinue: !anyPromptReleased,
+      syntheticContinue: syntheticContinuations,
     });
     // Fire-and-forget, same posture as `runtime-restart-recovery.ts`'s
     // `kickDrain`: the drain re-checks every claim itself, so a lost race or a
@@ -440,7 +524,7 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
       .catch(() => undefined);
   }
-  if (write.externalId) invalidateProviderCache(write.externalId);
+  if (write.externalId) invalidateSandbox(write.externalId);
 }
 
 export interface StoppedReconcileOptions {
@@ -556,6 +640,6 @@ export async function reconcileSandboxRemovedByExternalId(
       err,
     ),
   );
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   return true;
 }

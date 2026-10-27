@@ -5,6 +5,469 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Deprecated (app form)
+- `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
+  and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call
+  answers 404. The names stay exported until the next major.
+
+### Added (connector policy sets)
+- `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet`,
+  `deleteConnectorPolicySet` and the `ConnectorPolicySet` type: named rule sets on one connector
+  (`connectors[].policy_sets` in kortix.yaml) that an agent selects with `agents.<a>.policy_sets`
+  (`/connectors/projects/:id/connectors/:slug/policy-sets`). `deleteConnectorPolicySet` answers 409
+  `policy_set_in_use` (with `agents`) while an agent uses the set.
+- Facade `p.connectors.policySets.{list,upsert,rename,remove}`.
+- `ConnectorPolicySetOptions` (`{ policySet }`): the optional last argument of
+  `getConnectorPolicies` and `setConnectorPolicies` reads or writes one set's rules. Absent = the
+  base rules.
+- `ConnectorPolicyRule.conditions`, `ConnectorCatalogEntry.policy_set` (the caller's set),
+  `ConnectorCallResult.policy_set` / `.agent` (on a denial the set decided),
+  `ApprovalLinkDetails.policy_set` / `.agent`, `AgentConfigBlock.policy_sets`, and `policy_sets` on
+  the `setAgentScope` input (`null` or `base` removes one entry) and result.
+
+### Changed (connector policy sets)
+- `ConnectorPolicySource` gains `'policy_set'`. A consumer with an exhaustive `switch` over the
+  union must add the case.
+
+### Added (share one assistant response)
+- `getTurnShare`, `shareTurn`, `unshareTurn` and the `TurnShare` type: the public share of one
+  turn's response (`/projects/:id/sessions/:sid/turns/:turnId/share`, GET / PUT / DELETE). The
+  server publishes the response text as a snapshot; `shareTurn` again refreshes it and keeps the URL.
+  `shareTurn(…, { include_prompt: true })` also publishes the prompt text (`TurnShare.include_prompt`).
+- `ProjectSession.can_publish_response`: whether the viewer may publish a response of the session
+  (a human owner or project manager who can read it). Single-session reads only; absent means unknown.
+- `getPublicResponse` and the `PublicResponse` type: the anonymous read of a shared response
+  (`GET /public/responses/:token`); `prompt` is null unless the sharer included it. Throws `HostBoundaryError` with `status` 404 or 410.
+
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
+### Added (custom LLM providers)
+- `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
+  `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
+  `CustomLlmProviderInput`): a project's OpenAI-compatible endpoints, served through the gateway
+  (`GET`/`PUT`/`DELETE /projects/:id/custom-providers[/:providerId]`). The delete also deletes the
+  `CUSTOM_<ID>_API_KEY` project secret. On the facade: `projects.customLlmProviders`,
+  `projects.setCustomLlmProvider`, `projects.deleteCustomLlmProvider` and the same three on
+  `project(id)` without the project id.
+- `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
+  remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
+
+### Deprecated (the LLM gateway is the only model path)
+- `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
+  `useFeatureFlag(id, 'llm_gateway')` reports `enabled: true`.
+- Ignored inputs, kept so callers compile: `modelRefToKey`'s second argument,
+  `sessionModelCandidates({ gatewayEnabled })`, `PickerProviderListInput.gatewayEnabled`,
+  `.runtimeProviders`, `.llmCatalogProviders`, `.secretNames`, and `flattenModels`'
+  `providerMode`. `modelProviderMode()` always returns `'gateway'`; `filterToNativeProviders`
+  is deprecated.
+- Constant `true` fields: `useModelDefaults().llmGatewayEnabled` and
+  `useGatewayRoutingPolicy().llmGatewayEnabled` (with a project id),
+  `SessionOpenBundleConfig.llm_gateway_enabled`, `ProjectModelAccess.enforced`.
+
+### Changed (the LLM gateway is the only model path)
+- `useRuntimeProviders()` on a project route always reads the gateway catalog
+  (`GET /projects/:id/model-picker`). It no longer reads `GET /projects/:id` for the flag, and the
+  native picker sources (the runtime `/provider` list with project secret names, the
+  `/llm-catalog/providers` synthesis) are gone.
+- `useProjectModels`, `useProjectModelPickerCatalog`, `useModelEnablement`, `useModelDefaults`
+  and `useGatewayRoutingPolicy` fetch for every project without a project-detail read first.
+- `pickerProviderList` returns the `/model-picker` catalog only. `resolveComposerModel` no longer
+  rewrites a bare Bedrock id to its inference profile: under the gateway every key is `kortix`.
+- The session-open snapshot's `models` leg is now the model-defaults query's own fetch, so
+  `useModelDefaults` mounts onto it and sends no `/model-defaults` request.
+
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
+### Changed (Capture app ids)
+- `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
+  app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
+  (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
+  refuses empty, over-long, flag-like (`-x`) and control-character values.
+
+### Added (session log: the connecting view's saved copy)
+- `readSavedSessionCopy({ …, sessionLog: true })`: with the project flag `session_log` on,
+  reads the session log's newest page (`GET …/log`) into `SavedSessionCopy.log` (new optional
+  field; `envelope: null`) and proves an empty root from it. It reads no `GET …/transcript`.
+  Without `sessionLog` it reads the v1 copy exactly as before.
+- `useSession({ chatEngine: false })`: with the flag known on at the open, the session-open
+  snapshot asks no transcript window (`transcript=0`), as the chat engine already did.
+
+### Added (session-log restore notice)
+- `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
+  restore of a session log could not bring back, from the session record
+  (`restore_grade: 'partial'`, `grade_counts`, `ext.kortix.data.restore`).
+  `missing[].kind` includes `'message'`: the log was over the API's restore cap
+  (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
+  messages; the transcript keeps them.
+
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
+
+### Changed (Enterprise is a feature layer; trials removed)
+- `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.
+  Demo is self-serve (owners and admins); Licensed is a license contract.
+- `getEnterpriseDemo` / `setEnterpriseDemo` call `GET`/`PUT
+  /accounts/:id/iam/enterprise-demo` again (they rejected with
+  `ENDPOINT_RETIRED`). New hook `useSetEnterpriseDemo()`.
+- `contactEnterpriseSales(params)` (`POST /billing/enterprise/contact`),
+  `kortix.billing.contactSales`, `useContactSales()`: one-click "Talk to sales".
+- `AccountState.trial` is always null (`@deprecated`): trials are removed.
+- `AccountContract.credits_usd` / `AccountEnterpriseOffer.credits_usd` are
+  optional and `@deprecated`: a license carries no credits.
+
+### Added (BYOK fee entitlement)
+- `ADMIN_OVERRIDE_KEYS` and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS` add `'byokFee'`
+  (additive union member): the BYOK platform fee is an entitlement, on by
+  default for Free and Credits, off on Enterprise, and an operator override
+  switches it per account.
+
+### Changed (Enterprise is a feature layer)
+- An Enterprise trial no longer sets `AccountState.plan` to Enterprise: `plan`
+  stays the billing plan (what the account pays for), and the trial lends the
+  Enterprise features only (`trial.plan === 'enterprise'`, `tier.entitlements`).
+  A Credits trial still overlays `plan`. `plan.family === 'enterprise'` now
+  means an Enterprise contract.
+- `AccountState.subscription.monthly_usd` (optional, additive): the credits
+  plan's monthly amount the account pays, kept during a trial.
+
+### Added (Enterprise contracts and trials)
+One plan system (2026-10-15): the plan decides features; a trial is a dated
+grant of a plan; Enterprise is an annual contract (license + credit pool).
+
+- `AccountState` adds optional `trial` (`AccountTrial`: `plan`, `ends_at`,
+  `days_left`), `contract` (`AccountContract`), `enterprise_offer`
+  (`AccountEnterpriseOffer`) and `grace` (`AccountAccessGrace`: SSO/SCIM kept
+  14 days after an Enterprise trial or contract ends). Absent on an older
+  server. Additive.
+- `acceptEnterpriseOffer(params)` (`POST /billing/enterprise-offer/checkout`),
+  `kortix.billing.acceptEnterpriseOffer` and `useAcceptEnterpriseOffer()`:
+  a Stripe Checkout link for the open offer. Needs `billing.write`, which owners
+  AND admins now hold. Additive.
+- Admin: `useAdminEnterpriseContracts`, `useAdminCreateEnterpriseContract`,
+  `useAdminEndEnterpriseContract`, `useAdminWithdrawEnterpriseOffer`,
+  `useAdminEnterpriseOfferLink`, types `AdminEnterpriseContract`,
+  `AdminAccountContract`, `AdminContractCollection`,
+  `AdminCreateEnterpriseContractVariables`, and `ADMIN_ENTITLEMENT_OVERRIDE_KEYS`
+  (the six override keys the server accepts). `AdminAccount` adds optional
+  `contract` and `graceEndsAt`. Additive.
+
+### Deprecated (Enterprise preview and flags)
+- `getEnterpriseDemo`, `setEnterpriseDemo`, `useAdminSetEnterpriseDemo`,
+  `useAdminSetEnterpriseEntitled`, `useAdminSetManagedModels` now reject with
+  `ENDPOINT_RETIRED` and send no request (the API answers 410). Grant an
+  Enterprise trial (`useAdminGrantTrial`), create a contract, or set the
+  `managedModels` override. Removed in the next major. No export was removed.
+- Type changes (the API no longer sends these fields): `AdminAccount`
+  `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled` and
+  `computeRateMultiplier` become optional and `@deprecated`;
+  `AdminAccountTrial.monthlyUsd` becomes optional and `@deprecated`;
+  `AccountState.enterprise_entitled` is `@deprecated` (read `plan.family`).
+
+### Changed (credits-only billing)
+Seat pricing is gone. Every legacy plan reads as `credits`: one paid plan, any
+whole monthly amount from $50 to $10,000, one shared credit wallet, unlimited
+members. 1 credit = $0.01.
+
+- Added: `setBillingPlan(params)` (`POST /v1/billing/plan`), `kortix.billing.setPlan`,
+  and the `useSetBillingPlan()` mutation hook in `@kortix/sdk/react`. Params
+  `{ monthlyUsd, successUrl, cancelUrl, locale?, accountId? }`; result
+  `SetBillingPlanResult` = `checkout_created` | `updated` | `unchanged` |
+  `payment_pending`. The hook invalidates the `['account-state']` queries.
+  Types `SetBillingPlanParams` and `SetBillingPlanResult`. Additive.
+- Deprecated, now reject with `ENDPOINT_RETIRED` and send no request (the API
+  answers `410`): `createPerSeatCheckout`, `claimPerSeatBilling`,
+  `cancelScheduledChange` (also `kortix.billing.subscription.cancelScheduledChange`),
+  `getProrationPreview` (also `...subscription.prorationPreview`). Their result
+  types stay exported. Removed in the next major. No export name was removed.
+- Breaking type changes (the API no longer sends these fields; nothing is
+  renamed):
+  - `PlanFamily` is `'free' | 'credits' | 'enterprise'` (`'team'` is gone).
+  - `AccountState.plan`: `status` is `'current' | 'non_plan'`, `shape` is
+    `'none' | 'credits' | 'contract'`, `is_grandfathered` is removed, and
+    `monthly_usd: number | null` is added.
+  - `AccountState` drops `billing_model`, `seats`, `member_count`,
+    `can_claim_per_seat` and `can_claim_computer`. `usage_this_period` is
+    present for every account.
+  - `ResolvedPlanView.isGrandfathered` is replaced by `monthlyUsd`.
+  - `BillingTierConfigurationsResponse` adds required `min_monthly_usd` and
+    `max_monthly_usd`.
+  - Admin: `AdminGrantTrialVariables.seats` is removed (`creditGrant` is granted
+    now and every 30 days during the trial); `AdminAccountTrial.seats` becomes
+    `monthlyUsd`; `AdminAccount` drops `billingModel` and `seatCount`;
+    `AdminAccountPlan` drops `is_grandfathered`, adds `monthlyUsd`, and its
+    `family` and `status` unions narrow as above.
+- The 402 body no longer carries `billing_model`. Branch on `billing_state`
+  (`out_of_credits`, `no_subscription`, `payment_failed`).
+- Added: `ProjectLlmCatalogResponse.platformFeePercent`, Kortix's fee on managed
+  model usage in percent (5.5). `managedPricingRoutes` now carries base provider
+  prices, before the fee. Optional, absent on an older server. Additive.
+- Changed: `COST_MARKUP` is `1.055` (was `1.2`), so displayed session cost
+  matches what credits are charged.
+
+### Added (session-log follow-ups)
+- `sessionLogFullTextPlan(refs)`: which texts stored by reference a host shows
+  inline and which it downloads. The smallest fill the 1 MiB inline budget;
+  only the rest download. Before, a host could only download every text of a
+  turn over 1 MiB in all.
+- `hasRuntimeConfirmedMessage(sessionID, messageID)`
+  (`@kortix/sdk/internal/sync-store`): the store holds the message from a
+  runtime read or a live event, not only from a saved copy.
+
+### Fixed (session-log follow-ups)
+- `useSessionSync` stops offering the saved copy's older pages once the
+  runtime holds the saved window's oldest message and has no older page of
+  its own: `hasOlder` is `false` when the whole history is loaded. Before,
+  the "earlier messages" control stayed after the runtime had answered
+  everything (web and mobile). A box that lost its state still pages its
+  saved history.
+- `toToolView` reads Claude Code edits: `old_string` / `new_string`, the
+  `edits[]` of a `MultiEdit` (blocks joined in order), and a `NotebookEdit`'s
+  `notebook_path` and `new_source`. `toolKind` maps `MultiEdit` and
+  `NotebookEdit` to `edit`; `inputPath` reads `notebook_path`. The
+  `file-edit` view model reads the same blocks.
+- Unchanged message arrays keep their rows past 20 sessions
+  (`buildSessionMessages`). This stops the "Maximum update depth exceeded"
+  in a host that reads more than 20 sessions per render (the web session
+  context modal with 20+ sub-agents).
+
+### Added (block readers a host draws a tool call with)
+- `toolCallStatus(call)` (`pending` / `running` / `completed` / `error`),
+  `toolCallRawOutput(call)` (a completed call's text, one string per call
+  object) and `toolCallError(call)` (a failed call's error: the semantic
+  error, else the result text, as `toV1` gives `state.error`, so a native
+  failed call never shows an empty error body).
+- `subAgentCalls(thread)`: the shown tool calls of a sub-agent thread's
+  replies, in order, one array per thread object.
+
+### Changed (session log)
+- `useSession({ chatEngine: false })` negotiates the session log (v2) as
+  `useSession` with its chat engine does: with the runtime's
+  `session.log.v2` and the project flag `session_log`, it reads the first
+  log page and switches the session stream to `schema=v2`, so
+  `useSessionLogThread` serves v2 records to a host that reads its own
+  transcript (apps/mobile).
+- `useSessionLogThread` on v2 places the v1 store rows the log lacks by time,
+  as `useSessionMessages` does: an older page (`loadOlder`) goes before the
+  log's messages, an optimistic send after them. Before, every such row was
+  appended, so older turns rendered after the newest one.
+
+### Changed (one saved-history read per session open)
+- `useSession` reads a session's saved copy once per open. The session-open
+  snapshot carries the first window; the read waits up to 2 s for a snapshot
+  in flight, then asks `GET …/transcript?shape=sync&history=true`. Before,
+  every open with a snapshot in flight downloaded the window twice, and the
+  sync layer could read it a third time (KRTX-189).
+- `useSessionSync` with no `mirror` runs the same read. `useSession` passes
+  its answer as `mirror`: the copy, or `null` while the read runs and when
+  the server holds none. A host that mounts a second `useSessionSync` for the
+  root conversation beside `useSession` passes `mirror: null`. Beside
+  `useSession({ chatEngine: false })`, which makes no saved-history read, and
+  on a `savedChild` hook, the host omits `mirror`: that hook makes the read.
+- A host that passes no `mirror` now gets the server's "no saved copy" answer
+  from the snapshot too, so the device copy is dropped for the next open, as
+  the route answer already did.
+
+### Added (saved copy before `useSession` binds)
+- `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` and
+  `SavedSessionCopy` (`{ envelope, empty }`): the same saved-history read,
+  plus the empty-conversation proof (`isEmptyConversation` over the turn
+  record, read only when the copy proves the root empty). Never throws. For a
+  connecting screen that shows the conversation while the computer wakes;
+  apps/mobile uses it. Additive (KRTX-189).
+- The open that follows `readSavedSessionCopy` downloads the window no second
+  time. The SDK holds the copy for up to 5 min (one wake). The session-open
+  snapshot then asks for the pointer only (`?transcript=0`), and the
+  saved-history read answers from the held copy. Before, the connecting view
+  and the thread after it each downloaded the window.
+  `resetIdentityState` forgets the held copy and the session-open snapshots
+  (KRTX-189).
+
+### Added (bounded review reads)
+- `getReviewSummary(projectId)` and `project(id).review.summary()`
+  (`GET /v1/projects/:p/review/summary`): `ReviewSummary`, the needs-you
+  counts of the review inbox, `{ needs_you_total, needs_you_by_session }`.
+  Read it for a badge or a per-session indicator instead of the list. A
+  connector call the caller may not resolve counts nowhere. Additive
+  (KRTX-2316).
+- `listReviewItems` takes `sessionId`, `limit` and `cursor`
+  (`ReviewItemsQuery`) and resolves to `ReviewItemsPage`, which adds
+  `next_cursor` (null on the last page). The server now returns one page:
+  50 items by default, at most 200, with Needs you first, then Waiting, then
+  Done, newest first within each. A caller that read the whole inbox from one
+  response pages with `cursor` or passes `segment`. Additive types.
+- `listChangeRequests` takes `cursor` and its response adds `next_cursor`.
+  The server now returns one page: 50 change requests by default, at most
+  500 (a larger `limit` answers 400, it no longer clamps). Additive types.
+  `project(id).changeRequests.list(status?, options?)` passes both through,
+  so the facade can page as well. Additive (a widened parameter list).
+- React (`@kortix/sdk/react`): `useReviewSummary(projectId)` (polls every
+  60 s), `useReviewItemPages(projectId, query)` (an infinite query; read the
+  rows with `reviewItemsOf(query.data)`), `nextReviewItemsCursor`, and the
+  keys `qk.project.reviewSummary`, `qk.project.reviewItemsScope` and
+  `qk.project.reviewItemPages`. Additive.
+
+### Added (who may decide an approval)
+- `SessionAuditAction.can_resolve`: true only on an unresolved connector call
+  the viewer may approve or deny, the verdict `resolveApproval` would get
+  (today a project manager, or the session's launcher unless an API token or a
+  service account started the session). False on every other
+  row. Show Approve / Deny only when it is true. Also on the session snapshot's
+  `audit` leg. Optional, absent on an older server. Additive (KRTX-1724).
+- `ApiReviewItem.can_resolve` (connector-call items) and
+  `ReviewApprovalAction.canResolve`, set by `mapApiReviewItem`. A viewer who
+  may not decide the call gets it with status `waiting`, not `needs_you`. On an
+  older server `canResolve` follows `args_preview_authorized`, which the same
+  rule decided. Additive.
+- `reviewVerdictAllowed` refuses approve and reject on a connector call whose
+  `canResolve` is false.
+- `SessionAuditAction.resolvers`, `ApiReviewItem.resolvers` and
+  `ReviewApprovalAction.resolvers` (set by `mapApiReviewItem`): who decides a
+  pending call, for a viewer whose `can_resolve` is false. `managers` for a
+  session started with an API token or a service account (`origin: 'backend'`),
+  else `managers_and_launcher`. Null on a settled audit row; optional, absent
+  on an older server. Additive (KRTX-1724).
+
+### Added (undecryptable stored values)
+- `ProjectSecret.status` and `AccountSecretResource.status`: `'ok'`, or
+  `'undecryptable'` when the server can no longer decrypt the stored value
+  (its encryption key changed, or the row is damaged). The value is lost;
+  re-enter it with `upsertProjectSecret` or `rotateAccountSecretResource`.
+  `ProjectSecret.status` reports the shared value and is absent when none is
+  set. `ProjectSecret.mine.status` reports the caller's own override, which
+  the caller's sessions read while it is active: set it again with
+  `setPersonalProjectSecret`, or remove it with `deletePersonalProjectSecret`.
+  `SecretValueStatus` is the new public type. Optional: absent on older
+  servers. A connector call on such a credential fails with
+  `ConnectorCallError.code === 'credential_undecryptable'`. Any other request
+  that needs such a value answers `409` with
+  `ApiError.code === 'SECRET_UNDECRYPTABLE'` and a message that names it.
+  Additive (KRTX-1719).
+
+### Added (session restore)
+- `restoreProjectSession(projectId, sessionId)` and `session.restore()`
+  (`POST /v1/projects/:p/sessions/:s/restore`) take a deleted session out of
+  the trash. Its messages, stored files and branch come back, and its next
+  start boots a fresh sandbox from the branch. A refusal rejects with an
+  `ApiError`: 409 `session_not_deleted`, 409 `session_sandbox_removal_pending`
+  (retry in a minute), 410 `session_purged`. Additive (KRTX-1734).
+- `deleteProjectSession` resolves to `{ ok, restore_until? }`: the last
+  instant the session can be restored, 30 days after the delete. Absent on an
+  API that predates restore. Additive.
+
+### Added (gateway budget meters per period)
+- `GatewayBudgetRow` has `spent_usd`, `period_start` and `resets_at`: the
+  spend in the budget's own period (day, week or month, UTC), the number the
+  gateway compares with `limit_usd` before it admits a request, and when that
+  period ends. A member budget counts its member's requests only. Use
+  `spent_usd` for a budget meter, not `project_spend.cost`, which is
+  month-to-date. Optional, absent on an older server. Additive (KRTX-1725).
+- `GatewayBudgetRow.subject_email`: the member's email for a member budget,
+  also when the member has no spend this month and so no entry in `members`.
+  `null` for a project budget. Optional, absent on an older server. Additive.
+
+### Added (permissions)
+- `PROJECT_ACTIONS` and `ProjectAction`: every project action the IAM engine
+  answers about, the same strings as the API's catalog
+  (`apps/api/src/iam/actions.ts`; a test fails when they differ). Pass them to
+  `useCan` / `useCans` instead of spelling a leaf by hand (KRTX-1720).
+- `TRIGGER_CONTROL_ACTIONS`, `triggerControlsFrom(cans)` and `TriggerControls`:
+  the trigger controls a viewer gets, from the leaves each trigger route
+  asserts: create, update and delete need `project.write` and their trigger
+  leaf, fire needs `project.trigger.fire`. An unresolved probe gives no
+  control. Web and mobile both read them.
+- `REVIEW_CONTROL_ACTIONS`, `changeRequestControlsFrom(cans)` and
+  `ChangeRequestControls`: open a change request needs `project.write` +
+  `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`,
+  close and reopen need `project.write`.
+- `reviewVerdictAllowed(item, verdict, cans)`: whether to offer a verdict on a
+  review item. Approving a change request merges it (`canMerge`); every other
+  change request and native verdict needs `project.write` +
+  `project.review.act`. A connector call offers approve and reject only, to
+  the viewer the API lets decide it (`previewAuthorized` is not `false`). Web
+  and mobile both read it.
+- `canManageBilling(state)` and `canOfferTopup(state)`: whether the caller may
+  change billing, and whether to offer buying credits or auto top-up (the plan
+  may buy credits AND the caller may change billing). Both return `false` while
+  the account state is unknown. Additive.
+
+### Added (connector credential re-sync)
+- `setConnectorCredential` now resolves to `{ ok, sync? }`. For an MCP
+  connector the server re-reads the tools after the write: `sync` is that run
+  (`ConnectorSyncResult`), and a per-slug entry in `sync.errors` means the
+  credential is stored but the tools still fail to load. Absent for other
+  providers and on older servers. Additive (KRTX-2185).
+
+### Added (session log reads, P5.5)
+- `getSessionLogPage(projectId, sessionId, query?)` and `session.log(query?)`
+  read one page of the stored session log (`GET /v1/projects/:p/sessions/:s/log`):
+  `SessionLogPage` for `{ thread?, before_seq?, limit? }` (`SessionLogPageQuery`),
+  `null` on a 404 (no stored log, or no such thread). `SessionLogPage` and
+  `SessionLogPageQuery` are now public types. Additive.
+- `classifySessionLogMessage(message)`: `classifyTurn` of a session-log message
+  (`ClassifiedPart`s from its blocks, its `TurnError`). Transitional: it goes with
+  `ClassifiedPart`. Additive.
+- `findSessionAttachments` also reads session-log records: attachment blocks, a
+  harness block's v1 file part, text blocks and `show` tool-call blocks. Additive.
+
+### Added (session readiness)
+- `session.ensureReady({ session })` takes the session's row when the caller
+  already read it. A `running` row that names its sandbox and
+  `runtime_session_id` is adopted without `POST /start`; any other row, or a row
+  of another session, falls through to `/start` as before. The Kortix CLI
+  passes it, so a one-shot `kortix sessions chat -p` on a running session saves
+  the 1.2–2.4 s `/start` round trip. Additive.
+
+### Added (SSO and MFA remedies)
+- `configureKortix({ onAccessRemedy })` / `createKortix({ onAccessRemedy })`:
+  called with `'sso_required'` or `'account_mfa_required'` when the API answers
+  403 with that code, for every REST client (`backendApi`) response, including
+  `showErrors: false` calls. The runtime proxy and the event stream do not call it.
+  A host without DOM events (React Native) cannot receive the
+  `kortix:sso-required` / `kortix:mfa-required` window events; this is its
+  signal. A throw from the hook is caught. The window events are unchanged.
+  Additive (KRTX-1716).
+
 ### Added (account invites)
 - `acceptAccountInviteAndLand(inviteId, invite?)` (`accountInvites.acceptAndLand`)
   accepts an invite and returns `{ accepted, landing }`. `accountInviteLanding`
@@ -511,6 +974,16 @@ and `useOpenCodeRuntimeReady`; they compile either way.
 The 88 `V2Event*` type aliases are already gone (see **Removed** below).
 
 ### Fixed
+- A session stream's `question.asked`, `question.replied` and
+  `question.rejected` events refetch `useSessionsNeedingInput` for the
+  stream's project. Before, a question opened or closed showed in the
+  session lists only at the next 30 s poll (KRTX-1739).
+- `useProjectSessions` ends its read past empty pages (`isScanning`) on a
+  failed fetch. Before, it read the failed page again as soon as the fetch
+  ended, for as long as the server failed. It also reads the next page when
+  a page answers before React renders the fetch that asked for it; before,
+  the read stopped there with `isScanning` true and no fetch running
+  (KRTX-1727).
 - `createScopedKortix` (`@kortix/sdk/server`) runs every `next`, `return`
   and `throw` of a returned async generator inside its scope. Before, each
   `connector(slug).paginate` page ran outside the scope and used the

@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import type { Event as RuntimeEvent, Message, Part } from '../../core/runtime/runtime-types';
 import type { SessionLogPage } from '../../core/session-log/source';
 import type { SessionLog, TextBlock } from '../../core/session-log/types';
+import { selectSessionLog, selectSessionLogThread } from '../../core/session-log/store';
 import { toV1 } from '../../core/session-log/v1';
+import { sessionLogRowsFor } from '../../core/session-log/v1-view';
 import { selectSessionRows } from '../../react/session-transcript-subscription';
 import { useSyncStore } from './sync-store';
 
@@ -101,12 +103,12 @@ describe('selectSessionRows: the v1 hooks read the session log through toV1', ()
     expect(selectSessionRows(store(), ROOT)).toBe(rows);
   });
 
-  test('a thread without the kortix.transcript.v1 ext (pi): the v1 store rows', () => {
+  test('a thread without the kortix.transcript.v1 ext (pi): toV1 of it, as for a fromV1 thread', () => {
     const native = page();
     for (const t of native.threads) delete t.ext;
     store().applySessionLogPage(SESSION, native);
     const rows = selectSessionRows(store(), ROOT);
-    expect(rows).toEqual([]);
+    expect(rows.map((r) => r.info.id)).toEqual(v1().map((r) => r.info.id));
   });
 
   test('with a session log holding the thread: toV1 of it, the same array until something changes', () => {
@@ -120,5 +122,80 @@ describe('selectSessionRows: the v1 hooks read the session log through toV1', ()
     expect(after).not.toBe(rows);
     const part = after.find((r) => r.info.id === m.message_id)!.parts.find((p) => p.id === b.id) as { text: string };
     expect(part.text).toBe(`${b.text}?`);
+  });
+});
+
+// KRTX-2880: a streamed delta costs work proportional to what it changed, not to the transcript.
+describe('session log: per-delta work (KRTX-2880)', () => {
+  const delta = (messageId: string, blockId: string, text: string, id?: string) =>
+    ev('log.block.delta', { thread_id: ROOT, message_id: messageId, block_id: blockId, delta: text }, id) as never;
+
+  test('a delta keeps the identity of every thread it did not touch', () => {
+    store().applySessionLogPage(SESSION, page());
+    const CHILD = log.threads[1]!.thread_id;
+    const before = store().sessionLogs[SESSION]!;
+    const child = selectSessionLogThread(before, CHILD)!;
+    const root = selectSessionLogThread(before, ROOT)!;
+    const { m, b } = textTarget();
+    store().applySessionLogEvent(SESSION, delta(m.message_id, b.id, '!'));
+    const after = store().sessionLogs[SESSION]!;
+    expect(after).not.toBe(before);
+    expect(selectSessionLogThread(after, CHILD)).toBe(child);
+    expect(selectSessionLogThread(after, ROOT)).not.toBe(root);
+    expect(selectSessionLog(after)!.threads.find((t) => t.thread_id === ROOT)!.messages).toBe(after.messages[ROOT]!);
+  });
+
+  test('a coalesced log.block.delta applies each wire frame once, in one store update', () => {
+    store().applySessionLogPage(SESSION, page());
+    const { m, b } = textTarget();
+    const wire = Array.from({ length: 40 }, (_, i) => delta(m.message_id, b.id, `w${i} `, `evt_${i}`) as { id: string; type: string; properties: { delta: string } });
+    // The first two already arrived on their own: a redelivery inside the run is skipped.
+    store().applySessionLogEvent(SESSION, wire[0] as never);
+    store().applySessionLogEvent(SESSION, wire[1] as never);
+    let updates = 0;
+    const unsubscribe = useSyncStore.subscribe((next, prev) => {
+      if (next.sessionLogs !== prev.sessionLogs) updates++;
+    });
+    const last = wire[wire.length - 1]!;
+    store().applySessionLogEvent(SESSION, { ...last, properties: { ...last.properties, delta: wire.map((e) => e.properties.delta).join('') }, coalesced: wire } as never);
+    unsubscribe();
+    expect(textOf(m.message_id, b.id)).toBe(b.text + wire.map((e) => e.properties.delta).join(''));
+    expect(updates).toBe(1);
+  });
+
+  test('golden: the rows after every streamed frame equal a from-scratch conversion of the same state', () => {
+    store().applySessionLogPage(SESSION, page());
+    // A v1 row the log does not hold (an optimistic send) joins the rows.
+    const user = { id: 'msg_zzz_optimistic', sessionID: ROOT, role: 'user', time: { created: 4_102_444_800_000 }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as Message;
+    store().hydrate(ROOT, [{ info: user, parts: [] }]);
+    const targets = log.threads[0]!.messages.flatMap((m) => m.blocks.filter((b) => b.type === 'text' || b.type === 'reasoning').map((b) => ({ m, b })));
+    expect(targets.length).toBeGreaterThan(1);
+    const fresh = () => {
+      const s = store();
+      const v1Rows = s.buildSessionMessages(ROOT, s.messages[ROOT], s.parts);
+      return sessionLogRowsFor(structuredClone(s.sessionLogs), ROOT, structuredClone(v1Rows));
+    };
+    let previous = selectSessionRows(store(), ROOT);
+    expect(previous).toEqual(fresh());
+    for (let i = 0; i < 60; i++) {
+      const { m, b } = targets[i % targets.length]!;
+      store().applySessionLogEvent(SESSION, delta(m.message_id, b.id, `·${i}`, `evt_g${i}`));
+      if (i === 30) {
+        // A put of a streamed message and a new message mid-stream take the full path.
+        const held = store().sessionLogs[SESSION]!.messages[ROOT]!.find((x) => x.message_id === m.message_id)!;
+        store().applySessionLogEvent(SESSION, ev('log.message', { rev: 10_000, message: { ...held } }) as never);
+        const last = log.threads[0]!.messages.at(-1)!;
+        store().applySessionLogEvent(SESSION, ev('log.message', { rev: 10_001, message: { ...last, message_id: 'msg_zzz_new', seq: last.seq + 1 } }) as never);
+      }
+      const rows = selectSessionRows(store(), ROOT);
+      expect(rows).toEqual(fresh());
+      // A row whose message did not change keeps its identity.
+      const changed = new Set([m.message_id, 'msg_zzz_new']);
+      for (const row of rows) {
+        const was = previous.find((r) => r.info.id === row.info.id);
+        if (was && !changed.has(row.info.id) && i !== 30) expect(row).toBe(was);
+      }
+      previous = rows;
+    }
   });
 });

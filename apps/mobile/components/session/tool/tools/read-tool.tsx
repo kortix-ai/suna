@@ -33,23 +33,21 @@ import {
   ToolOutputFallback,
   ToolResultCard,
   ToolRunningContext,
-  ToolSurfaceContext,
   useToolNavigation,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ReadTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const surface = useContext(ToolSurfaceContext);
   const running = useContext(ToolRunningContext);
   const { openFile } = useToolNavigation();
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const metadata = partMetadata(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
@@ -65,7 +63,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   return (
     <>
       <BasicTool
-        disclosureId={disclosureKey('tool', part.id)}
+        disclosureId={disclosureKey('tool', call.id)}
         icon={ReadCvLogoIcon}
         trigger={{
           title: fileRowTitle('read', { running, isError: isReadError }),
@@ -109,7 +107,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <ToolOutputFallback output={output} toolName="read" />
         ) : null}
       </BasicTool>
-      {surface !== 'panel' && loaded.length > 0 ? (
+      {loaded.length > 0 ? (
         <View style={{ marginTop: webSpace(1), rowGap: webSpace(0.5), paddingLeft: webSpace(2) }}>
           {loaded.map((path) => (
             <Pressable

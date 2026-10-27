@@ -10,10 +10,7 @@ import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions, sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import {
-  mayResolveApproval,
-  maySeeSessionApprovals,
-} from '../lib/approval-authority';
+import { maySeeSessionApprovals } from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { isUuid } from '../../shared/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
@@ -23,14 +20,16 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import {
-  approvalTargetSession,
-  decideConnectorApproval,
-  isPendingApproval,
-  loadApprovalRow,
   normalizeApprovalNote,
+  resolveApprovalAs,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
+import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { approvalCallerOf } from '../lib/http-approval-caller';
+import { hiddenSpaceIds, sessionsInSpaces } from '../../shared/space-access';
+
+const APPROVAL_EXPIRED_BODY = { error: 'This approval expired', code: 'APPROVAL_EXPIRED' };
 
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
@@ -80,6 +79,7 @@ export function registerApprovalsRoutes(): void {
           actingUserId: connectorCalls.actingUserId,
           resultSummary: connectorCalls.resultSummary,
           createdAt: connectorCalls.createdAt,
+          expiresAt: connectorCalls.expiresAt,
         })
         .from(connectorCalls)
         .where(
@@ -88,19 +88,27 @@ export function registerApprovalsRoutes(): void {
             eq(connectorCalls.status, 'pending_approval'),
             isNull(connectorCalls.approvedBy),
             isNull(connectorCalls.resolvedAt),
+            approvalNotExpired,
           ),
         )
         .orderBy(desc(connectorCalls.createdAt))
         .limit(limit.value);
+      // Calls of a private channel's threads the manager is not in are not listed.
+      const hiddenSessions = await sessionsInSpaces(
+        projectId,
+        rows.flatMap((r) => (r.sessionId ? [String(r.sessionId)] : [])),
+        await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c)),
+      );
+      const listed = rows.filter((r) => !r.sessionId || !hiddenSessions.has(String(r.sessionId)));
 
-      const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
+      const userIds = [...new Set(listed.map((r) => r.actingUserId).filter((v): v is string => !!v))];
       const emailByUser = userIds.length
         ? await lookupEmailsByUserIds(userIds)
         : new Map<string, string>();
 
       return c.json({
-        count: rows.length,
-        approvals: rows.map((r) => ({
+        count: listed.length,
+        approvals: listed.map((r) => ({
           execution_id: r.executionId,
           action: r.actionPath,
           risk: r.risk,
@@ -108,6 +116,7 @@ export function registerApprovalsRoutes(): void {
           requested_by: r.actingUserId,
           requested_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
           requested_at: r.createdAt.toISOString(),
+          expires_at: r.expiresAt?.toISOString() ?? null,
           detail: r.resultSummary ?? null,
         })),
       });
@@ -169,6 +178,7 @@ export function registerApprovalsRoutes(): void {
             eq(connectorCalls.status, 'pending_approval'),
             isNull(connectorCalls.approvedBy),
             isNull(connectorCalls.resolvedAt),
+            approvalNotExpired,
           ),
         );
 
@@ -208,6 +218,7 @@ export function registerApprovalsRoutes(): void {
           opencodeSessionId: projectSessions.runtimeSessionId,
           createdBy: projectSessions.createdBy,
           origin: projectSessions.origin,
+          spaceId: projectSessions.spaceId,
         })
         .from(projectSessions)
         .where(
@@ -217,9 +228,12 @@ export function registerApprovalsRoutes(): void {
           ),
         );
 
+      // A private channel the caller is not in counts nothing.
+      const hidden = await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c));
       const sessions: Record<string, number> = {};
       let total = 0;
       for (const s of sess) {
+        if (s.spaceId && hidden.has(s.spaceId)) continue;
         // created_by is shared across every KaaB session, so it cannot filter
         // one end-user's pending gates from another's — and an execution_id is
         // all the resolve route needs.
@@ -297,48 +311,30 @@ export function registerApprovalsRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-      const row = await loadApprovalRow(projectId, executionId);
-      if (!row) return c.json({ error: 'Not found' }, 404);
-      if (!isPendingApproval(row)) {
-        return c.json({ error: 'Approval already resolved' }, 409);
-      }
-
-      // Who may resolve: a project MANAGER (the same project.members.manage IAM
-      // gate the inbox uses — capability-consistent, so a custom role holding the
-      // leaf without the "manager" label still qualifies), OR the human who
-      // launched the session the gated action belongs to. (Founder decision:
-      // managers + launcher.) assertProjectCapability throws on denial, so probe
-      // it — a non-manager launcher must still fall through.
-      let isManager = false;
-      try {
-        await assertProjectCapability(
-          c,
-          loaded.userId,
-          loaded.row.accountId,
-          projectId,
-          PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-        );
-        isManager = true;
-      } catch {
-        isManager = false;
-      }
-      const target = await approvalTargetSession(projectId, row);
-      const verdict = mayResolveApproval({
-        isManager,
-        targetSessionOrigin: target.origin,
-        targetSessionCreatedBy: target.createdBy,
-        callerUserId: loaded.userId,
-        callerAuthType: (c.get('authType') as string | undefined) ?? null,
-        callerSessionId: callerKortixSessionId(c),
+      // Who may resolve: a project MANAGER, OR the human who launched the
+      // session the gated action belongs to. (Founder decision: managers +
+      // launcher.) The session audit and the Review Center report this same
+      // verdict as `can_resolve`, from the same `approvalCallerOf`.
+      const result = await resolveApprovalAs({
+        projectId,
+        accountId: loaded.row.accountId,
+        executionId,
+        decision,
+        note,
+        caller: await approvalCallerOf(c, loaded, projectId),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
+        updateStaleCard: (row) =>
+          markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
       });
-      if (!verdict.allowed) {
+      if (result.outcome === 'not_found') return c.json({ error: 'Not found' }, 404);
+      if (result.outcome === 'forbidden') {
         return c.json(
-          verdict.reason === 'session_bound_caller'
+          result.reason === 'session_bound_caller'
             ? {
                 error: 'An agent cannot resolve its own approval — a human must approve or deny this',
                 code: 'APPROVAL_REQUIRES_HUMAN',
               }
-            : verdict.reason === 'non_human_caller'
+            : result.reason === 'non_human_caller'
               ? {
                   error: 'Sign in with a Kortix account to resolve this approval',
                   code: 'APPROVAL_REQUIRES_HUMAN',
@@ -347,20 +343,7 @@ export function registerApprovalsRoutes(): void {
           403,
         );
       }
-
-      const outcome = await decideConnectorApproval({
-        projectId,
-        accountId: loaded.row.accountId,
-        row,
-        decision,
-        note,
-        actorUserId: loaded.userId,
-        auditSource: inferAuditSource(c.get('authType'), 'human'),
-        resume: 'queue',
-        updateStaleCard: () =>
-          markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
-      });
-      if (outcome === 'preview_unavailable') {
+      if (result.outcome === 'preview_unavailable') {
         return c.json(
           {
             error: 'This call recorded no parameters to review, so it cannot be approved',
@@ -369,7 +352,8 @@ export function registerApprovalsRoutes(): void {
           409,
         );
       }
-      if (outcome === 'already_resolved') {
+      if (result.outcome === 'expired') return c.json(APPROVAL_EXPIRED_BODY, 409);
+      if (result.outcome === 'already_resolved') {
         return c.json({ error: 'Approval already resolved' }, 409);
       }
 

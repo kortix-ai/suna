@@ -14,6 +14,9 @@ export const NOTIFICATION_KINDS = [
   'shared',
   'automation_failed',
   'automation_recovered',
+  'capture_device_down',
+  'capture_device_recovered',
+  'message',
 ] as const;
 
 export type NotificationKindName = (typeof NOTIFICATION_KINDS)[number];
@@ -37,10 +40,13 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationKindPreferences = {
   shared: { push: true, email: true },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: true, email: false },
+  capture_device_down: { push: true, email: true },
+  capture_device_recovered: { push: true, email: false },
+  message: { push: true, email: true },
 };
 
 /** Kinds emailed as soon as they happen. Every other kind with email on joins the digest. */
-export const IMMEDIATE_EMAIL_KINDS: readonly NotificationKindName[] = ['automation_failed', 'automation_recovered'];
+export const IMMEDIATE_EMAIL_KINDS: readonly NotificationKindName[] = ['automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered'];
 
 /** Kinds never emailed in a digest: the ask goes stale before a digest is due. */
 export const NEVER_DIGESTED_KINDS: readonly NotificationKindName[] = ['permission'];

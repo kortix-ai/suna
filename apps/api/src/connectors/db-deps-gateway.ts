@@ -1,21 +1,30 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
-import { connectorConnections, connectorActions, connectors, connectorCalls } from '@kortix/db';
+import {
+  connectionCredentials,
+  connectorConnections,
+  connectorActions,
+  connectors,
+  connectorCalls,
+  connectorProjectSettings,
+} from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
-import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { resolveEmailApiKey } from '../channels/resend-email-api';
 import { bindSlackThreadToSession } from '../channels/slack/binding';
 import { slackUserNames } from '../channels/slack/labels';
 import {
-  loadAgentMailApiKeyForInbox,
-  loadAgentMailApiKeyForProject,
-  loadAgentMailInstall,
+  emailOwnKeyForAccount,
+  emailOwnKeyForInbox,
+  loadDefaultEmailInboxAccount,
   loadSlackTeamIdForProject,
   loadSlackTokenForProject,
   loadTeamsBotCredentials,
   loadTeamsTenantForProject,
+  loadTelegramBotToken,
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 import {
   getProjectSecretConsumerConfigurationStatus,
@@ -27,6 +36,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
@@ -50,6 +60,7 @@ import {
   headersOf,
   isUuid,
   loadConnectorPoliciesFor,
+  loadConnectorPolicySetFor,
   loadDefaultModeFor,
   loadProjectPoliciesFor,
   resolveActiveConnectorConnection,
@@ -84,7 +95,7 @@ export async function consumeApprovedExecution(input: {
   connectorId: string;
   actionPath: string;
   requestDigest: string;
-}): Promise<boolean> {
+}): Promise<false | { resolvedDigest: string | null; resolvedError: boolean }> {
   const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
   const candidates = await db
     .select({
@@ -113,13 +124,15 @@ export async function consumeApprovedExecution(input: {
     .orderBy(desc(connectorCalls.resolvedAt))
     .limit(3);
   for (const candidate of candidates) {
+    const summary =
+      typeof candidate.resultSummary === 'object' && candidate.resultSummary
+        ? (candidate.resultSummary as Record<string, unknown>)
+        : {};
     const claimed = await db
       .update(connectorCalls)
       .set({
         resultSummary: {
-          ...(typeof candidate.resultSummary === 'object' && candidate.resultSummary
-            ? candidate.resultSummary
-            : {}),
+          ...summary,
           consumed_at: new Date().toISOString(),
         },
       })
@@ -130,7 +143,14 @@ export async function consumeApprovedExecution(input: {
         ),
       )
       .returning({ id: connectorCalls.executionId });
-    if (claimed.length > 0) return true;
+    if (claimed.length > 0) {
+      // The content the human approved (approval-enrichers.ts); the gateway
+      // re-reads it before the call runs.
+      return {
+        resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null,
+        resolvedError: typeof summary.resolved_error === 'string',
+      };
+    }
   }
   return false;
 }
@@ -162,6 +182,7 @@ export async function isPendingApprovalExecution(input: {
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.approvedBy),
         isNull(connectorCalls.resolvedAt),
+        approvalNotExpired,
       ),
     )
     .limit(1);
@@ -180,12 +201,17 @@ async function channelToken(
     const creds = await loadTeamsBotCredentials(projectId);
     return graphToken(tenant, creds).catch(() => null);
   }
-  if (platform === 'email')
-    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'email') {
+    // `slug` here is the selected account's inbox id when it names one.
+    if (slug) return resolveEmailApiKey(await emailOwnKeyForInbox(projectId, slug));
+    const account = await loadDefaultEmailInboxAccount(projectId);
+    return account ? resolveEmailApiKey(await emailOwnKeyForAccount(account)) : null;
+  }
+  if (platform === 'telegram') return loadTelegramBotToken(projectId);
   return null;
 }
 
-function toGatewayConnector(
+export function toGatewayConnector(
   row: ConnectorRow,
   connection?: {
     connectionId: string;
@@ -381,13 +407,15 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           .from(connectors)
           .where(eq(connectors.connectorId, connector.connectorId))
           .limit(1);
-        const connectionSlug =
-          typeof connector.connectionMetadata?.connector_slug === 'string'
-            ? connector.connectionMetadata.connector_slug
+        const platform = row ? channelPlatform(row.config) : null;
+        // An email account names its inbox; the key is that inbox account's.
+        const scope =
+          platform === 'email'
+            ? typeof connector.connectionMetadata?.inbox_id === 'string'
+              ? connector.connectionMetadata.inbox_id
+              : null
             : row?.slug;
-        return row
-          ? channelToken(row.projectId, channelPlatform(row.config), connectionSlug)
-          : null;
+        return row ? channelToken(row.projectId, platform, scope) : null;
       }
       if (connector.provider === 'composio') {
         return composioConnectedAccountId(connector.connectionMetadata);
@@ -410,9 +438,10 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         projectId: principal.projectId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
-        actorUserId: principal.userId,
+        actorUserId: principal.secretsAsProject ? null : principal.userId,
         name: connector.authSecret,
         consumer: 'connector',
+        throwWhenUndecryptable: true,
       });
       if (value !== null) return value;
       // A configured secret that resolved to nothing for this caller is one
@@ -440,17 +469,36 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     gateChannelRead: (input) => gateChannelRead(input),
     gateChannelWrite: (input) => gateChannelWrite(input),
     loadEmailSessionContext: async () => null,
-    loadEmailConnectorContext: async (projectId, connectorSlug) => {
-      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
-      return install?.inboxId ? { inboxId: install.inboxId } : null;
+    // No selected account: the project's default inbox.
+    loadEmailConnectorContext: async (projectId) => {
+      const account = await loadDefaultEmailInboxAccount(projectId).catch(() => null);
+      return account ? { inboxId: account.inboxId } : null;
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
-      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+      resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
+    loadPolicySet: loadConnectorPolicySetFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
-      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // The link expires with the approval it points at (`expires_at`). A failed
+    // read still mints the link, with the default 24 h token.
+    mintApprovalLink: async ({ projectId, executionId, sessionId }) => {
+      let expiresAt: Date | null = null;
+      try {
+        const [row] = await db
+          .select({ expiresAt: connectorCalls.expiresAt })
+          .from(connectorCalls)
+          .where(eq(connectorCalls.executionId, executionId))
+          .limit(1);
+        expiresAt = row?.expiresAt ?? null;
+      } catch (error) {
+        logger.warn('[approvals] expires_at read failed; minting a 24h approval link', {
+          executionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL, expiresAt);
+    },
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
       (await import('../channels/approval-card-relay')).postApprovalCard(input),
@@ -474,6 +522,11 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           // denied) resolves at insert. Leaving pending rows unresolved is what lets
           // the inbox query surface exactly the actions still waiting on a decision.
           resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+          // The decision window: the project's `approvals.ttl`, else 24 h.
+          expiresAt:
+            rec.status === 'pending_approval'
+              ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
+              : null,
         })
         .returning({ id: connectorCalls.executionId });
       if (!row?.id) return null;
@@ -491,6 +544,24 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Every connector request resolves and checks its target, on each
     // redirect hop too. See egress.ts.
     fetchImpl: connectorEgressFetch,
+    markCredentialRejected: async (connectionId, rejected) => {
+      await db
+        .update(connectorConnections)
+        .set({
+          metadata: rejected
+            ? sql`${connectorConnections.metadata} || jsonb_build_object('credential_rejected_at', now())`
+            : sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+        })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    },
+    credentialKind: async (connectionId) => {
+      const [row] = await db
+        .select({ kind: connectionCredentials.kind })
+        .from(connectionCredentials)
+        .where(eq(connectionCredentials.connectionId, connectionId))
+        .limit(1);
+      return row?.kind ?? null;
+    },
     enforcePolicies: true,
   };
 }

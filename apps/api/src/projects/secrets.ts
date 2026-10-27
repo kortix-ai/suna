@@ -1,7 +1,6 @@
 import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
 import type { Database } from '@kortix/db';
 import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import {
   type SecretConsumer,
@@ -22,7 +21,7 @@ import {
   buildSecretCapabilities,
   serializeSecretCapabilities,
 } from './secret-capabilities';
-import { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+import { decryptNamedProjectSecret, encryptProjectSecret } from './secrets/envelope';
 import { projectSecretsRevision, resolveGrantedSecretSelection } from './secrets/grant-policy';
 import { mintSessionSecretHandle } from './secrets/handles';
 
@@ -218,7 +217,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
     if (row.scope === 'connector') continue;
     const canonical = row.identifier === row.name;
     if (row.name in env && winnerIsCanonical.has(row.name) && !canonical) continue;
-    env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    env[row.name] = decryptNamedProjectSecret(projectId, row.valueEnc, `Project secret ${row.identifier}`);
     if (canonical) winnerIsCanonical.add(row.name);
   }
   return env;
@@ -315,7 +314,14 @@ export async function listResolvedProjectSecrets(
       secretId: policyRow.secretId,
       identifier,
       key: chosen.name,
-      value: decryptProjectSecret(projectId, chosen.valueEnc),
+      // A value this server cannot decrypt fails the read with an error naming
+      // the identifier and whose value it is, so session start says which
+      // value to enter again.
+      value: decryptNamedProjectSecret(
+        projectId,
+        chosen.valueEnc,
+        chosen === slot.personal ? `Your own value of project secret ${identifier}` : `Project secret ${identifier}`,
+      ),
       strategy: policyRow.strategy ?? undefined,
       consumer: policyRow.consumer ?? undefined,
       egressPolicy: policyRow.egressPolicy ?? null,
@@ -364,11 +370,10 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * Pure so the rule is testable without a model catalog.
  */
 export function gatewayStripsRow(input: {
-  llmGatewayEnabled: boolean;
   nameIsGatewayManaged: boolean;
   consumer: SecretConsumer | null | undefined;
 }): boolean {
-  return input.llmGatewayEnabled && input.nameIsGatewayManaged && input.consumer !== 'sandbox';
+  return input.nameIsGatewayManaged && input.consumer !== 'sandbox';
 }
 
 export async function materializeSecretDelivery(
@@ -378,19 +383,6 @@ export async function materializeSecretDelivery(
     sessionId: string | null;
     grantEnv: string[] | 'all' | undefined;
     mintHandleFor: SecretHandleMinter;
-    /**
-     * The project's effective `llm_gateway` mode — the fork between the two
-     * model-credential delivery paths:
-     *
-     *  • gateway ON  — provider API keys are SERVICE credentials. Every
-     *    gateway-managed name is withheld from the box; the gateway resolves
-     *    the value server-side after authenticating the session token.
-     *  • gateway OFF (native OpenCode) — the same stored rows ARE the box's
-     *    credentials. A `consumer: 'llm_gateway'` row delivers its plaintext
-     *    value so OpenCode's native provider management auto-connects, and a
-     *    provider-key NAME is an ordinary env var.
-     */
-    llmGatewayEnabled: boolean;
   },
 ): Promise<ResolvedProjectSecret[]> {
   const delivered: ResolvedProjectSecret[] = [];
@@ -407,20 +399,11 @@ export async function materializeSecretDelivery(
     // with no stamp to trust, so it keeps today's strip.
     if (
       gatewayStripsRow({
-        llmGatewayEnabled: input.llmGatewayEnabled,
         nameIsGatewayManaged: isGatewayManagedEnv(row.key),
         consumer: row.consumer,
       })
     ) {
       delete env[row.key];
-      continue;
-    }
-    if (!input.llmGatewayEnabled && row.consumer === 'llm_gateway') {
-      // Native mode: the row was stored `broker`/`llm_gateway` only because the
-      // platform defaulted provider keys there (routes/provider-oauth.ts `defaultToGateway`,
-      // the provider-connect UI). With no gateway in the path it delivers like a
-      // `runtime` row — plaintext, so toggling the flag never strands the key.
-      delivered.push(row);
       continue;
     }
     const delivery = resolveSecretDelivery({
@@ -520,9 +503,7 @@ export async function listProjectSecretsSnapshotForUser(
   const connectorRead = Promise.resolve(
     db.select({ identifier: connectors.authSecret }).from(connectors).where(eq(connectors.projectId, projectId)),
   );
-  const gatewayRead = projectLlmGatewayEnabledById(projectId);
   connectorRead.catch(() => undefined);
-  gatewayRead.catch(() => undefined);
   // A narrowed value enters the box only for the on-behalf-of human of a
   // PRIVATE session. No session = values shared with everyone only.
   const rows = await listResolvedProjectSecrets(
@@ -537,14 +518,9 @@ export async function listProjectSecretsSnapshotForUser(
   );
   const sandboxRows = rows.filter((row) => !boundConnectorIdentifiers.has(row.identifier));
   const { env, selected } = resolveGrantedSecretSelection(sandboxRows, grantEnv);
-  // Resolved HERE, once, so boot, hot push, and the toggle fan-out all deliver
-  // model credentials from the same decision — a caller cannot pass a stale
-  // mode and desynchronise the box from the project's flag.
-  const llmGatewayEnabled = await gatewayRead;
   const delivered = await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,
-    llmGatewayEnabled,
     mintHandleFor: async (row) => {
       if (!sessionId) throw new Error('Secret handle delivery requires a session');
       return mintSessionSecretHandle(projectId, sessionId, row);

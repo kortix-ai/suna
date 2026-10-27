@@ -165,3 +165,11 @@ describe('stepLabel drops search operators', () => {
     expect(stepLabel(tool('web_search', { query: 'filetype:pdf' })).object).toBe('filetype:pdf');
   });
 });
+
+describe('stepLabel reads any session-log block', () => {
+  test('a reasoning block is a thought, any other non-call block the generic row', () => {
+    expect(stepLabel({ type: 'reasoning', id: 'r', text: 'hmm' })).toEqual({ verb: 'Thought', running: 'Thinking', object: undefined, tier: 'reasoning' });
+    expect(stepLabel({ type: 'harness', id: 'h', harness: 'opencode', kind: 'snapshot', data: {}, model_visible: false })).toEqual({ verb: 'Used', running: 'Using', object: undefined, tier: 'primary' });
+    expect(stepLabel({ type: 'attachment', id: 'a', mime: 'image/png' }).verb).toBe('Used');
+  });
+});

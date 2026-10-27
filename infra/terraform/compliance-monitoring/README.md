@@ -20,6 +20,13 @@ It manages:
 - CPU-utilization CloudWatch alarms for every running EC2 instance in
   eu-west-2, discovered on every plan so replacement workers remain covered
   (Drata DCF-86).
+- Message-age CloudWatch alarms for the manifest queue and DLQ in dev
+  (us-east-2), staging and prod (eu-west-2), with regional SNS actions
+  (Drata test 115 / DCF-86). Queue names are explicit because the AWS provider
+  has no SQS discovery data source. `scripts/test_sqs_message_age_alarms.py`
+  covers dev; `tests/sqs_message_age.tftest.hcl` checks the evaluated eu-west-2
+  alarm plan with mocked AWS reads. All six alarms belong to this global root;
+  applying the environment roots alone does not create them.
 - Regional Lambda reconcilers triggered by EC2 running-state events, plus a
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.
@@ -35,6 +42,10 @@ It manages:
 - VPC flow logs for the dev (us-east-2) and staging (eu-west-2) VPCs, which had
   none until 2026-10-12 (Drata DCF-406). The prod VPC carries a flow log created
   by CLI. us-west-2 has no VPC since 2026-10-12.
+- Empty default security groups (no ingress, no egress) for the same two VPCs
+  (Drata test 233, CIS 5.4). No ENI, launch template, ECS service, or Lambda
+  used either group on 2026-10-13. The prod VPC's default group was emptied
+  by CLI and is not in this stack.
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.
@@ -133,9 +144,15 @@ per resource. Four parser rules explain every finding it reports:
 1. It merges resources that share a type and name across roots. Two roots that
    both declare `aws_s3_bucket.alb_logs` become one resource with mixed
    attributes. Give every resource a name that is unique in `infra/terraform`.
+   `modules/capture-store` names its S3 resources `capture` for this reason:
+   as `this` they merged with `modules/project-snapshots-bucket` and the bucket
+   lost its public access block and versioning (tests `8011`, `8003`).
 2. It does not resolve `local.tags`, `var.tags`, `merge()` or `lookup()` on
-   KMS, S3, SNS, IAM role, EC2, subnet and DynamoDB resources (test `8028`).
-   Root-level resources repeat the tag map as a literal.
+   KMS, S3, SNS, SQS, IAM role, EC2, subnet and DynamoDB resources (test
+   `8028`). Root-level resources repeat the tag map as a literal. Module
+   resources use the audit-archive/ecs-api convention: a literal-keyed map
+   whose values read caller context with `lookup(var.tags, …)` (KRTX-1649),
+   which the scanner reads — no exclusion needed.
 3. It does not resolve module variables, so `subnets = var.public_subnet_ids`
    reads as empty (test `8004`).
 4. It caches results by branch and commit SHA. Re-running a scan for the same
@@ -165,3 +182,13 @@ scheme. A new finding fails the `drata-compliance.yml` gate at `CRITICAL`.
 | Moderate | 8010 | `modules/selfhost-ec2` `aws_security_group.this` egress | Self-host boxes reach registries, model providers and user-chosen hosts with no stable CIDR. Ingress is restricted separately. |
 | Moderate | 8028 | `modules/network` `aws_subnet.public`, `aws_subnet.private` | Tagged with `lookup(var.tags, …)` and an interpolated Kubernetes key. Parser rule 2. |
 | Moderate | 8028 | `modules/ecs-api` `aws_kms_key.logs`, `aws_s3_bucket.alb_logs`; `modules/selfhost-ec2` `aws_instance.this`, `aws_kms_key.alarm_topic`; `modules/project-snapshots-bucket` `aws_s3_bucket.this` | Module resources take the caller's `var.tags`; a literal map would drop per-environment tags. Parser rule 2. |
+
+### Exclusions to create
+
+These findings are correct by design but have no Drata exclusion yet. A person
+with Drata access creates each one (Drata → Monitoring → Pipelines →
+Exclusions) with the rationale below, then moves the row into the table above.
+
+| Sev | Test | Resource | Rationale |
+| --- | --- | --- | --- |
+| Critical | 8025 | `modules/capture-store` `aws_iam_role_policy.device` | The device role is the ceiling for every Capture device credential. The API assumes it with an inline session policy that narrows it to one `orgs/<account_id>/<device_id>/` folder (`apps/api/src/capture/credentials.ts`), and STS grants the intersection. The folder names exist only at issue time, so the role policy must name `orgs/*`. Only the API task role may assume it; sessions last at most 1 hour. |

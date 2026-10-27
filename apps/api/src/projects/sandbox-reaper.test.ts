@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
@@ -23,7 +24,7 @@ let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
 let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
-let e2bManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
+let platinumManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -212,7 +213,7 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 const reaperConfigModule = mockConfigModule({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
   KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
 });
 const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
 mock.module('../config', () => reaperConfigModule);
@@ -354,12 +355,13 @@ mock.module('../platform/providers', () => ({
       const err = lifecycleRenewErrorByExternal[externalId];
       if (err) throw err;
     },
-    listManagedRunningSandboxes: async () => (name === 'e2b' ? e2bManagedBoxes : managedBoxes),
+    listManagedRunningSandboxes: async () => (name === 'platinum' ? platinumManagedBoxes : managedBoxes),
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));
@@ -508,7 +510,7 @@ beforeEach(() => {
   stops = [];
   stopsByProvider = [];
   managedBoxes = [];
-  e2bManagedBoxes = [];
+  platinumManagedBoxes = [];
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
@@ -2662,7 +2664,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('every provider renews its native lifecycle while the Kortix deadline is live', async () => {
-    candidates = (['daytona', 'platinum', 'e2b'] as const).map((provider, index) =>
+    candidates = (['platinum', 'daytona'] as const).map((provider, index) =>
       candidate({
         sandboxId: `sb-${provider}`,
         sessionId: `sess-${provider}`,
@@ -2671,24 +2673,23 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
         deadlineAt: new Date(NOW.getTime() + HOUR + index),
       }),
     );
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       statusByExternal[`ext-${provider}`] = 'running';
     }
 
     const r = await reapAndReconcileSandboxes(NOW);
 
-    expect(r.skipped).toBe(3);
-    expect(r.lifecycleRenewed).toBe(3);
+    expect(r.skipped).toBe(2);
+    expect(r.lifecycleRenewed).toBe(2);
     expect(timeoutRenewals).toEqual([
-      { provider: 'daytona', externalId: 'ext-daytona' },
       { provider: 'platinum', externalId: 'ext-platinum' },
-      { provider: 'e2b', externalId: 'ext-e2b' },
+      { provider: 'daytona', externalId: 'ext-daytona' },
     ]);
     expect(stops).toEqual([]);
   });
 
   test('an expired box is stopped without renewing its provider lifecycle', async () => {
-    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() - 1) })];
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() - 1) })];
     statusByExternal['ext-1'] = 'running';
 
     const r = await reapAndReconcileSandboxes(NOW);
@@ -2700,7 +2701,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('a renewal failure never turns a live Kortix deadline into a stop decision', async () => {
-    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
     statusByExternal['ext-1'] = 'running';
     lifecycleRenewErrorByExternal['ext-1'] = new Error('provider renewal unavailable');
 
@@ -3106,6 +3107,19 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(stops).toEqual([]);
   });
 
+  test('a legacy e2b row reconciles locally as removed without a provider call', async () => {
+    // E2B support is discontinued; the DB enum still holds the value.
+    candidates = [candidate({ provider: 'e2b' as never })];
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.reconciled).toBe(1);
+    expect(statusCalls).toEqual([]);
+    expect(endedCompute).toEqual(['sb-1']);
+    expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
+    expect(stops).toEqual([]);
+  });
+
   test('a failed provider.stop closes NOTHING — no status flip, no billing close', async () => {
     candidates = [candidate({ deadlineAt: new Date(NOW.getTime() - HOUR) })];
     statusByExternal['ext-1'] = 'running';
@@ -3231,13 +3245,13 @@ describe('reapOrphanProviderBoxes', () => {
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
     managedBoxes = [{ externalId: 'daytona-orphan', createdAt: hoursAgo(10) }];
-    e2bManagedBoxes = [{ externalId: 'e2b-orphan', createdAt: hoursAgo(10) }];
+    platinumManagedBoxes = [{ externalId: 'platinum-orphan', createdAt: hoursAgo(10) }];
 
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stopsByProvider).toEqual([
+      { provider: 'platinum', externalId: 'platinum-orphan' },
       { provider: 'daytona', externalId: 'daytona-orphan' },
-      { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
     expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });

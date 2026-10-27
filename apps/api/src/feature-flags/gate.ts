@@ -3,7 +3,7 @@
  *
  * Usage, ALWAYS after membership authz (so non-members learn nothing):
  *
- *   const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
+ *   const gate = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
  *   if (gate) return gate;
  *
  * Every gated route rejects identically: 403 with the machine-readable
@@ -31,9 +31,7 @@ export function featureDisabledBody(key: FeatureFlagKey): {
   const def = featureFlagDef(key);
   return {
     error: def?.derivedFrom
-      ? `${def.name} is not enabled for this organization.`
-      : def?.scope === 'organization'
-      ? `${def.name} is not enabled for this organization. An organization admin can enable it in Settings → Feature flags.`
+      ? `${def.name} is not enabled for this project. Turn on Volumes in Settings → Feature flags.`
       : def?.catalogHidden
       ? `${def.name} is not enabled for this project. Contact Kortix to enable it.`
       : `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,

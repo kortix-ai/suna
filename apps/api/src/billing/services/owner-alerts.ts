@@ -1,11 +1,11 @@
 /**
- * Email the owners of an account about its billing (KRTX-1718). `billing.write`
- * is owner-only by default, so the owners are the people who can add credits
- * or fix a card. One helper for every billing alert: auto top-up turned off,
- * a member asking for credits.
+ * Email the billing managers of an account (KRTX-1718): the owners and admins,
+ * the two roles that hold `billing.write` and can add credits, fix a card or
+ * accept a plan. One helper for every billing alert: auto top-up turned off,
+ * a member asking for credits, a trial or contract about to end.
  */
 import { accounts } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../../accounts/core/owner-emails';
 import { config } from '../../config';
 import { accountRoleMap } from '../../iam/read-models';
@@ -32,19 +32,22 @@ export function billingPaneUrl(accountId: string): string {
 }
 
 /**
- * Email every owner of the account the message `compose` builds from the
- * account's name. Returns how many emails were handed to the transport.
+ * Email every billing manager (owner or admin) of the account the message
+ * `compose` builds from the account's name. Returns how many emails were
+ * handed to the transport.
  */
-export async function emailAccountOwners(
+export async function emailBillingManagers(
   accountId: string,
   compose: (accountName: string) => Omit<EmailMessage, 'to'>,
 ): Promise<number> {
-  const owners = [...(await accountRoleMap(accountId))]
-    .filter(([, role]) => role === 'owner')
+  let managers = [...(await accountRoleMap(accountId))]
+    .filter(([, role]) => role === 'owner' || role === 'admin')
     .map(([userId]) => userId);
-  if (owners.length === 0) return 0;
+  // A Suna-era account still billed has its owner only in basejump.account_user.
+  if (managers.length === 0) managers = await legacyOwners(accountId);
+  if (managers.length === 0) return 0;
   const [emails, [account]] = await Promise.all([
-    lookupEmailsByUserIds(owners),
+    lookupEmailsByUserIds(managers),
     db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, accountId)).limit(1),
   ]);
   const recipients = [...new Set([...emails.values()].filter((email): email is string => !!email))];
@@ -52,4 +55,12 @@ export async function emailAccountOwners(
   const message = compose(account?.name?.trim() || 'your Kortix account');
   await Promise.all(recipients.map((to) => send({ ...message, to: [to] })));
   return recipients.length;
+}
+
+async function legacyOwners(accountId: string): Promise<string[]> {
+  const rows = (await db.execute(sql`
+    SELECT user_id::text AS user_id FROM basejump.account_user
+     WHERE account_id = ${accountId}::uuid AND account_role = 'owner'
+  `)) as unknown as Array<{ user_id: string }>;
+  return rows.map((row) => row.user_id);
 }

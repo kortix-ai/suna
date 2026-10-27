@@ -15,10 +15,13 @@ import { STRIP_FORWARD_HEADERS, clientResponseHeaders } from '../preview-respons
 import { EFFECTIVE_MESSAGE_ID_HEADER } from '../prompt-wire-id-repair';
 import { proxyAttemptTimeoutMs } from '../preview-retry-budget';
 import { releasePromptDelivery } from '../prompt-dedupe';
-import { classifyRuntimeRequest, revertBodyMessageId } from '../runtime-request';
+import { classifyRuntimeRequest } from '../runtime-request';
 import { carriesSessionData } from '../session-data-ports';
 import { logger } from '../../lib/logger';
 import { recordSseStreamEnd, trackSseBytes } from '../sse-stall';
+import { canAccessSandboxSession } from '../../shared/preview-ownership';
+import { sessionStreamAccessCheck } from '../../shared/space-access';
+import { endStreamOnRevoke } from '../../shared/stream-access-recheck';
 import type { ForwardRequest, ForwardState } from './context';
 
 // The upstream hop itself: the request headers sent to the box, the bounded
@@ -256,7 +259,7 @@ export async function respondFromUpstream(
     // second header — see that module's doc for why.
     recordTurnStageMarks(summary.marks);
   }
-  await recordAcceptedRewind(req, state, upstream);
+  await closeAnsweredQuestion(req, upstream);
   // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
   // happened before the forward (see above); this is the other
   // control-plane-observed signal: an authenticated account member driving
@@ -394,8 +397,28 @@ export async function respondFromUpstream(
   // sandbox so the next connect re-resolves ingress — see `sse-stall.ts`.
   if (isSseEventStreamRequest && upstream.ok && upstream.body) {
     respHeaders.delete('content-length');
+    const tracked = trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes));
+    // Checked at connect only, the stream would outlive a removal from the
+    // session's private channel or a revoked share: re-check every 60 s and
+    // end it when access is gone.
+    const body =
+      access.kind === 'principal'
+        ? endStreamOnRevoke(
+            tracked,
+            sessionStreamAccessCheck(record.projectId, record.sessionId, () =>
+              canAccessSandboxSession({
+                sessionId: record.sessionId,
+                projectId: record.projectId,
+                accountId: record.accountId,
+                userId: access.userId,
+                callerSessionId: access.callerSessionId ?? null,
+                boundCredentialSessionId: access.boundCredentialSessionId,
+              }),
+            ),
+          )
+        : tracked;
     return new Response(
-      trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes)),
+      body,
       {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -420,39 +443,24 @@ export async function respondFromUpstream(
 }
 
 /**
- * A rewind OpenCode ACCEPTED: record (`revert`) or clear (`unrevert`) the
- * transcript mirror's rewind marker, the only licence a capture has to delete
- * saved rows. Awaited before the client hears the answer, so the capture of
- * the prompt that commits the rewind already sees it; the marker lives in
- * Postgres, so every API replica sees it. pi answers 501: nothing recorded.
+ * A client answered or dismissed an agent question (web, mobile, SDK and CLI
+ * all reply through this proxy). The runtime no longer waits on it, so its
+ * stored copy stops counting as waiting on a person (KRTX-1739). A 404 means
+ * the runtime holds no such question any more: that wait is over too. Awaited
+ * before the client hears the answer, so its next needs-input read is current.
  */
-async function recordAcceptedRewind(req: ForwardRequest, state: ForwardState, upstream: Response): Promise<void> {
-  if (!upstream.ok || !carriesSessionData(req.upstreamPort)) return;
-  const rewind = classifyRuntimeRequest(req.method, req.remainingPath);
-  if (rewind.kind !== 'revert' && rewind.kind !== 'unrevert') return;
-  const messageId = rewind.kind === 'revert' ? revertBodyMessageId(state.requestBody) : null;
-  if (rewind.kind === 'revert' && !messageId) return;
-  // Three tries, 100 ms then 400 ms apart. The rewind itself succeeded either
-  // way. A lost `revert` write only keeps the rewound rows in saved history.
-  // A lost `unrevert` clear leaves a stale marker: a capture spends it only
-  // on a read that lacks the marker message AND lists a newer one, and then
-  // deletes only rows from the marker onward that the read lacks.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const { setTranscriptRewindMarker } = await import('../../projects/surface');
-      await setTranscriptRewindMarker(req.record.sessionId, rewind.runtimeSessionId, messageId);
-      return;
-    } catch (err) {
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 100 : 400));
-        continue;
-      }
-      logger.warn('[transcript-mirror] rewind marker not recorded', {
-        session_id: req.record.sessionId,
-        kind: rewind.kind,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return;
-    }
+async function closeAnsweredQuestion(req: ForwardRequest, upstream: Response): Promise<void> {
+  if (!(upstream.ok || upstream.status === 404) || !carriesSessionData(req.upstreamPort)) return;
+  const answered = classifyRuntimeRequest(req.method, req.remainingPath);
+  if (answered.kind !== 'question-answer') return;
+  try {
+    const { clearOpenQuestions } = await import('../../projects/surface');
+    await clearOpenQuestions(req.record.sessionId, { requestId: answered.requestId });
+  } catch (err) {
+    logger.warn('[turn-question] answered question not closed', {
+      session_id: req.record.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
+

@@ -13,7 +13,7 @@
  * a health fetch failure) gets `{ admitted: true }` rather than blocking every
  * session open on this gate's own availability — the same shape as every other
  * "must not throw" convergence lane in this codebase
- * (`convergeBeforeTurnStart`, `convergeAssetsInBackground`). A box that FAILED
+ * (`convergeConfigIfBehind`, `convergeAssetsInBackground`). A box that FAILED
  * to answer at all is handled inside `evaluateAdmission` via
  * `parseActualRuntime`'s tolerant "reports nothing" default, which refuses —
  * this catch is for the admission PLUMBING breaking, not for the box.

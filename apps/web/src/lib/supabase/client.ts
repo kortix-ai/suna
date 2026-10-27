@@ -10,8 +10,7 @@ import { authCookieOptions, isInExtensionPanel, writePanelMarker } from './panel
  * preview, where the browser deliberately hits the same origin it was served
  * from and the preview proxy (next.config.ts: /supabase/* -> in-sandbox
  * Supabase) forwards the request. supabase-js requires an ABSOLUTE URL, so
- * resolve the relative value against the current origin. Mirrors
- * getAbsoluteBackendUrl() in opencode-sdk.ts.
+ * resolve the relative value against the current origin.
  */
 function resolveBrowserSupabaseUrl(url: string): string {
   if (url.startsWith('/') && typeof window !== 'undefined') {

@@ -11,13 +11,14 @@ import {
   appSiteFiles,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
+  AppArtifactStorageRefusedError,
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
   MAX_ARCHIVE_BYTES,
@@ -27,7 +28,7 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
-import { appVolumesSupported, destroyAppVolumes, listAppVolumes } from './volumes';
+import { chooseReleaseProvider, destroyAppVolumes, listAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -44,18 +45,24 @@ import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
-  appsOpenableByUser,
   appAccessSessionUrl,
-  filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
 } from './access';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
+import { accessibleApps } from './space-apps';
+import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manifest';
+import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
+import {
+  DEPRECATED_PROVIDER_CODE,
+  DEPRECATED_PROVIDER_ERROR,
+  isDeprecatedProvider,
+} from '../platform/providers/deprecated';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -99,6 +106,21 @@ const DisplaySchema = z.object({
   preview: z.enum(['live', 'none']).optional(),
   parent: z.string().regex(APP_SLUG, 'an App slug').optional(),
 }).strict();
+/** An external App's site: https only, no credentials in the URL. */
+const ExternalUrlSchema = z.string().url().max(2048).refine((value) => {
+  const url = new URL(value);
+  return url.protocol === 'https:' && !url.username && !url.password;
+}, 'an https URL without credentials');
+
+/** The create/PATCH warning for a site that refuses to be framed. */
+function framingWarnings(url: string, frameable: boolean): Array<{ code: string; message: string }> {
+  if (frameable) return [];
+  return [{
+    code: 'app_external_not_frameable',
+    message: `${new URL(url).host} does not allow other sites to frame it. Kortix opens it in a new tab.`,
+  }];
+}
+
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -287,10 +309,8 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       // Only the Apps the caller may see AND open: no card that is listed and
       // then refuses to open. An App left out answers 404 on GET, never 403.
-      const visible = await filterAppsVisibleToUser(rows, loaded.userId);
-      const openable = await appsOpenableByUser(visible, loaded.userId);
-      const accessible = visible.filter((row) => openable.has(row.appId));
-      return c.json({ apps: await appsJson(accessible, loaded.userId, openable) });
+      const accessible = await accessibleApps(rows, loaded.userId);
+      return c.json({ apps: await appsJson(accessible.rows, loaded.userId, accessible.openable) });
     },
   );
 
@@ -302,7 +322,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
@@ -417,10 +437,16 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, 'preview');
+      // An external App opens in a new tab when its site refuses a frame, so
+      // its URL is handed out whether or not it can be previewed.
+      const refusal = row.externalUrl ? null : capabilityRefusal(c, 'preview');
       if (refusal) return refusal;
       if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
         return c.json({ error: 'App access denied' }, 403);
+      }
+      // Hosted elsewhere: its own site signs people in. Kortix only decides who sees it.
+      if (row.externalUrl) {
+        return c.json({ url: row.externalUrl, expires_at: new Date(Date.now() + 24 * 3_600_000).toISOString() });
       }
       // A PASSWORD App gets the bare URL: the door is the password prompt, and a
       // Kortix session cannot stand in for knowing the secret.
@@ -443,7 +469,10 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
-      description: 'Account credits pay for App compute: there is no per-App budget.',
+      description: 'Account credits pay for App compute: there is no per-App budget. `external_url` (https) creates an ' +
+        'external App: Kortix lists and frames that site and never deploys it. It runs no compute and does not count ' +
+        'toward the App limit. A site that refuses framing (X-Frame-Options, CSP frame-ancestors) gets ' +
+        '`capabilities: []` and a warning: Kortix opens it in a new tab.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -454,6 +483,7 @@ export function registerAppsRoutes(): void {
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
           uses: UsesSchema.default([]),
+          external_url: ExternalUrlSchema.optional(),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -466,14 +496,42 @@ export function registerAppsRoutes(): void {
       const slug = body.slug.toLowerCase();
       if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
       const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
-      try {
-        assertAppMachineWithinLimits(machine);
-        await assertAppQuotaAvailable(loaded.row.accountId);
-      } catch (error) {
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        throw error;
+      const externalUrl: string | null = body.external_url ?? null;
+      if (!externalUrl) {
+        try {
+          assertAppMachineWithinLimits(machine);
+          await assertAppQuotaAvailable(loaded.row.accountId);
+        } catch (error) {
+          const refusal = appLimitResponse(c, error);
+          if (refusal) return refusal;
+          throw error;
+        }
       }
+      const externalFrameable = externalUrl ? await probeFrameable(externalUrl, config.FRONTEND_URL) : false;
+      // kortix.yaml owns the declarable fields: what the request sets explicitly
+      // is committed to apps.<slug> before the row exists. An external App is
+      // declared listed, so the file says it is on the Apps page.
+      // Nothing reaches kortix.yaml before the request is known to be allowed:
+      // a slug another App holds is a 409 here (or the commit would rewrite that
+      // App's declared settings), and every `uses` link passes the visibility
+      // check first (or the next sync would apply a link the caller may not make).
+      const [taken] = await db.select({ appId: apps.appId }).from(apps)
+        .where(and(eq(apps.projectId, projectId), eq(apps.slug, slug), isNull(apps.deletedAt))).limit(1);
+      if (taken) return c.json({ error: 'An App with this slug already exists' }, 409);
+      if (body.uses.length) {
+        try {
+          await resolveAppLinks({ projectId, slug }, body.uses, loaded.userId);
+        } catch (error) {
+          if (!(error instanceof UnknownLinkedAppError)) throw error;
+          return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+        }
+      }
+      const declared = await commitAppFields(projectId, slug, {
+        ...manifestFieldsOf({ cpu: body.cpu, memory_gb: body.memory_gb, disk_gb: body.disk_gb, always_on: body.always_on }),
+        ...(body.uses.length ? { uses: body.uses } : {}),
+        ...(externalUrl ? { display: { listed: true } } : {}),
+      });
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
@@ -483,6 +541,10 @@ export function registerAppsRoutes(): void {
           cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
           alwaysOn,
+          externalUrl,
+          externalFrameable,
+          // An external App exists to be shown: it is on the Apps page from the start.
+          ...(externalUrl ? { display: { listed: true } } : {}),
         }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
@@ -498,7 +560,8 @@ export function registerAppsRoutes(): void {
         await db.delete(apps).where(eq(apps.appId, row.appId));
         return linked;
       }
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] }, 201);
+      const warnings = externalUrl ? framingWarnings(externalUrl, externalFrameable) : [];
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings }, 201);
     },
   );
 
@@ -513,7 +576,7 @@ export function registerAppsRoutes(): void {
           z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
         ]) } } },
       },
-      responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
+      responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 500, 503) },
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
@@ -532,7 +595,15 @@ export function registerAppsRoutes(): void {
       try {
         upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
       } catch (error) {
+        // The Storage status and message go to the log either way (KRTX-2981).
+        const cause = (error as { cause?: { status?: unknown; statusCode?: unknown; message?: unknown } }).cause;
+        const detail = { status: cause?.status ?? null, statusCode: cause?.statusCode ?? null, message: cause?.message ?? null };
+        if (error instanceof AppArtifactStorageRefusedError) {
+          logger.error('[apps] artifact storage refused the upload', detail);
+          return c.json({ error: error.message }, 500);
+        }
         if (error instanceof AppArtifactStorageUnavailableError) {
+          logger.warn('[apps] artifact storage unavailable', detail);
           return c.json({ error: error.message }, 503);
         }
         throw error;
@@ -590,7 +661,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
+        '`external_url` moves an external App to another https URL (409 for an App Kortix runs). `display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -600,6 +671,7 @@ export function registerAppsRoutes(): void {
           uses: UsesSchema.optional(),
           labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/)).max(10).optional(),
           display: DisplaySchema.optional(),
+          external_url: ExternalUrlSchema.optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
@@ -613,6 +685,12 @@ export function registerAppsRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
+      if (body.external_url !== undefined && !current.externalUrl) {
+        return c.json({ error: 'Only an external App has an external_url. Create a new App with external_url instead.', code: 'app_not_external' }, 409);
+      }
+      const externalFrameable = body.external_url !== undefined
+        ? await probeFrameable(body.external_url, config.FRONTEND_URL)
+        : undefined;
       const nextMachine = {
         cpuCores: body.cpu ?? current.cpuCores,
         memoryGb: body.memory_gb ?? current.memoryGb,
@@ -633,6 +711,10 @@ export function registerAppsRoutes(): void {
       // links and the row, so a refused PATCH changes nothing.
       const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
       if (links instanceof Response) return links;
+      // kortix.yaml owns these fields: commit them to apps.<slug> first; a
+      // refused commit writes nothing, so the row never disagrees with the file.
+      const declared = await commitAppFields(projectId, current.slug, manifestFieldsOf(body));
+      if (!declared.ok) return c.json({ error: declared.error, code: declared.code ?? 'manifest_write_failed' }, declared.status);
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
@@ -644,11 +726,13 @@ export function registerAppsRoutes(): void {
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
           ...(body.labels !== undefined ? { labels: [...new Set(body.labels as string[])] } : {}),
           ...(body.display !== undefined ? { display: body.display } : {}),
+          ...(body.external_url !== undefined ? { externalUrl: body.external_url, externalFrameable } : {}),
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });
       if (!row) return c.json({ error: 'Not found' }, 404);
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] });
+      const warnings = body.external_url !== undefined ? framingWarnings(body.external_url, externalFrameable!) : [];
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings });
     },
   );
 
@@ -677,6 +761,10 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
+      // kortix.yaml owns the App's block: remove it (and references to it) first,
+      // or the next `kortix apps deploy` would recreate the App from it.
+      const undeclared = await commitAppRemoval(projectId, row.slug);
+      if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
@@ -740,7 +828,7 @@ export function registerAppsRoutes(): void {
         body: { content: { 'application/json': { schema: z.object({
           artifact_id: z.string().uuid().optional(),
           source: SourceSchema,
-          provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
+          provider: z.enum(['platinum', 'daytona']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
           config: ReleaseConfigSchema.optional(),
@@ -757,7 +845,12 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, 'deployments', null, app);
+      if (refusal) return refusal;
       const body = c.req.valid('json');
+      if (isDeprecatedProvider(body.provider)) {
+        return c.json({ error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE }, 400);
+      }
       if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
         eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
@@ -769,16 +862,27 @@ export function registerAppsRoutes(): void {
       const source = sourceFromWire(body.source);
       // A static site runs no machine: it has no release config.
       let releaseConfig = null;
+      let hostingProvider: string | null = body.provider ?? null;
       if (source.kind !== 'static') {
         const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
         if ('issues' in resolved) {
           return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
         }
         releaseConfig = resolved.config;
-        const provider = body.provider ?? config.getDefaultProvider();
-        if (releaseConfig.mounts.length > 0 && !appVolumesSupported(provider)) {
-          return c.json({ error: `Volumes need the platinum provider, not ${provider}.`, code: 'app_volumes_unsupported' }, 400);
+        const [latest] = await db.select({ provider: appDeployments.hostingProvider }).from(appDeployments)
+          .where(and(eq(appDeployments.appId, appId), isNotNull(appDeployments.hostingProvider)))
+          .orderBy(desc(appDeployments.version)).limit(1);
+        const choice = chooseReleaseProvider({
+          requested: body.provider,
+          hasMounts: releaseConfig.mounts.length > 0,
+          previous: config.ALLOWED_SANDBOX_PROVIDERS.find((name) => name === latest?.provider),
+          platinumEnabled: config.isPlatinumEnabled(),
+          platformDefault: config.getDefaultProvider(),
+        });
+        if (!choice.ok) {
+          return c.json({ error: `Volumes need the platinum provider, not ${choice.provider}.`, code: 'app_volumes_unsupported' }, 400);
         }
+        hostingProvider = choice.provider;
       }
       const deployment = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
@@ -787,7 +891,7 @@ export function registerAppsRoutes(): void {
         const version = Number(versionRow?.value ?? 0) + 1;
         const [row] = await tx.insert(appDeployments).values({
           appId, artifactId: artifact.artifactId, version, status: 'queued',
-          sourceKind: source.kind, hostingProvider: body.provider ?? null,
+          sourceKind: source.kind, hostingProvider,
           createdBy: loaded.userId,
           sourceSessionId: callerKortixSessionId(c),
           actorType: appDeploymentActorType(c),
@@ -816,7 +920,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -836,7 +940,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -863,7 +967,7 @@ export function registerAppsRoutes(): void {
     }),
     async (c: any) => {
       const { projectId, appId, deploymentId } = c.req.param();
-      const loaded = await authorizedProject(c, projectId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -1081,7 +1185,7 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, 'rollback');
+      const refusal = capabilityRefusal(c, 'rollback', null, app);
       if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [target] = await db.select().from(appDeployments).where(and(

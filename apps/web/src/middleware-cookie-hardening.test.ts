@@ -7,7 +7,7 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
   ENVIRONMENT_PROTECTION_USERNAME,
 } from '@/lib/environment-protection';
-import { AUTH_BOUNCE_COOKIE } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { middleware } from './middleware';
 
 /**

@@ -22,12 +22,18 @@ const RECENT_PROMPT_IDS = 512
  */
 const STEER_MIN_OPENCODE_VERSION = '1.18.15'
 
-/** True when this OpenCode release can steer, null when the version is unknown. */
+/**
+ * True when this OpenCode release can steer, null when the version is unknown.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeSupportsSteer(version: string | null): boolean | null {
   return version ? Bun.semver.satisfies(version, `>=${STEER_MIN_OPENCODE_VERSION}`) : null
 }
 
-/** The running OpenCode's version (`GET /global/health`, memoised by the state store). */
+/**
+ * The running OpenCode's version (`GET /global/health`, memoised by the state store).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const runningOpencodeVersion = async (): Promise<string | null> => (await runtimeStateStore()?.opencodeVersion()) ?? null
 
 /**
@@ -37,7 +43,10 @@ export const runningOpencodeVersion = async (): Promise<string | null> => (await
  */
 const unreadSteers = new Set<string>()
 
-/** Test seam. */
+/**
+ * Test seam.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetSteerWitnessForTests(): void {
   unreadSteers.clear()
 }
@@ -47,6 +56,7 @@ export function resetSteerWitnessForTests(): void {
  * message. OpenCode parents a step on the NEWEST user message and answers
  * everything before it, so every older unread steer (the set keeps send
  * order) was read by the same step.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function observeSteerRead(event: { type?: string; properties?: unknown }): void {
   if (event.type !== 'message.updated' || unreadSteers.size === 0) return
@@ -86,6 +96,7 @@ async function call(
 
 const segment = encodeURIComponent
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createOpenCodeTurnService(
   proxy: Pick<HarnessProxyService, 'forward'>,
   workspace: () => string,
@@ -97,6 +108,10 @@ export function createOpenCodeTurnService(
   // flight and one OpenCode has not listed yet; the message read covers a
   // daemon restart, because OpenCode persists the message.
   const recent = new Set<string>()
+  // replica-local: one daemon per box; the last prompt's `system` per session.
+  // OpenCode reads `system` from the latest user message, so a steer (a new
+  // user message) carries the turn's text again, or the rest of the turn runs without it.
+  const turnSystems = new Map<string, string>()
   let readFailureLogged = false
   const alreadyHeld = async (sessionId: string, messageId: string, directory: string): Promise<boolean> => {
     try {
@@ -133,6 +148,7 @@ export function createOpenCodeTurnService(
         ...(input.model ? { model: input.model } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.noReply ? { noReply: true } : {}),
+        ...(input.system ? { system: input.system } : {}),
       })
     } catch (err) {
       if (key) recent.delete(key)
@@ -151,6 +167,10 @@ export function createOpenCodeTurnService(
     async prompt(sessionId, input): Promise<HarnessTurnResponse> {
       const directory = input.directory ?? workspace()
       if (await duplicate(sessionId, input, directory)) return { status: 200, body: { deduplicated: true } }
+      if (!input.noReply) {
+        if (input.system) turnSystems.set(sessionId, input.system)
+        else turnSystems.delete(sessionId)
+      }
       return send(sessionId, input, directory)
     },
 
@@ -170,7 +190,7 @@ export function createOpenCodeTurnService(
       // Recorded before the send: the answering assistant message can follow at once.
       unreadSteers.add(input.messageId!)
       if (unreadSteers.size > RECENT_PROMPT_IDS) unreadSteers.delete(unreadSteers.values().next().value!)
-      const result = await send(sessionId, input, directory).catch((err) => {
+      const result = await send(sessionId, { ...input, system: turnSystems.get(sessionId) }, directory).catch((err) => {
         unreadSteers.delete(input.messageId!)
         throw err
       })

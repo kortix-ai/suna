@@ -159,6 +159,12 @@ variable "use_fargate_spot" {
   default     = false
 }
 
+variable "force_new_deployment" {
+  description = "Force a new deployment on apply. Required on the apply that changes the capacity-provider strategy."
+  type        = bool
+  default     = false
+}
+
 variable "fargate_base_on_demand" {
   description = <<-EOT
     Number of tasks pinned to on-demand FARGATE when use_fargate_spot = true.
@@ -180,12 +186,6 @@ variable "fargate_base_on_demand" {
     condition     = var.fargate_base_on_demand >= 0 && floor(var.fargate_base_on_demand) == var.fargate_base_on_demand
     error_message = "fargate_base_on_demand must be a non-negative whole number."
   }
-}
-
-variable "container_insights" {
-  description = "Enable CloudWatch Container Insights."
-  type        = bool
-  default     = true
 }
 
 variable "log_retention_days" {
@@ -295,4 +295,40 @@ variable "ses_send_region" {
     condition     = length(var.ses_send_identity_names) == 0 || length(trimspace(var.ses_send_region)) > 0
     error_message = "ses_send_region is required when ses_send_identity_names is not empty."
   }
+}
+
+variable "capture_enabled" {
+  description = "Grant the TASK role the Kortix Capture store (modules/capture-store). A literal bool so the grant's count is known at plan time even when the store is created in the same apply."
+  type        = bool
+  default     = false
+}
+
+variable "capture_bucket_arn" {
+  description = "ARN of the capture bucket (modules/capture-store bucket_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "capture_queue_arn" {
+  description = "ARN of the capture manifest-event queue (modules/capture-store queue_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "capture_device_role_arn" {
+  description = "ARN of the capture device role the API assumes to issue device credentials (modules/capture-store device_role_arn). Used only when capture_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "service_discovery" {
+  description = "Cloud Map registration: { namespace_id }. When set, every task registers an A record <container_name>.<namespace> so callers inside the VPC reach it without the ALB or Cloudflare. null = no registration. An object, so count stays known when the namespace is created in the same apply."
+  type        = object({ namespace_id = string })
+  default     = null
+}
+
+variable "extra_security_group_ids" {
+  description = "More security groups for the tasks, besides the module's own. Environment roots use them for VPC-internal rules, because the module's inline rules are authoritative."
+  type        = list(string)
+  default     = []
 }

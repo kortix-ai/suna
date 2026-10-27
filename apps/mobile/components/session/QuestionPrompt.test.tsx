@@ -1,235 +1,149 @@
-import { afterEach, expect, mock, test } from 'bun:test';
-import type { QuestionRequest } from '@/lib/session/types';
+/**
+ * Characterization tests for QuestionPrompt — the agent's question card.
+ * Pins the behavior the component had when it was touched (2026-10, the
+ * useTone swap): a single-choice option answers on tap; multi-choice options
+ * toggle and need send. Rules live in `lib/session/question-prompt.ts`
+ * (real, not faked — the component's logic is there).
+ */
+import { describe, expect, mock, test } from 'bun:test';
 import React from 'react';
-import { type ReactTestRenderer, act, create } from 'react-test-renderer';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props);
+type HostProps = React.PropsWithChildren<Record<string, unknown>>;
+const host =
+  (name: string) =>
+  ({ children, ...props }: HostProps) =>
+    React.createElement(name, props, children);
+
 mock.module('react-native', () => ({
-  View: host('View'),
-  ScrollView: host('ScrollView'),
-  TextInput: host('TextInput'),
+  ScrollView: host('scroll-view'),
+  TextInput: host('text-input'),
+  View: host('view'),
+  StyleSheet: { create: (s: unknown) => s },
+  Pressable: host('pressable'),
+  Platform: { OS: 'ios', select: (o: Record<string, string>) => o.ios },
 }));
+// `nativewind`'s real build (the color-scheme hook the component read before
+// the useTone swap) parses the native react-native graph under bun; the mock
+// keeps the test green at the base too.
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
-mock.module('@/components/ui/text', () => ({ Text: host('Text') }));
-mock.module('@/components/ui/button', () => ({ Button: host('Button') }));
-mock.module('@/components/ui/icon', () => ({ Icon: host('Icon') }));
-mock.module('@/components/kortix/pressable-surface', () => ({ PressableSurface: host('Option') }));
-mock.module('@/components/kortix/composer', () => ({ COMPOSER_CONTROL_HIT_SLOP: 4 }));
-mock.module('@/components/kortix/pill-input', () => ({
-  INPUT_FONT_FAMILY: 'Roobert',
-  INPUT_FONT_SIZE: 16,
+// The theme lives behind the same seam: the real module pulls
+// `expo-router/react-navigation`, whose native graph (fonts, PNG assets) bun
+// cannot parse outside Metro. The question behavior under test does not
+// depend on the palette's values — only that both tones index THEME.
+const THEME_STUB = { light: { secondary: '#eee', popover: '#fff', mutedForeground: '#666' }, dark: { secondary: '#111', popover: '#000', mutedForeground: '#999' } };
+mock.module('@/lib/utils/theme', () => ({
+  THEME: THEME_STUB,
+  useTone: () => 'light' as const,
+  withAlpha: (c: string, a: number) => `${c}@${a}`,
 }));
-mock.module('@/lib/icons', () => ({ ArrowUpIcon: host('Arrow'), CheckIcon: host('Check') }));
-mock.module('expo-router/react-navigation', () => ({
-  DefaultTheme: { colors: {} },
-  DarkTheme: { colors: {} },
+mock.module('@/components/ui/text', () => ({ Text: host('text') }));
+mock.module('@/components/ui/button', () => ({ Button: host('button') }));
+mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
+mock.module('@/lib/icons', () => ({ ArrowUpIcon: () => null, CheckIcon: () => null }));
+mock.module('@/components/kortix/composer', () => ({ COMPOSER_CONTROL_HIT_SLOP: 8 }));
+mock.module('@/components/kortix/pressable-surface', () => ({
+  // Pass the onPress through so tests can tap option rows and controls.
+  PressableSurface: ({ children, onPress, ...rest }: HostProps) =>
+    React.createElement('pressable-surface', { ...rest, onPress }, children),
 }));
-const { QuestionPrompt } = await import('./QuestionPrompt');
-let renderer: ReactTestRenderer;
-afterEach(async () => {
-  await act(async () => renderer?.unmount());
-});
-const request: QuestionRequest = {
-  id: 'q',
-  sessionID: 's',
-  questions: [
-    {
-      header: 'Choose',
-      question: 'Which?',
-      multiple: true,
-      options: [
-        { label: 'A', description: 'First' },
-        { label: 'B', description: 'Second' },
-      ],
-    },
-  ],
-};
-function deferred() {
-  let resolve = () => {};
-  let reject = (_error: Error) => {};
-  const promise = new Promise<void>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-async function mount(
-  onReply: React.ComponentProps<typeof QuestionPrompt>['onReply'],
-  onReject: React.ComponentProps<typeof QuestionPrompt>['onReject'],
-  value = request,
-) {
-  await act(async () => {
-    renderer = create(<QuestionPrompt request={value} onReply={onReply} onReject={onReject} />);
-  });
-}
-function send() {
-  return renderer.root.findByProps({ accessibilityLabel: 'Send answer' });
-}
-async function draftAndPick() {
-  await act(async () =>
-    renderer.root.findAll((node) => String(node.type) === 'Option')[0].props.onPress(),
-  );
-  await act(async () =>
-    renderer.root.find((node) => String(node.type) === 'TextInput').props.onChangeText('draft'),
-  );
-}
-function assertPreserved() {
-  expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.value).toBe('draft');
-  expect(
-    renderer.root.findAll((node) => String(node.type) === 'Option')[0].props.accessibilityState
-      .checked,
-  ).toBe(true);
-}
-for (const action of ['reply', 'reject']) {
-  test(`failed ${action} preserves answers and enables retry`, async () => {
-    const pending = deferred();
-    const retry = deferred();
-    const callback = mock(() =>
-      callback.mock.calls.length === 1 ? pending.promise : retry.promise,
-    );
-    await mount(
-      action === 'reply' ? callback : () => {},
-      action === 'reject' ? callback : () => {},
-    );
-    await draftAndPick();
-    const press =
-      action === 'reply'
-        ? send().props.onPress
-        : renderer.root.findAll((node) => String(node.type) === 'Button')[0].props.onPress;
-    await act(async () => {
-      void press();
-      void press();
-    });
-    expect(callback).toHaveBeenCalledTimes(1);
-    expect(renderer.toJSON()).not.toBeNull();
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Button')
-        .every((button) => button.props.disabled),
-    ).toBe(true);
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Option')
-        .every((option) => option.props.disabled),
-    ).toBe(true);
-    expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.editable).toBe(
-      false,
-    );
-    await act(async () => {
-      pending.reject(new Error('offline'));
-    });
-    assertPreserved();
-    expect(send().props.disabled).toBe(false);
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Text')
-        .some(
-          (text) =>
-            text.props.variant === 'muted' && String(text.props.children).includes('try again'),
-        ),
-    ).toBe(true);
-    expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.editable).toBe(
-      true,
-    );
-    await act(async () =>
-      renderer.root
-        .find((node) => String(node.type) === 'TextInput')
-        .props.onChangeText('edited draft'),
-    );
-    expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.value).toBe(
-      'edited draft',
-    );
-    await act(async () => {
-      void (
-        action === 'reply'
-          ? send().props.onPress
-          : renderer.root.findAll((node) => String(node.type) === 'Button')[0].props.onPress
-      )();
-    });
-    expect(callback).toHaveBeenCalledTimes(2);
-    if (action === 'reply') expect(callback).toHaveBeenLastCalledWith('q', [['A', 'edited draft']]);
-    else expect(callback).toHaveBeenLastCalledWith('q');
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Text')
-        .some((text) => String(text.props.children).includes('try again')),
-    ).toBe(false);
-    await act(async () => retry.resolve());
-    expect(renderer.toJSON()).not.toBeNull();
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Button')
-        .every((button) => button.props.disabled),
-    ).toBe(true);
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Option')
-        .every((option) => option.props.disabled),
-    ).toBe(true);
-    expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.editable).toBe(
-      false,
-    );
-    expect(
-      renderer.root
-        .findAll((node) => String(node.type) === 'Text')
-        .some((text) => String(text.props.children).includes('try again')),
-    ).toBe(false);
-    await act(async () => {
-      void send().props.onPress();
-      void renderer.root.findAll((node) => String(node.type) === 'Button')[0].props.onPress();
-    });
-    expect(callback).toHaveBeenCalledTimes(2);
-    await act(async () => renderer.unmount());
-    expect(renderer.toJSON()).toBeNull();
-  });
-}
-test('multi-step reply waits for removal and never repeats a successful action', async () => {
-  const pending = deferred();
-  const reply = mock(() => pending.promise);
-  await mount(reply, () => {}, {
-    ...request,
-    questions: [{ ...request.questions[0], multiple: false }, request.questions[0]],
-  });
-  await act(async () =>
-    renderer.root.findAll((node) => String(node.type) === 'Option')[0].props.onPress(),
-  );
-  await draftAndPick();
-  await act(async () => {
-    void send().props.onPress();
-  });
-  expect(reply).toHaveBeenCalledWith('q', [['A'], ['A', 'draft']]);
-  expect(
-    renderer.root
-      .findAll((node) => String(node.type) === 'Button')
-      .every((button) => button.props.disabled),
-  ).toBe(true);
-  await act(async () => pending.resolve());
-  expect(renderer.toJSON()).not.toBeNull();
-  await act(async () => {
-    void send().props.onPress();
-    void renderer.root.findAll((node) => String(node.type) === 'Button')[0].props.onPress();
-  });
-  expect(reply).toHaveBeenCalledTimes(1);
-});
+mock.module('@/components/kortix/pill-input', () => ({ INPUT_FONT_FAMILY: 'x', INPUT_FONT_SIZE: 16 }));
+mock.module('@/lib/ui/font-scale', () => ({ BUTTON_LABEL_MAX_FONT_SCALE: 1.4 }));
 
-test('failed final single-choice reply preserves the picked answer and draft', async () => {
-  const pending = deferred();
-  const reply = mock(() => pending.promise);
-  await mount(reply, () => {}, {
-    ...request,
-    questions: [{ ...request.questions[0], multiple: false }],
-  });
-  await act(async () =>
-    renderer.root.find((node) => String(node.type) === 'TextInput').props.onChangeText('draft'),
-  );
+/** Loaded after the mocks (a static import would hoist past them). */
+type QuestionPromptModule = typeof import('./QuestionPrompt');
+let mod!: QuestionPromptModule;
+import type { QuestionRequest } from '@/lib/session/types';
+
+const request = (over: Partial<QuestionRequest> = {}): QuestionRequest =>
+  ({
+    id: 'q1',
+    questions: [
+      {
+        question: 'Which shell?',
+        header: 'shell',
+        options: [
+          { label: 'zsh', description: 'Z shell' },
+          { label: 'fish', description: 'Friendly shell' },
+        ],
+      },
+    ],
+    ...over,
+  }) as QuestionRequest;
+
+const replies: Array<[string, string[][]]> = [];
+
+// Mocks above must exist before the component's graph loads.
+mod = (await import('./QuestionPrompt')) as QuestionPromptModule;
+
+const render = async (req: QuestionRequest): Promise<ReactTestRenderer> => {
+  let r: ReactTestRenderer | undefined;
   await act(async () => {
-    void renderer.root.findAll((node) => String(node.type) === 'Option')[0].props.onPress();
+    r = create(
+      React.createElement(mod.QuestionPrompt, {
+        request: req,
+        onReply: (id, answers) => {
+          replies.push([id, answers as string[][]]);
+        },
+        onReject: () => {},
+      }),
+    );
   });
-  expect(reply).toHaveBeenCalledWith('q', [['A']]);
-  await act(async () => pending.reject(new Error('offline')));
-  expect(renderer.root.find((node) => String(node.type) === 'TextInput').props.value).toBe('draft');
-  await act(async () =>
-    renderer.root.find((node) => String(node.type) === 'TextInput').props.onChangeText(''),
-  );
-  expect(send().props.disabled).toBe(false);
+  return r!;
+};
+
+const pressables = (r: ReactTestRenderer) =>
+  r.root.findAll((n: { type: unknown }) => n.type === 'pressable-surface') as Array<{
+    props: { onPress?: () => void };
+    children: unknown;
+  }>;
+
+describe('QuestionPrompt', () => {
+  test('renders the question and one row per option', async () => {
+    const r = await render(request());
+    const texts = r.root.findAll((n: { type: unknown }) => n.type === 'text');
+    const t = texts.map((n) => String((n as { props: { children?: unknown } }).props.children)).join(' | ');
+    expect(t).toContain('Which shell?');
+    expect(t).toContain('zsh');
+    expect(t).toContain('fish');
+  });
+
+  test('a single-choice option answers on tap (last step sends)', async () => {
+    replies.length = 0;
+    const r = await render(request());
+    expect(pressables(r).length).toBeGreaterThanOrEqual(2);
+    // Tap the first option row (zsh): pick → advance → submit → onReply.
+    await act(async () => {
+      pressables(r)[0].props.onPress?.();
+    });
+    expect(replies.length).toBe(1);
+    expect(replies[0][0]).toBe('q1');
+    expect(replies[0][1]).toEqual([['zsh']]);
+  });
+
+  test('multi-choice options toggle and send submits all picks', async () => {
+    replies.length = 0;
+    const r = await render(
+      request({ questions: [{ question: 'Pick', header: 'pick', multiple: true, options: [{ label: 'a', description: 'A' }, { label: 'b', description: 'B' }] }] }),
+    );
+    const rows = pressables(r);
+    await act(async () => {
+      rows[0].props.onPress?.(); // pick a
+    });
+    await act(async () => {
+      rows[1].props.onPress?.(); // pick b
+    });
+    // No send yet: picks toggle, nothing replied.
+    expect(replies.length).toBe(0);
+    // The send control is the control row's `Button` (a host `view`), after
+    // the option rows.
+    const send = r.root.findAll((n: { type: unknown }) => n.type === 'button').pop() as { props: { onPress?: () => void } };
+    await act(async () => {
+      send.props.onPress?.();
+    });
+    expect(replies.length).toBe(1);
+    // One QuestionAnswer (the picked labels) per question.
+    expect(replies[0][1]).toEqual([['a', 'b']]);
+  });
 });

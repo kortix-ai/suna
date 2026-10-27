@@ -51,6 +51,7 @@ jobs:
   version:
     name: Resolve version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     # Runs on every push to `prod` (i.e. a merged, reviewed release PR) and on
     # manual dispatch.
     outputs:
@@ -181,17 +182,28 @@ jobs:
       cloudflare: true
 
   # ── Raise the "release in progress" banner ──────────────────────────────────
-  # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
-  # for members; admins can still dismiss). Best-effort and non-blocking: it never
-  # gates or fails the deploy, and it
-  # never clobbers an active incident banner (see scripts/ci-maintenance-banner.sh).
-  # Cleared again by `maintenance-banner-off`, but ONLY once the rollout is green.
+  # Show users a CRITICAL banner while the ECS roll changes prod traffic
+  # (non-dismissible for members; admins can still dismiss). It waits for the
+  # same gates as `deploy-ecs` and starts in parallel with it, so a run that
+  # fails in Terraform, retag or migrations never raises it. Best-effort and
+  # non-blocking: it never gates or fails the deploy, and it never clobbers an
+  # active incident banner (see scripts/ci-maintenance-banner.sh).
+  # Cleared again by `maintenance-banner-off`, which runs when the run ends,
+  # whatever the result.
   # Requires the PROD_MAINTENANCE_TOKEN secret (a platform-admin bearer); if it
   # is unset the job is a no-op, so the release still works before it is added.
   maintenance-banner-on:
     name: Rollout banner (raise)
-    needs: version
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api]
+    # Same gate as deploy-ecs: raise the banner only when the roll will start.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
@@ -231,6 +243,7 @@ jobs:
     name: Re-tag staged → v${{ needs.version.outputs.version }}
     needs: version
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -302,6 +315,35 @@ jobs:
             fi
             echo "✓ $IMAGE:${VERSION} (from $SRC_TAG, digest $NEW_DIGEST verified)"
           done
+
+      # Sign what was just published. Deploy-dev has signed its images for a
+      # while; the RELEASE images — the ones a self-hosted box pulls and runs —
+      # shipped unsigned, so a puller had no way to check that the bytes came
+      # from this repository's workflow rather than from whoever controls the
+      # Docker Hub tag (pentest 2026-10-22, "prod images are mutable and
+      # unsigned"). Signed by digest, keyless, into the public transparency log.
+      - name: Check out the signing script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/ci
+          path: .release-scripts
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign release images (keyless)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            DIGEST="$(docker buildx imagetools inspect "$IMAGE:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            case "$DIGEST" in sha256:*) ;; *) echo "::error::could not resolve digest for $IMAGE:${VERSION} (got: ${DIGEST:-<empty>})"; exit 1 ;; esac
+            # Sign by digest, never by tag: the tag is mutable, the digest is
+            # the exact manifest this release verified above.
+            bash .release-scripts/scripts/ci/cosign-sign-attest.sh "$IMAGE@${DIGEST}"
+            echo "✓ signed $IMAGE@${DIGEST}"
+          done
       - name: Summary
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -329,6 +371,7 @@ jobs:
     name: Verify deployed image CODE matches the release commit
     needs: [version, retag-images]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -377,14 +420,15 @@ jobs:
     name: Build prod CLI (all targets)
     needs: version
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -454,12 +498,14 @@ jobs:
           if-no-files-found: error
 
   # ── Publish the public npm packages ─────────────────────────────────────────
-  # Three packages ship to npm on every version release, in lockstep with the
+  # Four packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
+  #   @kortix/ui            — the React component library and session UI; peers
+  #                           on @kortix/sdk@<version>
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
   # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
@@ -488,6 +534,7 @@ jobs:
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -496,9 +543,9 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -524,6 +571,7 @@ jobs:
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -532,9 +580,9 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -553,13 +601,16 @@ jobs:
           REQUIRE_NPM_AUTH: '1'
         run: bash ../../scripts/publish-npm-package.sh
 
-  publish-agent-tunnel:
-    name: Publish @kortix/agent-tunnel to npm
-    needs: version
+  # @kortix/ui peers on @kortix/sdk at the same lockstep version, so it publishes
+  # after the SDK is on the registry. @kortix/shared is inlined by its build.
+  publish-ui:
+    name: Publish @kortix/ui to npm
+    needs: [version, publish-sdk]
     # npm rejects sigstore provenance built on a non-GitHub-hosted runner
     # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
     # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -568,9 +619,46 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC)
+        working-directory: packages/ui
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
+        run: bash ../../scripts/publish-npm-package.sh
+
+  publish-agent-tunnel:
+    name: Publish @kortix/agent-tunnel to npm
+    needs: version
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -594,6 +682,7 @@ jobs:
     name: Build prod desktop ${{ matrix.target_pretty }}
     needs: version
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
     env:
       DESKTOP_URL: https://kortix.com/projects
     strategy:
@@ -632,7 +721,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -643,21 +732,18 @@ jobs:
       # bun by scripts/ensure-runtime.js before electron-builder runs.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
-      # Signing material lives in kortix-ci-env. Every key is optional: a build
-      # never hard-fails on missing certs. The read is skipped on Windows,
-      # where no signing material has ever been stored (WINDOWS_CERTIFICATE*
-      # stays empty, so Windows installers build UNSIGNED, as before). Only
-      # the Apple-ID notarization keys are stored today; the APPLE_API_* keys
-      # are read in case they are added later.
+      # Signing material lives in kortix-ci-env, read on every OS. Every key is
+      # optional: a build never hard-fails on missing certs. Windows signs through
+      # Microsoft Artifact Signing (the AZURE_SIGNING_* keys, same as Kortix
+      # Capture); see the kortix-capture skill, release-runbook "Windows signing setup".
       - name: Check out the aws-env action
-        if: runner.os != 'Windows'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -665,7 +751,6 @@ jobs:
           sparse-checkout: .github/actions
           persist-credentials: false
       - name: Read signing credentials from AWS Secrets Manager
-        if: runner.os != 'Windows'
         continue-on-error: true
         uses: ./.aws-env/.github/actions/aws-env
         with:
@@ -678,6 +763,12 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            AZURE_SIGNING_TENANT_ID?
+            AZURE_SIGNING_CLIENT_ID?
+            AZURE_SIGNING_CLIENT_SECRET?
+            AZURE_SIGNING_ENDPOINT?
+            AZURE_SIGNING_ACCOUNT?
+            AZURE_SIGNING_PROFILE?
             KORTIX_DESKTOP_SENTRY_DSN?
 
       # Never hard-fail on missing certs — a release should always ship an
@@ -691,11 +782,13 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD }}
           WINDOWS_CERTIFICATE: ${{ env.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ env.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          AZURE_SIGNING_PROFILE: ${{ env.AZURE_SIGNING_PROFILE }}
         run: |
           enabled=false
           case "${{ runner.os }}" in
             macOS)   [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && enabled=true ;;
-            Windows) [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            Windows) { [ -n "$AZURE_SIGNING_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_PROFILE" ]; } || { [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; } && enabled=true ;;
             *)       enabled=true ;;
           esac
           echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
@@ -722,7 +815,16 @@ jobs:
       - name: Build desktop installer (Electron)
         shell: bash
         run: |
+          # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
+          # scripts/sign-windows-azure.js signs each file with the ArtifactSigning module (the one
+          # azure/trusted-signing-action uses): electron-builder 25's azureSignOptions uses the
+          # retired TrustedSigning module, whose NuGet v2 downloads fail. The script signs SHA-256 only.
+          azure=()
+          if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
+            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js")
+          fi
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
+          "${azure[@]}" \
             --publish never \
             --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
@@ -741,15 +843,44 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID) || '' }}
           WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          # Windows Artifact Signing (electron-builder `win.azureSignOptions` reads these).
+          AZURE_TENANT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_SECRET || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: The Windows installer is signed by Kortix AI Corp
+        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem apps/desktop-electron/dist/*.exe) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
+          }
       - name: Upload installer artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.files }}
           if-no-files-found: error
+
+  # ── Build, sign and verify the prod Kortix Capture installers ───────────────
+  # Best-effort like build-desktop: no job gates on it. The reusable workflow
+  # installs each installer on its own OS runner before it passes.
+  build-capture:
+    name: Build prod Kortix Capture
+    needs: version
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
+    uses: ./.github/workflows/capture-build.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+      channel: stable
+      issuer_url: https://api.kortix.com
+      release_tag: ${{ needs.version.outputs.tag }}
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
   # HARD-GATED on the ECS backend deploy (deploy-ecs) and verify-live-version
@@ -779,15 +910,18 @@ jobs:
     name: GitHub Release v${{ needs.version.outputs.version }}
     needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
+      # Keyless cosign signing of SHA256SUMS needs a GitHub OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cli-binaries
           path: artifacts/
@@ -805,6 +939,20 @@ jobs:
           # SHA256SUMS so the checksum files are not themselves listed in it.
           for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
+
+      # Keyless-sign the checksum manifest. install.sh already refuses to run
+      # a binary whose digest is missing from SHA256SUMS — but it fetches both
+      # over the same channel, so the manifest alone proves only that the
+      # download was not corrupted. The Sigstore bundle ties it to this
+      # workflow's OIDC identity and a public transparency-log entry (pentest
+      # 2026-10-22: "release integrity is TOFU").
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign SHA256SUMS (keyless)
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/scripts/ci/cosign-sign-blob.sh" release/SHA256SUMS
+          ls -lh release/SHA256SUMS*
 
       # ── Refuse to publish an assetless or partial Release ────────────────────
       # A Release with no binaries is WORSE than no Release: scripts/install.sh
@@ -894,11 +1042,12 @@ jobs:
     needs: [version, github-release, build-desktop]
     if: always() && needs.github-release.result == 'success'
     runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           path: desktop-artifacts/
@@ -914,6 +1063,37 @@ jobs:
           fi
           cd desktop-artifacts
           sha256sum ./* > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Best-effort, after the release exists, like attach-desktop: a Capture
+  # problem can never block a release. Uploads the installers, SHA256SUMS and
+  # capture-update.json (the file the app polls for updates).
+  attach-capture:
+    name: Attach Kortix Capture installers
+    needs: [version, github-release, build-capture]
+    if: always() && needs.github-release.result == 'success'
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download the Capture installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: capture-installers
+          path: capture-installers/
+
+      - name: Upload the installers to the release (if any built)
+        run: |
+          set -euo pipefail
+          if [ ! -d capture-installers ] || [ -z "$(ls -A capture-installers 2>/dev/null)" ]; then
+            echo "::warning::No Capture installers built — release ships without Kortix Capture."
+            exit 0
+          fi
+          cd capture-installers
           gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -935,18 +1115,9 @@ jobs:
     # `prod` only.
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.3.14
-      - run: corepack enable pnpm
-      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
-        env:
-          npm_config_engine_strict: "false"
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -954,12 +1125,11 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/prepare-migrate
         with:
+          bun-version: 1.4.3
+          database-url: DATABASE_URL=kortix-prod-env:DATABASE_URL
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
-          keys: |
-            DATABASE_URL=kortix-prod-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
         run: |
           set -euo pipefail
@@ -991,21 +1161,21 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api, terraform-prod]
-    # `always()` is required because both terraform jobs are SKIPPED while
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod-api]
+    # `always()` is required because terraform-prod-api is SKIPPED while
     # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
-    # this remains the hard gate described above. Both roots are listed: a
-    # failed terraform-prod-api skips terraform-prod, and a skip alone must not
-    # read as a pass for the root that actually failed.
+    # this remains the hard gate described above. The web root (terraform-prod)
+    # is not awaited: the API and gateway roll read nothing it creates.
+    # deploy-web-ecs awaits it.
     if: >-
       ${{ always()
         && needs.retag-images.result == 'success'
         && needs.verify-image-commits.result == 'success'
         && needs.migrate-db.result == 'success'
-        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped')
-        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
+        && (needs.terraform-prod-api.result == 'success' || needs.terraform-prod-api.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 45
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -1032,7 +1202,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CAPTURE_S3_BUCKET":"kortix-prod-capture-store","KORTIX_CAPTURE_S3_REGION":"eu-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.eu-west-2.amazonaws.com/935064898258/kortix-prod-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-prod-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
@@ -1072,6 +1242,7 @@ jobs:
     name: Deploy prod API router Worker
     needs: [deploy-ecs]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     continue-on-error: true
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
@@ -1090,7 +1261,7 @@ jobs:
         with:
           keys: |
             CLOUDFLARE_API_TOKEN
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Deploy api-kortix-router from wrangler.toml [env.prod]
@@ -1136,6 +1307,7 @@ jobs:
     name: Verify live version == v${{ needs.version.outputs.version }}
     needs: [version, deploy-ecs]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     env:
       VERSION: ${{ needs.version.outputs.version }}
       SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
@@ -1237,6 +1409,7 @@ jobs:
     name: Announce release to Slack
     needs: [version, github-release, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Read live /v1/health (public router — the serving backend)
         id: health
@@ -1346,9 +1519,18 @@ jobs:
   # ── Prod frontend (parallel ECS + Vercel) ───────────────────────────────────
   deploy-web-ecs:
     name: Deploy prod web to ECS Fargate
-    needs: [version, retag-images, deploy-ecs]
+    needs: [version, retag-images, deploy-ecs, terraform-prod]
+    # `always()` because terraform-prod is SKIPPED while TF_APPLY_ROLE_ARN_PROD
+    # is unset. Every other upstream must have succeeded.
+    if: >-
+      ${{ always()
+        && needs.version.result == 'success'
+        && needs.retag-images.result == 'success'
+        && needs.deploy-ecs.result == 'success'
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     permissions:
       id-token: write
       contents: read
@@ -1358,7 +1540,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Configure AWS credentials (OIDC)
@@ -1402,6 +1584,7 @@ jobs:
     needs: [deploy-web-ecs]
     environment: prod
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -1410,11 +1593,6 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1422,25 +1600,18 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
+      - uses: ./.aws-env/.github/actions/publish-web-dns
         with:
-          role-to-assume: ''
-          keys: |
-            CLOUDFLARE_API_TOKEN
-      - name: Point only the isolated prod FE-ECS hostname at the web ALB
-        run: |
-          set -euo pipefail
-          alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-prod-web-alb \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)"
-          node infra/scripts/sync-web-dns.mjs prod "$alb"
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          environment: prod
+          alb-name: kortix-prod-web-alb
 
   verify-web-ecs:
     name: Verify prod FE-ECS
     needs: [version, publish-web-ecs-dns]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     env:
       EXPECTED_COMMIT: ${{ needs.version.outputs.source_sha }}
       EXPECTED_VERSION: ${{ needs.version.outputs.version }}
@@ -1482,6 +1653,7 @@ jobs:
     name: Deploy prod web to Vercel (after API is live)
     needs: [version, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out the aws-env action
@@ -1498,7 +1670,7 @@ jobs:
             VERCEL_ORG_ID=kortix-ci-env:VERCEL_TEAM_ID
             VERCEL_PROJECT_ID
             VERCEL_TOKEN
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Link and verify the Vercel project
@@ -1526,6 +1698,7 @@ jobs:
     name: Prod frontend paths active
     needs: [version, publish-web-ecs-dns]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - name: Note
         run: |
@@ -1560,6 +1733,7 @@ jobs:
     name: Sync dev VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -1617,6 +1791,7 @@ jobs:
     name: Sync staging VERSION → next dev target
     needs: [version, github-release]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     permissions:
       contents: write
       pull-requests: write
@@ -1652,19 +1827,20 @@ jobs:
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
 
-  # ── Lower the "release in progress" banner — ONLY when the rollout is green ───
-  # `needs: verify-live-version` with the default `if: success()` means this runs
-  # only after the backend deployed (deploy-ecs is upstream of
-  # verify-live-version, and migrate-db is upstream of those) AND the public
-  # endpoints verifiably serve the released version. If any of that fails, this
-  # job is skipped and the critical banner stays raised — deliberately, so users
-  # keep seeing it until an admin clears or escalates it from the console.
-  # Best-effort and non-clobbering: only clears the banner if it is still OUR
-  # rollout banner.
+  # ── Lower the "release in progress" banner — ALWAYS, when the run ends ───────
+  # `if: always()` runs this job after success, failure and cancel. It waits for
+  # every job that can hold the roll open: banner-on (so raise and lower never
+  # race), deploy-ecs, verify-live-version, and frontend-auth-proof. Incident
+  # 2026-10-11: a failed run skipped this job and left the banner up 8 h 27 min.
+  # Non-clobbering: scripts/ci-maintenance-banner.sh clears the banner only if it
+  # is still OUR rollout banner. The step retries, and logs an ::error:: if the
+  # endpoint stays down, but never fails the run.
   maintenance-banner-off:
     name: Rollout banner (lower)
-    needs: [verify-live-version, frontend-auth-proof]
+    needs: [maintenance-banner-on, deploy-ecs, verify-live-version, frontend-auth-proof]
+    if: ${{ always() }}
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Best effort, like the banner itself: an unreadable token skips it.
@@ -1720,6 +1896,7 @@ jobs:
     name: Move :prod → v${{ needs.version.outputs.version }}
     needs: [version, retag-images, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 15
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action

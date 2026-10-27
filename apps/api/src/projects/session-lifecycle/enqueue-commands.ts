@@ -20,6 +20,7 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
     apiKeyType: command.apiKeyType,
     inSession: command.inSession,
     callerSessionId: command.callerSessionId,
+    parentActor: command.parentActor,
   };
 }
 
@@ -61,9 +62,13 @@ export interface EnqueueContinueSessionCommandInput {
    *  `QueuedContinueSessionPayload.bindTurnIdentity`. */
   bindTurnIdentity?: boolean;
   authorSessionId?: string | null;
+  /** See `QueuedContinueSessionPayload.mayStopAnyTurn`. */
+  mayStopAnyTurn?: boolean;
   noReply?: boolean;
   opencodeEnv?: Record<string, string | null>;
   directFollowUp?: boolean;
+  /** See `QueuedContinueSessionPayload.resumesTurn`. */
+  resumesTurn?: string;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -86,9 +91,11 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.overrides ? { overrides: input.overrides } : {}),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
+    ...(input.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     ...(input.noReply ? { noReply: true } : {}),
     ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
     ...(input.directFollowUp ? { directFollowUp: true } : {}),
+    ...(input.resumesTurn ? { resumesTurn: input.resumesTurn } : {}),
   };
   return {
     commandType: 'continue_session',

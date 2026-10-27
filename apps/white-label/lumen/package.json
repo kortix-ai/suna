@@ -1,0 +1,50 @@
+{
+  "name": "@kortix/white-label-lumen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lumen: a customer-facing product built on Kortix. Its own stack (Next.js, Convex, Better Auth) owns users, organizations and data; Kortix runs the agents, sandboxes and sessions behind it.",
+  "scripts": {
+    "dev": "node scripts/copy-viewer-wasm.mjs && next dev --port ${WHITELABEL_PORT:-3010}",
+    "build": "pnpm lint:sdk-boundary && node scripts/copy-viewer-wasm.mjs && next build",
+    "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
+    "start": "next start --port ${WHITELABEL_PORT:-3010}",
+    "test": "node ../../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/unit && vitest run\"",
+    "test:unit": "pnpm lint:sdk-boundary && bun test tests/unit",
+    "test:convex": "vitest run",
+    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p convex",
+    "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev --local-cloud-port ${CONVEX_PORT:-3030} --local-site-port ${CONVEX_SITE_PORT:-3031}",
+    "seed:demo": "bun scripts/seed-demo.ts",
+    "eval": "bun agent-kit/evals/run.ts",
+    "kit:bundle": "bun scripts/kit-bundle.ts",
+    "kit:selftest": "cd agent-kit/lumen-kit && python3 -m lumen_kit.selftest"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "0.12.5",
+    "@kortix/sdk": "workspace:*",
+    "@kortix/ui": "workspace:*",
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-query": "^5.75.2",
+    "ajv": "8.18.0",
+    "better-auth": "1.6.33",
+    "convex": "1.46.0",
+    "jszip": "3.10.2",
+    "mammoth": "1.13.0",
+    "next": "16.4.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "unpdf": "1.8.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/node": "^20",
+    "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "convex-test": "0.0.60",
+    "happy-dom": "^20.14.5",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "4.1.12"
+  }
+}

@@ -9,15 +9,25 @@ import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
 import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
-import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
+import { SHIPPED_ICON_WEIGHTS } from '@kortix/ui/lib/icon-config';
 import {
+  embedContentSecurityPolicy,
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
 } from './src/lib/security/content-security-policy';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
-import { writeDevCatalogs, writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
+
+/** The header set a host-framed page carries instead of the global enforced
+ *  CSP: the same directives with `frame-ancestors` opened. One owner, so the
+ *  two session-page header rules cannot drift apart. */
+const embedFrameHeaders = () => [
+  {
+    key: 'Content-Security-Policy',
+    value: embedContentSecurityPolicy(),
+  },
+];
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -179,12 +189,6 @@ function resolveKortixVersion(): string {
   return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
-// Writes public/i18n/<locale>.<hash>.json (see the script for why) and returns
-// the hashes the browser uses to build each catalog URL. `next dev` writes
-// unhashed files instead and rewrites them on every catalog save, so a new key
-// shows after a reload rather than after a server restart.
-const I18N_CATALOG_VERSIONS =
-  process.env.NODE_ENV === 'development' ? writeDevCatalogs() : writePublicCatalogs();
 const KORTIX_COMMIT =
   process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 
@@ -281,9 +285,10 @@ const ALLOWED_PROXY_ORIGINS =
       ];
 
 const nextConfig = (): NextConfig => ({
+  poweredByHeader: false,
   // The frontend data layer lives in the @kortix/sdk workspace package (TS
   // source), so Next must transpile it.
-  transpilePackages: ['@kortix/sdk'],
+  transpilePackages: ['@kortix/sdk', '@kortix/ui'],
   // Standalone bundles the app for Docker via a slow monorepo-wide file-tracing
   // pass. Vercel injects a Next adapter. Next 16.3 does not emit the whole-app
   // NFT for adapter builds, but its standalone finalizer still requires that
@@ -295,8 +300,6 @@ const nextConfig = (): NextConfig => ({
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
     NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
-    // Content hash per locale catalog; versions the /i18n/<locale>.json URL.
-    NEXT_PUBLIC_KORTIX_I18N_VERSIONS: JSON.stringify(I18N_CATALOG_VERSIONS),
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
@@ -341,7 +344,7 @@ const nextConfig = (): NextConfig => ({
   //     fail a production build.
   //     This app is immune ONLY because `typescript.ignoreBuildErrors: true`
   //     above skips the type-check step entirely (including the CLI checker).
-  //     apps/whitelabel-demo does NOT set it, and 16.3 duly failed its build on
+  //     apps/white-label/lumen does NOT set it, and 16.3 duly failed its build on
   //     a pre-existing error in tests/e2e/session-scope.test.ts. Any new app in
   //     this monorepo inherits that same trap.
   //     Not adopted here: TypeScript 7 (`typescript@^7`, the 10x native port)
@@ -488,20 +491,35 @@ const nextConfig = (): NextConfig => ({
         protocol: 'https',
         hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
-      // The desktop shell historically launched at /dashboard, which never
-      // existed and fell through to the marketing 404. The authed home is
-      // /projects (see middleware). Redirect so already-shipped desktop builds
-      // (URL baked in at compile time) recover instead of 404ing on launch.
-      // {
-      //   source: '/dashboard',
-      //   destination: '/projects',
-      //   permanent: false,
-      // },
     ],
   },
 
   async redirects() {
     return [
+      // The desktop shell historically launched at /dashboard, which never
+      // existed. The signed-in home is /projects (see middleware). Desktop
+      // builds that baked the old URL in, and old links, land there instead
+      // of on the 404 page (KRTX-3232).
+      {
+        source: '/dashboard',
+        destination: '/projects',
+        permanent: false,
+      },
+      // The paths people type to sign in or up (KRTX-3154). /auth asks for the
+      // email first and picks sign-in or sign-up itself.
+      {
+        source: '/:path(login|signin|sign-in|signup|sign-up|register)',
+        destination: '/auth',
+        permanent: false,
+      },
+      // The per-release changelog moved to /changelog/releases (2026-10-19);
+      // /changelog is the weekly summary now. Page 1 of the old list is
+      // /changelog itself, which stays valid.
+      {
+        source: '/changelog/page/:page',
+        destination: '/changelog/releases/page/:page',
+        permanent: true,
+      },
       // Capability tabs moved under /customize/ (2026-09-03). The old
       // top-level segments were shared in Slack, saved as bookmarks and baked
       // into agent transcripts, so every one keeps resolving. `agent` became
@@ -547,6 +565,13 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/presentation/platform',
         destination: '/presentations/platform',
+        permanent: false,
+      },
+      {
+        // The docs site prefixes every absolute link with /docs (Blume `base`);
+        // its download links (Kortix Capture installers) belong to the app.
+        source: '/docs/download/:path*',
+        destination: '/download/:path*',
         permanent: false,
       },
       // The canonical self-host doc is content/docs/host/index.mdx, served at
@@ -665,16 +690,9 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/connect/connectors#call-connectors-from-code',
         permanent: true,
       },
-      // The help centre was a second support surface: it wore the app sidebar
-      // and a ⌘K modal to host exactly one article, while /support carried the
-      // FAQ, the contact addresses and the account-deletion steps. They merged
-      // into /support, so every help URL lands on its counterpart there.
-      //
-      // Permanent (308), because these are indexed public URLs and the merge is
-      // not going to be undone. /help went to the hub; /help/credits went to
-      // the credits guide, which now lives in the docs tree. /help/:path*
-      // catches nothing today — the tree held only the index and credits — and
-      // exists so a stale deep link ends on the hub instead of the marketing 404.
+      // The help centre merged into /support, and /support was removed
+      // (2026-10-26). Every help URL lands on the contact page, except
+      // /help/credits, which has a counterpart in the docs tree.
       {
         source: '/help/credits',
         destination: '/docs/credits',
@@ -682,12 +700,12 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/help',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       {
         source: '/help/:path*',
-        destination: '/support',
+        destination: '/contact',
         permanent: true,
       },
       // The credits guide is reference material, so it lives in the docs tree
@@ -699,6 +717,32 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/credits',
         permanent: true,
       },
+      // Marketing pages removed on 2026-10-26. They are indexed public URLs,
+      // listed in the old sitemap and llms.txt, so each one keeps resolving:
+      // /support (and its locale copies) goes to the contact page, the rest
+      // go home. The Markdown twins go to the home page's twin.
+      ...['/support'].flatMap((page) => [
+        { source: page, destination: '/contact', permanent: true },
+        { source: `${page}/:path*`, destination: '/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale/contact', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale/contact', permanent: true },
+      ]),
+      ...[
+        '/agent-computer',
+        '/agents-and-skills',
+        '/automations',
+        '/channels',
+        '/company-as-code',
+        '/connectors',
+        '/solutions',
+      ].flatMap((page) => [
+        { source: page, destination: '/', permanent: true },
+        { source: `${page}/:path*`, destination: '/', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}`, destination: '/:locale', permanent: true },
+        { source: `/:locale(${locales.join('|')})${page}/:path*`, destination: '/:locale', permanent: true },
+        { source: `/markdown${page}.md`, destination: '/markdown/index.md', permanent: true },
+        { source: `/markdown${page}/:path*`, destination: '/markdown/index.md', permanent: true },
+      ]),
       // Removed pages that may live on in old links and search indexes.
       // /credits-explained became the credits guide in the docs tree; the
       // /compare section was retired with no direct replacement.
@@ -813,6 +857,14 @@ const nextConfig = (): NextConfig => ({
         source: '/docs',
         destination: '/docs/index.html',
       },
+      // Blume links /docs/apple-touch-icon.png (it detects the app's
+      // public/apple-touch-icon.png) but never copies it into the docs build,
+      // so the directory rule below turned it into a 404 (KRTX-3226). Serve the
+      // app's one icon file.
+      {
+        source: '/docs/apple-touch-icon.png',
+        destination: '/apple-touch-icon.png',
+      },
       {
         source: '/docs/:path*',
         destination: '/docs/:path*/index.html',
@@ -858,6 +910,10 @@ const nextConfig = (): NextConfig => ({
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
           },
           {
             key: 'Referrer-Policy',
@@ -908,16 +964,35 @@ const nextConfig = (): NextConfig => ({
             : []),
         ],
       },
-      // Locale catalogs: the file name carries a content hash, so a response
-      // never changes under its URL. Production builds only.
-      ...(process.env.NODE_ENV === 'production'
-        ? [
-            {
-              source: '/i18n/:file',
-              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-            },
-          ]
-        : []),
+      // The session page is framed by host pages for a living (the Share
+      // dialog's Embed snippet). Its rule must come after the global
+      // `/:path*` rule: for the same header key, the LAST matching rule wins,
+      // so the enforced CSP here replaces the global one on the session page
+      // (verified by curl on the local stack). X-Frame-Options cannot be
+      // removed by a later rule, but a browser that implements CSP
+      // frame-ancestors — every evergreen browser — ignores X-Frame-Options
+      // when the policy carries frame-ancestors, so the global SAMEORIGIN is
+      // inert on this path.
+      //
+      // Only same-origin and Kortix-owned same-site host pages can frame the
+      // authenticated session. Cookies and existing project/session permissions
+      // still determine access. Both canonical URL forms are covered.
+      {
+        source: '/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
+      },
+      {
+        source: '/:locale/projects/:projectId/sessions/:sessionId',
+        headers: embedFrameHeaders(),
+      },
+      // Apple reads this file as JSON (Universal Links for /share and
+      // /auth/callback, shared web credentials). It has no extension, so it
+      // was served as application/octet-stream (KRTX-3255). The static file
+      // server keeps a Content-Type that a rule already set.
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
       {
         source: '/fonts/:path*',
         headers: [

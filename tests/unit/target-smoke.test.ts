@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   assertGatewayPreflightHealth,
   assertTargetSmokeHealth,
+  waitForTargetSha,
   resolveTargetSmokeConfig,
 } from '../src/core/target-smoke';
 
@@ -62,6 +63,18 @@ function routedFetch(routes: {
 }
 
 describe('deployed staging smoke', () => {
+  it('reads the build from liveness when public readiness contains only status', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url === `${STAGING.gatewayUrl}/health`) return json({ status: 'degraded' });
+      if (url === `${STAGING.gatewayUrl}/health/live`) return json({ ok: true, commit: SHA });
+      if (url.includes('/api/health')) return okFrontend();
+      return okApi();
+    });
+    await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(`${STAGING.gatewayUrl}/health/live`, expect.any(Object));
+  });
+
   it('accepts only the exact staging API, web, gateway, and source SHA', () => {
     expect(
       resolveTargetSmokeConfig({
@@ -159,6 +172,29 @@ describe('deployed staging smoke', () => {
     });
 
     await expect(assertTargetSmokeHealth(STAGING, fetchImpl)).resolves.toBeUndefined();
+  });
+
+  it('waits while staging serves the previous SHA, then passes', async () => {
+    let calls = 0;
+    const fetchImpl = routedFetch({
+      api: () => okApi(++calls < 3 ? 'b'.repeat(40) : undefined),
+      gateway: () => okGateway(),
+      frontend: () => okFrontend(),
+    });
+    const sleeps: number[] = [];
+    await waitForTargetSha(STAGING, { fetchImpl, intervalMs: 5, sleep: async (ms: number) => void sleeps.push(ms) });
+    expect(sleeps).toEqual([5, 5]);
+  });
+
+  it('stops waiting at the deadline and on any non-SHA failure', async () => {
+    const stale = routedFetch({ api: () => okApi('b'.repeat(40)), gateway: () => okGateway(), frontend: () => okFrontend() });
+    await expect(waitForTargetSha(STAGING, { fetchImpl: stale, timeoutMs: 0, sleep: async () => {} })).rejects.toThrow('SHA mismatch');
+    const unstamped = routedFetch({ api: () => okApi(), gateway: () => okGateway(), frontend: () => okFrontend('unknown') });
+    let slept = false;
+    await expect(
+      waitForTargetSha(STAGING, { fetchImpl: unstamped, sleep: async () => void (slept = true) }),
+    ).rejects.toThrow('did not stamp a commit');
+    expect(slept).toBe(false);
   });
 
   it('fails when staging serves another SHA', async () => {

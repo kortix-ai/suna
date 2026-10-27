@@ -18,8 +18,9 @@
 // Same `mock.module` + `globalThis.fetch` interception pattern as the sibling
 // `sandbox-env-sync.refresh-models.test.ts` (isolated per file via
 // `bun test --isolate`).
-import { SQL } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+
+import { applyEnvSyncDurableWrite } from '../../__tests__/helpers/env-sync-durable-fake';
 
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
@@ -30,11 +31,6 @@ const PROJECT_ROW = {
   manifestPath: 'kortix.yaml',
   metadata: null as Record<string, unknown> | null,
 };
-
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
 
 const SESSION_ROW = {
   createdBy: 'user-1',
@@ -50,27 +46,9 @@ let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
 /** The one fake row of durable state — this suite only ever exercises one
  *  session/sandbox, so a single mutable slot is enough. */
 let durableConfig: Record<string, unknown> | null = null;
+/** Who the session token acts for (`account_tokens.on_behalf_of_user_id`). */
+let tokenPerson: string | null = 'creator';
 let sandboxConfigReads = 0;
-
-/** Recover the raw JS values bound into an `env-sync-durable-state.ts` SQL
- *  merge fragment (drizzle's `queryChunks` interleave literal `StringChunk`s
- *  with the raw interpolated values) — same technique as
- *  `env-sync-durable-state.test.ts`. Returns null for a merge this suite does
- *  not care about (e.g. `markSandboxLlmGatewayMode`'s `llmGatewayEnabled`).
- */
-function extractEnvSyncWrite(fragment: unknown): { signature: unknown; appliedAtMs: unknown } | null {
-  if (!(fragment instanceof SQL)) return null;
-  const chunks = fragment.queryChunks;
-  let signature: unknown;
-  let appliedAtMs: unknown;
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i] as { value?: unknown[] } | undefined;
-    const text = Array.isArray(chunk?.value) ? chunk.value.join('') : null;
-    if (text?.includes('envSyncSignature')) signature = chunks[i + 1];
-    if (text?.includes('envSyncAppliedAtMs')) appliedAtMs = chunks[i + 1];
-  }
-  return signature === undefined ? null : { signature, appliedAtMs };
-}
 
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
@@ -78,6 +56,11 @@ mock.module('../../shared/db', () => ({
     select: (columns: Record<string, unknown>) => ({
       from: () => ({
         where: () => {
+          if ('onBehalfOf' in columns) {
+            // The session token's person (sandbox-env-push.ts `sessionTokenPerson`).
+            const rows = [{ onBehalfOf: tokenPerson }];
+            return { limit: async () => rows };
+          }
           const wantsSession = 'createdBy' in columns;
           const wantsSandboxConfig = !wantsSession && Object.keys(columns).length === 1 && 'config' in columns;
           if (wantsSandboxConfig) sandboxConfigReads += 1;
@@ -97,14 +80,7 @@ mock.module('../../shared/db', () => ({
     update: () => ({
       set: (patch: { config?: unknown }) => ({
         where: async () => {
-          const write = extractEnvSyncWrite(patch.config);
-          if (write) {
-            durableConfig = {
-              ...durableConfig,
-              envSyncSignature: write.signature,
-              envSyncAppliedAtMs: write.appliedAtMs,
-            };
-          }
+          durableConfig = applyEnvSyncDurableWrite(durableConfig, patch.config);
         },
       }),
     }),
@@ -148,11 +124,13 @@ const ORIGINAL_FETCH = globalThis.fetch;
   });
 };
 
+const { recordDaemonBootForEnvSync } = await import('./env-sync-durable-state');
 const {
   syncSandboxEnvForPrompt,
   __resetPromptModelSignatureCacheForTests,
   __resetBackgroundEnvRefreshForTests,
   __pendingBackgroundEnvRefreshesForTests,
+  __pendingEnvChecksForTests,
   ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
   PROMPT_MODEL_SIGNATURE_CACHE_MAX,
 } = await import('./sandbox-env-sync');
@@ -178,19 +156,50 @@ beforeEach(() => {
   __resetBackgroundEnvRefreshForTests();
   posted = [];
   durableConfig = null;
+  tokenPerson = 'creator';
   sandboxConfigReads = 0;
   snapshotEnv = { EXAMPLE: 'v1' };
   snapshotNames = ['EXAMPLE'];
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 afterEach(async () => {
   // Drain anything a test scheduled in the background so it can never leak
   // fetch calls or unhandled rejections into the next test.
   await Promise.all(__pendingBackgroundEnvRefreshesForTests());
+  await Promise.all(__pendingEnvChecksForTests());
+});
+
+// A turn whose bind changed the session's person: the box may still hold the
+// previous person's personal secrets (a private session's creator, before an
+// admin or a Slack participant prompts it). The trusted fast path would forward
+// the prompt first and drop those secrets only one turn later.
+describe('syncSandboxEnvForPrompt — a change of person is never trusted', () => {
+  test('the same agent, same person, inside the window: the prompt is forwarded on the trusted memo', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    snapshotEnv = {}; // the previous person's personal secret is no longer theirs to read
+    snapshotNames = [];
+    snapshotRevision = 'rev-2';
+
+    await prompt();
+    expect(posted).toHaveLength(1); // forwarded before any push
+  });
+
+  test('the token now acts for another person: the env is resolved and pushed before the prompt is forwarded', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    tokenPerson = null; // another member prompted the creator's private session
+    snapshotEnv = {};
+    snapshotNames = [];
+    snapshotRevision = 'rev-2';
+
+    await prompt();
+    expect(posted).toHaveLength(2); // pushed before the prompt went on
+    expect(posted[1]!.revision).not.toBe(posted[0]!.revision); // the env without the secret
+  });
 });
 
 describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
@@ -210,11 +219,15 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     expect(sandboxConfigReads).toBeGreaterThan(0); // it DID consult the durable store
 
     // Turn 3, back on the original replica (memory still warm from turn 1):
-    // must not even pay for the durable read.
+    // trusted, so it never waits for the env resolve. It pays exactly ONE
+    // durable read: the memo is trusted only while the shared record still
+    // says the box runs what the memo says (a daemon restart, or another
+    // replica's push, changes the record and not this memo).
     const readsBeforeTurn3 = sandboxConfigReads;
     await prompt();
     expect(posted).toHaveLength(1);
-    expect(sandboxConfigReads).toBe(readsBeforeTurn3); // memory alone answered
+    expect(__pendingEnvChecksForTests()).toHaveLength(1); // trusted: the resolve runs detached
+    expect(sandboxConfigReads).toBe(readsBeforeTurn3 + 1);
   });
 
   test('a real secret change is still pushed synchronously even from a cold replica', async () => {
@@ -240,10 +253,10 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     // written first.
     //
     // Bounded memo: the first entry was evicted, so its re-prompt misses
-    // memory and consults the durable record again (+1 read), still skipping.
-    // Unbounded memo (the old skip path): the first entry survives every
-    // skip-path write, so the re-prompt answers from memory alone and pays no
-    // durable read — this assertion is what goes red.
+    // memory, resolves the env inline (no detached check) and consults the
+    // durable record, still skipping. Unbounded memo (the old skip path): the
+    // first entry survives every skip-path write, so the re-prompt is trusted
+    // and its resolve runs detached — the pending-check assertion goes red.
     await prompt('ext-1');
     expect(posted).toHaveLength(1);
 
@@ -255,15 +268,15 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     const readsBeforeOldest = sandboxConfigReads;
     await prompt('ext-1');
     expect(posted).toHaveLength(1); // still a skip — the decision never changed
-    expect(sandboxConfigReads).toBe(readsBeforeOldest + 1); // memory miss → durable consult
+    expect(__pendingEnvChecksForTests()).toHaveLength(0); // memory miss → resolved inline
+    expect(sandboxConfigReads).toBe(readsBeforeOldest + 1); // → one durable consult
     await Promise.all(__pendingBackgroundEnvRefreshesForTests());
     expect(posted).toHaveLength(1); // and no background refresh either: the record is fresh
 
-    // A recent entry survives the eviction and still answers from memory alone.
-    const readsBeforeRecent = sandboxConfigReads;
+    // A recent entry survives the eviction and is still trusted.
     await prompt('ext-2001');
     expect(posted).toHaveLength(1);
-    expect(sandboxConfigReads).toBe(readsBeforeRecent);
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
   });
 
   test('a stale-but-unchanged durable record skips synchronously and self-heals in the background', async () => {
@@ -274,6 +287,7 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     // Simulate the confirmation aging past the self-heal threshold, as read by
     // a cold replica (never touches this process's own memo).
     durableConfig = {
+      ...durableConfig,
       envSyncSignature: signature,
       envSyncAppliedAtMs: Date.now() - ENV_SYNC_BACKGROUND_REFRESH_STALE_MS - 5_000,
     };
@@ -313,5 +327,97 @@ describe('syncSandboxEnvForPrompt — durable cross-replica skip', () => {
     await Promise.all(__pendingBackgroundEnvRefreshesForTests());
     expect(posted).toHaveLength(2);
     expect(posted[1]!.refreshModels).toBe(true);
+  });
+});
+
+// 2026-10-16, local stack, real Platinum box. kortixd swapped its binary
+// (`[runtime-assets] requesting agent swap; exiting for the supervisor`, exit
+// 75) and the new process seeded its env store from the BOOT env. The API kept
+// trusting the env it had pushed to the OLD process, so the next prompt inside
+// ENV_SYNC_BACKGROUND_REFRESH_STALE_MS ran on the boot env: in a private
+// session, the creator's personal secret for another person's turn
+// (KRTX-2517). Every daemon process claims its initial turn once at boot, and
+// that claim records the boot (`recordDaemonBootForEnvSync`).
+describe('syncSandboxEnvForPrompt — a daemon restart drops the trust', () => {
+  /** Turn 1 pushed 10 s ago; the daemon process booted 5 s ago. */
+  async function pushThenRestartDaemon(): Promise<void> {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    durableConfig = { ...durableConfig, envSyncAppliedAtMs: Date.now() - 10_000 };
+    await recordDaemonBootForEnvSync('sess-1', Date.now() - 5_000);
+  }
+
+  test('the next prompt pushes again on the replica that holds a fresh trusted memo', async () => {
+    tokenPerson = 'admin'; // another member prompts the creator's private session
+    await pushThenRestartDaemon();
+
+    await prompt(); // same agent, same person, inside the trusted window
+    expect(posted).toHaveLength(2); // pushed before the prompt went on
+    expect(posted[1]!.revision).toBe(posted[0]!.revision); // the same env, now on the new process
+    expect(__pendingEnvChecksForTests()).toHaveLength(0); // not trusted: resolved inline
+  });
+
+  test('the next prompt pushes again on a cold replica, which would otherwise skip on the durable record', async () => {
+    await pushThenRestartDaemon();
+    __resetPromptModelSignatureCacheForTests();
+
+    await prompt();
+    expect(posted).toHaveLength(2);
+  });
+
+  test('the push after the boot is trusted again', async () => {
+    await pushThenRestartDaemon();
+    await prompt();
+    expect(posted).toHaveLength(2);
+
+    await prompt();
+    expect(posted).toHaveLength(2);
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
+  });
+
+  // The deploy that ships the fence: a daemon that restarted earlier left no
+  // boot record, so a record written by the previous API confirms nothing.
+  test('a record written before the fence existed is pushed over once, then trusted', async () => {
+    await prompt();
+    expect(posted).toHaveLength(1);
+    const { envSyncRecordVersion: _version, ...previousApiRecord } = durableConfig ?? {};
+    durableConfig = previousApiRecord;
+    __resetPromptModelSignatureCacheForTests(); // the new API process
+
+    await prompt();
+    expect(posted).toHaveLength(2);
+    await prompt();
+    expect(posted).toHaveLength(2);
+  });
+
+  test('a boot recorded before the last push leaves the trust in place', async () => {
+    await recordDaemonBootForEnvSync('sess-1', Date.now() - 60_000);
+    await prompt();
+    expect(posted).toHaveLength(1);
+
+    await prompt();
+    expect(posted).toHaveLength(1);
+  });
+});
+
+// The same hole without a restart. The memo is per replica; the box is one.
+// Replica 1 pushed the env for the admin, replica 2 then pushed the creator's
+// env (with their personal secret) for the creator's own prompt. Replica 1's
+// memo still names the admin, the same agent, inside the window — and the box
+// holds the creator's env.
+describe('syncSandboxEnvForPrompt — another replica moved the box', () => {
+  test("a memo that disagrees with the durable record is not trusted", async () => {
+    tokenPerson = 'admin';
+    await prompt();
+    expect(posted).toHaveLength(1);
+    durableConfig = {
+      ...durableConfig,
+      envSyncSignature: 'the-creator-env-pushed-by-another-replica',
+      envSyncAppliedAtMs: Date.now(),
+    };
+
+    await prompt();
+    expect(posted).toHaveLength(2);
+    expect(posted[1]!.revision).toBe(posted[0]!.revision); // the admin's env, back on the box
   });
 });

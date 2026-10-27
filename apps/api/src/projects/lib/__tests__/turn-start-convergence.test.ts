@@ -8,12 +8,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   convergeAssetsInBackground,
-  convergeBeforeTurnStart,
+  convergeConfigIfBehind,
   DESIRED_TTL_MS,
   invalidateDesiredRelease,
   scheduleAssetConvergence,
   type AssetConvergenceDeps,
-  type TurnStartConvergenceDeps,
+  type ConfigGateDeps,
 } from '../turn-start-convergence';
 import {
   __clearRunningAssetsForTests,
@@ -52,7 +52,7 @@ let probeCalls = 0;
 let probeAnswer: string | null | undefined = undefined;
 let clock = 0;
 
-function deps(over: Partial<TurnStartConvergenceDeps> = {}): TurnStartConvergenceDeps {
+function deps(over: Partial<ConfigGateDeps> = {}): ConfigGateDeps {
   return {
     loadTarget: async () => TARGET as never,
     desiredReleaseId: async () => {
@@ -85,14 +85,14 @@ beforeEach(() => {
 describe('a box that is already current pays nothing', () => {
   test('no convergence runs when the running release equals the desired one', async () => {
     noteRunningRelease(SESSION, RELEASE_A);
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(result.decision).toBe('current');
     expect(result.outcome).toBeNull();
     expect(convergeCalls).toBe(0);
   });
 
   test('a session that is gone is skipped, never an error', async () => {
-    const result = await convergeBeforeTurnStart(SESSION, deps({ loadTarget: async () => null }));
+    const result = await convergeConfigIfBehind(SESSION, deps({ loadTarget: async () => null }));
     expect(result.decision).toBe('skipped');
     expect(convergeCalls).toBe(0);
   });
@@ -101,7 +101,7 @@ describe('a box that is already current pays nothing', () => {
 describe('a box that is behind converges before the turn runs', () => {
   test('a different running release converges', async () => {
     noteRunningRelease(SESSION, RELEASE_B);
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(result.decision).toBe('converged');
     expect(result.outcome).toBe('converged');
     expect(convergeCalls).toBe(1);
@@ -113,7 +113,7 @@ describe('a box that is behind converges before the turn runs', () => {
     // cost a real turn 10 907 ms for an `unchanged` answer.
     expect(lastKnownRunningRelease(SESSION)).toBeUndefined();
     probeAnswer = RELEASE_A;
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(probeCalls).toBe(1);
     expect(result.decision).toBe('current');
     expect(convergeCalls).toBe(0);
@@ -121,7 +121,7 @@ describe('a box that is behind converges before the turn runs', () => {
 
   test('a probe that cannot tell converges — silence is never "current"', async () => {
     probeAnswer = undefined;
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(probeCalls).toBe(1);
     expect(result.decision).toBe('converged');
     expect(convergeCalls).toBe(1);
@@ -129,26 +129,26 @@ describe('a box that is behind converges before the turn runs', () => {
 
   test('a probe that reports a different release converges', async () => {
     probeAnswer = RELEASE_B;
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(result.decision).toBe('converged');
     expect(convergeCalls).toBe(1);
   });
 
   test('a known running release is never probed', async () => {
     noteRunningRelease(SESSION, RELEASE_B);
-    await convergeBeforeTurnStart(SESSION, deps());
+    await convergeConfigIfBehind(SESSION, deps());
     expect(probeCalls).toBe(0);
   });
 
   test('a box that runs NO release converges', async () => {
     noteRunningRelease(SESSION, null);
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(result.decision).toBe('converged');
   });
 
   test('an unresolvable desired release still converges, and never throws', async () => {
     noteRunningRelease(SESSION, RELEASE_A);
-    const result = await convergeBeforeTurnStart(
+    const result = await convergeConfigIfBehind(
       SESSION,
       deps({
         desiredReleaseId: async () => {
@@ -162,7 +162,7 @@ describe('a box that is behind converges before the turn runs', () => {
 
 describe('the gate never refuses a turn', () => {
   test('a convergence that throws is swallowed', async () => {
-    const result = await convergeBeforeTurnStart(
+    const result = await convergeConfigIfBehind(
       SESSION,
       deps({
         converge: async () => {
@@ -174,14 +174,14 @@ describe('the gate never refuses a turn', () => {
   });
 
   test('a busy session reports busy and the turn proceeds', async () => {
-    const result = await convergeBeforeTurnStart(SESSION, deps({ converge: async () => 'busy' }));
+    const result = await convergeConfigIfBehind(SESSION, deps({ converge: async () => 'busy' }));
     expect(result.decision).toBe('converged');
     expect(result.outcome).toBe('busy');
   });
 
   test('it reports what it cost the turn', async () => {
     noteRunningRelease(SESSION, RELEASE_A);
-    const result = await convergeBeforeTurnStart(SESSION, deps());
+    const result = await convergeConfigIfBehind(SESSION, deps());
     expect(result.ms).toBeGreaterThanOrEqual(0);
   });
 });
@@ -225,7 +225,7 @@ describe('the running-release memo', () => {
 // RUNTIME ASSETS — the lane beside the config gate, and the one rule that
 // separates them: CONFIG BLOCKS THE TURN, BINARIES MUST NOT.
 //
-// Config changes what the agent IS, so `convergeBeforeTurnStart` awaits and a
+// Config changes what the agent IS, so `convergeConfigIfBehind` awaits and a
 // stale box pays 10,287-10,907 ms. A box one turn behind on the CLI is the state
 // that already exists today; a box that makes the user wait for ~100 MB is a
 // regression. So this half DETECTS and SCHEDULES. It never applies, and it is

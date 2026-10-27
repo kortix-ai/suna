@@ -1,0 +1,1638 @@
+'use client';
+
+import { useTranslations } from '../../../i18n';
+import {
+  setWasmSource,
+  useXlsxViewer,
+  useXlsxViewerController,
+  useXlsxViewerThumbnails,
+  useXlsxViewerZoom,
+  XlsxViewer,
+  XlsxViewerProvider,
+  type XlsxCellAddress,
+  type XlsxScrollerRenderProps,
+  type XlsxSheetData,
+  type XlsxTableHeaderMenuRenderProps,
+  type XlsxViewerController,
+} from '@extend-ai/react-xlsx';
+import {
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  MinusCircleIcon as CircleMinus,
+  PlusCircleIcon as CirclePlus,
+  DotsThreeIcon as Ellipsis,
+  MagnifyingGlassIcon as Search,
+  UploadIcon as Upload,
+} from '@phosphor-icons/react';
+import * as React from 'react';
+import { createPortal } from 'react-dom';
+
+import { Button } from '../../../primitives/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '../../../primitives/dropdown-menu';
+import { Input } from '../../../primitives/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
+import { Separator } from '../../../primitives/separator';
+import { Tabs, TabsList, TabsTrigger } from '../../../primitives/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../primitives/tooltip';
+import { ScrollArea } from '../shared/scroll-area-compat';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../shared/select-compat';
+import { Spinner } from '../shared/spinner';
+import { useViewerSearch } from '../shared/use-viewer-search';
+import { ViewerCopyMenu } from '../shared/viewer-copy-menu';
+import { ViewerDownloadButton } from '../shared/viewer-download-button';
+import { ViewerFileName } from '../shared/viewer-file-name';
+import { cn } from '../../../lib/utils';
+import { copyToClipboard } from '../../../internal/lib/utils/clipboard';
+
+// react-xlsx loads its wasm inside a `blob:`-URL Web Worker, where a
+// root-relative path (`/_next/static/media/duke_sheets_wasm_bg.*.wasm`) fails to
+// parse on `fetch`. Point it at an absolute, origin-qualified copy served from
+// `public/` (populated by `scripts/copy-viewer-wasm.mjs`); the resolved string
+// is forwarded to the worker so it fetches correctly while worker parsing stays
+// enabled.
+if (typeof window !== 'undefined') {
+  try {
+    setWasmSource(new URL('/react-xlsx/duke_sheets_wasm_bg.wasm', window.location.origin).href);
+  } catch {
+    // WASM was already initialized in this realm (e.g. after HMR); the source
+    // is fixed and cannot be reconfigured. Safe to ignore.
+  }
+}
+
+const XLSX_LOADING_INDICATOR_DELAY_MS = 300;
+const XLSX_DROPDOWN_Z_INDEX_CLASS = 'z-40';
+const XLSX_SEARCH_BATCH_ROW_COUNT = 500;
+const XLSX_GRID_HEADER_HEIGHT = 24;
+const XLSX_GRID_ROW_HEADER_WIDTH = 40;
+const XLSX_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+const ZOOM_OPTIONS = [10, 25, 50, 75, 100, 125, 150, 175, 200, 400] as const;
+
+// Stable reference so the thumbnails memo isn't invalidated on every render
+// (e.g. by selection changes), which would recompute every sheet thumbnail.
+const XLSX_SHEET_TAB_THUMBNAIL_OPTIONS = {
+  resolution: {
+    maxHeight: 360,
+    maxWidth: 560,
+  },
+} as const;
+
+type UploadedWorkbook = {
+  buffer: ArrayBuffer;
+  fileName: string;
+  identity: string;
+};
+
+type XlsxSearchResult = {
+  cell: XlsxCellAddress;
+  displayValue: string;
+  formula?: string;
+  sheetIndex: number;
+  sheetName: string;
+  workbookSheetIndex: number;
+};
+
+type XlsxBatchCell = {
+  col?: unknown;
+  formula?: unknown;
+  value?: unknown;
+};
+
+type XlsxBatchRow = {
+  cells?: unknown;
+  index?: unknown;
+};
+
+function formatWorkbookName(fileName: string | undefined, url: string) {
+  if (fileName?.trim()) return fileName;
+
+  const pathname = url.split('?')[0] ?? '';
+  const rawName = pathname.split('/').pop() ?? 'workbook.xlsx';
+
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
+function ensureWorkbookExtension(fileName: string) {
+  const lowerFileName = fileName.toLowerCase();
+  return lowerFileName.endsWith('.xlsx') || lowerFileName.endsWith('.xls')
+    ? fileName
+    : `${fileName}.xlsx`;
+}
+
+function downloadWorkbookBuffer(buffer: ArrayBuffer, fileName: string) {
+  const resolvedFileName = ensureWorkbookExtension(fileName);
+  const blob = new Blob([buffer], {
+    type: resolvedFileName.toLowerCase().endsWith('.xls')
+      ? 'application/vnd.ms-excel'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+
+  anchor.href = url;
+  anchor.download = resolvedFileName;
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function normalizeSearchText(value: unknown) {
+  return typeof value === 'string'
+    ? value
+    : value === null || value === undefined
+      ? ''
+      : String(value);
+}
+
+function cellValueToSearchText(value: unknown) {
+  if (!value || typeof value !== 'object') return normalizeSearchText(value);
+
+  const record = value as {
+    asBoolean?: () => boolean | null;
+    asError?: () => string | null;
+    asNumber?: () => number | null;
+    asText?: () => string | null;
+    is_boolean?: boolean;
+    is_empty?: boolean;
+    is_error?: boolean;
+    is_number?: boolean;
+    is_text?: boolean;
+  };
+
+  if (record.is_empty) return '';
+  if (record.is_error) return record.asError?.() ?? '';
+  if (record.is_text) return record.asText?.() ?? '';
+  if (record.is_number) return normalizeSearchText(record.asNumber?.());
+  if (record.is_boolean) return record.asBoolean?.() ? 'TRUE' : 'FALSE';
+
+  return normalizeSearchText(value);
+}
+
+function getCellSearchText(
+  controller: XlsxViewerController,
+  sheet: XlsxSheetData,
+  row: number,
+  col: number,
+) {
+  const worksheet = controller.workbook?.getSheet(sheet.workbookSheetIndex);
+  if (!worksheet) return { displayValue: '', formula: '' };
+
+  const formula = worksheet.getFormulaAt(row, col) ?? '';
+  const cachedFormulaValue = formula
+    ? sheet.cachedFormulaValues[cellAddressToA1({ row, col })]
+    : undefined;
+  const formatted = worksheet.getFormattedValueAt(row, col);
+
+  if (formatted && !(formula && cachedFormulaValue !== undefined && formatted.startsWith('#'))) {
+    return { displayValue: formatted, formula };
+  }
+
+  const calculated = worksheet.getCalculatedValueAt(row, col);
+  const displayValue =
+    formula && cachedFormulaValue !== undefined && calculated.is_error
+      ? cachedFormulaValue
+      : cellValueToSearchText(calculated);
+
+  return { displayValue, formula };
+}
+
+function getBatchRows(rows: unknown): XlsxBatchRow[] {
+  return Array.isArray(rows) ? (rows as XlsxBatchRow[]) : [];
+}
+
+function getBatchCells(row: XlsxBatchRow): XlsxBatchCell[] {
+  return Array.isArray(row.cells) ? (row.cells as XlsxBatchCell[]) : [];
+}
+
+function cellMatchesQuery(displayValue: string, formula: string, query: string) {
+  return displayValue.toLowerCase().includes(query) || formula.toLowerCase().includes(query);
+}
+
+function cellAddressToA1({ col, row }: XlsxCellAddress) {
+  let columnNumber = col + 1;
+  let columnName = '';
+
+  while (columnNumber > 0) {
+    const remainder = (columnNumber - 1) % 26;
+    columnName = String.fromCharCode(65 + remainder) + columnName;
+    columnNumber = Math.floor((columnNumber - 1) / 26);
+  }
+
+  return `${columnName}${row + 1}`;
+}
+
+async function findXlsxSearchResults(controller: XlsxViewerController, rawQuery: string) {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return [];
+
+  const results: XlsxSearchResult[] = [];
+
+  for (const [sheetIndex, sheet] of controller.sheets.entries()) {
+    const startRow = Math.max(0, sheet.minUsedRow);
+    const endRow = Math.max(startRow, sheet.maxUsedRow);
+    const visibleCols = sheet.visibleCols.filter(
+      (col) => col >= sheet.minUsedCol && col <= sheet.maxUsedCol,
+    );
+    const visibleRowSet = new Set(sheet.visibleRows);
+    const visibleColSet = new Set(visibleCols);
+
+    if (!visibleCols.length || sheet.maxUsedRow < sheet.minUsedRow) continue;
+
+    const worksheet = controller.workbook?.getSheet(sheet.workbookSheetIndex);
+    const worksheetWithBatch = worksheet as
+      | {
+          getRowsBatch?: (
+            startRow: number,
+            rowCount: number,
+            options?: Record<string, unknown>,
+          ) => unknown;
+        }
+      | undefined;
+
+    for (
+      let batchStartRow = startRow;
+      batchStartRow <= endRow;
+      batchStartRow += XLSX_SEARCH_BATCH_ROW_COUNT
+    ) {
+      const rowCount = Math.min(XLSX_SEARCH_BATCH_ROW_COUNT, endRow - batchStartRow + 1);
+      const rows = controller.getRowsBatchAsync
+        ? await controller.getRowsBatchAsync(sheet.workbookSheetIndex, batchStartRow, rowCount)
+        : worksheetWithBatch?.getRowsBatch?.(batchStartRow, rowCount, {
+            includeFormulas: true,
+            useFormattedValues: true,
+          });
+
+      if (rows) {
+        for (const rowEntry of getBatchRows(rows)) {
+          const row = Number(rowEntry.index);
+          if (!Number.isInteger(row) || !visibleRowSet.has(row)) {
+            continue;
+          }
+
+          for (const cellEntry of getBatchCells(rowEntry)) {
+            const col = Number(cellEntry.col);
+            if (!Number.isInteger(col) || !visibleColSet.has(col)) continue;
+
+            const displayValue = normalizeSearchText(cellEntry.value);
+            const formula = normalizeSearchText(cellEntry.formula);
+
+            if (!cellMatchesQuery(displayValue, formula, query)) continue;
+
+            results.push({
+              cell: { row, col },
+              displayValue,
+              formula,
+              sheetIndex,
+              sheetName: sheet.name,
+              workbookSheetIndex: sheet.workbookSheetIndex,
+            });
+          }
+        }
+        continue;
+      }
+
+      if (!worksheet) continue;
+
+      const batchEndRow = batchStartRow + rowCount - 1;
+      for (const row of sheet.visibleRows) {
+        if (row < batchStartRow || row > batchEndRow) continue;
+
+        for (const col of visibleCols) {
+          const { displayValue, formula } = getCellSearchText(controller, sheet, row, col);
+
+          if (!cellMatchesQuery(displayValue, formula, query)) continue;
+
+          results.push({
+            cell: { row, col },
+            displayValue,
+            formula,
+            sheetIndex,
+            sheetName: sheet.name,
+            workbookSheetIndex: sheet.workbookSheetIndex,
+          });
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * The selection as tab-separated rows, read through the worker. With
+ * `useWorker` the library keeps no main-thread workbook, so its own
+ * `getClipboardData()` returns null and Cmd+C copies nothing. Returns null
+ * when there is no selection or the sheet is not worker-backed.
+ */
+export async function readXlsxSelectionText(
+  controller: Pick<
+    XlsxViewerController,
+    'activeCell' | 'activeSheet' | 'getRowsBatchAsync' | 'selection'
+  >,
+) {
+  const { activeCell, activeSheet: sheet, getRowsBatchAsync } = controller;
+  const range =
+    controller.selection ?? (activeCell ? { start: activeCell, end: activeCell } : null);
+  if (!range || !sheet || !getRowsBatchAsync) return null;
+
+  const startRow = Math.min(range.start.row, range.end.row);
+  const startCol = Math.min(range.start.col, range.end.col);
+  // A header click selects the whole column or row; copy only the used part.
+  const endRow = Math.min(Math.max(range.start.row, range.end.row), sheet.maxUsedRow);
+  const endCol = Math.min(Math.max(range.start.col, range.end.col), sheet.maxUsedCol);
+  const lines: string[] = [];
+
+  for (let batchStart = startRow; batchStart <= endRow; batchStart += XLSX_SEARCH_BATCH_ROW_COUNT) {
+    const rowCount = Math.min(XLSX_SEARCH_BATCH_ROW_COUNT, endRow - batchStart + 1);
+    const rows = await getRowsBatchAsync(sheet.workbookSheetIndex, batchStart, rowCount);
+    const cellsByRow = new Map(
+      getBatchRows(rows).map((row) => [Number(row.index), getBatchCells(row)]),
+    );
+
+    for (let row = batchStart; row < batchStart + rowCount; row += 1) {
+      const values = new Map(
+        (cellsByRow.get(row) ?? []).map((cell) => [Number(cell.col), cell.value]),
+      );
+      const line: string[] = [];
+      for (let col = startCol; col <= endCol; col += 1) {
+        line.push(normalizeSearchText(values.get(col)));
+      }
+      lines.push(line.join('\t'));
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function sumAxisBefore(values: number[], endIndex: number, zoomFactor: number) {
+  let total = 0;
+  for (let index = 0; index < endIndex; index += 1) {
+    total += (values[index] ?? 0) * zoomFactor;
+  }
+  return total;
+}
+
+function scrollXlsxCellIntoView({
+  controller,
+  result,
+  viewport,
+}: {
+  controller: XlsxViewerController;
+  result: XlsxSearchResult;
+  viewport: HTMLDivElement | null;
+}) {
+  if (!viewport) return;
+
+  const sheet = controller.sheets[result.sheetIndex];
+  if (!sheet) return;
+
+  const rowIndex = sheet.visibleRows.indexOf(result.cell.row);
+  const colIndex = sheet.visibleCols.indexOf(result.cell.col);
+  if (rowIndex < 0 || colIndex < 0) return;
+
+  const zoomFactor = Math.max(0.1, controller.zoomScale / 100);
+  const headerHeight = XLSX_GRID_HEADER_HEIGHT * zoomFactor;
+  const rowHeaderWidth = XLSX_GRID_ROW_HEADER_WIDTH * zoomFactor;
+  const rowStart = headerHeight + sumAxisBefore(sheet.rowHeights, rowIndex, zoomFactor);
+  const colStart = rowHeaderWidth + sumAxisBefore(sheet.colWidths, colIndex, zoomFactor);
+  const rowHeight = (sheet.rowHeights[rowIndex] ?? sheet.defaultRowHeightPx) * zoomFactor;
+  const colWidth = (sheet.colWidths[colIndex] ?? sheet.defaultColWidthPx) * zoomFactor;
+  const rowEnd = rowStart + rowHeight;
+  const colEnd = colStart + colWidth;
+  let nextTop = viewport.scrollTop;
+  let nextLeft = viewport.scrollLeft;
+  const visibleTop = viewport.scrollTop + headerHeight;
+  const visibleLeft = viewport.scrollLeft + rowHeaderWidth;
+  const visibleBottom = viewport.scrollTop + viewport.clientHeight;
+  const visibleRight = viewport.scrollLeft + viewport.clientWidth;
+
+  if (rowStart < visibleTop) {
+    nextTop = rowStart - headerHeight;
+  } else if (rowEnd > visibleBottom) {
+    nextTop = rowEnd - viewport.clientHeight;
+  }
+
+  if (colStart < visibleLeft) {
+    nextLeft = colStart - rowHeaderWidth;
+  } else if (colEnd > visibleRight) {
+    nextLeft = colEnd - viewport.clientWidth;
+  }
+
+  viewport.scrollTo({
+    left: Math.max(0, nextLeft),
+    top: Math.max(0, nextTop),
+    behavior: 'auto',
+  });
+}
+
+function useDelayedLoadingIndicator(isLoading: boolean, delayMs: number) {
+  const [showSpinner, setShowSpinner] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      setShowSpinner(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowSpinner(true);
+    }, delayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, isLoading]);
+
+  return showSpinner;
+}
+
+function ToolbarTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{children}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ViewerLoadingSurface({ showSpinner = true }: { showSpinner?: boolean }) {
+  return (
+    <div className="grid h-full min-h-52 w-full min-w-full place-items-center bg-transparent">
+      {showSpinner ? <Spinner className="size-4" /> : null}
+    </div>
+  );
+}
+
+/**
+ * Upload is the only action left behind a menu here. Download is a visible
+ * button (`ViewerDownloadButton`) in the toolbar itself, so a menu that would
+ * hold nothing but Download is not rendered at all.
+ */
+function WorkbookFileActionsMenu({
+  onUploadClick,
+  showUploadButton,
+}: {
+  onUploadClick: () => void;
+  showUploadButton: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  if (!showUploadButton) return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="transition-transform active:scale-[0.96]"
+          aria-label={tI18nComplete.raw('text456a5556852f')}
+        >
+          <Ellipsis className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className={cn('w-52', XLSX_DROPDOWN_Z_INDEX_CLASS)}>
+        <DropdownMenuItem onClick={onUploadClick}>
+          <Upload className="size-4" />
+          {tI18nComplete.raw('text865e89de78d9')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function WorkbookTableHeaderMenu({
+  direction,
+  sortAscending,
+  sortDescending,
+  triggerIcon,
+  triggerProps,
+}: XlsxTableHeaderMenuRenderProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          {...triggerProps}
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className={cn('size-6 rounded-sm', triggerProps.className)}
+          aria-label={tI18nComplete.raw('text0fdefeed5773')}
+        >
+          {triggerIcon ? triggerIcon : <Ellipsis className="size-3.5" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className={cn('w-40', XLSX_DROPDOWN_Z_INDEX_CLASS)}>
+        <DropdownMenuRadioGroup
+          value={direction ?? ''}
+          onValueChange={(value) => {
+            if (value === 'ascending') {
+              sortAscending();
+            } else {
+              sortDescending();
+            }
+            setOpen(false);
+          }}
+        >
+          <DropdownMenuRadioItem value="ascending">
+            {tI18nComplete.raw('textec3c9c77806c')}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="descending">
+            {tI18nComplete.raw('text8993b788afbe')}
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function WorkbookSearchPopover({
+  viewportRef,
+  workbookIdentity,
+}: {
+  viewportRef: React.RefObject<HTMLDivElement | null>;
+  workbookIdentity: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const controller = useXlsxViewer();
+  const controllerRef = React.useRef(controller);
+  React.useEffect(() => {
+    controllerRef.current = controller;
+  }, [controller]);
+  const findResults = React.useCallback(
+    (query: string) => findXlsxSearchResults(controllerRef.current, query),
+    [],
+  );
+  const clearSelection = React.useCallback(() => controller.clearSelection(), [controller]);
+  const {
+    searchDraft,
+    setSearchDraft,
+    searchQuery,
+    searchResults,
+    activeResultIndex,
+    isSearching,
+    appliedResultKeyRef,
+    runSearch,
+    clearSearch,
+    goToRelativeResult,
+  } = useViewerSearch(findResults, workbookIdentity, clearSelection);
+  const activeResult = searchResults[activeResultIndex] ?? null;
+  const activeResultKey = activeResult
+    ? `${activeResult.workbookSheetIndex}:${activeResult.cell.row}:${activeResult.cell.col}`
+    : '';
+  const controlsDisabled =
+    controller.isLoading || Boolean(controller.error) || !controller.sheets.length;
+  const hasActiveQuery = Boolean(searchQuery.trim());
+  const resultLabel = isSearching
+    ? 'Searching'
+    : !hasActiveQuery
+      ? 'No search'
+      : searchResults.length
+        ? `${activeResultIndex + 1} / ${searchResults.length}`
+        : 'No results';
+
+  React.useEffect(() => {
+    if (!activeResult) return;
+
+    if (controller.activeSheetIndex !== activeResult.sheetIndex) {
+      appliedResultKeyRef.current = '';
+      controller.setActiveSheetIndex(activeResult.sheetIndex);
+      return;
+    }
+
+    if (appliedResultKeyRef.current === activeResultKey) return;
+    appliedResultKeyRef.current = activeResultKey;
+    controller.selectCell(activeResult.cell);
+
+    const frame = window.requestAnimationFrame(() => {
+      scrollXlsxCellIntoView({
+        controller,
+        result: activeResult,
+        viewport: viewportRef.current,
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeResult,
+    activeResultKey,
+    appliedResultKeyRef,
+    controller,
+    controller.activeSheetIndex,
+    viewportRef,
+  ]);
+
+  return (
+    <Popover>
+      <ToolbarTooltip label={tI18nComplete.raw('text6b11523da566')}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="transition-transform active:scale-[0.96]"
+            aria-label={tI18nComplete.raw('text6b11523da566')}
+            disabled={controlsDisabled}
+          >
+            <Search className="size-4" />
+          </Button>
+        </PopoverTrigger>
+      </ToolbarTooltip>
+      <PopoverContent align="end" className="w-72">
+        <div className="space-y-3">
+          <Input
+            placeholder={tI18nComplete.raw('text6b11523da566')}
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+
+              event.preventDefault();
+              if (event.shiftKey && searchResults.length) {
+                goToRelativeResult(-1);
+              } else if (searchResults.length) {
+                goToRelativeResult(1);
+              } else if (searchDraft.trim()) {
+                runSearch(searchDraft);
+              }
+            }}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-muted-foreground min-w-0 text-xs tabular-nums">
+              <div className="truncate">
+                {searchResults.length ? (
+                  <>
+                    <span className="text-primary">{activeResultIndex + 1}</span>
+                    {` / ${searchResults.length}`}
+                  </>
+                ) : (
+                  resultLabel
+                )}
+              </div>
+              {activeResult ? (
+                <div className="mt-0.5 truncate">
+                  {activeResult.sheetName}!{cellAddressToA1(activeResult.cell)}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                className="transition-transform active:scale-[0.96]"
+                aria-label={tI18nComplete.raw('text965bc32426d7')}
+                disabled={isSearching || searchResults.length === 0}
+                onClick={() => goToRelativeResult(-1)}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                className="transition-transform active:scale-[0.96]"
+                aria-label={tI18nComplete.raw('textbf56a193cb9f')}
+                disabled={isSearching || searchResults.length === 0}
+                onClick={() => goToRelativeResult(1)}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" size="sm" onClick={clearSearch}>
+              {tI18nComplete.raw('text83b12c2216ef')}
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function WorkbookToolbar({
+  fileName,
+  isDark,
+  onDownload,
+  onIsDarkChange,
+  onUploadClick,
+  showDownloadButton = true,
+  showNightRenderToggle,
+  showUploadButton = true,
+  toolbarActions,
+  viewportRef,
+  workbookIdentity,
+}: {
+  fileName?: string;
+  isDark: boolean;
+  onDownload?: () => void;
+  onIsDarkChange: (checked: boolean) => void;
+  onUploadClick: () => void;
+  showDownloadButton?: boolean;
+  showNightRenderToggle: boolean;
+  showUploadButton?: boolean;
+  toolbarActions?: React.ReactNode;
+  viewportRef: React.RefObject<HTMLDivElement | null>;
+  workbookIdentity: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { canZoomIn, canZoomOut, setZoomScale, zoomIn, zoomOut, zoomScale } = useXlsxViewerZoom();
+  const currentZoom = Math.round(zoomScale);
+
+  React.useEffect(() => {
+    setZoomScale(100);
+  }, [setZoomScale, workbookIdentity]);
+
+  return (
+    <div className="bg-background flex min-h-12 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+      <ViewerFileName fileName={fileName} fallback="Excel" />
+      <TooltipProvider>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+          <div className="flex flex-none items-center gap-1">
+            <ToolbarTooltip label={tI18nComplete.raw('textbc7b631a689b')}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="transition-transform active:scale-[0.96]"
+                disabled={!canZoomOut}
+                aria-label={tI18nComplete.raw('textbc7b631a689b')}
+                onClick={zoomOut}
+              >
+                <CircleMinus className="size-4" />
+              </Button>
+            </ToolbarTooltip>
+            <Select
+              value={currentZoom.toString()}
+              onValueChange={(value) => setZoomScale(Number(value))}
+              modal={false}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-[84px] min-w-[84px] tabular-nums"
+                aria-label={tI18nComplete.raw('text3926ced4e6c4')}
+              >
+                <SelectValue>{currentZoom}%</SelectValue>
+              </SelectTrigger>
+              <SelectContent
+                align="end"
+                alignItemWithTrigger={false}
+                className={XLSX_DROPDOWN_Z_INDEX_CLASS}
+              >
+                {ZOOM_OPTIONS.map((value) => (
+                  <SelectItem key={value} value={value.toString()}>
+                    {value}%
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ToolbarTooltip label={tI18nComplete.raw('text0e47f09a748f')}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="transition-transform active:scale-[0.96]"
+                disabled={!canZoomIn}
+                aria-label={tI18nComplete.raw('text0e47f09a748f')}
+                onClick={zoomIn}
+              >
+                <CirclePlus className="size-4" />
+              </Button>
+            </ToolbarTooltip>
+          </div>
+          <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+          <WorkbookSearchPopover viewportRef={viewportRef} workbookIdentity={workbookIdentity} />
+          {toolbarActions ? (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+              {toolbarActions}
+            </>
+          ) : null}
+          {(showDownloadButton && onDownload) || showUploadButton ? (
+            <>
+              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+              <WorkbookFileActionsMenu
+                onUploadClick={onUploadClick}
+                showUploadButton={showUploadButton}
+              />
+              {showDownloadButton && onDownload ? (
+                <ViewerDownloadButton onDownload={onDownload} />
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function WorkbookStandaloneToolbar({
+  onUploadClick,
+  showUploadButton = true,
+  toolbarActions,
+}: {
+  onUploadClick: () => void;
+  showUploadButton?: boolean;
+  toolbarActions?: React.ReactNode;
+}) {
+  return (
+    <div className="bg-background flex min-h-12 flex-wrap items-center justify-end gap-2 border-b px-3 py-2">
+      <TooltipProvider>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+          {toolbarActions ? <>{toolbarActions}</> : null}
+          {showUploadButton ? (
+            <>
+              {toolbarActions ? (
+                <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+              ) : null}
+              <WorkbookFileActionsMenu
+                onUploadClick={onUploadClick}
+                showUploadButton={showUploadButton}
+              />
+            </>
+          ) : null}
+        </div>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+type WorkbookSheetTab = {
+  name: string;
+  workbookSheetIndex: number;
+};
+
+type WorkbookSheetTabsInnerProps = {
+  activeSheetIndex: number;
+  onActiveSheetIndexChange: (index: number) => void;
+  sheets: WorkbookSheetTab[];
+  workbookIdentity: string;
+};
+
+export function WorkbookSheetTabs({ workbookIdentity }: { workbookIdentity: string }) {
+  const { activeSheetIndex, setActiveSheetIndex, sheets } = useXlsxViewer();
+
+  const handleActiveSheetIndexChange = React.useCallback(
+    (index: number) => setActiveSheetIndex(index),
+    [setActiveSheetIndex],
+  );
+
+  return (
+    <WorkbookSheetTabsInner
+      activeSheetIndex={activeSheetIndex}
+      onActiveSheetIndexChange={handleActiveSheetIndexChange}
+      sheets={sheets}
+      workbookIdentity={workbookIdentity}
+    />
+  );
+}
+
+const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
+  activeSheetIndex,
+  onActiveSheetIndexChange,
+  sheets,
+  workbookIdentity,
+}: WorkbookSheetTabsInnerProps) {
+  const [visiblePreviewIndex, setVisiblePreviewIndex] = React.useState<number | null>(null);
+  const [previewPosition, setPreviewPosition] = React.useState({
+    left: 0,
+    top: 0,
+  });
+  const { thumbnails } = useXlsxViewerThumbnails(XLSX_SHEET_TAB_THUMBNAIL_OPTIONS);
+  const [thumbnailUrls, setThumbnailUrls] = React.useState<Record<number, string>>({});
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const itemRefs = React.useRef<Record<number, HTMLButtonElement | null>>({});
+  const openTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewWidth = 220;
+  const previewHeight = (previewWidth * 7) / 11;
+  const previewGap = 12;
+  const previewOpenDelayMs = 500;
+
+  const clearOpenTimeout = React.useCallback(() => {
+    if (openTimeoutRef.current) {
+      clearTimeout(openTimeoutRef.current);
+      openTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearCloseTimeout = React.useCallback(() => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const getPreviewPosition = React.useCallback(
+    (sheetIndex: number) => {
+      const item = itemRefs.current[sheetIndex];
+      if (!item || typeof window === 'undefined') {
+        return { left: 0, top: 0 };
+      }
+
+      const itemRect = item.getBoundingClientRect();
+      const centeredLeft = itemRect.left + itemRect.width / 2 - previewWidth / 2;
+      const minLeft = 8;
+      const maxLeft = Math.max(minLeft, window.innerWidth - previewWidth - 8);
+      const left = Math.max(minLeft, Math.min(centeredLeft, maxLeft));
+      const top = Math.max(8, itemRect.top - previewHeight - previewGap);
+
+      return { left, top };
+    },
+    [previewHeight],
+  );
+
+  const updatePreviewPosition = React.useCallback(
+    (sheetIndex: number) => {
+      setPreviewPosition(getPreviewPosition(sheetIndex));
+    },
+    [getPreviewPosition],
+  );
+
+  const handleItemEnter = React.useCallback(
+    (sheetIndex: number) => {
+      clearCloseTimeout();
+      const nextPreviewPosition = getPreviewPosition(sheetIndex);
+
+      if (visiblePreviewIndex !== null) {
+        clearOpenTimeout();
+        setPreviewPosition(nextPreviewPosition);
+        setVisiblePreviewIndex(sheetIndex);
+        return;
+      }
+
+      clearOpenTimeout();
+      openTimeoutRef.current = setTimeout(() => {
+        setPreviewPosition(nextPreviewPosition);
+        setVisiblePreviewIndex(sheetIndex);
+      }, previewOpenDelayMs);
+    },
+    [clearCloseTimeout, clearOpenTimeout, getPreviewPosition, visiblePreviewIndex],
+  );
+
+  const handleContainerLeave = React.useCallback(() => {
+    clearOpenTimeout();
+    clearCloseTimeout();
+    closeTimeoutRef.current = setTimeout(() => {
+      setVisiblePreviewIndex(null);
+    }, 80);
+  }, [clearCloseTimeout, clearOpenTimeout]);
+
+  React.useEffect(() => {
+    return () => {
+      clearOpenTimeout();
+      clearCloseTimeout();
+    };
+  }, [clearCloseTimeout, clearOpenTimeout]);
+
+  React.useEffect(() => {
+    clearOpenTimeout();
+    clearCloseTimeout();
+    setVisiblePreviewIndex(null);
+    setPreviewPosition({ left: 0, top: 0 });
+    setThumbnailUrls({});
+  }, [clearCloseTimeout, clearOpenTimeout, workbookIdentity]);
+
+  React.useEffect(() => {
+    const painted: Record<number, string> = {};
+    for (const thumbnail of thumbnails) {
+      if (thumbnailUrls[thumbnail.sheetIndex]) continue;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = thumbnail.width;
+      canvas.height = thumbnail.height;
+
+      if (thumbnail.paint(canvas)) painted[thumbnail.sheetIndex] = canvas.toDataURL('image/png');
+    }
+    if (Object.keys(painted).length === 0) return;
+    // Existing entries win, as before: a sheet is painted once per workbook.
+    setThumbnailUrls((current) => ({ ...painted, ...current }));
+  }, [thumbnails, thumbnailUrls]);
+
+  React.useEffect(() => {
+    if (visiblePreviewIndex === null) return;
+
+    const handleReposition = () => updatePreviewPosition(visiblePreviewIndex);
+    handleReposition();
+
+    const scrollElement = scrollRef.current;
+    window.addEventListener('resize', handleReposition);
+    scrollElement?.addEventListener('scroll', handleReposition, {
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      scrollElement?.removeEventListener('scroll', handleReposition);
+    };
+  }, [updatePreviewPosition, visiblePreviewIndex]);
+
+  // The preview card portals to document.body, so it outlives the tab
+  // strip's own visibility: when the viewer is hidden or reparented under
+  // the cursor (keep-alive preview pools, a closing dialog) no mouseleave
+  // fires and the card would hang on screen. While the preview is open,
+  // poll the strip's effective visibility and dismiss as soon as it stops
+  // being shown.
+  React.useEffect(() => {
+    if (visiblePreviewIndex === null) return;
+
+    const dismissWhenHidden = () => {
+      const element = scrollRef.current;
+      const isVisible = Boolean(
+        element?.isConnected && (element.checkVisibility?.({ checkVisibilityCSS: true }) ?? true),
+      );
+
+      if (isVisible) return;
+      clearOpenTimeout();
+      clearCloseTimeout();
+      setVisiblePreviewIndex(null);
+    };
+    const interval = setInterval(dismissWhenHidden, 200);
+
+    return () => clearInterval(interval);
+  }, [clearCloseTimeout, clearOpenTimeout, visiblePreviewIndex]);
+
+  if (sheets.length <= 1) return null;
+
+  const previewSheet = visiblePreviewIndex === null ? null : sheets[visiblePreviewIndex];
+  const previewUrl =
+    visiblePreviewIndex === null ? null : (thumbnailUrls[visiblePreviewIndex] ?? null);
+
+  return (
+    <div className="bg-muted/40 border-t px-3 py-2" onMouseLeave={handleContainerLeave}>
+      <Tabs
+        value={String(activeSheetIndex)}
+        onValueChange={(value) => onActiveSheetIndexChange(Number(value))}
+        className="gap-0"
+      >
+        <ScrollArea
+          orientation="horizontal"
+          scrollbarGutter
+          className="h-fit w-full has-[[data-slot=scroll-area-viewport][data-has-overflow-x]]:h-[50px]"
+          viewportClassName="overflow-y-hidden"
+          viewportRef={scrollRef}
+        >
+          <div className="flex h-full items-center">
+            <TabsList className="shrink-0" size="xs" animate="none">
+              {sheets.map((sheet, index) => (
+                <TabsTrigger
+                  key={`${sheet.workbookSheetIndex}-${sheet.name}`}
+                  ref={(node) => {
+                    itemRefs.current[index] = node;
+                  }}
+                  value={String(index)}
+                  size="xs"
+                  className="max-w-48 flex-none rounded-md"
+                  onMouseEnter={() => handleItemEnter(index)}
+                >
+                  <span className="truncate">{sheet.name}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        </ScrollArea>
+      </Tabs>
+      {typeof document !== 'undefined' && previewSheet && visiblePreviewIndex !== null && previewUrl
+        ? createPortal(
+            <div
+              className="bg-background/95 duration-fast pointer-events-none fixed z-40 translate-y-0 overflow-hidden rounded-lg border opacity-100 shadow-xl backdrop-blur-md transition-[opacity,transform]"
+              style={{
+                left: previewPosition.left,
+                top: previewPosition.top,
+                width: previewWidth,
+              }}
+            >
+              <div className="bg-muted/60 relative aspect-[11/7] w-full overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element -- Workbook sheet previews are generated runtime image URLs. */}
+                <img
+                  key={`${workbookIdentity}-${visiblePreviewIndex}-${previewUrl}`}
+                  src={previewUrl}
+                  alt={`${previewSheet.name} preview`}
+                  className="absolute inset-0 h-full w-full object-cover object-left-top"
+                />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+});
+
+export function XlsxWorkbookSurface({
+  className,
+  fileName,
+  isDark,
+  onDownload,
+  onIsDarkChange,
+  onUploadClick,
+  renderTableHeaderMenu,
+  showDownloadButton = true,
+  showNightRenderToggle,
+  showToolbar = true,
+  showUploadButton = true,
+  toolbarActions,
+  workbookIdentity,
+}: {
+  className?: string;
+  fileName?: string;
+  isDark: boolean;
+  onDownload?: () => void;
+  onIsDarkChange: (checked: boolean) => void;
+  onUploadClick: () => void;
+  renderTableHeaderMenu: (props: XlsxTableHeaderMenuRenderProps) => React.ReactNode;
+  showDownloadButton?: boolean;
+  showNightRenderToggle: boolean;
+  showToolbar?: boolean;
+  showUploadButton?: boolean;
+  toolbarActions?: React.ReactNode;
+  workbookIdentity: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const controller = useXlsxViewer();
+  const { error } = controller;
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+
+  const controllerRef = React.useRef(controller);
+  React.useLayoutEffect(() => {
+    controllerRef.current = controller;
+  }, [controller]);
+
+  // Stable, so the window copy listener below is attached once.
+  const copySelection = React.useCallback(() => {
+    if (!controllerRef.current.getRowsBatchAsync) {
+      void controllerRef.current.copySelectionToClipboard();
+      return;
+    }
+    // ponytail: the controller's selection commits a frame (plus a React
+    // transition) after the grid's own, so a Cmd+C within ~20 ms of a click
+    // copies the previous cell. No human is that fast; wait on the library's
+    // commit if one ever is. A null result (nothing selected) rejects, which
+    // leaves the clipboard untouched.
+    void copyToClipboard(
+      readXlsxSelectionText(controllerRef.current).then(
+        (value) => value ?? Promise.reject(new Error('Nothing selected')),
+      ),
+    );
+  }, []);
+
+  // The grid's first canvas paint can run before the worker-backed sheet
+  // extent settles; the library only resyncs its painted viewport from the
+  // DOM on scroll events, so a workbook that finishes parsing after that
+  // first paint stays blank (or paints a phantom offset) until the user
+  // scrolls. Dispatching a zero-delta scroll whenever the viewport or its
+  // content sizer resizes forces that resync at every settle point
+  // (initial parse, sheet switch, hidden-card reveal) with no visible
+  // side effect — the library short-circuits when nothing changed.
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      viewport.dispatchEvent(new Event('scroll'));
+    });
+    observer.observe(viewport);
+    if (viewport.firstElementChild) observer.observe(viewport.firstElementChild);
+    return () => observer.disconnect();
+  }, [workbookIdentity]);
+
+  const renderSearchableScroller = React.useCallback(
+    ({ children, viewportProps }: XlsxScrollerRenderProps) => (
+      <ScrollArea
+        className="h-full min-h-0 w-full min-w-0 flex-1"
+        viewportProps={viewportProps}
+        viewportRef={viewportRef}
+      >
+        {children}
+      </ScrollArea>
+    ),
+    [],
+  );
+
+  // Cmd+C with no text selected fires `copy` on <body> in Chrome, not on the
+  // focused grid, so the library's own `onCopy` on the grid never runs (and
+  // copies nothing for a worker-backed workbook anyway). Listen on the window
+  // and copy when focus is in this grid, as Glide does for the CSV viewer.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented) return; // the library already copied
+      if (!viewportRef.current?.contains(document.activeElement)) return;
+      event.preventDefault();
+      copySelection();
+    };
+    window.addEventListener('copy', handleCopy);
+    return () => window.removeEventListener('copy', handleCopy);
+  }, [copySelection]);
+
+  return (
+    <div className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}>
+      {showToolbar ? (
+        <WorkbookToolbar
+          fileName={fileName}
+          isDark={isDark}
+          onDownload={onDownload}
+          onIsDarkChange={onIsDarkChange}
+          onUploadClick={onUploadClick}
+          showDownloadButton={showDownloadButton}
+          showNightRenderToggle={showNightRenderToggle}
+          showUploadButton={showUploadButton}
+          toolbarActions={toolbarActions}
+          viewportRef={viewportRef}
+          workbookIdentity={workbookIdentity}
+        />
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ViewerCopyMenu onCopy={copySelection}>
+          <div className="bg-muted/20 min-h-0 flex-1">
+            <XlsxViewer
+              experimentalCanvas
+              allowResizeInReadOnly
+              className="h-full min-h-0 min-w-0"
+              height="100%"
+              isDark={isDark}
+              readOnly
+              rounded={false}
+              showDefaultToolbar={false}
+              showImages
+              fileTooLargeState={
+                <div className="grid h-full w-full min-w-full place-items-center p-6">
+                  <div className="bg-background max-w-sm rounded-lg border p-4 text-sm">
+                    <p className="font-medium">{tI18nComplete.raw('text8a2819cae213')}</p>
+                    <p className="text-muted-foreground mt-1">
+                      {tI18nComplete.raw('textd3821f7d63f3')}
+                    </p>
+                  </div>
+                </div>
+              }
+              loadingState={<ViewerLoadingSurface />}
+              renderScroller={renderSearchableScroller}
+              errorState={
+                <div className="text-destructive grid h-full w-full min-w-full place-items-center p-6 text-sm">
+                  {error?.message ?? tI18nComplete.raw('text8d75c18adecc')}
+                </div>
+              }
+              renderTableHeaderMenu={renderTableHeaderMenu}
+            />
+          </div>
+        </ViewerCopyMenu>
+        <WorkbookSheetTabs workbookIdentity={workbookIdentity} />
+      </div>
+    </div>
+  );
+}
+
+export function XlsxViewerPreview({
+  className,
+  fileName,
+  isDark,
+  onIsDarkChange,
+  showDownload = true,
+  showToolbar = true,
+  showUpload = true,
+  src,
+  toolbarActions,
+}: {
+  className?: string;
+  fileName?: string;
+  isDark: boolean;
+  onIsDarkChange: (isDark: boolean) => void;
+  showDownload?: boolean;
+  showToolbar?: boolean;
+  showUpload?: boolean;
+  src?: string;
+  toolbarActions?: React.ReactNode;
+}) {
+  return (
+    <XlsxViewerContent
+      className={className}
+      effectiveIsDark={isDark}
+      fileName={fileName}
+      setNightRenderEnabled={onIsDarkChange}
+      shouldRenderNightMode
+      showDownload={showDownload}
+      showToolbar={showToolbar}
+      showUpload={showUpload}
+      toolbarActions={toolbarActions}
+      url={src}
+    />
+  );
+}
+
+function XlsxViewerContent({
+  className,
+  effectiveIsDark,
+  fileName,
+  setNightRenderEnabled,
+  shouldRenderNightMode,
+  showDownload,
+  showToolbar = true,
+  showUpload,
+  toolbarActions,
+  url,
+}: {
+  className?: string;
+  effectiveIsDark: boolean;
+  fileName?: string;
+  setNightRenderEnabled: (checked: boolean) => void;
+  shouldRenderNightMode: boolean;
+  showDownload: boolean;
+  showToolbar?: boolean;
+  showUpload: boolean;
+  toolbarActions?: React.ReactNode;
+  url?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [uploadedWorkbook, setUploadedWorkbook] = React.useState<UploadedWorkbook | null>(null);
+  const sourceFileName = React.useMemo(
+    () => (url ? formatWorkbookName(fileName, url) : (fileName ?? 'workbook.xlsx')),
+    [fileName, url],
+  );
+  const displayFileName = React.useMemo(
+    () => uploadedWorkbook?.fileName ?? sourceFileName,
+    [sourceFileName, uploadedWorkbook?.fileName],
+  );
+  const workbookIdentity = React.useMemo(
+    () => uploadedWorkbook?.identity ?? `${url ?? 'empty'}::${displayFileName}`,
+    [displayFileName, uploadedWorkbook?.identity, url],
+  );
+  const [workbookBuffer, setWorkbookBuffer] = React.useState<ArrayBuffer | null>(null);
+  const [loadError, setLoadError] = React.useState<string>();
+  const shouldShowLoadingSpinner = useDelayedLoadingIndicator(
+    !workbookBuffer && !loadError && !uploadedWorkbook,
+    XLSX_LOADING_INDICATOR_DELAY_MS,
+  );
+
+  React.useEffect(() => {
+    let isCurrent = true;
+    if (url) {
+      setUploadedWorkbook(null);
+    }
+
+    async function loadWorkbook(): Promise<void> {
+      if (!url) {
+        setWorkbookBuffer(null);
+        setLoadError(undefined);
+        return;
+      }
+
+      setWorkbookBuffer(null);
+      setLoadError(undefined);
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch XLSX (${response.status})`);
+        }
+
+        const nextWorkbookBuffer = await response.arrayBuffer();
+        if (!isCurrent) return;
+
+        setWorkbookBuffer(nextWorkbookBuffer);
+      } catch (error) {
+        if (!isCurrent) return;
+
+        setLoadError(error instanceof Error ? error.message : 'Unknown XLSX load error');
+      }
+    }
+
+    void loadWorkbook();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [url]);
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    const buffer = await file.arrayBuffer();
+    setLoadError(undefined);
+    setUploadedWorkbook({
+      buffer,
+      fileName: file.name,
+      identity: `${file.name}-${file.size}-${file.lastModified}`,
+    });
+  }
+
+  const activeBuffer = uploadedWorkbook?.buffer ?? workbookBuffer;
+  const activeFileName = uploadedWorkbook?.fileName ?? displayFileName;
+  const activeIdentity = workbookIdentity;
+
+  if (!url && !uploadedWorkbook) {
+    return (
+      <div
+        className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="hidden"
+          onChange={handleUpload}
+        />
+        <WorkbookStandaloneToolbar
+          onUploadClick={() => fileInputRef.current?.click()}
+          showUploadButton={showUpload}
+          toolbarActions={toolbarActions}
+        />
+        <div className="bg-muted/30 grid min-h-0 flex-1 place-items-center p-4">
+          <div className="bg-background max-w-md rounded-lg border p-4 text-center text-sm shadow-xs">
+            <p className="font-medium">{tI18nComplete.raw('text2e15b5a6e45a')}</p>
+            <p className="text-muted-foreground mt-1">
+              {tI18nComplete.raw('text27acc1f81d66')} <code>src</code>{' '}
+              {tI18nComplete.raw('text37056f2381e2')}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="size-4" />
+              {tI18nComplete.raw('text522d6e41c020')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError && !activeBuffer) {
+    return (
+      <div
+        className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="hidden"
+          onChange={handleUpload}
+        />
+        <WorkbookStandaloneToolbar
+          onUploadClick={() => fileInputRef.current?.click()}
+          showUploadButton={showUpload}
+          toolbarActions={toolbarActions}
+        />
+        <div className="bg-muted/30 grid min-h-0 flex-1 place-items-center p-4">
+          <div className="bg-background max-w-md rounded-lg border p-4 text-sm">
+            <p className="font-medium">{tI18nComplete.raw('texte3190ee3d8a8')}</p>
+            <p className="text-muted-foreground mt-1">{loadError}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="size-4" />
+              {tI18nComplete.raw('text522d6e41c020')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeBuffer) {
+    return (
+      <div
+        className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="hidden"
+          onChange={handleUpload}
+        />
+        <WorkbookStandaloneToolbar
+          onUploadClick={() => fileInputRef.current?.click()}
+          showUploadButton={showUpload}
+          toolbarActions={toolbarActions}
+        />
+        <ViewerLoadingSurface showSpinner={shouldShowLoadingSpinner} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('overflow-hidden', className)}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="hidden"
+        onChange={handleUpload}
+      />
+      <XlsxWorkbookLoadedViewer
+        className={className}
+        fileName={activeFileName}
+        isDark={effectiveIsDark}
+        onDownload={() => downloadWorkbookBuffer(activeBuffer, activeFileName)}
+        onIsDarkChange={setNightRenderEnabled}
+        onUploadClick={() => fileInputRef.current?.click()}
+        renderTableHeaderMenu={(props) => <WorkbookTableHeaderMenu {...props} />}
+        showDownloadButton={showDownload}
+        showNightRenderToggle={shouldRenderNightMode}
+        showToolbar={showToolbar}
+        showUploadButton={showUpload}
+        toolbarActions={toolbarActions}
+        workbookBuffer={activeBuffer}
+        workbookIdentity={activeIdentity}
+      />
+    </div>
+  );
+}
+
+function XlsxWorkbookLoadedViewer({
+  className,
+  fileName,
+  isDark,
+  onDownload,
+  onIsDarkChange,
+  onUploadClick,
+  renderTableHeaderMenu,
+  showDownloadButton,
+  showNightRenderToggle,
+  showToolbar = true,
+  showUploadButton,
+  toolbarActions,
+  workbookBuffer,
+  workbookIdentity,
+}: {
+  className?: string;
+  fileName: string;
+  isDark: boolean;
+  onDownload: () => void;
+  onIsDarkChange: (checked: boolean) => void;
+  onUploadClick: () => void;
+  renderTableHeaderMenu: (props: XlsxTableHeaderMenuRenderProps) => React.ReactNode;
+  showDownloadButton: boolean;
+  showNightRenderToggle: boolean;
+  showToolbar?: boolean;
+  showUploadButton: boolean;
+  toolbarActions?: React.ReactNode;
+  workbookBuffer: ArrayBuffer;
+  workbookIdentity: string;
+}) {
+  const controller = useXlsxViewerController(
+    React.useMemo(
+      () => ({
+        allowResizeInReadOnly: true,
+        file: workbookBuffer,
+        fileName,
+        maxFileSizeBytes: XLSX_MAX_FILE_SIZE_BYTES,
+        readOnly: true,
+        useWorker: true,
+      }),
+      [fileName, workbookBuffer],
+    ),
+  );
+
+  return (
+    <XlsxViewerProvider controller={controller} isDark={isDark}>
+      <XlsxWorkbookSurface
+        className={className}
+        fileName={fileName}
+        isDark={isDark}
+        onDownload={onDownload}
+        onIsDarkChange={onIsDarkChange}
+        onUploadClick={onUploadClick}
+        renderTableHeaderMenu={renderTableHeaderMenu}
+        showDownloadButton={showDownloadButton}
+        showNightRenderToggle={showNightRenderToggle}
+        showToolbar={showToolbar}
+        showUploadButton={showUploadButton}
+        toolbarActions={toolbarActions}
+        workbookIdentity={workbookIdentity}
+      />
+    </XlsxViewerProvider>
+  );
+}

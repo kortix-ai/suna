@@ -47,16 +47,16 @@
  * it, and a reconnect needs no replay to be correct.
  */
 
+import { registerSessionRuntimeTurnEnds, forgetSessionRuntimeTurnEnds } from './session-runtime-turn-ends';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
 import {
   readRuntimeControlState,
-  readMirrorWatermark,
   readSessionAuditWatermark,
   readSessionControlState,
 } from './session-control-readers';
-export type { RuntimeControlState, MirrorWatermark, AuditWatermark, SessionControlState } from './session-control-readers';
+export type { RuntimeControlState, AuditWatermark, SessionControlState } from './session-control-readers';
 import { deriveSessionWorking } from './session-working';
 import type { SessionTurnStatus } from '@kortix/api-contract';
 import type { RuntimeControlState } from './session-control-readers';
@@ -106,6 +106,7 @@ interface LadderState {
 import { onSessionChanged, onSessionPromptsChanged } from '../../shared/pg-broadcast';
 import {
   publishControlEvent,
+  TURN_FRAME_STOP_PROMPTER,
   type ControlEvent,
   type ControlEventType,
 } from './session-control-events';
@@ -175,6 +176,12 @@ interface Reconciler {
   projectId: string | null;
   /** The last turn read, so a runtime turn end can re-decide `working` without a read. */
   lastTurn: SessionTurnStatus | null;
+  /**
+   * Who prompted the newest running turn, read once per turn. The stream turns
+   * it into each viewer's own `can_stop` (`session-stream.ts`): the frame is one
+   * broadcast, the answer is per person.
+   */
+  stopPrompter: { messageId: string; userId: string | null } | null;
   /** The last queue read, for the same reason. */
   lastPrompts: Array<{ state: string; reason: string | null; client_sent_at_ms?: number | null }>;
   /** Newest `kortix.turn` end per runtime session id, seen on this replica's streams. */
@@ -237,6 +244,7 @@ export function acquireControlReconciler(
       idleSince: null,
       projectId,
       lastTurn: null,
+      stopPrompter: null,
       lastPrompts: [],
       runtimeTurnEnds: new Map(),
       lastRuntime: null,
@@ -252,6 +260,7 @@ export function acquireControlReconciler(
       },
     };
     reconcilers.set(sessionId, reconciler);
+    registerSessionRuntimeTurnEnds(sessionId, reconciler.runtimeTurnEnds);
   }
   const target = reconciler;
   target.projectId ??= projectId;
@@ -343,6 +352,7 @@ function sweepIdleReconcilers(): void {
     if (reconciler.refs <= 0 && reconciler.idleSince !== null && reconciler.idleSince < cutoff) {
       if (reconciler.timer) clearInterval(reconciler.timer);
       reconcilers.delete(sessionId);
+      forgetSessionRuntimeTurnEnds(sessionId);
     }
   }
 }
@@ -371,11 +381,10 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     const observedAt = new Date().toISOString();
     // No full holder: the queue is the only subsystem anyone reads.
     const full = reconciler.fullRefs > 0;
-    const [turn, queue, runtime, mirror, audit, session] = await Promise.allSettled([
+    const [turn, queue, runtime, audit, session] = await Promise.allSettled([
       full ? readSessionTurnState(sessionId) : null,
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       full ? readRuntimeControlState(sessionId) : null,
-      full ? readMirrorWatermark(sessionId) : null,
       full ? readSessionAuditWatermark(sessionId, reconciler) : null,
       full ? readSessionControlState(sessionId) : null,
     ]);
@@ -383,6 +392,7 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     if (queue.status === 'fulfilled') reconciler.lastPrompts = queue.value.map(serializePrompt);
     if (full && turn.status === 'fulfilled' && turn.value) {
       reconciler.lastTurn = turn.value;
+      await readStopPrompter(sessionId, reconciler);
       emitTurn(sessionId, reconciler);
     }
     if (queue.status === 'fulfilled') {
@@ -408,9 +418,6 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
       observeWake(reconciler);
       emitRuntime(sessionId, reconciler);
       void driveWakeLadder(sessionId, reconciler);
-    }
-    if (full && mirror.status === 'fulfilled') {
-      emit(sessionId, reconciler, 'kortix.control.mirror', mirror.value);
     }
     if (full && audit.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.audit', audit.value);
@@ -568,12 +575,32 @@ async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promi
   }
 }
 
+/** The prompter of the newest running turn, cached by its message id. Never throws. */
+async function readStopPrompter(sessionId: string, reconciler: Reconciler): Promise<void> {
+  const messageId = reconciler.lastTurn?.turns[0]?.message_id ?? null;
+  if (!messageId) {
+    reconciler.stopPrompter = null;
+    return;
+  }
+  if (reconciler.stopPrompter?.messageId === messageId) return;
+  try {
+    // Loaded on first use: the stop authority's module graph (admission, the
+    // inbox) stays out of every module that only imports the reconciler.
+    const { turnPrompterOf } = await import('../session-lifecycle/turn-stop-authority');
+    reconciler.stopPrompter = { messageId, userId: await turnPrompterOf(sessionId, messageId) };
+  } catch {
+    // Unknown prompter: only the owner or a manager reads `can_stop: true`.
+    reconciler.stopPrompter = { messageId, userId: null };
+  }
+}
+
 /** The turn frame: the last turn read plus the server's `working` verdict. */
 function emitTurn(sessionId: string, reconciler: Reconciler): void {
   if (!reconciler.lastTurn) return;
   emit(sessionId, reconciler, 'kortix.control.turn', {
     known: true,
     ...reconciler.lastTurn,
+    [TURN_FRAME_STOP_PROMPTER]: reconciler.stopPrompter?.userId ?? null,
     working: deriveSessionWorking(
       reconciler.lastTurn,
       reconciler.lastPrompts,
@@ -635,7 +662,8 @@ export function publishRuntimeStateFrame(sessionId: string, payload: unknown): C
 
 /** Test-only: stop and forget every reconciler. */
 export function __resetControlReconcilersForTests(): void {
-  for (const reconciler of reconcilers.values()) {
+  for (const [sessionId, reconciler] of reconcilers) {
+    forgetSessionRuntimeTurnEnds(sessionId);
     if (reconciler.timer) clearInterval(reconciler.timer);
   }
   reconcilers.clear();

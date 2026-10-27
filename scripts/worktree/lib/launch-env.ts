@@ -3,6 +3,13 @@ import type { SlotCreds } from './supabase';
 
 export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = 'local-flow-runner-internal-service-key';
 
+function appDotenvKeys(app: 'API' | 'WEB'): Record<string, string> {
+  return Object.fromEntries(['', '_DEV', '_STAGING'].flatMap(suffix => {
+    const key = process.env[`SUNA_${app}_DOTENV_PRIVATE_KEY${suffix}`];
+    return key ? [[`DOTENV_PRIVATE_KEY${suffix}`, key]] : [];
+  }));
+}
+
 export interface ApiLaunchOpts {
   /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
   kortixUrl?: string;
@@ -22,6 +29,8 @@ export interface ApiLaunchOpts {
 export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
   const billing = opts.billing ?? !!opts.stripeWebhookSecret;
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
+    ...appDotenvKeys('API'),
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
     KORTIX_APPS_LOCAL: 'true',
@@ -49,6 +58,20 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: 'true',
     ...(c.s3AccessKeyId ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
     ...(c.s3SecretAccessKey ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
+    // Kortix Capture reads and writes THIS slot's Supabase Storage (bucket
+    // `kortix-capture`, created by migration) unless the shell names another
+    // store. Supabase Storage has no STS, so device credentials need the MinIO
+    // recipe in .agents/skills/worktree/references/capture-local-store.md.
+    ...(process.env.KORTIX_CAPTURE_S3_BUCKET
+      ? {}
+      : {
+          KORTIX_CAPTURE_S3_BUCKET: 'kortix-capture',
+          KORTIX_CAPTURE_S3_REGION: 'local',
+          KORTIX_CAPTURE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,
+          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: 'true',
+          ...(c.s3AccessKeyId ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
+          ...(c.s3SecretAccessKey ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
+        }),
     INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
     // Billing is opt-in. --billing exposes local routes. --stripe also injects
@@ -60,7 +83,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway.
     // Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
     // standalone gateway owns /v1/chat/completions. Overrides .env.
-    LLM_GATEWAY_ENABLED: 'true',
     LLM_GATEWAY_BASE_URL: '',
     LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
@@ -73,6 +95,7 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
 // (optional tracing) passes through from the parent shell if set.
 export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
     PORT: String(ports.gateway),
     KORTIX_API_URL: `http://localhost:${ports.api}`,
     GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
@@ -82,6 +105,8 @@ export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
 
 export function webLaunchEnv(ports: Ports, c: SlotCreds, opts: { billing?: boolean } = {}): Record<string, string> {
   return {
+    INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV || 'dev',
+    ...appDotenvKeys('WEB'),
     WEB_PORT: String(ports.web),
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,

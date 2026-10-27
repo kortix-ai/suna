@@ -41,6 +41,22 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   ['POST', '/v1/billing/create-checkout-session'],
   ['POST', '/v1/billing/confirm-checkout-session'],
   ['POST', '/v1/billing/schedule-downgrade'],
+  // Credits-only billing (2026-10-14) replaced seats and the tier ladder with
+  // POST /v1/billing/plan.
+  ['POST', '/v1/billing/claim-per-seat'],
+  ['POST', '/v1/billing/create-per-seat-checkout'],
+  ['POST', '/v1/billing/create-inline-checkout'],
+  ['POST', '/v1/billing/confirm-inline-checkout'],
+  ['POST', '/v1/billing/cancel-scheduled-change'],
+  ['GET', '/v1/billing/proration-preview'],
+  // Enterprise is a feature layer (2026-10-15): a license contract
+  // (POST /v1/admin/api/accounts/:id/enterprise-contract) or the account's own
+  // demo toggle (PUT /v1/accounts/:accountId/iam/enterprise-demo). Trials are gone.
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-demo'],
+  ['POST', '/v1/admin/api/accounts/:id/trial'],
+  ['DELETE', '/v1/admin/api/accounts/:id/trial'],
+  ['POST', '/v1/admin/api/accounts/:id/enterprise-entitlement'],
+  ['POST', '/v1/admin/api/accounts/:id/managed-models'],
   // OpenRouter-parity generation lookup and the no-op prewarm.
   ['GET', '/v1/generation'],
   ['POST', '/v1/prewarm'],

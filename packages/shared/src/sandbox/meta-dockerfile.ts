@@ -52,7 +52,7 @@ export const META_AGENT_GUIDE = [
   '- Offload EVERY task to a specialized session — never decide a task is "small enough" to do here. If there is work, there is a session for it.',
   '- Give each specialized session one bounded task.',
   '- You are the only coordinator. Specialized sessions do their task themselves and never spawn sessions.',
-  '  Always pass the task via `--prompt`; the CLI appends a session contract that tells the worker to do the',
+  '  Always pass the task via `--prompt`; the CLI ships a session contract beside the prompt (initial_context) that tells the worker to do the',
   '  work directly and to write deliverables under /workspace/out/.',
   '- If a task needs another skill, spawn a sibling session yourself — never ask a session to delegate.',
   '- Monitor each specialized session and report its verified result.',

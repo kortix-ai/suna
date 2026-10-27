@@ -24,7 +24,7 @@
  * degraded leg all keep working.
  *
  * CONTROL PLANE ONLY — no sandbox hop, ever. The transcript comes from the
- * durable MIRROR (a DB read), never from the box; readiness stays the job of
+ * session log (a DB read), never from the box; readiness stays the job of
  * `POST .../start`, which is the only call allowed to wake anything. That is
  * what keeps this route answerable in ~one DB round trip for a stopped session
  * and stops it racing `/start` for the "is the runtime up" answer.
@@ -48,8 +48,6 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -62,17 +60,24 @@ import {
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
+import { normalizeDefaultReasoningEffort } from '../lib/effort-default';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
+import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
-import { readSessionLogPage } from '../session-log-read';
+import { readSessionConversationModels, readSessionLogPage } from '../session-log-read';
+import { turnPublishVerdict } from '../lib/http-session-access';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -151,8 +156,6 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // `GET .../sessions/:sessionId` applies, for the same reason.
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
-    const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
-    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log', loaded.row.accountId);
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
@@ -165,8 +168,18 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
-      readSessionTurnState(sessionId),
+    const personId = personUserId(c, loaded);
+    const [turn, queue, transcript, models, runtime, audit, log, listState, conversationModels] = await Promise.allSettled([
+      // = GET .../turn, `can_stop` included: one prompter read, only while a
+      // turn runs for a caller who is not the owner or a manager.
+      readSessionTurnState(sessionId).then(async (state) => ({
+        ...state,
+        can_stop: await canStopTurns(state, {
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        }),
+      })),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
         ? Promise.resolve(null)
@@ -174,38 +187,35 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
             session: visible.row,
             limit: transcriptLimit.value,
           }),
-      gatewayEnabled
-        ? (async () => {
-            const accountId = loaded.row.accountId as string;
-            const [defaults, mayUseManaged] = await Promise.all([
-              getAccountModelDefaults(accountId, projectId),
-              accountMayUseManagedModels(accountId),
-            ]);
-            const freeTier = !mayUseManaged;
-            // The project-level resolution, exactly as `GET .../model-defaults`
-            // computes it (no session scope): the SDK seeds that query from
-            // this leg, so the two answers must be the same answer.
-            const resolved = await resolveEffectiveModel({
-              userId,
-              accountId,
-              projectId,
-              explicit: null,
-              freeModelsOnly: freeTier,
-            });
-            return {
-              platformDefault: platformDefaultModelId(),
-              accountDefault: defaults.account,
-              agentDefaults: defaults.agents,
-              projectDefault: defaults.projects[projectId] ?? null,
-              // Same answer as GET /model-defaults (KRTX-1067): the platform
-              // default is servable for every tier, so the fallback is the
-              // same for free and paid callers.
-              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
-              resolvedSource: resolved.source,
-              freeTier,
-            };
-          })()
-        : Promise.resolve(null),
+      (async () => {
+        const accountId = loaded.row.accountId as string;
+        const [defaults, mayUseManaged] = await Promise.all([
+          getAccountModelDefaults(accountId, projectId),
+          accountMayUseManagedModels(accountId),
+        ]);
+        const freeTier = !mayUseManaged;
+        // The project-level resolution, exactly as `GET .../model-defaults`
+        // computes it (no session scope): the SDK seeds that query from
+        // this leg, so the two answers must be the same answer.
+        const resolved = await resolveEffectiveModel({
+          userId,
+          accountId,
+          projectId,
+          explicit: null,
+          freeModelsOnly: freeTier,
+        });
+        return {
+          platformDefault: freeTier ? null : platformDefaultModelId(),
+          accountDefault: defaults.account,
+          agentDefaults: defaults.agents,
+          projectDefault: defaults.projects[projectId] ?? null,
+          // Same answer as GET /model-defaults: an account without
+          // managed models has no platform default.
+          resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+          resolvedSource: resolved.source,
+          freeTier,
+        };
+      })(),
       // = the daemon's `/kortix/opencode/state`, served from Postgres. This is
       // the leg that lets a STOPPED session answer "which agents, which
       // commands, what model" — it is a DB read like every other leg here, and
@@ -226,14 +236,17 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           agentName: (visible.row.agentName as string | null) ?? null,
           audited,
           limit: AUDIT_ACTIONS_LIMIT,
+          // `can_resolve` + `resolvers`: the resolve route's verdict (KRTX-1724).
+          ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
-      // = `GET .../log`, the first page of the root thread, only with the
-      // `session_log` flag on. Same window as the transcript leg; `?transcript=0`
-      // reads the pointer only (session, generation, threads, no messages).
-      logEnabled
-        ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
-        : Promise.resolve(undefined),
+      // = `GET .../log`, the first page of the root thread. Same window as the
+      // transcript leg; `?transcript=0` reads the pointer only (session,
+      // generation, threads, no messages).
+      readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value }),
+      // The person's pin and archive, as the read by id serves them (KRTX-2418).
+      personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
+      readSessionConversationModels([sessionId]),
     ]);
 
     const prompts =
@@ -263,12 +276,19 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       // The session row, byte-identical to `GET .../sessions/:sessionId`.
       session: serializeSession(visible.row, {
         grants: visible.grants,
+        conversationModel: conversationModels.status === 'fulfilled' ? conversationModels.value.get(sessionId) : undefined,
         viewerId: loaded.userId,
         canManageProject: visible.canManageProject,
         ownerIsMachine: visible.ownerIsMachine,
+        canPublishResponse: (await turnPublishVerdict(c, loaded, visible)) === 'allow',
         // Owner email is a second lookup for a display string the composer does
         // not need to paint. The session route still serves it.
         ownerEmail: null,
+        // A failed read omits the fields rather than claiming "not pinned".
+        userState:
+          listState.status === 'fulfilled' && listState.value
+            ? (listState.value.get(sessionId) ?? { pinnedAt: null, archivedAt: null })
+            : undefined,
       }),
 
       // = GET .../turn. `known: false` means the read failed — render UNKNOWN,
@@ -292,8 +312,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
             }
           : failed(queue.reason),
 
-      // = GET .../transcript?shape=sync — the durable mirror, attachment bytes
-      // already stripped by the capture. `null` when `?transcript=0` asked for
+      // = GET .../transcript?shape=sync — `toV1` of the session log (an SDK
+      // that reads v1 still asks `transcript=40` and paints this window). `null` when `?transcript=0` asked for
       // the pointer only; the session projection above still names the OpenCode
       // root, which is the identity a client needs to trust its own store.
       transcript:
@@ -311,18 +331,16 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         known: true as const,
         base_ref: visible.row.baseRef ?? loaded.row.defaultBranch ?? null,
         agent_name: visible.row.agentName ?? null,
-        llm_gateway_enabled: gatewayEnabled,
+        llm_gateway_enabled: true,
+        default_reasoning_effort: normalizeDefaultReasoningEffort(
+          (loaded.row.metadata as Record<string, unknown> | null)?.default_reasoning_effort,
+        ),
       },
 
-      // = GET /projects/:id/model-defaults. `known: false` with
-      // `reason: 'llm_gateway_disabled'` mirrors that route's own 404 for a
-      // project with the gateway off — the client must not read the absence as
-      // "no default model".
+      // = GET /projects/:id/model-defaults.
       models:
         models.status === 'fulfilled'
-          ? models.value === null
-            ? { known: false as const, reason: 'llm_gateway_disabled' }
-            : { known: true as const, ...models.value }
+          ? { known: true as const, ...models.value }
           : failed(models.reason),
 
       // = the daemon's `/kortix/opencode/state`, from the runtime-projection
@@ -342,14 +360,11 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           ? { known: true as const, ...audit.value }
           : failed(audit.reason),
 
-      // = `GET .../log` (P4.2). Absent with the `session_log` flag off.
-      // `page: null`: the session has no stored log yet.
-      ...(logEnabled && {
-        log:
-          log.status === 'fulfilled'
-            ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
-            : failed(log.reason),
-      }),
+      // = `GET .../log` (P4.2). `page: null`: the session has no stored log yet.
+      log:
+        log.status === 'fulfilled'
+          ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
+          : failed(log.reason),
     });
   };
 

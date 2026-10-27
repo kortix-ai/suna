@@ -7,12 +7,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { PgClient } from './helpers/pg-client';
-import { accountMembers, accountSsoProviders, accounts, projects } from '@kortix/db';
+import { accountMembers, accountSessionActivity, accountSsoProviders, accounts, platformUserRoles, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { authorize, listAccessible, ssoRequiredFor } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
+import { signOutNonSsoMembers } from '../repositories/sso';
+import { getPlatformRole } from '../shared/platform-roles';
+import { confirmJwtLive } from '../shared/jwt-liveness';
 import { insertIntoView } from './helpers/compat-views';
 
 const superuser = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
@@ -116,5 +119,109 @@ describe('SSO only, enforced by authorize', () => {
     expect((await read(passwordOwner)).allowed).toBe(false);
     await enforce(true, false);
     expect((await read(passwordOwner)).allowed).toBe(true);
+  });
+});
+
+/** One GoTrue sign-in: the session, its refresh token, and the account's activity row. */
+async function signIn(userId: string): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  await superuser.query(`insert into auth.sessions (id, user_id) values ($1, $2)`, [sessionId, userId]);
+  await superuser.query(`insert into auth.refresh_tokens (token, user_id, session_id) values ($1, $2, $3)`, [
+    crypto.randomUUID(),
+    userId,
+    sessionId,
+  ]);
+  await db.insert(accountSessionActivity).values({ accountId: ACCOUNT, userId, sessionId });
+  return sessionId;
+}
+
+const liveSessions = async (ids: string[]) =>
+  (await superuser.query<{ id: string }>(`select id::text from auth.sessions where id = any($1::uuid[])`, [ids])).rows.map((r) => r.id);
+const liveRefreshTokens = async (ids: string[]) =>
+  (await superuser.query<{ session_id: string }>(`select session_id::text from auth.refresh_tokens where session_id = any($1::uuid[])`, [ids])).rows.map(
+    (r) => r.session_id,
+  );
+
+describe('turning SSO only on ends the sign-ins the gate refuses', () => {
+  test('ends exactly the sign-ins of the people authorize denies sso_required, once', async () => {
+    // An in-domain password identity that is not a member: the gate never sees it.
+    const nonMember = crypto.randomUUID();
+    await superuser.query(`insert into auth.users (id, email, raw_app_meta_data) values ($1, $2, '{"provider":"email"}'::jsonb)`, [
+      nonMember,
+      `outsider@${DOMAIN}`,
+    ]);
+    const people = { passwordAdmin, passwordOwner, idpMember, otherDomain, otherIdp, nonMember };
+    const sessions: Record<string, string[]> = {};
+    for (const [name, id] of Object.entries(people)) sessions[name] = [await signIn(id)];
+    sessions.passwordAdmin.push(await signIn(passwordAdmin)); // two devices
+    const all = Object.values(sessions).flat();
+
+    await enforce(false, true);
+    expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(0);
+    await enforce(true, false);
+    expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(0);
+    expect((await liveSessions(all)).sort()).toEqual([...all].sort());
+
+    await enforce(true, true);
+    // An ended sign-in's access token is refused on its next request, on every replica.
+    const adminToken = { sub: passwordAdmin, session_id: sessions.passwordAdmin[0] };
+    expect(await confirmJwtLive('synthetic-access-token', adminToken)).not.toBeNull();
+    expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(4);
+    expect(await confirmJwtLive('synthetic-access-token', adminToken)).toBeNull();
+
+    const ended = [...sessions.passwordAdmin, ...sessions.passwordOwner, ...sessions.otherIdp];
+    const kept = [...sessions.idpMember, ...sessions.otherDomain, ...sessions.nonMember];
+    const live = await liveSessions(all);
+    expect([...live].sort()).toEqual([...kept].sort());
+    // Deleting the session cascades to its refresh tokens: those sign-ins cannot renew.
+    expect((await liveRefreshTokens(all)).sort()).toEqual([...kept].sort());
+    // The ended set is the set the gate refuses, member by member.
+    for (const name of ['passwordAdmin', 'passwordOwner', 'idpMember', 'otherDomain', 'otherIdp'] as const) {
+      const refused = (await read(people[name])).reason === 'sso_required';
+      expect({ name, ended: sessions[name].every((s) => !live.includes(s)) }).toEqual({ name, ended: refused });
+    }
+
+    const activity = await db
+      .select({ sessionId: accountSessionActivity.sessionId, reason: accountSessionActivity.revokedReason, by: accountSessionActivity.revokedBy })
+      .from(accountSessionActivity)
+      .where(eq(accountSessionActivity.accountId, ACCOUNT));
+    for (const row of activity) {
+      expect(row).toEqual(
+        ended.includes(row.sessionId)
+          ? { sessionId: row.sessionId, reason: 'sso_enforced', by: passwordOwner }
+          : { sessionId: row.sessionId, reason: null, by: null },
+      );
+    }
+
+    // Idempotent: nothing is left to end, and break-glass restores nothing.
+    expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(0);
+    await enforce(true, false);
+    expect((await liveSessions(all)).sort()).toEqual([...kept].sort());
+  });
+});
+
+describe('a platform admin keeps the sign-in break-glass needs', () => {
+  test('the rule of getPlatformRole exempts the sign-in; the gate still refuses it on the account', async () => {
+    const staff = await person(`staff@${DOMAIN}`);
+    const operator = await person(`operator@${DOMAIN}`);
+    await db.insert(platformUserRoles).values({ accountId: staff, role: 'admin' });
+    const sessions = [staff, operator, otherIdp, passwordAdmin].map(async (id) => [id, await signIn(id)] as const);
+    const sessionOf = Object.fromEntries(await Promise.all(sessions));
+    const allowlist = process.env.KORTIX_PLATFORM_ADMIN_EMAILS;
+    // The other IdP's contractor is allowlisted too, but an SSO identity never
+    // matches the allowlist, so it stays a user and is signed out.
+    process.env.KORTIX_PLATFORM_ADMIN_EMAILS = `operator@${DOMAIN}, contractor@${DOMAIN}`;
+    try {
+      expect(await Promise.all([staff, operator, otherIdp, passwordAdmin].map(getPlatformRole))).toEqual(['admin', 'admin', 'user', 'user']);
+      await enforce(true, true);
+      expect(await signOutNonSsoMembers(ACCOUNT, passwordOwner)).toBe(2);
+    } finally {
+      if (allowlist === undefined) delete process.env.KORTIX_PLATFORM_ADMIN_EMAILS;
+      else process.env.KORTIX_PLATFORM_ADMIN_EMAILS = allowlist;
+      await db.delete(platformUserRoles).where(eq(platformUserRoles.accountId, staff));
+    }
+    expect((await liveSessions(Object.values(sessionOf))).sort()).toEqual([sessionOf[staff], sessionOf[operator]].sort());
+    expect(await read(staff)).toEqual({ allowed: false, reason: 'sso_required' });
+    expect(await read(operator)).toEqual({ allowed: false, reason: 'sso_required' });
   });
 });

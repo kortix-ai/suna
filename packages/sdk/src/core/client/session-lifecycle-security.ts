@@ -11,6 +11,7 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
         P.updateSessionReminder(ctx.projectId, ctx.sessionId, reminderId, input),
       remove: (reminderId: string) =>
         P.deleteSessionReminder(ctx.projectId, ctx.sessionId, reminderId),
+      run: (reminderId: string) => P.runSessionReminder(ctx.projectId, ctx.sessionId, reminderId),
     },
     /** Per-session audit trail of connector-gated agent actions. */
     audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
@@ -24,7 +25,11 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
           signal,
         ),
     },
-    /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
+    /**
+     * Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens.
+     *
+     * @deprecated Reads the v1 transcript. Use `log(query)`. Removed in the next major.
+     */
     transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
       P.getSessionTranscript(ctx.projectId, ctx.sessionId, options),
     /** Who wrote each message: a member, or another session's agent. */
@@ -34,9 +39,17 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
     /** The DURABLE server-side transcript mirror, in sync-store shape
      *  (OpenCode message envelopes verbatim, attachment bytes and tool
      *  inputs/outputs stripped). This is the read that answers while the
-     *  sandbox is stopped or still waking. */
+     *  sandbox is stopped or still waking.
+     *
+     * @deprecated Reads the v1 transcript. Use `log(query)`. Removed in the next major.
+     */
     transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
       P.getSessionTranscriptSync(ctx.projectId, ctx.sessionId, options),
+    /** One page of one thread of the stored session log (`kortix.session/2`), read from the
+     *  API's Postgres, so it answers while the sandbox is stopped. Null when the session has
+     *  no stored log yet, or no such thread. Older pages: `before_seq` = the first `seq`. */
+    log: (query?: Parameters<typeof P.getSessionLogPage>[2]) =>
+      P.getSessionLogPage(ctx.projectId, ctx.sessionId, query),
     /** Which turns are running right now, and how did the last one end?
      *  Server truth from the control plane's lifecycle authority, independent
      *  of the live stream. */

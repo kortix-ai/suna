@@ -8,9 +8,11 @@
  * `tools` map does not keep Kortix's meaning: it turns `true` into `allow`
  * (an `ask` becomes `allow`), and the agent's `permission` is applied over
  * it, so a `bash: allow` there re-opened a `bash` the map removed. The
- * compiled map is therefore written as rules here, in order, and dropped:
+ * compiled map is therefore written as rules here and dropped. kortixd then
+ * orders every block most specific last (`orderPermissionRules`):
  *
- *  - a removed tool: its rule moves to the end as `deny`;
+ *  - a removed tool: its rule becomes `deny`, and every rule its key covers
+ *    (`pty_spawn` under `pty_*`) goes, so no more specific rule re-opens it;
  *  - an allowlist (`*: false`): `*: deny` first, then the agent's rules for
  *    allowed tools and for the permissions that are not tools, then each
  *    allowed tool without a rule at the action it had without the list.
@@ -39,18 +41,22 @@ const asRules = (permission: unknown): Rules =>
       ? { ...(permission as Rules) }
       : {}
 
+/** `key` names `other` too: itself, or a trailing-`*` prefix of it. */
+const covers = (key: string, other: string) => key === other || (key.endsWith('*') && other.startsWith(key.slice(0, -1)))
+
 /** The action a rule set gives `key` on its own, before any allowlist. */
 function actionOf(rules: Rules, key: string): unknown {
   return Object.hasOwn(rules, key) ? rules[key] : rules['*']
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function toolAccessRules(tools: Record<string, boolean>, agentPermission: unknown, globalPermission: unknown): Rules {
   const own = asRules(agentPermission)
   if (tools['*'] !== false) {
     for (const [tool, enabled] of Object.entries(tools)) {
       if (enabled !== false) continue
       for (const key of permissionKeys(tool)) {
-        delete own[key]
+        for (const other of Object.keys(own)) if (covers(key, other)) delete own[other]
         own[key] = 'deny'
       }
     }
@@ -63,7 +69,7 @@ export function toolAccessRules(tools: Record<string, boolean>, agentPermission:
       .flatMap(([tool]) => permissionKeys(tool)),
     ...NOT_TOOLS,
   ]
-  const kept = (key: string) => keep.some((k) => k === key || (k.endsWith('*') && key.startsWith(k.slice(0, -1))))
+  const kept = (key: string) => keep.some((k) => covers(k, key))
   // `invalid` answers a call to a tool the model does not have; it is never offered to the model.
   const rules: Rules = { '*': 'deny', invalid: 'allow' }
   for (const [key, value] of Object.entries(own)) if (key !== '*' && kept(key)) rules[key] = value
@@ -74,7 +80,10 @@ export function toolAccessRules(tools: Record<string, boolean>, agentPermission:
   return rules
 }
 
-/** Apply every agent's compiled `tools` to its `permission`, in place, and drop `tools`. */
+/**
+ * Apply every agent's compiled `tools` to its `permission`, in place, and drop `tools`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function applyAgentToolAccess(config: Record<string, unknown>): void {
   const agents = config.agent
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return

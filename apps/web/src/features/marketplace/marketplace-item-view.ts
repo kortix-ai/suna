@@ -1,7 +1,7 @@
-import type { FileTreeNode } from '@/components/ui/file-tree';
-import { buildFileTree } from '@/features/workspace/capabilities/shared/entity/entity-files';
+import type { FileTreeNode } from '@kortix/ui/file-tree';
+import { buildFileTree } from '@kortix/ui/customize/shared/entity/entity-files';
 import type { UiTranslator } from '@/i18n/translator';
-import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
+import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client';
 import { typeMeta } from './marketplace-meta';
 
 /** Type-aware copy for the "no description" state. Every item type reads as
@@ -13,22 +13,6 @@ export function emptyDescriptionCopy(type: string): string {
 /** Type-aware copy for the "no README" empty state. */
 export function emptyReadmeCopy(type: string): string {
   return `This ${typeMeta(type).label.toLowerCase()} doesn't ship a README yet.`;
-}
-
-/** Type-aware meta-line count label for a card/detail (e.g. "3 items" for a
- *  bundle's member count, "12 files" for everything else). */
-export function itemCountLabel(
-  item: Pick<MarketplaceItem, 'type' | 'dependencies' | 'fileCount'>,
-): {
-  count: number;
-  unit: string;
-} {
-  if (item.type === 'registry:bundle') {
-    const count = item.dependencies.length;
-    return { count, unit: count === 1 ? 'item' : 'items' };
-  }
-  const count = item.fileCount;
-  return { count, unit: count === 1 ? 'file' : 'files' };
 }
 
 /** A single "what's inside" row for a bundle's member items. Prefers the
@@ -66,56 +50,6 @@ export function resolveBundleMembers(params: {
     }
     return { key: name, title: name, type: null, description: null, href: null };
   });
-}
-
-export interface TypedMemberGroup {
-  type: string;
-  label: string;
-  members: BundleMember[];
-}
-
-// Order + plural labels for a project's contents, so "what's inside" reads as
-// typed sections (Skills, Agents, Tools, …) instead of a flat list.
-const MEMBER_TYPE_ORDER = [
-  'registry:skill',
-  'registry:agent',
-  'registry:command',
-  'registry:tool',
-  'registry:bundle',
-  'registry:project',
-];
-const MEMBER_TYPE_LABELS: Record<string, string> = {
-  'registry:skill': 'Skills',
-  'registry:agent': 'Agents',
-  'registry:command': 'Commands',
-  'registry:tool': 'Tools',
-  'registry:bundle': 'Bundles',
-  'registry:project': 'Projects',
-};
-
-/** Bucket bundle/project members by registry type in a stable order, with an
- *  "Other" bucket for anything unrecognized (or a null type). */
-export function groupBundleMembersByType(
-  members: BundleMember[],
-  tI18nComplete: UiTranslator,
-): TypedMemberGroup[] {
-  const byType = new Map<string, BundleMember[]>();
-  for (const m of members) {
-    const key = m.type ?? 'other';
-    const arr = byType.get(key) ?? [];
-    arr.push(m);
-    byType.set(key, arr);
-  }
-  const groups: TypedMemberGroup[] = [];
-  for (const type of MEMBER_TYPE_ORDER) {
-    const arr = byType.get(type);
-    if (arr?.length) groups.push({ type, label: MEMBER_TYPE_LABELS[type] ?? type, members: arr });
-    byType.delete(type);
-  }
-  const rest = [...byType.values()].flat();
-  if (rest.length)
-    groups.push({ type: 'other', label: tI18nComplete.raw('textf97e9da0e3b8'), members: rest });
-  return groups;
 }
 
 /** One row in the grouped capability-badge display. */

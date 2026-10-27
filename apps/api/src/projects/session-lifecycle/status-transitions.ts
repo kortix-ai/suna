@@ -7,9 +7,10 @@
  *
  *   - `status IN (from)`, from the table below;
  *   - for a session, the tombstone: a deleted session (`metadata.deletedAt`) is
- *     never moved, unless the transition is one a deleted session still makes;
- *     for a sandbox, a deleted session's row is `archived`, and only the
- *     archive transitions accept or produce that state;
+ *     never moved, unless the transition is one a deleted session still makes,
+ *     and `restore` moves ONLY a deleted session;
+ *   - for a sandbox, a deleted session's row is `archived`: only the archive
+ *     transitions produce that state, and only `restore` leaves it;
  *   - the caller's own compare-and-set predicate (`guard`): an external id, a
  *     lease id, a row version.
  *
@@ -46,6 +47,10 @@ interface SessionTransitionRule {
   to: SessionStatus;
   /** Also applies to a deleted session. Only transitions TOWARD stopped may. */
   appliesToDeleted?: true;
+  /** Applies ONLY to a deleted session (`restoreSession`). */
+  deletedOnly?: true;
+  /** Leaves `updated_at` as it was, so the session keeps its list position. */
+  keepsUpdatedAt?: true;
 }
 
 interface SandboxTransitionRule {
@@ -54,8 +59,17 @@ interface SandboxTransitionRule {
 }
 
 export const SESSION_TRANSITIONS = {
-  /** `deleteSession`: the write that tombstones the session. */
-  delete: { from: ANY_SESSION, to: 'stopped', appliesToDeleted: true },
+  /**
+   * `deleteSession`: the write that tombstones the session. It keeps
+   * `updated_at`: a delete that moved the tombstone to the head of the list
+   * order buried the owner's live sessions under it (KRTX-1727 scenario B).
+   */
+  delete: { from: ANY_SESSION, to: 'stopped', appliesToDeleted: true, keepsUpdatedAt: true },
+  /**
+   * `restoreSession`: the write that lifts the tombstone. The caller strips
+   * `deletedAt`, so the session is live again and stopped, with no box.
+   */
+  restore: { from: ANY_SESSION, to: 'stopped', deletedOnly: true },
   /**
    * The box parked (`applyStoppedState`). A `failed` session keeps its park:
    * the dead-letter sets it so a `session_mode: "reuse"` trigger's next fire
@@ -103,6 +117,25 @@ export const SESSION_TRANSITIONS = {
 export const SANDBOX_TRANSITIONS = {
   /** `deleteSession`. */
   archive: { from: ANY_SANDBOX, to: 'archived' },
+  /**
+   * `restoreSession`: the archived row of a deleted session whose box the
+   * provider confirmed removed. It gives up its external id and becomes a
+   * retired row (`isRetiredSandboxRow`), which the next open claims for a
+   * fresh box from the session branch.
+   */
+  restore: { from: ['archived'], to: 'stopped' },
+  /**
+   * `recoverLostSession`: the stopped row of a lost session (provider removed
+   * the box, no in-place recovery). On a person's ask it becomes a retired row,
+   * as `restore` makes one, once the provider confirmed the box removed.
+   */
+  retireLost: { from: ['stopped'], to: 'stopped' },
+  /**
+   * `retireIdleVolumeBoxes`: the stopped row of a session whose /workspace is a
+   * Platinum volume, idle past KORTIX_SANDBOX_IDLE_DELETE_MINUTES. It becomes a
+   * retired row; the next open claims it for a fresh box on the same volume.
+   */
+  retireIdle: { from: ['stopped'], to: 'stopped' },
   /** A `provisioning` row of a deleted session whose owner lapsed. */
   archiveProvisioning: { from: ['provisioning'], to: 'archived' },
   /** A restart or recovery claimed the row. */
@@ -165,8 +198,10 @@ export interface SandboxMetadataPatch {
 }
 
 interface SessionWrite {
-  /** Written as `updated_at`. Defaults to now. */
+  /** Written as `updated_at`, unless the transition keeps it. Defaults to now. */
   at?: Date;
+  /** Keys removed from the session metadata, before `metadata` is merged. */
+  stripMetadata?: readonly string[];
   /** Set `error` (a message, or null to clear it). Omitted: left unchanged. */
   error?: string | null;
   /** Set `sandbox_url` (null clears it). Omitted: left unchanged. */
@@ -194,6 +229,11 @@ function sessionNotDeleted(): SQL {
   return sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
 }
 
+function tombstoneGuard(rule: SessionTransitionRule): SQL | undefined {
+  if (rule.deletedOnly) return sql`not (${sessionNotDeleted()})`;
+  return rule.appliesToDeleted ? undefined : sessionNotDeleted();
+}
+
 function statusIn<S extends string>(
   column: typeof projectSessions.status | typeof sessionSandboxes.status,
   from: readonly S[],
@@ -204,8 +244,9 @@ function statusIn<S extends string>(
   return inArray(column, from as S[] as never[]);
 }
 
-function mergedSessionMetadata(patch: Record<string, unknown>): SQL {
-  return sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
+function patchedSessionMetadata(write: SessionWrite): SQL {
+  const stripped = stripMetadataKeys(write.stripMetadata ?? [], projectSessions.metadata);
+  return sql`${stripped} || ${JSON.stringify(write.metadata ?? {})}::jsonb`;
 }
 
 /**
@@ -238,16 +279,16 @@ export async function transitionSession(
     .update(projectSessions)
     .set({
       status: rule.to,
-      updatedAt: write.at ?? new Date(),
+      ...(rule.keepsUpdatedAt ? {} : { updatedAt: write.at ?? new Date() }),
       ...(write.error !== undefined ? { error: write.error } : {}),
       ...(write.sandboxUrl !== undefined ? { sandboxUrl: write.sandboxUrl } : {}),
-      ...(write.metadata ? { metadata: mergedSessionMetadata(write.metadata) } : {}),
+      ...(write.metadata || write.stripMetadata ? { metadata: patchedSessionMetadata(write) } : {}),
     })
     .where(
       and(
         eq(projectSessions.sessionId, sessionId),
         statusIn(projectSessions.status, rule.from, ANY_SESSION),
-        rule.appliesToDeleted ? undefined : sessionNotDeleted(),
+        tombstoneGuard(rule),
         write.guard,
       ),
     )

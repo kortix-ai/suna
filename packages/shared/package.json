@@ -7,6 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./audit-labels": "./src/audit-labels.ts",
+    "./artifact-doc": "./src/artifact-doc.ts",
+    "./brand-css": "./src/brand-css.generated.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./guards": "./src/utils/guards.ts",
@@ -18,6 +20,7 @@
     "./sandbox": "./src/sandbox/index.ts",
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
     "./connector-sections": "./src/connector-sections.ts",
+    "./tool-risk": "./src/tool-risk.ts",
     "./app-connect": "./src/app-connect.ts",
     "./app-config": "./src/app-config.ts",
     "./app-templates": "./src/app-templates.ts",
@@ -27,16 +30,22 @@
     "./tool-output": "./src/tool-output/index.ts",
     "./tool-output/testing": "./src/tool-output/testing.ts",
     "./session-fixture": "./src/session-fixture/index.ts",
+    "./genui-samples": "./src/genui-samples.ts",
+    "./genui-layout": "./src/genui-layout.ts",
     "./host-config": "./src/host-config/config.ts",
     "./sandbox-env": "./src/host-config/sandbox-env.ts",
-    "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts"
+    "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts",
+    "./subprocessors": "./src/subprocessors.ts",
+    "./ssrf-guard": "./src/ssrf-guard.ts",
+    "./well-known": "./src/well-known.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}"
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.0.0"
   }
 }

@@ -30,6 +30,7 @@ import type { DaemonServer } from '../contract/server'
  *  that has no session env file. */
 const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function reloadSessionEnv(paths: string[] = [ptEnvFile()]): void {
   for (const path of paths) {
     let txt: string
@@ -82,6 +83,7 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   logger.info('[seed] baked full model catalog for seed', { file, models: count })
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function runWarmSeedMode(
   cfg: Config,
   bootState: SandboxBootState,
@@ -107,7 +109,6 @@ export async function runWarmSeedMode(
   const materialized = projectSeed
     ? await materializeProjectSeed(cfg)
     : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
-  bootMark(projectSeed ? 'seed-project-materialized' : 'seed-scaffold-materialized')
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
   // snapshots only — cold + Daytona never run it).
@@ -278,7 +279,6 @@ export async function runWarmSeedMode(
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo materialization failed', err)
         })
-        bootMark('adopt-repo-materialized')
         if (!bootState.repoMaterializationError) {
           scheduleHistoryBackfill(cfg2, cfg2.projectTarget)
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
@@ -372,6 +372,7 @@ export async function runWarmSeedMode(
 }
 
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
 // the warm adoption (provideWorkspace, Git only) takes its local-only branch
 // (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
@@ -405,7 +406,6 @@ export function armSeedAdoption(
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo adoption failed', err)
         })
-        bootMark('seed-repo-adopted')
         if (!bootState.repoMaterializationError) {
           scheduleHistoryBackfill(cfg2, cfg2.projectTarget)
           await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})

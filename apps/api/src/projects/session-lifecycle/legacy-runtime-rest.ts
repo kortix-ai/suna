@@ -12,6 +12,7 @@ import { WORKSPACE } from './runtime-fetch';
 const segment = encodeURIComponent;
 const inWorkspace = (directory: string = WORKSPACE) => `?directory=${segment(directory)}`;
 
+/** @deprecated Pre-W3 OpenCode route names for daemons without runtime.turns.v1; use runtimeVerbPaths (runtime-fetch.ts). */
 export const legacyRuntimePaths = {
   /** The transcript, oldest first; the newest `limit` when given. */
   messages: (sessionId: string, limit?: number) =>

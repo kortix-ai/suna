@@ -75,7 +75,7 @@ describe('requestDeadline exempts the streaming secret relay', () => {
     // too generic silently un-bounds half the API.
     for (const path of [
       `${project}/secrets`,
-      `${project}/sessions`,
+      `${project}/sessions/session-1`,
       '/v1/accounts/relayed-billing',
     ]) {
       expect(isExempt(ctx(path))).toBe(false);
@@ -118,5 +118,13 @@ describe('attachment completion has its own request deadline', () => {
 
   test('an exempt route has no deadline', () => {
     expect(requestDeadlineMs(ctx(`${project}/provision`))).toBeNull();
+  });
+
+  test('P2.13: the session-log attachment upload (PUT …/log/blobs/<sha256>) gets 95 s; its lookup keeps the general deadline', () => {
+    const blob = `${project}/sessions/00000000-0000-4000-a000-000000000002/log/blobs/${'a'.repeat(64)}`;
+    expect(requestDeadlineMs(ctx(blob, 'PUT'))).toBe(95_000);
+    const general = requestDeadlineMs(ctx('/v1/marketplace/items', 'GET'));
+    expect(requestDeadlineMs(ctx(blob, 'GET'))).toBe(general);
+    expect(requestDeadlineMs(ctx(`${blob}/extra`, 'PUT'))).toBe(general);
   });
 });

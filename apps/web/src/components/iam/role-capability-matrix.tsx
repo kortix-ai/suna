@@ -1,7 +1,7 @@
 'use client';
 
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 // The capability picker for a custom role (§7 of the access unification spec).
 //
@@ -27,18 +27,18 @@ import { useTranslations } from '@/i18n/use-translations';
 import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
 import type { Permission } from '@/lib/iam-client';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import {
   applyBulk,
   applyCell,
@@ -340,14 +340,6 @@ function MatrixCell({
         onCheckedChange={(c) => onToggle(c === true)}
         disabled={disabled}
         aria-label={`${kind === 'view' ? 'View' : 'Edit'} ${areaLabel}`}
-        className={cn(
-          'relative',
-          'data-[state=indeterminate]:border-foreground/60',
-          'data-[state=indeterminate]:[&_svg]:hidden',
-          'data-[state=indeterminate]:after:bg-foreground data-[state=indeterminate]:after:absolute',
-          'data-[state=indeterminate]:after:inset-x-[3px] data-[state=indeterminate]:after:h-0.5',
-          'data-[state=indeterminate]:after:rounded-full data-[state=indeterminate]:after:content-[""]',
-        )}
       />
     </span>
   );

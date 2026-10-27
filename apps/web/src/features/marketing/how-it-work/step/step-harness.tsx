@@ -1,8 +1,8 @@
 'use client';
 
 import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { CheckIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -48,11 +48,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  *   - A denied step is not a failure and must never be coloured like one in the
  *     summary — the run did exactly what it was told to do.
  */
-
-/** What a model hands back when it has nowhere to run. Revealed word by word,
- *  because the thing being dramatised is that text is the entire output. */
-const ANSWER =
-  'Add exponential backoff, cap it at five attempts, and skip the retry entirely for 4xx responses — those will never succeed. Worth logging the attempt count too.';
 
 type Outcome = 'done' | 'denied';
 
@@ -139,7 +134,7 @@ function StepGlyph({ outcome, resolved }: { outcome: Outcome; resolved: boolean 
             {denied ? (
               <ProhibitIcon weight="bold" className="text-kortix-red size-4" />
             ) : (
-              <CheckIcon weight="bold" className="text-muted-foreground size-3.5" />
+              <CheckIcon weight="bold" className="text-ring size-3.5" />
             )}
           </m.span>
         )}

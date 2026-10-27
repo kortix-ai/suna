@@ -4,7 +4,8 @@ import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
-import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
+import { channelOfSessionMetadata, isUnattendedSessionMetadata, releaseChannelQuestion, unattendedQuestionSentinel } from '../../channels/question-release';
+import { releaseRuntimeQuestion } from '../session-lifecycle/release-runtime-question';
 import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
@@ -12,13 +13,14 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { deliverThroughQueue } from '../session-lifecycle';
 import {
+  clearOpenQuestions,
   getOpenQuestion,
   recordPendingQuestion,
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../lib/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
   normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
@@ -65,6 +67,7 @@ export function registerTurnQuestionsRoutes(): void {
       // The session this credential is BOUND to, when it is a sandbox token.
       // Null for a human caller.
       let callerSandboxSessionId: string | null = null;
+      let humanLoaded: Awaited<ReturnType<typeof loadProjectForUser>> = null;
 
       if (isSessionSandboxCredential(c)) {
         const accountId = (c as any).get('accountId') as string | undefined;
@@ -95,8 +98,8 @@ export function registerTurnQuestionsRoutes(): void {
         // A question card finalizes and re-posts a LIVE turn, so it is a
         // mutation of that session — 'read' is too weak. The sibling turn-stream
         // route already requires more than read for the same reason.
-        const loaded = await loadProjectForUser(c, projectId, 'session');
-        if (!loaded) return c.json({ error: 'Not found' }, 404);
+        humanLoaded = await loadProjectForUser(c, projectId, 'session');
+        if (!humanLoaded) return c.json({ error: 'Not found' }, 404);
       }
 
       let body: Partial<TurnQuestionRelayBody>;
@@ -120,6 +123,14 @@ export function registerTurnQuestionsRoutes(): void {
         !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
       ) {
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      }
+      // A member's token acts only on a session it may see, as the GET/DELETE
+      // siblings require: project scope alone let any member post to a private one.
+      if (
+        humanLoaded &&
+        !(await loadVisibleSession(humanLoaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      ) {
+        return c.json({ error: 'Not found' }, 404);
       }
 
       const [turnQuestionSession] = await db
@@ -282,13 +293,40 @@ export function registerTurnQuestionsRoutes(): void {
 
       const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
-        await releaseChannelQuestion({
+        const released = await releaseChannelQuestion({
           sessionId,
           requestId: runtimeRequestId,
           questionCount: questions.length,
           channel,
           posted: result.ok,
         });
+        // The runtime no longer waits on it: the thread reply arrives as a new
+        // turn. Unreachable keeps the row; the turn end closes it (KRTX-1739).
+        if (released !== 'unreachable') {
+          await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
+            logger.warn('[turn-question] released question not closed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
+
+      // A trigger-started session has nobody to answer: release the call now so
+      // the turn finishes and the next fire is not queued behind it.
+      if (!channel && runtimeRequestId && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
+        const answers = Array.from({ length: Math.max(1, questions.length) }, () => [unattendedQuestionSentinel()]);
+        const released = await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers);
+        if (released === 'unreachable') {
+          logger.warn('[turn-question] could not release an unattended session question', { sessionId, requestId: runtimeRequestId });
+        } else {
+          await clearOpenQuestions(sessionId, { requestId: runtimeRequestId }).catch((err) =>
+            logger.warn('[turn-question] released question not closed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
 
       if (!result.ok) {
@@ -307,12 +345,8 @@ export function registerTurnQuestionsRoutes(): void {
   // GET returns the open question so a resumed session can render what it is
   // waiting on, instead of showing a conversation that mysteriously stopped.
   //
-  // POST answers it. The answer CANNOT go back to the call that blocked — that
-  // opencode process was parked and restarted cold, so its request id no longer
-  // exists and nothing is waiting on it. It is delivered as a FOLLOW-UP TURN,
-  // which is exactly how the channel path has always worked ("the user's
-  // in-thread reply arrives as a follow-up turn", above), and continueSession
-  // already owns waking a parked box and queueing until it is ready.
+  // POST answers the live blocking call first. A parked runtime has lost that
+  // request, so only that fallback needs a durable follow-up turn to wake it.
 
   projectsApp.openapi(
     createRoute({
@@ -346,7 +380,9 @@ export function registerTurnQuestionsRoutes(): void {
         c.get('sessionId') ?? null,
         callerKortixSessionId(c),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      // A deleted session reads nothing (KRTX-2744): its open question is content
+      // of a session the trash model advertises as gone. Restoring brings it back.
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json({ question: await getOpenQuestion(sessionId) });
     },
   );
@@ -407,6 +443,13 @@ export function registerTurnQuestionsRoutes(): void {
       const claimed = await resolvePendingQuestion({ sessionId, requestId, answers });
       if (!claimed) {
         return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
+      }
+
+      // A live tool must receive its answer, not a prompt queued behind itself.
+      // A successful reply resumes that turn; sending another would duplicate it.
+      const released = await releaseRuntimeQuestion(sessionId, requestId, answers);
+      if (released === 'released') {
+        return c.json({ ok: true, delivery: 'delivered' });
       }
 
       // The answer is a durable queue row from here: a parked box gets it when

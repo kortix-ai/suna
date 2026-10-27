@@ -20,8 +20,8 @@ import { db } from '../../shared/db';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { roleAllows, type ProjectRole } from '../access';
 import type { ProjectRow, ProjectSessionRow } from './serializers';
+import { hiddenSpaceIds, spaceVisibleFor } from '../../shared/space-access';
 
 async function loadProjectSessionRow(
   loaded: { row: ProjectRow },
@@ -37,6 +37,20 @@ async function loadProjectSessionRow(
     ))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The project that holds `sessionId`, or null. One primary-key read; it decides
+ * nothing about access: the caller still runs the project gate and
+ * `loadVisibleSession` on the project it returns.
+ */
+export async function sessionProjectId(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.projectId ?? null;
 }
 
 // Memoized like the membership/role loaders above, and for the same reason:
@@ -112,19 +126,23 @@ export async function sessionOwnerIsMachine(
  * it `canManageLifecycle` — producing a 403 on stop, restart, delete and
  * change-model for every manager who is not the owner.
  *
- * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ * Standing is the engine's `project.members.manage` verdict, so a custom role
+ * that holds the leaf has it and the role label plays no part.
  */
-export function callerHasManagerStanding(
-  effectiveRole: ProjectRole,
+export async function callerHasManagerStanding(
+  loaded: { actor?: Actor | null; row: { projectId: string } },
   boundCredentialSessionId: string | null,
-): boolean {
-  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+): Promise<boolean> {
+  if (boundCredentialSessionId !== null || !loaded.actor) return false;
+  return (
+    await authorize(loaded.actor, 'project.members.manage', { type: 'project', id: loaded.row.projectId })
+  ).allowed;
 }
 
 /**
- * Manager standing for the session LIST/serialization path: role standing, or a
- * `project.members.manage` capability probe — both behind the same binding gate
- * as `callerHasManagerStanding`.
+ * Manager standing for the session LIST/serialization path: the
+ * `project.members.manage` capability probe, behind the same binding gate as
+ * `callerHasManagerStanding`.
  *
  * The list route used to compute this from the role alone, so a session-bound
  * agent credential launched by a manager saw `can_manage_lifecycle: true` on
@@ -139,12 +157,10 @@ export function callerHasManagerStanding(
  * invoked for a bound credential — standing there is false before any I/O.
  */
 export async function viewerManagerStanding(
-  effectiveRole: ProjectRole,
   boundCredentialSessionId: string | null,
   probeManageCapability: () => Promise<boolean>,
 ): Promise<boolean> {
   if (boundCredentialSessionId !== null) return false;
-  if (roleAllows(effectiveRole, 'manage')) return true;
   return probeManageCapability();
 }
 
@@ -203,28 +219,30 @@ async function recordOversightSessionRead(input: {
 type VisibleSessionRequest = {
   row: ProjectRow;
   userId: string;
-  effectiveRole: ProjectRole;
-  adminBypass?: boolean;
   actor?: Actor | null;
 };
 
 async function sessionReadPrefetch(
   loaded: VisibleSessionRequest,
   sessionId: string,
-): Promise<{ row: ProjectSessionRow; subject: ShareSubject; grants: SecretGrant[] } | null> {
-  // The caller's share subject (their groups) and the session's grants are
-  // keyed on the user and the session id, not on anything the row returns, so
-  // all three reads go out together. Every session-scoped route pays this
-  // path, and one behind the other is three round trips.
+  boundCredentialSessionId: string | null,
+): Promise<{ row: ProjectSessionRow; subject: ShareSubject; grants: SecretGrant[]; hidden: Set<string> } | null> {
+  // The caller's share subject (their groups), the session's grants and the
+  // caller's hidden private channels are keyed on the caller and the session
+  // id, not on anything the row returns, so all four reads go out together.
+  // Every session-scoped route pays this path, and one behind the other is
+  // four round trips.
   const subjectRead = resolveShareSubject(loaded.userId);
   const grantsRead = loadSessionGrants([sessionId]);
+  const hiddenRead = hiddenSpaceIds(loaded.row.projectId, loaded.userId, boundCredentialSessionId);
   subjectRead.catch(() => undefined);
   grantsRead.catch(() => undefined);
+  hiddenRead.catch(() => undefined);
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
   const subject = await subjectRead;
   const grants = (await grantsRead).get(sessionId) ?? [];
-  return { row, subject, grants };
+  return { row, subject, grants, hidden: await hiddenRead };
 }
 
 async function sessionManagerStanding(
@@ -233,7 +251,7 @@ async function sessionManagerStanding(
   row: ProjectSessionRow,
   boundCredentialSessionId: string | null,
 ): Promise<boolean> {
-  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  let canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   if (
     !canManageProject &&
     boundCredentialSessionId === null &&
@@ -265,7 +283,9 @@ async function sessionReadAccess(
   grants: SecretGrant[],
   callerSessionId: string | null,
   boundCredentialSessionId: string | null,
+  hidden: ReadonlySet<string>,
 ): Promise<{ canManageProject: boolean; isOwner: boolean } | null> {
+  const spaceVisible = spaceVisibleFor(hidden, row.spaceId);
   const ownership = {
     origin: row.origin ?? null,
     sessionId,
@@ -280,7 +300,7 @@ async function sessionReadAccess(
     grants,
     subject,
     ownership,
-    { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject },
+    { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject, spaceVisible },
   );
   // Account session oversight: asked only when ordinary visibility refused, so
   // the common path never pays for it, and only for a human credential.
@@ -294,6 +314,7 @@ async function sessionReadAccess(
       initiatorType: row.initiatorType,
       canManageProject,
       accountSessionOversight: true,
+      spaceVisible,
     });
     if (visible) {
       await recordOversightSessionRead({
@@ -310,27 +331,14 @@ async function sessionReadAccess(
   // the ownership rule above refuses it its own row (404 on `kortix reminders`).
   if (
     !visible &&
+    spaceVisible &&
     loaded.actor &&
     isAgentPrincipalActor(loaded.actor) &&
     agentSessionStanding(boundCredentialSessionId, row, false).isOwner
   ) {
     visible = true;
   }
-  if (!visible) {
-    // A platform-admin bypass already verified for the parent project (see
-    // loadProjectForUser) also covers a session that would otherwise be
-    // invisible (private / not-my-grant). Audit every use — this is a real
-    // support/investigation escape hatch, not a standing grant.
-    if (!loaded.adminBypass) return null;
-    await recordAuditEvent({
-      accountId: loaded.row.accountId,
-      actorUserId: loaded.userId,
-      action: 'project.admin_bypass_session_read',
-      resourceType: 'project_session',
-      resourceId: sessionId,
-      metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
-    });
-  }
+  if (!visible) return null;
   let isOwner = row.createdBy === loaded.userId;
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: never the launcher's standing. Checked after the ordinary
@@ -381,8 +389,6 @@ export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
     userId: string;
-    effectiveRole: ProjectRole;
-    adminBypass?: boolean;
     /** The request's canonical principal. Absent only in tests that build a
      *  `loaded` shape by hand; the members.manage probe below then declines
      *  rather than widening. */
@@ -408,11 +414,11 @@ export async function loadVisibleSession(
    */
   boundCredentialSessionId: string | null,
 ): Promise<VisibleSessionAccess | null> {
-  const prefetch = await sessionReadPrefetch(loaded, sessionId);
+  const prefetch = await sessionReadPrefetch(loaded, sessionId, boundCredentialSessionId);
   if (!prefetch) return null;
-  const { row, subject, grants } = prefetch;
+  const { row, subject, grants, hidden } = prefetch;
   const access = await sessionReadAccess(
-    loaded, row, sessionId, subject, grants, callerSessionId, boundCredentialSessionId,
+    loaded, row, sessionId, subject, grants, callerSessionId, boundCredentialSessionId, hidden,
   );
   if (!access) return null;
   return finalizeVisibleAccess(loaded, row, subject, grants, access);
@@ -432,7 +438,7 @@ export async function loadVisibleSession(
  * for every row), and the grants in one batched read. The per-row verdicts then
  * run through the SAME `sessionReadAccess` rules as the single path — one copy
  * of the security decision, shared — and the rare per-row escape hatches
- * (trigger authorization, oversight, admin-bypass audit) stay exactly where
+ * (trigger authorization, oversight) stay exactly where
  * they were: per row, only when a verdict was refused without them.
  *
  * The owner probe (`service_accounts` lookup) stays memoized per creator, so a
@@ -456,8 +462,10 @@ export async function loadVisibleSessionsForList(
   // but once for the whole list instead of once per row.
   const subjectRead = resolveShareSubject(loaded.userId);
   const grantsRead = loadSessionGrants(ids);
+  const hiddenRead = hiddenSpaceIds(loaded.row.projectId, loaded.userId, boundCredentialSessionId);
   subjectRead.catch(() => undefined);
   grantsRead.catch(() => undefined);
+  hiddenRead.catch(() => undefined);
   const rows = await db
     .select()
     .from(projectSessions)
@@ -470,11 +478,12 @@ export async function loadVisibleSessionsForList(
   if (byId.size === 0) return out;
   const subject = await subjectRead;
   const grants = await grantsRead;
+  const hidden = await hiddenRead;
   for (const sessionId of ids) {
     const row = byId.get(sessionId);
     if (!row) continue;
     const access = await sessionReadAccess(
-      loaded, row, sessionId, subject, grants.get(sessionId) ?? [], callerSessionId, boundCredentialSessionId,
+      loaded, row, sessionId, subject, grants.get(sessionId) ?? [], callerSessionId, boundCredentialSessionId, hidden,
     );
     if (!access) continue;
     out.set(sessionId, await finalizeVisibleAccess(loaded, row, subject, grants.get(sessionId) ?? [], access));
@@ -504,7 +513,7 @@ export async function loadVisibleSessionsForList(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
+  loaded: { row: ProjectRow; userId: string; actor?: Actor | null },
   sessionId: string,
   /**
    * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
@@ -539,6 +548,13 @@ export async function loadSessionForSharing(
   })) {
     return null;
   }
+  // A thread of a private channel the caller is not in is not found here
+  // either: a manager outside the channel must not mint a
+  // public link to content the channel hides from them. Its members may share
+  // it.
+  if (!spaceVisibleFor(await hiddenSpaceIds(loaded.row.projectId, loaded.userId, boundCredentialSessionId), row.spaceId)) {
+    return null;
+  }
   let isOwner = row.createdBy === loaded.userId;
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: an agent session manages share links only for sessions it
@@ -549,7 +565,7 @@ export async function loadSessionForSharing(
   }
   // Same standing rule as loadVisibleSession: a session-bound credential acts
   // for one session and does not carry the launching user's manage role.
-  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  const canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;

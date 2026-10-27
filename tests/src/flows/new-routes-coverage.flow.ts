@@ -117,6 +117,14 @@ flow(
         r.status([200, 403]);
       }
     });
+    await ctx.step('gateway spend rejects fractional days before SQL', async () => {
+      for (const leaf of ['overview', 'series', 'sessions', 'breakdown']) {
+        const r = await owner.get(`/v1/projects/:projectId/gateway/${leaf}`, {
+          params, query: { days: '1.5' },
+        });
+        r.status(400);
+      }
+    });
     await ctx.step('gateway spend by source returns the windowed rollup shape', async () => {
       const r = await owner.get('/v1/projects/:projectId/gateway/sources', {
         params,
@@ -209,7 +217,7 @@ flow(
   'SESS-20',
   {
     domain: 'sessions',
-    requires: ['daytona'],
+    requires: ['sandbox'],
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
@@ -502,6 +510,7 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
+      'POST /internal/gateway/admit',
       'POST /internal/gateway/authenticate',
       'POST /internal/gateway/billing',
       'POST /internal/gateway/budget-check',
@@ -515,6 +524,7 @@ flow(
   },
   async (ctx) => {
     for (const route of [
+      '/internal/gateway/admit',
       '/internal/gateway/authenticate',
       '/internal/gateway/billing',
       '/internal/gateway/budget-check',
@@ -537,16 +547,17 @@ flow(
   'SBX-6',
   {
     domain: 'sandboxes',
+    tags: ['deployed'],
     routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {
-    await ctx.step('sandbox provider webhooks reject unsigned Daytona payload', async () => {
+    await ctx.step('the legacy Daytona sandbox webhook rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/daytona', {});
       r.status([400, 401, 403, 503]);
     });
-    await ctx.step('sandbox provider webhooks reject unsigned Platinum payload', async () => {
+    await ctx.step('Platinum ingress is absent or rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/platinum', {});
-      r.status([400, 401, 403, 503]);
+      r.status([401, 404]);
     });
   },
 );

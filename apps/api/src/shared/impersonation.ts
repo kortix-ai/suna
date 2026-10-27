@@ -150,8 +150,9 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // account-members POST above is only one door. `iam/members` carries the
   // super-admin PATCH, `iam/groups` adds a principal to a policy-bearing
   // group, and both outlive the grant. Refuse the whole IAM subtree's
-  // state changes (reads stay open for support).
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/members(\/|$)/ },
+  // state changes (reads stay open for support). `effective:batch` is a read
+  // sent as POST — the web app's permission probe on every page.
+  { re: /^\/v1\/accounts\/[^/]+\/iam\/members(?!\/[^/]+\/effective(:batch)?$)(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/groups(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/roles(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/policies(\/|$)/ },
@@ -202,8 +203,8 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   { re: /^\/v1\/projects\/[^/]+\/connect-requests(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/secret-requests(\/|$)/ },
   // Public shares. `expires_at` is optional, and the consuming route
-  // (`/v1/public/session-shares/:shareId`) is mounted before auth — an
-  // omitted expiry is a permanent unauthenticated link to a customer session.
+  // (`/v1/p/public-share/:token`) is mounted before auth — an omitted expiry
+  // is a permanent unauthenticated link to a customer session.
   { re: /^\/v1\/projects\/[^/]+\/sessions\/[^/]+\/public-shares(\/|$)/ },
   // Tunnels: the whole management surface. Creating a connection, rotating a
   // token, or APPROVING a device-auth code (`device-auth/:code/approve`, the
@@ -256,8 +257,7 @@ export function isImpersonationForbiddenPath(path: string, method = 'GET'): bool
 /**
  * The complete decision, pure. Every input is already resolved by the caller
  * (the grant row read, the platform role looked up), so the security gate
- * itself is exhaustively testable without a DB — the same shape as
- * `shouldApplyAdminBypass` in projects/lib/access.ts.
+ * itself is exhaustively testable without a DB.
  *
  * Order matters and is deliberate: cheap local refusals first, so a non-admin
  * probing grant ids learns nothing from response timing beyond "denied", and

@@ -129,6 +129,8 @@ SessionLogBlockSchema = union(
   | HarnessBlockSchema
 )
 
+SessionLogHarnessSchema = enum(pi | opencode)
+
 SessionLogJournalConflictSchema = {
   generation: number(int)(min0)
 }
@@ -151,6 +153,7 @@ SessionLogJournalSeqConflictSchema = {
   rev: number(int)(min0)
   thread_id: string(min1)
   seq: number(int)
+  seq_max: number(int)
 }
 
 SessionLogManifestSchema = {
@@ -211,6 +214,38 @@ SessionLogPageSchema = {
 SessionLogPutSchema = {
   rev: number(int)(min0)
   message: SessionLogMessageSchema
+}
+
+SessionLogRestoreBlobSchema = {
+  message_id: string(min1)
+  block_id: string(min1)
+  ref: string(min1)
+  bytes: number(int)(min0)
+  sha256: string(regex)
+}
+
+SessionLogRestoreMissingSchema = {
+  error: literal("no_session_log")
+}
+
+SessionLogRestoreSchema = {
+  generation: number(int)(min0)
+  log: SessionLogSchema
+  revs: record(number(int)(min0))
+  seq_max: record(number(int)(min0)) | absent
+  blobs: array(SessionLogRestoreBlobSchema)
+}
+
+SessionLogRestoreTooLargeSchema = {
+  generation: number(int)(min0)
+  log: SessionLogSchema
+  revs: record(number(int)(min0))
+  seq_max: record(number(int)(min0)) | absent
+  blobs: array(SessionLogRestoreBlobSchema)
+  error: literal("session_log_too_large")
+  bytes: number(int)(min0)
+  limit: number(int)(min0)
+  messages: number(int)(min0)
 }
 
 SessionLogSchema = {
@@ -283,6 +318,34 @@ SessionLogSessionPatchSchema = {
 SessionLogStateEventSchema = {
   generation: number(int)(min0)
   session: SessionLogSessionPatchSchema
+}
+
+SessionLogSwitchGapSchema = {
+  feature: string(min1)
+  detail: string(min1) | absent
+  status: enum(degraded | lost)
+}
+
+SessionLogSwitchLossSchema = {
+  feature: string(min1)
+  detail: string(min1) | absent
+  status: enum(degraded | lost)
+  used: number(int)(min0)
+}
+
+SessionLogSwitchPreflightRequestSchema = {
+  to: SessionLogHarnessSchema
+}
+
+SessionLogSwitchPreflightSchema = {
+  session_id: string
+  from: string
+  to: SessionLogHarnessSchema
+  available: boolean
+  reason: enum(same_harness) | null
+  restores: boolean
+  losses: array(SessionLogSwitchLossSchema)
+  unsupported: array(SessionLogSwitchGapSchema)
 }
 
 SessionLogThreadSchema = {

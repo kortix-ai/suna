@@ -10,6 +10,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectConfig } from './config';
+import { getStarterFiles } from '@kortix/starter';
+import { isSelectableAgent } from '@kortix/sdk/projects-client';
+import { projectConfigAgentsToRuntimeAgents } from '@kortix/sdk';
 import type { GitBackedProject } from './types';
 
 const exec = promisify(execFile);
@@ -131,6 +134,33 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
+  test('a fresh starter offers only its customer agent while keeping automation registered', async () => {
+    const files = getStarterFiles({ projectName: 'Picker regression' });
+    await push(Object.fromEntries(files.map((file) => [file.path, file.content])), 'seed a fresh starter');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toContain('harness-reflector');
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
+    expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
+  });
+
+  test('hidden primary agents stay registered but are excluded from pickers', async () => {
+    await push({
+      'kortix.yaml': 'kortix_version: 2\ndefault_agent: assistant\nagents:\n  assistant:\n    file: agents/assistant.md\n  internal:\n    file: agents/internal.md\n',
+      'agents/assistant.md': '---\nmode: primary\nhidden: false\n---\nCustomer assistant',
+      'agents/internal.md': '---\nmode: primary\nhidden: true\n---\nScheduled automation',
+    }, 'declare hidden automation');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
+  });
+
+  test('v3 hidden primary agents keep their visibility marker', async () => {
+    await push({ 'kortix.yaml': 'kortix_version: 3\ndefault_agent: assistant\nagents:\n  assistant:\n    mode: primary\n  internal:\n    mode: primary\n    hidden: true\n' }, 'declare v3 automation');
+    const config = await loadProjectConfig(project);
+    expect(config.agents.map((agent) => agent.name)).toEqual(['assistant', 'internal']);
+    expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['assistant']);
+  });
+
   test('imported agents: every registered agent is listed, a disabled one with enabled: false, attributed to its declaring file', async () => {
     // The reported shape: a root manifest that declares no `agents:` of its own
     // and imports a domain file that does — one enabled, one disabled agent.
@@ -306,3 +336,63 @@ description: "Runs deploys: say \\"go\\""
     expect(skill?.description).toBe("Covers the don't path");
   });
 });
+
+describe('loadProjectConfig on kortix_version 3', () => {
+  test('agents come from the YAML blocks, skills from the registry plus the Kortix skills, commands from the registry', async () => {
+    await push(
+      {
+        'kortix.yaml': `kortix_version: 3
+default_agent: lead
+skills:
+  triage: support/skills/triage
+commands:
+  report:
+    description: Write the report.
+    prompt_file: commands/report.md
+  ping:
+    prompt: Say pong.
+agents:
+  lead:
+    description: Leads the work.
+    mode: primary
+    model: kortix/glm-5.3-flash
+    prompt_file: agents/lead.md
+    skills: all
+    commands: [report]
+  helper:
+    mode: subagent
+    enabled: false
+    prompt: Help.
+`,
+        'agents/lead.md': 'You lead.\n',
+        'commands/report.md': 'Report on $ARGUMENTS.\n',
+        'support/skills/triage/SKILL.md': '---\nname: triage\ndescription: Sort tickets.\n---\n',
+        // Not registered: a v3 project never lists it.
+        'skills/stray/SKILL.md': '---\nname: stray\n---\n',
+      },
+      'v3 manifest',
+    );
+
+    const config = await loadProjectConfig(project);
+
+    expect(config.default_agent).toBe('lead');
+    expect(config.open_code_raw).toBeNull();
+    expect(config.agent_discovery).toBe('declarative');
+    expect(config.agents.map((agent) => [agent.name, agent.path, agent.description, agent.mode, agent.model, agent.enabled])).toEqual([
+      ['helper', 'kortix.yaml#agents.helper', null, 'subagent', null, false],
+      ['lead', 'agents/lead.md', 'Leads the work.', 'primary', 'kortix/glm-5.3-flash', true],
+    ]);
+    expect(config.skills.find((skill) => skill.name === 'triage')).toEqual({
+      name: 'triage',
+      path: 'support/skills/triage/SKILL.md',
+      description: 'Sort tickets.',
+    });
+    expect(config.skills.some((skill) => skill.name === 'stray')).toBe(false);
+    expect(config.skills.some((skill) => skill.name === 'kortix-system')).toBe(true);
+    expect(config.commands).toEqual([
+      { name: 'ping', path: 'kortix.yaml#commands.ping', description: null },
+      { name: 'report', path: 'commands/report.md', description: 'Write the report.' },
+    ]);
+  });
+});
+

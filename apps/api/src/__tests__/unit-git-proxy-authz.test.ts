@@ -21,7 +21,6 @@ let projectRow: Record<string, unknown> | null = null;
 let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
 let sandboxRow: Record<string, unknown> | null = null;
-let monitorBoxRow: Record<string, unknown> | null = null;
 /** The session connector-token grant the sandbox path resolves (account_tokens.agent_grant). */
 let grantRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
@@ -39,13 +38,10 @@ mock.module('../shared/db', () => ({
         ? () => (grantRow ? [grantRow] : [])
         : fields?.sessionMetadata
           ? () => (sandboxRow ? [sandboxRow] : [])
-          : fields?.boxEpoch
-            ? () => (monitorBoxRow ? [monitorBoxRow] : [])
-            : () => (projectRow ? [projectRow] : []);
+          : () => (projectRow ? [projectRow] : []);
       return {
         from: () => ({
           innerJoin: () => ({ where: () => ({ limit: async () => rows() }) }),
-          // Monitor-box lookup (loadMonitorBoxForToken) has no join.
           where: () => ({ limit: async () => rows() }),
         }),
       };
@@ -118,11 +114,11 @@ describe('authorizeGitProxy — CLI PAT', () => {
     ]);
   });
 
-  test('a same-account PAT clone is checked against project.gitops.read', async () => {
+  test('a same-account personal PAT clone needs project.gitops.push: the proxy serves every session branch', async () => {
     authorizeAllowed = false;
     const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
     expect(res).toMatchObject({ ok: false, status: 403 });
-    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.read']);
+    expect(authorizeCalls.map((call) => call.action)).toEqual(['project.gitops.push']);
   });
 
   test('a same-account PAT whose user holds the git role is allowed', async () => {
@@ -211,13 +207,13 @@ describe('authorizeGitProxy — CLI PAT', () => {
     expect(res).toMatchObject({ ok: false, status: 403 });
   });
 
-  test('read and write map to different capabilities', async () => {
+  test('a personal PAT on another account also needs project.gitops.push to read', async () => {
     patResult = { isValid: true, accountId: OTHER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
     authorizeAllowed = true;
 
     await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
 
-    expect(authorizeCalls[0]?.action).toBe('project.gitops.read');
+    expect(authorizeCalls[0]?.action).toBe('project.gitops.push');
   });
 
   test('a project-scoped PAT for a different project is rejected before any capability check', async () => {
@@ -362,25 +358,8 @@ describe('authorizeGitProxy — sandbox token', () => {
     if (res.ok) expect(res.agentGrant).toBeNull();
   });
 
-  // A monitor box has NO session_sandboxes row by design — its token scopes
-  // against project_monitor_boxes. Caught
-  // live on dev 2026-08-12: the box could not clone and no monitor ever ran.
-  test('a live monitor box clones through the proxy without a session row', async () => {
+  test('a sandbox token without a live session stays denied', async () => {
     sandboxRow = null;
-    monitorBoxRow = {
-      boxId: 'sandbox-1',
-      projectId: PROJECT_ID,
-      boxEpoch: 'epoch-1',
-    };
-
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
-
-    expect(res.ok).toBe(true);
-  });
-
-  test('a sandbox token with neither a session nor a monitor box stays denied', async () => {
-    sandboxRow = null;
-    monitorBoxRow = null;
 
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
 
