@@ -411,14 +411,8 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
-    // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
-    // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-    const treePath = normalizeTreePath(path);
-    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = repoFilePath(path);
+    if (!treePath) return c.json({ error: 'File not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -484,13 +478,8 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
-    // same answer as files/content.
-    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-    const treePath = normalizeTreePath(path);
-    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = repoFilePath(path);
+    if (!treePath) return c.json({ error: 'File not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -549,14 +538,8 @@ export function registerProjectFilesRoutes(): void {
     const projectId = c.req.param('projectId');
     const path = normalizeString(c.req.query('path'));
     if (!path) return c.json({ error: 'path query param is required' }, 400);
-    // Absolute, traversal and NUL-containing paths cannot resolve inside the repo tree —
-    // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
-    // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..') || path.includes('\0')) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-    const treePath = normalizeTreePath(path);
-    if (!treePath) return c.json({ error: 'path query param is required' }, 400);
+    const treePath = repoFilePath(path);
+    if (!treePath) return c.json({ error: 'File not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);

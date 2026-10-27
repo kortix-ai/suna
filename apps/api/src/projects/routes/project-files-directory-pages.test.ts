@@ -219,10 +219,10 @@ describe('GET /:projectId/files — the query it took before paging', () => {
 describe('single-file reads reject repository-root paths (KRTX-3551)', () => {
   for (const route of ['raw', 'content', 'history']) {
     for (const path of ['.', './', './//']) {
-      test(`${route}: ${path} returns 400 instead of throwing`, async () => {
+      test(`${route}: ${path} returns 404 instead of throwing`, async () => {
         const response = await projectsApp.request(`/${PROJECT_ID}/files/${route}?${new URLSearchParams({ path })}`);
-        expect(response.status).toBe(400);
-        expect(await response.json()).toEqual({ error: 'path query param is required' });
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: 'File not found' });
       });
     }
     if (route !== 'history') test(`${route}: a repository-relative file still reads`, async () => {

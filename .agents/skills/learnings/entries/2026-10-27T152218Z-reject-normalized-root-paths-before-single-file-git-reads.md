@@ -10,4 +10,4 @@ incident_date: 2026-10-27
 
 **Incident:** 2026-10-27, KRTX-3551: root aliases passed the route's string check and threw `File path is required` in dev (18 occurrences).
 
-**Enforcement:** `apps/api/src/projects/routes/project-files-directory-pages.test.ts` sends `.`, `./`, and `.///` through the real handlers and requires 400, not 500. Valid relative reads still return their bytes/content.
+**Enforcement:** `apps/api/src/projects/routes/project-files-directory-pages.test.ts` sends `.`, `./`, and `.///` through the real handlers and requires 404, not 500 (the canonical missing-file response). Valid relative reads still return their bytes/content.
