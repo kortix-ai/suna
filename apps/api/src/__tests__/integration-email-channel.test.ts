@@ -230,16 +230,17 @@ describe('a received email: stored before the ack, then run', () => {
         created.push(input);
         if (duringCreate) await duringCreate(input);
         const sessionId = crypto.randomUUID();
+        const projectId = input.project.projectId as string;
         await db.insert(projectSessions).values({
           sessionId,
           accountId: project.account_id,
-          projectId: project.project_id,
+          projectId,
           branchName: sessionId,
           createdBy: OWNER,
         });
         // The real post-create bind, which frees the thread's create claim.
         const bind = input.postCreate.filter((a: { type: string }) => a.type === 'bind_chat_thread');
-        await applyPostCreateActions({ projectId: project.project_id, sessionId, actions: bind });
+        await applyPostCreateActions({ projectId, sessionId, actions: bind });
         return { status: 'created', sessionId };
       }) as never,
       deliverThroughQueue: (async (command: Record<string, any>) => {
@@ -376,6 +377,39 @@ describe('a received email: stored before the ack, then run', () => {
     expect([job!.status, job!.attempts]).toEqual(['dead', 2]);
     expect(job!.lastError).toContain('Resend 503');
     expect(created).toHaveLength(0);
+  });
+
+  test('a header with a NUL is stored (as U+FFFD), not refused on every Resend retry', async () => {
+    const event = email(INBOX, 13, 'nul');
+    event.data.subject = 'Re:\u0000 invoice';
+    const res = await deliver(event);
+    expect(await res.json()).toEqual({ ok: true });
+    const [job] = (await jobsOf(INBOX)).filter((j) => j.jobKey.endsWith('-13'));
+    expect((job!.payload as { data: { subject: string } }).data.subject).toBe('Re:\uFFFD invoice');
+    await runJobBatch();
+    expect(created).toHaveLength(1);
+  });
+
+  test('an inbox that moved to another project after the ack runs its stored email there', async () => {
+    const MOVED = `inbox-moved-${RUN}`;
+    const to = await seedProject('email-moved-to', { accountId: project.account_id, metadata: { experimental: { email_channel: true } } });
+    try {
+      await addInbox(project, MOVED);
+      await deliver(email(MOVED, 1, 'mv'));
+      await revokeEmailInboxAccount((await loadEmailInboxAccountForInbox(project.project_id, MOVED))!);
+      await addInbox(to, MOVED);
+
+      await runJobBatch();
+      expect(created).toHaveLength(1);
+      expect(created[0]!.project.projectId).toBe(to.project_id);
+      expect(bodyReads()).toHaveLength(1);
+    } finally {
+      await db.delete(jobQueue).where(like(jobQueue.jobKey, `email:${MOVED}:%`));
+      await releaseEmailInbox(to.project_id, MOVED);
+      await db.delete(connectorConnections).where(eq(connectorConnections.projectId, to.project_id));
+      await db.delete(connectors).where(eq(connectors.projectId, to.project_id));
+      await dropProject(to.project_id);
+    }
   });
 
   test('an inbox removed after the ack drops its stored email without reading it', async () => {

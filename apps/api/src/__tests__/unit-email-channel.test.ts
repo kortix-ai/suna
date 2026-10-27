@@ -727,7 +727,8 @@ describe("handleEmailEvent", () => {
     dbResults = [[{ metadata: {} }]];
     await handleEmailEvent(stored(), { finalAttempt: false });
     inboxRemoved = true;
-    dbResults = [[CHANNEL_ON]];
+    // No project holds the inbox now.
+    dbResults = [[]];
     await handleEmailEvent(stored(), { finalAttempt: false });
     expect(threadEmailReads).toHaveLength(0);
     expect(createCalls).toHaveLength(0);
@@ -846,6 +847,11 @@ describe("stripHtml", () => {
       ),
     ).toBe("Hi there\nTwo\nlines\nend unclosed tail");
     expect(stripHtml("İİ<style>x</style>after")).toBe("İİafter");
+    // A `<` inside an attribute stays inside its tag; a `<` in text stays text.
+    expect(stripHtml('<img alt="a<b">Text')).toBe("Text");
+    expect(stripHtml("<p>a < b and c > d</p>")).toBe("a < b and c > d");
+    // An unclosed <style> stays as text and does not stop a later <script> from going.
+    expect(stripHtml("Hi<style>a{}Body<script>secret()</script>")).toBe("Hia{}Body");
   });
 
   test("crafted HTML costs linear time (a run of `<script` or `<` took seconds)", () => {
@@ -854,6 +860,9 @@ describe("stripHtml", () => {
       "<script".repeat(37_449),
       "<style".repeat(43_690),
       "<script" + "</script".repeat(32_768),
+      "<".repeat(262_144) + ">",
+      "<a".repeat(131_072),
+      "<style".repeat(20_000) + "<script>x</script>".repeat(10_000),
     ]) {
       const started = performance.now();
       stripHtml(html);

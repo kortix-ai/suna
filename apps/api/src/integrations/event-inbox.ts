@@ -24,6 +24,7 @@
  *   outlived its visibility: that run may have finished its work, and the chat
  *   was told nothing. While the row exists, a provider replay is a no-op.
  */
+import { jsonbSafeValue } from '../shared/jsonb-safe';
 import { enqueueJob, registerJobHandler } from '../shared/job-queue';
 
 export const INTEGRATION_EVENTS_QUEUE = 'integration.events';
@@ -82,10 +83,12 @@ export function emitIntegrationEvent(
   event: IntegrationEvent,
   opts: { maxAttempts?: number } = {},
 ): Promise<boolean> {
+  // A provider string with U+0000 (an email subject) would fail the store on
+  // every retry, so the provider would retry it until it gives up.
   return enqueueJob(
     queueOf(event.type),
     `${event.source}:${event.id}`,
-    event as unknown as Record<string, unknown>,
+    jsonbSafeValue(event) as unknown as Record<string, unknown>,
     { maxAttempts: opts.maxAttempts },
   );
 }

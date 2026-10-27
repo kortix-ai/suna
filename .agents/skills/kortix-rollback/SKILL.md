@@ -137,9 +137,13 @@ select job_key, created_at from kortix.job_queue
 where queue = 'integration.events.email' and status = 'queued' order by created_at;
 ```
 
-If a sender must not wait, replay that email from the Resend dashboard: the
-older api handles it, and the stored copy is a no-op at the roll-forward (its
-session create already started, or its follow-up key exists). Delete nothing.
+If a sender must not wait and the rollback target has the Resend route
+(`POST /v1/webhooks/email/resend`, first shipped after v0.14.8), replay that
+email from the Resend dashboard: the older api handles it, and the stored copy
+is a no-op at the roll-forward (its session create already started, or its
+follow-up key exists). A target without that route receives no Resend mail at
+all; Resend's own retries (8 over about 31 h) then decide what arrives after
+the roll-forward. Delete nothing.
 
 ## 5. Per-surface availability (the engine handles this)
 

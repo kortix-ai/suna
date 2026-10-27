@@ -99,14 +99,21 @@ export function emailMessageEvent(projectId: string, event: ResendInboxEmailRece
 export async function handleEmailEvent(event: IntegrationEvent, run: { finalAttempt: boolean }): Promise<void> {
   const { inbox_id: inboxId, thread_id: threadId, email_id: emailId, from, to, subject } =
     event.data as unknown as EmailEventData;
-  const { projectId } = event;
+  let { projectId } = event;
+  let account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    // The inbox left the project since the ack. The project that holds it now
+    // gets the email, as a fresh delivery would; with none, it is dropped.
+    const current = await resolveProjectForEmailInbox(inboxId);
+    account = current && current !== projectId ? await loadEmailInboxAccountForInbox(current, inboxId) : null;
+    if (!account) {
+      logger.info('[email-webhook] inbox removed from the project since the email arrived; dropped', { projectId, inboxId, emailId });
+      return;
+    }
+    projectId = current!;
+  }
   if (!(await emailChannelOnForProject(projectId))) {
     logger.info('[email-webhook] email channel turned off since the email arrived; dropped', { projectId, inboxId, emailId });
-    return;
-  }
-  const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
-  if (!account) {
-    logger.info('[email-webhook] inbox removed from the project since the email arrived; dropped', { projectId, inboxId, emailId });
     return;
   }
   if (!isEmailSenderAllowed(from, account.senderPolicy)) {
@@ -164,10 +171,11 @@ registerEventConsumer('email.', handleEmailEvent, { visibilityMs: 7 * 60_000, ba
  */
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
-  return dropScriptsAndStyles(html)
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
-    .replace(/<[^<>]+>/g, '')
+  return dropTags(
+    dropScriptsAndStyles(html)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n'),
+  )
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -180,17 +188,47 @@ export function stripHtml(html: string | null | undefined): string {
 function dropScriptsAndStyles(html: string): string {
   const opener = /<(script|style)\b/gi;
   const closers = { script: /<\/script/gi, style: /<\/style/gi };
+  // A tag with no closer after one opener has none after any later opener: skip it unscanned.
+  const closable = { script: true, style: true };
   let out = '';
   let pos = 0;
   for (let open = opener.exec(html); open; open = opener.exec(html)) {
-    const closer = closers[open[1]!.toLowerCase() as keyof typeof closers];
+    const tag = open[1]!.toLowerCase() as keyof typeof closers;
+    if (!closable[tag]) continue;
+    const closer = closers[tag];
     closer.lastIndex = open.index;
     const close = closer.exec(html);
     const end = close ? html.indexOf('>', close.index) : -1;
-    if (end < 0) break;
+    if (end < 0) {
+      closable[tag] = false;
+      continue;
+    }
     out += html.slice(pos, open.index);
     pos = end + 1;
     opener.lastIndex = pos;
+  }
+  return out + html.slice(pos);
+}
+
+/**
+ * Drop every tag: a `<` that starts one (a letter, `/` or `!`) through the
+ * next `>`. A `<` in text ("a < b") stays. One scan for `>` per tag, never
+ * re-read, so the cost is linear.
+ */
+function dropTags(html: string): string {
+  let out = '';
+  let pos = 0;
+  let gt = -1;
+  for (let lt = html.indexOf('<'); lt >= 0; lt = html.indexOf('<', pos)) {
+    if (gt < lt) gt = html.indexOf('>', lt);
+    if (gt < 0) break;
+    if (/[a-z/!]/i.test(html[lt + 1] ?? '')) {
+      out += html.slice(pos, lt);
+      pos = gt + 1;
+    } else {
+      out += html.slice(pos, lt + 1);
+      pos = lt + 1;
+    }
   }
   return out + html.slice(pos);
 }
