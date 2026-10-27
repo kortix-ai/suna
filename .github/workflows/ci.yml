@@ -411,7 +411,10 @@ jobs:
       - name: Check daemon lockfile against GHSA advisories
         if: always()
         working-directory: apps/kortix-sandbox-agent-server
-        run: bun audit --audit-level moderate
+        # GHSA-mrhx-c7xc-m3w5 (zod collection-size DoS) has no 3.x fix. kortixd
+        # compiles @kortix/api-contract's zod 3 types, so it moves to zod 4 with
+        # api-contract. Root and .trivyignore carry the same exception.
+        run: bun audit --audit-level moderate --ignore=GHSA-mrhx-c7xc-m3w5
 
   dependency-scan:
     name: Dependency + secret scan

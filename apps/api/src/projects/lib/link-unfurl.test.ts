@@ -51,12 +51,26 @@ describe('parseLinkMeta', () => {
     expect(parseLinkMeta('<title>Acme pricing &lt;2026&gt; &amp; 1 &lt; 2</title>', BASE).title).toBe('Acme pricing <2026> & 1 < 2');
   });
 
+  test('a tag that only forms once an inner tag is removed is removed too', () => {
+    const title = parseLinkMeta('<title>&lt;scr&lt;b&gt;ipt&gt;alert(1)&lt;/scr&lt;i&gt;ipt&gt; Acme</title>', BASE).title;
+    expect(title).toBe('alert(1) Acme');
+    // Nested past the pass cap: every angle bracket goes.
+    const nested = parseLinkMeta(`<title>${'&lt;a'.repeat(20)}${'&gt;'.repeat(20)}Acme</title>`, BASE).title;
+    expect(nested).not.toMatch(/[<>]/);
+    expect(nested).toEndWith('Acme');
+  });
+
   test('tags after the head are not read', () => {
     expect(parseLinkMeta('<head></head><body><meta property="og:title" content="x"></body>', BASE).title).toBeNull();
   });
 
   test('a crafted page of the full read size parses in linear time', () => {
-    const crafted = ['<meta'.repeat(UNFURL_MAX_BYTES / 5), `<link ${'a'.repeat(UNFURL_MAX_BYTES)}`, `<meta ${'a='.repeat(500)}>`.repeat(400)];
+    const crafted = [
+      '<meta'.repeat(UNFURL_MAX_BYTES / 5),
+      `<link ${'a'.repeat(UNFURL_MAX_BYTES)}`,
+      `<meta ${'a='.repeat(500)}>`.repeat(400),
+      `<title>${'&lt;a'.repeat(UNFURL_MAX_BYTES / 16)}${'&gt;'.repeat(UNFURL_MAX_BYTES / 16)}</title>`,
+    ];
     for (const html of crafted) {
       const start = performance.now();
       parseLinkMeta(html, BASE);
