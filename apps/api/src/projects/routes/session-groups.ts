@@ -203,7 +203,7 @@ export function registerSessionGroupsRoutes(): void {
       path: '/{projectId}/sessions/{sessionId}/group',
       tags: ['sessions'],
       summary: 'File a session into a session group',
-      description: '`group_id` files the session into that group of its project; `null` takes it out of its group. The session keeps its `updated_at`, so it keeps its place in the list.',
+      description: '`group_id` files the session into that group of its project; `null` takes it out of its group. The session keeps its `updated_at`, so it keeps its place in the list. A session another session started stays with its parent: 400 `group_child_session`.',
       ...auth,
       request: {
         params: sessionParams,
@@ -219,6 +219,12 @@ export function registerSessionGroupsRoutes(): void {
       if (!guard.ok) return c.json({ error: guard.error }, guard.status);
       const result = await setSessionGroup(loaded.row.projectId, sessionId, c.req.valid('json').group_id);
       if (!result.ok) {
+        if (result.code === 'child_session') {
+          return c.json(
+            { error: 'A session another session started stays with its parent. File the parent instead.', code: 'group_child_session' },
+            400,
+          );
+        }
         return result.code === 'group_not_found' ? c.json(GROUP_NOT_FOUND, 404) : c.json({ error: 'Not found' }, 404);
       }
       return c.json({ session_id: sessionId, group_id: result.groupId }, 200);

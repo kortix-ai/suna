@@ -11,7 +11,13 @@
  *
  * Every write that reads or changes the order takes the project's advisory
  * lock first, so two creates never take one position and a reorder never
- * races a create or a delete.
+ * races a create or a delete. A write that moves sessions between lists
+ * (filing, deleting a group) forgets this replica's memoized list pages, so
+ * the next list read is computed again, never a 304 from before the write.
+ *
+ * Only a top-level session is filed: a session another session started
+ * (`parent_session_id`, or the older `metadata.spawned_by_session`) stays
+ * with its parent.
  */
 import { SESSION_GROUPS_MAX } from '@kortix/api-contract';
 import { projectSessionGroups, projectSessions } from '@kortix/db';
@@ -19,6 +25,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { errorSqlstate } from '../../shared/error-cause';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
+import { forgetSessionListPollEtags } from './session-list-poll-memo';
 
 export type SessionGroupRow = typeof projectSessionGroups.$inferSelect;
 
@@ -134,6 +141,7 @@ export async function deleteSessionGroup(projectId: string, groupId: string): Pr
       .where(and(eq(projectSessionGroups.projectId, projectId), eq(projectSessionGroups.groupId, groupId)))
       .returning({ position: projectSessionGroups.position });
     if (!deleted) return false;
+    forgetSessionListPollEtags(projectId);
     await tx
       .update(projectSessionGroups)
       .set({ position: sql`${projectSessionGroups.position} - 1` })
@@ -148,15 +156,25 @@ export async function deleteSessionGroup(projectId: string, groupId: string): Pr
 }
 
 /**
- * File a session of the project into one of the project's groups, or into no
- * group (`null`). `updated_at` is left as it is. The caller has already checked
- * that the person may see the session.
+ * File a top-level session of the project into one of the project's groups, or
+ * into no group (`null`). `updated_at` is left as it is. The caller has already
+ * checked that the person may see the session.
  */
 export async function setSessionGroup(
   projectId: string,
   sessionId: string,
   groupId: string | null,
-): Promise<{ ok: true; groupId: string | null } | { ok: false; code: 'group_not_found' | 'session_not_found' }> {
+): Promise<
+  { ok: true; groupId: string | null } | { ok: false; code: 'group_not_found' | 'session_not_found' | 'child_session' }
+> {
+  const [session] = await db
+    .select({ parent: projectSessions.parentSessionId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)));
+  if (!session) return { ok: false, code: 'session_not_found' };
+  if (session.parent || typeof session.metadata?.spawned_by_session === 'string') {
+    return { ok: false, code: 'child_session' };
+  }
   if (groupId !== null) {
     const [group] = await db
       .select({ groupId: projectSessionGroups.groupId })
@@ -170,7 +188,9 @@ export async function setSessionGroup(
       .set({ groupId })
       .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)))
       .returning({ groupId: projectSessions.groupId });
-    return row ? { ok: true, groupId: row.groupId } : { ok: false, code: 'session_not_found' };
+    if (!row) return { ok: false, code: 'session_not_found' };
+    forgetSessionListPollEtags(projectId);
+    return { ok: true, groupId: row.groupId };
   } catch (error) {
     // The group was deleted between the read above and this write: the FK
     // refuses the stale id (23503).

@@ -153,6 +153,24 @@ describe('session groups', () => {
     expect((await read()).groupId).toBeNull();
   });
 
+  test('a session another session started stays with its parent: filing it is refused', async () => {
+    const [group] = await listSessionGroups(project.project_id);
+    const parentId = await seedSession(project, creator);
+    const childId = await seedSession(project, creator);
+    await db.update(projectSessions).set({ parentSessionId: parentId }).where(eq(projectSessions.sessionId, childId));
+    const legacyChildId = await seedSession(project, creator);
+    await db
+      .update(projectSessions)
+      .set({ metadata: { spawned_by_session: parentId } })
+      .where(eq(projectSessions.sessionId, legacyChildId));
+    for (const sessionId of [childId, legacyChildId]) {
+      expect(await setSessionGroup(project.project_id, sessionId, group!.groupId)).toEqual({ ok: false, code: 'child_session' });
+      const row = (await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)))[0]!;
+      expect(row.groupId).toBeNull();
+    }
+    expect(await setSessionGroup(project.project_id, parentId, group!.groupId)).toEqual({ ok: true, groupId: group!.groupId });
+  });
+
   test('delete: its sessions go to no group, the rest close up, an unknown or foreign group is not found', async () => {
     const [first, second, third] = await listSessionGroups(project.project_id);
     const sessionId = await seedSession(project, creator);

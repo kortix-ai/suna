@@ -235,6 +235,14 @@ flow('SGRP-3', meta([ROUTES.create, ROUTES.assign, ROUTES.remove, SESSION_ROUTES
       (await world.owner.put(ASSIGN, { group_id: store }, { params: { ...params, sessionId: randomUUID() } })).status(404);
     });
 
+    await ctx.step('a session another session started stays with its parent: filing it → 400 group_child_session', async () => {
+      const child = await insertSession(world, project.id, world.ownerUserId, 'project');
+      await world.db.query('UPDATE kortix.project_sessions SET parent_session_id = $1 WHERE session_id = $2', [shared, child]);
+      (await world.owner.put(ASSIGN, { group_id: store }, { params: { ...params, sessionId: child } }))
+        .status(400).body().has('$.code', 'group_child_session');
+      if ((await readSession(child)).group_id !== null) fail('a refused child was filed');
+    });
+
     await ctx.step('group_id null takes the session out of its group', async () => {
       (await world.owner.put(ASSIGN, { group_id: store }, { params: { ...params, sessionId: loose } })).status(200);
       (await world.owner.put(ASSIGN, { group_id: null }, { params: { ...params, sessionId: loose } }))
