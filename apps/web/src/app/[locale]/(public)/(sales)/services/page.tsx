@@ -27,7 +27,6 @@ import {
   GitBranchIcon,
   PathIcon,
   ReceiptIcon,
-  TagIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
@@ -88,7 +87,6 @@ function Price({ className }: { className?: string }): ReactNode {
     <p className={cn('flex flex-wrap items-baseline gap-x-3', className)}>
       <span className="text-5xl font-medium tracking-tight tabular-nums">{PRICE.now}</span>
       <span className="opacity-70">{PRICE.per}</span>
-      <s className="opacity-50 tabular-nums">{PRICE.was}</s>
     </p>
   );
 }
@@ -100,11 +98,11 @@ export default function ServicesPage() {
       <section id="hero" className="grid grid-cols-1 items-center gap-12 px-8 pt-32 pb-16 lg:grid-cols-[3fr_2fr] lg:gap-16 lg:px-28 lg:pt-44 lg:pb-24">
         <div className="flex min-w-0 flex-col gap-7">
           <a
-            href="#pricing"
+            href="#how"
             className="text-foreground hover:bg-muted outline-ring duration-moderate inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-2"
           >
-            <TagIcon className="size-4" aria-hidden />
-            {hero.offer}
+            <UsersThreeIcon className="size-4" aria-hidden />
+            {hero.team}
           </a>
           <h1 className="text-4xl font-medium tracking-tight text-balance sm:text-5xl">
             <span className="text-foreground block">{hero.title}</span>
@@ -150,6 +148,7 @@ export default function ServicesPage() {
                 <div className="flex flex-col gap-3 lg:col-span-3">
                   <span className="text-muted-foreground font-mono text-xs tabular-nums">{stage.n}</span>
                   <h3 className="text-foreground text-xl font-medium tracking-tight">{stage.k}</h3>
+                  <p className="text-muted-foreground text-sm">{stage.who}</p>
                 </div>
                 <p className="text-muted-foreground text-base text-pretty lg:col-span-5">{stage.v}</p>
                 <ul className="flex flex-col gap-2 text-sm lg:col-span-4">
@@ -248,13 +247,7 @@ export default function ServicesPage() {
         <Heading title={pricing.title} titleMuted={pricing.titleMuted} />
         <div className="mt-12 grid grid-cols-1 gap-4 px-8 lg:grid-cols-[3fr_2fr] lg:px-28">
           <div className="bg-foreground text-background flex flex-col gap-6 rounded-lg p-8 lg:p-10">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-medium">{pricing.plan}</h3>
-              <span className="border-background/30 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs">
-                <TagIcon className="size-3.5" aria-hidden />
-                {pricing.badge}
-              </span>
-            </div>
+            <h3 className="text-lg font-medium">{pricing.plan}</h3>
             <Price />
             <p className="text-sm text-pretty opacity-70">{pricing.lock}</p>
             <ul className="grid grid-cols-1 gap-x-6 gap-y-3 border-t border-current/20 pt-6 text-sm sm:grid-cols-2">
@@ -315,8 +308,7 @@ export default function ServicesPage() {
       <div className="bg-background fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-4 border-t px-4 py-3 lg:hidden">
         <p className="text-sm">
           <span className="text-foreground font-medium tabular-nums">{PRICE.now}</span>
-          <span className="text-muted-foreground">{PRICE.per} </span>
-          <s className="text-muted-foreground tabular-nums">{PRICE.was}</s>
+          <span className="text-muted-foreground">{PRICE.per}</span>
         </p>
         <JoinButton />
       </div>

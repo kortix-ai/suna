@@ -1,15 +1,16 @@
 /**
- * The /services sales page: AI Transformation, done for you by one Forward
- * Deployed Engineer, sold as one flat monthly membership. The idea: we map
+ * The /services sales page: AI Transformation, done for you by a Deployment
+ * Strategist and a Forward Deployed Engineer, sold as one flat monthly
+ * membership. The idea: we map
  * your org (what people do, how they work), unify your data, automate the
  * work and build your custom software. A standalone page with its own shell;
  * the AI OS site and this page link through `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
- *  - One Forward Deployed Engineer, full time.
- *  - List price $20,000 a month. Launch price $15,000 a month: $5,000 off,
- *    for life, for a limited time. The Stripe price is the $15,000 one, so a
- *    subscription keeps it for as long as it runs.
+ *  - A Deployment Strategist and a Forward Deployed Engineer, full time.
+ *    Name both roles wherever the page names the team.
+ *  - A flat $20,000 a month. No discount, no "limited time", no strike-through
+ *    price: the founder dropped the $5,000 launch discount as too fishy.
  *  - Guarantee, kept low-key (one line, never a card or a headline): "Not
  *    loving it in the first 2 weeks? Get 50% back, no questions asked."
  *  - "AI Transformation" is the service name here only (D15). Everywhere
@@ -27,21 +28,21 @@
  * English only for now, like the /enterprise sections.
  */
 
-export const PRICE = { now: '$15,000', was: '$20,000', per: '/month', off: '$5,000' } as const;
+export const PRICE = { now: '$20,000', per: '/month' } as const;
 
 export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no questions asked.';
 
 export const hero = {
-  offer: `Limited time: ${PRICE.off} off every month, for life`,
+  team: 'Deployment Strategist + Forward Deployed Engineer',
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map how your company works. Then we automate it.',
-  sub: 'A Forward Deployed Engineer joins your company full time. They map what every team does and how it works, unify your data in one place, automate the work with agents, and build the custom software your teams need. You own everything they build.',
-  assurances: ['One flat monthly fee', 'Price locked for life', 'Everything in a repo you own'],
+  sub: 'A Deployment Strategist and a Forward Deployed Engineer join your company full time. The strategist maps what every team does and how it works. The engineer unifies your data, automates the work with agents, and builds the custom software your teams need. You own everything they build.',
+  assurances: ['One flat monthly fee', 'Two people, full time', 'Everything in a repo you own'],
 } as const;
 
 export const intro = {
   title: 'Book an intro call',
-  body: 'Meet your engineer. We look at how your company works and pick the first function together.',
+  body: 'Meet your Deployment Strategist and Forward Deployed Engineer. We look at how your company works and pick the first function together.',
 } as const;
 
 export const proof = [
@@ -53,10 +54,11 @@ export const proof = [
 
 export const stages = {
   title: 'What happens.',
-  titleMuted: 'Four stages, one engineer.',
+  titleMuted: 'Four stages, two people.',
   items: [
     {
       id: 'map',
+      who: 'Deployment Strategist',
       n: '01',
       k: 'Map your org',
       v: 'We sit with every team and map what each person does, how they do it, which tools they use and where the work waits.',
@@ -64,6 +66,7 @@ export const stages = {
     },
     {
       id: 'unify',
+      who: 'Forward Deployed Engineer',
       n: '02',
       k: 'Unify your data',
       v: 'We connect every system you run and centralise its data in one place, so every agent and every person works from the same facts.',
@@ -71,6 +74,7 @@ export const stages = {
     },
     {
       id: 'automate',
+      who: 'Deployment Strategist + Forward Deployed Engineer',
       n: '03',
       k: 'Automate the work',
       v: 'Agents take over the recurring work we mapped, on schedules and triggers. Your people keep the decisions and the exceptions.',
@@ -78,6 +82,7 @@ export const stages = {
     },
     {
       id: 'build',
+      who: 'Forward Deployed Engineer',
       n: '04',
       k: 'Build custom software',
       v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on the Kortix AI Operating System.',
@@ -115,7 +120,7 @@ export const compare = {
   columns: ['Kortix', 'Hire an AI team', 'A consultancy'] as const,
   rows: [
     { id: 'strategy', k: 'Strategy', v: ['A map of your org and a ranked roadmap', 'You write it yourself', 'A slide deck'] },
-    { id: 'build', k: 'Build', v: ['The same engineer builds it', 'Once you have hired them', 'Another firm, another contract'] },
+    { id: 'build', k: 'Build', v: ['The same two people build it', 'Once you have hired them', 'Another firm, another contract'] },
     { id: 'data', k: 'Your data', v: ['Unified in one place', 'Up to you', 'Rarely in scope'] },
     { id: 'own', k: 'What you keep', v: ['Every agent and app, in your repo', 'What they build', 'The report'] },
     { id: 'price', k: 'Price', v: ['One flat monthly fee', 'Salaries, recruiting, equity', 'Day rates and change orders'] },
@@ -126,9 +131,9 @@ export const benefits = {
   title: 'Membership benefits.',
   titleMuted: 'Why companies join instead of hiring.',
   items: [
-    { id: 'team', icon: 'team', k: 'One engineer, full time', v: 'A Forward Deployed Engineer on your company, in your tools.' },
+    { id: 'team', icon: 'team', k: 'Two people, full time', v: 'A Deployment Strategist and a Forward Deployed Engineer on your company, in your tools.' },
     { id: 'flat', icon: 'flat', k: 'One flat fee', v: 'One price every month. No day rates, no change orders.' },
-    { id: 'one-person', icon: 'path', k: 'Maps it and builds it', v: 'The engineer who maps your company builds the automation.' },
+    { id: 'one-team', icon: 'path', k: 'Strategy and build, one team', v: 'The strategist who maps your company and the engineer who automates it work side by side.' },
     { id: 'os', icon: 'os', k: 'Built on the AI OS', v: 'Agents, skills, memory and connectors on the open-source Kortix AI Operating System.' },
     { id: 'own', icon: 'repo', k: 'You own all of it', v: 'Every agent, skill and app lives in one git repo you own.' },
     { id: 'where', icon: 'cloud', k: 'Runs where you run', v: 'Kortix Cloud, your VPC, or your own on-prem network.' },
@@ -139,9 +144,9 @@ export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
   plan: 'AI Transformation',
-  badge: 'Limited time',
-  lock: `${PRICE.off} off every month, for life. Join while the offer runs and your price never goes up.`,
+  lock: 'One flat monthly fee for both people, full time. No day rates, no change orders.',
   includes: [
+    'A Deployment Strategist, full time',
     'A Forward Deployed Engineer, full time',
     'A map of your org and how it works',
     'Your data unified in one place',
@@ -159,14 +164,14 @@ export const faq = {
   titleMuted: 'Answered before you ask.',
   items: [
     {
-      id: 'lifetime',
-      q: 'What does the lifetime discount mean?',
-      a: `Join while the offer runs and you pay ${PRICE.now} a month instead of ${PRICE.was}. Your price stays at ${PRICE.now} for as long as your membership runs.`,
+      id: 'team',
+      q: 'What do the Deployment Strategist and the Forward Deployed Engineer do?',
+      a: 'The Deployment Strategist sits with your leaders and teams, maps what every person does and how they work, and decides what agents take first. The Forward Deployed Engineer connects your systems, unifies your data, builds the agents and the custom software, and keeps it all running.',
     },
     {
-      id: 'engineer',
-      q: 'What does the Forward Deployed Engineer do?',
-      a: 'They join your company full time. They map how every team works, connect your systems and unify your data, build the agents that take over the recurring work, build the custom software your teams need, and keep it all running.',
+      id: 'price',
+      q: 'What does it cost?',
+      a: `${PRICE.now} a month, flat, for both people full time. No day rates, no change orders.`,
     },
     {
       id: 'data',
