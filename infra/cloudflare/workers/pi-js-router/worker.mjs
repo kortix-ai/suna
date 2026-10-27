@@ -98,8 +98,30 @@ export function accessRefusal(request, env) {
   );
 }
 
+// Preserve the application's policies. A static-bundle default-src 'none'
+// would break the Next.js application served by this origin.
+const SECURITY_HEADERS = {
+  'strict-transport-security': 'max-age=31536000',
+  'content-security-policy': "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+};
+
 export default {
   async fetch(request, env) {
+    const response = await proxy(request, env);
+    // Rebuilding a Cloudflare upgrade response drops the accepted socket.
+    if (response.status === 101 || response.webSocket) return response;
+    const output = new Response(response.body, response);
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+      if (!output.headers.has(name)) output.headers.set(name, value);
+    }
+    return output;
+  },
+};
+
+async function proxy(request, env) {
     const target = (env.TARGET_ORIGIN || '').trim();
     if (!target) {
       return Response.json(
@@ -151,5 +173,4 @@ export default {
     });
     output.headers.set('x-kortix-environment', 'pi-js');
     return output;
-  },
-};
+}
