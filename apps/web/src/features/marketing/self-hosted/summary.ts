@@ -11,7 +11,7 @@
 /** The hero's description, shortened to two lines. The title and buttons
  *  still come from `content.ts` (translated). */
 export const heroSub =
-  'One Docker Compose stack, built from the images the cloud runs. Your data stays on disk you control, in code you can read.';
+  'Self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your own servers. Your data stays on infrastructure you control, in code you can read.';
 
 export const yoursSummary = {
   title: 'Your company stays on your side.',
