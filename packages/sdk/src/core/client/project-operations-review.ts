@@ -61,6 +61,24 @@ export function bindProjectOperationsReview(projectId: string) {
       },
     },
 
+    /**
+     * Session groups (`session_groups` flag): named folders of the project's
+     * sessions, shared by every member, in one order. List a group's sessions
+     * with `sessions.listPage({ group })` (`'none'`: the sessions in no group).
+     */
+    sessionGroups: {
+      list: () => P.listProjectSessionGroups(projectId),
+      /** Last in the order. A taken name (any case) rejects with 409 `group_name_taken`. */
+      create: (input: Parameters<typeof P.createProjectSessionGroup>[1]) => P.createProjectSessionGroup(projectId, input),
+      rename: (groupId: string, name: string) => P.renameProjectSessionGroup(projectId, groupId, name),
+      /** Every group id, once, in the new order; an out-of-date list rejects with 409 `group_order_stale`. */
+      reorder: (groupIds: readonly string[]) => P.reorderProjectSessionGroups(projectId, groupIds),
+      /** Its sessions stay, in no group. */
+      delete: (groupId: string) => P.deleteProjectSessionGroup(projectId, groupId),
+      /** `file(sessionId, groupId)`: into that group; `null` takes it out. Keeps its `updated_at`. */
+      file: (sessionId: string, groupId: string | null) => P.setProjectSessionGroup(projectId, sessionId, groupId),
+    },
+
     /** Memory: the Markdown files of the project's Drive (`drives` flag). A layer key is `company` or a channel's or DM's space id. */
     memory: {
       /** One layer: its Drive folder and page counts. */
