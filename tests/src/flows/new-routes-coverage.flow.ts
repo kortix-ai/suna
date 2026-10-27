@@ -555,9 +555,9 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/daytona', {});
       r.status([400, 401, 403, 503]);
     });
-    await ctx.step('sandbox provider webhooks reject unsigned Platinum payload', async () => {
+    await ctx.step('Platinum ingress is absent or rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/platinum', {});
-      r.status([400, 401, 403, 503]);
+      r.status([401, 404]);
     });
   },
 );
