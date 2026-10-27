@@ -31,11 +31,21 @@ export function SalesShell({ children }: { children: ReactNode }) {
             <KortixLogo size={15} variant="logomark" />
           </Link>
           <SiteSwitcher className="mr-auto" />
-          <a href="#how" className={BAR_LINK}>
+          {/* designjoy's bar: jump to the parts a buyer checks. Phones keep Pricing only. */}
+          <a href="#how-it-works" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
+            How it works
+          </a>
+          <a href="#how" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
             What we do
+          </a>
+          <a href="#case-studies" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
+            Recent work
           </a>
           <a href="#pricing" className={BAR_LINK}>
             Pricing
+          </a>
+          <a href="#faq" className={cn(BAR_LINK, 'md:hidden lg:flex')}>
+            FAQ
           </a>
           <MarketingButton className="hit-area-y-3" onClick={() => openDemo({ source: 'services' })}>
             <span className="sm:hidden">Book a call</span>
