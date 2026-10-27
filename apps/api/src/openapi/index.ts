@@ -66,13 +66,26 @@ export const auth: Pick<RouteConfig, 'security'> = { security: [{ bearerAuth: []
  * Single validation-error contract for every typed route. Zod failures (bad body,
  * params, query) become a consistent 400 envelope instead of per-route ad-hoc shapes.
  */
-function defaultHook(result: { success: boolean; error?: { issues: unknown } }, c: any) {
+export function defaultHook(result: { success: boolean; error?: { issues: readonly unknown[] } }, c: any) {
   if (!result.success) {
     return c.json(
-      { error: true, message: 'Validation failed', status: 400, issues: result.error?.issues },
+      { error: true, message: 'Validation failed', status: 400, ...boundedIssues(result.error?.issues) },
       400,
     );
   }
+}
+
+/** The most validation issues one response lists (KRTX-3419). */
+export const RESPONSE_ISSUE_LIMIT = 20;
+
+/**
+ * A response's `issues`: the first 20, plus `issue_count` with the total. Zod
+ * reports one issue per failing array element, so the whole list let a 1.5 MB
+ * request answer 68 MB. `unit-bounded-issues-guard` keeps every response on it.
+ */
+export function boundedIssues<T>(issues: readonly T[] | undefined): { issues: T[]; issue_count: number } {
+  const all = issues ?? [];
+  return { issues: all.slice(0, RESPONSE_ISSUE_LIMIT), issue_count: all.length };
 }
 
 /** Create an OpenAPIHono sub-app with the shared error contract. */
