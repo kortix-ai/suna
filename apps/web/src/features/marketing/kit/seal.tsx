@@ -24,14 +24,17 @@ export function Seal({
   detail,
   note,
   ornament,
+  className = 'text-foreground size-32 lg:size-36',
 }: {
   name: string;
   detail: string;
   note?: string;
   ornament: Ornament;
+  /** Ink and size; the default sits on the page surface. */
+  className?: string;
 }) {
   return (
-    <svg viewBox="0 0 100 100" className="text-foreground size-32 lg:size-36" role="img" aria-label={[name, detail, note].filter(Boolean).join(' ')}>
+    <svg viewBox="0 0 100 100" className={className} role="img" aria-label={[name, detail, note].filter(Boolean).join(' ')}>
       <g fill="none" stroke="currentColor" strokeWidth="1">
         <circle cx="50" cy="50" r="48" />
         {ornament === 'double' && <circle cx="50" cy="50" r="44" strokeDasharray="1 2.5" />}
