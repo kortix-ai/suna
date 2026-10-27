@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 961,
+  "count": 967,
   "routes": [
     {
       "method": "GET",
@@ -1229,6 +1229,30 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/attach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chrome/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/chrome/connections/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/panel-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chrome/release"
     },
     {
       "method": "POST",
