@@ -1,40 +1,40 @@
 'use client';
 
-import { HardDrivesIcon } from '@phosphor-icons/react';
-import type { DriveEntry } from '@kortix/sdk';
+import type { AgentMount, DriveEntry, FolderLevel } from '@kortix/sdk';
+import { useAgentMounts } from '@kortix/sdk/react';
+import { CaretRightIcon, FolderSimpleIcon, HardDrivesIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
 
-import {
-  useDriveFolder,
-  useFolderAccess,
-  useProjectDrive,
-  useShareFolder,
-  useUnshareFolder,
-} from '../../files/drives/use-drives';
+import { useDriveFolder, useFolderAccess, useProjectDrive, useShareFolder, useUnshareFolder } from '../../files/drives/use-drives';
 import { useTranslations } from '../../i18n';
+import { agentDisplayName } from '../../internal/components/agent-mark';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
+import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { EmptyArt } from '../../primitives/empty-art';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
+import Hint from '../../primitives/hint';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '../../primitives/modal';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../primitives/select';
 import { Skeleton } from '../../primitives/skeleton';
-import { Switch } from '../../primitives/switch';
 import { errorToast } from '../../primitives/toast';
 import { ManageButton } from '../sections/view/agent-editor-access-fields';
 import { EditorList } from '../sections/view/agent-editor-primitives';
 import { AccessLead } from './agent-access-list';
 
 /**
- * Access > Drives: which shared drives an agent gets. Turning one on shares
- * that drive's folder with the agent, the same grant Drive > Share makes, so
- * it writes at once and does not wait for the page's Save.
+ * Access > Drives, as mounts (Marko, 2026-10-27: "folder mount based,
+ * exactly"). Each row is one folder a new session of this agent mounts: where
+ * it appears (`/drives/...`), which Files folder it is, who it comes through
+ * (this agent, or everyone in the project) and whether it is read-only. The
+ * list is the server's own plan (`GET /drives/:id/agents/:name/mounts`, the
+ * functions a session boot runs), so it never guesses.
  *
- * The view is often one or two rows, so it carries a second panel with real
- * content: "In a session", the folders a session of this agent sees and
- * where each one is mounted. The near-empty view then reads as intentional,
- * never as one card floating in space.
- *
- * ponytail: no per-drive file count or last-update column. The folder access
- * read carries neither; add them when the drive listing serves them.
+ * Mounting, changing the level and unmounting share or unshare the folder
+ * with the agent at once, the same grant Files > Share makes; they do not
+ * wait for the page's Save. A folder that comes through the project is
+ * changed in Files, where its sharing lives.
  */
 export function AgentDrivesSection({
   projectId,
@@ -46,139 +46,280 @@ export function AgentDrivesSection({
   /** Whether sessions of the agent get the project repository at /workspace. */
   repositoryAccess?: boolean;
 }) {
-  const t = useTranslations('drives');
-  const tTabs = useTranslations('agentEditor.tabs');
+  const t = useTranslations('agentMounts');
   const drive = useProjectDrive(projectId);
-  const root = useDriveFolder(drive.data?.driveId ?? null, '/');
-  const drives = (root.data?.entries ?? []).filter((e) => e.type === 'dir' && !/^\/?Users(\/|$)/.test(e.path));
   const driveId = drive.data?.driveId ?? null;
+  const plan = useAgentMounts(driveId, agentName);
+  const root = useFolderAccess(driveId, '/');
+  // Mounting needs `manage` on the folder; someone who holds it at the top holds it below.
+  const canMount = root.data?.access === 'manage';
+  const [picking, setPicking] = useState(false);
 
-  let list;
-  if (drive.isLoading || root.isLoading) {
-    list = (
+  let body;
+  if (drive.isLoading || plan.isLoading) {
+    body = (
       <EditorList>
         {[0, 1].map((i) => (
           <li key={i} className="flex min-h-12 items-center gap-3 px-4 py-2">
-            <Skeleton className="h-4 w-40 rounded-sm" />
+            <Skeleton className="h-4 w-48 rounded-sm" />
           </li>
         ))}
       </EditorList>
     );
-  } else if (drive.isError || root.isError || !driveId) {
-    list = (
+  } else if (drive.isError || plan.isError || !driveId || !plan.data) {
+    body = (
       <ErrorState
         size="sm"
         title={t('loadError')}
         action={
-          <Button variant="outline" size="sm" onClick={() => void root.refetch()}>
+          <Button variant="outline" size="sm" onClick={() => void plan.refetch()}>
             {t('retry')}
           </Button>
         }
       />
     );
-  } else if (drives.length === 0) {
-    list = <EmptyState media={<EmptyArt icon={HardDrivesIcon} />} title={t('noCompanyDrives')} />;
+  } else if (plan.data.mounts.length === 0 && !repositoryAccess) {
+    body = (
+      <EmptyState media={<EmptyArt icon={HardDrivesIcon} />} title={t('emptyTitle')} description={t('emptyDescription')} />
+    );
   } else {
-    list = (
-      <EditorList>
-        {drives.map((entry) => (
-          <AgentDriveRow key={entry.path} driveId={driveId} entry={entry} agentName={agentName} />
-        ))}
-      </EditorList>
+    body = (
+      <div className="space-y-3">
+        <EditorList>
+          {repositoryAccess ? (
+            <li className="flex min-h-12 items-center gap-3 px-4 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="text-foreground block truncate font-mono text-sm">/workspace</span>
+                <span className="text-muted-foreground block truncate text-xs">{t('repository')}</span>
+              </span>
+              <span className="text-muted-foreground shrink-0 text-xs">{t('readWrite')}</span>
+            </li>
+          ) : null}
+          {plan.data.mounts.map((mount) => (
+            <MountRow key={mount.path} driveId={driveId} agentName={agentName} mount={mount} />
+          ))}
+        </EditorList>
+        {plan.data.skipped.length > 0 ? (
+          <p className="text-muted-foreground text-xs text-pretty">
+            {t('skipped', { slots: plan.data.slots, list: plan.data.skipped.join(', ') })}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
   return (
     <section className="space-y-6" data-testid="agent-access-drives">
       <AccessLead
-        description={tTabs('drivesLead')}
-        action={<ManageButton href={(id) => uiRoutes().drive(id)} />}
+        description={t('lead')}
+        action={
+          <>
+            {canMount && driveId ? (
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setPicking(true)}>
+                <PlusIcon className="size-3.5 shrink-0" />
+                {t('mount')}
+              </Button>
+            ) : null}
+            <ManageButton href={(id) => uiRoutes().drive(id)} />
+          </>
+        }
       />
-      {list}
-      <section className="space-y-3">
-        <h3 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
-          {tTabs('inSession')}
-          <span className="text-muted-foreground text-xs font-normal">{tTabs('inSessionHint')}</span>
-        </h3>
-        <EditorList>
-          {repositoryAccess ? <MountRow path="/workspace" label={tTabs('mountRepository')} /> : null}
-          {driveId
-            ? drives.map((entry) => (
-                <DriveMount key={entry.path} driveId={driveId} entry={entry} agentName={agentName} />
-              ))
-            : null}
-        </EditorList>
-      </section>
+      {body}
+      {driveId ? (
+        <FolderPicker
+          open={picking}
+          onOpenChange={setPicking}
+          driveId={driveId}
+          agentName={agentName}
+          mounted={new Set(plan.data?.mounts.map((m) => m.path))}
+        />
+      ) : null}
     </section>
   );
 }
 
-function normalPath(entry: DriveEntry) {
-  return entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
-}
+/** The level a mount gives: read only, or read and write. `manage` mounts read and write. */
+const levelValue = (level: FolderLevel): 'read' | 'write' => (level === 'read' ? 'read' : 'write');
 
-/** The agent's state on one drive: its own grant, or one it inherits. */
-function useDriveGrant(driveId: string, entry: DriveEntry, agentName: string) {
-  const path = normalPath(entry);
-  const access = useFolderAccess(driveId, path);
-  const grants = access.data?.grants ?? [];
-  const own = grants.find((g) => !g.inherited && g.principalType === 'agent' && g.principalId === agentName);
-  // Everyone in the project, or a grant on a folder above, already reaches the agent.
-  const inherited =
-    !own && grants.some((g) => g.principalType === 'project' || (g.principalType === 'agent' && g.principalId === agentName));
-  return { path, access, own, inherited, on: !!own || inherited };
-}
-
-function AgentDriveRow({ driveId, entry, agentName }: { driveId: string; entry: DriveEntry; agentName: string }) {
-  const t = useTranslations('drives');
-  const tTabs = useTranslations('agentEditor.tabs');
-  const { path, access, own, inherited, on } = useDriveGrant(driveId, entry, agentName);
+function MountRow({ driveId, agentName, mount }: { driveId: string; agentName: string; mount: AgentMount }) {
+  const t = useTranslations('agentMounts');
   const share = useShareFolder();
   const unshare = useUnshareFolder();
-  const canManage = access.data?.access === 'manage' && !!access.data?.grantable;
+  const access = useFolderAccess(driveId, mount.path, !!mount.grantId);
+  const canChange = !!mount.grantId && access.data?.access === 'manage';
+  const [confirming, setConfirming] = useState(false);
   const pending = share.isPending || unshare.isPending;
 
-  const toggle = async (next: boolean) => {
+  const setLevel = async (level: FolderLevel) => {
     try {
-      if (next) await share.mutateAsync({ driveId, path, principalType: 'agent', principalId: agentName, level: 'write' });
-      else if (own) await unshare.mutateAsync({ driveId, grantId: own.grantId });
+      await share.mutateAsync({ driveId, path: mount.path, principalType: 'agent', principalId: agentName, level });
     } catch {
-      errorToast(t('shareFailed'));
+      errorToast(t('changeFailed'));
+    }
+  };
+  const unmount = async () => {
+    try {
+      await unshare.mutateAsync({ driveId, grantId: mount.grantId! });
+      setConfirming(false);
+    } catch {
+      errorToast(t('changeFailed'));
     }
   };
 
-  const who = inherited ? t('everyoneInProject') : on ? tTabs('thisAgent') : tTabs('notShared');
+  const who = mount.via === 'agent' ? t('viaAgent') : t('viaProject');
   return (
     <li className="flex min-h-12 items-center gap-3 px-4 py-2">
       <span className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm">{entry.name}</span>
-        <span className="text-muted-foreground block truncate text-xs">{who}</span>
+        <span className="text-foreground block truncate font-mono text-sm">{mount.mountPath}</span>
+        <span className="text-muted-foreground block truncate text-xs">{t('from', { path: mount.path, who })}</span>
       </span>
-      {access.isLoading ? (
-        <Skeleton className="h-5 w-9 rounded-full" />
+      {canChange ? (
+        <>
+          <Select value={levelValue(mount.level)} onValueChange={(v) => void setLevel(v as FolderLevel)} disabled={pending}>
+            <SelectTrigger size="sm" className="w-36 shrink-0" aria-label={t('levelFor', { path: mount.path })}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="read">{t('readOnly')}</SelectItem>
+              <SelectItem value="write">{t('readWrite')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Hint label={t('unmountLabel', { path: mount.path })}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('unmountLabel', { path: mount.path })}
+              onClick={() => setConfirming(true)}
+              disabled={pending}
+            >
+              <XIcon className="size-4" />
+            </Button>
+          </Hint>
+          <ConfirmDialog
+            open={confirming}
+            onOpenChange={setConfirming}
+            title={t('unmountTitle', { path: mount.mountPath })}
+            description={t('unmountDescription', { agent: agentDisplayName(agentName) })}
+            confirmLabel={t('unmount')}
+            confirmVariant="destructive"
+            isPending={unshare.isPending}
+            onConfirm={() => void unmount()}
+          />
+        </>
       ) : (
-        <Switch
-          checked={on}
-          disabled={!canManage || inherited || pending}
-          onCheckedChange={(v) => void toggle(v)}
-          aria-label={t('levelFor', { name: entry.name })}
-        />
+        <span className="text-muted-foreground shrink-0 text-xs">{mount.readOnly ? t('readOnly') : t('readWrite')}</span>
       )}
     </li>
   );
 }
 
-function DriveMount({ driveId, entry, agentName }: { driveId: string; entry: DriveEntry; agentName: string }) {
-  const { path, on } = useDriveGrant(driveId, entry, agentName);
-  if (!on) return null;
-  return <MountRow path={`/drives${path}`} label={entry.name} />;
-}
+/** Pick a folder in Files and the level, then mount it for the agent. */
+function FolderPicker({
+  open,
+  onOpenChange,
+  driveId,
+  agentName,
+  mounted,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  driveId: string;
+  agentName: string;
+  mounted: ReadonlySet<string>;
+}) {
+  const t = useTranslations('agentMounts');
+  const [path, setPath] = useState('/');
+  const [level, setLevel] = useState<'read' | 'write'>('write');
+  const folder = useDriveFolder(open ? driveId : null, path);
+  const share = useShareFolder();
+  // Personal folders under /Users are their owners' to share, never a mount to pick here.
+  const dirs = (folder.data?.entries ?? []).filter(
+    (e: DriveEntry) => e.type === 'dir' && !(path === '/' && /^\/?Users$/.test(e.path)),
+  );
+  const crumbs = path.split('/').filter(Boolean);
 
-function MountRow({ path, label }: { path: string; label: string }) {
+  const close = (next: boolean) => {
+    if (share.isPending) return;
+    if (!next) setPath('/');
+    onOpenChange(next);
+  };
+  const mount = async () => {
+    try {
+      await share.mutateAsync({ driveId, path, principalType: 'agent', principalId: agentName, level });
+      close(false);
+    } catch {
+      errorToast(t('changeFailed'));
+    }
+  };
+
   return (
-    <li className="flex min-h-12 items-center justify-between gap-4 px-4 py-2">
-      <span className="text-muted-foreground min-w-0 truncate text-sm">{label}</span>
-      <span className="text-muted-foreground shrink-0 font-mono text-xs">{path}</span>
-    </li>
+    <Modal open={open} onOpenChange={close}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{t('pickerTitle')}</ModalTitle>
+          <ModalDescription>{t('pickerDescription', { agent: agentDisplayName(agentName) })}</ModalDescription>
+        </ModalHeader>
+        <ModalBody className="space-y-3">
+          <nav aria-label={t('pickerPath')} className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
+            <button type="button" className="text-muted-foreground hover:text-foreground rounded-sm" onClick={() => setPath('/')}>
+              {t('pickerRoot')}
+            </button>
+            {crumbs.map((name, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <CaretRightIcon aria-hidden className="text-muted-foreground size-3" />
+                <button
+                  type="button"
+                  className={i === crumbs.length - 1 ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}
+                  onClick={() => setPath(`/${crumbs.slice(0, i + 1).join('/')}`)}
+                >
+                  {name}
+                </button>
+              </span>
+            ))}
+          </nav>
+          <EditorList className="max-h-72 overflow-y-auto">
+            {folder.isLoading ? (
+              <li className="flex min-h-10 items-center px-4 py-2">
+                <Skeleton className="h-4 w-40 rounded-sm" />
+              </li>
+            ) : dirs.length === 0 ? (
+              <li className="text-muted-foreground px-4 py-3 text-sm">{t('pickerEmpty')}</li>
+            ) : (
+              dirs.map((entry: DriveEntry) => {
+                const next = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+                return (
+                  <li key={next}>
+                    <button
+                      type="button"
+                      onClick={() => setPath(next)}
+                      className="hover:bg-hover flex min-h-10 w-full items-center gap-2 px-4 py-2 text-left text-sm"
+                    >
+                      <FolderSimpleIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+                      <span className="text-foreground min-w-0 flex-1 truncate">{entry.name}</span>
+                      {mounted.has(next) ? <span className="text-muted-foreground text-xs">{t('alreadyMounted')}</span> : null}
+                      <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </EditorList>
+        </ModalBody>
+        <ModalFooter className="flex items-center justify-between gap-2">
+          <Select value={level} onValueChange={(v) => setLevel(v as 'read' | 'write')}>
+            <SelectTrigger size="sm" className="w-36" aria-label={t('levelFor', { path })}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="read">{t('readOnly')}</SelectItem>
+              <SelectItem value="write">{t('readWrite')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={() => void mount()} disabled={path === '/' || share.isPending} aria-busy={share.isPending}>
+            {path === '/' ? t('pickerChoose') : t('pickerMount', { path })}
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

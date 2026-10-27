@@ -80,6 +80,27 @@ export interface FolderAccessView {
   grants: FolderGrant[];
 }
 
+/** One folder a new session of an agent mounts (`listAgentMounts`). */
+export interface AgentMount {
+  /** The Files folder, e.g. `/Company/Reports`. */
+  path: string;
+  /** Where a session sees it, e.g. `/drives/Company/Reports`. */
+  mountPath: string;
+  readOnly: boolean;
+  /** `agent`: shared with the agent. `project`: shared with everyone in the project. */
+  via: 'agent' | 'project';
+  /** The agent's own grant on the folder, to change or remove. Absent when it comes through the project. */
+  grantId?: string;
+  level: FolderLevel;
+}
+
+export interface AgentMountPlan {
+  mounts: AgentMount[];
+  /** Folders past the sandbox's mount slots, in the order they were left out. */
+  skipped: string[];
+  slots: number;
+}
+
 export interface FolderPrincipals {
   people: Array<{ id: string; label: string }>;
   teams: Array<{ id: string; label: string }>;
@@ -142,6 +163,19 @@ export async function getFolderAccess(driveId: string, path: string): Promise<Fo
       showErrors: false,
     }),
     'Failed to load sharing',
+  );
+}
+
+/**
+ * The Files folders a new session of an agent mounts, where, and read-only
+ * or not: the folders shared with the agent and with everyone in the
+ * project, planned the way a session boots. A person's own folders join the
+ * sessions they start and are not listed.
+ */
+export async function listAgentMounts(driveId: string, agentName: string): Promise<AgentMountPlan> {
+  return unwrap(
+    await backendApi.get<AgentMountPlan>(`${drivePath(driveId)}/agents/${encodeURIComponent(agentName)}/mounts`),
+    'Failed to load mounts',
   );
 }
 

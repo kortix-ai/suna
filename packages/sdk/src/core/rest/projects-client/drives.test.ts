@@ -5,6 +5,7 @@ import {
   deleteDriveFile,
   downloadDriveFile,
   getFolderAccess,
+  listAgentMounts,
   getDriveFileUrl,
   listDriveFiles,
   listDriveVersions,
@@ -122,6 +123,19 @@ test('stopping a share reports the sessions it has not reached yet', async () =>
 
   respond(202, { pendingSessions: 2 });
   expect(await unshareFolder(D, 'g1')).toEqual({ pendingSessions: 2 });
+});
+
+test("an agent's mounts are the folders a new session of it mounts", async () => {
+  respond(200, {
+    mounts: [{ path: '/Company', mountPath: '/drives/Company', readOnly: false, via: 'project', level: 'write' }],
+    skipped: [],
+    slots: 8,
+  });
+  const plan = await listAgentMounts(D, 'research bot');
+  expect(last().method).toBe('GET');
+  expect(last().url).toBe(`http://test.local/drives/${D}/agents/research%20bot/mounts`);
+  expect(plan.mounts[0]!.mountPath).toBe('/drives/Company');
+  expect(plan.slots).toBe(8);
 });
 
 // ── Upload progress over XHR ──

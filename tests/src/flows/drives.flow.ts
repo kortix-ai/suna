@@ -49,6 +49,7 @@ flow(
       'GET /v1/drives/:driveId/access',
       'PUT /v1/drives/:driveId/access',
       'GET /v1/drives/:driveId/principals',
+      'GET /v1/drives/:driveId/agents/:agentName/mounts',
       'POST /v1/drives/:driveId/restore',
       'DELETE /v1/drives/:driveId/access/:grantId',
       'GET /v1/drives/:driveId/conflicts',
@@ -179,6 +180,16 @@ flow(
         const r = (await owner.get('/v1/drives/:driveId/principals', { params: { driveId } })).status(200);
         if (!JSON.stringify(r.json()).includes(member.userId!)) throw new Error(`member missing from principals: ${r.text()}`);
         if (!JSON.stringify(r.json()).includes(outsider.userId!)) throw new Error(`owner cannot name an account member: ${r.text()}`);
+      });
+
+      await ctx.step("an agent's mounts are the session plan: the project's folders at /drives paths; ANON 401", async () => {
+        const plan = (await owner.get('/v1/drives/:driveId/agents/:agentName/mounts', { params: { driveId, agentName: 'kortix' } }))
+          .status(200)
+          .json<{ mounts: { path: string; mountPath: string; via: string; readOnly: boolean }[]; skipped: string[]; slots: number }>();
+        if (!(plan.slots > 0)) throw new Error(`slots ${plan.slots}`);
+        if (!plan.mounts.every((m) => m.mountPath.startsWith('/drives/'))) throw new Error(`mounts ${JSON.stringify(plan.mounts)}`);
+        if (plan.mounts.some((m) => m.path.startsWith('/Users'))) throw new Error(`a person's folder in an agent plan: ${JSON.stringify(plan.mounts)}`);
+        (await ctx.client.as(ctx.P.ANON).get('/v1/drives/:driveId/agents/:agentName/mounts', { params: { driveId, agentName: 'kortix' } })).status(401);
       });
 
       await ctx.step('a plain member names only themselves: not the owner, not an account member', async () => {

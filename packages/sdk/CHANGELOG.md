@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (agent mounts)
+- `listAgentMounts(driveId, agentName)`, `agentMountsQueryOptions` and `useAgentMounts`, with the
+  `AgentMount` and `AgentMountPlan` types: the Files folders a new session of an agent mounts, at
+  which `/drives/...` path, read-only or not, and through the agent's own grant or the project's
+  (`GET /drives/:driveId/agents/:agentName/mounts`).
+
 ### Added (spaces)
 - Spaces are channels: `kortix.yaml` `spaces.<slug>` (label, description, order, `header`, `tabs`) and
   `agents.<name>.space`. `ProjectConfigSummary.spaces`, each agent's `space`, and `AgentConfigBlock.space`.

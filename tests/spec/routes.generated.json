@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 961,
+  "count": 962,
   "routes": [
     {
       "method": "GET",
@@ -1457,6 +1457,10 @@
     {
       "method": "DELETE",
       "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/agents/:agentName/mounts"
     },
     {
       "method": "GET",
