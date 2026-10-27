@@ -7,8 +7,8 @@ import { useEffect, useState } from 'react';
 
 import { SessionWindow } from './session-window';
 
-// The hero's adjective cycles through the three pillars (kortix-brand D16, D21).
-const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible'];
+// The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
+const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible', 'open'];
 
 /**
  * "The <word> AI Operating System", the word changing every 2.5 s. The new
@@ -49,7 +49,7 @@ export function SandBandHero() {
             pattern): sits close under the title, muted, two lines at most. */}
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="sr-only">The sovereign, multiplayer and extensible AI Operating System</span>
+            <span className="sr-only">The sovereign, multiplayer, extensible and open AI Operating System</span>
             <span aria-hidden className="text-foreground block">
               The <PillarWord /> AI Operating System
             </span>
