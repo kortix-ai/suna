@@ -47,7 +47,7 @@ All four surfaces reach the same API with the same permissions.
 | REST API | Any language. Integrations, scripts, and servers that are not TypeScript. | A bearer token from [Authenticate](#authenticate) |
 | [SDK](/docs/sdk) (`@kortix/sdk`) | TypeScript and React. Sessions with live streaming, typed errors, automatic retries, and the session runtime. | `getToken` returns a bearer token |
 | [CLI](/docs/cli) (`kortix`) | Terminals, CI jobs, and agents inside a session sandbox. | `kortix login`, or a token in CI |
-| [Kortix MCP server](/docs#connectors) | Claude, Cursor, ChatGPT, and other MCP clients that act as you. Its `search_api`, `describe_api`, and `call_api` tools read and call this API. | OAuth sign-in from the client |
+| [Kortix MCP server](/docs/#connectors) | Claude, Cursor, ChatGPT, and other MCP clients that act as you. Its `search_api`, `describe_api`, and `call_api` tools read and call this API. | OAuth sign-in from the client |
 
 Prefer the SDK for anything that drives a session: it owns the start, the
 readiness wait, the event stream, and the runtime routes that the REST reference
@@ -83,14 +83,14 @@ Authorization: Bearer <token>
 
 The token decides who the request acts as. Every Kortix credential starts with
 a prefix that names its kind. Create and manage them on
-[Sign-in, SSO & API keys](/docs#security).
+[Sign-in, SSO & API keys](/docs/#security).
 
 | Prefix | Credential | Acts as |
 |---|---|---|
 | `kortix_pat_` | Personal access key (**Settings → Personal access keys**, `kortix tokens new`, `kortix login`) | You, with your roles. A key bound to one project gets `403` everywhere else. |
 | `kortix_sa_` | Service account key (**Account settings → API keys**) | The service account. It has no access until someone assigns it a role. |
 | `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/sdk/auth#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The person who approved the app. |
-| `kortix_gw_` | Project gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one project, and nothing else. See [Models](/docs#models). |
+| `kortix_gw_` | Project gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one project, and nothing else. See [Models](/docs/#models). |
 | `kortix_scim_` | SCIM token (**Account settings → Identity**) | Directory sync under `/scim/v2` for one account. |
 | `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The agent of that one session, limited to its project. It ends with the session. |
 
@@ -150,23 +150,23 @@ These are the codes clients branch on most. The linked page explains each fix.
 
 | `code` | Status | Cause | Fix on |
 |---|---|---|---|
-| `session_token_revoked` | `401` | The credential can never work again. | [Sign-in, SSO & API keys](/docs#security) |
-| `insufficient_credits` | `402` | The account's credit balance is empty. | [Plans & credits](/docs#billing) |
-| `subscription_required` | `402` | The account has no plan for Kortix-billed usage. | [Plans & credits](/docs#billing) |
-| `no_account` | `402` | The account has no credit account yet. Its setup is not complete. | [Plans & credits](/docs#billing) |
-| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Sign-in, SSO & API keys](/docs#security) |
-| `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs#models) |
+| `session_token_revoked` | `401` | The credential can never work again. | [Sign-in, SSO & API keys](/docs/#security) |
+| `insufficient_credits` | `402` | The account's credit balance is empty. | [Plans & credits](/docs/#billing) |
+| `subscription_required` | `402` | The account has no plan for Kortix-billed usage. | [Plans & credits](/docs/#billing) |
+| `no_account` | `402` | The account has no credit account yet. Its setup is not complete. | [Plans & credits](/docs/#billing) |
+| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Sign-in, SSO & API keys](/docs/#security) |
+| `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs/#models) |
 | `feature_disabled` | `403` | The project has this feature flag off. The body names `feature`. | [Projects](/docs) |
 | `feature_operator_only` | `403` | Only Kortix (a platform admin) may change this flag. Apps is generally available and has no feature flag. | [Projects](/docs) |
-| `account_mfa_required` | `403` | The account requires two-factor, and this sign-in did not use it. | [Sign-in, SSO & API keys](/docs#security) |
-| `expiry_required`, `expiry_too_far` | `400` | A new key breaks the account's key rules. | [Sign-in, SSO & API keys](/docs#security) |
+| `account_mfa_required` | `403` | The account requires two-factor, and this sign-in did not use it. | [Sign-in, SSO & API keys](/docs/#security) |
+| `expiry_required`, `expiry_too_far` | `400` | A new key breaks the account's key rules. | [Sign-in, SSO & API keys](/docs/#security) |
 | `INVALID_IDEMPOTENCY_KEY` | `400` | The `Idempotency-Key` header is not 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
 | `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/sdk/sessions#session-errors) |
-| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs#computers) |
-| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs#computers) |
-| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Sessions](/docs#computers) |
+| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs/#computers) |
+| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs/#computers) |
+| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Sessions](/docs/#computers) |
 | `project_archived` | `404` | The project was deleted. | [Projects](/docs) |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/git) |
@@ -174,16 +174,16 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `CR_HEAD_NOT_AHEAD` | `422` | The change request branch has no commits ahead of its base. | [Git](/docs/git#change-requests) |
 | `CR_SELF_MERGE_REFUSED` | `403` | A session tried to merge its own change request without a `project.gitops.merge` grant. | [Git](/docs/git#change-requests) |
 | `MANIFEST_INVALID` | `422` | The change request makes `kortix.yaml` invalid. The merge is blocked. `issues` lists the errors. | [kortix.yaml reference](/docs/project/manifest) |
-| `PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | `409` | You tried to share a session that holds a secret shared only with you. | [Secrets](/docs#security) |
-| `project_secret_write_limit` | `429` | The project wrote secrets more than 100 times in one hour. | [Secrets](/docs#security) |
+| `PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | `409` | You tried to share a session that holds a secret shared only with you. | [Secrets](/docs/#security) |
+| `project_secret_write_limit` | `429` | The project wrote secrets more than 100 times in one hour. | [Secrets](/docs/#security) |
 | `app_config_invalid` | `400` | An App release config is not valid. `issues` lists the errors. | [Apps](/docs/apps) |
 | `app_auth_required` | `401` | An App URL needs a viewer that may open it. | [Apps](/docs/apps#access) |
 
 A connector call reports its outcome in `reason`, not `code`, inside
 `{ ok: false, status: "denied" | "error", reason }`. The reasons, such as
 `connector_not_connected` and `policy_block`, are on
-[Connectors](/docs#connectors). LLM provider and model failures
-are on [Models](/docs#models).
+[Connectors](/docs/#connectors). LLM provider and model failures
+are on [Models](/docs/#models).
 
 ## Retries and idempotency
 
@@ -256,10 +256,10 @@ take a different credential or protocol than a plain bearer call:
 | Surface | Use instead |
 |---|---|
 | The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/sdk/sessions). |
-| SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [SCIM provisioning](/docs#security) |
-| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs#automations) |
-| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs#automations) |
-| The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs#models) |
+| SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [SCIM provisioning](/docs/#security) |
+| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/#automations) |
+| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/#automations) |
+| The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/#models) |
 | The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/git) |
 
 ## Machine-readable docs
@@ -276,5 +276,5 @@ tools:
 
 Point a coding agent at `https://kortix.com/llms.txt` for the concepts and at
 `https://api.kortix.com/v1/openapi.json` for the exact routes. An MCP client that uses the
-[Kortix MCP server](/docs#connectors) reads the route reference itself through
+[Kortix MCP server](/docs/#connectors) reads the route reference itself through
 `search_api` and `describe_api`.

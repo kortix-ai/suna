@@ -45,7 +45,7 @@ Clone `git_origin_url`, not `repo_url`. `repo_url` is the upstream repository th
 
 - The origin speaks git over HTTPS only.
 - You authenticate with a Kortix token. Kortix adds the upstream credential on the server. No GitHub or other provider credential reaches your computer or a sandbox.
-- The audit log records each clone and fetch as `git.clone` and each push as `git.push`. See [Audit actions](/docs#security).
+- The audit log records each clone and fetch as `git.clone` and each push as `git.push`. See [Audit actions](/docs/#security).
 
 ## Clone a project
 
@@ -104,7 +104,7 @@ git -c http.extraHeader="Authorization: Bearer $KORTIX_GIT_TOKEN" clone https://
 | Session token, `KORTIX_TOKEN` inside a sandbox | Reads the repository and pushes the session's own branch. See [Who can clone and push](#who-can-clone-and-push). |
 | Service account key (`kortix_sa_…`), OAuth token, gateway key, browser sign-in token | Refused with `401`. |
 
-[Sign-in, SSO & API keys](/docs#security) explains how to create and revoke keys.
+[Sign-in, SSO & API keys](/docs/#security) explains how to create and revoke keys.
 
 ### Wire the helper by hand
 
@@ -187,7 +187,7 @@ Five permissions control git:
 | `project.gitops.ref.any` | For a session: push a branch other than its own. |
 | `project.gitops.ref.delete` | Delete a branch. |
 
-A project **Member** holds `project.gitops.read` only. A Member reads the branches, commits and change requests of their own sessions and of sessions they may open, and nothing of another member's private session. A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch: a Member cannot clone from their own git client. A Member's sessions still clone and push their own branch. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs#teams).
+A project **Member** holds `project.gitops.read` only. A Member reads the branches, commits and change requests of their own sessions and of sessions they may open, and nothing of another member's private session. A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch: a Member cannot clone from their own git client. A Member's sessions still clone and push their own branch. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/#teams).
 
 **People** with push access:
 
@@ -202,9 +202,9 @@ IP allowlist and MFA policies of the account apply to git requests too.
 - A session pushes only its own branch, the branch named after its `session_id`.
 - Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
 - A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
-- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs#agents).
+- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/#agents).
 
-By default, agents land work through [change requests](#change-requests). [Agents & permissions](/docs#agents) shows how to grant leaves.
+By default, agents land work through [change requests](#change-requests). [Agents & permissions](/docs/#agents) shows how to grant leaves.
 
 Kortix does not block a force-push. On a GitHub repository, add a ruleset that blocks force-pushes and deletions on the default branch. The ruleset does not block change-request merges, because a merge is a fast-forward or a merge commit.
 
@@ -229,7 +229,7 @@ Kortix refuses the whole push when it refuses one ref. Git prints the reason for
 
 Each session works on its own branch. The branch name is the `session_id`, with no prefix. Kortix cuts it from the session's `base_ref`, which is the project default branch unless the session was created with another one.
 
-Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Sandboxes & previews](/docs#computers) lists the other variables.
+Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Sandboxes & previews](/docs/#computers) lists the other variables.
 
 A pushed branch stays in the repository after the session stops and after the session is deleted. Work the agent did not push is lost when the sandbox is deleted.
 
@@ -359,7 +359,7 @@ The Review page is the project's inbox for everything that waits on a person. Op
 | Item | Id | Comes from |
 | --- | --- | --- |
 | Change | `cr:<id>` | A change request. |
-| Approval | `call:<id>` | A connector call that a policy holds for approval. See [Connectors](/docs#connectors). |
+| Approval | `call:<id>` | A connector call that a policy holds for approval. See [Connectors](/docs/#connectors). |
 | Output (`output`), question (`decision`), finished batch (`batch`) | its own id | An agent submits it with `kortix review submit`. |
 
 The lists are **Needs you**, **Waiting** and **Done**. The filters are **All**, **Changes**, **Approvals**, **Outputs**, **Questions** and **Finished**. Keys: `j` and `k` move, `Enter` opens, `a` approves, `e` asks for changes, `d` dismisses, `1` `2` `3` switch lists, `/` searches, `?` shows help.
@@ -415,7 +415,7 @@ A session runs the current config release of its base branch: `kortix.yaml`, age
 - To test config before a merge, create a session with `base_ref` set to your branch. Its change requests target that branch too.
 - Such a session runs the branch's agent behavior: prompts, tools, skills and harness files. Governance still comes from the default branch: which agents are declared, and their secret, connector and permission grants. A branch cannot widen what an agent may use before it merges. When the project requires declared agents, an agent declared only on the branch is refused with `400` `AGENT_NOT_DECLARED`.
 
-When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs#computers) for troubleshooting.
+When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs/#computers) for troubleshooting.
 
 | Limit | Value |
 | --- | --- |
@@ -493,7 +493,7 @@ To let Kortix reach a repository on another git host, store a token with `PUT /v
 | `kortix files diff <sha> [--path <p>]` | Prints a commit's patch. |
 | `kortix files download -o <file.zip> [--path <p>]` | Downloads the repository or a subtree as a zip. |
 
-For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>:<path> <dst>`. See [Sandboxes & previews](/docs#computers).
+For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>:<path> <dst>`. See [Sandboxes & previews](/docs/#computers).
 
 ### Delete
 

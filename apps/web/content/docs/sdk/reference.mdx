@@ -141,7 +141,7 @@ Methods: `signUp`, `signInWithPassword`, `sendMagicLink`, `verifyOtp`, `signInWi
 | `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Who was active and how often, per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
 | `audit.webhooks.list` · `.create` · `.update` · `.remove` | Signed webhooks that stream audit events to a SIEM. |
 
-Account features are explained in [Accounts & access](/docs#teams), keys in [API keys and tokens](/docs#security).
+Account features are explained in [Accounts & access](/docs/#teams), keys in [API keys and tokens](/docs/#security).
 
 ### `kortix.iam`
 
@@ -183,7 +183,7 @@ For change requests and the review inbox, probe `REVIEW_CONTROL_ACTIONS`. `chang
 
 Before you render a purchase control, ask `canOfferTopup(state)` (root export) about the account state: `true` only when the plan may buy credits and the caller may change billing. `canManageBilling(state)` answers the second half alone. Both return `false` while `state` is `undefined` or `null`, so a member never sees a control the API answers with `403`.
 
-Plans and credits are explained in [Plans & credits](/docs#billing).
+Plans and credits are explained in [Plans & credits](/docs/#billing).
 
 ### `kortix.notifications`
 
@@ -197,7 +197,7 @@ Every method needs a person's credential. A service account gets `403`.
 | `webPushPublicKey()` · `registerWebPushSubscription({ endpoint, keys })` · `unregisterWebPushSubscription(endpoint)` | Web Push for this browser. Registration needs a browser sign-in: a personal access key gets `403`. |
 | `registerDeviceToken(input)` · `unregisterDeviceToken(token)` · `releaseDeviceToken(token, { backendUrl? })` | A native app's push token. `releaseDeviceToken` needs no credential: a signed-out app removes its token. |
 
-Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs#computers).
+Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/#computers).
 
 ### `kortix.capture`
 
@@ -294,7 +294,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds, and again on each question event of an open session. |
 | `approvals.resolve(executionId, 'approve' \| 'deny', { note? })` | Decide one call. `note` goes to the agent as an instruction. A decision covers that call only. |
 
-Policies and approvals are explained in [Policies and approvals](/docs#connectors).
+Policies and approvals are explained in [Policies and approvals](/docs/#connectors).
 
 ### Secrets, tokens and setup links
 
@@ -309,7 +309,7 @@ Policies and approvals are explained in [Policies and approvals](/docs#connector
 | `tokens.list()` · `tokens.create(input?)` · `tokens.revoke(tokenId)` | Project API keys. Kortix also mints one per session as `KORTIX_TOKEN`. |
 | `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. A connector link works on `composio` and `pipedream` connectors, and on `mcp` connectors with one-click sign-in. |
 
-Exposure policies and flags are explained in [Secrets](/docs#security).
+Exposure policies and flags are explained in [Secrets](/docs/#security).
 
 ### Connectors and policies
 
@@ -322,15 +322,15 @@ Exposure policies and flags are explained in [Secrets](/docs#security).
 | `connectors.list()` · `.config(slug)` · `.create(input)` · `.remove(slug)` · `.sync()` · `.auth.discover(input)` | Configure connectors. `auth.discover` reads auth from an OpenAPI spec, a Postman collection or an endpoint. |
 | `connectors.setName` · `.setSensitive` · `.setCredentialMode` · `.setCredential` · `.deleteCredential` | Connector settings and its stored credential. |
 | `connectors.policies.get(slug, { policySet? })` · `connectors.policies.set(slug, policies, { policySet? })` | One connector's base rules, or with `policySet` the rules of that policy set. A rule is `{ match, action, conditions? }`. |
-| `connectors.policySets.list(slug)` · `.upsert(slug, name, { description? })` · `.rename(slug, name, newName)` · `.remove(slug, name)` | The connector's [policy sets](/docs#connectors): list each set with its rules and the agents that use it · create one or set its description · rename it and every agent reference · delete it (`409`, `policy_set_in_use`, while an agent uses it). The root exports `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet` and `deleteConnectorPolicySet`. |
+| `connectors.policySets.list(slug)` · `.upsert(slug, name, { description? })` · `.rename(slug, name, newName)` · `.remove(slug, name)` | The connector's [policy sets](/docs/#connectors): list each set with its rules and the agents that use it · create one or set its description · rename it and every agent reference · delete it (`409`, `policy_set_in_use`, while an agent uses it). The root exports `listConnectorPolicySets`, `upsertConnectorPolicySet`, `renameConnectorPolicySet` and `deleteConnectorPolicySet`. |
 | `connectors.connections.list()` · `.listAll()` · `.reconcile(…)` · `.reconcileMember(…)` · `.updateCredential(…)` · `.revoke(…)` · `.activate(…)` · `.setDefault(…)` · `.rename(…)` · `.share(…)` · `.addComputer(…)` | Connected accounts: shared or private, defaults, labels, sharing and paired computers. |
 | `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Legacy Pipedream connect for OAuth apps. |
-| `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. See [Move a Pipedream or Composio connector to Kortix](/docs#connectors). |
+| `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. See [Move a Pipedream or Composio connector to Kortix](/docs/#connectors). |
 | `connectors.discover.list` · `.sections` · `.detail` · `.tools` · `.install` | The app catalog: every MCP server, REST and GraphQL API and Composio app. `list` and `sections` take `q`, `category`, `kinds` (`mcp`, `composio`, `openapi`, `graphql`) and `oneClick`. `detail(id)` lists the app's ways to connect, best first, the first `recommended`. `tools(id, way?)` lists what one way can do before install. `install({ id, way?, name?, slug? })` adds a named connector profile and returns `next` (`connect`, `credential` or `ready`). |
 | `policies.list()` · `policies.set(policies)` | Project policies. |
 | `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets, connectors and policy sets to one agent. `scope.policy_sets` is `{ <slug>: <name> \| null }`, merged per connector; `null` or `'base'` removes the entry. |
 
-Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs#connectors) and [Call connectors from code](/docs#connectors).
+Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs/#connectors) and [Call connectors from code](/docs/#connectors).
 
 ### Triggers and reminders
 
@@ -345,7 +345,7 @@ Accounts, the account a call uses, typed calls and errors are explained in [Conn
 | `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Connected apps with connector events (not Kortix Apps) · the event types of one connector or app. |
 | `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session you can open: list, pause or resume, delete. One session's reminders are `s.reminders`. |
 
-Every field of `create` is in [Triggers & reminders](/docs#automations).
+Every field of `create` is in [Triggers & reminders](/docs/#automations).
 
 ### Apps
 
@@ -378,7 +378,7 @@ Apps are generally available in every project. Apps routes still require project
 | `modelDefaults.get()` · `.set(input)` · `.clear(params)` | Default models per account, agent and project. |
 | `setDefaultAgent(agentName)` | Set `default_agent` in `kortix.yaml`. The agent must be declared and enabled. |
 
-Routing, fallback and budgets are explained in [Models](/docs#models).
+Routing, fallback and budgets are explained in [Models](/docs/#models).
 
 ### Channels
 
@@ -389,7 +389,7 @@ Routing, fallback and budgets are explained in [Models](/docs#models).
 | `channels.teams.completeInstall(input)` | Finish a Microsoft Teams install as the signed-in user. |
 | `channels.email.installation(connectorSlug?)` · `.mode()` · `.connect(input)` · `.disconnect(connectorSlug?)` · `.updatePolicy(…)` | The email channel and its send and reply policy. |
 
-See [Slack, Teams & email](/docs#channels).
+See [Slack, Teams & email](/docs/#channels).
 
 ### Access
 
@@ -401,7 +401,7 @@ See [Slack, Teams & email](/docs#channels).
 | `access.groupGrants()` · `.attachGroupGrant(…)` · `.updateGroupGrant(…)` · `.detachGroupGrant(groupId)` | Groups with project access. |
 | `access.resourceGrants.list()` · `.create(input)` · `.remove(grantId)` | Access to one object, such as one agent or skill, for a member or a group. |
 
-See [Project access](/docs#teams) and [Grant access to one object](/docs#teams).
+See [Project access](/docs/#teams) and [Grant access to one object](/docs/#teams).
 
 ### Sandbox
 
@@ -412,7 +412,7 @@ See [Project access](/docs#teams) and [Grant access to one object](/docs#teams).
 | `sandbox.createTemplate(input)` · `.updateTemplate(…)` · `.removeTemplate(templateId)` · `.buildTemplate(templateId)` | Sandbox templates. |
 | `sandbox.setProvider(provider \| null)` | Pin the sandbox provider, or `null` for the platform default. Returns `kind: 'project'` when the change applies at once, or `kind: 'preparation'` while the new provider's image builds. The current provider serves until activation. |
 
-See [Sandboxes & previews](/docs#computers).
+See [Sandboxes & previews](/docs/#computers).
 
 ### Settings and feature flags
 
@@ -666,7 +666,7 @@ Each name below is marked `@deprecated` and stays until the next major version. 
 | `OpenCodeConfigIssue` · `OpenCodeConfigInvalidError` · `getOpenCodeConfigInvalidError` · `isOpenCodeConfigInvalidError` | `RuntimeConfigIssue` · `RuntimeConfigInvalidError` · `getRuntimeConfigInvalidError` · `isRuntimeConfigInvalidError` |
 | `p.sessions.claimWarm(input)` · `claimWarmProjectSession` | Open the session from `p.sessions.ensureWarm()` and prompt it |
 | `p.connectors.setAuthorizationStrategy` · `setConnectorAuthorizationStrategy` | The call changes nothing. To create an account under one owner, pass `owner` to `connectorConnect`. |
-| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set`. For other rules per agent, a [policy set](/docs#connectors). |
+| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set`. For other rules per agent, a [policy set](/docs/#connectors). |
 | `pipedreamConnect` · `pipedreamFinalize` | `connectorConnect` · `connectorFinalize` |
 | `listDiscoverIntegrations` · `getDiscoverIntegration` · `DiscoverIntegration*` types | `listDiscoverConnectors` · `getDiscoverConnector` · `DiscoverConnector*` types |
 | `SessionScopeResult` · `toWorkspaceRelative` | `SessionScope` · `toDaemonPath` |

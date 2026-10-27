@@ -362,7 +362,7 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | `useAppDeployments`, `useAppDeployment` | Deployments with `deploy` and `rollback`, and one deployment with its build log. |
 | `useAppMachines(projectId, appId)`, `useAppVolumes(projectId, appId)`, `useAppVolumeSnapshots(projectId, appId, volumeId)`, `useAppAccess` | Machines with `start`, `stop`, `restart`, `destroy` and `scale` (polled every 5 s). Volumes with `snapshot`, `restore`, `fork`, `extend` and `destroy`. A volume's snapshots, newest first. `useAppAccess` returns `{ policy, session, update }`. See [Apps](/docs/apps#build-on-apps-from-typescript). |
 | `useKortixAppViewer()` | Inside an App: the person who is looking, as `{ status: 'loading' \| 'anonymous' \| 'viewer', viewer }`. |
-| `useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })` | One connector action's output as a cached query. Use it only for actions that read: every fetch runs the action. See [Connectors](/docs#connectors). |
+| `useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })` | One connector action's output as a cached query. Use it only for actions that read: every fetch runs the action. See [Connectors](/docs/#connectors). |
 | `useConnectorSetup(token, { backendUrl, storage, openPopup, onOpened })` | The flow behind a connect link (`/connect/<token>`): `phase` (`loading`, `ready`, `starting`, `opened`, `connected`, `error`), `info`, `error`, `connectedAs` and `connect()`. You supply the popup opener. |
 | `useNotificationInbox({ userId, limit, enabled })` | The caller's newest notifications (`limit` 1 to 50, default 20), `unreadCount`, `markRead(ids)`, `markAllRead()` and `markSessionRead(sessionId)`. Polls every 60 s while the page is visible. |
 | `useNotificationPreferences({ userId, enabled })` | Push and email choices per kind, and `update(patch)`. |
@@ -380,8 +380,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 
 Rules that apply to several hooks:
 
-- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs#teams).
-- The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs#computers).
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/#teams).
+- The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/#computers).
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
 
 ## Fast opens and offline
