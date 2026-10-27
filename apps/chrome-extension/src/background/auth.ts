@@ -20,9 +20,16 @@ export const normalizeApiUrl = (u: string) => {
   return url.origin;
 };
 
-type Meta = { authorization_endpoint: string; token_endpoint: string; registration_endpoint: string };
+/**
+ * fetch without cookies: the extension signs requests with a bearer token. A
+ * local server shares the `localhost` cookie jar of every local app, and that
+ * header alone can pass Bun's 16 KB limit (431).
+ */
+export const send = (url: string, init: RequestInit = {}) => fetch(url, { ...init, credentials: 'omit' });
+
+type Meta ={ authorization_endpoint: string; token_endpoint: string; registration_endpoint: string };
 const meta = async (api: string): Promise<Meta> => {
-  const r = await fetch(`${api}/.well-known/oauth-authorization-server`);
+  const r = await send(`${api}/.well-known/oauth-authorization-server`);
   if (!r.ok) throw new Error(`Cannot reach ${api} (${r.status})`);
   return r.json();
 };
@@ -50,14 +57,14 @@ export async function startSignIn(apiUrl: string | undefined, tabId?: number): P
   const api = normalizeApiUrl(apiUrl || (await getStored()).apiUrl || DEFAULT_API_URL);
   // A server without Kortix in Chrome answers 404 here; one with it answers 401.
   const host = SERVERS.find((x) => x.api === api)?.web ?? new URL(api).host;
-  const probe = await fetch(`${api}/v1/chrome/connections`).catch(() => null);
+  const probe = await send(`${api}/v1/chrome/connections`).catch(() => null);
   if (!probe) throw new Error(`Cannot reach ${host}. Check the server address.`);
   if (probe.status === 404) throw new Error(`${host} does not have Kortix in Chrome yet.`);
   const m = await meta(api);
   const back = redirectUri();
   let { clientId, clientApi, redirectUri: regRedirect } = await getStored();
   if (!clientId || clientApi !== api || regRedirect !== back) {
-    const r = await fetch(m.registration_endpoint, {
+    const r = await send(m.registration_endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -93,7 +100,7 @@ export async function finishSignIn(callbackUrl: string): Promise<void> {
   await chrome.storage.session.remove('pendingSignIn');
   const code = back.searchParams.get('code');
   if (!code) throw new Error(back.searchParams.get('error_description') || 'Sign-in was canceled.');
-  const r = await fetch(p.tokenEndpoint, {
+  const r = await send(p.tokenEndpoint, {
     method: 'POST',
     body: form({ grant_type: 'authorization_code', code, redirect_uri: redirectUri(), client_id: p.clientId, code_verifier: p.verifier }),
   });
@@ -114,7 +121,7 @@ export async function getToken(force = false): Promise<string | undefined> {
   refreshing ??= (async () => {
     try {
       const m = await meta(s.apiUrl!);
-      const r = await fetch(m.token_endpoint, {
+      const r = await send(m.token_endpoint, {
         method: 'POST',
         body: form({ grant_type: 'refresh_token', refresh_token: s.refreshToken!, client_id: s.clientId! }),
       });

@@ -1,4 +1,4 @@
-import { finishSignIn, getToken, normalizeApiUrl, signOutLocal, startSignIn } from './auth';
+import { finishSignIn, getToken, normalizeApiUrl, send, signOutLocal, startSignIn } from './auth';
 import { Control } from './control';
 import { Hub } from './hub';
 import { getStored, setStored } from './state';
@@ -74,7 +74,7 @@ chrome.windows.onRemoved.addListener((id) => hub.onWindowRemoved(id));
 async function api(path: string, init: RequestInit = {}) {
   const [{ apiUrl }, token] = [await getStored(), await getToken()];
   if (!token) throw new Error('Sign in to Kortix first.');
-  const r = await fetch(`${apiUrl ?? DEFAULT_API_URL}/v1${path}`, {
+  const r = await send(`${apiUrl ?? DEFAULT_API_URL}/v1${path}`, {
     ...init,
     headers: { ...init.headers, authorization: `Bearer ${token}`, 'content-type': 'application/json' },
   });

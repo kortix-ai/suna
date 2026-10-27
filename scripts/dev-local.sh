@@ -240,7 +240,7 @@ start_tunnel_watchdog() {
       touch "$TUNNEL_URL_FILE.rotated"
       echo "[dev] ✅ tunnel rotated: KORTIX_URL=$newurl (API restarting)"
       # Match on the script path ONLY. `pnpm --filter kortix-api dev` runs
-      # `dotenvx run … -- bun --no-env-file run --hot src/index.ts`, so the
+      # `dotenvx run … -- bun --no-env-file --max-http-header-size=65536 run --hot src/index.ts`, so the
       # old `bun run --hot …` pattern stopped matching when #6260 inserted
       # `--no-env-file` (2026-08-10). pkill -f matches a SUBSTRING of the
       # full command line and exits 1 silently, so rotation printed
