@@ -10,7 +10,6 @@ import {
   useCapabilityAccess,
 } from '../../internal/layout/project-settings-nav';
 import { isProjectAdminPath, ProjectCapabilityNav } from '../../internal/layout/project-capability-nav';
-import { ManifestSpacesNav } from './manifest-spaces-nav';
 import { cn } from '../../lib/utils';
 import {
   DropdownMenu,
@@ -42,8 +41,9 @@ const HOVER_CLOSE_DELAY_MS = 150;
 /**
  * The customizable nav rows under New session, in the order and with the
  * visibility chosen in "Customize sidebar" (`customize-sidebar-modal.tsx`).
- * Each row still applies its own flag and permission gate. Spaces follow the
- * rows, and More (rows set to "Show in More", plus Customize sidebar) is last.
+ * Each row still applies its own flag and permission gate. More (rows set to
+ * "Show in More", plus Customize sidebar) is last. Spaces are the channel
+ * sidebar under the `project_channels` flag (project-spaces-nav.tsx).
  *
  * The layout lives in localStorage, which the server cannot read. The first
  * client render therefore uses the defaults, the same as the server HTML, and
@@ -58,7 +58,6 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
       {items.map((entry) => (
         <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
-      <ManifestSpacesNav projectId={projectId} />
       <MoreNavItem projectId={projectId} items={items} />
     </>
   );
