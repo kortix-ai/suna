@@ -353,6 +353,27 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, spaceB)).toEqual([]);
   });
 
+  test('a new session lands in a group list only when filed in that group; a no-group list takes only an unfiled one', () => {
+    const qc = new QueryClient();
+    const groupA = qk.project.sessionsPaged('P1', 'visible', { group: 'GA' });
+    const groupB = qk.project.sessionsPaged('P1', 'visible', { group: 'GB' });
+    const ungrouped = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: 'none' });
+    for (const key of [groupA, groupB, ungrouped]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { group_id: 'GA' }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('LOOSE', { group_id: null }));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('OLDER-API', {}));
+    expect(ids(qc, groupA)).toEqual(['IN-A']);
+    expect(ids(qc, groupB)).toEqual([]);
+    expect(ids(qc, ungrouped).sort()).toEqual(['LOOSE', 'OLDER-API']);
+  });
+
+  test('the group filter is its own key segment, absent when unset', () => {
+    expect(qk.project.sessionsPaged('P1', 'visible', { group: 'GA' })).not.toEqual(qk.project.sessionsPaged('P1'));
+    expect(qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: undefined })).toEqual(
+      qk.project.sessionsPaged('P1', 'visible', { parent: 'root' }),
+    );
+  });
+
   test('an unfiltered legacy cache still receives every session', () => {
     const qc = new QueryClient();
     const legacy = qk.project.sessionsPaged('P1');

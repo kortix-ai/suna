@@ -52,6 +52,7 @@ type ListFilters = {
   q: string | null;
   view?: 'pinned' | 'archived' | 'deleted';
   spaceId?: string;
+  group?: string;
 };
 
 /**
@@ -62,7 +63,8 @@ type ListFilters = {
  * here, so "mine" is `is_owner !== false` on a member-started row. A pinned
  * or archived view takes only a row the viewer pinned or archived: a new
  * session is neither, so it never shows under Pinned. A space list takes only
- * a session filed in that space.
+ * a session filed in that space, and a group list only a session filed in
+ * that group (`group: 'none'`: in no group).
  */
 function sessionBelongsInList(projectId: string, query: Query, session: ProjectSession): boolean {
   const rest = query.queryKey.slice(qk.project.sessionsScope(projectId).length);
@@ -79,6 +81,9 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   if (filters.parent && filters.parent !== 'root') return parentId === filters.parent;
   // A space list takes only that space's sessions; a row without `space_id` (an older API) never.
   if (filters.spaceId && session.space_id !== filters.spaceId) return false;
+  // A group list takes only that group's sessions; the no-group list only a session in none.
+  if (filters.group === 'none' && session.group_id) return false;
+  if (filters.group && filters.group !== 'none' && session.group_id !== filters.group) return false;
   if (!filters.startedBy) return true;
   const isMember = (session.initiator?.type ?? 'member') === 'member';
   if (filters.startedBy === 'automated') return !isMember;
