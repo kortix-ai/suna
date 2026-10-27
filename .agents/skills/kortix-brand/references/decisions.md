@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D21 The home hero cycles the pillars: "The sovereign / multiplayer / extensible AI Operating System"
+- **Date:** 2026-10-27
+- **Decision:** The home hero title is "The <word> AI Operating System", the word cycling through sovereign, multiplayer and extensible (the three pillars, D16). The muted line "for companies that own their …" is gone. Screen readers read "The sovereign, multiplayer and extensible AI Operating System".
+- **Why:** founder, 2026-10-27: "The sovereign/multiplayer/extensible AI Operating Systems, maybe these 3 instead as switcher … & then remove the for companies that own their".
+- **Where:** `apps/web/src/features/marketing/landing-hero/sand-band-hero.tsx`.
+- **Supersedes:** D16's fixed hero line "The sovereign AI Operating System" and the rotating "own their" line.
+- **Source:** the `services-page` branch.
+
 ### D20 Core marketing copy does not name pi
 - **Date:** 2026-10-27
 - **Decision:** The home hero, the pillars and other core marketing copy do not name pi. The Company as code pillar reads "Extensible to the core." and says the agent harness is open source and yours to extend. pi stays named in docs, the changelog, developer pages and claims.md row "Harness".

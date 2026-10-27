@@ -7,43 +7,29 @@ import { useEffect, useState } from 'react';
 
 import { SessionWindow } from './session-window';
 
-// What a company owns with Kortix: the hero's last word cycles through these.
-const OWNED = ['agents', 'AI', 'data', 'intellectual property', 'company memory', 'workflows', 'know-how', 'infrastructure', 'code'];
+// The hero's adjective cycles through the three pillars (kortix-brand D16, D21).
+const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible'];
 
 /**
- * "for companies that own their <word>", the word changing every 2 s: the new
- * word fades in, the old one goes at once. Every variant is stacked in one
- * grid cell, so the line keeps the height of its longest variant and nothing
- * below it moves. Opacity only, so reduced motion
- * needs no variant (motion.md). Screen readers get one static sentence.
+ * "The <word> AI Operating System", the word changing every 2.5 s. The new
+ * word mounts and fades in (opacity only, so reduced motion needs no variant,
+ * motion.md); the line reflows to its width. Screen readers get one static
+ * sentence.
  */
-function OwnedLine() {
+function PillarWord() {
   const [shown, setShown] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setShown((n) => (n + 1) % OWNED.length), 2000);
+    const timer = setInterval(() => setShown((n) => (n + 1) % PILLAR_WORDS.length), 2500);
     return () => clearInterval(timer);
   }, []);
+  const word = PILLAR_WORDS.at(shown);
 
   return (
-    <span className="text-muted-foreground block">
-      <span className="sr-only">for companies that own their agents, AI, data and intellectual property</span>
-      <span aria-hidden className="grid">
-        {OWNED.map((word, n) => (
-          <span key={word} className="col-start-1 row-start-1">
-            <span className={n === 0 ? undefined : 'invisible'}>for companies that own their </span>
-            <span
-              // Only the incoming word transitions: the outgoing one goes at once, so two never overlap.
-              className={`text-foreground ${n === shown ? 'opacity-100 transition-opacity duration-slower ease-out' : 'opacity-0'}`}
-            >
-              {word}
-            </span>
-          </span>
-        ))}
-      </span>
+    <span key={word} aria-hidden className="animate-in fade-in duration-slower ease-out whitespace-nowrap">
+      {word}
     </span>
   );
 }
-
 
 /**
  * Landing hero, Paper "Kortix 2" Hero D (Accrue layout): the two-tone
@@ -63,8 +49,10 @@ export function SandBandHero() {
             pattern): sits close under the title, muted, two lines at most. */}
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="text-foreground block">The sovereign AI Operating System</span>
-            <OwnedLine />
+            <span className="sr-only">The sovereign, multiplayer and extensible AI Operating System</span>
+            <span aria-hidden className="text-foreground block">
+              The <PillarWord /> AI Operating System
+            </span>
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
             Hand it an outcome and agents run it 24/7. Multiplayer AI for your whole team, your
