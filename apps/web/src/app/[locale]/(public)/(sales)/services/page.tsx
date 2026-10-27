@@ -108,6 +108,17 @@ export default function ServicesPage() {
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">{hero.sub}</p>
+          <ul className="flex flex-col gap-2.5 text-base">
+            {hero.does.map((item) => (
+              <li key={item.k} className="flex items-start gap-3">
+                <CheckIcon className="text-foreground mt-1 size-4 shrink-0" aria-hidden />
+                <span>
+                  <span className="text-foreground font-medium">{item.k}</span>
+                  <span className="text-muted-foreground">: {item.v}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
           <div className="flex flex-wrap gap-2.5">
             <JoinButton className="hit-area-y-1" />
             <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
@@ -137,26 +148,7 @@ export default function ServicesPage() {
         <SpecGrid items={proof} cols="lg:grid-cols-4" />
       </Band>
 
-      <CaseStudies />
-      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
-        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
-        <div className="flex flex-wrap gap-2.5">
-          <IntroButton variant="primary" />
-          <JoinButton variant="secondary" />
-        </div>
-      </div>
-
-      {/* ── the three things we do ─────────────────────────────────────── */}
-      <Block id="services">
-        <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
-        <Band className="mt-12">
-          <CellGrid items={pillars.items} cols="lg:grid-cols-3" />
-        </Band>
-      </Block>
-
-      <FeatureSplit id="strategy" {...strategy} cols="lg:grid-cols-4" />
-
-      {/* ── transformation: map, unify, automate, build ─────────────────── */}
+      {/* ── what we do: map, unify, automate, build, teach ──────────────── */}
       <Block id="how">
         <Heading title={stages.title} titleMuted={stages.titleMuted} />
         <Band className="mt-12">
@@ -181,6 +173,25 @@ export default function ServicesPage() {
           </ol>
         </Band>
       </Block>
+
+      <CaseStudies />
+      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
+        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
+        <div className="flex flex-wrap gap-2.5">
+          <IntroButton variant="primary" />
+          <JoinButton variant="secondary" />
+        </div>
+      </div>
+
+      {/* ── the three things we do ─────────────────────────────────────── */}
+      <Block id="services">
+        <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
+        <Band className="mt-12">
+          <CellGrid items={pillars.items} cols="lg:grid-cols-3" />
+        </Band>
+      </Block>
+
+      <FeatureSplit id="strategy" {...strategy} cols="lg:grid-cols-4" />
 
       {/* ── every function, and what agents take over ────────────────────── */}
       <Block id="functions">

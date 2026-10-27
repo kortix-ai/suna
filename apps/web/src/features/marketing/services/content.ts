@@ -2,7 +2,7 @@
  * The /services sales page: AI Transformation, done for you, sold as one
  * flat monthly membership. The idea: we map
  * your org (what people do, how they work), unify your data, automate the
- * work and build your custom software. A standalone page with its own shell;
+ * work and build your custom apps. A standalone page with its own shell;
  * the AI OS site and this page link through `SiteSwitcher`.
  *
  * COMMERCIAL TERMS (founder, 2026-10-27, kortix-brand decisions.md D15):
@@ -35,8 +35,16 @@ export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no q
 
 export const hero = {
   title: 'AI Transformation, done for you.',
-  titleMuted: 'We map how your company works. Then we automate it.',
-  sub: 'We set your AI strategy, then do the work inside your company: we map how every team works, unify your data, automate the work with agents and build the custom software you need. Then we teach your team to run it. You own everything we build.',
+  titleMuted: 'We map your company, unify your data and build your apps.',
+  sub: 'Our team works inside your company, from strategy to shipped software, then teaches your people to run it. You own everything we build.',
+  /** The offer in five lines: the first thing a buyer reads after the title. */
+  does: [
+    { k: 'Map your company', v: 'every team, role and workflow' },
+    { k: 'Unify your data', v: 'every system in one place' },
+    { k: 'Automate the work', v: 'agents on the recurring jobs' },
+    { k: 'Build custom apps', v: 'internal tools and dashboards on your data' },
+    { k: 'Train your team', v: 'to run it and build the next one' },
+  ],
   assurances: [`${PRICE.now} a month, flat`, 'Strategy and build, one team', 'Everything in a repo you own'],
 } as const;
 
@@ -63,7 +71,7 @@ export const pillars = {
       id: 'transformation',
       n: '02',
       k: 'AI Transformation',
-      v: 'We map how your company works, unify your data, automate the work and build your software.',
+      v: 'We map your company, unify your data, automate the work and build your custom apps.',
     },
     { id: 'education', n: '03', k: 'AI Education', v: 'We teach your existing team to run the agents and build the next ones.' },
   ],
@@ -85,8 +93,8 @@ export const strategy = {
 } as const;
 
 export const stages = {
-  title: 'AI Transformation.',
-  titleMuted: 'Map, unify, automate, build.',
+  title: 'What we do.',
+  titleMuted: 'Map, unify, automate, build, teach.',
   items: [
     {
       id: 'map',
@@ -112,9 +120,16 @@ export const stages = {
     {
       id: 'build',
       n: '04',
-      k: 'Build custom software',
+      k: 'Build custom apps',
       v: 'We build the internal apps, dashboards and tools your teams need on top of the unified data, on the Kortix AI Operating System.',
       get: ['Internal apps your teams use every day', 'Dashboards on live company data', 'All of it in a git repo you own'],
+    },
+    {
+      id: 'teach',
+      n: '05',
+      k: 'Train your team',
+      v: 'We teach the people you already have to run the agents and apps, and to build the next ones without us.',
+      get: ['Hands-on workshops per team', 'Builder training for your engineers', 'Playbooks in your repo'],
     },
   ],
 } as const;
@@ -197,7 +212,7 @@ export const pricing = {
     'A map of your org and how it works',
     'Your data unified in one place',
     'Agents for your recurring work',
-    'Custom software and internal apps',
+    'Custom apps and internal tools',
     'Training for your existing team',
     'Everything in a git repo you own',
     'Kortix Cloud, your VPC, or on-prem',

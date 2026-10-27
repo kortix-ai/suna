@@ -31,7 +31,7 @@ export function SalesShell({ children }: { children: ReactNode }) {
             <KortixLogo size={15} variant="logomark" />
           </Link>
           <SiteSwitcher className="mr-auto" />
-          <a href="#services" className={BAR_LINK}>
+          <a href="#how" className={BAR_LINK}>
             What we do
           </a>
           <a href="#pricing" className={BAR_LINK}>
