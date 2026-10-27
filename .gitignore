@@ -107,6 +107,8 @@ dump.rdb
 **/.prompts/
 .cwc/
 test/
+# A bundled marketplace project ships its own test suite; it is template content, not a local artefact.
+!packages/starter/templates/marketplace-projects/*/pipeline/test/
 
 # The root .kortix/ dogfood project moved to the company operator repo; keep
 # any local per-clone leftovers out. Other vendored .kortix dirs stay ignored

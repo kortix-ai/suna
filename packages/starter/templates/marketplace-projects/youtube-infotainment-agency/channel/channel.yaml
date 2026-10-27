@@ -1,0 +1,111 @@
+# Channel configuration read by the `yt` CLI (pipeline/src/config.ts).
+# Creative identity lives in brand.md / design.md / audio.md next to this file.
+name: "Mote" # example channel name (and kit mascot); rename for your channel
+niche: "science explainers — physics, biology, space, how things work"
+language: en
+
+video:
+  width: 1920
+  height: 1080
+  fps: 30
+  quality: standard # draft | standard | high  (draft for previews)
+
+voice:
+  provider: elevenlabs # elevenlabs | kokoro (local, free) | stub (offline tests)
+  wpm: 150 # used for estimates and the stub voice
+  default_pause: 0.35 # seconds of air after each beat unless the beat sets pause_after
+  elevenlabs: # delivery settings for every narrator; the voice and model are cast per episode (03-script/voice.json)
+    stability: 0.5
+    similarity_boost: 0.75
+    style: 0.3
+    speed: 1.0
+  casting: # the rule the sound-editor casts each episode's narrator by: eligible Voice Library voices, chosen per episode, no channel-wide voice, no human gate
+    language: en
+    use_case: narrative_story # the Voice Library's narration category
+    sort: usage_character_count_1y # candidates listed most-used first
+    model_id: eleven_v4 # ElevenLabs' recommended model for long-form narration and Library voices
+  kokoro:
+    voice: am_michael
+
+music:
+  provider: elevenlabs # ElevenLabs Music: API + commercial licence on paid plans
+  default_volume: 0.22
+  duck_db: 2 # side-chain ratio of the ducker under the narration (10 was measured at −15 dB GR, which put the score 21–24 dB under speech; 2 with the threshold below lands it 14–16 dB under)
+  reference_lufs: -20 # every music take is normalised to this loudness before its cue volume (ElevenLabs cues arrive at −18…−22 LUFS)
+
+sfx:
+  provider: elevenlabs
+  reference_peak_db: -4 # every SFX take is normalised to this true peak before its storyboard volume (takes of one prompt can span 30 dB)
+
+mix:
+  target_lufs: -14 # YouTube playback reference
+  true_peak: -1.5
+  duck_threshold_db: -30 # ducker side-chain threshold; below this the score is not ducked at all
+  duck_release_ms: 700 # slow enough that the bed does not pump up inside 0.2–0.35 s word gaps
+  music_crossfade_s: 1.5 # equal-power crossfade centred on each act seam: a cue starts half of it before its beat and plays half of it past its window, so the music never fades to nothing between cues; 0 restores hard per-cue fades
+
+broll:
+  enabled: false # generative b-roll: atmosphere shots only, never factual diagrams
+  provider: fal
+  model: "fal-ai/kling-video/v3/standard/text-to-video" # verify the current model id on fal.ai before enabling
+  max_runtime_fraction: 0.2
+  budget_usd: 25
+  usd_per_second: 0.1
+
+styleframes: # `yt storyboard frames`: the image model (OpenAI, OPENAI_API_KEY) draws each scene's key frame
+  model: gpt-image-2 # an OpenAI image model; keep the openai_image_* rates below in step with its price
+  size: 1536x1024 # the model's widest size; frames are cropped to 16:9 (1536x864)
+  quality: high # about 5,500 output tokens a frame on gpt-image-2 (6,200 on gpt-image-1)
+  width: 960 # saved width: keeps each PNG under 1 MB in git (measured 0.5-0.7 MB)
+  # The art direction sent with every frame. The frames set each episode's look and the animators recreate it
+  # (in tests, frames drawn as the ideal video and then recreated beat a fixed flat-vector house style).
+  # Describe a fixed look here instead to give every episode the same one; never name Mote here (the model
+  # draws whatever this names into every frame).
+  look: >-
+    Make this frame look the way the ideal version of this video would look: the best art direction,
+    illustration, colour, lighting and typography you can imagine for it, at the polish of a top animation
+    studio's flagship explainer.
+
+# human: a person decides in the Kortix review inbox
+# critic: the critic agent's review decides (pass/fail)
+# auto:   no gate
+gates:
+  topic: human
+  script: human
+  storyboard: human
+  final: human
+
+critic:
+  # A stage passes when the critic finds no auto-fail, blocker or major issue (`yt review verdict`).
+  # Scores are feedback only; minor issues are recorded, not sent back.
+  max_revisions: 3 # revise → re-check loops before escalating to a human
+  # Scenes get this many fix → re-check rounds per scene; issues still open after them go to the final
+  # gate packet for the human instead of another round.
+  scene_fix_rounds: 1
+
+# Parallel work: agents run independent stages and scenes at the same time; CPU-heavy HyperFrames jobs
+# queue for a slot, one pool per kind. Slots = min(vCPUs / cores, RAM / memory_gb).
+# Renders: 3 on the 6 vCPU / 12 GB video sandbox. Measured 2026-10-21: one scene render uses ~1.65 cores
+# and ~1.4 GB peak; beyond that many at once, extra jobs only queue for CPU (2 at once saved 17%, 6 saved 17%).
+# Previews (`hyperframes check`, snapshots): 6 on the same sandbox. Measured 2026-10-21: a check uses
+# 0.6-0.9 cores and 0.84 GB peak, a 6-frame snapshot ~0.9 cores and 0.71 GB. With previews in the render
+# pool, six animators' checks averaged 26 s each in a test episode against 17 s alone.
+parallel:
+  heavy_job:
+    cores: 1.65
+    memory_gb: 1.4
+  preview_job:
+    cores: 0.9
+    memory_gb: 0.84
+
+# Cost estimates for the ledger (USD). Tune to your plans; LLM spend is tracked by Kortix billing.
+rates:
+  elevenlabs_tts_per_1k_chars: 0.15
+  elevenlabs_music_per_minute: 0.8
+  elevenlabs_sfx_per_generation: 0.08
+  openai_image_text_input_per_1m_tokens: 5 # gpt-image-2, OpenAI pricing page 23 Oct 2026
+  openai_image_output_per_1m_tokens: 30
+
+publish:
+  default_privacy: private
+  sources_base_url: "" # e.g. a public page/repo that hosts episodes/<slug>/08-publish/sources.md

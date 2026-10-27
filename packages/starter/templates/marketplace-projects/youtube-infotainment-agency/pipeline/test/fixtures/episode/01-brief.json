@@ -1,0 +1,23 @@
+{
+  "slug": "_smoke",
+  "working_title": "Why is the sky blue?",
+  "question": "Why is the daytime sky blue?",
+  "one_liner": "Air scatters short blue waves of sunlight far more than red ones, so blue reaches you from every direction.",
+  "audience": "Curious adults and teens with no physics background",
+  "misconception": "The sky is blue because it reflects the ocean.",
+  "resolution": "Air molecules scatter short wavelengths much more strongly (Rayleigh scattering), filling the sky with blue light.",
+  "hook_ideas": ["Look up: the sky is the largest object you see every day, and it's coloured.", "If air is transparent, why is the sky blue?"],
+  "why_now": "Evergreen; pipeline smoke test.",
+  "originality": {
+    "score": 3,
+    "existing_coverage": [
+      { "title": "Why Is The Sky Blue?", "url": "https://www.youtube.com/watch?v=ehUIlhKhzDA", "channel": "Example channel" },
+      { "title": "Rayleigh scattering explained", "url": "https://www.youtube.com/watch?v=example0001", "channel": "Example channel" },
+      { "title": "Blue sky physics", "url": "https://www.youtube.com/watch?v=example0002", "channel": "Example channel" }
+    ],
+    "our_angle": "Show the scattering ratio as a single physical number viewers can feel, instead of the usual hand-wave."
+  },
+  "target_minutes": 2,
+  "key_questions": ["What is sunlight made of?", "What does air do to each colour?", "How much more is blue scattered than red?"],
+  "risks": []
+}

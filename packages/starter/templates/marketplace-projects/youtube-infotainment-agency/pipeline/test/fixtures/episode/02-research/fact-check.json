@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-10-13T00:00:00Z",
+  "checker": "fixture",
+  "results": [
+    { "claim_id": "c01", "verdict": "supported", "evidence": "fixture" },
+    { "claim_id": "c02", "verdict": "supported", "evidence": "fixture" },
+    { "claim_id": "c03", "verdict": "supported", "evidence": "fixture: arithmetic from the λ⁻⁴ law" }
+  ]
+}

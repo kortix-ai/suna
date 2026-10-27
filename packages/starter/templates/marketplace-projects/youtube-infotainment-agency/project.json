@@ -1,0 +1,16 @@
+{
+  "title": "YouTube Infotainment Agency",
+  "description": "An agent studio that researches, fact-checks, scripts, animates (HyperFrames), narrates (ElevenLabs), scores and packages science-explainer YouTube videos, with a critic at every stage and human gates.",
+  "categories": ["project", "video", "youtube", "content"],
+  "dependencies": [
+    "agent-browser",
+    "hyperframes",
+    "hyperframes-core",
+    "hyperframes-animation",
+    "hyperframes-keyframes",
+    "hyperframes-registry",
+    "hyperframes-cli",
+    "hyperframes-creative",
+    "hyperframes-audio"
+  ]
+}

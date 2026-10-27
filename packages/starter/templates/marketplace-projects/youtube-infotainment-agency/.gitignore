@@ -1,0 +1,27 @@
+# Local OpenCode / Kortix runtime state — never commit.
+.kortix/state/
+harnesses/opencode/sessions/
+harnesses/opencode/log/
+harnesses/opencode/cache/
+harnesses/opencode/package-lock.json
+node_modules/
+.env
+.env.local
+.DS_Store
+
+# Local coding-agent links created by `kortix init` (sessions read skills/ directly).
+.agents/
+.opencode/
+.pi/
+
+# Heavy media lives in object storage (`yt media push`), indexed by episodes/*/media.lock.json.
+episodes/*/media/
+build/
+*.mp4
+!docs/demo/*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+episodes/*/qa/scenes/*/
+

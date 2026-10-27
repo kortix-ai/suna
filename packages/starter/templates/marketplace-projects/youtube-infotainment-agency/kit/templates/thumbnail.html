@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/vendor/gsap.min.js"></script>
+    <script src="kit/kit.js"></script>
+    <style>
+      html, body { width: 1280px; height: 720px; }
+      #thumb { width: 1280px; height: 720px; }
+      /* Thumbnail rules (rubrics/packaging.md): ≤4 words of text, one focal object, max contrast,
+         readable at 160px wide, never repeat the title verbatim. */
+      .t-text { position: absolute; left: 64px; top: 56px; font-family: var(--font-display); font-weight: 700;
+        font-size: 120px; line-height: 0.95; color: var(--paper); text-shadow: 0 8px 0 var(--shadow); max-width: 640px; }
+    </style>
+  </head>
+  <body>
+    <div id="thumb" class="k-stage bg-night" data-composition-id="thumbnail" data-start="0" data-duration="1" data-width="1280" data-height="720">
+      <div class="k-layer">
+        <div class="t-text">{{TEXT}}</div>
+        <div id="hero" class="k-abs" style="right: 80px; bottom: 60px"></div>
+      </div>
+      <div class="k-grain"></div>
+    </div>
+    <script>
+      Kit.mount("#hero", Kit.mascot({ mood: "surprised", size: 420 }));
+      const tl = Kit.scene("thumbnail", 1);
+      window.__timelines["thumbnail"] = tl;
+    </script>
+  </body>
+</html>

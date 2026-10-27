@@ -1,0 +1,8 @@
+{
+  "style_notes": "House style: flat vector, night-to-day palette, Mote as guide. Diagrams in paper-white line art with colour only where it carries meaning (blue = scattered light).",
+  "scenes": [
+    { "id": "sc01", "beats": ["b01"], "type": "title", "concept": "Daytime sky; Mote looks up; title question lands on 'blue'.", "elements": ["sky gradient", "sun", "clouds", "Mote", "title"], "motion": "Sun pops, clouds drift, title fades up, 'blue' word punches.", "on_screen_text": ["Why is the sky blue?"], "transition_in": "cut", "sfx": [{ "prompt": "soft bright chime", "beat": "b01", "at_word": "blue", "duration": 1.2 }] },
+    { "id": "sc02", "beats": ["b02"], "type": "diagram", "concept": "Sunbeam meets air molecules; blue scatters in all directions, red continues straight.", "visual_metaphor": "molecules as tiny pinballs that bounce blue light sideways", "elements": ["sun", "white beam", "molecule cluster", "blue rays", "red ray", "labels"], "motion": "Beam draws on; on 'scattered' blue rays burst outward with stagger, then until the cut packets of light keep streaming from the sun into the molecules: blue ones scatter out along every ray, red ones carry on straight.", "on_screen_text": ["air molecules", "short blue waves"], "transition_in": "wipe", "sfx": [{ "prompt": "gentle airy whoosh", "beat": "b02", "at_word": "scattered", "duration": 1.5 }] },
+    { "id": "sc03", "beats": ["b03"], "type": "hf-2d", "concept": "The payoff number: blue scatters ~5.9× more than red; Mote is delighted.", "elements": ["stat counter", "wavelength chips", "Mote"], "motion": "Counter runs up on 'six'; chips slide in; Mote pops and blinks.", "on_screen_text": ["≈5.9×", "450 nm blue vs 700 nm red"], "transition_in": "cut", "sfx": [] }
+  ]
+}

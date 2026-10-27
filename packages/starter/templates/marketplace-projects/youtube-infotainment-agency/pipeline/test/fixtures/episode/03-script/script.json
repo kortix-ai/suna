@@ -1,0 +1,10 @@
+{
+  "title": "Why is the sky blue?",
+  "voice_direction": "Warm, curious, unhurried. Smile on the payoff.",
+  "target_wpm": 150,
+  "beats": [
+    { "id": "b01", "act": "hook", "kind": "question", "narration": "[curious] Look up on a clear day. Why is the sky blue?", "claims": [], "visual_intent": "Mote gazes up at a bright sky; the question appears.", "emphasis": ["blue"], "chapter": "The question" },
+    { "id": "b02", "act": "journey", "kind": "fact", "narration": "Sunlight holds every colour. When it hits the tiny molecules of air, the short blue waves get scattered all over the sky.", "claims": ["c01", "c02"], "visual_intent": "A white sunbeam strikes air molecules; blue rays spray outward while red passes straight on.", "emphasis": ["colour", "molecules", "scattered"], "chapter": "Scattering" },
+    { "id": "b03", "act": "resolution", "kind": "fact", "narration": "Blue scatters about six times more than red. That scattered light is the blue you see.", "claims": ["c03"], "visual_intent": "A big ×5.9 stat counts up; Mote smiles under a blue sky.", "emphasis": ["six", "blue"], "chapter": "The answer" }
+  ]
+}

@@ -1,0 +1,190 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+#
+# YouTube Infotainment Agency — an agent loop that researches, writes, animates, voices, packages and
+# publishes science explainers at the Kurzgesagt / Veritasium quality bar.
+#
+#   agents/<name>.md        behaviour (frontmatter + system prompt)   ← one agent per production role
+#   skills/<name>/SKILL.md  how-to knowledge, loaded on demand
+#   rubrics/                the quality bar the critic scores against
+#   channel/                channel bible (brand, design, audio) + channel.yaml (pipeline config)
+#   kit/                    house HyperFrames components every scene is built from
+#   pipeline/               the `yt` CLI (bin/yt): state machine, validation, timing, render, QA, upload
+#   episodes/<slug>/        one folder per video; heavy media lives in object storage (media.lock.json)
+#
+# This file is governance only (grants, triggers, sandbox). v2 grants are deny-by-default.
+kortix_version: 2
+default_agent: showrunner
+
+# Sessions run on the pi harness (calls models through the Kortix LLM gateway). pi reads agents/,
+# skills/, AGENTS.md, memory/ and this file; it has no `skill` tool (agents read SKILL.md files) and
+# gets the five Kortix tools (web_search, scrape_webpage, image_search, memory, show) automatically.
+runtime: pi
+
+project:
+  name: "{{projectName}}"
+  description: Automated, research-first edutainment YouTube pipeline (HyperFrames code-rendered animation).
+
+env:
+  required: [ELEVENLABS_API_KEY, OPENAI_API_KEY]   # OpenAI: the image model draws style frames. Agents use the project's default Kortix model; no model key is needed
+  optional:
+    - YT_CLIENT_ID              # YouTube OAuth client (skills/youtube-publishing/SKILL.md → Credentials)
+    - YT_CLIENT_SECRET
+    - YT_REFRESH_TOKEN          # scopes: youtube.upload, youtube.force-ssl, yt-analytics.readonly
+    - YT_API_KEY                # optional: `yt youtube search` without the OAuth secrets
+    - MEDIA_S3_ENDPOINT         # S3-compatible media store (Cloudflare R2 recommended)
+    - MEDIA_S3_BUCKET
+    - MEDIA_S3_ACCESS_KEY_ID
+    - MEDIA_S3_SECRET_ACCESS_KEY
+    - MEDIA_S3_PREFIX
+    - FAL_KEY                   # generative b-roll (off by default: channel.yaml → broll.enabled)
+
+# Rendering is CPU-only (headless Chrome + ffmpeg scale with vCPUs): 10 s of 1080p30 renders in ~26 s
+# on 4 vCPU. 6 vCPU / 12 GB fits common sandbox-provider limits; raise both if your provider allows.
+sandbox:
+  default: video
+  templates:
+    - slug: video
+      name: Video production (Node 22, HyperFrames, Chrome, ffmpeg)
+      dockerfile: Dockerfile.video
+      cpu: 6
+      memory: 12
+      disk: 60
+
+agents:
+  # ── Orchestration ────────────────────────────────────────────────────────────
+  showrunner:
+    file: agents/showrunner.md
+    # Runs whole episodes: dispatches stage subagents (same sandbox), so it holds every secret they use.
+    secrets: [ELEVENLABS_API_KEY, OPENAI_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN, YT_API_KEY, MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY, MEDIA_S3_PREFIX, FAL_KEY]
+    skills: [showrunner-loop, kortix-cli, agent-browser]
+    kortix_permissions: [project.read, project.session.read, project.session.start, project.review.read,
+      project.review.submit, project.gitops.read, project.gitops.push, project.gitops.ref.any, project.trigger.read,
+      project.file.read, project.usage.read,
+      # Setup: `kortix secrets request` (a link a person fills in) needs secret.write; `ls` needs read.
+      project.secret.read, project.secret.write]
+
+  critic:
+    file: agents/critic.md
+    skills: [critique, agent-browser]
+
+  # ── 1 · Topic choice & editorial framing ────────────────────────────────────
+  topic-scout:
+    file: agents/topic-scout.md
+    secrets: [YT_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN]
+    skills: [editorial-framing, agent-browser]
+
+  # ── 2 · Research & reporting ────────────────────────────────────────────────
+  researcher:
+    file: agents/researcher.md
+    skills: [research-dossier, agent-browser]
+
+  fact-checker:
+    file: agents/fact-checker.md
+    skills: [claim-verification, agent-browser]
+
+  # ── 3 · Script writing & structure ──────────────────────────────────────────
+  scriptwriter:
+    file: agents/scriptwriter.md
+    skills: [edutainment-scriptwriting]
+
+  # ── 4 · Visual concepting & set design ──────────────────────────────────────
+  art-director:
+    file: agents/art-director.md
+    secrets: [OPENAI_API_KEY, FAL_KEY]
+    skills: [art-direction, scene-animation, hyperframes, hyperframes-creative, hyperframes-core, hyperframes-registry]
+
+  # ── 5 · 2D/3D animation ─────────────────────────────────────────────────────
+  animator:
+    file: agents/animator.md
+    secrets: [FAL_KEY]
+    skills: [scene-animation, hyperframes, hyperframes-core, hyperframes-animation, hyperframes-keyframes,
+      hyperframes-registry, hyperframes-cli, hyperframes-creative]
+
+  # ── 6 · Editing, sound & music ──────────────────────────────────────────────
+  sound-editor:
+    file: agents/sound-editor.md
+    secrets: [ELEVENLABS_API_KEY]
+    skills: [narration-and-sound, hyperframes-audio]
+
+  # ── 7 · Thumbnails & packaging ──────────────────────────────────────────────
+  packager:
+    file: agents/packager.md
+    secrets: [YT_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN]
+    skills: [packaging, scene-animation, hyperframes-core]
+
+  # ── 8 · Publication, sources & follow-through ───────────────────────────────
+  publisher:
+    file: agents/publisher.md
+    secrets: [YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN, MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY, MEDIA_S3_PREFIX]
+    skills: [youtube-publishing, post-mortem, kortix-cli]
+    kortix_permissions: [project.read, project.review.read, project.review.submit, project.gitops.read,
+      project.gitops.push, project.gitops.ref.any]
+
+  # ── Harness upkeep ──────────────────────────────────────────────────────────
+  harness-reflector:
+    file: agents/harness-reflector.md
+    # Refines prompts/skills/memory from session evidence; opens (never merges) a harness CR.
+    kortix_permissions: all
+    skills: all
+
+  session-reviewer:
+    file: agents/session-reviewer.md
+    kortix_permissions: all
+    skills: all
+
+# Triggers ship DISABLED: each fire boots a sandbox. Turn them on once secrets are set
+# (`kortix triggers enable <slug>`), starting with showrunner-tick for the pilot episode.
+triggers:
+  - slug: showrunner-tick
+    name: Showrunner tick
+    type: cron
+    agent: showrunner
+    enabled: false
+    session_key: "showrunner-{{ cron.scheduled_date }}"
+    cron: "0 7 * * * *"            # hourly at :07
+    timezone: UTC
+    prompt: |
+      Showrunner tick ({{ cron.scheduled_date }}). Load the `showrunner-loop` skill and follow its tick
+      protocol: sync gate verdicts, then advance every active episode by at most one stage each, within
+      this session's time budget. If nothing is actionable, say so in one line and stop.
+
+  - slug: topic-scout-weekly
+    name: Topic backlog refresh
+    type: cron
+    agent: showrunner              # stage agents are subagents; the showrunner dispatches them
+    enabled: false
+    cron: "0 13 6 * * 1"           # Mondays 06:13
+    timezone: UTC
+    prompt: |
+      Weekly backlog refresh. Dispatch the `topic-scout` (task tool) to load `editorial-framing`, read
+      memory/ (audience learnings, what performed), and add 5 scored candidate topics to
+      episodes/backlog.md following the skill's backlog format. Do not start episodes. Open a change
+      request with the backlog update.
+
+  - slug: analytics-daily
+    name: Post-publication follow-through
+    type: cron
+    agent: showrunner
+    enabled: false
+    cron: "0 31 9 * * *"           # daily 09:31
+    timezone: UTC
+    prompt: |
+      Daily follow-through. Dispatch the `publisher` (task tool) to load `post-mortem` and, for every
+      episode published in the last 30 days, pull analytics (`bin/yt youtube analytics <slug>`) on day
+      2, 7 and 28, triage comments for factual corrections, and write learnings to memory/. Open one
+      change request with all updates.
+
+  - slug: harness-reflector
+    name: Harness reflector
+    type: cron
+    agent: harness-reflector
+    enabled: false
+    cron: "0 0 3 * * *"
+    timezone: UTC
+    prompt: |
+      Load the `kortix-cli` skill, then read the refinement protocol with
+      `kortix skills get kortix-harness-refinement`. Run the four-pass refinement protocol over the
+      last 24h of project activity (`kortix sessions digest --since 24h`, git log, merged CRs). Pay
+      particular attention to critic reviews in episodes/*/qa/ and human gate notes in episode.yaml:
+      recurring rejections are the strongest signal for skill and rubric changes. Open a single CR
+      titled `harness: …`; exit silently if nothing is worth changing.

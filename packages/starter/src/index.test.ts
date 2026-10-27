@@ -481,12 +481,20 @@ describe('marketplace projects — full project templates', () => {
    * than a wall of half-relevant verticals, and the synthetic starter item is
    * built in the API catalog, not from this root.
    *
-   * The `registry:project` machinery itself stays — this root is the extension
-   * point for bundling an example project again — so the contract worth pinning
-   * is that an EMPTY root degrades cleanly instead of throwing the catalog build.
+   * The root is the extension point for bundling an example project, and holds
+   * one again: the YouTube Infotainment Agency. Its files are slug-prefixed,
+   * carry a `project.json` the catalog reads for title/description, and are
+   * text only — every template file is read as UTF-8.
    */
-  test('an empty project-template root yields no files and does not throw', () => {
-    expect(() => getProjectTemplateFiles()).not.toThrow();
-    expect(getProjectTemplateFiles()).toEqual([]);
+  test('bundles the YouTube Infotainment Agency project template', () => {
+    const files = getProjectTemplateFiles();
+    const slugs = new Set(files.map((f) => f.path.split('/')[0]));
+    expect([...slugs]).toEqual(['youtube-infotainment-agency']);
+    const meta = files.find((f) => f.path === 'youtube-infotainment-agency/project.json');
+    expect(JSON.parse(meta!.content)).toMatchObject({ title: 'YouTube Infotainment Agency' });
+    for (const required of ['kortix.yaml', 'README.md', 'install.md']) {
+      expect(files.some((f) => f.path === `youtube-infotainment-agency/${required}`)).toBe(true);
+    }
+    for (const f of files) expect(f.content).not.toContain('\uFFFD');
   });
 });

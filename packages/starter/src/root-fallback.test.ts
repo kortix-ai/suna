@@ -26,9 +26,11 @@ describe('template root fallback', () => {
     );
   });
 
-  test('keeps an absent optional project root empty', async () => {
+  test('serves the embedded project templates when their root is absent', async () => {
     const { starter } = await fixture();
-    expect(starter.getProjectTemplateFiles()).toEqual([]);
+    expect(starter.getProjectTemplateFiles()).toEqual(
+      [...embedded['marketplace-projects'].files].sort((a, b) => a.path.localeCompare(b.path)),
+    );
   });
 
   test('propagates a nested missing entry instead of using the snapshot', async () => {

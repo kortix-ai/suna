@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/vendor/gsap.min.js"></script>
+    <script src="kit/kit.js"></script>
+    <style>
+      html, body { width: 1280px; height: 720px; }
+      #thumb { width: 1280px; height: 720px; background: linear-gradient(180deg, #2f8fe6 0%, #6fc3ff 100%); }
+      .t-text { position: absolute; left: 64px; top: 70px; font-family: var(--font-display); font-weight: 700;
+        font-size: 150px; line-height: 0.92; color: #fff; text-shadow: 0 10px 0 rgba(14, 27, 61, 0.45); }
+      #sun { position: absolute; right: 120px; top: 60px; width: 170px; height: 170px; border-radius: 50%; background: var(--sun);
+        box-shadow: 0 0 0 30px rgba(255, 236, 170, 0.45); }
+      #hero { right: 140px; bottom: 30px; }
+    </style>
+  </head>
+  <body>
+    <div id="thumb" class="k-stage" data-composition-id="thumbnail" data-start="0" data-duration="1" data-width="1280" data-height="720">
+      <div class="k-layer">
+        <div class="t-text">WHY<br />BLUE?</div>
+        <div id="sun"></div>
+        <div id="hero" class="k-abs"></div>
+      </div>
+      <div class="k-grain"></div>
+    </div>
+    <script>
+      Kit.mount("#hero", Kit.mascot({ mood: "surprised", size: 400 }));
+      gsap.set("#hero .m-pupil", { y: -8 });
+      const tl = Kit.scene("thumbnail", 1);
+      window.__timelines["thumbnail"] = tl;
+    </script>
+  </body>
+</html>

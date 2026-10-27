@@ -1,0 +1,14 @@
+{
+  "titles": [
+    { "text": "Why the Sky Is Blue (It's Not the Ocean)", "rationale": "Names and kills the misconception", "score": 8 },
+    { "text": "The Sky Is Blue Because of One Number", "rationale": "Curiosity gap on the payoff stat", "score": 7 },
+    { "text": "Air Is Invisible. So Why Is the Sky Blue?", "rationale": "Paradox framing", "score": 8 },
+    { "text": "Rayleigh Scattering in 25 Seconds", "rationale": "Search-friendly", "score": 5 },
+    { "text": "What Colour Is Sunlight, Really?", "rationale": "Adjacent question", "score": 6 }
+  ],
+  "chosen_title": "Air Is Invisible. So Why Is the Sky Blue?",
+  "description": "Air is transparent, yet the whole sky glows blue. The answer is a single number hiding in how light bounces off molecules. (Pipeline smoke-test fixture.)",
+  "tags": ["science", "physics", "why is the sky blue", "rayleigh scattering", "light"],
+  "thumbnail": { "concept": "Mote astonished under a vivid blue sky", "text": "WHY BLUE?" },
+  "contains_synthetic_media": false
+}
