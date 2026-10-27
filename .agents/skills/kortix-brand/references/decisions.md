@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D23 The home "Run any model" tab names the managed models with their versions
+- **Date:** 2026-10-27
+- **Decision:** The home How it works tab "Run any model" shows the provider marks (any provider with your own keys) and names the Kortix-managed models with their versions, today "DeepSeek V4.1 Flash" and "GLM 5.3 Flash", served with zero data retention. The names live in one constant, `MANAGED_MODELS` in `step-providers.tsx`; it follows Platinum Inference's `GET /v1/inference/models`. Everywhere else the families-only rule in [claims.md](verbal/claims.md) holds. The separate home sections "Need an internal app?" and "Every model, one bill." are removed: Apps and models are tabs of How it works.
+- **Why:** founder, 2026-10-27: "it should just be model-agnostic: connect any model provider ... show the actual logos ... say we offer deepseek v4 1 ... fold all of these ideas fully into how kortix works".
+- **Where:** `apps/web/src/features/marketing/landing-sections/how-it-works-tabs.tsx`, `apps/web/src/features/marketing/how-it-work/step/step-providers.tsx`, `step-apps.tsx`.
+- **Supersedes:** the families-only rule for this one tab.
+- **Source:** the `services-page` branch.
+
 ### D22 `/about` is the vision page: SuperIntelligence, AGI and self-improving companies run by AI
 - **Date:** 2026-10-27
 - **Decision:** `/about` is about SuperIntelligence and AGI: Kortix builds every layer (operating system, agent harness, infrastructure, governance, the 24/7 loop, then training and evals) so companies can run on AI at scale, improve as they operate, and stay their own. Its sections: the hero (D19), "The thesis." (companies will run on AI, they will improve themselves, they have to be owned), "Every layer, A to Z.", "Self-improving companies." and the mission line. On this page only, and only as direction (future tense or "we are building"), copy may say "AGI", "SuperIntelligence", "self-improving companies" and "run by AI". It still never says "self-driving company" or "autonomous company" (positioning.md, retired lines). Elsewhere the idea appears at most as one line, e.g. the home Outcomes sub: "Every run makes the next one better."

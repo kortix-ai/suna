@@ -71,7 +71,7 @@ export const statements = [
   {
     id: 'own',
     title: 'And they have to be owned.',
-    body: 'Claude Cowork, ChatGPT Work and the rest are heading the same way, and you will never own those. A company run by AI has to own its AI: the agents, the data, the memory and the infrastructure.',
+    body: 'Anthropic, OpenAI and the AGI labs are heading the same way, and you will never own those. A company run by AI has to own its AI: the agents, the data, the memory and the infrastructure.',
   },
 ] as const;
 

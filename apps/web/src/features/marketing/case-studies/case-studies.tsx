@@ -144,7 +144,7 @@ export function CaseStudies({ id = 'case-studies', allLink = false }: { id?: str
   }
 
   return (
-    <section id={id} className="scroll-mt-16 py-20 lg:py-28">
+    <section id={id} className="scroll-mt-16 py-14 lg:py-20">
       <Heading
         title={caseStudies.title}
         titleMuted={caseStudies.titleMuted}

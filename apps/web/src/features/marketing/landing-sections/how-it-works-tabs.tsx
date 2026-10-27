@@ -2,7 +2,8 @@
 
 import { StepComputer } from '@/features/marketing/how-it-work/step/step-computer';
 import { StepConnectors } from '@/features/marketing/how-it-work/step/step-connectors';
-import { StepModels } from '@/features/marketing/how-it-work/step/step-models';
+import { StepApps } from '@/features/marketing/how-it-work/step/step-apps';
+import { MANAGED_MODELS, StepProviders } from '@/features/marketing/how-it-work/step/step-providers';
 import { StepSourceOfTruth } from '@/features/marketing/how-it-work/step/step-source-of-truth';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
@@ -35,8 +36,8 @@ const TABS: {
   {
     id: 'models',
     title: 'Run any model',
-    description: 'Pick the model per agent or session, with your key or ours.',
-    panel: () => <StepModels />,
+    description: `Connect any provider with your own keys, or the ChatGPT plan you already pay for. Or run ${MANAGED_MODELS.join(' and ')}, managed by Kortix with zero data retention. You pay for the work, not per seat.`,
+    panel: () => <StepProviders />,
     bare: true,
   },
   {
@@ -45,6 +46,14 @@ const TABS: {
     description:
       'A full cloud computer per session: a terminal, your files, code and a browser for anything with no API, from old portals to internal apps. Your team can connect their own computers too, under rules each person sets on the machine.',
     panel: () => <StepComputer />,
+    bare: true,
+  },
+  {
+    id: 'apps',
+    title: 'Ask for an app, get one',
+    description:
+      'An agent builds the dashboard, tracker or approval form you ask for and ships it as an App: on your live data, at a stable URL, behind Kortix sign-in.',
+    panel: () => <StepApps />,
     bare: true,
   },
 ];
@@ -73,7 +82,7 @@ export function HowItWorksTabs() {
   const tab = TABS[selected];
 
   return (
-    <section id="how-it-works" className="scroll-mt-16 py-24 lg:py-32">
+    <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       {/* Band row: hairlines across the whole page, like the hero band. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
         <div className="grid grid-cols-1 lg:grid-cols-2">
@@ -81,7 +90,7 @@ export function HowItWorksTabs() {
             <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
               How Kortix works.
               <span className="text-muted-foreground block">
-                One repo, every tool, a computer per agent.
+                One repo, every tool, any model, a computer per agent.
               </span>
             </h2>
 

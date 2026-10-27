@@ -36,7 +36,7 @@ export const GUARANTEE = 'Not loving it in the first 2 weeks? Get 50% back, no q
 export const hero = {
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map your company, unify your data and build your apps.',
-  sub: 'Our team works inside your company, from strategy to shipped software, on Kortix, our open-source AI Operating System. One flat monthly fee. You own every line.',
+  sub: 'Our team works inside your company, from strategy to shipped software, on Kortix. One flat monthly fee. You own every line.',
   /** The offer as five tiles, right under the call to action. */
   does: [
     { id: 'map', icon: 'map', k: 'Map your company', v: 'Every team, role and workflow.' },

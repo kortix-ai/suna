@@ -19,7 +19,7 @@ export function LandingFaqSection() {
   const { items } = useLocalizedUiCatalog(faq);
 
   return (
-    <section id="faq" className="scroll-mt-16 px-8 py-24 lg:px-28 lg:py-32">
+    <section id="faq" className="scroll-mt-16 px-8 py-14 lg:px-28 lg:py-20">
       <div className="grid grid-cols-1 gap-y-12 lg:grid-cols-3">
         <div className="lg:pr-8">
           <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">

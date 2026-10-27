@@ -56,7 +56,7 @@ const PILLARS = [
 /** The three pillars: each name is the cell's headline, its meaning under it. */
 export function PillarsBand() {
   return (
-    <section id="pillars" className="scroll-mt-16 py-20 lg:py-28">
+    <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading
         title="Multiplayer. Company as code. Sovereign."
         titleMuted="The AI OS your whole company owns."

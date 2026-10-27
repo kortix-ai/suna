@@ -45,7 +45,7 @@ const CELLS = [
  */
 export function TrustBand() {
   return (
-    <section id="trust" className="scroll-mt-16 px-4 py-20 lg:px-17 lg:py-28">
+    <section id="trust" className="scroll-mt-16 px-4 py-14 lg:px-17 lg:py-20">
       <div className="dark bg-muted text-foreground rounded-xl px-6 py-10 lg:px-14 lg:py-16">
         <h2 className="text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
           Everything IT needs to say yes.
