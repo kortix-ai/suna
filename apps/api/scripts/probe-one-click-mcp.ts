@@ -277,7 +277,8 @@ const kinds = {
 for (const url of Object.keys(out).sort()) {
   const kind = kinds[out[url].verdict as keyof typeof kinds];
   const host = new URL(url).hostname;
-  if (kind && !host.endsWith("googleapis.com") && host !== "api.anthropic.com")
+  const google = host === "googleapis.com" || host.endsWith(".googleapis.com");
+  if (kind && !google && host !== "api.anthropic.com")
     servers[url] = kind;
 }
 await Bun.write(
