@@ -134,11 +134,11 @@ afterEach(async () => {
 });
 
 describe('loadProjectConfig characterization', () => {
-  test('a fresh starter offers only its customer agent while keeping automation registered', async () => {
+  test('a fresh starter declares one agent, kortix, and offers it', async () => {
     const files = getStarterFiles({ projectName: 'Picker regression' });
     await push(Object.fromEntries(files.map((file) => [file.path, file.content])), 'seed a fresh starter');
     const config = await loadProjectConfig(project);
-    expect(config.agents.map((agent) => agent.name)).toContain('harness-reflector');
+    expect(config.agents.map((agent) => agent.name)).toEqual(['kortix']);
     expect(config.agents.filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
     expect(projectConfigAgentsToRuntimeAgents({ ...config, agents: config.agents.map((agent) => ({ ...agent, source: undefined })) }).filter(isSelectableAgent).map((agent) => agent.name)).toEqual(['kortix']);
   });

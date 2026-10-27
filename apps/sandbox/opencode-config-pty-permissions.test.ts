@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { checkWorkdirPermission, initPermissions } from '../../templates/base/harnesses/opencode/plugins/opencode-pty/src/plugin/pty/permissions';
+import { checkWorkdirPermission, initPermissions } from './opencode-config/plugins/opencode-pty/src/plugin/pty/permissions';
 
 describe('PTY external directory permissions', () => {
   for (const action of [undefined, 'allow', 'deny', 'ask'] as const) {

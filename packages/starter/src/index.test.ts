@@ -167,24 +167,11 @@ describe('getStarterFiles', () => {
 
   test('every starter agent declares its project repository explicitly', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
-    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'));
     const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
-    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
+    expect(names).toEqual(['kortix']);
     // One explicit, uncommented line per agent: v3 defaults it to false.
     expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
-  });
-
-  test('ships scheduled starter automation disabled by default', () => {
-    const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
-      'kortix.yaml',
-    );
-    expect(manifest).toBeDefined();
-    if (!manifest) throw new Error('minimal starter is missing kortix.yaml');
-    const lines = manifest.split('\n');
-    const start = lines.findIndex((line) => line.trim() === '- slug: harness-reflector');
-    expect(start).toBeGreaterThanOrEqual(0);
-    const enabled = lines.slice(start + 1).find((line) => line.trim().startsWith('enabled:'));
-    expect(enabled?.trim()).toBe('enabled: false');
   });
 
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
@@ -263,20 +250,17 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter includes the runtime plugin but no tool copies or optional marketplace skills', () => {
+  test('minimal starter ships no harness folder and no optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
     // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
-    expect([...paths].filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
+    expect([...paths].filter((path) => path.startsWith('harnesses/'))).toEqual([]);
     // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
     // `kortix-*` family lives in `templates/managed/` and is injected at boot.
     expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
     expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
     expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('harnesses/opencode/plugins/pty.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('harnesses/opencode/plugins/lib/tool.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {

@@ -54,8 +54,8 @@ describe('resolveAgentLocation', () => {
     expect(at({})).toEqual({ tab: 'overview', view: null });
   });
 
-  test('Access opens its first view, Skills; Runtime opens Model', () => {
-    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'skills' });
+  test('Access opens its first view, Connectors; Runtime opens Model', () => {
+    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'connectors' });
     expect(at({ tab: 'runtime' })).toEqual({ tab: 'runtime', view: 'model' });
   });
 
@@ -98,7 +98,7 @@ describe('resolveAgentLocation', () => {
   test('a view the agent lacks falls back to the first one it has', () => {
     expect(at({ tab: 'access', view: 'drives' }, ['skills', 'connectors'])).toEqual({
       tab: 'access',
-      view: 'skills',
+      view: 'connectors',
     });
   });
 

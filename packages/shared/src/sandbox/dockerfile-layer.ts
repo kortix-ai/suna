@@ -734,7 +734,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/harnesses/opencode/package.json.
+    // below) is duplicated in apps/sandbox/opencode-config/package.json.
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the

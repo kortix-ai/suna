@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateManifest } from '@kortix/manifest-schema';
 
@@ -11,15 +11,6 @@ import {
 } from '../index';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
-const OPENCODE_ROOT = join(
-  REPO_ROOT,
-  'packages',
-  'starter',
-  'templates',
-  'base',
-  'harnesses',
-  'opencode',
-);
 
 const NATIVE_HARNESS_CONFIG_PATHS = [
   '.claude/CLAUDE.md',
@@ -99,10 +90,10 @@ describe('the starter is a kortix_version 3 manifest', () => {
     }
   });
 
-  test('the scaffolded README names no other harness', () => {
+  test('the scaffolded README names no harness', () => {
     const readme = filesFor().find((file) => file.path === 'README.md')?.content ?? '';
 
-    expect(readme).toContain('OpenCode');
+    expect(readme).not.toContain('OpenCode');
     expect(readme).not.toContain('Claude Code');
     expect(readme).not.toContain('Codex');
     expect(readme).not.toContain('multi-harness');
@@ -122,38 +113,14 @@ describe('the starter is a kortix_version 3 manifest', () => {
     expect(paths).toContain('agents/kortix.md');
   });
 
-  test('keeps the fast starter tool ABI independent of the full plugin SDK', () => {
-    const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
-      kortixToolAbi?: number;
-      dependencies?: Record<string, string>;
-    };
-    const lock = readFileSync(join(OPENCODE_ROOT, 'bun.lock'), 'utf8');
-
-    expect(packageJson.kortixToolAbi).toBe(1);
-    expect(packageJson.dependencies?.zod).toBe('4.1.8');
-    expect(packageJson.dependencies?.['@opencode-ai/plugin']).toBeUndefined();
-    expect(lock).not.toContain('"@opencode-ai/plugin"');
-    expect(lock).not.toContain('"effect"');
-    expect(readFileSync(join(OPENCODE_ROOT, '..', '..', '.gitignore'), 'utf8')).toContain(
-      'harnesses/opencode/package-lock.json',
-    );
-
-    expect(readFileSync(join(OPENCODE_ROOT, 'plugins', 'pty.ts'), 'utf8')).toContain(
-      "from './lib/tool'",
-    );
-  });
-
-  test('ships no tool copies: the runtime hosts the Kortix tools on every harness', () => {
-    const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
-      dependencies?: Record<string, string>;
-    };
-    const lock = readFileSync(join(OPENCODE_ROOT, 'bun.lock'), 'utf8');
-
-    expect(packageJson.dependencies).toEqual({ zod: '4.1.8' });
-    for (const dependency of ['@mendable/firecrawl-js', '@tavily/core', 'replicate']) {
-      expect(lock).not.toContain(`\"${dependency}\"`);
-    }
-    expect(filesFor().map((file) => file.path).filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
+  test('ships no harness folder and no maintenance agents: one worker agent, My Kortix runs it', () => {
+    const paths = filesFor().map((file) => file.path);
+    expect(paths.filter((path) => path.startsWith('harnesses/'))).toEqual([]);
+    expect(paths.filter((path) => path.startsWith('agents/'))).toEqual(['agents/kortix.md']);
+    const manifest = manifestFor();
+    expect(manifest).not.toContain('harness-reflector');
+    expect(manifest).not.toContain('session-reviewer');
+    expect(manifest).toContain('tools: all');
   });
 });
 

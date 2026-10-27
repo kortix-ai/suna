@@ -285,6 +285,8 @@ COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-a
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
+# The OpenCode config the image warms for sessions still on OpenCode (no longer in the starter).
+COPY apps/sandbox/opencode-config ./apps/sandbox/opencode-config
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 # From deps, not the build context: the SDK imports @kortix/llm-catalog at

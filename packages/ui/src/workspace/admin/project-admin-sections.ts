@@ -78,15 +78,15 @@ export interface ProjectAdminResource {
 /** Rail order. Icons match the agent editor's tabs (`agent-page.tsx`). */
 export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'connectors', icon: PlugsConnectedIcon, capability: 'connectors', host: false },
+  { key: 'secrets', icon: KeyIcon, capability: 'secrets', host: false },
   { key: 'skills', icon: BookOpenTextIcon, capability: 'skills', host: false },
   { key: 'tools', icon: WrenchIcon, capability: 'agent', host: false },
   { key: 'extensions', icon: PuzzlePieceIcon, capability: 'agent', host: false },
+  { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
+  { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
   { key: 'triggers', icon: TimerIcon, capability: 'triggers', host: false },
   { key: 'loops', icon: AlarmIcon, capability: 'reminders', host: true },
   { key: 'models', icon: CpuIcon, capability: 'models', host: false },
-  { key: 'secrets', icon: KeyIcon, capability: 'secrets', host: false },
-  { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
-  { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
   { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
 

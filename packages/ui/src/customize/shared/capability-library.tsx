@@ -133,9 +133,11 @@ function catalogRows(
     description: ext.controlled_by ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
     status: ext.required ? <span className="text-muted-foreground text-xs">{t('alwaysOn')}</span> : undefined,
   });
+  // A required platform extension (permission rules on script calls, the show
+  // tool's part, the turn's date) is plumbing, not a choice: it is not listed.
   return {
     project: catalog.extensions.filter((ext) => ext.group === 'project').map(item),
-    builtin: catalog.extensions.filter((ext) => ext.group === 'platform').map(item),
+    builtin: catalog.extensions.filter((ext) => ext.group === 'platform' && !ext.required).map(item),
     ids: catalog.extensions.filter((ext) => ext.group === 'project').map((ext) => ext.id),
   };
 }

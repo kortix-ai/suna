@@ -14,7 +14,6 @@ const REQUIRED_BASE_PATHS = [
   // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
   // the `kortix-*` family lives in templates/managed/ and is injected at boot.
   'skills/kortix-cli/SKILL.md',
-  'harnesses/opencode/plugins/pty.ts',
   'README.md',
   'kortix.yaml',
 ];
@@ -74,8 +73,8 @@ describe('applyScaffold', () => {
     expect(manifest).not.toContain('{{projectName}}');
 
     expect(manifest).not.toMatch(/^sandbox:/m);
-    expect(manifest).toContain('config_dir: harnesses/opencode');
-    expect(manifest).toContain('file: agents/kortix.md');
+    expect(manifest).not.toContain('harnesses/');
+    expect(manifest).toContain('prompt_file: agents/kortix.md');
 
     expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);

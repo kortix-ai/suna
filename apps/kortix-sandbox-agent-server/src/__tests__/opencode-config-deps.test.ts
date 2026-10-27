@@ -5,7 +5,8 @@ import { join } from 'node:path'
 
 import { ensureOpencodeConfigDeps } from '@/harness/open-code/opencode-config-deps'
 
-const STARTER_GITIGNORE = join(import.meta.dir, '../../../../packages/starter/templates/base/.gitignore')
+// The ignore rules an OpenCode project carries for its config dir's dependencies.
+const OPENCODE_GITIGNORE = 'harnesses/opencode/package-lock.json\nnode_modules/\n'
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -274,7 +275,7 @@ describe('ensureOpencodeConfigDeps working-tree cleanliness', () => {
     // The starter template's own ignore rules: they must cover the sentinel
     // and the dependency tree, so a template change that drops either rule
     // fails here rather than dirtying every session checkout.
-    await writeFile(join(repo, '.gitignore'), await readFile(STARTER_GITIGNORE, 'utf8'))
+    await writeFile(join(repo, '.gitignore'), OPENCODE_GITIGNORE)
     await writeFile(
       join(configDir, 'package.json'),
       `${JSON.stringify(

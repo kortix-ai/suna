@@ -65,11 +65,11 @@ const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
-// Canonical starter OpenCode config dir (pty plugin + standard tools).
-// Staged into the context so the layer can warm a real opencode project
-// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
+// The OpenCode config dir (pty plugin) the image warms for sessions that
+// still run OpenCode. New projects do not get it: the starter ships no harness
+// folder. Staged into the context (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
-  || resolve(REPO_ROOT, 'packages/starter/templates/base/harnesses/opencode');
+  || resolve(REPO_ROOT, 'apps/sandbox/opencode-config');
 /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
