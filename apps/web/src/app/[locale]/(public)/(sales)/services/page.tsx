@@ -19,7 +19,6 @@ import {
   caseCta,
   closing,
   compare,
-  education,
   faq,
   functions,
   GUARANTEE,
@@ -31,17 +30,16 @@ import {
   pricing,
   proof,
   stages,
-  strategy,
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon,
   CheckIcon,
-  CloudIcon,
-  CpuIcon,
   GitBranchIcon,
+  GraduationCapIcon,
   PathIcon,
   ReceiptIcon,
+  StackIcon,
   UsersThreeIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -67,9 +65,9 @@ const BENEFIT_ICONS = {
   team: UsersThreeIcon,
   flat: ReceiptIcon,
   path: PathIcon,
-  os: CpuIcon,
+  os: StackIcon,
   repo: GitBranchIcon,
-  cloud: CloudIcon,
+  cloud: GraduationCapIcon,
 } as const;
 
 /** "Join now": the Stripe checkout when it is configured, else the intro call. */
@@ -185,6 +183,14 @@ export default function ServicesPage() {
         <SpecGrid items={proof} cols="lg:grid-cols-4" />
       </Band>
 
+      {/* ── how it works: join, map, ship (designjoy's three steps) ─────── */}
+      <Block id="how-it-works">
+        <Heading title={onboarding.title} titleMuted={onboarding.titleMuted} />
+        <Band className="mt-12">
+          <CellGrid items={onboarding.items} cols="lg:grid-cols-3" />
+        </Band>
+      </Block>
+
       {/* ── what we do: map, unify, automate, build, teach ──────────────── */}
       <Block id="how">
         <Heading title={stages.title} titleMuted={stages.titleMuted} />
@@ -218,6 +224,15 @@ export default function ServicesPage() {
         </Band>
       </Block>
 
+      <CaseStudies />
+      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
+        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
+        <div className="flex flex-wrap gap-2.5">
+          <IntroButton variant="primary" />
+          <JoinButton variant="secondary" />
+        </div>
+      </div>
+
       {/* ── built on Kortix: what everything runs on ───────────────────── */}
       <FeatureSplit
         id="platform"
@@ -238,25 +253,6 @@ export default function ServicesPage() {
         }
       />
 
-      <CaseStudies />
-      <div className="flex flex-col items-start gap-5 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between lg:px-28">
-        <p className="text-foreground text-lg font-medium text-balance">{caseCta}</p>
-        <div className="flex flex-wrap gap-2.5">
-          <IntroButton variant="primary" />
-          <JoinButton variant="secondary" />
-        </div>
-      </div>
-
-      {/* ── how an engagement starts ───────────────────────────────────── */}
-      <Block id="services">
-        <Heading title={onboarding.title} titleMuted={onboarding.titleMuted} />
-        <Band className="mt-12">
-          <CellGrid items={onboarding.items} cols="lg:grid-cols-3" />
-        </Band>
-      </Block>
-
-      <FeatureSplit id="strategy" {...strategy} cols="lg:grid-cols-4" />
-
       {/* ── every function, and what agents take over ────────────────────── */}
       <Block id="functions">
         <Heading title={functions.title} titleMuted={functions.titleMuted} />
@@ -268,8 +264,6 @@ export default function ServicesPage() {
           </div>
         </Band>
       </Block>
-
-      <FeatureSplit id="education" {...education} cols="lg:grid-cols-4" />
 
       {/* ── the alternatives ──────────────────────────────────────────────── */}
       <Block id="compare">

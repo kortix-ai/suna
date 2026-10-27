@@ -85,45 +85,27 @@ export const proof = [
 
 /** How an engagement starts. No durations: none is set (ACCURACY). */
 export const onboarding = {
-  title: 'How we start.',
-  titleMuted: 'One function first, then the next.',
+  title: 'How it works.',
+  titleMuted: 'Join, map, ship. Then the next function.',
   items: [
     {
-      id: 'call',
+      id: 'join',
       n: '01',
-      k: 'Intro call',
-      v: 'We look at how your company works and pick the first function together.',
+      k: 'Join',
+      v: 'One flat monthly membership. Book an intro call first if you want to meet the team.',
     },
     {
-      id: 'plan',
+      id: 'map',
       n: '02',
-      k: 'Map and plan',
-      v: 'We map that function end to end and write the roadmap: what to automate first, second and third.',
+      k: 'We map your company',
+      v: 'We interview your leaders and the people who do the work, then write a ranked roadmap: what to automate first, second and third.',
     },
     {
       id: 'ship',
       n: '03',
-      k: 'Build and ship',
-      v: 'We unify its data, put agents on the recurring work, build the apps it needs and train the team. Then the next function.',
+      k: 'We ship, function by function',
+      v: 'We unify the data, put agents on the work, build the apps and train the team. Then we move to the next function.',
     },
-  ],
-} as const;
-
-export const strategy = {
-  title: 'AI Strategy.',
-  titleMuted: 'A roadmap, not a slide deck.',
-  body: [
-    'We audit **one function or the whole company**. We interview leadership and the people who do the work, set a baseline for each process, and rank every use case by effort and return.',
-    'You get **an AI strategy and a roadmap in your own repo**: what to automate first, second and third, and how you will know it worked.',
-  ],
-  cells: [
-    {
-      k: 'Leadership interviews',
-      v: 'Where the company must get better, from the people who decide.',
-    },
-    { k: 'Team interviews', v: 'How the work really gets done, from the people who do it.' },
-    { k: 'Baselines', v: 'How each process runs today, so you can measure the change.' },
-    { k: 'A ranked roadmap', v: 'Every use case by effort and return, in the order we build it.' },
   ],
 } as const;
 
@@ -135,11 +117,11 @@ export const stages = {
       id: 'map',
       n: '01',
       k: 'Map your company',
-      v: 'We sit with every team and map what each person does, how they do it, which tools they use and where the work waits.',
+      v: 'We interview your leaders and sit with every team: what each person does, how, in which tools, and where the work waits. Then we rank every use case by effort and return.',
       get: [
         'A map of every team, role and recurring job',
-        'Where the time goes and where work stalls',
-        'Who does what, in which tool',
+        'A baseline for each process, so you can measure the change',
+        'A ranked roadmap in your own repo',
       ],
     },
     {
@@ -179,11 +161,11 @@ export const stages = {
       id: 'teach',
       n: '05',
       k: 'Train your team',
-      v: 'We teach the people you already have to run the agents and apps, and to build the next ones without us.',
+      v: 'We teach the people you already have, on their own work: leaders on what changes, teams on running the agents, your engineers on building the next ones without us.',
       get: [
-        'Hands-on workshops per team',
+        'Leadership sessions and team workshops',
         'Builder training for your engineers',
-        'Playbooks in your repo',
+        'Playbooks your agents and people both read',
       ],
     },
   ],
@@ -226,33 +208,6 @@ export const functions = {
     k: 'Anything that runs on repeat',
     v: 'If a person does it every week by the same steps, we map it and hand it to an agent.',
   },
-} as const;
-
-export const education = {
-  title: 'AI Education.',
-  titleMuted: 'We teach your existing team.',
-  body: [
-    'Agents stick when your people know how to use them. We train **the team you already have**, on **their own work**, not on generic demos.',
-    'The goal: your team **runs the agents every day and builds the next ones without us**.',
-  ],
-  cells: [
-    {
-      k: 'Leadership sessions',
-      v: 'What AI changes for your company, and the decisions only leaders can make.',
-    },
-    {
-      k: 'Team workshops',
-      v: 'Hands-on, per team: pick one workflow, decide what agents do and where a person approves, then build it.',
-    },
-    {
-      k: 'Builder training',
-      v: 'Your engineers and power users learn to write agents, skills and connectors in your repo.',
-    },
-    {
-      k: 'Playbooks in your repo',
-      v: 'Your workflows written down as skills that your agents and your people both read.',
-    },
-  ],
 } as const;
 
 export const compare = {
@@ -317,14 +272,14 @@ export const benefits = {
     {
       id: 'one-team',
       icon: 'path',
-      k: 'Strategy and build, one team',
+      k: 'Strategy to shipped software',
       v: 'The people who map your company build its agents and apps.',
     },
     {
-      id: 'os',
+      id: 'function',
       icon: 'os',
-      k: 'Built on the AI OS',
-      v: 'Agents, skills, memory and connectors on the open-source Kortix AI Operating System.',
+      k: 'Function by function',
+      v: 'We finish one function, then move to the next.',
     },
     {
       id: 'own',
@@ -333,10 +288,10 @@ export const benefits = {
       v: 'Every agent, skill and app lives in one git repo you own.',
     },
     {
-      id: 'where',
+      id: 'trained',
       icon: 'cloud',
-      k: 'Runs where you run',
-      v: 'Kortix Cloud, your VPC, or your own on-prem network.',
+      k: 'Your team, trained',
+      v: 'Your people run it and build the next agents without us.',
     },
   ],
 } as const;
@@ -407,11 +362,6 @@ export const faq = {
       id: 'host',
       q: 'Do we have to use Kortix Cloud?',
       a: 'No. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Any model provider with your own keys.',
-    },
-    {
-      id: 'engineers',
-      q: 'Can our own engineers keep building?',
-      a: 'Yes, that is the point. Your team works in the same repo and keeps building after we hand over.',
     },
     {
       id: 'fit',
