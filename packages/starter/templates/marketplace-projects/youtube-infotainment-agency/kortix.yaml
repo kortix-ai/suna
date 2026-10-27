@@ -40,7 +40,8 @@ env:
 
 # Rendering is CPU-only (headless Chrome + ffmpeg scale with vCPUs): 10 s of 1080p30 renders in ~26 s
 # on 4 vCPU. 6 vCPU / 12 GB fits common sandbox-provider limits; raise both if your provider allows.
-# Disk stays at 40 GB, Daytona's per-sandbox cap: episode media lives in object storage, not here.
+# Disk stays at 40 GB, Daytona's per-sandbox cap. A 60 s episode peaks near 10 GB on disk (image,
+# caches, media, render), and media stays on this disk unless MEDIA_S3_* is set.
 sandbox:
   default: video
   templates:
