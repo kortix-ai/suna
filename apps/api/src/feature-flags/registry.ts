@@ -489,9 +489,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
     stability: 'experimental',
     available: () => true,
-    // On by default (Marko, 2026-10-24): Rooms is the p2p substrate every
-    // project ships with. A project can still turn it off.
-    platformDefault: () => true,
+    // Off by default again (Marko, 2026-10-27): a project turns it on.
+    platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
       'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
