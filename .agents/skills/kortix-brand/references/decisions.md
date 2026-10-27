@@ -28,9 +28,9 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Supersedes:** D16's "Extensible, powered by pi." pillar line and its naming of pi in the home copy.
 - **Source:** the `services-page` branch.
 
-### D19 The `/about` hero: "We are building the Operating System for superintelligence"
+### D19 The `/about` hero: "We are building the Operating System for SuperIntelligence"
 - **Date:** 2026-10-27
-- **Decision:** The `/about` hero reads "We are building the Operating System for superintelligence. One you own end to end, every part of it." "Superintelligence" is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.
+- **Decision:** The `/about` hero reads "We are building the Operating System for SuperIntelligence. One you own end to end, every part of it." "SuperIntelligence" (capital S and I, founder: "write SI in big letters") is founder vision: it appears in the `/about` hero only, in the future or progressive tense ("we are building"), never as a category, a page title elsewhere or a product claim.
 - **Why:** founder, 2026-10-27: "We are building the Operating System for SuperIntelligence that you can own e2e every aspect".
 - **Where:** `apps/web/src/features/marketing/about/content.ts` (`hero`); [positioning.md](verbal/positioning.md) rule on "AGI", which this extends.
 - **Supersedes:** the `/about` hero line "We are building the open-source AI Operating System."

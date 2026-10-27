@@ -34,9 +34,9 @@
  */
 
 export const hero = {
-  // Founder vision, future tense (kortix-brand D19): "superintelligence" is
+  // Founder vision, future tense (kortix-brand D19): "SuperIntelligence" is
   // allowed here, in the hero of /about only, never as a product claim.
-  title: 'We are building the Operating System for superintelligence.',
+  title: 'We are building the Operating System for SuperIntelligence.',
   titleMuted: 'One you own end to end, every part of it.',
   lead: 'Every agent, all of their data, every skill, every connector, the memory and the whole configuration.',
   ctaPrimary: 'We are hiring',
