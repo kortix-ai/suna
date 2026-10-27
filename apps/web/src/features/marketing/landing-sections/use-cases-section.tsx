@@ -25,15 +25,15 @@ export type UseCaseItem = { slug: string; url: string; title: string; team: Team
  */
 
 // The outcome loop (kortix-brand D18) heads this section: hand Kortix an
-// outcome, agents run it 24/7, for every team below. Goals is early access
-// (the `goals` flag is experimental, off by default), so the note says so.
+// outcome, agents run it 24/7, for every team below. The loop is triggers,
+// sessions, change requests and memory, all shipped (founder, 2026-10-27: no
+// early-access label).
 const COPY = {
   eyebrow: 'Outcomes',
   title: 'Give it an outcome. Agents run it 24/7.',
   titleMuted: 'End to end, for every team.',
   sub: 'Agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and through a change request you approve, then learn from it.',
   loop: ['Outcome', 'Plan', 'Work', 'Verify', 'Learn'],
-  early: 'Outcomes (Goals) are in early access.',
   you: 'You',
 };
 
@@ -160,7 +160,6 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
             <span className="text-muted-foreground">24/7</span>
           </li>
         </ol>
-        <p className="text-muted-foreground text-xs">{copy.early}</p>
       </div>
 
       {/* The ruler runs rail to rail. Seven team names sit over one
