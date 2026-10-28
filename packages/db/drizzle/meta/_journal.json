@@ -1289,6 +1289,13 @@
       "when": 1792955176796,
       "tag": "20261025190616_project_channels",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1793093398130,
+      "tag": "20261027092958_project_session_groups",
+      "breakpoints": true
     }
   ]
 }

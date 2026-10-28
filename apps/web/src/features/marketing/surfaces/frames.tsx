@@ -3,13 +3,14 @@ import { MicrophoneIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
 /*
- * The devices the surface pages show. The terminal is taller than its stage
- * and runs off the bottom edge; the phone stands whole, centred. Hairlines, never shadows.
- * Every frame is drawn in tokens, so it follows the visitor's theme.
+ * The devices the surface pages draw: a desktop window, a phone and a
+ * terminal. Hairlines, never shadows. Every frame is drawn in tokens, so it
+ * follows the visitor's theme, and every one reflows to 390 px instead of
+ * scaling down: text stays at its real size.
  */
 
 /** Neutral window dots. Not the macOS colours: the page spends no decorative colour. */
-function WindowDots() {
+export function WindowDots() {
   return (
     <span aria-hidden className="flex gap-1.5">
       <span className="bg-border size-2.5 rounded-full" />
@@ -19,10 +20,24 @@ function WindowDots() {
   );
 }
 
+/** A native desktop window: the title bar, then the app. */
+export function DesktopFrame({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="bg-background w-full overflow-hidden rounded-lg border">
+      <div className="flex items-center gap-4 border-b px-4 py-2.5">
+        <WindowDots />
+        <span className="text-muted-foreground flex-1 truncate text-center text-xs">{title}</span>
+        <span aria-hidden className="w-12" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
 /** A whole phone: status bar, the session's title bar, the screen, the composer. */
 export function PhoneFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div /* audit:allow device art: a phone body, no UI radius token draws one */ className="bg-background border-border relative h-[34rem] w-72 shrink-0 overflow-hidden rounded-[2.75rem] border p-2 sm:h-[38rem] sm:w-80">
+    <div /* audit:allow device art: a phone body, no UI radius token draws one */ className="bg-background border-border relative h-[36rem] w-80 max-w-full shrink-0 overflow-hidden rounded-[2.75rem] border p-2">
       <div /* audit:allow device art: the screen, concentric with the body (2.75rem minus the 0.5rem bezel) */ className="border-border flex h-full flex-col overflow-hidden rounded-[2.25rem] border">
         <div className="flex items-center justify-between px-6 pt-3.5 pb-2">
           <span className="text-foreground text-xs font-medium tabular-nums">9:41</span>
@@ -43,7 +58,7 @@ export function PhoneFrame({ title, children }: { title: string; children: React
             ···
           </span>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-4">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden px-4 pt-4 pb-3">{children}</div>
         <div className="px-3 pb-3">
           <div className="text-muted-foreground flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm">
             Ask anything…
@@ -59,19 +74,38 @@ export function PhoneFrame({ title, children }: { title: string; children: React
 export type TerminalLine =
   | { kind: 'cmd'; text: string }
   | { kind: 'out'; text: string }
+  /** A table row: never wraps; the terminal scrolls sideways instead. */
+  | { kind: 'row'; text: string }
   | { kind: 'ok'; text: string }
+  | { kind: 'note'; text: string }
   | { kind: 'gap' };
 
-/** A terminal window: commands after a muted prompt, output under them. */
-export function TerminalFrame({ title, lines }: { title: string; lines: readonly TerminalLine[] }) {
+/**
+ * A terminal: commands after a muted prompt, output under them, `#` notes
+ * muted. Long lines wrap as a real terminal does, so nothing is cut at 390 px.
+ */
+export function TerminalFrame({
+  title,
+  lines,
+  size = 'lg',
+}: {
+  title: string;
+  lines: readonly TerminalLine[];
+  size?: 'lg' | 'sm';
+}) {
   return (
-    <div className="bg-background border-border w-full max-w-3xl overflow-hidden rounded-t-lg border border-b-0">
-      <div className="flex items-center gap-4 border-b px-4 py-3">
+    <div className="bg-background w-full overflow-hidden rounded-lg border">
+      <div className="flex items-center gap-4 border-b px-4 py-2.5">
         <WindowDots />
         <span className="text-muted-foreground flex-1 truncate text-center font-mono text-xs">{title}</span>
         <span aria-hidden className="w-12" />
       </div>
-      <pre className="h-[22rem] overflow-hidden px-5 py-5 font-mono text-xs leading-6 sm:h-[26rem] sm:px-6 sm:text-sm sm:leading-7">
+      <pre
+        className={cn(
+          'overflow-x-auto font-mono break-words whitespace-pre-wrap',
+          size === 'lg' ? 'px-4 py-5 text-xs leading-6 sm:px-6 sm:text-sm sm:leading-7' : 'px-4 py-4 text-xs leading-6',
+        )}
+      >
         {lines.map((line, i) =>
           line.kind === 'gap' ? (
             <span key={i} className="block h-3" />
@@ -79,14 +113,17 @@ export function TerminalFrame({ title, lines }: { title: string; lines: readonly
             <span
               key={i}
               className={cn(
-                'block truncate',
-                line.kind === 'cmd' && 'text-foreground',
-                line.kind === 'out' && 'text-muted-foreground',
-                line.kind === 'ok' && 'text-foreground',
+                'block',
+                (line.kind === 'cmd' || line.kind === 'ok') && 'text-foreground',
+                line.kind === 'out' && 'text-muted-foreground pl-4',
+                line.kind === 'row' && 'text-muted-foreground w-max pl-4 whitespace-pre',
+                line.kind === 'ok' && 'pl-4',
+                line.kind === 'note' && 'text-muted-foreground',
               )}
             >
               {line.kind === 'cmd' ? <span className="text-muted-foreground select-none">$ </span> : null}
-              {line.kind === 'ok' ? <span className="text-muted-foreground select-none">✓ </span> : null}
+              {line.kind === 'ok' ? <span className="text-kortix-green select-none">✓ </span> : null}
+              {line.kind === 'note' ? <span className="select-none"># </span> : null}
               {line.text}
             </span>
           ),

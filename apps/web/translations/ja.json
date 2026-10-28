@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "チャンネル",
           "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
+        },
+        "session_groups": {
+          "name": "セッショングループ",
+          "description": "サイドバーのセッションを、プロジェクト全員で共有する名前付きフォルダーにまとめます（例：ストアやクライアントごとに1つ）。メニューまたはドラッグでセッションをグループに移動し、グループを並べ替えたり折りたたんだりできます。"
         }
       },
       "channelsSwitch": {
@@ -1314,9 +1318,9 @@
       "oneOffDescription": "代わりに1つの変更を記述できます。セッションが変更と検証を行い、変更リクエストを開きます。",
       "oneOffPlaceholder": "例: release-bot エージェントをすべての参照で deploy-bot に変更する",
       "runUpgrade": "アップグレードを実行",
-      "manifestV2": {
-        "title": "マニフェストを v2 (kortix.yaml) に移行",
-        "description": "v1 kortix.toml をガバナンス重視の kortix.yaml に変換し、プラットフォーム管理スキルを更新して、レビュー用の変更リクエストを開きます。"
+      "manifestV3": {
+        "title": "マニフェストを v3 (kortix.yaml) にアップグレード",
+        "description": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。"
       },
       "agentEditorHint": "このプロジェクトはバージョン 1 のマニフェストを使用しています。<code>kortix.yaml</code> バージョン 3 にアップグレードすると、このエージェントの指示、モデル、ツール権限、アクセスをここで編集できます。"
     },
@@ -1651,8 +1655,8 @@
       "localComputer": "あなたのコンピューター"
     },
     "manifestUpgrade": {
-      "title": "v2 にアップグレード",
-      "description": "このプロジェクトはまだ <toml>kortix.toml</toml> を使用しています。エージェントが <yaml>kortix.yaml</yaml> に変換し、管理対象スキルを更新して変更リクエストを作成します。承認するまで変更は適用されません。",
+      "title": "v3 にアップグレード",
+      "description": "このプロジェクトは古いマニフェストを使用しています。エージェントが <yaml>kortix.yaml</yaml> バージョン 3 に移行し、管理対象スキルを更新して変更リクエストを作成します。承認するまで変更は適用されません。",
       "start": "アップグレードを開始"
     },
     "filter": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, other {# 件のセッションを変更できませんでした}}",
       "showArchived": "アーカイブ済みのセッション",
       "pinnedMark": "ピン留め済み"
+    },
+    "sessionGroups": {
+      "newGroup": "新しいグループ",
+      "newGroupFromMenu": "新しいグループ…",
+      "createTitle": "新しいグループ",
+      "createDescription": "このプロジェクトの全員がこのグループを見られます。セッションのメニューから移動するか、セッションをグループにドラッグします。",
+      "namePlaceholder": "グループ名",
+      "create": "グループを作成",
+      "created": "グループを作成しました",
+      "createFailed": "グループを作成できませんでした",
+      "rename": "グループ名を変更",
+      "save": "保存",
+      "renamed": "グループ名を変更しました",
+      "renameFailed": "グループ名を変更できませんでした",
+      "nameTaken": "このプロジェクトには同じ名前のグループがすでにあります。",
+      "limit": "1つのプロジェクトに作成できるグループは最大50個です。",
+      "cancel": "キャンセル",
+      "delete": "グループを削除",
+      "deleteTitle": "このグループを削除しますか？",
+      "deleteDescription": "{name} はこのプロジェクトの全員に対して削除されます。グループ内のセッションは残り、どのグループにも属さなくなります。この操作は元に戻せません。",
+      "deleted": "グループを削除しました",
+      "deleteFailed": "グループを削除できませんでした",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "reorderFailed": "グループを並べ替えできませんでした",
+      "moveTo": "グループに移動",
+      "removeFromGroup": "グループから外す",
+      "moved": "セッションを移動しました",
+      "noGroup": "グループなし",
+      "moveFailed": "セッションを移動できませんでした",
+      "empty": "ここに移動したセッションはここに表示されます。",
+      "groupOptions": "グループのオプション"
     },
     "recentlyDeleted": {
       "view": "最近削除した項目",
@@ -2767,6 +2803,7 @@
     "signInWithEmail": "メールでログイン",
     "createNewAccount": "新しいアカウントを作成",
     "byContinuingYouAgreeSimple": "続行することで、",
+    "customerLogoNotice": "Kortix は、プランを問わず、あなたの組織の名称とロゴを顧客として掲載することがあります。legal@kortix.com までご連絡いただければ、いつでも掲載を停止できます。",
     "phoneVerification": {
       "title": "電話番号を確認",
       "titleOtp": "確認コードを入力",
@@ -10540,7 +10577,7 @@
       "text0f096c40454e": "データセットをプロファイリングし、分布を可視化し、リーケージと不均衡を確認し、データの内容について最初の率直な段落を書きます。空のセルからではなく、概要を把握した状態から始められます。",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 自動",
-      "text0f4827ef74ea": "Kortixの募集中ポジション：Marketing / Content、Sales、FDE / Services、Product / Eng、Product / R&D。セルビアのベオグラードとサンフランシスコ。長期的なオーナーシップを担える人材を採用しています。",
+      "text0f4827ef74ea": "Kortixの募集中ポジション：FDE、GTM、MTS。セルビアのベオグラードとサンフランシスコ。長期的なオーナーシップを担える人材を採用しています。",
       "text0f600458e375": "SSO、メンバー、グループ、ロールベースアクセスを標準搭載。人とエージェントごとのリソース権限、暗号化されたシークレット、完全な監査証跡にも対応します。セルフホストすれば、プラットフォーム全体を自社環境内で運用できます。",
       "text0f64c7d16c28": "# コンパイルを確認し、不足しているシークレットを尋ね、",
       "text0f656790976e": "どのエージェントプラットフォームを開いても、アーキテクチャは同じです。わずかな違いは守れる優位性になりません。差がつくのは学習ループだけです。",
@@ -16766,7 +16803,7 @@
       "textc3bf78fdd3b9": "申請を送信できませんでした",
       "textc3c25857485f": "すること",
       "textc3c709a999c1": "メモリを読み取り中…",
-      "textc3d1545dd522": "v1のkortix.tomlをガバナンス優先のkortix.yamlに変換し、プラットフォーム管理のスキルを最新のマーケットプレース基準に更新して、レビュー用の変更リクエストを開きます。",
+      "text7823a1f3af93": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。",
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
@@ -17501,7 +17538,7 @@
       "textd83a0d814c59": "API Statusに緑色の「Enabled」が表示され、「SCIM Username」パラメーターがEmailにマッピングされ、管理者承認による保留なしでプロビジョニングが有効になっていることを確認します。",
       "textd84b8be91e7b": "Kortix — プレゼンテーション",
       "textd84ee1e1e08b": "kortix init を試すか、コマンドには / を入力",
-      "textd85a383e851d": "マニフェストを v2 (kortix.yaml) に移行",
+      "text08edd5b6dcdc": "マニフェストを v3 (kortix.yaml) にアップグレード",
       "text848f54e89660": "実行履歴",
       "textb098a09c78aa": "ペイロードでテスト",
       "text99733344956d": "ペイロード",
@@ -20428,7 +20465,9 @@
       "text7c0a91e5b3d2": "未分類のツール",
       "text9d2b6f0c41ae": "ツールとルール",
       "openThreadAction": "スレッドを開く",
-      "untitledThread": "無題のスレッド"
+      "untitledThread": "無題のスレッド",
+      "text314ae71b8c8d": "アーティファクト",
+      "textfe204b549282": "アーティファクト ドキュメント スライド プレゼンテーション ボード デザイン ダッシュボード ページ 公開 共有"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20767,7 +20806,14 @@
     "sessionModel": "モデル {cost}",
     "sessionSandbox": "サンドボックス {cost}",
     "noCapUnlimited": "上限なし · 支出は無制限",
-    "tokensSub": "入力 {in} · 出力 {out}"
+    "tokensSub": "入力 {in} · 出力 {out}",
+    "unknownValue": "不明",
+    "estimateCoverageUnavailable": "見積もりの対象範囲を取得できません。",
+    "estimatesSeparate": "上の実際の支出は別に扱われます。見積もりが請求額に加算されることはありません。",
+    "estimatedUsageValueLabel": "LLM の推定利用額(請求ではありません):",
+    "pricedRequests": "料金計算済みリクエスト {count} 件",
+    "unpricedRequests": "料金未計算リクエスト {count} 件",
+    "llmEstimateLabel": "LLM の推定:"
   },
   "triggerComposer": {
     "every": "間隔",
@@ -21161,6 +21207,18 @@
     "emailHeroLede": "Resend アカウントを接続し、自分のドメインのアドレスを選びます。そのアドレスにメールが届くと、エージェントがスレッドを読みそのまま返信します。",
     "telegramHeroTitle": "エージェントを Telegram に",
     "telegramHeroLede": "BotFather で作ったボットを接続します。ボットにメッセージすると、エージェントがチャットで答えます。",
+    "telegramUsersDescription": "ボットと話せるのはこれらのユーザーだけです。ほかの人がボットに個別メッセージを送ると、ここに表示されます。",
+    "telegramRequestsTitle": "アクセスを希望",
+    "telegramAllowedTitle": "許可済み",
+    "telegramUsersEmptyTitle": "許可したユーザーがここに表示されます",
+    "telegramUsersEmptyDescription": "ボットにメッセージを送ってもらい、そのリクエストを許可するか、ユーザー ID を追加します。",
+    "telegramUsersLoadError": "Telegram ユーザーを読み込めませんでした。",
+    "telegramAddByIdLabel": "ユーザー ID で追加",
+    "telegramAddByIdHint": "ボットは知らない相手に、その人のユーザー ID を返信します。",
+    "telegramAddByIdInvalid": "Telegram のユーザー ID は数字です（例: 123456789）。",
+    "telegramAllowAria": "{name} を許可",
+    "telegramRemoveTitle": "{name} を削除しますか？",
+    "telegramRemoveDescription": "{name} はボットと話せなくなります。再び許可するには、ユーザー ID を追加するか、次のリクエストを許可します。",
     "otherWaysToConnect": "その他の接続方法",
     "computerHeroTitle": "エージェントをあなたのコンピューターに",
     "computerConnectedTitle": "{count, plural, other {# 台のコンピューターが接続済み}}",
@@ -21546,7 +21604,11 @@
     "inviteSent": "{email} に招待状を送信しました",
     "reschedule": "日時を変更する場合は招待状のリンクを使ってください。",
     "addToCalendar": "カレンダーに追加",
-    "done": "完了"
+    "done": "完了",
+    "errorName": "名前を入力してください。",
+    "errorEmail": "ご連絡のため、有効な勤務先のメールアドレスを入力してください。",
+    "errorCompany": "会社名を入力してください。",
+    "errorSize": "会社の規模を選んでください。"
   },
   "drives": {
     "title": "ドライブ",
@@ -22913,8 +22975,8 @@
         "restoreShort": "復元",
         "viewing": "{time}のバージョンを表示中",
         "backToCurrent": "現在の版に戻る",
-        "added": "+{count}行",
-        "removed": "−{count}行",
+        "added": "+{count, plural, other {#行}}",
+        "removed": "−{count, plural, other {#行}}",
         "viewingBy": "作成者: {author}",
         "created": "ページを作成",
         "edited": "ページを編集"
@@ -23165,7 +23227,7 @@
       "rosterTitlePeople": "メンバー",
       "rosterTitleAgents": "エージェント",
       "viewAllMembers": "すべてのメンバーを表示",
-      "agentThreads": "{count}件のスレッド",
+      "agentThreads": "{count, plural, other {#件のスレッド}}",
       "threadFilter": {
         "search": "スレッドを検索",
         "filter": "フィルター",
@@ -23298,8 +23360,8 @@
       "inviteByEmail": "メールで招待",
       "confirmEmpty": "メンバーを追加",
       "confirm": "{what}を追加",
-      "peopleCount": "{count}人",
-      "agentsCount": "{count}個のエージェント",
+      "peopleCount": "{count, plural, other {#人}}",
+      "agentsCount": "{count, plural, other {#個のエージェント}}",
       "both": "{people}と{agents}",
       "added": "#{name} に{what}を追加しました。",
       "failed": "メンバーを追加できませんでした。もう一度お試しください。",
@@ -23309,6 +23371,37 @@
       "agentsFailedPeopleAdded": "#{name} に{what}を追加しました。エージェントは追加できませんでした。選択したままです。",
       "allAdded": "プロジェクトの全員がすでに参加しています。",
       "noMatches": "「{query}」に一致する項目はありません。"
+    },
+    "privateNotIn": {
+      "row": "参加していないプライベートチャンネル",
+      "title": "参加していないプライベートチャンネル",
+      "description": "名前の変更、アーカイブ、メンバーの追加ができます。チャンネルの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
+      "meta": "{count, plural, =0 {メンバーなし} other {#人のメンバー}} · 作成者: {name}",
+      "metaNoCreator": "{count, plural, =0 {メンバーなし} other {#人のメンバー}}",
+      "archived": "アーカイブ済み",
+      "menu": "#{name} のオプション",
+      "addPeople": "メンバーを追加",
+      "rename": "名前を変更",
+      "archive": "アーカイブ",
+      "unarchive": "アーカイブを解除",
+      "archivedToast": "#{name} をアーカイブしました",
+      "unarchivedToast": "#{name} のアーカイブを解除しました",
+      "failed": "#{name} を更新できませんでした。もう一度お試しください。"
     }
+  },
+  "imageGen": {
+    "generating": "画像を生成中",
+    "editing": "画像を編集中",
+    "generatingCount": "{count, plural, other {#枚の画像を生成中}}",
+    "editingCount": "{count, plural, other {#枚の画像を編集中}}",
+    "openFullScreen": "全画面で開く",
+    "openFullScreenPrompt": "全画面で開く: {prompt}",
+    "loading": "画像を読み込み中",
+    "stopped": "停止しました",
+    "failed": "画像は生成されませんでした。",
+    "retry": "{when}に再試行してください。",
+    "unavailable": "画像を表示できません",
+    "tryAgain": "再試行",
+    "details": "画像の詳細"
   }
 }

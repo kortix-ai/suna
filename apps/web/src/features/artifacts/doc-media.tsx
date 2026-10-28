@@ -29,6 +29,9 @@ export const Video = Node.create({
   },
 });
 
+/** The code-fence language id of a block that names none: a Markdown token, not UI copy. */
+const PLAIN_LANGUAGE = 'text';
+
 function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
   const t = useTranslations('artifacts');
   const [editing, setEditing] = useState(false);
@@ -45,12 +48,12 @@ function CodeBlockView({ node, editor, updateAttributes }: ReactNodeViewProps) {
           {editor.isEditable ? (
             <input
               aria-label={t('codeLanguage')}
-              placeholder="text"
+              placeholder={PLAIN_LANGUAGE}
               value={language}
               onChange={(e) => updateAttributes({ language: e.target.value.trim().toLowerCase() || null })}
             />
           ) : (
-            <span>{language || 'text'}</span>
+            <span>{language || PLAIN_LANGUAGE}</span>
           )}
           {source ? <CopyButton code={node.textContent} /> : null}
         </figcaption>

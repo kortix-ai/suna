@@ -572,7 +572,7 @@ function runMaintenanceSweeps() {
     // removed; its next open boots a fresh box on the volume.
     () => retireIdleVolumeBoxes().catch((err) => {
       logger.warn('[project-maintenance] idle volume box retire failed', { error: err instanceof Error ? err.message : String(err) });
-      return { retired: 0, removed: 0, failed: 1 };
+      return { retired: 0, removed: 0, failed: 1, held: 0 };
     }),
   ]);
 }
@@ -653,7 +653,8 @@ function logMaintenanceCycle(
       triggerRunsSettled ||
       idleVolumeRetires.retired ||
       idleVolumeRetires.removed ||
-      idleVolumeRetires.failed,
+      idleVolumeRetires.failed ||
+      idleVolumeRetires.held,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {

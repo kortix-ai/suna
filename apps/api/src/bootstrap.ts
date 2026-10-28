@@ -407,6 +407,8 @@ async function runShutdown(signal: string): Promise<void> {
   // Stop claiming lifecycle rows now. The leader's slow singleton stops used to
   // run first, so this replica kept claiming prompts while it waited to die.
   stopSessionLifecycleWorker();
+  // Stop claiming queued jobs too; the request drain waits for the ones running.
+  stopJobWorker();
   const handBack = handBackClaims()
     .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
     .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
@@ -425,7 +427,6 @@ async function runShutdown(signal: string): Promise<void> {
   stopAccessControlCache();
   stopManagedLineupRefresh();
   stopTmpReaper();
-  stopJobWorker();
   stopTriggerEventPollWorker();
   await handBack;
   // A build claim this task holds would block peers until its lease lapses.

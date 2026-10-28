@@ -159,7 +159,8 @@ async function hasStorage(world: AgentPrincipalsWorld): Promise<boolean> {
     return false;
   }
   r.status([200, 201]);
-  (await world.owner.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path } })).status([200, 204]);
+  // A new folder on Platinum storage is not empty to a plain delete; remove it as the web UI does.
+  (await world.owner.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path, recursive: 'true' } })).status([200, 204]);
   return true;
 }
 

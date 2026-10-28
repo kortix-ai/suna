@@ -131,6 +131,26 @@ test('project(id).spaces lists, creates, updates and opens a DM', async () => {
   ]);
 });
 
+test('project(id).sessionGroups lists, creates, renames, reorders, deletes and files a session', async () => {
+  const groups = kortix.project('P1').sessionGroups;
+  await groups.list();
+  await groups.create({ name: 'Store A' });
+  await groups.rename('G1', 'Store A (EU)');
+  await groups.reorder(['G2', 'G1']);
+  await groups.delete('G2');
+  await groups.file('S1', 'G1');
+  await groups.file('S1', null);
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/session-groups', body: undefined },
+    { method: 'POST', url: 'http://test.local/projects/P1/session-groups', body: { name: 'Store A' } },
+    { method: 'PATCH', url: 'http://test.local/projects/P1/session-groups/G1', body: { name: 'Store A (EU)' } },
+    { method: 'PUT', url: 'http://test.local/projects/P1/session-groups/order', body: { group_ids: ['G2', 'G1'] } },
+    { method: 'DELETE', url: 'http://test.local/projects/P1/session-groups/G2', body: undefined },
+    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/group', body: { group_id: 'G1' } },
+    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/group', body: { group_id: null } },
+  ]);
+});
+
 test('project(id).spaces.members lists, adds, removes, joins and leaves', async () => {
   const members = kortix.project('P1').spaces.members;
   await members.list('S1');

@@ -450,8 +450,9 @@ flow(
       });
 
       await ctx.step('all:true marks every unread row of the reader → unread_count 0; a repeat → updated 0', async () => {
-        // The hidden row is still the reader's own: `all` marks it too.
-        (await read({ all: true })).status(200).body().has('$.updated', 2).has('$.unread_count', 0);
+        // `all` marks the hidden row too, but `updated` counts only rows the
+        // reader may see, so it does not disclose hidden rows (#10893).
+        (await read({ all: true })).status(200).body().has('$.updated', 1).has('$.unread_count', 0);
         (await read({ all: true })).status(200).body().has('$.updated', 0).has('$.unread_count', 0);
       });
 

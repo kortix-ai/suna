@@ -103,6 +103,14 @@ mock.module('../lib/access', () => ({
   projectCapabilityAllowed: async () => true,
 }));
 
+// ── kortix.yaml owns project.name (#10883): a rename commits the file first.
+// No repository here, so the commit succeeds without one.
+const realManifestName = await import('../lib/manifest-project-name');
+mock.module('../lib/manifest-project-name', () => ({
+  ...realManifestName,
+  commitProjectName: async () => ({ ok: true }),
+}));
+
 // Registers project-detail.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT imported,
 // so these requests need no Authorization header.
@@ -145,15 +153,14 @@ beforeEach(() => {
 });
 
 describe('PATCH /:projectId — icon absent', () => {
-  test('a name-only patch writes NO metadata at all, so the stored icon survives', async () => {
+  test('a name-only patch writes only the kortix.yaml name marker, so the stored icon survives', async () => {
     const res = await patch({ name: 'renamed-only' });
 
     expect(res.status).toBe(200);
     expect(lastSet().name).toBe('renamed-only');
-    // Not `toBeUndefined()`: Drizzle's `.set()` treats a present-but-undefined
-    // key differently from an absent one in some versions, and "we never
-    // mentioned metadata" is the property that matters.
-    expect('metadata' in lastSet()).toBe(false);
+    // The rename records the name it committed to kortix.yaml; no icon key is
+    // merged or deleted.
+    expect(metadataQuery().params).toEqual(['{"manifest_project_name":"renamed-only"}']);
   });
 
   test('an empty patch writes no metadata either', async () => {
@@ -199,7 +206,7 @@ describe('PATCH /:projectId — icon set', () => {
 
     expect(res.status).toBe(200);
     expect(lastSet().name).toBe('renamed-and-iconed');
-    expect(metadataQuery().params).toEqual(['icon_glyph', '{"icon":"🎯"}']);
+    expect(metadataQuery().params).toEqual(['icon_glyph', '{"icon":"🎯"}', '{"manifest_project_name":"renamed-and-iconed"}']);
   });
 });
 
@@ -232,7 +239,7 @@ describe('PATCH /:projectId — icon cleared', () => {
 
     expect(res.status).toBe(200);
     expect(lastSet().name).toBe('renamed-and-cleared');
-    expect(metadataQuery().params).toEqual(['icon', '{}']);
+    expect(metadataQuery().params).toEqual(['icon', '{}', '{"manifest_project_name":"renamed-and-cleared"}']);
   });
 });
 
@@ -269,6 +276,6 @@ describe('PATCH /:projectId — invalid icon is NOT a clear', () => {
 
     expect(res.status).toBe(200);
     expect(lastSet().name).toBe('renamed-despite-bad-icon');
-    expect('metadata' in lastSet()).toBe(false);
+    expect(metadataQuery().params).toEqual(['{"manifest_project_name":"renamed-despite-bad-icon"}']);
   });
 });

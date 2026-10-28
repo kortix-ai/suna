@@ -114,6 +114,7 @@ export function SandboxAddressBar({
   inputRef,
   resetOnEscape = true,
   trailing,
+  disabled,
 }: {
   /** The URL the bar shows at rest — the surface's current address. */
   displayValue: string;
@@ -142,6 +143,9 @@ export function SandboxAddressBar({
   /** Actions on the open page, rendered at the address's trailing edge —
    *  `AppPreview` puts `Copy link` here. */
   trailing?: ReactNode;
+  /** The address takes no input (the session's computer is booting). Pair it
+   *  with `hasPreview={false}`, which disables the buttons. */
+  disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [addressValue, setAddressValue] = useState(displayValue);
@@ -238,6 +242,7 @@ export function SandboxAddressBar({
                 ref={inputRef}
                 type="text"
                 size="xs"
+                disabled={disabled}
                 value={urlParts ? displayValue : addressValue}
                 aria-label={ariaLabel}
                 list={suggestions.length ? suggestionsId : undefined}

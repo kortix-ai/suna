@@ -4,6 +4,8 @@ import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
+import { resolveTokenPrincipal } from '../../connectors/db-deps-principal';
+import { bearerToken } from '../../shared/bearer-token';
 import { channelOfSessionMetadata, isUnattendedSessionMetadata, releaseChannelQuestion, unattendedQuestionSentinel } from '../../channels/question-release';
 import { releaseRuntimeQuestion } from '../session-lifecycle/release-runtime-question';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -207,6 +209,7 @@ export function registerTurnQuestionsRoutes(): void {
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
       const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
       let notify = false;
+      let pendingId: string | null = null;
       if (resolvedAccountId) {
         const recorded = await recordPendingQuestion({
           accountId: resolvedAccountId,
@@ -221,6 +224,7 @@ export function registerTurnQuestionsRoutes(): void {
           console.warn('[turn-question] could not persist pending question:', err);
           return null;
         });
+        pendingId = recorded?.id ?? null;
         // Notify once per request id: a daemon retry of the same request
         // updates the stored row (`inserted` false) and sends nothing. Only the
         // session's own sandbox notifies (KRTX-1742): a person's token may
@@ -247,12 +251,24 @@ export function registerTurnQuestionsRoutes(): void {
       // A relay that throws (a DB read before anything is posted) must not cost
       // the stored question its notification: the daemon never retries it.
       // Flag off, the push went out above and a throw fails the request.
+      const runtimeRequestId = body.request_id?.trim();
+      // Only the session's own sandbox posts into a session-addressed chat
+      // (Telegram): a person's token may store a question, but its text never
+      // reaches other people (as `notify`). Only a question the runtime names:
+      // the `q-<session>` fallback row is shared by later questions. The post
+      // stands in for the agent's own connector call, so the principal its
+      // token names decides it, as the connector gateway would.
+      const principal =
+        callerSandboxSessionId !== null && runtimeRequestId && pendingId
+          ? await resolveTokenPrincipal(bearerToken(c.req.header('Authorization')), sessionId).catch(() => null)
+          : null;
+      const chat = principal && pendingId ? { pendingId, principal } : null;
       const result = notificationCenter
-        ? await relayTurnQuestion(sessionId, questions).catch((err): { ok: false; error: string } => {
+        ? await relayTurnQuestion(sessionId, questions, chat).catch((err): { ok: false; error: string } => {
             logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
             return { ok: false, error: 'relay_failed' };
           })
-        : await relayTurnQuestion(sessionId, questions);
+        : await relayTurnQuestion(sessionId, questions, chat);
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,
@@ -291,7 +307,6 @@ export function registerTurnQuestionsRoutes(): void {
         );
       }
 
-      const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
         const released = await releaseChannelQuestion({
           sessionId,

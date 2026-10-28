@@ -102,7 +102,7 @@ function withFreshFirstPage(data: ProjectSessionPages | undefined, fresh: Projec
 export interface UseProjectSessionsOptions
   extends Pick<
     ListProjectSessionsOptions,
-    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'createdBy' | 'agent' | 'updatedAfter'
+    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId' | 'group' | 'createdBy' | 'agent' | 'updatedAfter'
   > {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
@@ -131,8 +131,8 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter } = options ?? {};
-  const filters = { parent, startedBy, q, labels, view, spaceId, createdBy, agent, updatedAfter };
+  const { parent, startedBy, q, labels, view, spaceId, group, createdBy, agent, updatedAfter } = options ?? {};
+  const filters = { parent, startedBy, q, labels, view, spaceId, group, createdBy, agent, updatedAfter };
   const queryKey = qk.project.sessionsPaged(projectId, scope, filters);
   const readPage = (cursor: string | null) =>
     listProjectSessionsPage(projectId, { scope, limit: options?.limit, cursor, ...filters });
@@ -177,7 +177,7 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
     };
     // The answer's timestamp re-arms the timer; the key's parts identify the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollMs, query.dataUpdatedAt, rearm, projectId, scope, parent, startedBy, q, view, spaceId, createdBy, agent, updatedAfter, options?.limit]);
+  }, [pollMs, query.dataUpdatedAt, rearm, projectId, scope, parent, startedBy, q, view, spaceId, group, createdBy, agent, updatedAfter, options?.limit]);
 
   // A failed fetch ends the scan: Load more (or a refetch) is the retry.
   const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;

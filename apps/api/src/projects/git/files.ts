@@ -10,6 +10,7 @@ import {
   resolveManifestImports,
   serializeManifestObject,
 } from '@kortix/manifest-schema';
+import { HTTPException } from 'hono/http-exception';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
 import { type MirrorRefresh, isGitOperationError, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
@@ -504,6 +505,13 @@ export async function readManifestFromRepo(
     // A ref that does not resolve is NOT "the manifest is absent". Returning
     // null here made an unreadable mirror indistinguishable from a blank
     // project, which callers answer with a synthesized permissive manifest.
+    if (/fatal: (?:not a valid|invalid) object name /i.test(listed.stderr)) {
+      const message = `Repository ref '${treeRef}' does not exist. Push a commit to '${treeRef}' or update the project's default branch before starting a session.`;
+      throw new HTTPException(409, {
+        message,
+        res: Response.json({ error: true, code: 'git_ref_not_found', message, status: 409 }, { status: 409 }),
+      });
+    }
     throw new Error(
       `git ls-tree ${treeRef} failed (exit ${listed.exitCode}): ${listed.stderr.trim() || 'no output'}`,
     );

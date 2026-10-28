@@ -165,9 +165,8 @@ export const sdkBoundaryConfig = {
           // about (@kortix/sdk and anything opencode-named) — NOT every
           // import named "OpenCode" from anywhere. An earlier unscoped
           // version (`ImportSpecifier[imported.name=/OpenCode/i]`) also
-          // fired on an unrelated brand-mark icon component imported from
-          // '@/features/icon/icons/open-code', forcing it to export under a
-          // confusing alias for no boundary-safety reason.
+          // fired on an unrelated brand-mark icon component and forced it to
+          // export under a confusing alias for no boundary-safety reason.
           selector:
             'ImportDeclaration[source.value=/(^@kortix\\/sdk(\\/|$))|opencode/i] > ImportSpecifier[imported.name=/OpenCode/i]',
           message: 'Import a runtime-neutral alias from @kortix/sdk.',

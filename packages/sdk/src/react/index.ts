@@ -275,6 +275,15 @@ export {
   useRemoveProjectSpaceLink,
   useUpdateProjectSpace,
 } from './use-project-spaces';
+// Session groups (`session_groups`): the project's shared folders of sessions.
+export {
+  useCreateProjectSessionGroup,
+  useDeleteProjectSessionGroup,
+  useProjectSessionGroups,
+  useRenameProjectSessionGroup,
+  useReorderProjectSessionGroups,
+  useSetProjectSessionGroup,
+} from './use-session-groups';
 export * from './use-sessions-needing-input';
 // The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
 export * from './use-review-summary';

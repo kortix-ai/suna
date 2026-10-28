@@ -60,6 +60,7 @@ export {
   isSpoofedWebGLGetParameterNoise,
 } from './browser-noise/rules/graphics';
 export {
+  isGoogletagUndefinedNoise,
   isOneTrustJsonParseNoise,
   isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,

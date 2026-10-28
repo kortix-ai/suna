@@ -122,6 +122,7 @@ export function ArtifactViewer({
   const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
+  const sidebar = useOptionalSidebar();
 
   if (query.isError) {
     return (
@@ -139,7 +140,6 @@ export function ArtifactViewer({
     );
   }
 
-  const sidebar = useOptionalSidebar();
   const VisIcon = artifact ? VISIBILITY_ICON[artifact.visibility] : null;
   const statusText = isDoc && canEdit && docStatus !== 'saved' ? t(`docStatus.${docStatus}`) : null;
   const folder = artifact ? (artifact.path.endsWith(`/${artifact.entry}`) ? artifact.path.slice(0, -artifact.entry.length - 1) : artifact.path) : '';
@@ -317,8 +317,10 @@ export function ArtifactViewer({
           <div className="flex shrink-0 items-center">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} onClick={() => router.push(`/projects/${projectId}/artifacts/${artifactId}`)}>
-                  <ArrowsOutSimpleIcon className="size-3.5" />
+                <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
+                  <Link href={`/projects/${projectId}/artifacts/${artifactId}`}>
+                    <ArrowsOutSimpleIcon className="size-3.5" />
+                  </Link>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('openFullPage')}</TooltipContent>

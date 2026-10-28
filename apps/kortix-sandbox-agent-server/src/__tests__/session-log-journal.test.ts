@@ -22,8 +22,6 @@ import type {
 } from '@kortix/api-contract/session-log'
 import { installShutdownHandlers } from '@/app/shutdown'
 import type { SessionLogChanges, SessionLogPort } from '@/harness/contract/session-log'
-import { __resetRelayedTurnSignatures, relayTurnEndToApi } from '@/harness/open-code/boot'
-import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   JOURNAL_MAX_BATCH_BYTES,
   JOURNAL_TRUNCATION_MARK,
@@ -47,7 +45,6 @@ let saved: Record<string, string | undefined> = {}
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 
 beforeEach(() => {
-  __resetRelayedTurnSignatures()
   resetSessionLogJournalForTests()
   resetDaemonShutdownStateForTests()
   resetSessionTokenHealthForTests()
@@ -58,7 +55,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  __resetRelayedTurnSignatures()
   resetSessionLogJournalForTests()
   resetDaemonShutdownStateForTests()
   resetSessionTokenHealthForTests()
@@ -190,9 +186,8 @@ const ack = (body: SessionLogJournalRequest) =>
   })
 
 /**
- * The fake API, also a fake OpenCode for the OpenCode turn-end path.
- * `journal` answers the n-th journal POST (1-based); the turn stream always
- * settles. `order` records journal posts and turn ends as they arrive.
+ * The fake API. `journal` answers the n-th journal POST (1-based); the turn
+ * stream always settles.
  */
 function fakeApi(
   journal: (body: SessionLogJournalRequest, n: number, request: Request) => Response | Promise<Response> = ack,
@@ -200,7 +195,6 @@ function fakeApi(
 ) {
   const received: Received[] = []
   const turnEnds: number[] = []
-  const order: string[] = []
   const server = Bun.serve({
     port,
     hostname: '127.0.0.1',
@@ -208,29 +202,18 @@ function fakeApi(
       const url = new URL(request.url)
       if (url.pathname.endsWith('/turn-stream')) {
         const body = (await request.json()) as { kind?: string }
-        if (body.kind === 'end') {
-          turnEnds.push(performance.now())
-          order.push('end')
-        }
+        if (body.kind === 'end') turnEnds.push(performance.now())
         return Response.json({ ok: true })
-      }
-      if (url.pathname === '/session/ses_root') return Response.json({ parentID: null })
-      if (url.pathname === '/session/ses_root/message') {
-        return Response.json([
-          { info: { id: 'msg_user', role: 'user' } },
-          { info: { role: 'assistant', parentID: 'msg_user', time: { completed: 1000 } } },
-        ])
       }
       const raw = new Uint8Array(await request.arrayBuffer())
       const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(raw))) as SessionLogJournalRequest
       received.push({ body, gzippedBytes: raw.byteLength, at: performance.now(), path: url.pathname, headers: request.headers })
-      order.push(`journal ${body.puts.map((p) => p.message.message_id).join(',')}`)
       return journal(body, received.length, request)
     },
   })
   servers.push(server)
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
-  return { received, turnEnds, order, port: server.port, url: `http://127.0.0.1:${server.port}` }
+  return { received, turnEnds, port: server.port }
 }
 
 const putIds = (r: Received[]) => r.flatMap((x) => x.body.puts.map((p) => p.message.message_id))
@@ -777,19 +760,6 @@ describe('session-log journal', () => {
     await until(() => journal.clean, 8_000)
     expect(putIds(api.received)).toEqual(['m1', 'm1'])
   }, 20_000)
-
-  test('OpenCode: relayTurnEndToApi flushes the journal before it posts the turn end', async () => {
-    const api = fakeApi()
-    const fake = fakeAdapter()
-    fake.put('m1', 1, 'the reply')
-    const journal = startSessionLogJournal(fake.port, { generation: 1 })
-    if (!journal) throw new Error('journal did not start')
-
-    await relayTurnEndToApi('ses_root', 'idle', { getInternalUrl: () => api.url }, { workspace: '/workspace' } as unknown as OpenCodeConfig)
-
-    expect(api.order).toEqual(['journal m1', 'end'])
-    expect(journal.clean).toBe(true)
-  })
 
   test('the daemon stop flushes the journal before the harness stops and the process exits', async () => {
     const order: string[] = []

@@ -117,6 +117,20 @@ flow(
         r.status([200, 403]);
       }
     });
+    await ctx.step('gateway logs: limit outside 1–100 and a bad offset → 400 naming the rule; limit 1 and 100 → 200 (KRTX-3389)', async () => {
+      const logs = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs', { params, query });
+      for (const limit of ['0', '101', '500', '-1', 'abc', '1.5']) {
+        (await logs({ limit })).status(400).body().has('$.error', 'limit must be an integer from 1 to 100');
+      }
+      for (const offset of ['-1', 'abc', '2.5', '99999999999999999999']) {
+        (await logs({ offset })).status(400).body().has('$.error', 'offset must be a non-negative integer');
+      }
+      for (const limit of ['1', '100']) {
+        const r = await logs({ limit, offset: '0' });
+        r.status(200).body().exists('$.logs');
+        if (r.json<{ logs: unknown[] }>().logs.length > Number(limit)) throw new Error(`limit=${limit} returned more rows`);
+      }
+    });
     await ctx.step('gateway spend rejects fractional days before SQL', async () => {
       for (const leaf of ['overview', 'series', 'sessions', 'breakdown']) {
         const r = await owner.get(`/v1/projects/:projectId/gateway/${leaf}`, {

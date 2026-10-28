@@ -1,19 +1,20 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors } from '../../openapi';
 import { config } from '../../config';
+import { emitIntegrationEvent } from '../../integrations/event-inbox';
+import { logger } from '../../lib/logger';
 import {
   emailOwnKeyForAccount,
-  emailWebhookSecretForInbox,
+  emailWebhookSecretForAccount,
   loadEmailInboxAccountForInbox,
   updateEmailAccountWebhook,
 } from '../install-store';
 import { ensureResendInboxWebhook, resolveEmailApiKey } from '../resend-email-api';
 import { emailWebhookApp } from './app';
-import { dispatchResendEmailEvent, emailChannelOnForProject, resolveProjectForEmailInbox } from './session';
+import { emailChannelOnForProject, emailMessageEvent, isEmailSenderAllowed, resolveProjectForEmailInbox } from './session';
 import { verifyEmailWebhookSignature } from './verify';
 import type { ResendInboxEmailReceivedEvent } from './types';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
-import { runWebhookWork } from '../webhook-work';
 
 export function registerEmailWebhookRoutes(): void {
   emailWebhookApp.openapi(
@@ -27,7 +28,7 @@ export function registerEmailWebhookRoutes(): void {
       },
       responses: {
         200: json(z.object({ ok: z.boolean(), ignored: z.boolean().optional() }), 'Accepted'),
-        ...errors(400, 401),
+        ...errors(400, 401, 500),
       },
     }),
     async (c: any) => {
@@ -50,8 +51,9 @@ export function registerEmailWebhookRoutes(): void {
       // A project with the email channel off (`email_channel`) is ignored too.
       const projectId = await resolveProjectForEmailInbox(event.data.inbox_id);
       if (!projectId || !(await emailChannelOnForProject(projectId))) return c.json({ ok: true, ignored: true });
-      const secret = await emailWebhookSecretForInbox(projectId, event.data.inbox_id);
-      if (!secret) return c.json({ ok: true, ignored: true });
+      const account = await loadEmailInboxAccountForInbox(projectId, event.data.inbox_id);
+      const secret = account ? await emailWebhookSecretForAccount(account) : null;
+      if (!account || !secret) return c.json({ ok: true, ignored: true });
 
       const signature = {
         rawBody,
@@ -74,12 +76,25 @@ export function registerEmailWebhookRoutes(): void {
         });
         return c.json({ error: 'Invalid signature' }, 401);
       }
-      bindIntegrationPrincipal('resend');
+      bindIntegrationPrincipal('resend', { projectId });
 
-      // A failure inside the ack window answers 500 so Resend retries; the
-      // dedup claims are released first (`webhook-work.ts`).
-      const outcome = await runWebhookWork('email-webhook', () => dispatchResendEmailEvent(event));
-      if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
+      const inbound = emailMessageEvent(projectId, event);
+      if (!inbound) return c.json({ ok: true, ignored: true });
+      // The inbox's sender policy gates the store: a rejected sender's mail is never kept.
+      const sender = String(inbound.data.from);
+      if (!isEmailSenderAllowed(sender, account.senderPolicy)) {
+        logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId: event.data.inbox_id, emailId: inbound.id, sender });
+        return c.json({ ok: true, ignored: true });
+      }
+      // Ack only after the store: a crash after the 200 loses nothing, and a
+      // Resend retry of a stored email is a no-op. A failed store answers 500,
+      // so Resend retries it.
+      try {
+        await emitIntegrationEvent(inbound);
+      } catch (error) {
+        logger.error('[email-webhook] email not stored', { inboxId: event.data.inbox_id, emailId: inbound.id, error: String(error) });
+        return c.json({ error: 'store failed' }, 500);
+      }
       return c.json({ ok: true });
     },
   );

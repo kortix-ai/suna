@@ -3,10 +3,11 @@
  * and what its output says. Primary-arg extraction, file verbs, search-query
  * humanizing, patch verbs, success/partial/failed outcomes, and parsers for
  * web search, scrape, skill, memory, read, question, presentation and worker
- * output. Pure data → data, no framework.
+ * output, and the `image_gen` card's state. Pure data → data, no framework.
  */
 export * from './agent-helpers';
 export * from './file-verb';
+export * from './image-gen-view';
 export * from './memory-helpers';
 export * from './patch-summary';
 export * from './presentation-helpers';

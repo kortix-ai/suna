@@ -169,7 +169,7 @@ describe('purging a project removes its connector rows', () => {
     });
     const res = await projectsApp.request(`/${PROJECT}`, { method: 'DELETE' });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
+    expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: false });
 
     const [row] = await db.select().from(projects).where(eq(projects.projectId, PROJECT)).limit(1);
     expect(row?.status).toBe('archived');

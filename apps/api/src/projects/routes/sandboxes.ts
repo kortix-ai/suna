@@ -34,6 +34,7 @@ import { templateProviderObservation } from '../lib/template-provider-observatio
 import { readJsonObject } from '../../shared/http-body';
 import { logger } from '../../lib/logger';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
@@ -277,6 +278,7 @@ export function registerSandboxesRoutes(): void {
         selected_provider: observation.selectedProvider,
       });
     } catch (err) {
+      rethrowDatabaseError(err);
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: `Failed to list sandbox templates: ${message}` }, 500);
     }
@@ -476,6 +478,7 @@ export function registerSandboxesRoutes(): void {
       if (err instanceof TemplateNotFoundError) {
         return c.json({ error: err.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
       }
+      rethrowDatabaseError(err);
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ error: message }, 502);
     }

@@ -92,6 +92,8 @@ export interface SessionListFilter {
   labels?: string[] | null;
   /** Only sessions filed into this space (`project_channels`). */
   spaceId?: string | null;
+  /** Only sessions filed into this group, or (`'none'`) in no group (`session_groups`). */
+  group?: string | 'none' | null;
   /** Only sessions this person started: `started_by=me`'s rule for another user id. */
   createdBy?: string | null;
   /** Only sessions that run this agent (its slug). */
@@ -188,6 +190,8 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
   if (filter.spaceId) conditions.push(eq(t.spaceId, filter.spaceId));
+  if (filter.group === 'none') conditions.push(isNull(t.groupId));
+  else if (filter.group) conditions.push(eq(t.groupId, filter.group));
   if (filter.createdBy) conditions.push(startedByPersonSql(filter.createdBy));
   if (filter.agent) conditions.push(eq(t.agentName, filter.agent));
   if (filter.updatedAfter) conditions.push(gte(t.updatedAt, filter.updatedAfter));
@@ -390,7 +394,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     // A cursor is a scan position inside ONE filtered list.
     filter:
       filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted || filter.spaceId ||
-      filter.createdBy || filter.agent || filter.updatedAfter
+      filter.group || filter.createdBy || filter.agent || filter.updatedAfter
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
@@ -399,6 +403,7 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
             ...(filter.view ? [{ view: filter.view }] : []),
             ...(filter.deleted ? [{ deleted: true }] : []),
             ...(filter.spaceId ? [{ space: filter.spaceId }] : []),
+            ...(filter.group ? [{ group: filter.group }] : []),
             ...(filter.createdBy ? [{ createdBy: filter.createdBy }] : []),
             ...(filter.agent ? [{ agent: filter.agent }] : []),
             ...(filter.updatedAfter ? [{ updatedAfter: filter.updatedAfter.toISOString() }] : []),
@@ -501,10 +506,10 @@ async function appendMissingAncestors(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  // A pinned, archived, deleted or space view promises only those rows.
+  // A pinned, archived, deleted, space or group view promises only those rows.
   const appendAncestors =
     !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted && !filter.spaceId &&
-    !filter.createdBy && !filter.agent && !filter.updatedAfter;
+    !filter.group && !filter.createdBy && !filter.agent && !filter.updatedAfter;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(

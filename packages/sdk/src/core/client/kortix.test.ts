@@ -434,6 +434,29 @@ test('project(id).channels covers slack and email', async () => {
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
 });
 
+test('project(id).channels.telegram binds the project id on every call', async () => {
+  const telegram = kortix.project('PID123').channels.telegram;
+  const base = 'http://test.local/projects/PID123/channels/telegram';
+  await telegram.installation();
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/installation` });
+  await telegram.connect({ bot_token: '123:abc' });
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/connect`, body: { bot_token: '123:abc' } });
+  await telegram.setAllowedUsers(['42']);
+  expect(last()).toMatchObject({ method: 'PUT', url: `${base}/allowed-users`, body: { user_ids: ['42'] } });
+  await telegram.users();
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/users` });
+  await telegram.allowUser('77');
+  expect(last()).toMatchObject({ method: 'POST', url: `${base}/allowed-users`, body: { user_id: '77' } });
+  await telegram.removeUser('42');
+  expect(last()).toMatchObject({ method: 'DELETE', url: `${base}/allowed-users/42` });
+  await telegram.dismissAccessRequest('77');
+  expect(last()).toMatchObject({ method: 'DELETE', url: `${base}/access-requests/77` });
+  await telegram.userPhoto('42', 'AQAD');
+  expect(last()).toMatchObject({ method: 'GET', url: `${base}/users/42/photo?v=AQAD` });
+  await telegram.disconnect();
+  expect(last()).toMatchObject({ method: 'DELETE', url: base });
+});
+
 test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
   const handle = kortix.project('PID123') as unknown as Record<string, unknown>;
   expect('apps' in handle).toBe(true);

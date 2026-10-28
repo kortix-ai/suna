@@ -1,3 +1,4 @@
+import { llmValueFields, llmValueBasis } from '../../shared/llm-value';
 import { and, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
@@ -50,6 +51,7 @@ export function registerGatewaySpendRoutes(): void {
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
       const [agg] = await db
         .select({
+          ...llmValueFields,
           requests: sql<number>`count(*)::int`,
           errors: sql<number>`count(*) filter (where not ok)::int`,
           totalCost: totalSpendSql,
@@ -68,6 +70,10 @@ export function registerGatewaySpendRoutes(): void {
 
       return c.json({
         window_days: days,
+        valuation: llmValueBasis,
+        estimated_usage_value: agg?.estimated_usage_value ?? null,
+        priced_requests: agg?.priced_requests ?? 0,
+        unpriced_requests: agg?.unpriced_requests ?? 0,
         requests: agg?.requests ?? 0,
         errors: agg?.errors ?? 0,
         total_cost: agg?.totalCost ?? 0,
@@ -108,6 +114,7 @@ export function registerGatewaySpendRoutes(): void {
       const rows = await db
         .select({
           day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
+          ...llmValueFields,
           requests: sql<number>`count(*)::int`,
           errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
           cost: totalSpendSql,
@@ -132,6 +139,9 @@ export function registerGatewaySpendRoutes(): void {
       const byDay = new Map(rows.map((r) => [r.day, r]));
       const series: {
         day: string;
+        estimated_usage_value: number | null;
+        priced_requests: number;
+        unpriced_requests: number;
         requests: number;
         errors: number;
         cost: number;
@@ -149,6 +159,9 @@ export function registerGatewaySpendRoutes(): void {
         const r = byDay.get(key);
         series.push({
           day: key,
+          estimated_usage_value: r?.estimated_usage_value ?? null,
+          priced_requests: r?.priced_requests ?? 0,
+          unpriced_requests: r?.unpriced_requests ?? 0,
           requests: r?.requests ?? 0,
           errors: r?.errors ?? 0,
           cost: r?.cost ?? 0,

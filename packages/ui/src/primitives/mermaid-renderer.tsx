@@ -354,7 +354,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           .mermaid-container :is(.edgePath path, .flowchart-link) {
             stroke: var(--muted-foreground) !important;
           }
-          .mermaid-container :is(.marker, .arrowheadPath) {
+          .mermaid-container :is(.marker, .arrowheadPath, .arrowMarkerPath) {
             fill: var(--muted-foreground) !important;
             stroke: var(--muted-foreground) !important;
           }

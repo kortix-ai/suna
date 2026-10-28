@@ -100,6 +100,15 @@ export const IAM_CACHE_BUST_CHANNEL = 'kortix_iam_cache_bust';
  */
 export const SPACE_ACCESS_BUST_CHANNEL = 'kortix_space_access_bust';
 
+/**
+ * A ninth channel: "drop this project's memoized session-list ETags".
+ * Payload: one project id. `forgetSessionListPollEtags`
+ * (`projects/lib/session-list-poll-memo.ts`) sends it after every session
+ * write, so a revalidation that lands on another replica than the write gets
+ * the new list, not a 304 from before it.
+ */
+export const SESSION_LIST_BUST_CHANNEL = 'kortix_session_list_bust';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
@@ -116,6 +125,7 @@ let promptsChangedHandler: ((sessionId: string) => void) | null = null;
 const sessionChangedHandlers = new Set<(sessionId: string) => void>();
 let iamCacheBustHandler: ((payload: string) => void) | null = null;
 let spaceAccessBustHandler: ((projectId: string) => void) | null = null;
+let sessionListBustHandler: ((projectId: string) => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const LISTEN_RETRY_MS = 60_000;
 
@@ -254,6 +264,26 @@ function deliverSpaceAccessBust(payload: string): void {
   }
 }
 
+/** `projects/lib/session-list-poll-memo.ts` registers once, at import. Kept across stop/start. */
+export function onSessionListBustNotify(handler: ((projectId: string) => void) | null): void {
+  sessionListBustHandler = handler;
+}
+
+/** Tell every replica (this one included) to drop a project's session-list memo. Without the LISTEN it is a no-op: the 2 s TTL is the backstop. */
+export function publishSessionListBust(projectId: string): void {
+  if (listener) void listener.notify(SESSION_LIST_BUST_CHANNEL, projectId).catch(() => {});
+}
+
+function deliverSessionListBust(payload: string): void {
+  // The payload is a project id and nothing else.
+  if (!isUuid(payload)) return;
+  try {
+    sessionListBustHandler?.(payload);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
 /** The forwarder registers once, at import. Kept across stop/start. */
 export function onTunnelForwardNotify(handler: (payload: string) => void): void {
   tunnelForwardHandler = handler;
@@ -341,6 +371,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       }
     });
     await sql.listen(SPACE_ACCESS_BUST_CHANNEL, deliverSpaceAccessBust);
+    await sql.listen(SESSION_LIST_BUST_CHANNEL, deliverSessionListBust);
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -349,7 +380,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}`,
     );
     return true;
   } catch (error) {

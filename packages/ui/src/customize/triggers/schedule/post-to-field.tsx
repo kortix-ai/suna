@@ -1,6 +1,7 @@
 'use client';
 
 import { useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
+import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { HashIcon, LockSimpleIcon } from '@phosphor-icons/react';
 
 import { useTranslations } from '../../../i18n';
@@ -8,7 +9,6 @@ import { AgentMark } from '../../../internal/components/agent-mark';
 import { Label } from '../../../primitives/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../primitives/select';
 import { useUiViewerId } from '../../../providers/ui-provider';
-import { agentLabel } from '../../../workspace/spaces/space-timeline';
 import type { PatchDraft } from './composer-parts';
 import { type ComposerDraft, postToChange } from './trigger-composer-logic';
 
@@ -109,4 +109,8 @@ export function PostToField({
       </p>
     </div>
   );
+}
+
+function agentLabel(name: string): string {
+  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
 }

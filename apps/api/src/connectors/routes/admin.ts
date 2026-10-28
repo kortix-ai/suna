@@ -38,6 +38,7 @@ import {
   ProjectSlugParam,
   featureNotSupportedResponse,
 } from './shared';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 /**
  * Structured 400 for an EXPECTED source-address validation rejection from
@@ -391,6 +392,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       try {
         result = await deps.setConnectorCredential(projectId, slug, parsed.data);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
       }
       // An MCP connector re-syncs on a credential write: return that run, so
@@ -439,6 +441,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       try {
         result = await deps.setConnectorCredential(projectId, slug, { oauth2: parsed.data });
       } catch (error) {
+        rethrowDatabaseError(error);
         const detail = (error as Error).message || 'the token request failed';
         // 503, not 502: the edge never sends a 502 (Cloudflare replaces its body; http-middleware.ts).
         return c.json({ error: 'oauth2_token_failed', code: 'oauth2_token_failed', detail }, 503);

@@ -1,3 +1,5 @@
+import { DrizzleQueryError } from 'drizzle-orm/errors';
+
 export interface DatabaseErrorDetails {
   isDatabaseError: true;
   outerName: string;
@@ -97,6 +99,41 @@ export function inspectDatabaseError(error: unknown): DatabaseErrorDetails | nul
     detail: stringField(databaseNode.detail),
     hint: stringField(databaseNode.hint),
   };
+}
+
+/**
+ * Throws `error` again when it, or an error in its cause chain, came from the
+ * database driver. A route catch-all calls it before echoing the caught
+ * message: `DrizzleQueryError.message` is the whole statement and its bound
+ * parameters. The global handler answers a 500 and keeps the query in the log
+ * (KRTX-3422). Matches the driver classes, not a SQLSTATE-shaped `code`, so a
+ * socket `EPIPE` keeps its route's answer.
+ */
+export function rethrowDatabaseError(error: unknown): void {
+  if (isDatabaseError(error)) throw error;
+}
+
+/** True when `error`, or an error in its cause chain, came from the database driver. */
+export function isDatabaseError(error: unknown): boolean {
+  return errorChain(error).some(
+    (node) => node instanceof DrizzleQueryError || stringField(node.name) === 'PostgresError',
+  );
+}
+
+/**
+ * A database error without its statement: `Database error (SQLSTATE 22P02):
+ * <driver message>`. Null for any other error. For a route that must tell an
+ * operator what failed (`adminErrorMessage`) instead of a generic 500.
+ */
+export function databaseErrorSummary(error: unknown): string | null {
+  if (!isDatabaseError(error)) return null;
+  const chain = errorChain(error);
+  const sqlstate = chain.map((node) => stringField(node.code)).find((code) => code !== null);
+  const driverMessage = chain
+    .map((node) => stringField(node.message))
+    .reverse()
+    .find((message) => message !== null && !message.startsWith('Failed query'));
+  return `Database error${sqlstate ? ` (SQLSTATE ${sqlstate})` : ''}: ${driverMessage?.split('\n')[0] ?? 'the query failed'}`;
 }
 
 export function isTransientDatabaseError(error: unknown): boolean {

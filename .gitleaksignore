@@ -116,3 +116,25 @@ d9db615d7f26fc4a1aef21b8f0085e3ad37f0258:.gitleaksignore:generic-api-key:62
 # 127.0.0.1:9000 and that dies with the runner. Not a credential. Reviewed 2026-10-16.
 b851ab47e635d269406de6ffae401c0ce651ce2c:.github/workflows/capture-build.yml:generic-api-key:305
 b851ab47e635d269406de6ffae401c0ce651ce2c:apps/capture/scripts/ci_update_test.py:generic-api-key:287
+
+# v0.14.9 release PR (2026-10-27). All 12 are removed from the tree in the commit
+# that adds these lines; the fingerprints cover the commits that added them.
+# - secret-check.test.ts (59e801ce13, #10893) and unit-email-channel.test.ts
+#   (c16b74338b, #10866): synthetic secret-shaped fixtures for the secret detector
+#   and a webhook signature test; none is a live credential. The tests now build
+#   them at runtime.
+# - one-click-mcp.json / mcp-tools.json (c16b74338b, #10866): two MCP connect
+#   URLs from the public integrations.sh registry with a third-party provider key
+#   in the query, published by that provider. Not a Kortix credential. The catalog
+#   drops them and the probe skips credentialed URLs.
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:aws-access-token:8
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:aws-access-token:9
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:generic-api-key:12
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:generic-api-key:14
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:github-pat:10
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:jwt:16
+59e801ce133529d90f6e607055f7d060244274c6:apps/api/src/memory/secret-check.test.ts:stripe-access-token:7
+c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/__tests__/unit-email-channel.test.ts:generic-api-key:231
+c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/mcp-tools.json:generic-api-key:1
+c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:17
+c16b74338b9c53744201aac00694984253a52f0e:apps/api/src/connectors/one-click-mcp.json:generic-api-key:403

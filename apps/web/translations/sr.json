@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Kanali",
           "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
+        },
+        "session_groups": {
+          "name": "Групе сесија",
+          "description": "Груписање сесија у бочној траци у именоване фасцикле које дели цео пројекат, на пример једну по продавници или клијенту. Премести сесију у групу из њеног менија или превлачењем; преуреди и скупи групе."
         }
       },
       "channelsSwitch": {
@@ -1314,9 +1318,9 @@
       "oneOffDescription": "Уместо тога опишите једну измену. Сесија је извршава, проверава и отвара захтев за измену.",
       "oneOffPlaceholder": "нпр. Преименујте агента release-bot у deploy-bot на свим местима",
       "runUpgrade": "Покрени надоградњу",
-      "manifestV2": {
-        "title": "Пребаци манифест на v2 (kortix.yaml)",
-        "description": "Претвара v1 kortix.toml у kortix.yaml усмерен на управљање, ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
+      "manifestV3": {
+        "title": "Надогради манифест на v3 (kortix.yaml)",
+        "description": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
       },
       "agentEditorHint": "Овај пројекат користи манифест верзије 1. Надоградите га на <code>kortix.yaml</code> верзије 3 да бисте овде уређивали упутства, модел, дозволе алата и приступ овог агента."
     },
@@ -1651,8 +1655,8 @@
       "localComputer": "Ваш рачунар"
     },
     "manifestUpgrade": {
-      "title": "Надогради на v2",
-      "description": "Овај пројекат и даље користи <toml>kortix.toml</toml>. Агент га претвара у <yaml>kortix.yaml</yaml>, освежава управљане вештине и отвара захтев за измену. Ништа се не мења док га не одобрите.",
+      "title": "Надогради на v3",
+      "description": "Овај пројекат користи старији манифест. Агент га преводи у <yaml>kortix.yaml</yaml> верзије 3, освежава управљане вештине и отвара захтев за измену. Ништа се не мења док га не одобрите.",
       "start": "Покрени надоградњу"
     },
     "filter": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {# сесију није могуће променити} few {# сесије није могуће променити} other {# сесија није могуће променити}}",
       "showArchived": "Архивиране сесије",
       "pinnedMark": "Закачена"
+    },
+    "sessionGroups": {
+      "newGroup": "Нова група",
+      "newGroupFromMenu": "Нова група…",
+      "createTitle": "Нова група",
+      "createDescription": "Сви у овом пројекту виде групу. Премести сесију у групу из њеног менија или је превуци на групу.",
+      "namePlaceholder": "Назив групе",
+      "create": "Направи групу",
+      "created": "Група је направљена",
+      "createFailed": "Групу није могуће направити",
+      "rename": "Преименуј групу",
+      "save": "Сачувај",
+      "renamed": "Група је преименована",
+      "renameFailed": "Групу није могуће преименовати",
+      "nameTaken": "Друга група у овом пројекту већ има тај назив.",
+      "limit": "Пројекат може имати највише 50 група.",
+      "cancel": "Откажи",
+      "delete": "Обриши групу",
+      "deleteTitle": "Обрисати ову групу?",
+      "deleteDescription": "{name} се брише за све у овом пројекту. Њене сесије остају, без групе. Ово се не може опозвати.",
+      "deleted": "Група је обрисана",
+      "deleteFailed": "Групу није могуће обрисати",
+      "moveUp": "Помери нагоре",
+      "moveDown": "Помери надоле",
+      "reorderFailed": "Групе није могуће преуредити",
+      "moveTo": "Премести у групу",
+      "removeFromGroup": "Уклони из групе",
+      "moved": "Сесија је премештена",
+      "noGroup": "Без групе",
+      "moveFailed": "Сесију није могуће преместити",
+      "empty": "Сесије које овде преместиш појавиће се овде.",
+      "groupOptions": "Опције групе"
     },
     "recentlyDeleted": {
       "view": "Недавно обрисане",
@@ -2767,6 +2803,7 @@
     "signInWithEmail": "Пријавите се путем е-поште",
     "createNewAccount": "Направи нови налог",
     "byContinuingYouAgreeSimple": "Ако наставите, слажете се са нашим",
+    "customerLogoNotice": "Kortix може да прикаже назив и лого ваше организације као клијента, на било ком плану. Можете се одјавити у сваком тренутку на legal@kortix.com.",
     "phoneVerification": {
       "title": "Потврдите свој број телефона",
       "titleOtp": "Enter Верификациони код",
@@ -10540,7 +10577,7 @@
       "text0f096c40454e": "Профилише скуп података, црта дистрибуције, проверава цурење података и неравнотежу и пише први искрени пасус о томе шта се налази у подацима. Почињете са припремљеном сликом, а не од празне ћелије.",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 аутоматски",
-      "text0f4827ef74ea": "Отворене позиције у Kortix-у — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Београд, Србија и Сан Франциско. Запошљавамо за дугорочно власништво.",
+      "text0f4827ef74ea": "Отворене позиције у Kortix-у — FDE, GTM и MTS. Београд, Србија и Сан Франциско. Запошљавамо за дугорочно власништво.",
       "text0f600458e375": "SSO, чланови, групе и приступ заснован на улогама су уграђени, уз дозволе по ресурсу за људе и агенте, шифроване тајне и потпун ревизорски траг. Хостујте сами тако да цела платформа ради у вашем окружењу.",
       "text0f64c7d16c28": "# проверите да ли се компајлира, затражите недостајуће тајне,",
       "text0f656790976e": "Отворите било коју агентску платформу — архитектонски су исте. Маргиналне разлике нису одбрањиве. Једино што се разликује јесте петља учења.",
@@ -16766,7 +16803,7 @@
       "textc3bf78fdd3b9": "Слање пријаве није успело",
       "textc3c25857485f": "Ради",
       "textc3c709a999c1": "Читање меморије…",
-      "textc3d1545dd522": "Конвертује v1 kortix.toml у governance-first kortix.yaml, освежава вештине којима управља платформа на најновију основу marketplace-а и отвара захтев за измену на преглед.",
+      "text7823a1f3af93": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа.",
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
@@ -17501,7 +17538,7 @@
       "textd83a0d814c59": "API Status приказује зелено „Enabled“, параметар „SCIM Username“ је мапиран на Email, а provisioning је омогућен без задржавања због одобрења администратора.",
       "textd84b8be91e7b": "Kortix — Презентације",
       "textd84ee1e1e08b": "покушајте kortix init или / за команде",
-      "textd85a383e851d": "Мигрирај манифест на v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Надогради манифест на v3 (kortix.yaml)",
       "text848f54e89660": "Покретања",
       "textb098a09c78aa": "Тестирај са payload-ом",
       "text99733344956d": "Payload",
@@ -20428,7 +20465,9 @@
       "text7c0a91e5b3d2": "Некласификовани алати",
       "text9d2b6f0c41ae": "Алати и правила",
       "openThreadAction": "Отвори тему",
-      "untitledThread": "Тема без наслова"
+      "untitledThread": "Тема без наслова",
+      "text314ae71b8c8d": "Артефакти",
+      "textfe204b549282": "артефакти документи документ слајдови презентација табла дизајн контролна табла страница објављено дели"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20767,7 +20806,14 @@
     "sessionModel": "Модел {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Без ограничења · потрошња је неограничена",
-    "tokensSub": "{in} улаз · {out} излаз"
+    "tokensSub": "{in} улаз · {out} излаз",
+    "unknownValue": "Nepoznato",
+    "estimateCoverageUnavailable": "Pokrivenost procene nije dostupna.",
+    "estimatesSeparate": "Stvarna potrošnja iznad je odvojena. Procene se nikada ne dodaju troškovima.",
+    "estimatedUsageValueLabel": "Procenjena vrednost LLM upotrebe (nije račun):",
+    "pricedRequests": "{count} zahteva sa cenom",
+    "unpricedRequests": "{count} zahteva bez cene",
+    "llmEstimateLabel": "LLM procena:"
   },
   "triggerComposer": {
     "every": "Сваких",
@@ -21161,6 +21207,18 @@
     "emailHeroLede": "Poveži svoj Resend nalog i izaberi adresu na svom domenu. Ljudi pišu na nju, a agent čita prepisku i odgovara u njoj.",
     "telegramHeroTitle": "Dovedi agenta na Telegram",
     "telegramHeroLede": "Poveži bota koga napraviš preko BotFather-a. Ljudi pišu botu, a agent odgovara u četu.",
+    "telegramUsersDescription": "Samo ovi ljudi mogu da pričaju sa botom. Kad mu neko drugi piše privatno, pojaviće se ovde.",
+    "telegramRequestsTitle": "Traži pristup",
+    "telegramAllowedTitle": "Dozvoljeni",
+    "telegramUsersEmptyTitle": "Ljudi kojima dozvoliš pojaviće se ovde",
+    "telegramUsersEmptyDescription": "Zamoli nekoga da piše botu, pa dozvoli njegov zahtev ili dodaj njegov korisnički ID.",
+    "telegramUsersLoadError": "Nije moguće učitati Telegram korisnike.",
+    "telegramAddByIdLabel": "Dodaj po korisničkom ID-u",
+    "telegramAddByIdHint": "Bot svakome koga ne poznaje odgovara njegovim korisničkim ID-em.",
+    "telegramAddByIdInvalid": "Telegram korisnički ID je broj, na primer 123456789.",
+    "telegramAllowAria": "Dozvoli: {name}",
+    "telegramRemoveTitle": "Ukloniti {name}?",
+    "telegramRemoveDescription": "{name} više ne može da priča sa botom. Da ga ponovo dozvoliš, dodaj njegov korisnički ID ili dozvoli njegov sledeći zahtev.",
     "otherWaysToConnect": "Drugi načini povezivanja",
     "computerHeroTitle": "Dovedi agenta na svoj računar",
     "computerConnectedTitle": "{count, plural, one {Tvoj računar je povezan} few {# računara su povezana} other {# računara je povezano}}",
@@ -21546,7 +21604,11 @@
     "inviteSent": "Pozivnica je poslata na {email}",
     "reschedule": "Treba vam drugi termin? Koristite link iz pozivnice.",
     "addToCalendar": "Dodaj u kalendar",
-    "done": "Gotovo"
+    "done": "Gotovo",
+    "errorName": "Unesite svoje ime.",
+    "errorEmail": "Unesite ispravnu poslovnu e-adresu kako bismo mogli da vas kontaktiramo.",
+    "errorCompany": "Unesite naziv svoje kompanije.",
+    "errorSize": "Izaberite veličinu kompanije."
   },
   "drives": {
     "title": "Диск",
@@ -23309,6 +23371,37 @@
       "agentsFailedPeopleAdded": "У #{name} је додато: {what}. Агенти нису додати и остају изабрани.",
       "allAdded": "Сви из пројекта су већ овде.",
       "noMatches": "Ништа не одговара „{query}“."
+    },
+    "privateNotIn": {
+      "row": "Приватни канали у којима ниси",
+      "title": "Приватни канали у којима ниси",
+      "description": "Можеш да преименујеш, архивираш и додаш људе. Само чланови читају садржај канала, па не можеш да додаш себе.",
+      "meta": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}} · аутор: {name}",
+      "metaNoCreator": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}}",
+      "archived": "Архивиран",
+      "menu": "Опције за #{name}",
+      "addPeople": "Додај људе",
+      "rename": "Преименуј",
+      "archive": "Архивирај",
+      "unarchive": "Врати из архиве",
+      "archivedToast": "#{name} је архивиран",
+      "unarchivedToast": "#{name} је враћен из архиве",
+      "failed": "Ажурирање канала #{name} није успело. Покушај поново."
     }
+  },
+  "imageGen": {
+    "generating": "Generisanje slike",
+    "editing": "Uređivanje slike",
+    "generatingCount": "Generisanje {count, plural, one {# slike} few {# slike} other {# slika}}",
+    "editingCount": "Uređivanje {count, plural, one {# slike} few {# slike} other {# slika}}",
+    "openFullScreen": "Otvori preko celog ekrana",
+    "openFullScreenPrompt": "Otvori preko celog ekrana: {prompt}",
+    "loading": "Učitavanje slike",
+    "stopped": "Zaustavljeno",
+    "failed": "Slika nije generisana.",
+    "retry": "Pokušajte ponovo {when}.",
+    "unavailable": "Slika nije dostupna",
+    "tryAgain": "Pokušajte ponovo",
+    "details": "Detalji slike"
   }
 }

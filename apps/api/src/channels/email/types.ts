@@ -1,6 +1,8 @@
 /**
- * Resend's `inbox.email.received` webhook. It names the inbox, thread and
- * email but carries no body: `session.ts` reads it with Retrieve Thread Email.
+ * Resend's `inbox.email.received` webhook
+ * (https://resend.com/docs/webhooks/inboxes/email-received). It names the
+ * inbox, thread and email; the email's headers are under `email`, never at the
+ * `data` level. It carries no body: `session.ts` reads it with Retrieve Thread Email.
  */
 export interface ResendInboxEmailReceivedEvent {
   type: string;
@@ -9,11 +11,15 @@ export interface ResendInboxEmailReceivedEvent {
     inbox_id: string;
     thread_id: string;
     email_id: string;
-    from?: string;
-    to?: string[];
-    cc?: string[];
-    subject?: string | null;
-    created_at?: string;
+    email?: {
+      id?: string;
+      /** `address` or `Name <address>`. */
+      from?: string;
+      to?: string[];
+      cc?: string[];
+      subject?: string | null;
+      received_at?: string;
+    };
   };
 }
 

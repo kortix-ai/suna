@@ -82,6 +82,8 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
     ]);
 
     expect(res.status).toBe(200);
+    // KRTX-3369: the Anthropic envelope keeps the chat answer's model names.
+    expect(res.headers.get('x-kortix-model')).toBe('anthropic/claude-sonnet-4-6');
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({
       type: 'message',
@@ -212,6 +214,7 @@ describe('gateway.responses (OpenAI Responses API ingress)', () => {
     ]);
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('x-kortix-requested-model')).toBe('codex/gpt-6-sol');
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({
       object: 'response',

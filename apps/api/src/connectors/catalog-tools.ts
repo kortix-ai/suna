@@ -15,7 +15,7 @@ import { createConnectorEgressFetch } from './egress';
 import mcpTools from './mcp-tools.json';
 import { parseSpecDocument } from './spec-doc';
 
-export interface CatalogTool {
+interface CatalogTool {
   name: string;
   description: string;
 }

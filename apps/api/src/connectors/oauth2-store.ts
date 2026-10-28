@@ -18,6 +18,7 @@ import { decryptNamedProjectSecret, decryptProjectSecret, encryptProjectSecret }
 import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
+import { isUuid } from '../shared/validate';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
@@ -629,6 +630,8 @@ export async function pollDeviceAuthorizationSession(input: {
   sessionId: string;
   initiatedBy: string;
 }) {
+  // A malformed id is an unknown session; at the uuid column it would be a 22P02.
+  if (!isUuid(input.sessionId)) throw new Error('OAuth2 device session not found');
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${input.sessionId}::text, 0))`,

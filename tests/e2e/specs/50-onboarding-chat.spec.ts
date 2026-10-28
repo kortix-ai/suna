@@ -5,7 +5,7 @@ import { type Env, loadEnv } from '../../src/core/env';
 import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
 import { queryDatabaseRows, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
-import { fundAccount } from '../helpers/manifest-project';
+import { fundAccount, isDeployedTarget } from '../helpers/manifest-project';
 import {
   type AuthSession,
   createAuthUser,
@@ -30,6 +30,8 @@ const promoTitle = (page: Parameters<typeof installBrowserSessionDirect>[0]) =>
 
 interface Provisioned {
   projectId: string;
+  /** A managed-git project from `POST /projects/provision`, deleted through the API. */
+  provisioned?: boolean;
   accountId: string;
   session: AuthSession;
   userId: string;
@@ -37,7 +39,12 @@ interface Provisioned {
   env: Env;
 }
 
-async function freshUserWithProject(): Promise<Provisioned> {
+/**
+ * `realProject`: on a deployed target, fund the account and provision a real
+ * managed-git project, as a new user's sign-up does. A database project has no
+ * repository, so its first session cannot start and the kickoff never stamps.
+ */
+async function freshUserWithProject(options: { realProject?: boolean } = {}): Promise<Provisioned> {
   // Two workers reach this line in the same millisecond more often than one
   // would guess, and auth.users enforces the email uniqueness; the UUID suffix
   // keeps the four parallel provisions collision-free.
@@ -56,6 +63,17 @@ async function freshUserWithProject(): Promise<Provisioned> {
     // other journeys land on the usual home; null it here so this fresh
     // project opens on the onboarding chat.
     const env = loadEnv();
+    if (options.realProject && isDeployedTarget()) {
+      await fundAccount(env.databaseUrl!, account.account_id);
+      const real = await api<{ project_id: string }>(
+        session.access_token,
+        'POST',
+        '/projects/provision',
+        { account_id: account.account_id, name: `Onboarding chat ${randomUUID().slice(0, 8)}`, seed_starter: true },
+        201,
+      );
+      return { projectId: real.project_id, provisioned: true, accountId: account.account_id, session, userId: user.id, email, env };
+    }
     const project = await createDatabaseProject(env, {
       accountId: account.account_id,
       userId: user.id,
@@ -72,7 +90,11 @@ async function freshUserWithProject(): Promise<Provisioned> {
 async function cleanup(user: Provisioned) {
   const { env, projectId, userId, email } = user;
   const databaseUrl = env.databaseUrl ?? undefined;
-  await deleteDatabaseProject(env, projectId).catch(() => undefined);
+  if (user.provisioned) {
+    await api(user.session.access_token, 'DELETE', `/projects/${projectId}`, undefined, [200, 204, 404]).catch(() => undefined);
+  } else {
+    await deleteDatabaseProject(env, projectId).catch(() => undefined);
+  }
   const rows = await queryDatabaseRows<{ account_id: string }>(
     'select distinct account_id::text from kortix.account_members where user_id = $1::uuid',
     [userId],
@@ -124,9 +146,10 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
         showMobileAppPromo: true,
       });
       await expect(composerEditor(page)).toHaveText('Onboard me', { timeout: 60_000 });
-      // The landing is the first chat: its welcome, its starters, its sidebar row.
+      // The landing is the first chat: its welcome, what Kortix can do, its sidebar row.
+      // (#10878 replaced the starter tiles with the "What you can do" list.)
       await expect(page.getByRole('heading', { level: 1, name: /I'm Kortix\./ })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Recommend tools' })).toBeVisible();
+      await expect(page.getByText('What you can do with Kortix')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Your first chat with Kortix' })).toBeVisible();
       expect(new URL(page.url()).searchParams.get('chat')).toBe('first');
       await expect(page.getByText('No model connected')).toBeVisible({ timeout: 30_000 });
@@ -149,7 +172,7 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
   }) => {
     test.skip(!process.env.E2E_SUPABASE_URL, 'E2E_SUPABASE_URL is required');
     test.setTimeout(300_000);
-    const user = await freshUserWithProject();
+    const user = await freshUserWithProject({ realProject: true });
     try {
       // Credits buy Kortix models; Free cannot run them (#10297).
       await fundAccount(user.env.databaseUrl!, user.accountId);

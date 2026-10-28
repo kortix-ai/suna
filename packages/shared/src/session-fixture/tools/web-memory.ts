@@ -585,7 +585,7 @@ export const WEB_MEMORY_TOOL_GROUP: FixtureToolGroup = {
       output: MEMORY_SEARCH_OUTPUT,
       error: 'Error: memory index is not ready. Retry in a few seconds.',
       durationMs: 380,
-      note: 'JSON shape: 3 hits across `ltm` and `obs`, with confidence and file chips. Title "Memory Search". Web parses with `lib/utils/memory-search-output.ts`; mobile with its port `lib/session/tools/projects-memory-search-output.ts`.',
+      note: 'JSON shape: 3 hits across `ltm` and `obs`, with confidence and file chips. Title "Memory Search". Web parses with `parseMemorySearchOutput` (`@kortix/shared/tool-output`); mobile with its port `lib/session/tools/projects-memory-search-output.ts`.',
     },
     {
       renderer: 'memory-search-tool.tsx',

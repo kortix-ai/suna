@@ -113,6 +113,37 @@ describe('OAuth authorization request persistence + consent', () => {
     log.updates.length = 0;
   });
 
+  test('null stored scopes and state normalize in both consent routes', async () => {
+    const app = createApp();
+    await app.request(authRequestUrl());
+    const row = pendingRequests[0];
+    expect(row).toBeDefined();
+    Object.assign(row, { scopes: null, state: null });
+    const metadata = await app.request('/oauth/authorize/consent/synthetic-request', { headers: authed });
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({ scopes: [], scope: '' });
+    const denied = await app.request('/oauth/authorize/consent', {
+      method: 'POST', headers: authed,
+      body: JSON.stringify({ request_id: 'synthetic-request', approved: false }),
+    });
+    expect(denied.status).toBe(200);
+    const redirect = new URL((await denied.json()).redirect_uri);
+    expect(redirect.searchParams.get('state')).toBeNull();
+    expect(redirect.searchParams.get('error')).toBe('access_denied');
+  });
+
+  test('both consent routes reject expired requests', async () => {
+    const app = createApp();
+    await app.request(authRequestUrl());
+    Object.assign(pendingRequests[0], { expiresAt: new Date(0) });
+    expect((await app.request('/oauth/authorize/consent/synthetic-request', { headers: authed })).status).toBe(400);
+    expect((await app.request('/oauth/authorize/consent', {
+      method: 'POST', headers: authed,
+      body: JSON.stringify({ request_id: 'synthetic-request', approved: true }),
+    })).status).toBe(400);
+    expect(log.inserts.some((entry) => entry.table === oauthAuthorizationCodes)).toBe(false);
+  });
+
   test('the pending request is persisted (hashed id) and the consent UI gets only an opaque request id', async () => {
     const app = createApp();
     const start = await app.request(authRequestUrl());

@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Canais",
           "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
+        },
+        "session_groups": {
+          "name": "Grupos de sessões",
+          "description": "Agrupe as sessões da barra lateral em pastas com nome compartilhadas por todo o projeto, por exemplo uma por loja ou cliente. Mova uma sessão para um grupo pelo menu dela ou arrastando; reordene e recolha os grupos."
         }
       },
       "channelsSwitch": {
@@ -1314,9 +1318,9 @@
       "oneOffDescription": "Descreva uma única alteração. Uma sessão a realiza, valida e abre uma solicitação de alteração.",
       "oneOffPlaceholder": "ex. Renomeie o agente release-bot para deploy-bot em todas as referências",
       "runUpgrade": "Executar atualização",
-      "manifestV2": {
-        "title": "Migrar o manifesto para v2 (kortix.yaml)",
-        "description": "Converte o kortix.toml v1 no kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
+      "manifestV3": {
+        "title": "Atualizar o manifesto para v3 (kortix.yaml)",
+        "description": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão."
       },
       "agentEditorHint": "Este projeto usa um manifesto da versão 1. Atualize-o para <code>kortix.yaml</code> versão 3 para editar aqui as instruções, o modelo, as permissões de ferramentas e o acesso deste agente."
     },
@@ -1651,8 +1655,8 @@
       "localComputer": "Seu computador"
     },
     "manifestUpgrade": {
-      "title": "Atualizar para v2",
-      "description": "Este projeto ainda usa <toml>kortix.toml</toml>. Um agente converte-o em <yaml>kortix.yaml</yaml>, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
+      "title": "Atualizar para v3",
+      "description": "Este projeto usa um manifesto anterior. Um agente leva-o para <yaml>kortix.yaml</yaml> versão 3, atualiza as competências geridas e abre um pedido de alteração. Nada muda até à sua aprovação.",
       "start": "Iniciar atualização"
     },
     "filter": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {Não foi possível alterar # sessão} other {Não foi possível alterar # sessões}}",
       "showArchived": "Sessões arquivadas",
       "pinnedMark": "Fixada"
+    },
+    "sessionGroups": {
+      "newGroup": "Novo grupo",
+      "newGroupFromMenu": "Novo grupo…",
+      "createTitle": "Novo grupo",
+      "createDescription": "Todos neste projeto veem o grupo. Mova uma sessão para o grupo pelo menu dela ou arraste-a até ele.",
+      "namePlaceholder": "Nome do grupo",
+      "create": "Criar grupo",
+      "created": "Grupo criado",
+      "createFailed": "Não foi possível criar o grupo",
+      "rename": "Renomear grupo",
+      "save": "Salvar",
+      "renamed": "Grupo renomeado",
+      "renameFailed": "Não foi possível renomear o grupo",
+      "nameTaken": "Outro grupo deste projeto já tem esse nome.",
+      "limit": "Um projeto tem no máximo 50 grupos.",
+      "cancel": "Cancelar",
+      "delete": "Excluir grupo",
+      "deleteTitle": "Excluir este grupo?",
+      "deleteDescription": "{name} será excluído para todos neste projeto. As sessões dele continuam, sem grupo. Esta ação não pode ser desfeita.",
+      "deleted": "Grupo excluído",
+      "deleteFailed": "Não foi possível excluir o grupo",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "reorderFailed": "Não foi possível reordenar os grupos",
+      "moveTo": "Mover para um grupo",
+      "removeFromGroup": "Remover do grupo",
+      "moved": "Sessão movida",
+      "noGroup": "Sem grupo",
+      "moveFailed": "Não foi possível mover a sessão",
+      "empty": "As sessões que você mover para cá aparecerão aqui.",
+      "groupOptions": "Opções do grupo"
     },
     "recentlyDeleted": {
       "view": "Excluídas recentemente",
@@ -2767,6 +2803,7 @@
     "signInWithEmail": "Entrar com email",
     "createNewAccount": "Criar nova conta",
     "byContinuingYouAgreeSimple": "Ao continuar, concordas com a nossa",
+    "customerLogoNotice": "A Kortix pode mostrar o nome e o logótipo da tua organização como cliente, em qualquer plano. Podes recusar a qualquer momento através de legal@kortix.com.",
     "phoneVerification": {
       "title": "Verifica o teu número de telefone",
       "titleOtp": "Insere o código de verificação",
@@ -10540,7 +10577,7 @@
       "text0f096c40454e": "Perfila o dataset, plota as distribuições, verifica vazamento e desequilíbrio e escreve o primeiro parágrafo honesto sobre os dados. Você começa com contexto, não com uma célula vazia.",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 automático",
-      "text0f4827ef74ea": "Vagas abertas na Kortix — Marketing / Conteúdo, Vendas, FDE / Serviços, Product / Eng, Product / R&D. Belgrado, Sérvia e São Francisco. Contratamos para responsabilidade prolongada.",
+      "text0f4827ef74ea": "Vagas abertas na Kortix — FDE, GTM e MTS. Belgrado, Sérvia e São Francisco. Contratamos para responsabilidade prolongada.",
       "text0f600458e375": "SSO, membros, grupos e acesso baseado em funções já vêm integrados, com permissões por recurso para pessoas e agentes, segredos criptografados e uma trilha de auditoria completa. Hospede por conta própria para executar toda a plataforma dentro do seu ambiente.",
       "text0f64c7d16c28": "# verifique se compila, peça os secrets ausentes,",
       "text0f656790976e": "Abra qualquer plataforma de agentes — todas são arquitetonicamente idênticas. As diferenças marginais não são defensáveis. A única coisa que diverge é o loop de aprendizado.",
@@ -16766,7 +16803,7 @@
       "textc3bf78fdd3b9": "Não foi possível enviar sua inscrição",
       "textc3c25857485f": "Faz",
       "textc3c709a999c1": "Lendo a memória…",
-      "textc3d1545dd522": "Converte o kortix.toml v1 em kortix.yaml orientado à governança, atualiza as habilidades gerenciadas pela plataforma para a versão mais recente do marketplace e abre uma solicitação de alteração para revisão.",
+      "text7823a1f3af93": "Leva o kortix.toml ou um kortix.yaml da versão 2 para a versão 3: o projeto regista habilidades, ferramentas, comandos e extensões, e cada agente ativa-os pelo nome. Atualiza as habilidades gerenciadas pela plataforma e abre uma solicitação de alteração para revisão.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
@@ -17501,7 +17538,7 @@
       "textd83a0d814c59": "API Status mostra um \"Enabled\" verde, o parâmetro \"SCIM Username\" está mapeado para Email e o provisionamento está ativado sem a retenção de aprovação do administrador.",
       "textd84b8be91e7b": "Kortix — Apresentações",
       "textd84ee1e1e08b": "tente kortix init ou / para ver os comandos",
-      "textd85a383e851d": "Migrar o manifesto para v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Atualizar o manifesto para v3 (kortix.yaml)",
       "text848f54e89660": "Execuções",
       "textb098a09c78aa": "Testar com payload",
       "text99733344956d": "Payload",
@@ -20428,7 +20465,9 @@
       "text7c0a91e5b3d2": "Ferramentas não classificadas",
       "text9d2b6f0c41ae": "Ferramentas e regras",
       "openThreadAction": "Abrir thread",
-      "untitledThread": "Thread sem título"
+      "untitledThread": "Thread sem título",
+      "text314ae71b8c8d": "Artefatos",
+      "textfe204b549282": "artefatos documentos documento slides apresentação quadro design painel página publicado compartilhar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20767,7 +20806,14 @@
     "sessionModel": "Modelo {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Sem limite · gasto ilimitado",
-    "tokensSub": "{in} entrada · {out} saída"
+    "tokensSub": "{in} entrada · {out} saída",
+    "unknownValue": "Desconhecido",
+    "estimateCoverageUnavailable": "Cobertura da estimativa indisponível.",
+    "estimatesSeparate": "O gasto real acima é separado. As estimativas nunca são somadas às cobranças.",
+    "estimatedUsageValueLabel": "Valor de uso estimado do LLM (não é uma fatura):",
+    "pricedRequests": "{count} solicitações com preço",
+    "unpricedRequests": "{count} solicitações sem preço",
+    "llmEstimateLabel": "Estimativa do LLM:"
   },
   "triggerComposer": {
     "every": "A cada",
@@ -21161,6 +21207,18 @@
     "emailHeroLede": "Conecte sua conta Resend e escolha um endereço no seu domínio. As pessoas escrevem para ele, e o agente lê a conversa e responde nela.",
     "telegramHeroTitle": "Leve seu agente ao Telegram",
     "telegramHeroLede": "Conecte um bot criado com o BotFather. As pessoas escrevem ao bot e o agente responde no chat.",
+    "telegramUsersDescription": "Só essas pessoas podem falar com o bot. Se outra pessoa escrever a ele em privado, ela aparece aqui.",
+    "telegramRequestsTitle": "Quer acesso",
+    "telegramAllowedTitle": "Permitidos",
+    "telegramUsersEmptyTitle": "As pessoas que você permitir aparecerão aqui",
+    "telegramUsersEmptyDescription": "Peça para alguém escrever ao bot e depois permita a solicitação ou adicione o ID de usuário.",
+    "telegramUsersLoadError": "Não foi possível carregar os usuários do Telegram.",
+    "telegramAddByIdLabel": "Adicionar por ID de usuário",
+    "telegramAddByIdHint": "O bot responde a quem não conhece com o ID de usuário da pessoa.",
+    "telegramAddByIdInvalid": "Um ID de usuário do Telegram é um número, como 123456789.",
+    "telegramAllowAria": "Permitir {name}",
+    "telegramRemoveTitle": "Remover {name}?",
+    "telegramRemoveDescription": "{name} não poderá mais falar com o bot. Para permitir de novo, adicione o ID de usuário ou permita a próxima solicitação.",
     "otherWaysToConnect": "Outras formas de conectar",
     "computerHeroTitle": "Leve seu agente ao seu computador",
     "computerConnectedTitle": "{count, plural, one {Seu computador está conectado} other {# computadores conectados}}",
@@ -21546,7 +21604,11 @@
     "inviteSent": "Convite enviado para {email}",
     "reschedule": "Precisa de outro horário? Use o link do convite.",
     "addToCalendar": "Adicionar ao calendário",
-    "done": "Concluir"
+    "done": "Concluir",
+    "errorName": "Digite seu nome.",
+    "errorEmail": "Digite um e-mail de trabalho válido para podermos entrar em contato.",
+    "errorCompany": "Digite o nome da sua empresa.",
+    "errorSize": "Escolha o tamanho da sua empresa."
   },
   "drives": {
     "title": "Drive",
@@ -23309,6 +23371,37 @@
       "agentsFailedPeopleAdded": "{what} adicionados a #{name}. Não foi possível adicionar os agentes: continuam selecionados.",
       "allAdded": "Todos do projeto já estão aqui.",
       "noMatches": "Nada corresponde a “{query}”."
+    },
+    "privateNotIn": {
+      "row": "Canais privados dos quais você não participa",
+      "title": "Canais privados dos quais você não participa",
+      "description": "Você pode renomear, arquivar e adicionar pessoas. Só os membros leem o que há em um canal, então você não pode se adicionar.",
+      "meta": "{count, plural, =0 {Nenhum membro} one {# membro} other {# membros}} · criado por {name}",
+      "metaNoCreator": "{count, plural, =0 {Nenhum membro} one {# membro} other {# membros}}",
+      "archived": "Arquivado",
+      "menu": "Opções de #{name}",
+      "addPeople": "Adicionar pessoas",
+      "rename": "Renomear",
+      "archive": "Arquivar",
+      "unarchive": "Desarquivar",
+      "archivedToast": "#{name} arquivado",
+      "unarchivedToast": "#{name} desarquivado",
+      "failed": "Não foi possível atualizar #{name}. Tente de novo."
     }
+  },
+  "imageGen": {
+    "generating": "Gerando imagem",
+    "editing": "Editando imagem",
+    "generatingCount": "Gerando {count, plural, one {# imagem} other {# imagens}}",
+    "editingCount": "Editando {count, plural, one {# imagem} other {# imagens}}",
+    "openFullScreen": "Abrir em tela cheia",
+    "openFullScreenPrompt": "Abrir em tela cheia: {prompt}",
+    "loading": "Carregando imagem",
+    "stopped": "Interrompido",
+    "failed": "A imagem não foi gerada.",
+    "retry": "Tente novamente {when}.",
+    "unavailable": "Imagem indisponível",
+    "tryAgain": "Tentar novamente",
+    "details": "Detalhes da imagem"
   }
 }

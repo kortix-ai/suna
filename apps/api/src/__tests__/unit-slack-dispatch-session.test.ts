@@ -35,6 +35,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     initiatorType: null,
     initiatorId: null,
     spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -103,7 +104,9 @@ let deliverCalls = 0;
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
 let createSessionInputs: any[] = [];
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => {
     deliverCalls++;
     return deliverOutcome;

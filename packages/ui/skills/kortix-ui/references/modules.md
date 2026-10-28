@@ -87,7 +87,9 @@ export function Answer({ text }: { text: string }) {
 }
 ```
 
-Names: `markdownPolicy`, `MarkdownPolicy`, `MarkdownTrust`, `MarkdownVariant`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `CopyOverlay`, `HighlightedCode`, `CopyButton`, `MarkdownWithFrontmatter`, `languageLabel`, `normalizeLanguage`
+Code outside markdown: `CodeHighlight` (`code`, `language`) draws one highlighted block without the markdown parser; `INLINE_CODE` is the class string of an inline code chip.
+
+Names: `markdownPolicy`, `MarkdownPolicy`, `MarkdownTrust`, `MarkdownVariant`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `CopyOverlay`, `CodeHighlight`, `HighlightedCode`, `INLINE_CODE`, `CopyButton`, `MarkdownWithFrontmatter`, `languageLabel`, `normalizeLanguage`
 
 ## `@kortix/ui/genui`
 
@@ -177,7 +179,7 @@ export function PreviewHost() {
 }
 ```
 
-Names: `saveDriveFile`, `useDismissDriveConflict`, `useDriveAvailability`, `useDriveConflicts`, `useDriveFolder`, `useFolderAccess`, `useFolderPrincipals`, `useInvalidateDrives`, `useProjectDrive`, `useShareFolder`, `useUnshareFolder`, `FilesStoreProvider`, `getFileIcon`, `FilePreviewHost`, `ChangeRequestDetailDialog`, `DiffRenderer`, `DriveExplorer`, `DriveUploadTray`, `FileExplorerPage`, `FileThumbnail`, `ProjectFilesProvider`, `useProjectContext`, `FileExplorerSourceProvider`, `ExplorerQueryResult`, `FileExplorerSource`, `gitRefExplorerSource`, `useChangeRequestRecovery`, `changeRequestKeys`, `openChangeRequestListQuery`, `useChangeRequestDiff`, `useChangeRequestMergePreview`, `useCloseChangeRequest`, `useMergeChangeRequest`, `useRequestChangesOnChangeRequest`, `useSelectedVersion`, `workspaceFileSource`, `useWorkspaceSearch`, `SandboxFileExplorer`
+Names: `saveDriveFile`, `useDismissDriveConflict`, `useDriveAvailability`, `useDriveConflicts`, `useDriveFolder`, `useFolderAccess`, `useFolderPrincipals`, `useInvalidateDrives`, `useProjectDrive`, `useShareFolder`, `useUnshareFolder`, `FilesStoreProvider`, `getFileIcon`, `FilePreviewHost`, `ChangeRequestDetailDialog`, `DiffRenderer`, `DriveExplorer`, `DriveUploadTray`, `FileExplorerPage`, `FileThumbnail`, `ProjectFilesProvider`, `useProjectContext`, `FileExplorerSourceProvider`, `ExplorerQueryResult`, `FileExplorerSource`, `gitRefExplorerSource`, `useChangeRequestRecovery`, `changeRequestKeys`, `openChangeRequestListQuery`, `useChangeRequestDiff`, `useChangeRequestMergePreview`, `useCloseChangeRequest`, `useMergeChangeRequest`, `useRequestChangesOnChangeRequest`, `useSelectedVersion`, `workspaceFileSource`, `useWorkspaceSearch`, `SandboxFileExplorer`, `CodeEditor` (the CodeMirror editor, loaded as its own chunk on first render)
 
 ## `@kortix/ui/file-viewer`
 
@@ -255,6 +257,26 @@ export function AppLink({ url }: { url: string }) {
 ```
 
 Names: `AppPreview`, `AppPreviewOverlay`, `PREVIEW_SPINNER_DELAY_MS`, `PREVIEW_TILE_ASPECT`, `PREVIEW_VIEWPORT_HEIGHT`, `PREVIEW_VIEWPORT_WIDTH`, `framePlacement`, `previewScale`, `scheduleSlowPreview`, `ensureFrame`, `frameKey`, `framesKeepAlive`, `pruneFrames`, `reloadFrame`, `ANONYMOUS_MODES`, `DEPLOYMENT_COPY`, `appCan`, `appCommand`, `appHost`, `appStatus`, `appTabLabel`, `cardPreviewApp`, `childApps`, `deployNotice`, `gridApps`, `localizedAppCopy`, `isKortixAppUrl`
+
+The frame pool: `ensureFrame` creates a parked frame, `claimFrame` (`key`, `slot`, `placement`) shows it in `slot` and returns the release, `restyleFrame` restyles the current claim, `useFrameStatus` (`key`) reads `loading`, `loaded` or `failed`; `FramePlacement` is a slot's class, style and `interactive`. The Apps page: `hiddenApps` (neither a card nor a tab), `appTriggers` (the triggers that call an App and the ones its events start), `backgroundSummary` (running, asleep, undeployed, external counts), `appSizeLabel` ("2 vCPU · 4 GB · 20 GB"), `DeployCommand` (`code`: a shell command with a copy button).
+
+## `@kortix/ui/artifacts`
+
+Source: `src/artifacts/index.ts`. Kortix Artifacts in any host: the frame policy and link parsing (server-safe), the pooled page frame, and the session views. Artifact frames share the `@kortix/ui/apps` frame pool; their keys start with `ARTIFACT_FRAME_PREFIX`.
+
+Props: `ArtifactFrame`: `frameKey` (`artifactFrameKey(artifact, version)`), `src`, `title`, `preview` (no input), `className`. `ShowArtifactCard`: `url`, `fallback` (drawn when the viewer cannot open it). `ArtifactPanelPreview`: `url`, `onClose`.
+
+```tsx
+import { parseArtifactUrl } from '@kortix/ui/artifacts';
+
+// A link to an artifact opens it in your viewer; any other link stays a link.
+export function ArtifactLink({ url }: { url: string }) {
+  const artifact = parseArtifactUrl(url);
+  return <a href={url}>{artifact ? `Artifact ${artifact.artifactId}` : url}</a>;
+}
+```
+
+Names: `ARTIFACT_FRAME_ALLOW`, `ARTIFACT_FRAME_PREFIX`, `ARTIFACT_IFRAME_SANDBOX`, `artifactFrameKey`, `parseArtifactUrl`, `printArtifact` (a doc's print view in a hidden frame: Export as PDF), `ArtifactFrame`, `ensureArtifactFrame`, `ArtifactPanelPreview`, `ShowArtifactCard`
 
 ## `@kortix/ui/composer`
 
@@ -375,7 +397,9 @@ export function Sessions({ projectId }: { projectId: string }) {
 
 Goals (behind the `goals` flag): `GoalStatusBadge` (a goal's status), `GoalHealthDot` (green running, orange needs attention, grey closed), `useGoalIssueText` (one sentence per health issue), `goalProgress` (met and total criteria), `goalOpenAsks` (asks waiting on a person), `goalNeedsYou` (an open ask or a health issue), `formatGoalTime` (the reminders time format), `goalHref` (the goal's page, or null), `useGoalClock` (the current time, re-read every 30 s).
 
-Names: `ProjectPageHeader`, `useCapabilityAccess`, `useProjectNavRows`, `SidebarToggle`, `activeCapabilityTab`, `agentHref`, `capabilityTabHref`, `channelsHref`, `remindersHref`, `reviewHref`, `detectManifestVersion`, `manifestFilename`, `manifestNeedsUpgrade`, `useProjectManifestVersion`, `ManifestVersion`, `CUSTOMIZE_SECTION_ACCESS`, `CUSTOMIZE_SECTION_GATE_ACTIONS`, `PROJECT_ACTIONS`, `isCustomizeSectionVisible`, `CustomizeSection`, `ProjectAction`, `usePermission`, `usePermissions`, `usePermissionsFor`, `PROJECT_PAGE_ACTIONS`, `useProjectCan`, `useProjectCans`, `useProjectPageCans`, `CanResult`, `formatFireTime`, `nearestFire`, `reminderTitle`, `scheduleLabel`, `ProjectHomeWallpaper`, `ProjectHomeWelcomeBody`, `InstantSessionShell`, `ProjectFilesView`, `ProjectHome`, `ProjectHomeSendOptions`, `useProjectHomeSend`, `UseProjectHomeSendOptions`, `SavedSessionSkeleton`, `SessionLayout`, `SessionWorkspace`, `SessionLayoutProps`, `SessionWorkspaceProps`, `ProjectSessionsView`, `ProjectSessionList`, `ProjectSidebar`, `ShareSessionModal`
+Channels and memory (behind the `project_channels` flag): `SpaceView` (`projectId`, `target`: a `SpaceTarget`, `{ kind: 'channel', slug }` or `{ kind: 'dm', agentName }`; `beforeSend`; `renderFolder` draws a `SpaceFolder`, one space's Files tab; `renderApps`) is a channel or DM page with its threads, files, memory, apps, links and triggers. `ChannelGlyph` (`visibility`) is `#` or a lock. `agentLabel` (`name`) is an agent's display name. `MemoryView` (`projectId`, `layerKey`: `company` or a space id, `place`) is one memory layer's pages; `CompanyMemoryPage` (`projectId`) is the project's Company memory. `useMemoryPageHref` (`projectId`) returns `(layer: MemoryLayerRef, pageId) => href | null`: the page's link, null when the host serves no such page.
+
+Names: `SpaceView`, `SpaceViewProps`, `SpaceTarget`, `SpaceFolder`, `ChannelGlyph`, `agentLabel`, `MemoryView`, `MemoryViewProps`, `CompanyMemoryPage`, `MemoryLayerRef`, `useMemoryPageHref`, `ProjectPageHeader`, `useCapabilityAccess`, `useProjectNavRows`, `SidebarToggle`, `activeCapabilityTab`, `agentHref`, `capabilityTabHref`, `channelsHref`, `remindersHref`, `reviewHref`, `detectManifestVersion`, `manifestFilename`, `manifestNeedsUpgrade`, `useProjectManifestVersion`, `ManifestVersion`, `CUSTOMIZE_SECTION_ACCESS`, `CUSTOMIZE_SECTION_GATE_ACTIONS`, `PROJECT_ACTIONS`, `isCustomizeSectionVisible`, `CustomizeSection`, `ProjectAction`, `usePermission`, `usePermissions`, `usePermissionsFor`, `PROJECT_PAGE_ACTIONS`, `useProjectCan`, `useProjectCans`, `useProjectPageCans`, `CanResult`, `formatFireTime`, `nearestFire`, `reminderTitle`, `scheduleLabel`, `ProjectHomeWallpaper`, `ProjectHomeWelcomeBody`, `InstantSessionShell`, `ProjectFilesView`, `ProjectHome`, `ProjectHomeSendOptions`, `useProjectHomeSend`, `UseProjectHomeSendOptions`, `SavedSessionSkeleton`, `SessionLayout`, `SessionWorkspace`, `SessionLayoutProps`, `SessionWorkspaceProps`, `ProjectSessionsView`, `ProjectSessionList`, `ProjectSidebar`, `ShareSessionModal`
 
 ## `@kortix/ui/access`
 

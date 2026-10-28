@@ -36,6 +36,7 @@
     "./sandbox-env": "./src/host-config/sandbox-env.ts",
     "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts",
     "./subprocessors": "./src/subprocessors.ts",
+    "./terms": "./src/terms.ts",
     "./ssrf-guard": "./src/ssrf-guard.ts",
     "./well-known": "./src/well-known.ts"
   },

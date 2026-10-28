@@ -86,6 +86,7 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSessionGroups,
   projectSpaces,
   projectSpaceLinks,
   projectSpaceMembers,

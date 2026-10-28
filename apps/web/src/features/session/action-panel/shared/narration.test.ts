@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { ToolRegistry } from '@kortix/ui/session';
 import '@kortix/ui/session/tool/tools/register';
-import { familyForTool } from './narration';
+import { familyForTool } from '@kortix/sdk';
 
 // Narration and its unit tests live in `@kortix/sdk`
 // (`packages/sdk/src/core/turns/segments/narration.test.ts`). This file keeps

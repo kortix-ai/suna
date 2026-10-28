@@ -36,11 +36,13 @@
  *   dir, after the write, so a crash mid-write reads as behind at the next boot. A 404 (no
  *   stored log) or 503 (the operator switch is off) claims nothing and restores nothing. Any
  *   other failure is retried: 3 attempts, each a new claim; then the boot fails.
- * - Over the cap. A 413 `session_log_too_large` claimed but carries no message: the box writes the
- *   log's root with the D3 note alone (above `seq_max`), keeps no other thread, and persists every
- *   stored id (`revs`) as unwritten, so later boots do not read the store as behind. The notice
- *   counts the left-out messages as `dropped.message`. A 413 with another body (a proxy) claimed
- *   nothing: no restore, as a 404.
+ * - Over the cap. A 413 `session_log_too_large` claimed, and carries the part of the log that fits (`kept`).
+ *   The box writes the threads as sent and persists every other stored id (`revs`) as unwritten, so later
+ *   boots do not read the store as behind. `model_view`: what the model sees; the cut adds no note and no
+ *   `dropped.message` (the writer's own losses still count). `newest`: the newest turns; the D3 note names
+ *   the left-out messages, counted as `dropped.message`. No `kept` (an API before it, or nothing fits): the
+ *   box writes the log's root with the D3 note alone (above `seq_max`) and keeps no other thread. A 413 with
+ *   another body (a proxy) claimed nothing: no restore, as a 404.
  * - D3, a partial restore (the log's grade is `partial`, or the write dropped content, or a
  *   text kept its preview). The agent: a user message with one text block
  *   (`prt_kortix_restore_g<generation>`) after every seq the API holds, under a wire id above
@@ -205,7 +207,7 @@ async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POS
     headers: { Authorization: `Bearer ${ctx.token}`, 'Accept-Encoding': 'gzip' },
     signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),
   })
-  // A 413 to the restore claimed: the answer is the log without messages (`session_log_too_large`).
+  // A 413 to the restore claimed: the answer is the part of the log that fits (`session_log_too_large`).
   if (response.ok || (path === 'restore' && response.status === 413)) return response
   const body = (await response.text().catch(() => '')).slice(0, 200)
   if (response.status >= 500 && response.status !== 503) throw new Error(`${path} answered ${response.status}: ${body}`)
@@ -243,12 +245,17 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   }
   if (!answer || !Number.isSafeInteger(answer.generation) || !Array.isArray(answer.log?.threads)) throw new Error('the restore answer is not a SessionLogRestore')
   const tooLarge = status === 413 ? (answer as SessionLogRestoreTooLarge) : null
-  // Over the cap: the root alone, which gets the D3 note; the box keeps no other thread.
-  if (tooLarge) {
+  // Over the cap without `kept`: the root alone, which gets the D3 note; the box keeps no other thread.
+  if (tooLarge && !tooLarge.kept) {
     const root = tooLarge.log.threads.find((t) => t.parent_thread_id === null) ?? tooLarge.log.threads[0]
     tooLarge.log.threads = root ? [{ ...root, messages: [] }] : []
     logger.warn('[session-log] the log is over the restore cap; the box boots with the D3 note alone', { generation: answer.generation, bytes: tooLarge.bytes, limit: tooLarge.limit, messages: tooLarge.messages })
+  } else if (tooLarge) {
+    const kept = tooLarge.log.threads.reduce((n, t) => n + t.messages.length, 0)
+    logger.info('[session-log] the log is over the restore cap; the box restores a part of it', { mode: tooLarge.kept, kept, left_out: tooLarge.messages, threads: tooLarge.log.threads.length, generation: answer.generation, bytes: tooLarge.bytes, limit: tooLarge.limit })
   }
+  // The cut is a loss only when the model does not get what it saw: not for `model_view`.
+  const cut = tooLarge?.kept === 'model_view' ? null : tooLarge
   // Both budgets run at once: the attachment reads do not wait for the texts.
   const bytes = attachmentBytes(answer.log as SessionLog, apiBytesReader(ctx))
   const { log, seq_max, truncated } = await sessionLogFromRestore(answer, apiTextReader(ctx))
@@ -262,11 +269,12 @@ async function restore(ctx: SandboxRelayContext, port: SessionLogPort): Promise<
   const floor = Math.max(seq_max[root.thread_id] ?? 0, ...root.messages.map((m) => m.seq))
   const harness: HarnessCarry = { history: restoredHistory(log), from_seq: floor + 1, at: new Date().toISOString() }
   let result = await port.restore(log, seq_max, read)
-  const dropped = tooLarge ? { ...result.dropped, message: tooLarge.messages } : result.dropped
+  const dropped = cut ? { ...result.dropped, message: cut.messages } : result.dropped
   let note: SessionLogMessage | null = null
-  const notice = partialNotice(log, dropped, truncated, answer.generation, tooLarge)
+  const notice = partialNotice(log, dropped, truncated, answer.generation, cut)
   // One note per loss: a partial log that already holds an earlier note gets none for the old loss.
-  const earlierNote = log.threads.some((t) => t.messages.some(isRestoreNote))
+  // A `model_view` part may have left that note out, so it gets a note only for its own losses.
+  const earlierNote = tooLarge?.kept === 'model_view' || log.threads.some((t) => t.messages.some(isRestoreNote))
   if (notice && (Object.keys(dropped).length > 0 || truncated.length > 0 || !earlierNote)) {
     note = noteMessage(root, floor + 1, answer.generation, notice.text)
     root.messages.push(note)
@@ -352,9 +360,11 @@ function partialNotice(log: SessionLog, dropped: Record<string, number>, truncat
   const size = (n: number) => (n >= 1024 ** 2 ? `${+(n / 1024 ** 2).toFixed(1)} MiB` : n >= 1024 ? `${+(n / 1024).toFixed(1)} KiB` : `${n} bytes`)
   const text =
     'Kortix: this session was restored from its saved session log. ' +
-    (tooLarge
-      ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
-      : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
+    (tooLarge?.kept === 'newest'
+      ? `Its ${tooLarge.messages} earliest messages were not restored: the conversation (${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit, and the newest messages that fit were restored. `
+      : tooLarge
+        ? `Its earlier conversation (${tooLarge.messages} messages, ${size(tooLarge.bytes)}) is above the ${size(tooLarge.limit)} restore limit and was not restored. `
+        : `Some earlier content could not be restored${items.length ? `: ${items.join(', ')}` : ''}. `) +
     'If you need it, ask the user to send it again.'
   return {
     text,

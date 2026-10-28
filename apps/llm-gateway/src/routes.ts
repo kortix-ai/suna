@@ -5,12 +5,14 @@ import {
 import type { Hono } from 'hono';
 import { cloudflareSafe, messagesAuthorization, perRequestCapBytes } from './server';
 
-type Protocol = 'chat' | 'messages' | 'responses';
+type Protocol = 'chat' | 'messages' | 'responses' | 'images';
+type InferenceRequest = { authorization: string | undefined; rawBody: string; signal?: AbortSignal };
 type Gateway = {
-  chatCompletions: (request: { authorization: string | undefined; rawBody: string; signal?: AbortSignal }) => Promise<Response>;
-  messages: (request: { authorization: string | undefined; rawBody: string; signal?: AbortSignal }) => Promise<Response>;
-  responses: (request: { authorization: string | undefined; rawBody: string; signal?: AbortSignal }) => Promise<Response>;
+  chatCompletions: (request: InferenceRequest) => Promise<Response>;
+  messages: (request: InferenceRequest) => Promise<Response>;
+  responses: (request: InferenceRequest) => Promise<Response>;
   listModels: (authorization: string | undefined, options: { managedOnly: boolean; scope?: 'picker' }) => Promise<Response>;
+  images: (request: InferenceRequest & { operation: 'generations' | 'edits' }) => Promise<Response>;
 };
 
 function failure(protocol: Protocol, requestId: string): Response {
@@ -25,7 +27,12 @@ function failure(protocol: Protocol, requestId: string): Response {
     { status: 503, headers: { 'content-type': 'application/json' } });
 }
 
-function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void, protocol: Protocol) {
+function inference(
+  inflight: InflightBudget,
+  recordOutcome: (status: number) => void,
+  protocol: Protocol,
+  call: (request: InferenceRequest) => Promise<Response>,
+) {
   return async (c: { req: { raw: Request; header: (name: string) => string | undefined } }) => {
     const requestId = protocol === 'chat' ? `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}` : '';
     try {
@@ -58,7 +65,7 @@ function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (s
           rawBody: body.body, signal: c.req.raw?.signal,
         };
         body.body = '';
-        const res = await cloudflareSafe(await gateway[protocol === 'chat' ? 'chatCompletions' : protocol](request));
+        const res = await cloudflareSafe(await call(request));
         recordOutcome(res.status);
         return releaseWhenResponseEnds(res, body.release);
       } catch (error) {
@@ -86,13 +93,21 @@ function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (s
  * `kortix` provider matches the web picker. See wire.ts.
  */
 export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void) {
-  const chat = inference(gateway, inflight, recordOutcome, 'chat');
-  const messages = inference(gateway, inflight, recordOutcome, 'messages');
-  const responses = inference(gateway, inflight, recordOutcome, 'responses');
+  const chat = inference(inflight, recordOutcome, 'chat', gateway.chatCompletions);
+  const messages = inference(inflight, recordOutcome, 'messages', gateway.messages);
+  const responses = inference(inflight, recordOutcome, 'responses', gateway.responses);
+  // The project's ChatGPT login generates and edits images (pipeline/images.ts).
+  // A thrown error gets the Responses-style 503 envelope.
+  const images = (operation: 'generations' | 'edits') =>
+    inference(inflight, recordOutcome, 'images', (request) => gateway.images({ ...request, operation }));
+  const generations = images('generations');
+  const edits = images('edits');
   for (const prefix of ['/', '/v1/', '/v1/llm/', '/v1/openai/']) {
     app.post(prefix + 'chat/completions', chat);
     app.post(prefix + 'messages', messages);
     app.post(prefix + 'responses', responses);
+    app.post(prefix + 'images/generations', generations);
+    app.post(prefix + 'images/edits', edits);
     app.get(prefix + 'models', (c) => gateway.listModels(c.req.header('authorization'), {
       managedOnly: c.req.query('scope') === 'managed',
       scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,

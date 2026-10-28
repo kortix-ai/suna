@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   addEmailDomain,
@@ -12,10 +12,16 @@ import {
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
+  allowTelegramUser,
   connectTelegram,
   disconnectTelegram,
+  dismissTelegramAccessRequest,
   getTelegramInstallation,
+  getTelegramUserPhoto,
+  listTelegramUsers,
+  removeTelegramUser,
   setTelegramAllowedUsers,
+  type TelegramUsers,
   bindSlackIdentity,
   bindTeamsIdentity,
   previewSlackIdentity,
@@ -459,6 +465,131 @@ test('disconnectTelegram deletes the installation', async () => {
   await disconnectTelegram('P1');
   expect(last()).toMatchObject({ method: 'DELETE' });
   expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
+});
+
+const telegramInstall = { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'], access_request_count: 1 };
+
+test('getTelegramInstallation passes access_request_count through', async () => {
+  nextResponse = { status: 200, body: telegramInstall };
+  expect((await getTelegramInstallation('P1'))?.access_request_count).toBe(1);
+});
+
+test('listTelegramUsers reads the allowed users and the access requests', async () => {
+  const users: TelegramUsers = {
+    allowed: [
+      { user_id: '42', username: 'sam', first_name: 'Sam', last_name: null, photo_version: 'AQAD', known: true },
+    ],
+    requests: [
+      {
+        user_id: '77',
+        username: null,
+        first_name: 'Alex',
+        last_name: 'Doe',
+        photo_version: null,
+        known: true,
+        last_seen: '2026-10-28T10:00:00.000Z',
+      },
+    ],
+  };
+  nextResponse = { status: 200, body: users };
+  expect(await listTelegramUsers('P/1')).toEqual(users);
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P%2F1/channels/telegram/users' });
+});
+
+test('listTelegramUsers throws the API error message', async () => {
+  nextResponse = { status: 404, body: { error: 'Telegram is not connected', code: 'telegram_not_connected' } };
+  await expect(listTelegramUsers('P1')).rejects.toThrow('Telegram is not connected');
+});
+
+test('allowTelegramUser posts one user id and returns the installation', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, allowed_user_ids: ['42', '77'], access_request_count: 0 } };
+  const result = await allowTelegramUser('P1', '77');
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/P1/channels/telegram/allowed-users',
+    body: { user_id: '77' },
+  });
+  expect(result.allowed_user_ids).toEqual(['42', '77']);
+  expect(result.access_request_count).toBe(0);
+});
+
+test('allowTelegramUser throws the API error message when the list is full', async () => {
+  nextResponse = { status: 409, body: { error: 'At most 200 allowed users', code: 'telegram_allowed_users_full' } };
+  await expect(allowTelegramUser('P1', '77')).rejects.toThrow('At most 200 allowed users');
+});
+
+test('removeTelegramUser deletes one allowed user id and returns the installation', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, allowed_user_ids: [] } };
+  const result = await removeTelegramUser('P1', '42');
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/P1/channels/telegram/allowed-users/42',
+  });
+  expect(result.allowed_user_ids).toEqual([]);
+});
+
+test('dismissTelegramAccessRequest deletes one access request and returns the installation', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, access_request_count: 0 } };
+  const result = await dismissTelegramAccessRequest('P1', '77');
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/P1/channels/telegram/access-requests/77',
+  });
+  expect(result.access_request_count).toBe(0);
+});
+
+describe('getTelegramUserPhoto', () => {
+  let photoResponse: () => Response;
+  beforeEach(() => {
+    photoResponse = () =>
+      new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
+      calls.push({ url: String(url), method: opts.method ?? 'GET', body: undefined });
+      return photoResponse();
+    }) as unknown as typeof fetch;
+  });
+
+  test('returns the JPEG bytes from the Kortix API photo route, never from Telegram', async () => {
+    const photo = await getTelegramUserPhoto('P1', '42', 'AQAD+x/y');
+    expect(photo).toBeInstanceOf(Blob);
+    expect(photo?.type).toBe('image/jpeg');
+    expect(Array.from(new Uint8Array(await photo!.arrayBuffer()))).toEqual([0xff, 0xd8, 0xff, 0xe0]);
+    expect(calls).toHaveLength(1);
+    expect(last()).toMatchObject({
+      method: 'GET',
+      url: `http://test.local/projects/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
+    });
+    expect(calls.some((c) => c.url.includes('telegram.org'))).toBe(false);
+  });
+
+  test('omits the version query when none is given', async () => {
+    await getTelegramUserPhoto('P1', '42');
+    expect(last().url).toBe('http://test.local/projects/P1/channels/telegram/users/42/photo');
+  });
+
+  test('returns null when the user has no photo (404)', async () => {
+    photoResponse = () =>
+      new Response(JSON.stringify({ error: 'No photo', code: 'telegram_photo_unavailable' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    expect(await getTelegramUserPhoto('P1', '42', 'AQAD')).toBeNull();
+  });
+
+  test('throws when Telegram is unreachable (502)', async () => {
+    photoResponse = () =>
+      new Response(JSON.stringify({ error: 'Telegram is unreachable', code: 'telegram_unreachable' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      });
+    await expect(getTelegramUserPhoto('P1', '42', 'AQAD')).rejects.toThrow('Telegram is unreachable');
+  });
+
+  test('rejects when the caller aborts the signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(getTelegramUserPhoto('P1', '42', 'AQAD', controller.signal)).rejects.toThrow('Request aborted');
+  });
 });
 
 test('listEmailDomains posts the key in the body, never in the URL', async () => {

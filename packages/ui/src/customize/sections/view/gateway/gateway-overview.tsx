@@ -33,6 +33,10 @@ import {
 import { displayModel } from './_shared';
 import { GatewayBudgetSection } from './gateway-budgets';
 
+/** An LLM usage estimate in US dollars, to 4 decimals. */
+const usd4 = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(value);
+
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
 
 const METRICS: {
@@ -221,6 +225,20 @@ export function GatewayOverview({
             <p className="text-muted-foreground text-xs tabular-nums">
               {tabs.find((m) => m.key === metric)?.sub}
             </p>
+            <p className="text-muted-foreground text-xs tabular-nums">
+              {t('estimatedUsageValueLabel')}{' '}
+              {overview?.estimated_usage_value == null
+                ? t('unknownValue')
+                : usd4(overview.estimated_usage_value)}
+              {' · '}
+              {t('pricedRequests', { count: overview?.priced_requests ?? 0 })}
+              {' · '}
+              {t('unpricedRequests', { count: overview?.unpriced_requests ?? 0 })}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {overview?.valuation?.coverage ?? t('estimateCoverageUnavailable')} {t('estimatesSeparate')}{' '}
+              {overview?.valuation?.rate_version}
+            </p>
             <UsageChart
               data={series}
               keys={activeMetric.keys}
@@ -289,10 +307,18 @@ export function GatewayOverview({
                           {name ?? s.session_id.slice(0, 8)}
                         </span>
                         <span className="text-muted-foreground truncate text-xs tabular-nums">
-                          {name ? <span className="font-mono">{s.session_id.slice(0, 8)} · </span> : null}
+                          {name ? (
+                            <span className="font-mono">{s.session_id.slice(0, 8)} · </span>
+                          ) : null}
                           {t('sessionModel', { cost: credits(s.llm_cost) })} ·{' '}
-                          {t('sessionSandbox', { cost: credits(s.compute_cost) })} ·{' '}
-                          {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
+                          {t('sessionSandbox', {
+                            cost: credits(s.compute_cost),
+                          })}{' '}
+                          · {s.requests.toLocaleString()} {tI18nComplete.raw('textc3f7bdf537c4')}
+                          {' · '}{t('llmEstimateLabel')}{' '}
+                          {s.estimated_usage_value == null
+                            ? t('unknownValue')
+                            : usd4(s.estimated_usage_value)}
                         </span>
                       </div>
                       <ShareBar

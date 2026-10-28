@@ -431,7 +431,7 @@ function useSessionStream(sessions: Session[]) {
         // motion gets it finished, at once.
         if (!entry.isIntersecting || pickedRef.current) return;
         pickedRef.current = true;
-        const session = Math.floor(Math.random() * sessions.length);
+        const session = Date.now() % sessions.length;
         setFrame(
           reducedRef.current
             ? { ...START, session, prompt: true, done: sessions[session].steps.length }

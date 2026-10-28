@@ -373,4 +373,34 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
     await lazy({ ...principal, defaultModel: 'account-model' }, { requestedModel: 'x', requires: { imageInput: true } });
     expect(reads).toBe(1);
   });
+
+  test('requires.imageOutput absent keeps chat routing unchanged', async () => {
+    let policyReads = 0;
+    const imageRequests: string[] = [];
+    const withImages = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: undefined, supportsImage: () => false,
+      policies: [{ id: 'default-degrade', models: ['model-default'], fallbackModels: ['model-fallback'], fallbackOn: 'any-error' }],
+      getProjectPolicy: async () => { policyReads += 1; return null; },
+      imageRoute: async (_principal, requestedModel) => {
+        imageRequests.push(requestedModel);
+        return { policyId: 'image', primaryModel: 'codex/gpt-image-2', fallbackModels: [], fallbackOn: 'any-error' };
+      },
+    });
+    const chat = { requestedModel: 'model-default', requires: { imageInput: false } };
+    const chatPlan = {
+      policyId: 'default-degrade', primaryModel: 'model-default', fallbackModels: ['model-fallback'],
+      fallbackOn: 'any-error' as const, generationDefaults: undefined, generationDefaultsForModel: expect.any(Function),
+    };
+    const project = { ...principal, projectId: 'p1' };
+    expect(await withImages(project, chat)).toEqual(chatPlan);
+    expect(await withImages(project, { ...chat, requires: { imageInput: false, imageOutput: false } })).toEqual(chatPlan);
+    expect(imageRequests).toEqual([]);
+    expect(policyReads).toBe(2);
+
+    // An image request takes the image plan and never reads the chat policy.
+    expect(await withImages(project, { requestedModel: 'auto', requires: { imageInput: false, imageOutput: true } }))
+      .toEqual({ policyId: 'image', primaryModel: 'codex/gpt-image-2', fallbackModels: [], fallbackOn: 'any-error' });
+    expect(imageRequests).toEqual(['auto']);
+    expect(policyReads).toBe(2);
+  });
 });

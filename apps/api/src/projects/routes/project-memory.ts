@@ -50,7 +50,7 @@ import {
   type Viewer,
 } from '../../memory';
 import { callerKortixSessionId } from '../../middleware/caller-session';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -109,7 +109,7 @@ function memoryValidationHook(
   if (result.success) return undefined;
   const issue = result.error?.issues[0];
   const where = issue?.path.length ? `${issue.path.map(String).join('.')}: ` : '';
-  return c.json({ error: `${where}${issue?.message ?? 'Invalid input'}`, code: 'invalid_input', issues: result.error?.issues }, 400);
+  return c.json({ error: `${where}${issue?.message ?? 'Invalid input'}`, code: 'invalid_input', ...boundedIssues(result.error?.issues) }, 400);
 }
 
 /** The page of a page id: its layer (the viewer must read it) and its path in it. */

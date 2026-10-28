@@ -1292,6 +1292,37 @@ export const projectSessionInitiatorEnum = kortixSchema.enum('project_session_in
   'system',
 ]);
 
+/**
+ * A session group: a named folder of a project's sessions in the sidebar,
+ * behind the `session_groups` flag. Every project member sees the same groups
+ * in the same order (`position`, 0-based). A session is in at most one group
+ * (`project_sessions.group_id`); deleting a group leaves its sessions in none.
+ */
+export const projectSessionGroups = kortixSchema.table(
+  'project_session_groups',
+  {
+    groupId: uuid('group_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Trimmed, 1–80 characters; unique in the project in any case. */
+    name: text('name').notNull(),
+    position: integer('position').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('project_session_groups_name_check', sql`char_length(${table.name}) between 1 and 80`),
+    check('project_session_groups_position_check', sql`${table.position} >= 0`),
+    uniqueIndex('uniq_project_session_groups_name').on(table.projectId, sql`lower(${table.name})`),
+    index('idx_project_session_groups_project').on(table.projectId, table.position),
+  ],
+);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -1331,6 +1362,8 @@ export const projectSessions = kortixSchema.table(
     // The project space (channel or DM) this thread belongs to. null = no space
     // (every session created before channels, or while the flag is off).
     spaceId: uuid('space_id'),
+    // The session group it is filed in (`session_groups`). null = no group.
+    groupId: uuid('group_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1379,6 +1412,16 @@ export const projectSessions = kortixSchema.table(
       columns: [table.spaceId],
       foreignColumns: [projectSpaces.spaceId],
     }).onDelete('set null'),
+    foreignKey({
+      name: 'project_sessions_group_fk',
+      columns: [table.groupId],
+      foreignColumns: [projectSessionGroups.groupId],
+    }).onDelete('set null'),
+    // One group's sessions in the list order (updated_at desc); also serves the
+    // FK's ON DELETE SET NULL. Partial: sessions in no group are never listed by it.
+    index('idx_project_sessions_group')
+      .on(table.groupId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.groupId} is not null`),
     // One space's threads in the list order (updated_at desc). Partial:
     // sessions outside a space are never listed by it.
     index('idx_project_sessions_space')

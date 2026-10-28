@@ -459,7 +459,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
       'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
-      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
+      '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
   },
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
   // integrations.sh, Composio), Telegram as a channel connector, the Kortix
@@ -519,6 +519,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'KORTIX_SANDBOX_IDLE_DELETE_MINUTES (default 60) is deleted (projects/reaping/idle-volume-retire.ts). The ' +
       'volume is deleted with the session content: by the retention purge after the trash window ' +
       '(projects/session-log-purge.ts) or by account erasure.',
+  },
+  {
+    key: 'session_groups',
+    name: 'Session groups',
+    description:
+      "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: every /projects/:id/session-groups route and PUT /projects/:id/sessions/:sid/group answer 403 ' +
+      '`feature_disabled` while off (projects/routes/session-groups.ts). The session list ignores `group` while off, ' +
+      "so the sidebar lists every session again. Turning it off deletes nothing: the groups and each session's " +
+      '`group_id` stay and come back when it is turned on. WEB: no group sections, no New group and no Move to group.',
   },
 ];
 

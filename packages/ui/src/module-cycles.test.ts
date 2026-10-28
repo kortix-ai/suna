@@ -102,7 +102,7 @@ const LAYER: Record<string, number> = {
 
 const KNOWN_UPWARD: string[] = [
   'access/access/agent-principals.ts -> customize/sections/view/agent-editor-catalog.ts',
-  'customize/connectors/rules-tab.tsx -> workspace/projects/policies-panel.tsx',
+  'customize/connectors/connectors-page.tsx -> workspace/projects/policies-panel.tsx',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/hooks/use-review-items.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/map.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/review-actions.ts',

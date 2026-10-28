@@ -20,7 +20,7 @@
 
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { isRecord } from '@kortix/shared/guards';
-import { jsonbSafeValue } from './jsonb-safe';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 import { TranscriptReadError, isRuntimeUnavailableError } from './runtime-read-failure';
 
 /** Messages read from the box per capture. A turn adds one user message and a

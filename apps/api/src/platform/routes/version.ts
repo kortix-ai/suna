@@ -170,30 +170,43 @@ async function getLatestDev(): Promise<LatestVersionResult> {
   };
 }
 
-async function getAllVersions(): Promise<VersionEntry[]> {
-  const runningVersion = getRunningVersion();
-  const versions: VersionEntry[] = [];
-
-  for (const release of await githubReleases()) {
+function releaseMetadata(release: GHRelease): Pick<VersionEntry, 'version' | 'date' | 'title'> {
     const version = release.tag_name.replace(/^v/, '');
-    versions.push({
+    return {
       version,
-      channel: release.prerelease ? 'dev' : 'stable',
       date: release.published_at?.split('T')[0] ?? '',
       title: release.name || `v${version}`,
-      body: release.body || undefined,
-      current: version === runningVersion,
-    });
-  }
+    };
+}
 
-  for (const tag of (await dockerHubDevTags()).slice(0, 20)) {
+function tagMetadata(tag: DockerHubTag): Pick<VersionEntry, 'version' | 'channel' | 'date' | 'title' | 'sha'> {
     const sha8 = tag.name.replace('dev-', '');
-    versions.push({
+    return {
       version: tag.name,
       channel: 'dev',
       date: tag.last_updated?.split('T')[0] ?? '',
       title: `Dev build ${sha8}`,
       sha: sha8,
+    };
+}
+
+async function getAllVersions(): Promise<VersionEntry[]> {
+  const runningVersion = getRunningVersion();
+  const versions: VersionEntry[] = [];
+
+  for (const release of await githubReleases()) {
+    const metadata = releaseMetadata(release);
+    versions.push({
+      ...metadata,
+      channel: release.prerelease ? 'dev' : 'stable',
+      body: release.body || undefined,
+      current: metadata.version === runningVersion,
+    });
+  }
+
+  for (const tag of (await dockerHubDevTags()).slice(0, 20)) {
+    versions.push({
+      ...tagMetadata(tag),
       current: tag.name === runningVersion,
     });
   }
@@ -333,12 +346,9 @@ versionRouter.openapi(
   if (channel === 'stable' || channel === 'all') {
     for (const release of await githubReleases()) {
       if (release.prerelease) continue;
-      const version = release.tag_name.replace(/^v/, '');
       entries.push({
-        version,
+        ...releaseMetadata(release),
         channel: 'stable',
-        date: release.published_at?.split('T')[0] ?? '',
-        title: release.name || `v${version}`,
         description: release.body || '',
         changes: [],
       });
@@ -347,15 +357,10 @@ versionRouter.openapi(
 
   if (channel === 'dev' || channel === 'all') {
     for (const tag of (await dockerHubDevTags()).slice(0, 20)) {
-      const sha8 = tag.name.replace('dev-', '');
       entries.push({
-        version: tag.name,
-        channel: 'dev',
-        date: tag.last_updated?.split('T')[0] ?? '',
-        title: `Dev build ${sha8}`,
+        ...tagMetadata(tag),
         description: '',
         changes: [],
-        sha: sha8,
       });
     }
   }

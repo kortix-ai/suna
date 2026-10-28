@@ -17,6 +17,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Agent Browser': 'text75417b282302',
   Agents: 'text279b44d2ab4b',
   Apps: 'text89dd748442c1',
+  Artifacts: 'text314ae71b8c8d',
   'Ask Agent: Sync Branch & Reload': 'textc2d5fe56d856',
   Changelog: 'textead07c84baac',
   Channels: 'text4c8906cf76f5',
@@ -78,6 +79,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textcb97e7f77a44',
   'agents subagents ai': 'text2cda01a9e9be',
   'apps deploy deployments serverless docker static hosting urls': 'textd49230a2e007',
+  'artifacts docs doc slides deck presentation board design dashboard page published share':
+    'textfe204b549282',
   'audit governed actions approvals trail session': 'textdc4cbd66fe2d',
   'audit log logs events history trail compliance': 'text67f332ec4359',
   'billing payment credit card subscription manage wallet tier plan limits overview spend':

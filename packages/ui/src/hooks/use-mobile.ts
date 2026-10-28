@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { useMediaQuery } from '../internal/hooks/use-media-query';
+import { useMediaQuery } from './use-media-query';
 
 export const MOBILE_BREAKPOINT = 768;
 

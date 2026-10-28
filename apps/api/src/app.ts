@@ -1,7 +1,7 @@
 import { wellKnownResponse } from '@kortix/shared/well-known';
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { createRoute, z } from '@hono/zod-openapi';
 import { config } from './config';
-import { auth, errors, json } from './openapi';
+import { auth, errors, json, makeOpenApiApp } from './openapi';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { getPlatformRole } from './shared/platform-roles';
 
@@ -65,7 +65,7 @@ import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new OpenAPIHono();
+const app = makeOpenApiApp();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };

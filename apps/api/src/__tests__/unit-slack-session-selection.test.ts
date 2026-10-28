@@ -36,6 +36,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     initiatorType: null,
     initiatorId: null,
     spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -69,7 +70,9 @@ mock.module('../shared/db', () => ({
   },
   hasDatabase: () => true,
 }));
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;

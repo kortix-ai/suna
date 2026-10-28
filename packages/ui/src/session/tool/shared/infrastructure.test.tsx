@@ -584,3 +584,25 @@ describe('shouldShowToolPartInActionsPanel — empty show', () => {
     ).toBe(true);
   });
 });
+
+describe('shouldShowToolPartInActionsPanel — empty memory read', () => {
+  const EMPTY =
+    "Here're the files and directories up to 2 levels deep in memory, excluding hidden items and node_modules:\n4K\tmemory";
+  const memoryPart = (status: string, output: string) =>
+    toolCallBlock({
+      type: 'tool',
+      tool: 'memory',
+      callID: 'm',
+      state: { status, input: { command: 'view', path: 'memory' }, output },
+    } as unknown as ToolPart);
+
+  test('drops a settled view of an empty memory folder', () => {
+    expect(shouldShowToolPartInActionsPanel(memoryPart('completed', EMPTY))).toBe(false);
+  });
+
+  test('keeps a view that lists a file', () => {
+    expect(
+      shouldShowToolPartInActionsPanel(memoryPart('completed', `${EMPTY}\n1.2K\tmemory/overview.md`)),
+    ).toBe(true);
+  });
+});

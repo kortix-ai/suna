@@ -29,7 +29,14 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
+import {
+  isShowContentUnavailable,
+  isShowPayloadEmpty,
+  parseLocalhostUrl,
+  showItemDigest,
+  withoutImageGenDuplicates,
+  type ShowLoadStatus,
+} from '@kortix/sdk';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -60,6 +67,8 @@ import {
   ToolRunningContext,
   ToolDetailContext,
   ToolEmptyState,
+  ImageGenDigestsContext,
+  ImageGenPathsContext,
   partInput,
   useServicePreview,
   useToolNavigation,
@@ -103,7 +112,15 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   const aspectRatio = str(input.aspect_ratio);
   const language = str(input.language);
 
-  const items = useMemo(() => parseShowItems(input.items), [input.items]);
+  // Images an `image_gen` card of this turn already drew are not drawn twice:
+  // the same path, or the same bytes at another path, by sha256 (R38).
+  const drawnByImageGen = useContext(ImageGenPathsContext);
+  const drawnDigests = useContext(ImageGenDigestsContext);
+  const items = useMemo(() => {
+    const parsed = parseShowItems(input.items)?.map((item) => ({ ...item, sha256: showItemDigest(call, item.path) }));
+    const rest = parsed && withoutImageGenDuplicates(parsed, drawnByImageGen, drawnDigests);
+    return rest?.length ? rest : null;
+  }, [input.items, call, drawnByImageGen, drawnDigests]);
   const isCarousel = !!items && items.length > 0;
   const [carouselIndex, setCarouselIndex] = useState(0);
   const currentItem = isCarousel ? items[carouselIndex] || items[0] : null;
@@ -254,6 +271,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
               content={content}
               language={language}
               aspectRatio={aspectRatio}
+              sha256={showItemDigest(call, path)}
               LocalhostPreview={InlineServicePreview}
               onStatusChange={setContentStatus}
             />

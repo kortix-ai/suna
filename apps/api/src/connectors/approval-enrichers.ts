@@ -144,7 +144,7 @@ export const APPROVAL_ENRICHERS: Readonly<Record<string, ApprovalEnricher>> = {
   'composio:GITHUB_MERGE_A_PULL_REQUEST': githubMergePullRequest,
 };
 
-export const APPROVAL_ENRICH_TIMEOUT_MS = 3_000;
+const APPROVAL_ENRICH_TIMEOUT_MS = 3_000;
 
 /**
  * Provider-qualified action identity. Connector slugs are user-chosen, so a

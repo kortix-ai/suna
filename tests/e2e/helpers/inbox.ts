@@ -176,7 +176,8 @@ async function resendInbox(apiKey: string): Promise<DisposableInbox> {
     await purgeE2eInboxes(baseUrl, headers);
     created = await createOnce();
   }
-  const inbox = await json<ResendInboxResponse>(created, 200);
+  // Resend answers 201 Created for a new inbox.
+  const inbox = await json<ResendInboxResponse>(created, [200, 201]);
   const inboxPath = `${baseUrl}/inboxes/${encodeURIComponent(inbox.id)}`;
   // `received_at` can fall up to a second before the send that produced it,
   // so read 2 s back and skip messages this inbox already returned: an earlier

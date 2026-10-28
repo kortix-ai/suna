@@ -1,5 +1,5 @@
 /** Server-side `kortix.toml` / `kortix.yaml` manifest validation. */
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, boundedIssues, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -58,7 +58,7 @@ export function registerManifestValidationRoutes(): void {
     const verdict = validateManifest(raw, format);
     return c.json({
       valid: verdict.valid,
-      issues: verdict.issues,
+      ...boundedIssues(verdict.issues),
     });
   },
   );

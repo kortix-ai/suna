@@ -216,6 +216,24 @@ describe('GET /:projectId/files — the query it took before paging', () => {
   });
 });
 
+describe('single-file reads reject repository-root paths (KRTX-3551)', () => {
+  for (const route of ['raw', 'content', 'history']) {
+    for (const path of ['.', './', './//']) {
+      test(`${route}: ${path} returns 404 instead of throwing`, async () => {
+        const response = await projectsApp.request(`/${PROJECT_ID}/files/${route}?${new URLSearchParams({ path })}`);
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: 'File not found' });
+      });
+    }
+    if (route !== 'history') test(`${route}: a repository-relative file still reads`, async () => {
+      const response = await projectsApp.request(`/${PROJECT_ID}/files/${route}?${new URLSearchParams({ path: './z/last.txt' })}`);
+      expect(response.status).toBe(200);
+      if (route === 'raw') expect(await response.text()).toBe('last\n');
+      else expect(await response.json()).toMatchObject({ path: './z/last.txt', ref: 'main', content: 'last\n' });
+    });
+  }
+});
+
 // NUL is not representable in a Git path or process argument (KRTX-3404).
 describe('file read paths', () => {
   for (const endpoint of ['content', 'raw', 'history']) {

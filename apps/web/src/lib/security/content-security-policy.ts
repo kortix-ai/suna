@@ -19,6 +19,13 @@
  * is still required by the root layout's inline bootstrap, so this does not
  * yet protect against injected inline script, only against unlisted hosts.
  * Moving to nonces is the next step.
+ *
+ * `next dev` alone adds `'unsafe-eval'`: React rebuilds the call stacks of
+ * development errors with eval(), and without it every page logs "eval() is
+ * not supported" and the dev overlay counts an issue. A production build never
+ * calls eval(). Every deployed web app is a production build
+ * (`apps/web/Dockerfile` sets `NODE_ENV=production`), so the deployed header is
+ * unchanged.
  */
 
 export const CSP_REPORT_PATH = '/api/csp-report';
@@ -52,6 +59,8 @@ function scriptSourceDirective(): string {
     "'unsafe-inline'",
     // Shiki's regex engine and the file viewers compile WebAssembly.
     "'wasm-unsafe-eval'",
+    // React's development call stacks; see the file comment.
+    ...(process.env.NODE_ENV === 'development' ? ["'unsafe-eval'"] : []),
     // Workers created from blob URLs (PDF and editor workers).
     'blob:',
     ...SCRIPT_SRC_HOSTS,
