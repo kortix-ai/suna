@@ -1,49 +1,36 @@
 'use client';
 
 import { YamlLine } from '@/features/marketing/code-panel';
-import { MANIFEST, SUPPORT_AGENT, TREE } from '@/features/marketing/framework/content';
+import { FILES, TREE } from '@/features/marketing/framework/content';
 import { cn } from '@kortix/ui';
 import { FileTextIcon, FolderSimpleIcon, GitBranchIcon, TerminalIcon } from '@phosphor-icons/react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import { H, useFitScale, W } from './session-window';
 
-/** One open file: its path, then numbered lines. */
-function Pane({ title, lines }: { title: string; lines: readonly string[] }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="text-muted-foreground border-b px-5 py-2.5 font-mono text-xs">{title}</div>
-      <ol className="min-h-0 flex-1 overflow-hidden py-3 font-mono text-sm leading-relaxed">
-        {lines.map((line, i) => (
-          <li key={i} className="flex gap-5 px-5 whitespace-pre">
-            <span className="text-muted-foreground w-6 shrink-0 text-right tabular-nums select-none">
-              {i + 1}
-            </span>
-            <span>
-              <YamlLine line={line} />
-            </span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
+/** One line of an open file: YAML and frontmatter tinted, Markdown headings in weight. */
+function Line({ path, line, inFrontmatter }: { path: string; line: string; inFrontmatter: boolean }) {
+  if (path.endsWith('.yaml') || inFrontmatter || line === '---') return <YamlLine line={line} />;
+  if (line.startsWith('#')) return <span className="text-foreground font-medium">{line}</span>;
+  return <span className="text-muted-foreground">{line}</span>;
 }
 
 /**
  * The same Northwind project as the session window, seen as code: its git
- * repository, with kortix.yaml open. Drawn at the session window's board size
- * and scaled the same way, so the two line up under the hero's slider.
+ * repository, with every file in the tree clickable. kortix.yaml is open by
+ * default. Drawn at the session window's board size and scaled the same way.
+ * `onInteract` tells the hero's switcher that the reader is exploring.
  */
-export function FrameworkWindow({ className }: { className?: string }) {
+export function FrameworkWindow({ className, onInteract }: { className?: string; onInteract?: () => void }) {
   const frame = useRef<HTMLDivElement>(null);
   const scale = useFitScale(frame);
+  const [open, setOpen] = useState('kortix.yaml');
+  const lines = FILES[open] ?? [];
+  // Frontmatter: the lines between the first two `---` of a Markdown file.
+  const fenceEnd = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
 
   return (
-    <div
-      ref={frame}
-      className={cn('relative w-full', className)}
-      style={{ aspectRatio: `${W} / ${H}` }}
-    >
+    <div ref={frame} className={cn('relative w-full', className)} style={{ aspectRatio: `${W} / ${H}` }}>
       <div
         className="absolute top-0 left-0 origin-top-left"
         style={{ width: W, height: H, transform: `scale(${scale})` }}
@@ -57,35 +44,51 @@ export function FrameworkWindow({ className }: { className?: string }) {
                 main
               </span>
             </div>
-            {/* The repository and one agent file on the left, kortix.yaml wide
-                on the right so every agent fits on one line. */}
-            <div className="grid min-h-0 flex-1 grid-cols-[22rem_1fr]">
-              <div className="flex min-h-0 flex-col border-r">
-                <ul className="bg-sidebar border-b py-3 text-sm">
-                  {TREE.map((node) => (
+            <div className="grid min-h-0 flex-1 grid-cols-[20rem_1fr]">
+              <ul className="bg-sidebar overflow-hidden border-r py-3 text-sm" aria-label="Repository files">
+                {TREE.map((node) =>
+                  node.path ? (
+                    <li key={node.path}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(node.path!);
+                          onInteract?.();
+                        }}
+                        aria-current={open === node.path ? 'true' : undefined}
+                        className="text-muted-foreground hover:text-foreground aria-[current]:bg-muted aria-[current]:text-foreground flex w-full items-center gap-2 py-1.5 pr-4 text-left aria-[current]:font-medium"
+                        style={{ paddingLeft: 20 + node.depth * 16 }}
+                      >
+                        <FileTextIcon className="size-4 shrink-0" aria-hidden />
+                        <span className="truncate">{node.name}</span>
+                      </button>
+                    </li>
+                  ) : (
                     <li
-                      key={`${node.depth}-${node.name}`}
-                      className={cn(
-                        'flex items-center gap-2 py-1 pr-4',
-                        'open' in node && node.open
-                          ? 'bg-muted text-foreground font-medium'
-                          : 'text-muted-foreground',
-                      )}
+                      key={node.name}
+                      className="text-foreground flex items-center gap-2 pt-3 pr-4 pb-1.5 font-medium first:pt-1.5"
                       style={{ paddingLeft: 20 + node.depth * 16 }}
                     >
-                      {'dir' in node && node.dir ? (
-                        <FolderSimpleIcon className="size-4 shrink-0" aria-hidden />
-                      ) : (
-                        <FileTextIcon className="size-4 shrink-0" aria-hidden />
-                      )}
+                      <FolderSimpleIcon className="size-4 shrink-0" aria-hidden />
                       {node.name}
                     </li>
+                  ),
+                )}
+              </ul>
+              <div className="flex min-h-0 min-w-0 flex-col">
+                <div className="text-muted-foreground border-b px-5 py-2.5 font-mono text-xs">{open}</div>
+                <ol className="min-h-0 flex-1 overflow-hidden py-3 font-mono text-sm leading-relaxed">
+                  {lines.map((line, i) => (
+                    <li key={`${open}-${i}`} className="flex gap-5 px-5 whitespace-pre">
+                      <span className="text-muted-foreground w-6 shrink-0 text-right tabular-nums select-none">
+                        {i + 1}
+                      </span>
+                      <span>
+                        <Line path={open} line={line} inFrontmatter={i > 0 && i < fenceEnd} />
+                      </span>
+                    </li>
                   ))}
-                </ul>
-                <Pane title="agents/support.md" lines={SUPPORT_AGENT} />
-              </div>
-              <div className="flex min-h-0 flex-col">
-                <Pane title="kortix.yaml" lines={MANIFEST} />
+                </ol>
                 <div className="flex items-center gap-2 border-t px-5 py-3 font-mono text-sm">
                   <TerminalIcon className="text-muted-foreground size-4" aria-hidden />
                   <span className="text-muted-foreground select-none">$</span>
