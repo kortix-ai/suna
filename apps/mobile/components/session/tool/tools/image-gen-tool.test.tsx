@@ -242,6 +242,12 @@ describe('ImageGenTool', () => {
     expect(all.at(-1)).toBe('codex/gpt-image-2');
   });
 
+  test('a ready grid frame whose file is still loading shows its loading state', async () => {
+    const output = batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1024', 'b']]);
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: ['a', 'b'] }, output }), false);
+    expect(texts().filter((t) => t === 'Loading image')).toHaveLength(2);
+  });
+
   test('legacy single path output still renders', async () => {
     const output = JSON.stringify({ path: FOX, action: 'generate', size: '1254x836', model: 'gpt-image-2' });
     await render(call({ status: 'completed', input: { action: 'generate', prompt: 'A paper-cutout fox', size: '1536x1024' }, output }), false);

@@ -143,14 +143,12 @@ interface SandboxImageProps {
   path: string;
   alt: string;
   seed: string;
-  /** The card's only frame: it says "Loading image"; a grid's frames wait silently. */
-  solo: boolean;
   onRatio: (ratio: number | null) => void;
   onPress: () => void;
 }
 
 /** One load of the sandbox file; a failure hands over to the next attempt after `WAKE_RETRY_MS`. */
-function SandboxImageAttempt({ path, alt, seed, solo, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
+function SandboxImageAttempt({ path, alt, seed, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
   const { t } = useTranslation();
   const image = useSandboxImage(path, true);
   const [loaded, setLoaded] = useState(false);
@@ -185,7 +183,7 @@ function SandboxImageAttempt({ path, alt, seed, solo, onRatio, onPress, onFail }
           onPress={onPress}
         />
       ) : null}
-      {loaded || !solo ? null : (
+      {loaded ? null : (
         <Overlay>
           <BusyLabel seed={seed} label={t('imageGen.loading')} />
         </Overlay>
@@ -251,7 +249,11 @@ function FailureNote({ error }: { error: ImageGenView['error'] }) {
   );
 }
 
-/** One image, from its generating frame to the file. `solo`: the card's only frame carries the busy line itself. */
+/**
+ * One image, from its generating frame to the file. `solo`: the card's only
+ * frame carries the generating line itself; in rows the card's header does. A
+ * frame whose file is still on the way says "Loading image" in either case.
+ */
 function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
   image: ImageGenImage;
   seed: string;
@@ -300,7 +302,7 @@ function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
           }}
           onPress={() => openExternal(directUrl)}
         />
-        {urlLoaded || !solo ? null : (
+        {urlLoaded ? null : (
           <Overlay>
             <BusyLabel seed={seed} label={t('imageGen.loading')} />
           </Overlay>
@@ -308,7 +310,7 @@ function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
       </>
     );
   } else if (filePath) {
-    content = <SandboxImage path={filePath} alt={alt} seed={seed} solo={solo} onRatio={onRatio} onPress={() => openFile(filePath)} />;
+    content = <SandboxImage path={filePath} alt={alt} seed={seed} onRatio={onRatio} onPress={() => openFile(filePath)} />;
   }
   return (
     <View

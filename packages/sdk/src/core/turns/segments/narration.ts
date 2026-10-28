@@ -420,8 +420,13 @@ function truncate(s: string, max = 60): string {
   return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
 }
 
-/** The images one `image_gen` call made (its output's `images`), else the prompts it asked for, else 1. */
+/**
+ * The images one `image_gen` call made (its output's `images`), else the
+ * prompts it asked for, else 1. A call that failed as a whole made none it
+ * can claim: 1, so its sentence never counts the prompts it asked for.
+ */
 function imageCount(part: ToolPart): number {
+  if ((part.state as { status?: string } | undefined)?.status === 'error') return 1;
   try {
     const images = JSON.parse(String((part.state as { output?: unknown } | undefined)?.output)).images;
     if (Array.isArray(images) && images.length) return images.length;
@@ -578,9 +583,13 @@ const CREATE_MEDIA_NOUN: Record<CreateMedia, string> = {
 /** The group's actions (or its media types) genuinely differ — say only what
  * was touched, in neutral terms that hold no matter which specific action
  * each part turns out to be. Vague-but-true always beats specific-but-false. */
-function mixedCreateSentence(keys: string[]): string {
+function mixedCreateSentence(parts: ToolPart[], keys: string[]): string {
   const counts: Record<CreateMedia, number> = { image: 0, video: 0, presentation: 0, shown: 0 };
-  for (const key of keys) counts[createMediaOf(key)]++;
+  // One image_gen call can make up to four images: count images, not calls.
+  keys.forEach((key, i) => {
+    const media = createMediaOf(key);
+    counts[media] += media === 'image' ? imageCount(parts[i]!) : 1;
+  });
   const segments: string[] = [];
   (Object.keys(counts) as CreateMedia[]).forEach((media) => {
     const c = counts[media];
@@ -667,7 +676,7 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
         const count = createMediaOf(keys[0]) === 'image' ? parts.reduce((sum, p) => sum + imageCount(p), 0) : n;
         return CREATE_GROUP_SENTENCE[keys[0]](count);
       }
-      return mixedCreateSentence(keys);
+      return mixedCreateSentence(parts, keys);
     }
     case 'plan':
       return n === 1 ? 'Planned the work' : `Planned the work · ${n} steps`;

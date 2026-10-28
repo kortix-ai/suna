@@ -5,14 +5,24 @@ import { useBinaryBlob } from '../../../files/runtime/hooks/use-binary-blob';
 import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { ImageFrame } from '../../../files/renderers/image-frame';
 import { Button } from '../../../primitives/button';
+import { ChatGptConnectionSlot } from '../../models/chatgpt-connection-button';
 import { useModelConnectionGate } from '../../models/use-model-connection-gate';
-import { InTranscriptTurnContext, isLocalSandboxFilePath, TurnLiveContext, useToolNavigation } from '../shared/infrastructure';
+import { sessionPersonalUser } from '../../overrides/provider-pool-draft';
+import { useSessionIds } from '../../../providers/session-ids';
+import { useUiViewerId } from '../../../providers/ui-provider';
+import {
+  InTranscriptTurnContext,
+  isLocalSandboxFilePath,
+  ReadOnlySessionContext,
+  TurnLiveContext,
+  useToolNavigation,
+} from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { ShowFileActions } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
 import { useLocale, useTranslations } from '../../../i18n';
 import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView, isSandboxNotReadyError } from '@kortix/sdk';
-import type { FlatModel } from '@kortix/sdk/react';
+import { type FlatModel, useProjectSession } from '@kortix/sdk/react';
 import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 /** The one busy signal over the flat frame. Elapsed time counts from the call's start, so a reload keeps it. */
@@ -52,13 +62,18 @@ const NO_MODELS: FlatModel[] = [];
 
 /**
  * Opens the project's model settings on Providers: the model picker's connect
- * action (`useModelConnectionGate`). Hidden outside a project or without the
- * host's provider modal.
+ * action (`useModelConnectionGate`). Shown only to a viewer who can change the
+ * project's models (`project.model.write`), in a session private to them;
+ * hidden outside a project or without the host's provider modal.
  */
 function ConnectModelAction() {
   const t = useTranslations('sessionUi.modelGate');
-  const { canConnectProvider, openConnectProvider, modal } = useModelConnectionGate(NO_MODELS);
-  if (!canConnectProvider) return null;
+  const { canConnectProvider, canWriteProviders, openConnectProvider, modal } = useModelConnectionGate(NO_MODELS);
+  const { projectId, sessionId } = useSessionIds();
+  const viewerId = useUiViewerId();
+  const session = useProjectSession(projectId ?? '', sessionId ?? '', { enabled: !!projectId && !!sessionId });
+  const ownSession = !!viewerId && sessionPersonalUser(session.data) === viewerId;
+  if (!canConnectProvider || !canWriteProviders || !ownSession) return null;
   return (
     <>
       {modal}
@@ -69,10 +84,24 @@ function ConnectModelAction() {
   );
 }
 
+/**
+ * The fix for a failure a connection can repair, by code, as the session error
+ * banner routes it: the member's own ChatGPT login (`ChatGptConnectionSlot`,
+ * which applies `chatGptActionApplies`) for the two ChatGPT codes, the
+ * project's model settings for `image_model_unavailable`. None in a read-only view.
+ */
+function ConnectAction({ code }: { code?: string }) {
+  const readOnly = useContext(ReadOnlySessionContext);
+  if (readOnly) return null;
+  if (code === 'provider_not_connected') return <ChatGptConnectionSlot action="connect" className="mt-1" />;
+  if (code === 'provider_reauth_required') return <ChatGptConnectionSlot action="reconnect" className="mt-1" />;
+  return <ConnectModelAction />;
+}
+
 type ImageGenImage = ImageGenView['images'][number];
 
-/** A failure in a quiet plate: the message, the suggestion, the retry wait and the connect action. No error reads "Stopped". */
-function FailureNote({ error }: { error: ImageGenView['error'] }) {
+/** A failure in a quiet plate: the message, the suggestion, the retry wait and `action`. No error reads "Stopped". */
+function FailureNote({ error, action }: { error: ImageGenView['error']; action?: ReactNode }) {
   const t = useTranslations('imageGen');
   const retryLine = useRetryLine(error?.retryAfterSeconds);
   return (
@@ -82,7 +111,7 @@ function FailureNote({ error }: { error: ImageGenView['error'] }) {
           <span className="text-foreground">{error.message || t('failed')}</span>
           {error.suggestion ? <span className="text-muted-foreground">{error.suggestion}</span> : null}
           {retryLine ? <span className="text-muted-foreground">{retryLine}</span> : null}
-          {error.connectModel ? <ConnectModelAction /> : null}
+          {action}
         </>
       ) : (
         <span className="text-muted-foreground">{t('stopped')}</span>
@@ -93,7 +122,8 @@ function FailureNote({ error }: { error: ImageGenView['error'] }) {
 
 /**
  * One image, from its generating frame to the file. `solo`: the card's only
- * frame carries the busy line itself; in a grid the card's header does.
+ * frame carries the generating line itself; in a grid the card's header does.
+ * A frame whose file is still on the way says "Loading image" in either case.
  */
 function ImageGenFrame({
   image,
@@ -139,7 +169,7 @@ function ImageGenFrame({
             solo ? <BusyLabel seed={seed} label={busyLabel} startedAt={startedAt} /> : null
           ) : blobError ? (
             <span className="text-muted-foreground text-xs">{blobError}</span>
-          ) : !src && solo ? (
+          ) : !src ? (
             <BusyLabel seed={seed} label={t('loading')} />
           ) : null
         }
@@ -170,13 +200,16 @@ export function ImageGenTool({ call }: ToolProps) {
   const view = useMemo(() => imageGenView(call, inTurn ? live : undefined), [call, inTurn, live]);
   const edit = view.action === 'edit';
   const solo = view.images.length === 1;
+  // One fix per card, even when several frames failed for the same reason.
+  const repairable = view.error?.connectModel ? view.error : view.images.find((image) => image.error?.connectModel)?.error;
+  const action = repairable ? <ConnectAction code={repairable.code} /> : null;
 
   let body: ReactNode;
   if (!view.images.length) {
     // The whole call failed or stopped.
     body = (
       <>
-        <FailureNote error={view.error} />
+        <FailureNote error={view.error} action={action} />
         {view.prompts.map((prompt, i) => (
           <PromptLine key={i} prompt={prompt} />
         ))}
@@ -214,6 +247,8 @@ export function ImageGenTool({ call }: ToolProps) {
   return (
     <figure className="flex w-full max-w-md flex-col gap-2">
       {body}
+      {/* A whole-call failure carries the fix in its plate; failed frames share one, under them. */}
+      {action && view.images.length ? <div className="flex flex-col items-start">{action}</div> : null}
       {view.model ? <figcaption className="text-muted-foreground truncate font-mono text-xs">{view.model}</figcaption> : null}
     </figure>
   );

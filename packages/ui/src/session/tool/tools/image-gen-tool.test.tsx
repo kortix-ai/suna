@@ -8,8 +8,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ToolPart } from '../../../internal/session-types';
 import { TooltipProvider } from '../../../primitives/tooltip';
+import * as uiProvider from '../../../providers/ui-provider';
 import { IntlTestProvider } from '../../../test-utils/intl';
-import { InTranscriptTurnContext, TurnLiveContext } from '../shared/infrastructure';
+import * as sdkReact from '@kortix/sdk/react';
+import { InTranscriptTurnContext, ReadOnlySessionContext, TurnLiveContext } from '../shared/infrastructure';
 import { ImageGenTool } from './image-gen-tool';
 
 // The file read, as the card sees it: still loading by default.
@@ -22,13 +24,29 @@ mock.module('../../../files/runtime/hooks/use-binary-blob', () => ({ useBinaryBl
 // provider modal mounted. `opened` records each tab the card asked to open.
 const opened: string[] = [];
 let canConnectProvider = true;
+/** `project.model.write` for the viewer. */
+let canWriteProviders = true;
 mock.module('../../models/use-model-connection-gate', () => ({
   useModelConnectionGate: () => ({
     canConnectProvider,
+    canWriteProviders,
     openConnectProvider: (tab: string) => opened.push(tab),
     modal: <div data-provider-modal="" />,
   }),
 }));
+
+// The session error banner's ChatGPT fix, as the card sees it (its own rules
+// live in `chatGptActionApplies`, tested beside it).
+mock.module('../../models/chatgpt-connection-button', () => ({
+  ChatGptConnectionSlot: ({ action }: { action: string }) => <button data-chatgpt-slot={action}>ChatGPT {action}</button>,
+}));
+
+// Whose session this is: private to the viewer by default.
+const VIEWER = 'user-viewer';
+let sessionRow: { visibility: string; created_by: string } = { visibility: 'private', created_by: VIEWER };
+let readOnly = false;
+mock.module('@kortix/sdk/react', () => ({ ...sdkReact, useProjectSession: () => ({ data: sessionRow }) }));
+mock.module('../../../providers/ui-provider', () => ({ ...uiProvider, useUiViewerId: () => VIEWER }));
 
 /** The tool's batch output for the given images (`[path, size, prompt]`) and failed prompts. */
 function batch(images: [string, string, string][], failed: { prompt: string; error: string }[] = [], model = 'codex/gpt-image-2') {
@@ -55,6 +73,7 @@ function card(state: Record<string, unknown>, turn?: { live: boolean }): ReactEl
     <IntlTestProvider locale="en" onError={() => {}}>
       <QueryClientProvider client={new QueryClient()}>
         <TooltipProvider>
+          <ReadOnlySessionContext.Provider value={readOnly}>
           {turn ? (
             <InTranscriptTurnContext.Provider value>
               <TurnLiveContext.Provider value={turn.live}>
@@ -64,6 +83,7 @@ function card(state: Record<string, unknown>, turn?: { live: boolean }): ReactEl
           ) : (
             <ImageGenTool call={call} />
           )}
+          </ReadOnlySessionContext.Provider>
         </TooltipProvider>
       </QueryClientProvider>
     </IntlTestProvider>
@@ -160,14 +180,37 @@ describe('ImageGenTool', () => {
     expect(count(html, 'codex/gpt-image-2')).toBe(1);
   });
 
-  test('a failed frame with a connect code offers Connect model in its place', () => {
+  test('a failed frame with a ChatGPT code offers the ChatGPT reconnect for its card', () => {
     const html = render({
       status: 'completed',
       input: { action: 'generate', prompts: ['a', 'b'] },
       output: batch([[FOX, '1024x1024', 'a']], [{ prompt: 'b', error: 'Image generation failed (401): The ChatGPT login expired. Reconnect ChatGPT in Models, then retry. [provider_reauth_required]' }]),
     });
-    expect(count(html, 'Connect model')).toBe(1);
+    expect(count(html, 'data-chatgpt-slot="reconnect"')).toBe(1);
+    expect(html).not.toContain('Connect model');
     expect(html).toContain('The ChatGPT login expired.');
+  });
+
+  test('two failed frames that need a connection show the action once for the card', () => {
+    const unavailable = 'Image generation failed (400): No image model is available for this project. Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings. [image_model_unavailable]';
+    const html = render({
+      status: 'completed',
+      input: { action: 'generate', prompts: ['a', 'b', 'c'] },
+      output: batch([[FOX, '1024x1024', 'a']], [{ prompt: 'b', error: unavailable }, { prompt: 'c', error: unavailable }]),
+    });
+    expect(count(html, 'No image model is available for this project.')).toBe(2);
+    expect(count(html, 'Connect model')).toBe(1);
+  });
+
+  test('a ready grid frame whose file is still loading shows its loading state', () => {
+    const html = render({
+      status: 'completed',
+      input: { action: 'generate', prompts: ['a', 'b'] },
+      output: batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1024', 'b']]),
+    });
+    expect(count(html, 'aria-busy="true"')).toBe(2);
+    expect(count(html, 'Loading image')).toBe(2);
+    expect(count(html, 'role="status"')).toBe(2);
   });
 
   test('legacy single path output still renders', () => {
@@ -272,14 +315,51 @@ describe('ImageGenTool', () => {
     expect(opened).toEqual(['providers']);
   });
 
-  test('the connect codes from ChatGPT show the same Connect model action', () => {
-    for (const error of [
-      'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Models, then retry. [provider_not_connected]',
-      'Image generation failed (401): The ChatGPT login expired. Reconnect ChatGPT in Models, then retry. [provider_reauth_required]',
-    ]) {
-      const html = render({ status: 'error', error });
-      expect(html).toContain('Connect model');
-      expect(html).not.toContain('Connect ChatGPT</button>');
+  const NOT_CONNECTED = 'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Models, then retry. [provider_not_connected]';
+  const REAUTH = 'Image generation failed (401): The ChatGPT login expired. Reconnect ChatGPT in Models, then retry. [provider_reauth_required]';
+
+  test('the ChatGPT codes use the session error banner\'s ChatGPT fix, not Connect model', () => {
+    const notConnected = render({ status: 'error', error: NOT_CONNECTED });
+    expect(notConnected).toContain('data-chatgpt-slot="connect"');
+    expect(notConnected).not.toContain('Connect model');
+    const reauth = render({ status: 'error', error: REAUTH });
+    expect(reauth).toContain('data-chatgpt-slot="reconnect"');
+    expect(reauth).not.toContain('Connect model');
+  });
+
+  test('a read-only view offers no fix at all', () => {
+    readOnly = true;
+    try {
+      for (const error of [NOT_CONNECTED, REAUTH, UNAVAILABLE.error]) {
+        const html = render({ status: 'error', error });
+        expect(html).not.toContain('data-chatgpt-slot');
+        expect(html).not.toContain('Connect model');
+      }
+    } finally {
+      readOnly = false;
+    }
+  });
+
+  test('Connect model is hidden in a shared session and for a member without project.model.write', () => {
+    sessionRow = { visibility: 'project', created_by: VIEWER };
+    try {
+      expect(render(UNAVAILABLE)).not.toContain('Connect model');
+    } finally {
+      sessionRow = { visibility: 'private', created_by: VIEWER };
+    }
+    sessionRow = { visibility: 'private', created_by: 'another-member' };
+    try {
+      expect(render(UNAVAILABLE)).not.toContain('Connect model');
+    } finally {
+      sessionRow = { visibility: 'private', created_by: VIEWER };
+    }
+    canWriteProviders = false;
+    try {
+      const html = render(UNAVAILABLE);
+      expect(html).toContain('No image model is available for this project.');
+      expect(html).not.toContain('Connect model');
+    } finally {
+      canWriteProviders = true;
     }
   });
 

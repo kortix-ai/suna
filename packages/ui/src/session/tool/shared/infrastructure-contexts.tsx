@@ -95,6 +95,12 @@ export const InTranscriptTurnContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
+/**
+ * True in a read-only session view (the sub-session modal): a tool card shows
+ * what happened and offers no fix (connect a model, reconnect ChatGPT).
+ */
+export const ReadOnlySessionContext = createContext(false);
+
 // Background memory plumbing (searches/gets and raw memory/ reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
 // is NOT listed here — it renders in the panel so clicking its chat row works.

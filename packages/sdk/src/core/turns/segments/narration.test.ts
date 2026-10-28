@@ -533,6 +533,25 @@ describe('narrateStep - image_gen must resolve its own action, not always "Made 
     ).toBe('Made 4 images');
   });
 
+  it('a mixed step counts images, not calls', () => {
+    const line = narrateStep('create', [
+      part('image_gen', { action: 'generate', prompts: ['a', 'b', 'c'] }),
+      part('image_gen', { action: 'edit', prompts: ['d', 'e'] }),
+      part('video_gen', {}),
+    ]);
+    expect(line).toBe('Worked on 5 images and 1 video');
+  });
+
+  it('a batch call that failed as a whole never claims it made its images', () => {
+    const failed = {
+      type: 'tool',
+      tool: 'image_gen',
+      callID: 'c-failed-batch',
+      state: { status: 'error', input: { action: 'generate', prompts: ['a', 'b', 'c'] }, error: 'Image generation failed (500): Upstream error.' },
+    } as unknown as ToolPart;
+    expect(narrateStep('create', [failed])).not.toContain('3 images');
+  });
+
   it('falls back to a vague-but-true sentence when action is missing (grouped)', () => {
     const line = narrateStep('create', [part('image_gen', {}), part('image_gen', {})]);
     expect(line).toBe('Worked on 2 images');
