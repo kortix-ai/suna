@@ -17,9 +17,12 @@ account buys, and which features it may use.
 
 1. **Money and features are separate.** Every account buys usage the same way:
    a billing plan (Free or Credits) plus top-ups. Enterprise never changes that.
-2. **Enterprise is a feature entitlement**, nothing else: SSO, SCIM, advanced
-   roles, audit export. No credits come with it. Organization branding is on
-   every plan (2026-10-28: Kortix is Apache 2.0, so anyone may rebrand it).
+2. **Enterprise is a feature entitlement**, nothing else: the four features
+   `sso`, `scim`, `rbac`, `auditAccess` (`ENTERPRISE_FEATURES`,
+   `apps/api/src/types.ts`, the only list). No credits come with it. The gate
+   rule for every Enterprise route is in `ee/README.md` and flow `IAM-45`
+   proves it. Organization branding is a plan entitlement, on for every plan
+   (2026-10-28: Kortix is Apache 2.0, so anyone may rebrand it).
 3. **Three Enterprise states, no clocks.** Off, Demo (self-serve) and Licensed
    (a contract). There are no trials.
 4. **Exceptions are per-key overrides** in `entitlement_overrides`, each with an
@@ -150,7 +153,9 @@ A model request on the account's own provider key is billed by the provider
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
 `auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
-Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+Set through `PUT /v1/admin/api/accounts/{id}/overrides`. `branding: false` is
+the operator's switch to stop one account showing its own branding (writes
+answer `403 branding_disabled`); branding is otherwise on for every plan.
 
 ## Managed models are sold, never given
 

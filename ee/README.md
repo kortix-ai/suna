@@ -6,25 +6,59 @@ directories named `ee` is the exception. It is licensed under the
 
 ## What is Enterprise
 
-Enterprise is four features. They match the `sso`, `scim`, `rbac` and
-`auditAccess` entitlements in `apps/api/src/billing/services/plan-catalog.ts`.
+Enterprise is four features: the entitlements `sso`, `scim`, `rbac` and
+`auditAccess`. `ENTERPRISE_FEATURES` in `apps/api/src/types.ts` is the only
+list. The plan catalog, the Demo and Licensed states, the self-host license key,
+the operator overrides and `requireEntitlement` all derive from it.
 
 | Feature | Server code |
 |---|---|
 | SAML single sign-on | `apps/api/src/accounts/iam/ee/sso.ts`, `sso-provisioning.ts`, `apps/api/src/iam/ee/sso-sync.ts`, `apps/api/src/repositories/ee/sso.ts` |
 | SCIM directory provisioning | `apps/api/src/ee/scim/`, `apps/api/src/accounts/iam/ee/scim-tokens.ts`, `apps/api/src/repositories/ee/scim.ts` |
 | Custom roles, policies and groups | `apps/api/src/accounts/iam/ee/custom-roles.ts`, `custom-roles-policy.ts`, `groups.ts`, `apps/api/src/projects/routes/ee/group-grants.ts` |
-| Audit log access, export and webhooks | `apps/api/src/accounts/ee/audit.ts`, `apps/api/src/shared/ee/audit-webhooks.ts` |
+| Audit log access, export and webhooks | `apps/api/src/accounts/ee/audit.ts`, `apps/api/src/projects/routes/ee/project-audit-log.ts`, `apps/api/src/shared/ee/audit-webhooks.ts` |
 
 Every one of these files starts with the header
 `// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise`, so the license stays
 on a file that is copied out of its directory. `tests/unit/ee-license-headers.test.ts`
 fails when an `ee` file lacks it, or a file outside `ee` claims it.
 
-Each feature is also gated at run time by its entitlement: a route answers `402
-entitlement_required`, the SCIM API refuses the token, and audit webhooks stop
-delivering, unless the account is Licensed, in Demo, or the deployment holds a
-valid license key.
+## When a feature is on
+
+An account may use an Enterprise feature when one of these is true:
+
+| State | How it starts |
+|---|---|
+| Licensed | an active license contract (Kortix Cloud) |
+| Demo | an owner or admin turns it on in Settings > Billing; for development, testing and evaluation |
+| Self-host license key | `KORTIX_LICENSE_KEY` holds a valid, unexpired key; every account of the deployment |
+
+An operator can still switch one feature off or on for one account with an
+override (`PUT /v1/admin/api/accounts/:id/overrides`).
+
+## The gate rule
+
+One rule covers every Enterprise route:
+
+| Request | Without the feature |
+|---|---|
+| Create or change Enterprise configuration (SSO provider, mappings, SCIM tokens, groups, roles, policies, group grants, audit webhooks, webhook replay) | `402 {code:"entitlement_required", entitlement:"<feature>"}` |
+| Read the audit log (`GET /accounts/:id/audit`, `/activity`, `/export`, `POST /reconcile`, `GET /projects/:id/audit`) | `402 entitlement_required` |
+| Read Enterprise configuration, or remove it | allowed |
+| Use the SCIM API with a token | `403`, every request |
+| Deliver audit webhooks | stops |
+| Sign in with SSO | allowed: nobody is locked out |
+
+The gate (`requireEntitlement`, `apps/api/src/accounts/iam/http-helpers.ts`)
+runs right after the permission check and before any lookup, so a denied
+account learns nothing about the resource. Reading and removing stay open so an
+account whose license ended can see and undo what it set up. Data an account
+created stays in force: existing custom roles and groups keep applying until
+someone removes them.
+
+Flow `IAM-45` (`tests/src/flows/enterprise-entitlement.flow.ts`) walks every
+Enterprise route through Off → Demo → Off and proves the rule. A new Enterprise
+route goes into its lists.
 
 Everything else is Apache 2.0, including:
 
@@ -34,7 +68,9 @@ Everything else is Apache 2.0, including:
 - the audit trail itself (Kortix records audit events on every plan);
 - the web screens and the `@kortix/sdk` calls for these features, which do
   nothing without an Enterprise server;
-- organization branding, which is on for every plan.
+- organization branding, which is on for every plan. It is a plan entitlement,
+  not an Enterprise feature; an operator override can switch it off for one
+  account (`403 branding_disabled`).
 
 ## What is free
 
@@ -77,7 +113,8 @@ requests that rebuild an `ee/` feature in the Apache core.
   to the module it belongs to (`accounts/iam/ee/`, `repositories/ee/`,
   `shared/ee/`), or in `apps/api/src/ee/` for a whole module, and starts with
   the SPDX header above.
-- Gate every new Enterprise route with `requireEntitlement(c, accountId, '<key>')`.
+- Gate every new route that creates or changes Enterprise configuration with
+  `requireEntitlement(c, accountId, '<feature>')`, and add it to flow `IAM-45`.
 - Core code calls `ee/` only through its `register…Routes()` functions, the SSO
   sign-in checks and the audit webhook worker's timer. Shared logic that core
   needs stays in core.
