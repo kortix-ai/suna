@@ -15,8 +15,8 @@
  * | `New message from <user> in the same Slack thread:` | the same renderer before 2026-09, kept for old transcripts |
  * | `You're answering a message on Microsoft Teams as a teammate.` | `channels/teams/session.ts` renderAgentPrompt |
  * | `New message from <user> in the same Teams conversation:` | `channels/teams/session.ts` renderFollowUpPrompt |
- * | `You received a message on Telegram.` + `Chat:`/`From:`/`Message id:`, the text, `How to answer:` | `channels/telegram/session.ts` renderTelegramPrompt |
- * | `New Telegram message from <user> in the same chat:` + the same block | `channels/telegram/session.ts` renderTelegramPrompt |
+ * | `You received a message on Telegram.` + `Chat:`/`From:`/`Message id:`, the text, `How to answer:` | the Telegram renderer from 2026-10-24 until `channelPromptText`, kept so old transcripts still render |
+ * | `New Telegram message from <user> in the same chat:` + the same block | the same renderer, kept so old transcripts still render |
  * | `You received a message on Telegram.` + a `Message:` line | the retired one-session-per-message Telegram webhook (removed 2026-10-24), kept so old transcripts still render |
  * | `[<Platform> · <context> · message from <user>]` with no such delimiter | the pre-2026 header, kept so old transcripts still render |
  *
@@ -158,7 +158,7 @@ const TELEGRAM_FOLLOW_UP_HEADER = /^New Telegram message from (\S+) in the same 
 const TELEGRAM_TAIL = '\n\nHow to answer:\n- Reply with the ';
 
 /**
- * A Telegram prompt as `renderTelegramPrompt` writes it: the header line, the
+ * A Telegram prompt as the 2026-10-24 renderer wrote it: the header line, the
  * `Chat:`, `From:` and `Message id:` lines, the text, then `How to answer:`.
  * The chat id names nothing a person reads, so the context stays empty (as for
  * Teams). The retired shape, with a `Message:` line, is left to the loop below.

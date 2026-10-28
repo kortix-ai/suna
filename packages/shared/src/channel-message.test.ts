@@ -237,7 +237,7 @@ describe('parseChannelMessage — Slack', () => {
   });
 });
 
-/** `renderTelegramPrompt` (apps/api channels/telegram/session.ts) since 2026-10-24; its own test parses the real output. */
+/** The Telegram prompt from 2026-10-24 until `channelPromptText`, kept so old transcripts still render. */
 const telegramPrompt = (header: string, from: string, text: string) =>
   [
     header,
