@@ -5,7 +5,9 @@ import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub'
 // `/login` / `/logout` subcommands and help rows become live.
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'true';
 
+const realConfig = await import('../../../config');
 mock.module('../../../config', () => ({
+  ...realConfig,
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,
@@ -21,7 +23,9 @@ mock.module('../../core/identity', () =>
     resolveProjectChatActor: async () => ({ userId: 'user-1' }),
   }),
 );
+const realApp = await import('../../../accounts/core/app');
 mock.module('../../../accounts/core/app', () => ({
+  ...realApp,
   lookupEmailsByUserIds: async () => new Map(),
 }));
 mock.module('../selection', () => ({

@@ -104,7 +104,9 @@ let deliverCalls = 0;
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
 let createSessionInputs: any[] = [];
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => {
     deliverCalls++;
     return deliverOutcome;
