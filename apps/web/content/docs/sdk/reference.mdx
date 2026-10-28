@@ -611,6 +611,29 @@ What a host draws a `ToolCallBlock` with. Block-native: they stay.
 | `toolCallError(call)` | A failed call's error text: its semantic error (`result.error.message`), else its result text, as `toV1` gives a v1 part's `state.error`. A harness that closes a failed call with `is_error` and the tool's text only still shows that text. `undefined` for a call that did not fail. |
 | `subAgentCalls(thread)` | The tool calls a sub-agent row lists: every shown call (`shouldShowToolPart`) of the thread's replies, in order. One array per thread object; the same empty array for `null`. |
 
+### The `image_gen` card
+
+What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk` and `@kortix/sdk/turns`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
+
+| Name | What it does |
+| --- | --- |
+| `imageGenView(call, live?)` | The card of one `ToolCallBlock` as an `ImageGenView`: `phase` (`ImageGenPhase`: `generating`, `ready`, `failed` or `stopped`), `action` (`generate` or `edit`), `prompt`, `aspectRatio` (`"<w> / <h>"`: the delivered size once the call completed, else the requested size; `auto` is `1 / 1`), `imagePath` (a sandbox file), `directUrl` (legacy outputs without a path; an http(s) URL only, never set beside a path), `startedAt` (epoch ms, from the call's start), `error`. A call that failed with an interrupt, a closure-rule result or an abort text is `stopped`. A completed call with no image path or URL is `failed`. An open call is `stopped` when `live` is `false`, else `generating`. |
+| `ImageGenView['error']` | `message`, `suggestion?` (the text after the first sentence), `code?` (the gateway's trailing `[code]`, such as `provider_not_connected` or `image_rate_limited`), `retryAfterSeconds?` (from `Retry after N s.`), `connectChatGpt` (true only for `provider_not_connected` or `provider_reauth_required`). `null` unless `phase` is `failed`. |
+| `imageGenRetryDelay(seconds)` | `{ value, unit }`: whole seconds below 90 s (at least 1), minutes below 90 min, else hours, each rounded up. |
+| `formatImageGenElapsed(ms)` | The elapsed time as `m:ss`, such as `0:42` or `2:05`. |
+| `imagePathsShownByImageGen(blocks)` | The image paths the `image_gen` calls among `blocks` drew (`ready` calls only), each without its `/workspace/` prefix. |
+| `withoutImageGenDuplicates(items, paths)` | `items` without each item whose `path` is in `paths` (with or without the `/workspace/` prefix). Items without a `path` stay. |
+| `showDrawnByImageGen(call, paths)` | True when `call` is a `show` or `show_user` call and every file it names (`items`, else `path`) is in `paths`: the host renders nothing for it. |
+
+```ts
+import { imageGenView, imagePathsShownByImageGen, showDrawnByImageGen } from '@kortix/sdk';
+
+const drawn = imagePathsShownByImageGen(turn.blocks);
+const view = imageGenView(call, turn.live);
+if (view.phase === 'ready' && view.imagePath) renderImage(view.imagePath, view.aspectRatio);
+if (showDrawnByImageGen(showCall, drawn)) skip(showCall); // the image card already shows it
+```
+
 ### Block turns
 
 The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.
@@ -618,8 +641,8 @@ The turn model over session-log blocks: what a transcript renders a thread from.
 | Name | What it does | Replaces |
 | --- | --- | --- |
 | `sessionLogTurns(thread, options?)` | One `SessionLogTurn` per user message: `id`, `user`, `assistant` (the replies, by `reply_to` then order), `partial` (the prompt is not loaded), `blocks` (every reply block), and the derived fields `status` (`pending`, else the last reply's status), `error` (`code`, `message`, `details`, `raw`), `cost` (the replies' usage priced with the platform markup; a compaction's summary usage is a reply's; a message converted from v1 is priced over its v1 parts, exactly as `getTurnCost` prices them), `compaction` (`block`, `hasContent`, `inFlight`), `threads` (the sub-threads it spawned), `plan` (owns the plan card), `shell` (shell mode's bash call), `response` (the last text block), `attachments`, `live`, `queued`, `retrying`. Options: `busy`, `liveMessageId`, `held` (the prompts the inbox holds, in queue order), `threads`, `pricing`. A turn keeps its identity while its messages and derived fields do. A message out of context keeps its turn; `hideOutOfContext: true` leaves out every message with `in_context: false` that is not streaming (a failed attempt, an aborted empty reply, an old root's history). | `groupMessagesIntoTurns`, `collectTurnParts`, `getTurnError`, `getTurnErrorDetails`, `getTurnErrorRawText`, `getTurnCost`, `compactionTurnInfo`, `getShellModePart`, `findLastTextPart`, `isAttachment`, `getWorkingState`, `resolveWorkingTurn`, `hasRetryingAssistantTurn`, `getChildSessionId` |
-| `sessionLogTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
-| `splitSessionLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the `show` deliverables), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
+| `sessionLogTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show`, `image_gen` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
+| `splitSessionLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the deliverables: `show-group` segments and `show`, `show_user` and `image_gen` calls, in call order), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
 | `sessionLogBurstSteps(blocks)` | The rows of a burst: `thought` (a run of reasoning; `running` only while its message streams), `block`, `group` (same-family calls, with `family`, `label`, `status`). An answered question is its own row. | `mergeBurstSteps`, `stepLabel` |
 | `sessionLogCallStatus(call, live)` | The status a call renders with: `pending`, `running`, `complete`, `error`, or `interrupted`. An open call, or one the closure rule closed (`result.synthetic`, or `result.error.code` `'interrupted'`), is `running` (started) or `pending` on a live turn and `interrupted` on any other. | new |
 | `sessionLogOpenCall(call)` | The call in the open shape `sessionLogCallStatus(call, true)` names: a call the closure rule closed reads `running` (started) or `pending`, without its `result`; every other call is itself. One object per call. Render a thread's calls through it so the v1 live view and the v2 page draw one call the same; `sessionLogCallStatus(call, turn.live)` says whether it is interrupted. | the host's open-call shim |

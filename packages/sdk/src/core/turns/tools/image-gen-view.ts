@@ -197,7 +197,7 @@ function imageGenPathKey(path: string): string {
   return path.trim().replace(/^\/?workspace\//, '');
 }
 
-/** The images the turn's `image_gen` calls already drew, as `imageGenPathKey`s. */
+/** The images the turn's `image_gen` calls already drew, as paths without the `/workspace/` prefix. */
 export function imagePathsShownByImageGen(blocks: readonly SessionLogBlock[]): Set<string> {
   const paths = new Set<string>();
   for (const block of blocks) {

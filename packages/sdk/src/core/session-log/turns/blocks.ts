@@ -34,7 +34,7 @@ export type SessionLogSegment =
 export interface SessionLogTurnWorkSplit {
   /** Folded behind the "Worked for" row. Never empty. */
   work: SessionLogSegment[];
-  /** The `show` deliverables, in call order. */
+  /** The deliverables (`show-group`, `show`, `show_user`, `image_gen`), in call order. */
   hoisted: SessionLogSegment[];
   /** The final text segment, or empty when the turn did not end on text. */
   final: SessionLogSegment[];
@@ -47,7 +47,7 @@ export type SessionLogBurstStep =
 
 const call = (p: object) => blockOf(p) as ToolCallBlock;
 
-/** The segments of a turn's blocks: a burst is a run of non-text blocks, closed by a text block; `show` and sub-agent calls stand alone. */
+/** The segments of a turn's blocks: a burst is a run of non-text blocks, closed by a text block; `show`, `image_gen` and sub-agent calls stand alone. */
 export function sessionLogTurnSegments(blocks: ReadonlyArray<SessionLogBlock>, options: SegmentTurnOptions = {}): SessionLogSegment[] {
   return groupShowSegments(segmentTurn(partsOf(blocks), options), options).map((s) =>
     s.kind === 'burst' ? { kind: s.kind, blocks: s.parts.map(blockOf) }

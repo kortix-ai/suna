@@ -934,6 +934,16 @@ A host draws a `ToolCallBlock` with `toolCallStatus(call)` (`completed`, not
 `complete`), `toolCallRawOutput(call)`, `toolCallError(call)` (the semantic error,
 else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
 
+An `image_gen` card reads `imageGenView(call, live?)`: an `ImageGenView` with
+`phase` (`ImageGenPhase`: `generating`, `ready`, `failed`, `stopped`), `action`,
+`prompt`, `aspectRatio`, `imagePath`, `directUrl`, `startedAt` and `error`
+(`message`, `suggestion?`, `code?`, `retryAfterSeconds?`, `connectChatGpt`).
+`imageGenRetryDelay(seconds)` and `formatImageGenElapsed(ms)` format its retry wait
+and elapsed time. `imagePathsShownByImageGen(blocks)`,
+`withoutImageGenDuplicates(items, paths)` and `showDrawnByImageGen(call, paths)` keep
+a `show` from drawing an image the turn's `image_gen` card already drew. See the
+[reference](https://kortix.com/docs/sdk/reference#the-image_gen-card).
+
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,
 reads one page of the stored session log (`SessionLogPage`: the session record,
 every thread head, a thread's newest messages by `seq`, `has_more`). `query` is
@@ -966,7 +976,8 @@ transcript renders a thread from. It replaces the v1 turn helpers over
   out every message with `in_context: false` that is not streaming.
 - `sessionLogTurnSegments(blocks, options?)`, `splitSessionLogTurnWork(segments, { working })`
   and `sessionLogBurstSteps(blocks)` draw a turn: bursts, text and standalone calls,
-  the settled-turn fold, and the rows of a burst.
+  the settled-turn fold, and the rows of a burst. The deliverables (`show`, `show_user`,
+  `image_gen`: `NO_GROUP_ACTIVITY_TOOLS`) stand alone and are hoisted above the final text.
 - `sessionLogCallStatus(call, live)` is the status a call renders with: an open call,
   or one the closure rule closed, is `running` or `pending` on a live turn and
   `interrupted` on any other. `sessionLogOpenCall(call)` is the call in that open

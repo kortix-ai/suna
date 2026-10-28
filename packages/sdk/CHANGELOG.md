@@ -5,6 +5,24 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (image generation card)
+- `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
+  card draws from its `ToolCallBlock`. `phase` is `generating`, `ready`, `failed` or `stopped`;
+  `action`, `prompt`, `aspectRatio` (`"<w> / <h>"`, from the delivered size, else the requested
+  size, else `1 / 1`), `imagePath` (a sandbox file), `directUrl` (legacy outputs without a path,
+  http(s) only), `startedAt` and `error` (`message`, `suggestion?`, `code?`, `retryAfterSeconds?`,
+  `connectChatGpt`). `live: false` reads an open call as `stopped`.
+- `imageGenRetryDelay(seconds)`: `{ value, unit }` in seconds below 90 s, minutes below 90 min,
+  else hours. `formatImageGenElapsed(ms)`: `m:ss`.
+- `imagePathsShownByImageGen(blocks)`, `withoutImageGenDuplicates(items, paths)` and
+  `showDrawnByImageGen(call, paths)`: a `show` of an image that an `image_gen` card of the same
+  turn already drew is left out, and a `show` call whose every file is such an image draws nothing.
+
+### Changed (image_gen is a deliverable)
+- `NO_GROUP_ACTIVITY_TOOLS`, and with it `STANDALONE_TOOLS`, include `image_gen`. An `image_gen`
+  call is a `standalone` segment, never folds into a burst, and `splitTurnWork` /
+  `splitSessionLogTurnWork` hoist it above the final text like `show`.
+
 ### Deprecated (app form)
 - `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
   and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call

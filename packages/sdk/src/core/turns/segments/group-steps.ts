@@ -90,7 +90,7 @@ export function groupSteps<P extends ToolPart | ToolCallBlock = ToolPart>(given:
     // Dropped here, before the standalone branch, so it also cannot split a run.
     if (isEmptyShowPart(part)) continue;
 
-    // show / show_user each stand alone.
+    // The deliverables (show / show_user / image_gen) each stand alone.
     if (isNoGroupActivityTool(part.tool)) {
       flush();
       steps.push(finalize(f, [item]));
