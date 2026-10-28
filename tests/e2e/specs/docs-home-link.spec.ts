@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 
 test('docs home link announces the brand once in either theme', async ({ page }) => {
   await page.goto('/docs');
-  const home = page.locator('header a').filter({ hasText: 'Kortix' }).first();
+  // The link holds the full logo file; its alt text names it (#10931).
+  const home = page.locator('header a[href="/docs"]').first();
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expect(home).toBeVisible();
