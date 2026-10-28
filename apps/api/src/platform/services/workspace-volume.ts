@@ -228,6 +228,30 @@ async function deleteWorkspaceVolume(volume: WorkspaceVolume): Promise<void> {
   }
 }
 
+/**
+ * Why a stopped box of this session must stay, or null when its volume holds
+ * everything the box wrote and the box may go. Platinum's volume health
+ * (`GET /v1/volumes/:v/health`) reads the mounts, merge queue, open commits and
+ * blocks not yet in object storage; only `ok` lets the box go. A volume
+ * Platinum cannot judge (no valid record, not found, no answer) keeps the box:
+ * it may hold the session's only copy of a file. Never throws.
+ */
+export async function workspaceVolumeHoldReason(sessionId: string, sessionMetadata: unknown): Promise<string | null> {
+  const volume = recordedWorkspaceVolume(sessionId, sessionMetadata);
+  if (!volume) return 'the session has no valid workspace volume record';
+  try {
+    const health = await platinumJson<{ status?: string; reason?: string | null }>(
+      // probe=false: the verdict on unsaved writes comes from Platinum's database, not the gateway host.
+      `/v1/volumes/${encodeURIComponent(volume.name)}/health?probe=false`,
+      { signal: AbortSignal.timeout(15_000) },
+      volumeOrigin(volume),
+    );
+    return health.status === 'ok' ? null : `volume ${volume.name} is ${health.status ?? 'unknown'}: ${health.reason ?? 'no reason given'}`;
+  } catch (err) {
+    return `volume ${volume.name} health check failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 /** Delete the session's workspace volume when it has one: its content ended (purge, account erasure). Throws on failure. */
 export async function deleteSessionWorkspaceVolume(sessionId: string, metadata: unknown): Promise<void> {
   const volume = recordedWorkspaceVolume(sessionId, metadata);

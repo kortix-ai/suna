@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   CSP_REPORT_PATH,
@@ -55,5 +55,35 @@ describe('content security policy', () => {
     expect(scriptSrc).not.toContain('*');
     expect(scriptSrc).not.toContain('https:');
     expect(policy.get('report-uri')).toEqual([CSP_REPORT_PATH]);
+  });
+});
+
+describe('content security policy in next dev', () => {
+  const env = process.env as Record<string, string | undefined>;
+  const nodeEnv = env.NODE_ENV;
+  // process.env stores `undefined` as the string "undefined": delete instead.
+  const setNodeEnv = (value: string | undefined) => {
+    if (value === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = value;
+  };
+  afterEach(() => setNodeEnv(nodeEnv));
+  const scriptSrc = (policy: () => string) => directives(policy()).get('script-src')!;
+
+  test('next dev allows eval, for React development call stacks', () => {
+    setNodeEnv('development');
+
+    expect(scriptSrc(enforcedContentSecurityPolicy)).toContain("'unsafe-eval'");
+    expect(scriptSrc(reportOnlyContentSecurityPolicy)).toContain("'unsafe-eval'");
+  });
+
+  test('a production build and tests do not allow eval', () => {
+    for (const value of ['production', 'test', undefined]) {
+      setNodeEnv(value);
+
+      expect(scriptSrc(enforcedContentSecurityPolicy)).not.toContain("'unsafe-eval'");
+      expect(scriptSrc(reportOnlyContentSecurityPolicy)).not.toContain("'unsafe-eval'");
+      // WebAssembly compilation stays allowed everywhere.
+      expect(scriptSrc(enforcedContentSecurityPolicy)).toContain("'wasm-unsafe-eval'");
+    }
   });
 });

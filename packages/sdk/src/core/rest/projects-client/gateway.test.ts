@@ -258,3 +258,11 @@ test('verifyGatewayProvider URL-encodes the provider id', async () => {
   await verifyGatewayProvider('P1', 'weird/id');
   expect(last().url).toContain('/projects/P1/gateway/providers/weird%2Fid/verify');
 });
+
+test('usage value remains distinct from charges and unknown subscription fees on the public client', async () => {
+  nextResponse = { status: 200, body: { total_cost: 0, estimated_usage_value: 0.00205, priced_requests: 1, unpriced_requests: 0, valuation: { rate_version: 'v1', rate_source: 'https://models.dev/api.json', coverage: 'LLM only', subscription_fee: null, subscription_allocation: null } } };
+  const result = await getGatewayOverview('synthetic');
+  expect(result.total_cost).toBe(0);
+  expect(result.estimated_usage_value).toBe(0.00205);
+  expect(result.valuation?.subscription_fee).toBeNull();
+});

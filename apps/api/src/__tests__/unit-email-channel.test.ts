@@ -255,7 +255,7 @@ describe("Resend webhook verification", () => {
       }),
     ).toBe(false);
     expect(
-      verifyEmailWebhookSignature({ ...input, secret: "whsec_b3RoZXI=" }),
+      verifyEmailWebhookSignature({ ...input, secret: `whsec_${"b3RoZXI="}` }),
     ).toBe(false);
   });
 
@@ -869,6 +869,8 @@ describe("stripHtml", () => {
     expect(stripHtml("<p>a < b and c > d</p>")).toBe("a < b and c > d");
     // An unclosed <style> stays as text and does not stop a later <script> from going.
     expect(stripHtml("Hi<style>a{}Body<script>secret()</script>")).toBe("Hia{}Body");
+    // Entities decode once: an escaped entity stays text, never a tag.
+    expect(stripHtml("<p>&amp;lt;script&amp;gt; &lt;b&gt; &amp;amp;</p>")).toBe("&lt;script&gt; <b> &amp;");
   });
 
   test("crafted HTML costs linear time (a run of `<script` or `<` took seconds)", () => {

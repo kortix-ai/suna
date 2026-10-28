@@ -1,3 +1,4 @@
+import { estimateLlmValue, llmValueBasis } from '../../shared/llm-value';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayRequestLogs } from '@kortix/db';
@@ -45,6 +46,7 @@ const LIST_COLUMNS = {
   actorUserId: gatewayRequestLogs.actorUserId,
   keyId: gatewayRequestLogs.keyId,
   sessionId: gatewayRequestLogs.sessionId,
+  usageEstimated: sql<boolean>`coalesce(${gatewayRequestLogs.metadata}->>'usageEstimated', 'false') = 'true'`,
 };
 
 function serializeLogRow(r: Record<string, any>) {
@@ -56,6 +58,18 @@ function serializeLogRow(r: Record<string, any>) {
     finalCost: r.finalCost,
   });
   return {
+    estimated_usage_value:
+      r.ok && !r.usageEstimated && r.metadata?.usageEstimated !== true
+        ? estimateLlmValue({
+            provider: r.provider,
+            model: r.resolvedModel,
+            input: r.inputTokens,
+            output: r.outputTokens,
+            cached: r.cachedTokens,
+            cacheWrite: r.cacheWriteTokens,
+          })
+        : null,
+    valuation: llmValueBasis,
     log_id: r.logId,
     request_id: r.requestId,
     created_at: r.createdAt,
