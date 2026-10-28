@@ -157,8 +157,16 @@ const AgentBlockSchema = z
     behavior: OpencodeAgentConfigSchema.optional(),
     // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
     opencode: OpencodeAgentConfigSchema.optional(),
+    // Server-owned (SERVER_KEPT_KEYS): the GET returns them, so a GET → PUT
+    // round trip carries them back. The handler drops them and the declared
+    // value stays. Strict-rejecting them made every save of such an agent 400.
+    network_egress: z.unknown().optional(),
+    harnesses: z.unknown().optional(),
   })
   .strict();
+
+/** Block keys this editor never writes: a PUT keeps the declared value. */
+const SERVER_KEPT_KEYS = new Set(['network_egress', 'harnesses']);
 
 const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
 const DefaultAgentResponseSchema = z.object({
@@ -512,6 +520,8 @@ export function registerAgentConfigRoutes(): void {
         behavior: behaviorName,
         opencode: preW4BehaviorName,
         file: requestedFile,
+        network_egress: _declaredEgress,
+        harnesses: _declaredHarnesses,
         ...governanceRaw
       } = parsed.data;
       const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
@@ -710,7 +720,7 @@ async function prepareAgentConfigV2(
     // (`harnesses`, `network_egress`) are not this editor's to delete: keep
     // them, as the v3 write does.
     for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
-      if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+      if (!(key in AgentBlockSchema.shape) || SERVER_KEPT_KEYS.has(key)) (governanceBlock as Record<string, unknown>)[key] = value;
     }
     // `policy_sets` is in the schema (the GET → PUT round trip carries it) but
     // keeps the declared value when omitted, like the v3 grants.

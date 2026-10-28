@@ -87,4 +87,21 @@ describe('PUT /agents/:name/config on a kortix_version 2 manifest', () => {
     expect(yaml).toContain('network_egress:');
     expect(yaml).not.toContain('connectors: all');
   });
+
+  test('the agent page sends the GET block back unchanged, server-kept keys included: 200, both kept', async () => {
+    const read = await app.request(configUrl, { headers: { Authorization: `Bearer ${secret}` } });
+    const { block } = (await read.json()) as { block: Record<string, unknown> };
+    // The web editor's draft is the GET block itself, plus the edit.
+    const saved = await app.request(configUrl, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...block, connectors: 'all' }),
+    });
+    expect(saved.status).toBe(200);
+
+    const yaml = committedManifest();
+    expect(yaml).toContain('codemode: only');
+    expect(yaml).toContain('network_egress:');
+    expect(yaml).toContain('connectors: all');
+  });
 });
