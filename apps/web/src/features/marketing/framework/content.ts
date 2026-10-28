@@ -43,7 +43,7 @@ export const MANIFEST = [
   '    on: { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }',
   '    run:',
   '      agent: kortix',
-  "      prompt: Summarize yesterday's orders and post the top three in Slack.",
+  "      prompt: Post yesterday's top orders in Slack.",
 ] as const;
 
 /** agents/support.md: the agent's behavior. Frontmatter keys as in the starter's agents/kortix.md. */
