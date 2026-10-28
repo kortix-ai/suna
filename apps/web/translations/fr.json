@@ -22752,7 +22752,8 @@
     "docStatus": {
       "unsaved": "Modifications non enregistrées",
       "saving": "Enregistrement…",
-      "error": "Non enregistré"
+      "error": "Non enregistré. Nouvelle tentative…",
+      "conflict": "Modifié ailleurs"
     },
     "placeholder": "Écrivez, ou tapez # pour un titre, - pour une liste, [ ] pour une tâche",
     "placeholderHeading": "Titre",
@@ -22773,7 +22774,7 @@
     "addColumn": "Ajouter une colonne",
     "deleteRow": "Supprimer la ligne",
     "deleteTable": "Supprimer le tableau",
-    "conflict": "Quelqu’un d’autre a enregistré ce document après que vous l’avez ouvert. Rechargez pour voir sa version ; vos dernières modifications n’ont pas été enregistrées.",
+    "conflict": "Ce document a changé dans Files après son ouverture (un agent ou un autre onglet l’a enregistré). Vos modifications sont toujours là.",
     "newDoc": "Nouveau document",
     "untitledDoc": "Document sans titre",
     "history": "Historique",
@@ -22794,7 +22795,9 @@
     "codeLanguage": "Langage du code",
     "editedAgo": "Modifié {time}",
     "openFullPage": "Ouvrir en pleine page",
-    "close": "Fermer"
+    "close": "Fermer",
+    "conflictReload": "Charger la leur",
+    "conflictKeepMine": "Garder la mienne"
   },
   "emailConnect": {
     "homeTitle": "Où se trouve la boîte",

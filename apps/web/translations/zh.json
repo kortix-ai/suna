@@ -22752,7 +22752,8 @@
     "docStatus": {
       "unsaved": "有未保存的更改",
       "saving": "保存中…",
-      "error": "未保存"
+      "error": "未保存。正在重试…",
+      "conflict": "已在别处更改"
     },
     "placeholder": "开始书写，或输入 # 添加标题、- 添加列表、[ ] 添加任务",
     "placeholderHeading": "标题",
@@ -22773,7 +22774,7 @@
     "addColumn": "添加列",
     "deleteRow": "删除行",
     "deleteTable": "删除表格",
-    "conflict": "你打开此文档后，其他人保存了它。请重新加载以查看对方的版本；你最近的更改未保存。",
+    "conflict": "你打开此文档后，它在 Files 中被更改（由智能体或其他标签页保存）。你的编辑仍在这里。",
     "newDoc": "新建文档",
     "untitledDoc": "未命名文档",
     "history": "历史记录",
@@ -22794,7 +22795,9 @@
     "codeLanguage": "代码语言",
     "editedAgo": "编辑于 {time}",
     "openFullPage": "全页打开",
-    "close": "关闭"
+    "close": "关闭",
+    "conflictReload": "加载对方版本",
+    "conflictKeepMine": "保留我的版本"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",

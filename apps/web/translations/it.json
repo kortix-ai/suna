@@ -22752,7 +22752,8 @@
     "docStatus": {
       "unsaved": "Modifiche non salvate",
       "saving": "Salvataggio…",
-      "error": "Non salvato"
+      "error": "Non salvato. Nuovo tentativo…",
+      "conflict": "Modificato altrove"
     },
     "placeholder": "Scrivi, oppure digita # per un titolo, - per un elenco, [ ] per un’attività",
     "placeholderHeading": "Titolo",
@@ -22773,7 +22774,7 @@
     "addColumn": "Aggiungi colonna",
     "deleteRow": "Elimina riga",
     "deleteTable": "Elimina tabella",
-    "conflict": "Qualcun altro ha salvato questo documento dopo che lo hai aperto. Ricarica per vedere la sua versione; le tue ultime modifiche non sono state salvate.",
+    "conflict": "Questo documento è cambiato in Files dopo l’apertura (lo ha salvato un agente o un’altra scheda). Le tue modifiche sono ancora qui.",
     "newDoc": "Nuovo documento",
     "untitledDoc": "Documento senza titolo",
     "history": "Cronologia",
@@ -22794,7 +22795,9 @@
     "codeLanguage": "Linguaggio del codice",
     "editedAgo": "Modificato {time}",
     "openFullPage": "Apri a pagina intera",
-    "close": "Chiudi"
+    "close": "Chiudi",
+    "conflictReload": "Carica la loro",
+    "conflictKeepMine": "Mantieni la mia"
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",
