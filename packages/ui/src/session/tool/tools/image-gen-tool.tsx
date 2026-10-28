@@ -183,6 +183,8 @@ function ImageGenFrame({
       <ImageFrame
         aspectRatio={image.aspectRatio}
         fill={fill}
+        maxHeight={fill ? undefined : IMAGE_MAX_HEIGHT}
+        openLabel={image.prompt ? t('openFullScreenPrompt', { prompt: image.prompt }) : t('openFullScreen')}
         src={src}
         alt={image.prompt || t('generating')}
         pending={generating || (!src && !blobError)}
@@ -211,29 +213,33 @@ function ImageGenFrame({
   );
 }
 
-/** `'3 / 2'` scaled by `num / den` and reduced: the bento rectangle from one tile's ratio. */
-function scaledRatio(ratio: string, num: number, den: number): string {
-  const [w = 1, h = 1] = ratio.split('/').map((part) => Number(part.trim()) || 1);
-  const a = w * num;
-  const b = h * den;
-  const gcd = (x: number, y: number): number => (y ? gcd(y, x % y) : x);
-  const d = gcd(a, b);
-  return `${a / d} / ${b / d}`;
+/**
+ * The tallest a lone image or the bento may be (R33). The box narrows to
+ * keep its ratio, so it never crops more and never letterboxes.
+ */
+const IMAGE_MAX_HEIGHT = '60vh';
+
+/** `'3 / 2'` → `1.5`; anything unreadable → `1`. */
+function ratioValue(ratio: string): number {
+  const [w, h] = ratio.split('/').map((part) => Number(part.trim()));
+  return w && h ? w / h : 1;
 }
 
 /**
- * The bento: several images fill one rectangle, the width of the message, its
- * height fixed from the requested ratio, so nothing moves when they land.
+ * The bento: several images fill one rectangle, the width of the message up
+ * to `IMAGE_MAX_HEIGHT` tall, its ratio fixed from the requested one, so
+ * nothing moves when they land.
  * Tile i keeps slot i. Every tile has the requested ratio `r`:
  * - 2: side by side, one row → the rectangle is `2r`;
  * - 3: tile 0 takes 2/3 of the width and both rows, tiles 1 and 2 stack on
  *   the right third → `1.5r`;
  * - 4: 2×2 → `r`.
  */
-const BENTO: Record<number, { grid: string; ratio: [number, number]; first?: string }> = {
-  2: { grid: 'grid-cols-2', ratio: [2, 1] },
-  3: { grid: 'grid-cols-3 grid-rows-2', ratio: [3, 2], first: 'col-span-2 row-span-2' },
-  4: { grid: 'grid-cols-2 grid-rows-2', ratio: [1, 1] },
+const BENTO: Record<number, { grid: string; scale: number; first?: string }> = {
+  // Explicit rows: each is minmax(0, 1fr), so a loaded image never stretches one.
+  2: { grid: 'grid-cols-2 grid-rows-1', scale: 2 },
+  3: { grid: 'grid-cols-3 grid-rows-2', scale: 1.5, first: 'col-span-2 row-span-2' },
+  4: { grid: 'grid-cols-2 grid-rows-2', scale: 1 },
 };
 
 export function ImageGenTool({ call }: ToolProps) {
@@ -267,6 +273,7 @@ export function ImageGenTool({ call }: ToolProps) {
     />
   );
   const bento = solo ? null : BENTO[Math.min(view.images.length, 4)]!;
+  const rectangle = bento ? ratioValue(view.aspectRatio) * bento.scale : 1;
   const frames = view.images.map((image, i) => (
     <ImageGenFrame
       key={i}
@@ -293,8 +300,8 @@ export function ImageGenTool({ call }: ToolProps) {
       {bento ? (
         <div
           data-image-gen-bento={Math.min(view.images.length, 4)}
-          className={cn('grid w-full gap-1', bento.grid)}
-          style={{ aspectRatio: scaledRatio(view.aspectRatio, ...bento.ratio) }}
+          className={cn('grid min-h-0 w-full gap-1', bento.grid)}
+          style={{ aspectRatio: rectangle, width: `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${rectangle}))` }}
         >
           {frames.slice(0, 4).map((frame, i) => (
             <div key={i} data-image-gen-tile={i} className={cn('min-h-0 min-w-0', i === 0 && bento.first)}>

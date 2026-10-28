@@ -1266,6 +1266,8 @@
   "imageGen": {
     "generating": "正在生成图像",
     "editing": "正在编辑图像",
+    "openFullScreen": "全屏打开",
+    "openFullScreenPrompt": "全屏打开：{{prompt}}",
     "generatingCount_other": "正在生成 {{count}} 张图像",
     "editingCount_other": "正在编辑 {{count}} 张图像",
     "loading": "正在加载图像",

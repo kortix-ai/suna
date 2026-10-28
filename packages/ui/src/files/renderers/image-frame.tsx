@@ -20,6 +20,19 @@ export interface ImageFrameProps {
    * (`object-cover`), in place of holding `aspectRatio` and fitting the image.
    */
   fill?: boolean;
+  /**
+   * The tallest the frame may be (`'60vh'`): it narrows to keep its ratio,
+   * so it never crops more and never letterboxes. Unset: the full width.
+   */
+  maxHeight?: string;
+  /** The image button's accessible name; `alt` when unset. */
+  openLabel?: string;
+}
+
+/** `'3 / 2'` → `1.5`; anything unreadable → `1`. */
+function ratioValue(ratio: string): number {
+  const [w, h] = ratio.split('/').map((part) => Number(part.trim()));
+  return w && h ? w / h : 1;
 }
 
 /**
@@ -29,7 +42,7 @@ export interface ImageFrameProps {
  * The frame itself never moves: the busy signal is the label (one waiting
  * channel, kortix-brand `layout.md` States).
  */
-export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className, fill = false }: ImageFrameProps) {
+export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className, fill = false, maxHeight, openLabel }: ImageFrameProps) {
   const img = useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [natural, setNatural] = useState<string | null>(null);
@@ -68,13 +81,20 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
     <div
       aria-busy={pending}
       className={cn('bg-muted relative w-full overflow-hidden rounded-md', fill && 'h-full', className)}
-      style={fill ? undefined : { aspectRatio: natural ?? aspectRatio }}
+      style={
+        fill
+          ? undefined
+          : {
+              aspectRatio: natural ?? aspectRatio,
+              ...(maxHeight && { width: `min(100%, calc(${maxHeight} * ${ratioValue(natural ?? aspectRatio)}))` }),
+            }
+      }
     >
       {image && onOpen ? (
         <button
           type="button"
           onClick={onOpen}
-          aria-label={alt}
+          aria-label={openLabel ?? alt}
           className="focus-visible:ring-kortix-base block size-full cursor-zoom-in rounded-md focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
         >
           {image}

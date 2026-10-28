@@ -1266,6 +1266,8 @@
   "imageGen": {
     "generating": "Gerando imagem",
     "editing": "Editando imagem",
+    "openFullScreen": "Abrir em tela cheia",
+    "openFullScreenPrompt": "Abrir em tela cheia: {{prompt}}",
     "generatingCount_one": "Gerando {{count}} imagem",
     "generatingCount_other": "Gerando {{count}} imagens",
     "editingCount_one": "Editando {{count}} imagem",

@@ -23370,6 +23370,8 @@
     "editing": "Editando imagem",
     "generatingCount": "Gerando {count, plural, one {# imagem} other {# imagens}}",
     "editingCount": "Editando {count, plural, one {# imagem} other {# imagens}}",
+    "openFullScreen": "Abrir em tela cheia",
+    "openFullScreenPrompt": "Abrir em tela cheia: {prompt}",
     "loading": "Carregando imagem",
     "stopped": "Interrompido",
     "failed": "A imagem não foi gerada.",

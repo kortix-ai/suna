@@ -23370,6 +23370,8 @@
     "editing": "画像を編集中",
     "generatingCount": "{count, plural, other {#枚の画像を生成中}}",
     "editingCount": "{count, plural, other {#枚の画像を編集中}}",
+    "openFullScreen": "全画面で開く",
+    "openFullScreenPrompt": "全画面で開く: {prompt}",
     "loading": "画像を読み込み中",
     "stopped": "停止しました",
     "failed": "画像は生成されませんでした。",

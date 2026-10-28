@@ -23370,6 +23370,8 @@
     "editing": "Modifica immagine",
     "generatingCount": "Generazione di {count, plural, one {# immagine} other {# immagini}}",
     "editingCount": "Modifica di {count, plural, one {# immagine} other {# immagini}}",
+    "openFullScreen": "Apri a schermo intero",
+    "openFullScreenPrompt": "Apri a schermo intero: {prompt}",
     "loading": "Caricamento immagine",
     "stopped": "Interrotto",
     "failed": "L’immagine non è stata generata.",

@@ -1266,6 +1266,8 @@
   "imageGen": {
     "generating": "Bild wird erstellt",
     "editing": "Bild wird bearbeitet",
+    "openFullScreen": "Im Vollbild öffnen",
+    "openFullScreenPrompt": "Im Vollbild öffnen: {{prompt}}",
     "generatingCount_one": "{{count}} Bild wird erstellt",
     "generatingCount_other": "{{count}} Bilder werden erstellt",
     "editingCount_one": "{{count}} Bild wird bearbeitet",

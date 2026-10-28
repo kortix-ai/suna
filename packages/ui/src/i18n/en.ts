@@ -8057,6 +8057,8 @@ const catalog = {
     "editing": "Editing image",
     "generatingCount": "Generating {count, plural, one {# image} other {# images}}",
     "editingCount": "Editing {count, plural, one {# image} other {# images}}",
+    "openFullScreen": "Open full screen",
+    "openFullScreenPrompt": "Open full screen: {prompt}",
     "loading": "Loading image",
     "stopped": "Stopped",
     "failed": "The image was not generated.",

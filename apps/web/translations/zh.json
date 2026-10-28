@@ -23370,6 +23370,8 @@
     "editing": "正在编辑图像",
     "generatingCount": "{count, plural, other {正在生成 # 张图像}}",
     "editingCount": "{count, plural, other {正在编辑 # 张图像}}",
+    "openFullScreen": "全屏打开",
+    "openFullScreenPrompt": "全屏打开：{prompt}",
     "loading": "正在加载图像",
     "stopped": "已停止",
     "failed": "图像未生成。",

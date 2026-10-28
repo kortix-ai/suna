@@ -33,7 +33,7 @@
  */
 
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView } from '@kortix/sdk';
@@ -99,7 +99,9 @@ function Overlay({ children }: { children: ReactNode }) {
 }
 
 /** Hidden until its bytes decode, then fades in; reports the image's own ratio. */
-function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress, cover = false }: {
+function FadeInImage({ uri, headers, alt, openLabel, onLoaded, onError, onPress, cover = false }: {
+  /** The image button's accessible name; `alt` when unset. */
+  openLabel?: string;
   uri: string;
   /** Crop to the box (a bento tile) in place of fitting the whole image. */
   cover?: boolean;
@@ -132,7 +134,7 @@ function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress, cover = fa
   return (
     <Animated.View style={[StyleSheet.absoluteFill, style]}>
       {onPress ? (
-        <Pressable accessibilityRole="imagebutton" accessibilityLabel={alt} onPress={onPress} style={{ flex: 1 }}>
+        <Pressable accessibilityRole="imagebutton" accessibilityLabel={openLabel ?? alt} onPress={onPress} style={{ flex: 1 }}>
           {image}
         </Pressable>
       ) : (
@@ -145,6 +147,7 @@ function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress, cover = fa
 interface SandboxImageProps {
   path: string;
   alt: string;
+  openLabel: string;
   seed: string;
   cover: boolean;
   onRatio: (ratio: number | null) => void;
@@ -152,7 +155,7 @@ interface SandboxImageProps {
 }
 
 /** One load of the sandbox file; a failure hands over to the next attempt after `WAKE_RETRY_MS`. */
-function SandboxImageAttempt({ path, alt, seed, cover, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
+function SandboxImageAttempt({ path, alt, openLabel, seed, cover, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
   const { t } = useTranslation();
   const image = useSandboxImage(path, true);
   const [loaded, setLoaded] = useState(false);
@@ -177,6 +180,7 @@ function SandboxImageAttempt({ path, alt, seed, cover, onRatio, onPress, onFail 
         <FadeInImage
           key={image.attempt}
           cover={cover}
+          openLabel={openLabel}
           uri={image.source.uri}
           headers={image.source.headers}
           alt={alt}
@@ -255,6 +259,21 @@ function FailureNote({ error, fill = false }: { error: ImageGenView['error']; fi
   );
 }
 
+/** The tallest a lone image or the bento may be: this share of the window height (R33, web `60vh`). */
+const MAX_HEIGHT_SHARE = 0.6;
+
+function useMaxImageHeight(): number {
+  return useWindowDimensions().height * MAX_HEIGHT_SHARE;
+}
+
+/**
+ * A box at `ratio` (width over height), the full width up to `maxHeight` tall:
+ * it narrows (`maxWidth`) to keep its ratio, so it never crops or letterboxes.
+ */
+function capped(ratio: number, maxHeight: number) {
+  return { width: '100%' as const, aspectRatio: ratio, maxWidth: maxHeight * ratio };
+}
+
 /**
  * One image, from its generating frame to the file. `busy` is what the frame
  * shows while it generates (the busy line, or the glyph alone in a grid); a
@@ -276,6 +295,7 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
   const [natural, setNatural] = useState<number | null>(null);
   const [urlLoaded, setUrlLoaded] = useState(false);
   const onRatio = useCallback((ratio: number | null) => setNatural(ratio), []);
+  const maxHeight = useMaxImageHeight();
 
   if (image.phase === 'failed') return <FailureNote error={image.error} fill={fill} />;
   const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
@@ -290,6 +310,7 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
     );
   }
   const alt = image.prompt || t('imageGen.generating');
+  const openLabel = image.prompt ? t('imageGen.openFullScreenPrompt', { prompt: image.prompt }) : t('imageGen.openFullScreen');
   const caption = image.prompt ? { text: image.prompt, model } : undefined;
   const directUrl = image.directUrl;
   let content: ReactNode = null;
@@ -306,6 +327,7 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
             setUrlLoaded(true);
             onRatio(ratio);
           }}
+          openLabel={openLabel}
           onPress={() => openExternal(directUrl)}
         />
         {urlLoaded ? null : (
@@ -317,15 +339,14 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
     );
   } else if (filePath) {
     content = (
-      <SandboxImage path={filePath} alt={alt} seed={seed} cover={fill} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
+      <SandboxImage path={filePath} alt={alt} openLabel={openLabel} seed={seed} cover={fill} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
     );
   }
   return (
     <View
       accessibilityState={{ busy: image.phase === 'generating' }}
       style={{
-        width: '100%',
-        ...(fill ? { flex: 1 } : { aspectRatio: natural ?? aspectRatioValue(image.aspectRatio) }),
+        ...(fill ? { width: '100%', flex: 1 } : capped(natural ?? aspectRatioValue(image.aspectRatio), maxHeight)),
         backgroundColor: palette.muted,
         borderRadius: TURN_SPACE.radiusMd,
         overflow: 'hidden',
@@ -341,6 +362,7 @@ export function ImageGenTool({ call }: ToolProps) {
   // The turn says whether an open call still runs: an open call on a finished turn was stopped.
   const live = useContext(TurnLiveContext);
   const view = useMemo(() => imageGenView(call, live), [call, live]);
+  const maxHeight = useMaxImageHeight();
   const edit = view.action === 'edit';
   const solo = view.images.length === 1;
 
@@ -406,7 +428,7 @@ export function ImageGenTool({ call }: ToolProps) {
     <View
       testID="image-gen-bento"
       className="w-full"
-      style={{ aspectRatio: ratio, flexDirection: count === 4 ? 'column' : 'row', gap }}
+      style={{ ...capped(ratio, maxHeight), flexDirection: count === 4 ? 'column' : 'row', gap }}
     >
       {count === 2 ? (
         [tile(0, 1), tile(1, 1)]

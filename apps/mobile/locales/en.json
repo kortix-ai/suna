@@ -1268,6 +1268,8 @@
   "imageGen": {
     "generating": "Generating image",
     "editing": "Editing image",
+    "openFullScreen": "Open full screen",
+    "openFullScreenPrompt": "Open full screen: {{prompt}}",
     "generatingCount_one": "Generating {{count}} image",
     "generatingCount_other": "Generating {{count}} images",
     "editingCount_one": "Editing {{count}} image",

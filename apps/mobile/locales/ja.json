@@ -1266,6 +1266,8 @@
   "imageGen": {
     "generating": "画像を生成中",
     "editing": "画像を編集中",
+    "openFullScreen": "全画面で開く",
+    "openFullScreenPrompt": "全画面で開く: {{prompt}}",
     "generatingCount_other": "{{count}}枚の画像を生成中",
     "editingCount_other": "{{count}}枚の画像を編集中",
     "loading": "画像を読み込み中",

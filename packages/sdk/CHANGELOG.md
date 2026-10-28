@@ -31,6 +31,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   such an image draws nothing.
 - Narration counts the images of one `image_gen` call: "Made 3 images" (the images it made, else
   the prompts it asked for). `getToolInfo('image_gen', input).subtitle` is the first prompt.
+- `getToolPrimaryArg` reads an `image_gen` call as its first prompt (60 characters) and, for a batch,
+  how many more (`A fox in a shuttle (+2)`), never its arguments as JSON (a script card's call row).
 
 ### Changed (image_gen is a deliverable)
 - `NO_GROUP_ACTIVITY_TOOLS`, and with it `STANDALONE_TOOLS`, include `image_gen`. An `image_gen`

@@ -23370,6 +23370,8 @@
     "editing": "Bild wird bearbeitet",
     "generatingCount": "{count, plural, one {# Bild wird erstellt} other {# Bilder werden erstellt}}",
     "editingCount": "{count, plural, one {# Bild wird bearbeitet} other {# Bilder werden bearbeitet}}",
+    "openFullScreen": "Im Vollbild öffnen",
+    "openFullScreenPrompt": "Im Vollbild öffnen: {prompt}",
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
     "failed": "Das Bild wurde nicht erstellt.",

@@ -23370,6 +23370,8 @@
     "editing": "Uređivanje slike",
     "generatingCount": "Generisanje {count, plural, one {# slike} few {# slike} other {# slika}}",
     "editingCount": "Uređivanje {count, plural, one {# slike} few {# slike} other {# slika}}",
+    "openFullScreen": "Otvori preko celog ekrana",
+    "openFullScreenPrompt": "Otvori preko celog ekrana: {prompt}",
     "loading": "Učitavanje slike",
     "stopped": "Zaustavljeno",
     "failed": "Slika nije generisana.",

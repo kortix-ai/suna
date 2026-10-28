@@ -20,6 +20,8 @@ mock.module('react-native', () => ({
   Image: host('image'),
   Pressable: host('pressable'),
   StyleSheet: { absoluteFill: {} },
+  // A 720×480 window: the image box is at most 60% of 480 = 288 pt tall.
+  useWindowDimensions: () => ({ width: 720, height: 480, scale: 1, fontScale: 1 }),
 }));
 mock.module('react-native-reanimated', () => ({
   default: { View: host('view') },
@@ -33,6 +35,8 @@ const EN: Record<string, string> = {
   'imageGen.editing': 'Editing image',
   'imageGen.generatingCount': 'Generating {{count}} images',
   'imageGen.editingCount': 'Editing {{count}} images',
+  'imageGen.openFullScreen': 'Open full screen',
+  'imageGen.openFullScreenPrompt': 'Open full screen: {{prompt}}',
   'imageGen.loading': 'Loading image',
   'imageGen.stopped': 'Stopped',
   'imageGen.failed': 'The image was not generated.',
@@ -268,6 +272,27 @@ describe('ImageGenTool', () => {
     expect(bento()).toBeUndefined();
   });
 
+  test('a lone 9:16 at a 720×480 window is at most 288 pt tall, and so is every rectangle', async () => {
+    // The box narrows (`maxWidth`) to keep its ratio: never cropped more, never letterboxed.
+    const heightIn = (style: { aspectRatio: number; maxWidth: number }, column: number) => Math.min(column, style.maxWidth) / style.aspectRatio;
+    await render(call({ status: 'running', input: { action: 'generate', prompts: ['a'], aspect_ratio: '9:16' } }), true);
+    const frame = tree?.root.findAll((node) => node.type === 'view' && node.props.accessibilityState?.busy === true)[0]!;
+    expect(heightIn(frame.props.style, 720)).toBeCloseTo(288);
+    await act(async () => tree?.unmount());
+    for (const prompts of [['a', 'b'], ['a', 'b', 'c'], ['a', 'b', 'c', 'd']]) {
+      await render(call({ status: 'running', input: { action: 'generate', prompts, aspect_ratio: '9:16' } }), true);
+      expect(heightIn(bento()!.props.style, 720)).toBeLessThanOrEqual(288 + 1e-9);
+      await act(async () => tree?.unmount());
+    }
+  });
+
+  test('a tile names its full-screen action', async () => {
+    const output = batch([[FOX, '1024x1024', 'a fox'], ['/workspace/output/images/b.png', '1024x1024', 'b owl']]);
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: ['a fox', 'b owl'] }, output }), false);
+    const labels = tree?.root.findAll((node) => (node.type as string) === 'pressable').map((node) => node.props.accessibilityLabel);
+    expect(labels).toEqual(['Open full screen: a fox', 'Open full screen: b owl']);
+  });
+
   test('no action toolbar renders at rest', async () => {
     const output = batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1024', 'b']]);
     await render(call({ status: 'completed', input: { action: 'generate', prompts: ['a', 'b'] }, output }), false);
@@ -283,7 +308,7 @@ describe('ImageGenTool', () => {
     expect(opened).toEqual([['/workspace/output/images/b.png', undefined, { text: 'b owl', model: 'codex/gpt-image-2' }]]);
   });
 
-  test('the busy line wraps in a half-width frame, and only the first frame is announced', async () => {
+  test('the busy line wraps in a narrow tile, and only the first tile is announced', async () => {
     await render(call({ status: 'running', input: { action: 'generate', prompts: THREE } }), true);
     const rows = tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { flexWrap?: string } | undefined)?.flexWrap === 'wrap') ?? [];
     expect(rows).toHaveLength(1);
