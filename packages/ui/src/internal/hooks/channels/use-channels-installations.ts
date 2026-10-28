@@ -16,6 +16,11 @@ import {
   getSlackManifest,
   getSlackMode,
   getTelegramInstallation,
+  getTelegramUserPhoto,
+  listTelegramUsers,
+  allowTelegramUser,
+  removeTelegramUser,
+  dismissTelegramAccessRequest,
   setTelegramAllowedUsers,
   updateEmailPolicy,
   type EmailDomain,
@@ -28,6 +33,8 @@ import {
   type SlackMode,
   type ConnectTelegramInput,
   type TelegramInstallation,
+  type TelegramUser,
+  type TelegramAccessRequest,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +49,8 @@ export type {
   SlackInstallation,
   SlackMode,
   TelegramInstallation,
+  TelegramUser,
+  TelegramAccessRequest,
 };
 
 const key = (projectId: string | null) =>
@@ -224,6 +233,7 @@ export function useUpdateEmailPolicy() {
 
 const telegramKey = (projectId: string | null) =>
   ['channels', 'telegram-install', projectId ?? 'none'] as const;
+const telegramUsersKey = (projectId: string) => ['channels', 'telegram-users', projectId] as const;
 
 /** The project's Telegram bot. Pass null to keep the query off. */
 export function useTelegramInstall(projectId: string | null) {
@@ -252,9 +262,52 @@ export function useSetTelegramAllowedUsers() {
   return useMutation({
     mutationFn: ({ projectId, userIds }: { projectId: string; userIds: string[] }) =>
       setTelegramAllowedUsers(projectId, userIds),
-    onSuccess: (_data, { projectId }) => qc.invalidateQueries({ queryKey: telegramKey(projectId) }),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      qc.invalidateQueries({ queryKey: telegramUsersKey(projectId) });
+    },
   });
 }
+
+/** Allowed users and access requests, with Telegram names. Each fetch can call Telegram, so enable it only on demand. */
+export function useTelegramUsers(projectId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: telegramUsersKey(projectId),
+    enabled,
+    queryFn: () => listTelegramUsers(projectId),
+  });
+}
+
+/** One user's profile photo. Off without a `version`: that user has no photo. */
+export function useTelegramUserPhoto(projectId: string, userId: string, version: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['channels', 'telegram-photo', projectId, userId, version],
+    enabled: enabled && !!version,
+    // The version is in the key: a new photo is a new key.
+    staleTime: Infinity,
+    retry: false,
+    queryFn: ({ signal }) => getTelegramUserPhoto(projectId, userId, version, signal),
+  });
+}
+
+function useTelegramUserMutation(
+  action: (projectId: string, userId: string) => Promise<TelegramInstallation>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId }: { projectId: string; userId: string }) => action(projectId, userId),
+    // Returned so the mutation stays pending until the list shows the change.
+    onSuccess: (_data, { projectId }) =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: telegramKey(projectId) }),
+        qc.invalidateQueries({ queryKey: telegramUsersKey(projectId) }),
+      ]),
+  });
+}
+
+export const useAllowTelegramUser = () => useTelegramUserMutation(allowTelegramUser);
+export const useRemoveTelegramUser = () => useTelegramUserMutation(removeTelegramUser);
+export const useDismissTelegramAccessRequest = () => useTelegramUserMutation(dismissTelegramAccessRequest);
 
 export function useDisconnectTelegram() {
   const qc = useQueryClient();
