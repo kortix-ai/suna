@@ -214,7 +214,121 @@ export interface TelegramUsers {
   requests: TelegramAccessRequest[];
 }
 
+/** A chat platform whose bot keeps an allowed-user list and access requests. */
+export type ChannelAccessPlatform = 'telegram';
+
+/** A chat user, as the platform's bot knows them. */
+export interface ChannelUser {
+  user_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  /** Changes when the profile photo changes; null when the user has no visible photo. Pass it to `getChannelUserPhoto`. */
+  photo_version: string | null;
+  /** False when the platform returned no profile and the bot has never seen the user: only `user_id` is real. */
+  known: boolean;
+}
+
+/** A person who messaged the bot privately but is not allowed yet. */
+export interface ChannelAccessRequest extends ChannelUser {
+  /** ISO time of their latest message. */
+  last_seen: string;
+}
+
+export interface ChannelUsers {
+  /** In allowed-list order. */
+  allowed: ChannelUser[];
+  /** Newest first. Excludes allowed users and requests older than 30 days. */
+  requests: ChannelAccessRequest[];
+}
+
+/** The access fields of the installation that every allowed-user and access-request edit returns. */
+export interface ChannelAccessList {
+  /** The allowed user ids. Telegram returns them; another platform may not. */
+  allowed_user_ids?: string[];
+  /** How many people messaged the bot privately and are not allowed yet. */
+  access_request_count?: number;
+}
+
+const channelPath = (projectId: string, platform: ChannelAccessPlatform) =>
+  `/projects/${encodeURIComponent(projectId)}/channels/${platform}`;
+// A literal path, so route-contract.test.ts resolves the Telegram-only routes
+// to `/channels/telegram/…` and fails when the API drops one.
 const telegramPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/telegram`;
+
+async function channelUsers(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  fallback: string,
+): Promise<ChannelUsers> {
+  return unwrap(
+    await backendApi.get<ChannelUsers>(`${channelPath(projectId, platform)}/users`, { showErrors: false }),
+    fallback,
+  );
+}
+
+async function allowUser<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.post<T>(
+      `${channelPath(projectId, platform)}/allowed-users`,
+      { user_id: userId },
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function removeUser<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.delete<T>(
+      `${channelPath(projectId, platform)}/allowed-users/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function dismissRequest<T>(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  fallback: string,
+): Promise<T> {
+  return unwrap(
+    await backendApi.delete<T>(
+      `${channelPath(projectId, platform)}/access-requests/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    fallback,
+  );
+}
+
+async function userPhoto(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  version: string | null | undefined,
+  signal: AbortSignal | undefined,
+  fallback: string,
+): Promise<Blob | null> {
+  const query = version ? `?v=${encodeURIComponent(version)}` : '';
+  const res = await backendApi.get<Blob>(
+    `${channelPath(projectId, platform)}/users/${encodeURIComponent(userId)}/photo${query}`,
+    { showErrors: false, signal },
+  );
+  if (res.error?.status === 404) return null;
+  return unwrap(res, fallback);
+}
 
 /** The project's Telegram bot, or null when none is connected (or the flag is off). */
 export async function getTelegramInstallation(projectId: string): Promise<TelegramInstallation | null> {
@@ -268,48 +382,26 @@ export async function disconnectTelegram(projectId: string): Promise<void> {
 }
 
 /** The allowed users and the people who asked for access, with their Telegram names. */
-export async function listTelegramUsers(projectId: string): Promise<TelegramUsers> {
-  return unwrap(
-    await backendApi.get<TelegramUsers>(`${telegramPath(projectId)}/users`, { showErrors: false }),
-    'Failed to load Telegram users',
-  );
+export function listTelegramUsers(projectId: string): Promise<TelegramUsers> {
+  return channelUsers(projectId, 'telegram', 'Failed to load Telegram users');
 }
 
 /** Allow one Telegram user. Adds the id once and clears their access request. */
-export async function allowTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
-  return unwrap(
-    await backendApi.post<TelegramInstallation>(
-      `${telegramPath(projectId)}/allowed-users`,
-      { user_id: userId },
-      { showErrors: false },
-    ),
-    'Failed to allow the Telegram user',
-  );
+export function allowTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return allowUser(projectId, 'telegram', userId, 'Failed to allow the Telegram user');
 }
 
 /** Remove one Telegram user from the allowed list. Idempotent. */
-export async function removeTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
-  return unwrap(
-    await backendApi.delete<TelegramInstallation>(
-      `${telegramPath(projectId)}/allowed-users/${encodeURIComponent(userId)}`,
-      { showErrors: false },
-    ),
-    'Failed to remove the Telegram user',
-  );
+export function removeTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return removeUser(projectId, 'telegram', userId, 'Failed to remove the Telegram user');
 }
 
 /** Dismiss one access request without allowing the user. Idempotent. */
-export async function dismissTelegramAccessRequest(
+export function dismissTelegramAccessRequest(
   projectId: string,
   userId: string,
 ): Promise<TelegramInstallation> {
-  return unwrap(
-    await backendApi.delete<TelegramInstallation>(
-      `${telegramPath(projectId)}/access-requests/${encodeURIComponent(userId)}`,
-      { showErrors: false },
-    ),
-    'Failed to dismiss the access request',
-  );
+  return dismissRequest(projectId, 'telegram', userId, 'Failed to dismiss the access request');
 }
 
 /**
@@ -317,19 +409,61 @@ export async function dismissTelegramAccessRequest(
  * bot token stays server-side. Null when the user has no visible photo.
  * `version` is `TelegramUser.photo_version`; it keys the HTTP cache.
  */
-export async function getTelegramUserPhoto(
+export function getTelegramUserPhoto(
   projectId: string,
   userId: string,
   version?: string | null,
   signal?: AbortSignal,
 ): Promise<Blob | null> {
-  const query = version ? `?v=${encodeURIComponent(version)}` : '';
-  const res = await backendApi.get<Blob>(
-    `${telegramPath(projectId)}/users/${encodeURIComponent(userId)}/photo${query}`,
-    { showErrors: false, signal },
-  );
-  if (res.error?.status === 404) return null;
-  return unwrap(res, 'Failed to load the Telegram photo');
+  return userPhoto(projectId, 'telegram', userId, version, signal, 'Failed to load the Telegram photo');
+}
+
+/** The allowed users and the people who asked for access on one chat platform, with their names there. */
+export function listChannelUsers(projectId: string, platform: ChannelAccessPlatform): Promise<ChannelUsers> {
+  return channelUsers(projectId, platform, 'Failed to load the users');
+}
+
+/** Allow one user on a chat platform. Adds the id once and clears their access request. */
+export function allowChannelUser(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return allowUser(projectId, platform, userId, 'Failed to allow the user');
+}
+
+/** Remove one user from a chat platform's allowed list. Idempotent. */
+export function removeChannelUser(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return removeUser(projectId, platform, userId, 'Failed to remove the user');
+}
+
+/** Dismiss one access request on a chat platform without allowing the user. Idempotent. */
+export function dismissChannelAccessRequest(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+): Promise<ChannelAccessList> {
+  return dismissRequest(projectId, platform, userId, 'Failed to dismiss the access request');
+}
+
+/**
+ * A chat user's profile photo, fetched through the Kortix API so the bot
+ * credential stays server-side. Null when the user has no visible photo. The
+ * Blob's type is the image type (`image/jpeg` on Telegram).
+ * `version` is `ChannelUser.photo_version`; it keys the HTTP cache.
+ */
+export function getChannelUserPhoto(
+  projectId: string,
+  platform: ChannelAccessPlatform,
+  userId: string,
+  version?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  return userPhoto(projectId, platform, userId, version, signal, 'Failed to load the photo');
 }
 
 /**

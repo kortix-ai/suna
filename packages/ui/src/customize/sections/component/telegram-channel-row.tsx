@@ -6,7 +6,7 @@ import { TelegramChatMock } from './channel-mocks';
  * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
  * to the API once and never comes back to the browser. The allowed users
- * dialog is `TelegramUsersPanel`.
+ * dialog is `ChannelAccessPanel`.
  */
 import { Button } from '../../../primitives/button';
 import { CountBadge } from '../../../primitives/count-badge';
@@ -27,7 +27,7 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from './channel-row';
-import { TelegramUsersPanel } from './telegram-users-panel';
+import { ChannelAccessPanel } from './channel-access-panel';
 import {
   useConnectTelegram,
   useDisconnectTelegram,
@@ -97,7 +97,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
           {dialog === 'connect' ? (
             <TelegramConnectForm projectId={projectId} onDone={() => setDialog(null)} />
           ) : dialog === 'users' ? (
-            <TelegramUsersPanel projectId={projectId} onDone={() => setDialog(null)} />
+            <ChannelAccessPanel projectId={projectId} platform="telegram" onDone={() => setDialog(null)} />
           ) : null}
         </ModalContent>
       </Modal>
