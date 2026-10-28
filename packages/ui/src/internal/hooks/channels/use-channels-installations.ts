@@ -252,6 +252,8 @@ export function useConnectTelegram() {
       connectTelegram(projectId, body),
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      // Another bot sees other users: never show the old bot's list.
+      qc.removeQueries({ queryKey: telegramUsersKey(projectId) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });
@@ -315,6 +317,7 @@ export function useDisconnectTelegram() {
     mutationFn: (projectId: string) => disconnectTelegram(projectId),
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
+      qc.removeQueries({ queryKey: telegramUsersKey(projectId) });
       qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
   });

@@ -21,6 +21,7 @@ import { type IntegrationEvent, registerEventConsumer } from '../../integrations
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { databaseErrorSummary } from '../../shared/database-errors';
 import { isUuid } from '../../shared/validate';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
@@ -325,16 +326,21 @@ export async function handleTelegramEvent(
   if (!senderId || !install.allowedUserIds.includes(senderId)) {
     // Only a private chat asks for access: there the sender wrote to the bot itself.
     const asks = !!senderId && message.chat.type === 'private';
-    if (asks) {
-      await recordTelegramAccessRequest(event.projectId, message.from!).catch((error) =>
-        logger.warn('[telegram] access request not recorded', { projectId: event.projectId, error: String(error) }),
-      );
-    }
+    const waiting =
+      asks &&
+      (await recordTelegramAccessRequest(event.projectId, install, message.from!).catch((error) => {
+        // A failed query's message carries its parameters, the sender's names among them.
+        logger.warn('[telegram] access request not recorded', {
+          projectId: event.projectId,
+          error: databaseErrorSummary(error) ?? String(error),
+        });
+        return false;
+      }));
     await reply(
       `This bot belongs to a Kortix project, and your Telegram account is not allowed to use it yet. ` +
-        (asks
+        (waiting
           ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Telegram. Your Telegram user ID is ${senderId}.`
-          : `Ask a project admin to allow your Telegram user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → Telegram, or message this bot privately to ask for access.`),
+          : `Ask a project admin to allow your Telegram user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → Telegram${asks ? '' : ', or message this bot privately to ask for access'}.`),
     );
     return;
   }

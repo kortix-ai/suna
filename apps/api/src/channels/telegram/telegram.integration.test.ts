@@ -8,7 +8,7 @@
  * thread the way the real post-create step does, and the clock is an instant
  * sleep, so no sandbox and no real wait is needed.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import {
   accountMembers,
   accountTokens,
@@ -30,6 +30,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { Hono } from 'hono';
 import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-views';
 import { projectsApp } from '../../projects/surface';
@@ -43,6 +44,7 @@ import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { config as appConfig } from '../../config';
 import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
 import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
@@ -1394,6 +1396,11 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
   };
   const setTelegram = (telegram: Record<string, unknown>) =>
     db.update(projects).set({ metadata: { telegram } }).where(eq(projects.projectId, PROJECT));
+  /** The pool behind `db`: a spy on the `db` proxy itself sees no call. */
+  const pooled = () => (globalThis as { __kortixApiDb?: typeof db }).__kortixApiDb!;
+  /** The install as a webhook loaded it: this bot, no request seen yet. */
+  const loaded = { botId: BOT_ID, accessRequests: [] };
+  const storedIds = async () => ((await telegramMetadata()).accessRequests ?? []).map((r: { id: string }) => r.id);
   const request = (id: string, last_seen = new Date().toISOString()) => ({
     id,
     username: `user_${id}`,
@@ -1420,15 +1427,51 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
     expect(Object.keys(entry).sort()).toEqual(['first_name', 'id', 'last_name', 'last_seen', 'username']);
     expect(entry).toMatchObject({ id: '4001', username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester' });
     expect(JSON.stringify(await telegramMetadata())).not.toContain('secret plan');
-    expect(replies()).toEqual([expect.stringContaining('Customize → Connectors → Channels → Telegram')]);
+    expect(replies()).toEqual([expect.stringContaining('Your request is waiting for a project admin')]);
+    expect(replies()[0]).toContain('Customize → Connectors → Channels → Telegram');
     expect(replies()[0]).toContain('4001');
     // The pairing reply is the only Telegram call: recording asks Telegram nothing.
     expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
 
-    await handleTelegramEvent(message('again', from));
+    const transaction = spyOn(pooled(), 'transaction');
+    try {
+      await handleTelegramEvent(message('again', from));
+      // The loaded install already shows the request: no row lock, no write.
+      expect(transaction).not.toHaveBeenCalled();
+      expect(replies()[1]).toContain('Your request is waiting for a project admin');
+    } finally {
+      transaction.mockRestore();
+    }
+    expect((await telegramMetadata()).accessRequests).toEqual([entry]);
+    // A webhook that loaded the install before the request landed re-checks under the lock.
+    expect(await recordTelegramAccessRequest(PROJECT, loaded, from)).toBe(true);
     expect((await telegramMetadata()).accessRequests).toEqual([entry]);
     await handleTelegramEvent(message('renamed', { ...from, first_name: 'Renamed' }));
     expect((await telegramMetadata()).accessRequests).toEqual([expect.objectContaining({ id: '4001', first_name: 'Renamed' })]);
+  });
+
+  test('a request that is not stored gets the plain reply, once, and the log carries no stored name', async () => {
+    const warn = spyOn(logger, 'warn');
+    const postgres = Object.assign(new Error('deadlock detected'), { name: 'PostgresError', code: '40P01' });
+    const transaction = spyOn(pooled(), 'transaction').mockImplementationOnce(() =>
+      Promise.reject(new DrizzleQueryError('update "projects" set "metadata" = $1', ['Synthetic Hiddenname'], postgres)),
+    );
+    try {
+      await handleTelegramEvent(message('hello', { id: 4090, first_name: 'Synthetic Hiddenname' }));
+      // Read before the restore: a restore clears the recorded calls.
+      expect(warn.mock.calls.find(([text]) => text === '[telegram] access request not recorded')?.[1]).toEqual({
+        projectId: PROJECT,
+        error: 'Database error (SQLSTATE 40P01): deadlock detected',
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('Hiddenname');
+    } finally {
+      transaction.mockRestore();
+      warn.mockRestore();
+    }
+    expect(replies()).toEqual([expect.stringContaining('Ask a project admin to allow your Telegram user ID 4090 under')]);
+    expect(replies()[0]).not.toContain('waiting');
+    expect(replies()[0]).not.toContain('message this bot privately');
+    expect(await storedIds()).toEqual([]);
   });
 
   test('an allowed sender and a sender in a group are not recorded', async () => {
@@ -1439,22 +1482,86 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
   });
 
   test('concurrent requests all land, newest first, and the list keeps the newest 20', async () => {
-    await Promise.all(Array.from({ length: 5 }, (_, i) => recordTelegramAccessRequest(PROJECT, { id: 4050 + i })));
+    await Promise.all(Array.from({ length: 5 }, (_, i) => recordTelegramAccessRequest(PROJECT, loaded, { id: 4050 + i })));
     expect((await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id).sort()).toEqual(['4050', '4051', '4052', '4053', '4054']);
-    for (let i = 0; i < 20; i++) await recordTelegramAccessRequest(PROJECT, { id: 4060 + i });
+    for (let i = 0; i < 20; i++) await recordTelegramAccessRequest(PROJECT, loaded, { id: 4060 + i });
     const ids = (await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id);
     expect(ids).toHaveLength(20);
     expect(ids[0]).toBe('4079');
   });
 
-  test('a stored name loses its control characters and is cut at 64 characters, never inside an emoji', async () => {
-    await recordTelegramAccessRequest(PROJECT, { id: 4085, first_name: `a${'🙂'.repeat(70)}`, last_name: 'Syn\u0000thetic', username: 42 });
+  test('a stored name loses its control and format characters and is cut at 64 characters, never inside an emoji', async () => {
+    await recordTelegramAccessRequest(PROJECT, loaded, {
+      id: 4085,
+      first_name: `a${'🙂'.repeat(70)}`,
+      // A NUL, a right-to-left override, a first-strong isolate and a zero-width space.
+      last_name: 'Syn\u0000th\u202Ee\u2068ti\u200Bc',
+      username: 42,
+    });
     expect((await telegramMetadata()).accessRequests[0]).toMatchObject({
       id: '4085',
       first_name: `a${'🙂'.repeat(63)}`,
       last_name: 'Synthetic',
       username: null,
     });
+  });
+
+  test('every write drops expired requests and the requests of allowed ids: allow, remove, dismiss, record, a no-op', async () => {
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    // 4102 asked over 30 days ago; 4100 is allowed and still has a request stored.
+    const before = { allowedUserIds: ['4100', '4101'], accessRequests: [request('4102', old), request('4100'), request('4103'), request('4104')] };
+    const writes: Array<[() => Promise<unknown>, string[]]> = [
+      [() => api('POST', '/allowed-users', { user_id: '4103' }), ['4104']],
+      [() => api('DELETE', '/allowed-users/4101'), ['4103', '4104']],
+      [() => api('DELETE', '/access-requests/4103'), ['4104']],
+      [() => api('DELETE', '/access-requests/4199'), ['4103', '4104']],
+      [() => recordTelegramAccessRequest(PROJECT, loaded, { id: 4105 }), ['4105', '4103', '4104']],
+    ];
+    for (const [write, left] of writes) {
+      await setTelegram(before);
+      await write();
+      expect(await storedIds()).toEqual(left);
+    }
+  });
+
+  test('allowing ids by PUT drops their requests, and a later remove brings none back', async () => {
+    await setTelegram({ allowedUserIds: ['4110'], accessRequests: [request('4111'), request('4112')] });
+    const put = await api('PUT', '/allowed-users', { user_ids: ['4110', '4111'] });
+    expect(await put.json()).toMatchObject({ allowed_user_ids: ['4110', '4111'], access_request_count: 1 });
+    expect(await storedIds()).toEqual(['4112']);
+    const removed = await api('DELETE', '/allowed-users/4111');
+    expect(await removed.json()).toMatchObject({ allowed_user_ids: ['4110'], access_request_count: 1 });
+
+    // A request stored while its id was allowed (before this rule) does not come back on remove either.
+    await setTelegram({ allowedUserIds: ['4113'], accessRequests: [request('4113')] });
+    expect(await (await api('DELETE', '/allowed-users/4113')).json()).toMatchObject({ allowed_user_ids: [], access_request_count: 0 });
+    expect(await storedIds()).toEqual([]);
+  });
+
+  test('a request for a bot the project no longer has is not stored', async () => {
+    // Another bot: a webhook that loaded the install before a reconnect.
+    expect(await recordTelegramAccessRequest(PROJECT, { ...loaded, botId: String(Number(BOT_ID) + 1) }, { id: 4120 })).toBe(false);
+    expect(await storedIds()).toEqual([]);
+    // No bot: a webhook that loaded the install before a disconnect.
+    await deleteTelegramInstall(PROJECT);
+    try {
+      expect(await recordTelegramAccessRequest(PROJECT, loaded, { id: 4121 })).toBe(false);
+      expect(await storedIds()).toEqual([]);
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    }
+  });
+
+  test('a reconnect with the same bot keeps the requests; another bot clears them and keeps the allowed list', async () => {
+    await setTelegram({ allowedUserIds: ['4130'], accessRequests: [request('4131')] });
+    await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    expect(await storedIds()).toEqual(['4131']);
+    try {
+      await saveTelegramInstall({ projectId: PROJECT, botId: String(Number(BOT_ID) + 1), username: 'other_bot', token: TOKEN, webhookSecret: 's' });
+      expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4130'] });
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    }
   });
 
   test('the list names allowed users and requests from Telegram and falls back when getChat fails', async () => {
