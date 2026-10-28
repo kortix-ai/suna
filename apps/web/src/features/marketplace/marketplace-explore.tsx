@@ -19,11 +19,7 @@ import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace
 import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { cn, useDebounce } from '@kortix/ui';
 import { AddMarketplaceModal } from './add-marketplace-modal';
-import {
-  MARKETPLACE_GRID_COLUMNS,
-  resolveMarketplaceTypeSectionTotal,
-  sumMarketplaceTypeCounts,
-} from './marketplace-grid';
+import { MARKETPLACE_GRID_COLUMNS } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
 import { rememberMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
@@ -267,7 +263,6 @@ export function MarketplaceExplore({
     () => catalogItems.filter((it) => it.type !== 'registry:project' && !it.partOfProject),
     [catalogItems],
   );
-  const typeCounts = useMemo(() => sumMarketplaceTypeCounts(marketplaces), [marketplaces]);
 
   const groups = useMemo(() => {
     const byType = new Map<string, MarketplaceItem[]>();
@@ -288,10 +283,9 @@ export function MarketplaceExplore({
           type,
           label: pluralize(typeMeta(type, tI18nComplete).label),
           items,
-          total: resolveMarketplaceTypeSectionTotal(type, typeCounts, items.length),
         };
       });
-  }, [componentItems, typeCounts, tI18nComplete]);
+  }, [componentItems, tI18nComplete]);
 
   // Embedded: the fixed top bar already says "Marketplace", so the lone
   // "Marketplace" crumb on the all-sources view is redundant — drop it. A
