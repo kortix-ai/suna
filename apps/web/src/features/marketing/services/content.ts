@@ -82,8 +82,8 @@ export const platform = {
 export const caseCta = 'See what we would build for your company.';
 
 export const intro = {
-  title: 'Book an intro call',
-  body: 'Meet the team. We look at how your company works and pick the first function together.',
+  title: 'Rather meet first?',
+  body: 'Book an intro call with the team. We look at how your company works and pick the first function together.',
 } as const;
 
 /** How an engagement starts. No durations: none is set (ACCURACY). */
@@ -303,6 +303,7 @@ export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
   plan: 'AI Transformation',
+  includedTitle: 'Everything included',
   lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
     'An AI strategy and a ranked roadmap',
