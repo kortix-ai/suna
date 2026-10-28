@@ -1,25 +1,30 @@
 /**
- * `kortix migrate` — convert this project's kortix.yaml from kortix_version 2
- * to 3 (`planMigration` in ../manifest-migrate.ts). A preview by default;
- * `--write` applies it. Nothing is written or deleted without `--write`, and
- * nothing is written when the result does not validate.
+ * `kortix migrate` — convert this project's manifest from kortix_version 1
+ * (kortix.toml) or 2 to 3 (`planMigration` in ../manifest-migrate.ts). A
+ * preview by default; `--write` applies it. Nothing is written or deleted
+ * without `--write`, and nothing is written when the result does not validate.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { formatIssues, IMPORTABLE_LIST_KEYS, IMPORTABLE_MAP_KEYS, MANIFEST_IMPORTS_KEY, parseManifestText, splitManifestByOrigin } from '@kortix/manifest-schema';
+import { legacyConfigDir } from '@kortix/manifest-schema/layout';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
-import { type MigrationPlan, planMigration, renderManifest } from '../manifest-migrate.ts';
+import { type MigrationPlan, parseJsonc, planMigration, renderManifest } from '../manifest-migrate.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix migrate [--write] [--json]
 
-Convert this project's kortix.yaml from kortix_version 2 to 3. v3 defines each
-agent in one kortix.yaml block: the project registers skills, tools, commands
-and extensions, and each agent enables what it uses.
+Convert this project's manifest from kortix_version 1 (kortix.toml) or 2 to 3.
+v3 defines each agent in one kortix.yaml block: the project registers skills,
+tools, commands and extensions, and each agent enables what it uses.
 
 What it does:
+  - kortix_version 1: each [[agents]] entry and each .kortix/opencode/agents/*.md
+    becomes an agent. A grant v1 omitted meant all and is written as all; env
+    becomes secrets. default_agent comes from opencode.jsonc, else the first
+    agent. kortix.toml is deleted.
   - Each agent's .md frontmatter moves into its kortix.yaml block; the .md
     keeps the prompt alone and becomes the agent's prompt_file.
   - opencode.json(c)'s permission is copied onto every agent that sets none,
@@ -77,19 +82,18 @@ export function runMigrate(argv: string[]): number {
     else process.stdout.write(`${status.ok(`${basename(found.path)} is already kortix_version 3`)}\n`);
     return 0;
   }
-  if (version !== 2) {
-    process.stderr.write(
-      `${status.err(`${basename(found.path)} is kortix_version ${version}.`)}\n  ${C.dim}kortix migrate converts kortix_version 2. Run \`kortix projects upgrade\` to move a v1 kortix.toml to kortix.yaml first.${C.reset}\n`,
-    );
+  if (version !== 1 && version !== 2) {
+    process.stderr.write(`${status.err(`${basename(found.path)} is kortix_version ${version}.`)}\n  ${C.dim}kortix migrate converts kortix_version 1 and 2.${C.reset}\n`);
     return 1;
   }
+  if (version === 1) raw = v1AsV2(root, raw);
   const plan = raw.imports === undefined ? planMigration(root, 'kortix.yaml', raw) : planSplitMigration(root, found.path);
   if (found.format === 'toml') plan.changes.push({ path: relative(root, found.path), action: 'delete', note: 'replaced by kortix.yaml' });
 
   if (json) {
     emitJson({ migrated: write && plan.valid, valid: plan.valid, manifest: plan.manifest, changes: plan.changes.map(({ content: _, ...change }) => change), dropped: plan.dropped, issues: plan.issues });
   } else {
-    printPlan(plan, write);
+    printPlan(plan, write, version);
   }
   if (!plan.valid) return 1;
   if (!write) return 0;
@@ -109,6 +113,31 @@ export function runMigrate(argv: string[]): number {
     );
   }
   return 0;
+}
+
+/**
+ * A v1 kortix.toml in the shape `planMigration` reads. `[[agents]]` becomes the
+ * `agents` map, and each agent `.kortix/opencode/agents/*.md` defines is listed
+ * too: v1 ran it unrestricted. A grant v1 omitted meant `all`, so it is written
+ * as `all`; `env` is v2's `secrets`. v1 kept `default_agent` in opencode.jsonc.
+ */
+function v1AsV2(root: string, raw: Record<string, unknown>): Record<string, unknown> {
+  const dir = legacyConfigDir(raw);
+  const agents: Record<string, Record<string, unknown>> = {};
+  const agentDir = join(root, dir, 'agents');
+  for (const file of existsSync(agentDir) ? readdirSync(agentDir).sort() : []) if (file.endsWith('.md')) agents[file.slice(0, -3)] = {};
+  for (const entry of Array.isArray(raw.agents) ? (raw.agents as Record<string, unknown>[]) : []) {
+    const { name, env, ...grants } = entry;
+    if (typeof name === 'string') agents[name] = { ...grants, ...(env === undefined ? {} : { secrets: env }) };
+  }
+  for (const block of Object.values(agents)) {
+    if (block.kortix_permissions === undefined && block.kortix_cli === undefined) block.kortix_permissions = 'all';
+    for (const key of ['connectors', 'secrets', 'skills']) block[key] ??= 'all';
+  }
+  const jsonc = ['opencode.jsonc', 'opencode.json'].map((name) => join(root, dir, name)).find(existsSync);
+  const configured = jsonc ? (parseJsonc(readFileSync(jsonc, 'utf8')) as { default_agent?: unknown } | null)?.default_agent : undefined;
+  const defaultAgent = typeof configured === 'string' && agents[configured] ? configured : Object.keys(agents)[0];
+  return { ...raw, agents, default_agent: raw.default_agent ?? defaultAgent };
 }
 
 /** Keys an imported v3 file may hold; anything else fails the whole manifest. */
@@ -136,15 +165,15 @@ function planSplitMigration(root: string, manifestFile: string): MigrationPlan {
       }
     }
     if (!isRoot && !file.changed && Object.keys(raw).length === Object.keys(file.raw).length) return [];
-    return [{ path: file.path, action: 'rewrite' as const, note: isRoot ? 'kortix_version 2 → 3: agents inline, registries, per-agent grants' : 'its entries in kortix_version 3 shape', content: renderManifest(raw, isRoot) }];
+    return [{ path: file.path, action: 'rewrite' as const, note: isRoot ? 'kortix_version 3: agents inline, registries, per-agent grants' : 'its entries in kortix_version 3 shape', content: renderManifest(raw, isRoot) }];
   });
   plan.changes.unshift(...rewrites);
   plan.manifest = rewrites[0]?.content ?? plan.manifest;
   return plan;
 }
 
-function printPlan(plan: MigrationPlan, write: boolean): void {
-  process.stdout.write(`kortix migrate: kortix_version 2 → 3${write ? '' : ' (preview — nothing changes; run with --write to apply)'}\n\n`);
+function printPlan(plan: MigrationPlan, write: boolean, version: number): void {
+  process.stdout.write(`kortix migrate: kortix_version ${version} → 3${write ? '' : ' (preview — nothing changes; run with --write to apply)'}\n\n`);
   const width = Math.max(...plan.changes.map((change) => change.path.length)) + 2;
   for (const change of plan.changes) {
     const mark = change.action === 'delete' ? `${C.red}-${C.reset}` : `${C.yellow}~${C.reset}`;

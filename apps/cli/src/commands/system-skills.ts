@@ -101,7 +101,7 @@ Subcommands:
 
 Options:
   --full               get: also inline every referenced file (kortix-system is
-                       ~230 KB in full — prefer \`file\` for a single document).
+                       ~55 KB in full — prefer \`file\` for a single document).
   --host <name>        Use a configured Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
@@ -292,9 +292,9 @@ async function skillsGet(argv: string[], flags: SkillsFlags, cmd: string): Promi
  * `get <name> <path>` — ONE reference file, not the whole tree.
  *
  * `get --full` inlines every reference in a single response, which for
- * `kortix-system` is ~230 KB. An agent that needs one file (say
- * `references/kortix/kortix-yaml.md`, ~8 KB) should not have to spend the other
- * 222 KB of its context to read it. This fronts the API's existing
+ * `kortix-system` is ~55 KB. An agent that needs one file (say
+ * `references/kortix/kortix-yaml.md`, ~10 KB) should not have to spend the other
+ * 45 KB of its context to read it. This fronts the API's existing
  * `GET /skills/:name/file?path=…`, which was reachable over HTTP but had no CLI
  * surface at all, making the CLI all-or-nothing.
  *

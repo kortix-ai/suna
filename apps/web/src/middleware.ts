@@ -55,6 +55,12 @@ const MARKETING_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
   '/white-label',
   // Surface pages: where Kortix runs. /cli, /slack and /teams are also app
@@ -95,6 +101,12 @@ const SELF_HOST_MARKETING_ONLY = [
   '/developers',
   '/enterprise',
   '/pricing',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
   '/security',
   '/white-label',
@@ -181,7 +193,13 @@ const PUBLIC_ROUTES = [
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
+  '/services', // Services (AI Transformation) sales page should be public
   '/pricing', // Pricing page should be public
+  '/case-studies', // Case studies page should be public
+  '/framework', // Framework page should be public
+  '/multiplayer', // Multiplayer AI page should be public
+  '/sovereign', // Sovereign and open page should be public
+  '/compliance', // Compliance page should be public
   '/use-cases', // Use cases page should be public
   '/blog', // Blog index and posts should be public
   '/security', // Security & trust page should be public

@@ -15,8 +15,8 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 /**
- * Closing CTA above the site map. Copy lives in content.ts, not the i18n
- * bundle, matching the rest of the rebuilt landing page. A page can replace
+ * Closing CTA above the site map: a two-tone line that echoes the hero, two
+ * actions, then the trust line. Copy lives in content.ts. A page can replace
  * the copy and both actions through `footer-cta.ts`.
  */
 export function CtaSection() {
@@ -55,69 +55,70 @@ export function CtaSection() {
         <DitherField />
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center px-6 text-center">
-        {/* Two-tone marketing title, then one line of description. */}
-        <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance md:text-3xl lg:text-4xl">
-          {override?.title ?? cta.title}
-          <span className="text-muted-foreground block">{override?.subtitle ?? cta.subtitle}</span>
-        </h2>
-        {override && !override.sub ? null : (
-          <p className="text-muted-foreground mt-4 text-lg text-pretty">
-            {override?.sub ?? cta.sub}
-          </p>
-        )}
-
-        <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
-          {override ? (
-            <>
-              <MarketingButton
-                size="md"
-                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
-                asChild
+      {override ? (
+        <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center px-6 text-center">
+          <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance md:text-3xl lg:text-4xl">
+            {override.title}
+            <span className="text-muted-foreground block">{override.subtitle}</span>
+          </h2>
+          {override.sub ? (
+            <p className="text-muted-foreground mt-4 text-lg text-pretty">{override.sub}</p>
+          ) : null}
+          <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
+            <MarketingButton
+              size="md"
+              className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+              asChild
+            >
+              <HoverPrefetchLink href={override.primary.href}>
+                {override.primary.label}
+                <ArrowRightIcon />
+              </HoverPrefetchLink>
+            </MarketingButton>
+            <MarketingButton
+              variant="secondary"
+              size="md"
+              className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+              asChild
+            >
+              <a
+                href={override.secondary.href}
+                {...(override.secondary.external ? { target: '_blank', rel: 'noreferrer' } : {})}
               >
-                <HoverPrefetchLink href={override.primary.href}>
-                  {override.primary.label}
-                  <ArrowRightIcon />
-                </HoverPrefetchLink>
-              </MarketingButton>
-              <MarketingButton
-                variant="secondary"
-                size="md"
-                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
-                asChild
-              >
-                <a
-                  href={override.secondary.href}
-                  {...(override.secondary.external ? { target: '_blank', rel: 'noreferrer' } : {})}
-                >
-                  {override.secondary.label}
-                </a>
-              </MarketingButton>
-            </>
-          ) : (
-            <>
-              <MarketingButton
-                size="md"
-                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
-                asChild
-              >
-                <HoverPrefetchLink href={launchHref} prefetch onClick={trackCtaSignup}>
-                  {cta.ctaPrimary}
-                  <ArrowRightIcon />
-                </HoverPrefetchLink>
-              </MarketingButton>
-              <MarketingButton
-                variant="secondary"
-                size="md"
-                className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
-                onClick={() => openDemo()}
-              >
-                {cta.ctaSecondary}
-              </MarketingButton>
-            </>
-          )}
+                {override.secondary.label}
+              </a>
+            </MarketingButton>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center px-6 text-center">
+          <h2 className="text-foreground text-2xl font-medium tracking-tight text-balance md:text-3xl lg:text-4xl">
+            {cta.title}
+            <span className="text-muted-foreground block">{cta.subtitle}</span>
+          </h2>
+          <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
+            <MarketingButton
+              size="md"
+              className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+              asChild
+            >
+              <HoverPrefetchLink href={launchHref} prefetch onClick={trackCtaSignup}>
+                {cta.ctaPrimary}
+                <ArrowRightIcon />
+              </HoverPrefetchLink>
+            </MarketingButton>
+            <MarketingButton
+              variant="secondary"
+              size="md"
+              className="hit-area-y-1 w-full sm:w-auto sm:min-w-36"
+              onClick={() => openDemo({ source: 'footer-cta' })}
+            >
+              {cta.ctaSecondary}
+            </MarketingButton>
+          </div>
+          <p className="text-muted-foreground mt-6 text-sm text-pretty">{cta.trust}</p>
+        </div>
+      )}
     </section>
   );
 }
