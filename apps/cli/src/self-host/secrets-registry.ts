@@ -125,10 +125,10 @@ export const SECRET_DEFS: SecretDef[] = [
   // IdP until re-registered.
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
-  // Agent sandbox — Platinum (the reference) or the legacy Daytona fallback,
-  // whose removal is scheduled (SandboxProviderName in apps/api/src/config.ts).
-  // `init`/`configure` ask which ONE this instance runs on (default platinum)
-  // and only collect that provider's key(s); the actual required-secret gate
+  // Agent sandbox — Platinum. `init`/`configure` collect only its key.
+  // DAYTONA_API_KEY stays listed for an instance whose env still names the
+  // legacy provider (SandboxProviderName in apps/api/src/config.ts), so
+  // `env ls`/`env set` still reach it. The actual required-secret gate
   // is the composite sandboxProviderConfigured() check in
   // commands/self-host.ts (whichever provider ALLOWED_SANDBOX_PROVIDERS
   // names), not a blanket `required` flag per key here — Platinum stays

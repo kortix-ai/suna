@@ -10,6 +10,7 @@ import {
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { cn } from '@kortix/ui';
 import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { Close } from '@kortix/ui/icons';
 import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
@@ -17,9 +18,9 @@ import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { isWorkEmail } from '@/lib/personal-email';
 
 import { Button } from '@kortix/ui/button';
+import { Field, FieldGroup, FieldLabel } from '@kortix/ui/field';
 import { InfoBanner } from '@kortix/ui/info-banner';
-import { Input } from '@kortix/ui/input';
-import { Label } from '@kortix/ui/label';
+import { Input, inputInvalidClasses } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import {
   Modal,
@@ -27,7 +28,6 @@ import {
   ModalClose,
   ModalContent,
   ModalDescription,
-  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@kortix/ui/modal';
@@ -73,6 +73,16 @@ const sizeQualifies = (s: CompanySize, email: string) =>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The fields the form checks, in the order they appear (the first error takes focus). */
+type FieldKey = 'name' | 'company' | 'email' | 'size';
+const FIELD_ID: Record<FieldKey, string> = {
+  name: 'dq-name',
+  company: 'dq-company',
+  email: 'dq-email',
+  size: 'dq-size',
+};
+type FieldErrors = Partial<Record<FieldKey, string>>;
+
 // Ticket perforation: each half of the confirmation is cut by an 11px
 // half-circle on both edges where the halves meet, so the overlay shows
 // through the notches.
@@ -83,9 +93,6 @@ const notch = (y: '0' | '100%') =>
   ].join(', ');
 const TICKET_TOP = { mask: notch('100%') };
 const TICKET_BOTTOM = { mask: notch('0') };
-
-// The Kortix logo tile is light in both themes.
-const LOGO_TILE = 'bg-white text-black';
 
 export interface DemoQualifierModalProps {
   open: boolean;
@@ -100,25 +107,72 @@ export interface DemoQualifierModalProps {
   onBookingSuccessful?: () => void;
 }
 
-/** The demo's identity, shown above every step so the modal reads as one flow. */
-function MeetingHeader({ meta }: { meta: string }) {
+/**
+ * The demo's identity and progress, shown above every step so the modal reads
+ * as one flow: the Kortix tile, the meeting name, the close button, and, while
+ * the person is still booking, the two steps (Your details, Pick a time).
+ */
+function DemoHeader({ step }: { step?: 0 | 1 }) {
   const t = useTranslations('demoBooking');
+  const steps = [t('stepDetails'), t('stepTime')];
   return (
-    <div className="bg-sidebar border-border flex items-center gap-3 border-b px-5 py-4">
-      <div className={`flex size-8 shrink-0 items-center justify-center rounded-sm ${LOGO_TILE}`}>
-        <KortixLogo variant="icon" size={16} />
+    <div className="flex flex-col gap-5 px-6 pt-5">
+      <div className="flex items-center gap-2.5">
+        <span className="bg-background text-foreground ring-border flex size-7 shrink-0 items-center justify-center rounded-md ring-1 ring-inset">
+          <KortixLogo variant="icon" size={14} />
+        </span>
+        <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+          {t('meetingTitle')}
+        </span>
+        <ModalClose asChild>
+          <Button variant="ghost" size="icon-base" className="-mr-2 shrink-0">
+            <Close className="size-4 stroke-1" />
+            <span className="sr-only">{t('close')}</span>
+          </Button>
+        </ModalClose>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-foreground text-sm font-medium">{t('meetingTitle')}</span>
-        <span className="text-muted-foreground truncate text-xs">{meta}</span>
-      </div>
-      <ModalClose asChild>
-        <Button variant="ghost" size="icon-base" className="shrink-0">
-          <Close className="size-4 stroke-1" />
-          <span className="sr-only">{t('close')}</span>
-        </Button>
-      </ModalClose>
+      {step !== undefined && (
+        <ol className="grid grid-cols-2 gap-2">
+          {steps.map((label, i) => (
+            <li
+              key={label}
+              aria-current={i === step ? 'step' : undefined}
+              className="flex min-w-0 flex-col gap-2"
+            >
+              <span
+                aria-hidden
+                className={cn('h-0.5 rounded-full', i <= step ? 'bg-foreground' : 'bg-border')}
+              />
+              <span
+                className={cn(
+                  'flex min-w-0 items-center gap-1.5 text-xs',
+                  i <= step ? 'text-foreground font-medium' : 'text-muted-foreground',
+                )}
+              >
+                {i < step ? (
+                  <Check aria-hidden className="size-3.5 shrink-0" />
+                ) : (
+                  <span aria-hidden className="tabular-nums">
+                    {i + 1}
+                  </span>
+                )}
+                <span className="truncate">{label}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
+  );
+}
+
+/** One field's error line, read by the input through `aria-describedby`. */
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="text-destructive text-xs text-pretty wrap-anywhere">
+      {message}
+    </p>
   );
 }
 
@@ -145,7 +199,7 @@ export function DemoQualifierModal({
   const [company, setCompany] = useState('');
   const [size, setSize] = useState<CompanySize | null>(null);
   const [goal, setGoal] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const companySizes = useMemo(() => companySizesForEmail(email), [email]);
   const slot = useMemo(() => booking && formatBookedSlot(booking, locale), [booking, locale]);
@@ -156,7 +210,7 @@ export function DemoQualifierModal({
     if (open) {
       setStep('form');
       setBooking(null);
-      setError(null);
+      setErrors({});
     }
   }
 
@@ -196,26 +250,30 @@ export function DemoQualifierModal({
     };
   }, [open, calNamespace, onBookingSuccessful]);
 
+  /** Clear one field's error as soon as the person edits that field. */
+  const clearError = (key: FieldKey) =>
+    setErrors((e) => {
+      if (!e[key]) return e;
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
+
   const submit = useCallback(async () => {
-    if (!EMAIL_RE.test(email.trim())) {
-      const message = 'Enter a valid work email so we can reach you.';
-      setError(message);
-      errorToast(message);
+    // Every problem shows at once, under its own field, and the first one
+    // takes focus. The form sets `noValidate`, so the browser's own bubbles
+    // never cover these.
+    const found: FieldErrors = {};
+    if (!name.trim()) found.name = t('errorName');
+    if (!company.trim()) found.company = t('errorCompany');
+    if (!EMAIL_RE.test(email.trim())) found.email = t('errorEmail');
+    if (!size) found.size = t('errorSize');
+    setErrors(found);
+    const first = (Object.keys(FIELD_ID) as FieldKey[]).find((k) => found[k]);
+    if (first || !size) {
+      if (first) document.getElementById(FIELD_ID[first])?.focus();
       return;
     }
-    if (!company.trim()) {
-      const message = 'Tell us your company name.';
-      setError(message);
-      errorToast(message);
-      return;
-    }
-    if (!size) {
-      const message = 'Pick your company size.';
-      setError(message);
-      errorToast(message);
-      return;
-    }
-    setError(null);
     const qualified = sizeQualifies(size, email);
 
     setSubmitting(true);
@@ -240,7 +298,7 @@ export function DemoQualifierModal({
     } finally {
       setSubmitting(false);
     }
-  }, [email, company, size, name, goal, source, tI18nHardcoded]);
+  }, [email, company, size, name, goal, source, t, tI18nHardcoded]);
 
   const calConfig: Record<string, string> = { layout: 'month_view' };
   if (name.trim()) calConfig.name = name.trim();
@@ -248,6 +306,12 @@ export function DemoQualifierModal({
   if (company.trim()) calConfig[CAL_FIELD_COMPANY_NAME] = company.trim();
   if (size) calConfig[CAL_FIELD_COMPANY_SIZE] = size;
   if (goal.trim()) calConfig.notes = `Goal: ${goal.trim()}`;
+
+  /** The props that tie an input to its error line. */
+  const invalidProps = (key: FieldKey) =>
+    errors[key]
+      ? { 'aria-invalid': true as const, 'aria-describedby': `${FIELD_ID[key]}-error` }
+      : {};
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -258,8 +322,9 @@ export function DemoQualifierModal({
           className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-lg"
         >
           <ModalTitle className="sr-only">{t('meetingTitle')}</ModalTitle>
-          <MeetingHeader meta={t('stepTime')} />
-          <div className="h-[min(780px,82vh)] overflow-y-auto">
+          <ModalDescription className="sr-only">{t('stepTime')}</ModalDescription>
+          <DemoHeader step={1} />
+          <div className="mt-4 h-[min(780px,82vh)] overflow-y-auto">
             <Cal
               namespace={calNamespace}
               calLink={calLink}
@@ -277,11 +342,11 @@ export function DemoQualifierModal({
           closeOnOutsideClick={false}
           className="gap-0 space-y-0 border-0 p-0 shadow-none drop-shadow-xl lg:max-w-sm"
         >
-          <div className="bg-background rounded-t-xl pb-7.5" style={TICKET_TOP}>
+          <div className="bg-background rounded-t-xl pb-8" style={TICKET_TOP}>
             <div className="flex items-center justify-between pt-4 pr-3 pl-5">
               <div className="flex items-center gap-1.5">
-                <SolidCheckIcon className="text-ring size-4" />
-                <ModalTitle className="text-kortix-green text-xs font-medium">
+                <SolidCheckIcon className="text-kortix-green size-4" />
+                <ModalTitle className="text-foreground text-xs font-medium">
                   {t('bookedLabel')}
                 </ModalTitle>
               </div>
@@ -295,20 +360,16 @@ export function DemoQualifierModal({
 
             <div className="flex items-center gap-4 px-5 pt-3">
               {slot && (
-                <div className="bg-muted flex h-19.5 w-17.5 shrink-0 flex-col items-center justify-center rounded-lg">
-                  <span className="text-kortix-red text-[11px] leading-3.5 font-semibold tracking-[0.1em] uppercase">
-                    {slot.month}
-                  </span>
-                  <span className="text-foreground text-[28px] leading-[30px] font-semibold tracking-[-0.03em] tabular-nums">
+                <div className="bg-muted flex w-16 shrink-0 flex-col items-center justify-center rounded-md py-2">
+                  <span className="text-muted-foreground text-xs font-medium">{slot.month}</span>
+                  <span className="text-foreground text-2xl font-semibold tracking-tight tabular-nums">
                     {slot.day}
                   </span>
-                  <span className="text-muted-foreground text-[11px] leading-3.5 font-medium">
-                    {slot.weekday}
-                  </span>
+                  <span className="text-muted-foreground text-xs">{slot.weekday}</span>
                 </div>
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-foreground truncate text-xl leading-6 font-semibold tracking-[-0.015em]">
+                <span className="text-foreground truncate text-xl font-semibold">
                   {t('meetingTitle')}
                 </span>
                 {slot && (
@@ -326,17 +387,17 @@ export function DemoQualifierModal({
           </div>
 
           <div className="bg-background relative -mt-px rounded-b-xl" style={TICKET_BOTTOM}>
-            <div className="border-foreground/15 absolute inset-x-4.5 top-0 border-t-2 border-dashed" />
+            <div className="border-border absolute inset-x-4 top-0 border-t-2 border-dashed" />
             <div className="flex flex-col gap-4 px-5 pt-6 pb-5">
               <ModalDescription asChild>
-                <div className="flex flex-col gap-0.5 text-xs leading-5">
+                <div className="flex flex-col gap-0.5 text-xs">
                   <span className="text-foreground font-medium">
                     {t('inviteSent', { email: email.trim() })}
                   </span>
                   <span className="text-muted-foreground">{t('reschedule')}</span>
                 </div>
               </ModalDescription>
-              <div className="flex flex-col items-center gap-2.5">
+              <div className="flex flex-col items-center gap-2">
                 <ModalClose asChild>
                   <Button size="lg" className="w-full">
                     {t('done')}
@@ -362,136 +423,168 @@ export function DemoQualifierModal({
         <ModalContent
           showCloseButton={false}
           variant="base"
-          className="gap-0 space-y-0 overflow-hidden p-0 lg:max-w-lg"
+          className="gap-0 space-y-0 p-0 lg:h-auto lg:max-w-lg"
         >
           <form
+            noValidate
             className="contents"
             onSubmit={(e) => {
               e.preventDefault();
               void submit();
             }}
           >
-            <MeetingHeader meta={t('stepDetails')} />
+            <DemoHeader step={0} />
 
-            <ModalHeader className="px-6 pt-5 pb-0">
-              <ModalTitle className="text-xl font-semibold tracking-tight">
+            <ModalHeader className="gap-1.5 px-6 pt-6">
+              <ModalTitle className="text-lg font-medium text-balance">
                 {title ?? t('formTitle')}
               </ModalTitle>
-              <ModalDescription>{description ?? t('formDescription')}</ModalDescription>
+              <ModalDescription className="text-pretty">
+                {description ?? t('formDescription')}
+              </ModalDescription>
             </ModalHeader>
 
-            <ModalBody className="space-y-4 px-6 pt-5 pb-5">
-              <div className="flex gap-3">
-                <div className="flex-1 space-y-1.5">
-                  <Label htmlFor="dq-name">
-                    {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}
-                  </Label>
-                  <Input
-                    id="dq-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={tI18nHardcoded.raw(
-                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae',
-                    )}
-                    autoComplete="name"
-                    required
-                  />
-                </div>
-                <div className="flex-1 space-y-1.5">
-                  <Label htmlFor="dq-company">
-                    {tI18nHardcoded.raw(
-                      'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
-                    )}
-                  </Label>
-                  <Input
-                    id="dq-company"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder={tI18nHardcoded.raw(
-                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderAcmeInc4c41f6f1',
-                    )}
-                    autoComplete="organization"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="dq-email">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxTextWorkEmailc15a71d1',
-                  )}
-                </Label>
-                <Input
-                  id="dq-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (!isWorkEmail(e.target.value)) setSize((s) => (s === '1-10' ? null : s));
-                  }}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYouCompanyee6aa000',
-                  )}
-                  autoComplete="email"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="dq-size">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxTextCompanySizee13e1fef',
-                  )}
-                </Label>
-                <Select value={size ?? undefined} onValueChange={(v) => setSize(v as CompanySize)}>
-                  <SelectTrigger
-                    id="dq-size"
-                    variant="outline"
-                    className="h-9 w-full px-3 font-medium"
-                  >
-                    <SelectValue
+            <ModalBody className="px-6 pt-6 pb-0">
+              <FieldGroup className="gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field className="gap-1.5" data-invalid={errors.name ? true : undefined}>
+                    <FieldLabel htmlFor={FIELD_ID.name}>
+                      {tI18nHardcoded.raw('i18nComplete.textdcd1d5223f73')}
+                    </FieldLabel>
+                    <Input
+                      id={FIELD_ID.name}
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        clearError('name');
+                      }}
                       placeholder={tI18nHardcoded.raw(
-                        'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderSelectCompanya2ad2a30',
+                        'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae',
                       )}
+                      autoComplete="name"
+                      required
+                      {...invalidProps('name')}
                     />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {companySizes.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.value} {tI18nHardcoded.raw('i18nComplete.textc49de3d265fb')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <FieldError id={`${FIELD_ID.name}-error`} message={errors.name} />
+                  </Field>
+                  <Field className="gap-1.5" data-invalid={errors.company ? true : undefined}>
+                    <FieldLabel htmlFor={FIELD_ID.company}>
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
+                      )}
+                    </FieldLabel>
+                    <Input
+                      id={FIELD_ID.company}
+                      value={company}
+                      onChange={(e) => {
+                        setCompany(e.target.value);
+                        clearError('company');
+                      }}
+                      placeholder={tI18nHardcoded.raw(
+                        'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderAcmeInc4c41f6f1',
+                      )}
+                      autoComplete="organization"
+                      required
+                      {...invalidProps('company')}
+                    />
+                    <FieldError id={`${FIELD_ID.company}-error`} message={errors.company} />
+                  </Field>
+                </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="dq-goal">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxTextWhatDoYoud0acfddd',
-                  )}{' '}
-                  <span className="text-muted-foreground font-normal">
-                    {tI18nHardcoded.raw('i18nComplete.text0059798b7f70')}
-                  </span>
-                </Label>
-                <Textarea
-                  id="dq-goal"
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderEGcf1d0320',
-                  )}
-                  rows={2}
-                  className="resize-none"
-                />
-              </div>
+                <Field className="gap-1.5" data-invalid={errors.email ? true : undefined}>
+                  <FieldLabel htmlFor={FIELD_ID.email}>
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxTextWorkEmailc15a71d1',
+                    )}
+                  </FieldLabel>
+                  <Input
+                    id={FIELD_ID.email}
+                    type="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearError('email');
+                      if (!isWorkEmail(e.target.value)) setSize((s) => (s === '1-10' ? null : s));
+                    }}
+                    placeholder={tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYouCompanyee6aa000',
+                    )}
+                    autoComplete="email"
+                    required
+                    {...invalidProps('email')}
+                  />
+                  <FieldError id={`${FIELD_ID.email}-error`} message={errors.email} />
+                </Field>
 
-              {error && <p className="text-destructive text-sm">{error}</p>}
+                <Field className="gap-1.5" data-invalid={errors.size ? true : undefined}>
+                  <FieldLabel htmlFor={FIELD_ID.size}>
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxTextCompanySizee13e1fef',
+                    )}
+                  </FieldLabel>
+                  <Select
+                    value={size ?? undefined}
+                    onValueChange={(v) => {
+                      setSize(v as CompanySize);
+                      clearError('size');
+                    }}
+                  >
+                    <SelectTrigger
+                      id={FIELD_ID.size}
+                      variant="outline"
+                      // The trigger shows the same invalid border and halo as the inputs beside it.
+                      className={cn('h-9 w-full px-3 font-medium', inputInvalidClasses)}
+                      {...invalidProps('size')}
+                    >
+                      <SelectValue
+                        placeholder={tI18nHardcoded.raw(
+                          'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderSelectCompanya2ad2a30',
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companySizes.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.value} {tI18nHardcoded.raw('i18nComplete.textc49de3d265fb')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldError id={`${FIELD_ID.size}-error`} message={errors.size} />
+                </Field>
+
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="dq-goal" className="gap-1.5">
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxTextWhatDoYoud0acfddd',
+                    )}
+                    <span className="text-muted-foreground font-normal">
+                      {tI18nHardcoded.raw('i18nComplete.text0059798b7f70')}
+                    </span>
+                  </FieldLabel>
+                  <Textarea
+                    id="dq-goal"
+                    value={goal}
+                    onChange={(e) => setGoal(e.target.value)}
+                    placeholder={tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderEGcf1d0320',
+                    )}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </Field>
+              </FieldGroup>
             </ModalBody>
 
-            <div className="px-6 pb-6">
-              <Button type="submit" size="lg" disabled={submitting} className="group/cta w-full">
+            <div className="px-6 pt-6 pb-6">
+              <Button
+                type="submit"
+                size="lg"
+                disabled={submitting}
+                aria-busy={submitting || undefined}
+                className="group/cta w-full"
+              >
                 {submitting ? (
                   <>
                     <Loading />
@@ -510,19 +603,25 @@ export function DemoQualifierModal({
           </form>
         </ModalContent>
       ) : (
-        <ModalContent variant="base" className="gap-0 overflow-hidden p-0 lg:max-w-lg">
-          <ModalHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-            <ModalTitle>
+        <ModalContent
+          showCloseButton={false}
+          variant="base"
+          className="gap-0 space-y-0 p-0 lg:h-auto lg:max-w-lg"
+        >
+          <DemoHeader />
+
+          <ModalHeader className="gap-1.5 px-6 pt-6">
+            <ModalTitle className="text-lg font-medium text-balance">
               {tI18nHardcoded.raw(
                 'autoFeaturesContactDemoQualifierModalJsxTextRequestReceivedab5bf6e1',
               )}
             </ModalTitle>
-            <ModalDescription>
+            <ModalDescription className="text-pretty">
               {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextThanksWeVeafd780cd')}
             </ModalDescription>
           </ModalHeader>
 
-          <div className="space-y-4 px-6 py-5">
+          <div className="space-y-4 px-6 pt-6">
             <InfoBanner
               tone="success"
               icon={Check}
@@ -534,22 +633,22 @@ export function DemoQualifierModal({
                 'autoFeaturesContactDemoQualifierModalJsxTextKortixIsBuilt9d7721e7',
               )}
             </InfoBanner>
-            <p className="text-muted-foreground text-sm leading-relaxed">
+            <p className="text-muted-foreground text-sm text-pretty">
               {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextSpinUpYour0b48cac5')}
             </p>
           </div>
 
-          <ModalFooter className="sm:justify-between">
-            <Button asChild variant="ghost" className="w-full sm:w-auto">
+          <div className="flex flex-col gap-2 px-6 pt-6 pb-6">
+            <Button size="lg" onClick={() => onOpenChange(false)} className="w-full">
+              {tI18nHardcoded.raw('i18nComplete.text11a6767d5674')}
+            </Button>
+            <Button asChild variant="ghost" className="w-full">
               <Link href={`mailto:${CONTACT_EMAIL}`}>
                 <Mail />
                 {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextEmailUs103301cb')}
               </Link>
             </Button>
-            <Button onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
-              {tI18nHardcoded.raw('i18nComplete.text11a6767d5674')}
-            </Button>
-          </ModalFooter>
+          </div>
         </ModalContent>
       )}
     </Modal>

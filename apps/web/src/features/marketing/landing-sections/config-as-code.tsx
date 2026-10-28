@@ -1,13 +1,14 @@
 const PLATE = '/media/landing/plate-config.svg';
 
-// A real manifest: every key is in docs/project/manifest.mdx. Triggers are
-// keyed by `slug` (the board said `name`, which the schema rejects).
-const KORTIX_YAML = `kortix_version: 2
+// A real kortix_version 3 manifest: every key is in the docs "kortix.yaml
+// reference" section, and `kortix validate` passes it. Triggers are keyed by
+// `slug` (the board said `name`, which the schema rejects).
+const KORTIX_YAML = `kortix_version: 3
 default_agent: kortix
 
 agents:
   kortix:
-    file: agents/kortix.md
+    prompt_file: agents/kortix.md
     connectors: all
     skills: all
 
@@ -16,7 +17,8 @@ triggers:
     type: cron
     agent: kortix
     cron: "0 0 8 * * 1"
-    timezone: UTC`;
+    timezone: UTC
+    prompt: Write the weekly report.`;
 
 const FACTS = [
   { label: 'Version every change', tag: 'Git' },
@@ -40,8 +42,8 @@ export function ConfigAsCode() {
               One file describes your whole company.
             </h2>
             <p className="text-muted-foreground text-base leading-relaxed text-pretty">
-              Agents, their permissions, triggers and secrets live in kortix.yaml. Review a change to
-              how your company works the same way you review code.
+              Agents, their permissions, triggers and secrets live in kortix.yaml. Review a change
+              to how your company works the same way you review code.
             </p>
           </div>
 
@@ -49,7 +51,9 @@ export function ConfigAsCode() {
             {FACTS.map((fact) => (
               <li key={fact.tag} className="flex items-center justify-between border-t py-3.75">
                 <span className="text-foreground text-sm">{fact.label}</span>
-                <span className="text-muted-foreground font-mono text-xs uppercase">{fact.tag}</span>
+                <span className="text-muted-foreground font-mono text-xs uppercase">
+                  {fact.tag}
+                </span>
               </li>
             ))}
           </ul>
