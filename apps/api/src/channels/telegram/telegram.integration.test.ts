@@ -1112,7 +1112,7 @@ describe('question buttons go when the chat answers another way — migrated Pos
     expect(await remembered('2101')).toHaveLength(1);
     await handleTelegramEvent(update('Postgres', ALLOWED, 2101));
     expect(edits().map((c) => ({ chat_id: c.body.chat_id, message_id: c.body.message_id, reply_markup: c.body.reply_markup }))).toEqual([
-      { chat_id: '2101', message_id: 1, reply_markup: { inline_keyboard: [] } },
+      { chat_id: 2101, message_id: 1, reply_markup: { inline_keyboard: [] } },
     ]);
     expect(String(edits()[0]!.body.text)).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nAnswered in the chat.');
     expect(await remembered('2101')).toHaveLength(0);

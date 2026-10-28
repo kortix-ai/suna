@@ -187,7 +187,12 @@ export default tseslint.config(
     // (channels/core/session-notice.ts). The patterns cover the platform folders
     // and their sibling files (`telegram-webhook.ts`, `resend-email-api.ts`, …).
     // The other files in channels/core are shared Slack/Teams helpers.
-    files: ['src/channels/core/conversation.ts', 'src/channels/core/session-notice.ts', 'src/channels/core/threads.ts'],
+    files: [
+      'src/channels/core/conversation.ts',
+      'src/channels/core/questions.ts',
+      'src/channels/core/session-notice.ts',
+      'src/channels/core/threads.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
