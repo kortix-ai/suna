@@ -109,8 +109,8 @@ export async function readManifest(
 /**
  * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
  * default — same name `@kortix/starter`'s `base` template seeds (see
- * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
- * `agents.kortix`). Keeping the two in sync means a blank managed-git project
+ * packages/starter/templates/base/kortix.yaml's `default_agent: worker` +
+ * `agents.worker`). Keeping the two in sync means a blank managed-git project
  * (provisioned WITHOUT `seed_starter:true`, so no kortix.yaml ever lands on
  * disk) self-heals into the exact shape a seeded one would already have.
  *
@@ -123,7 +123,7 @@ export async function readManifest(
  * literal `null` and 400'd AGENT_NOT_DECLARED on a blank project's very
  * first session).
  */
-export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
+export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'worker';
 
 /**
  * Build the synthesized v2 manifest for a project with no kortix.yaml/

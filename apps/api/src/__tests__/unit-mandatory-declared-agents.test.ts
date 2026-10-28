@@ -306,17 +306,17 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     // configuration, so it must carry the full grant — a narrowed default is a
     // silently crippled first session.
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
     });
   });
 
-  test('the starter\'s declared "kortix" agent also resolves when named explicitly', () => {
+  test('the starter\'s declared "worker" agent also resolves when named explicitly', () => {
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
     const loaded = extractAgents(manifest);
-    const governed = resolveGovernedAgentGrant('kortix', loaded, {
+    const governed = resolveGovernedAgentGrant('worker', loaded, {
       subject: true,
       projectDefaultAgent: null,
     });

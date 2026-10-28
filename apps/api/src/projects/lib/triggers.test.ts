@@ -132,7 +132,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
-      agent: 'kortix',
+      agent: 'worker',
       connectors: 'all',
       permissions: 'all',
       env: 'all',
@@ -150,7 +150,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
 
     const manifest = await loadManifestForEdit(fakeProject());
 
-    const defaultAgentWrite = applyDefaultAgentV2(manifest, 'kortix');
+    const defaultAgentWrite = applyDefaultAgentV2(manifest, 'worker');
     expect(defaultAgentWrite.ok).toBe(true);
 
     const blockWrite = applyAgentBlockV2(manifest, 'release-bot', {
@@ -160,8 +160,8 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(blockWrite.ok).toBe(true);
     if (!blockWrite.ok) return;
     expect(Object.keys(blockWrite.raw.agents as Record<string, unknown>).sort()).toEqual([
-      'kortix',
       'release-bot',
+      'worker',
     ]);
   });
 

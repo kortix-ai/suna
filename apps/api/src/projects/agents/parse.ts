@@ -201,7 +201,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
  * `readManifest`'s literal `null` → zero declared agents → every
  * declared-agent check (`resolveGovernedAgentGrant`) 400'd AGENT_NOT_DECLARED
  * even though the project "should" already resolve to the synthesized
- * `kortix` default agent with zero writes. Synthesizing here too closes that
+ * `worker` default agent with zero writes. Synthesizing here too closes that
  * gap — a blank project's very first session-create with no agent forced now
  * resolves the same declared default the write path already promises.
  */
