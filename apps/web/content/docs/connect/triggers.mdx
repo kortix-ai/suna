@@ -1,9 +1,9 @@
 ---
-title: Triggers & reminders
+title: Triggers & loops
 description: Start sessions or call your Apps on a schedule, from a signed webhook, from a connected app or from one of your Apps, and have a session re-prompt itself later.
 ---
 
-A trigger starts a [session](/docs/work/sessions) with no person present. A reminder re-prompts one existing session later, once or on repeat. This page is for project owners who automate agent work and debug a fire that failed.
+A trigger starts a [session](/docs/work/sessions) with no person present. A [loop](#loops) re-prompts one existing session later, once or on repeat. This page is for project owners who automate agent work and debug a fire that failed.
 
 ## How triggers work
 
@@ -425,60 +425,81 @@ curl -X POST "$(dirname "$KORTIX_APP_EVENTS_URL")/runs" \
 - The answer is `201` with `run_id` and `run_at`. `DELETE …/apps/<app_id>/runs/<run_id>` cancels a run that has not fired.
 - An App holds at most 1,000 pending runs. A `payload` is at most 64 KiB. A fired run is kept 30 days.
 
-## Reminders
+<a id="reminders" />
 
-A reminder sends a prompt into one existing session at a time you set: "in 24 hours, check whether the vendor replied". It fires once, or it repeats until someone removes it. A reminder lives in the database, not in `kortix.yaml`. It makes no commit, and a fire never starts a new session.
+## Loops
 
-Reminders need the project flag `reminders`, on by default. Turn it off or back on in **Project admin → Feature flags → Reminders**, or run `kortix projects features enable reminders`. While it is off, reminder routes answer `403` with `code: feature_disabled` and no reminder fires.
+A loop sends a prompt into one existing session at a time you set: "in 24 hours, check whether the vendor replied". It fires once, or it repeats until someone removes it. An agent sets a loop to check back on its own work later, then ends its turn. A loop lives in the database, not in `kortix.yaml`. It makes no commit, and a fire never starts a new session.
+
+Loops were called reminders until October 2026. Only the name changed: the scheduling engine, the stored loops and every fire work as before. The wire names keep the old word: the HTTP routes (`…/sessions/<session_id>/reminders`), the ids (`reminder.<12 hex>`), the flag key `reminders`, the audit actions (`session.reminder.*`), the error codes (`reminder_*`) and the SDK names (`s.reminders`, `useSessionReminders`). The CLI commands `kortix remind` and `kortix reminders` still run as aliases of `kortix loop` and `kortix loops`.
+
+Loops need the project flag `reminders` (shown as **Loops**), on by default. Turn it off or back on in **Project admin → Feature flags → Loops**, or run `kortix projects features enable reminders`. While it is off, the loop routes answer `403` with `code: feature_disabled` and no loop fires.
 
 ```sh
-kortix remind "Check whether the vendor replied to the contract email." --in 24h
-kortix remind "Did the deploy go green? If yes, report it and remove this reminder." --in 10m --every 1h
-kortix remind "Post the launch checklist." --at 2026-11-02T09:00:00Z
-kortix remind "Post the standup summary." --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
+kortix loop "Check whether the vendor replied to the contract email." --in 24h
+kortix loop "Did the deploy go green? If yes, report it and remove this loop." --in 10m --every 1h
+kortix loop "Post the launch checklist." --at 2026-11-02T09:00:00Z
+kortix loops add "Post the standup summary." --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
 ```
 
-`kortix remind` is `kortix reminders add`. Inside a session it targets that session. Outside one, pass `--session <session_id>`; a unique prefix works. `--name` sets a label. The command prints the reminder id, such as `reminder.3f9a1c2e7b04`, and the next fire.
+`kortix loop` is `kortix loops add`. Inside a session it targets that session. Outside one, pass `--session <session_id>`; a unique prefix works. The command prints the loop id, such as `reminder.3f9a1c2e7b04`, and the next fire.
 
 | Flag | Rule |
 | --- | --- |
-| `--in <dur>`, `--at <iso>` | Set the first fire. Alone, the reminder fires once. At most 366 days ahead. |
+| `--in <dur>`, `--at <iso>` | Set the first fire. Alone, the loop fires once. At most 366 days ahead. |
 | `--every <dur>` | Repeats. At least `5m`, at most 366 days. Each period starts when the previous fire is claimed. |
-| `--cron "<expr>"` | Repeats on a 6-field cron, at most once every 5 minutes. Takes no `--in` or `--at`. |
+| `--cron "<expr>"` | Repeats on a 6-field cron (seconds first), at most once every 5 minutes. Takes no `--in` or `--at`. |
 | `--timezone <tz>` | IANA zone for `--cron`. Default `UTC`. |
+| `--name <text>` | A label, shown in `kortix loops ls` and on the Loops page. |
+| `--session <id>` | The session to re-prompt. Default: `$KORTIX_SESSION_ID` inside a session. |
+| `--json` | Machine-readable output. |
 
-Durations look like `30m`, `24h` or `2d`. A session holds at most 20 active reminders and a project 200; past that, the API answers `409`. A prompt holds at most 10,000 characters.
+Durations look like `30m`, `24h` or `2d`. A session holds at most 20 active loops and a project 200; past that, the API answers `409`. A prompt holds at most 10,000 characters.
 
 ### What a fire does
 
-- The fire queues the text into the session after a header line: `[REMINDER <id> — … scheduled check-in on this session, not a new user message.]`. A recurring reminder's header adds the `kortix reminders rm <id>` command.
-- A parked session wakes with its full history and workspace.
-- If the session is deleted or failed, the reminder pauses itself and records `last_error`.
-- A reminder that a person set runs as that person. When the person leaves the account, is removed from it, or is deactivated through SCIM, their reminders in its projects pause at once. A fire that still finds its author gone pauses the reminder and records the reason in `last_error`. A reminder that a session's agent set runs as the person who created the session, while they are a member. See [When a person leaves](/docs/accounts#when-a-person-leaves).
-- Anyone who can prompt a session can set a reminder on it. An agent can set one only on its own session; another session answers `403`.
-- A fire that could not be delivered shows **Last run failed** with the reason. Press **Retry**, or run `kortix reminders run <id>`, to fire it again now.
-- `kortix triggers pause` also stops reminders.
-- Each fire is a model turn. Remove a recurring reminder when its condition is met.
+- The fire queues the text into the session after a header line. The header keeps the wire name, so an agent's transcript shows:
 
-### Manage reminders
+  ```text
+  [REMINDER reminder.3f9a1c2e7b04 — one-time scheduled check-in on this session, not a new user message.]
+
+  Check whether the vendor replied to the contract email.
+  ```
+
+  A recurring loop's header says `recurring` and adds the command that removes it, `kortix reminders rm <id>`. The web and mobile apps draw the fire as a **Loop** pill (**One-time** or **Recurring**), not as a message a person typed.
+- A parked session wakes with its full history and workspace.
+- If the session is deleted or failed, the loop pauses itself and records `last_error`.
+- A loop that a person set runs as that person. When the person leaves the account, is removed from it, or is deactivated through SCIM, their loops in its projects pause at once. A fire that still finds its author gone pauses the loop and records the reason in `last_error`. A loop that a session's agent set runs as the person who created the session, while they are a member. See [When a person leaves](/docs/accounts#when-a-person-leaves).
+- Anyone who can prompt a session can set a loop on it. An agent can set one only on its own session; another session answers `403`.
+- A fire that could not be delivered shows **Last run failed** with the reason. Press **Retry**, or run `kortix loops run <id>`, to fire it again now. A loop that keeps failing raises an alert titled with its name, or **Loop** when it has none. See [Failures and alerts](#failures-and-alerts).
+- `kortix triggers pause` also stops loops.
+- Each fire is a model turn. Remove a recurring loop when its condition is met.
+
+### Manage loops
 
 | Command | Effect |
 | --- | --- |
-| `kortix reminders ls [--json]` | Lists the session's reminders: id, state, schedule, next fire, text. |
-| `kortix reminders pause <id>` | Stops firing and keeps the reminder. |
-| `kortix reminders resume <id>` | Fires again, re-armed from now. A one-time reminder that fired stays `done`. |
-| `kortix reminders run <id>` | Fires once now, as you. The schedule does not move. This is the **Retry** of a failed run. |
-| `kortix reminders rm <id>` | Deletes the reminder. Aliases: `stop`, `delete`. |
+| `kortix loops ls [--json]` | Lists the session's loops: id, state, schedule, next fire, text. |
+| `kortix loops pause <id>` | Stops firing and keeps the loop. |
+| `kortix loops resume <id>` | Fires again, re-armed from now. A one-time loop that fired stays `done`. |
+| `kortix loops run <id>` | Fires once now, as you. The schedule does not move. This is the **Retry** of a failed run. |
+| `kortix loops rm <id>` | Deletes the loop. Aliases: `stop`, `delete`. |
 
-A reminder is `active`, `paused`, or `done` (a one-time reminder that fired). In the web app, the project's **Reminders** page lists every reminder on sessions you can open, and the reminder chip on a session shows that session's reminders. A reminder whose last run failed shows **Retry** in both places.
+A loop is `active`, `paused`, or `done` (a one-time loop that fired).
 
-From code, use the session handle:
+In the web and desktop apps:
+
+- **Project admin → Loops** (`/projects/<project_id>/admin/loops`) lists every loop on sessions you can open, as a list or a calendar. Filter by session, state and next run, and pause, resume or remove several at once. The page shows to the people who can configure the project's triggers. The old addresses `/projects/<project_id>/reminders` and `/projects/<project_id>/customize/reminders` redirect here.
+- The loop chip in a session's header shows that session's loops. **Manage loops** opens the Loops page filtered to the session.
+- A loop whose last run failed shows **Retry** in both places.
+
+From code, use the session handle. The SDK keeps the wire name:
 
 ```ts
-const reminders = kortix.session(projectId, sessionId).reminders;
-const reminder = await reminders.create({ prompt: 'Did the vendor reply?', in: '24h', every: '1h' });
-await reminders.update(reminder.id, { enabled: false });
-await reminders.remove(reminder.id);
+const loops = kortix.session(projectId, sessionId).reminders;
+const loop = await loops.create({ prompt: 'Did the vendor reply?', in: '24h', every: '1h' });
+await loops.update(loop.id, { enabled: false });
+await loops.remove(loop.id);
 ```
 
 ## Fields
@@ -605,16 +626,16 @@ When a fire or a run fails, Kortix sets the trigger's `last_status` to `failed` 
 
 With the project flag `notification_center` on, Kortix sends one `automation_failed` alert when a trigger starts failing and one `automation_recovered` alert when it works again. Failures in between send nothing new.
 
-- **Recipients:** the people who created or edited the trigger through the web app, the API, the SDK or the CLI. Without one, the project managers. A reminder's alert goes to the person who set it.
-- **Timing:** schedules, reminders and App events alert after their retries run out. Manual and webhook fires alert on the first failure. A connector event alerts on the third failed delivery of one event, or on the first failure that a retry cannot fix.
+- **Recipients:** the people who created or edited the trigger through the web app, the API, the SDK or the CLI. Without one, the project managers. A loop's alert goes to the person who set it.
+- **Timing:** schedules, loops and App events alert after their retries run out. Manual and webhook fires alert on the first failure. A connector event alerts on the third failed delivery of one event, or on the first failure that a retry cannot fix.
 - **Flag off:** an account owner's phone gets one push when a trigger starts failing.
 - **Turn alerts off:** see [Notifications](/docs/work/sessions#notifications).
 
 ## Pause and limits
 
-`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, connector events, App events and reminders. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For connector events of source `mcp`, see Pause in [How checks work](#how-checks-work).
+`kortix triggers pause` stops every automatic fire in the project: schedules, webhooks, connector events, App events and loops. Webhooks answer `200` with `status: skipped`. A manual fire still runs. `kortix triggers resume` turns fires back on. The API route is `PATCH /v1/projects/<project_id>/triggers/activation` with `{ "paused": true }`. Pause one of two instances that run the same repository, so that schedules do not fire twice. For connector events of source `mcp`, see Pause in [How checks work](#how-checks-work).
 
-**Pause all automations** does the same for every project of the account at once: no schedule, reminder, webhook, connector event or App event of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
+**Pause all automations** does the same for every project of the account at once: no schedule, loop, webhook, connector event or App event of any project fires on its own. Use it to stop all automation at once, for example while you investigate unexpected spend. A webhook answers `200` with `status: skipped` and `reason: "account automations are paused"`. A manual fire still runs. A schedule slot missed while paused fires once on resume.
 
 - In the web app: **Account settings** → **Settings** → **Automations** → **Pause all automations**. The Triggers page of every project shows that automations are paused.
 - In the CLI: `kortix triggers pause --account-wide` and `kortix triggers resume --account-wide`.
@@ -673,4 +694,4 @@ A trigger that keeps hitting its hourly limit is a runaway, not a burst. When `m
 
 - At most 3 trigger-created sessions provision at once in a project. A fire past that answers `queued` and runs when a slot frees.
 - The webhook URLs of one project accept 120 requests per minute from one client.
-- A session holds at most 20 active reminders.
+- A session holds at most 20 active loops, and a project 200.

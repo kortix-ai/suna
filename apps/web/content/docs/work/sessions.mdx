@@ -39,7 +39,7 @@ Each session also has an `origin`, the class of caller that started it.
 | `origin` | Started by |
 | --- | --- |
 | `user` | A person in the web, desktop, or mobile app; a Slack, Teams, or email message; or an agent inside a session. |
-| `trigger` | A schedule, webhook, connector event, App event, or manual [trigger](/docs/connect/triggers) run, or a [reminder](/docs/connect/triggers#reminders). |
+| `trigger` | A schedule, webhook, connector event, App event, or manual [trigger](/docs/connect/triggers) run, or a [loop](/docs/connect/triggers#loops). |
 | `schedule` | A cron trigger. |
 | `backend` | A personal access key, which includes the `kortix` CLI on your machine, or a service account, for example the [SDK](/docs/sdk) on your server. |
 | `system` | Kortix itself. |
@@ -53,7 +53,7 @@ You need the `project.session.start` permission. The agent you pick, or the proj
 - **CLI:** run `kortix sessions new` from a linked project directory.
 - **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
 - **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).
-- **Triggers:** a schedule, webhook, connector event or App event starts one. See [Triggers & reminders](/docs/connect/triggers).
+- **Triggers:** a schedule, webhook, connector event or App event starts one. See [Triggers & loops](/docs/connect/triggers).
 
 ```bash
 kortix sessions new -p "Fix the failing test in src/billing and open a change request" --wait
@@ -359,7 +359,7 @@ kortix sessions share <session_id> --show
 - **Everyone with access reads and continues the conversation.**
 - **A shared session uses only provider keys shared with the whole project.** If its model ran on your own keys, sharing switches it to the project's keys for that provider. If no shared key runs the model, Kortix refuses the share. See [Models](/docs/project/models#shared-keys-and-chatgpt-accounts).
 - **Only the owner changes access.** A project manager who can open the session can stop, restart, and delete it, but cannot change its access.
-- **A trigger's sessions take their access from the trigger.** See [Triggers & reminders](/docs/connect/triggers#session-access).
+- **A trigger's sessions take their access from the trigger.** See [Triggers & loops](/docs/connect/triggers#session-access).
 - **A removed member keeps their sessions.** Their access stays as it was. A project manager can stop or delete those sessions.
 
 The project's **Sessions** page shows each session's owner and access. **Filter** narrows by **Owner** or **Access**, and **Grouping → Owner** groups the list.
@@ -471,8 +471,8 @@ With the flag off:
 | `question` | Question | The agent asks a question and waits. | On | Digest |
 | `permission` | Permission request | The agent asks to run a tool. | On | Never |
 | `shared` | Shared with you | Someone shares a session with you. | On | Digest |
-| `automation_failed` | Failure alert | A trigger or a reminder starts failing. | On | At once |
-| `automation_recovered` | Recovery alert | That trigger or reminder works again. | On | Off. On: at once. |
+| `automation_failed` | Failure alert | A trigger or a loop starts failing. | On | At once |
+| `automation_recovered` | Recovery alert | That trigger or loop works again. | On | Off. On: at once. |
 
 ### Who gets them
 
@@ -491,11 +491,11 @@ A session's notifications go to:
 - A person who muted the session, or who cannot open it, gets nothing from it.
 - A turn you stop yourself sends nothing. A turn whose next queued message starts at once sends no `turn_done`.
 - `shared` goes to each person and group member added under **Specific people**, at most once per person and session per UTC day. Sharing with the whole project sends none.
-- A trigger or [reminder](/docs/connect/triggers#reminders) alert goes to the people who wrote the trigger or set the reminder.
+- A trigger or [loop](/docs/connect/triggers#loops) alert goes to the people who wrote the trigger or set the loop.
 
 ### Where they appear
 
-- **The bell**, at the top of the project sidebar and on the projects page, in the web and desktop apps. Choose a notification to open its session, or the **Triggers** or **Reminders** page for an alert. **Mark all as read** clears the count. Opening a session marks its notifications read, in every app. A new notification also shows as a toast, unless it is about the session on your screen.
+- **The bell**, at the top of the project sidebar and on the projects page, in the web and desktop apps. Choose a notification to open its session, or the **Triggers** or **Loops** page for an alert. **Mark all as read** clears the count. Opening a session marks its notifications read, in every app. A new notification also shows as a toast, unless it is about the session on your screen.
 - **The mobile app** gets a push for each kind your **Push** switches allow. **Notifications** in the drawer lists them across projects.
 - **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it. An account that requires MFA sends browser push only to a browser signed in with MFA; its super admins get it either way, as the app lets them in without MFA.
 - **The desktop app** checks about once a minute while its window is open. When the window is not in focus, it shows up to 3 new ones per check as OS notifications.

@@ -42,7 +42,6 @@ To create a project, open the project menu at the top of the sidebar and select 
 | **Apps** | The project's Apps. Available in every project. See [Apps](/docs/apps). |
 | Session list | Your sessions, grouped and filtered. See below. |
 | **Review** | Work waiting on a person before it can continue, such as change requests. See [Git](/docs/git). |
-| **Reminders** | The project's reminders. Shown when the `reminders` flag is on and a reminder is not done. See [Triggers & reminders](/docs/connect/triggers). |
 | **Files** | A file browser over the project's git repository. Needs read access to project files. When shared folders are on for the account, this entry reads **Repo**. |
 | **Connect GPT subscription** | Connects a ChatGPT subscription as a model provider. Shown on a free plan until a subscription is connected. See [Models](/docs/project/models). |
 | **Connect MCP**, **Connect your computer** | Shortcuts to add Kortix to an MCP client and to pair this machine. Dismiss each with its **×**. See [Kortix MCP server](/docs/connect/mcp) and [Computers](/docs/connect/computers). |
@@ -91,7 +90,7 @@ The indicators on the right of the header appear only when they have something t
 
 - **Changes**: the files this session changed. Select it to see the diff.
 - **Approvals**: actions a connector policy holds for a person. Approve or deny each one. See [Connectors](/docs/connect/connectors).
-- **Reminders**: reminders set on this session.
+- **Loops**: the [loops](/docs/connect/triggers#loops) set on this session. **Manage loops** opens Project admin → Loops for this session.
 - **Agent config update available**: the base branch has a newer config. Select **Reload config** to restart the agent runtime on it, or **Ask agent to sync** to have the agent merge the base branch first. If a new config fails to load, the chip reads **Config failed to load** and shows the config that runs now.
 
 The **Terminal**, **Browser** and **Files** buttons open those tools for the session's sandbox. On a narrow window they are in the **Developer tools** menu. The side panel beside the conversation holds the **Plan**, **Outputs**, **Preview** and **Context** cards. `Mod+I` shows or hides it. On a narrow window, select **Show panel**.
@@ -135,8 +134,8 @@ Select **Customize** in the sidebar. It lists My Kortix, then the project's agen
 | **Tools**, **Extensions** | The project's tools and harness extensions | [Tools](/docs/project/tools) |
 | **Drives** | Shared folders that every new session of the project mounts. Shown when shared folders are on. | See below |
 | **Apps** | The project's Apps | [Apps](/docs/apps) |
-| **Triggers** | Schedules, webhooks, connector events and App events | [Triggers & reminders](/docs/connect/triggers) |
-| **Loops** | The project's reminders | [Triggers & reminders](/docs/connect/triggers) |
+| **Triggers** | Schedules, webhooks, connector events and App events | [Triggers & loops](/docs/connect/triggers) |
+| **Loops** | Every loop on a session you can open, as a list or a calendar. Shown when the `reminders` flag is on and you can configure triggers. | [Loops](/docs/connect/triggers#loops) |
 | **Models** | Models, providers and provider keys | [Models](/docs/project/models) |
 | **Repo** | The project's git repository. Shown when shared folders are on. | [Git](/docs/git) |
 | **General** | The project name and icon, and project deletion | |

@@ -688,7 +688,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/connect/reminders',
-        destination: '/docs/connect/triggers#reminders',
+        destination: '/docs/connect/triggers#loops',
         permanent: true,
       },
       {

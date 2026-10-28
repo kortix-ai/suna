@@ -151,10 +151,10 @@ Removal, [Leave](#leave) and SCIM deactivation (`active: false` or `DELETE`, see
 - their personal access keys and the tokens of their running sessions;
 - their notifications and follows in the account's projects;
 - every computer account in the account that reaches a machine they own. This covers a computer they shared with a project and a computer they paired for themselves. The account becomes `revoked`, with `metadata.revokedReason: owner_left`. The computer stays theirs and keeps working in their other Kortix accounts;
-- every reminder they set in the account's projects. The reminder becomes `paused`. A reminder that a session's agent set keeps firing;
+- every [loop](/docs/connect/triggers#loops) they set in the account's projects. The loop becomes `paused`. A loop that a session's agent set keeps firing;
 - their seat on a per-seat plan. Their personal drive folders pass to an owner.
 
-The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled`. A count is `0` when the person had nothing of that kind, and `null` when that step failed.
+The audit log records one `member.offboarded` event, titled **Offboarded a member**, per departure. Its `metadata` holds `reason` (`removed`, `left` or `deprovisioned`), `computers_revoked` and `reminders_disabled` (the loops it paused). A count is `0` when the person had nothing of that kind, and `null` when that step failed.
 
 ### Errors
 
@@ -640,7 +640,7 @@ Every project permission can go in a custom role.
 
 ### Leave
 
-Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. Your computers stop serving the account, and your reminders in its projects pause. See [When a person leaves](#when-a-person-leaves). The last owner cannot leave (`409`): make another member owner first.
+Open **Account settings** → **Members**, open the menu on your own row, and select **Leave account**. You lose access to the account and its projects. Your computers stop serving the account, and your loops in its projects pause. See [When a person leaves](#when-a-person-leaves). The last owner cannot leave (`409`): make another member owner first.
 
 ### Delete
 

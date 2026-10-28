@@ -290,7 +290,7 @@ jobs:
           kortix sessions log "$id" --limit 1
 ```
 
-Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Triggers & reminders](/docs/connect/triggers).
+Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Triggers & loops](/docs/connect/triggers).
 
 ## Use Kortix from your coding agent
 
@@ -362,7 +362,7 @@ Commands an agent uses:
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
-| `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
+| `kortix loop "<prompt>" --in 24h` | Prompt this session again later (a [loop](/docs/connect/triggers#loops)). Loops are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/project/agents). These commands are refused for an agent session's token, whatever the grant:
@@ -429,8 +429,8 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `sandboxes` | Sandbox templates, builds, health and the provider pin. | [Sandboxes & previews](/docs/work/runtime) |
 | `connectors` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/connect/connectors) |
 | `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs/connect/channels) |
-| `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs/connect/triggers) |
-| `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs/connect/triggers) |
+| `triggers` | List, add, fire, pause and resume triggers. | [Triggers & loops](/docs/connect/triggers) |
+| `loops`, `loop` | Prompt one session later or on repeat. `reminders` and `remind` are aliases. | [Loops](/docs/connect/triggers#loops) |
 | `apps` | Deploy and manage Apps. | [Apps](/docs/apps) |
 
 ### Administer
@@ -475,7 +475,8 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `session` | `sessions` |
 | `skills` | `system-skills` |
 | `perms` | `permissions` |
-| `remind` | `reminders add` |
+| `loop`, `remind` | `loops add` |
+| `reminders` | `loops` |
 | `t`, `kortixt` | `tui` |
 | `sessions pause` / `wake` | `sessions stop` / `start` |
 | `sessions wait` | `sessions wait-for` |

@@ -382,14 +382,14 @@ agents:
 
 A trigger or connector entry is identified by its `slug`, and an App by its key under `apps`. Each one matches `[a-z0-9][a-z0-9_-]{0,127}` and is unique in its collection.
 
-**`triggers`.** Full reference: [Triggers & reminders](/docs/connect/triggers). An entry is `slug` + `on:` (what fires it: `cron`/`every`/`at` with `timezone`, `webhook: { secret }`, `event` + `connector`, or `event` + `app`) + `run:` (`prompt` with `agent`, `model`, `session`; or `app`, `path`, `method`, `payload`). The flat form below means the same thing.
+**`triggers`.** Full reference: [Triggers & loops](/docs/connect/triggers). An entry is `slug` + `on:` (what fires it: `cron`/`every`/`at` with `timezone`, `webhook: { secret }`, `event` + `connector`, or `event` + `app`) + `run:` (`prompt` with `agent`, `model`, `session`; or `app`, `path`, `method`, `payload`). The flat form below means the same thing.
 
 | Field | Rule |
 | --- | --- |
 | `slug`, `type`, `prompt` | Required in the flat form. `type` is `cron`, `webhook`, `event` or `app`. `prompt` is a non-empty template, unless `target` calls an App. |
 | `name`, `agent`, `enabled`, `model` | Optional. `agent` defaults to `default_agent` and names a declared agent. `model` is `provider/model`. |
 | `session_mode` | `fresh` (default), `reuse`, `pinned` (needs `session_id`) or `keyed` (needs `session_key`). |
-| `filter` | Optional. Map of dotted path to expected string. A fire runs only when every path matches. See [Triggers & reminders](/docs/connect/triggers). |
+| `filter` | Optional. Map of dotted path to expected string. A fire runs only when every path matches. See [Triggers & loops](/docs/connect/triggers). |
 | `cron` type | `cron` (6 fields, seconds first), `every` (a duration, at least `60s`) or `run_at` (ISO-8601), and `timezone` (IANA, default `UTC`). Fires at most once every 60 seconds. |
 | `webhook` type | `secret_env`: the name of the signing secret. |
 | `app` type | `app`: the slug of the App whose posted events fire it. `on: { event: <name> \| "*", app }`; in the flat form a name is `filter: { event.name: <name> }`. No feature flag. |
@@ -524,7 +524,7 @@ Everything the manifest can declare is owned by the file. The dashboard, the API
 | `project.name` | Commits to `project.name`, then renames the project | A changed value renames the project on the next sync |
 | A sandbox template the file declares | Refused with `409 template_declared_in_manifest`: edit `sandbox.templates` | Applied on the next sync, `entrypoint` included |
 
-A write that cannot commit (the repository is unreachable, the value is invalid) changes nothing. Kept out of the file on purpose: runtime state (last fire, status, run history), secret values, reminders, runs an App schedules for itself, feature flags, and an App's access mode. An App's release config (`env`, `processes`, `mounts`, …) applies when you deploy: a release is the build plus the config it was deployed with, so a rollback runs an older config by design. `project.description` is informational.
+A write that cannot commit (the repository is unreachable, the value is invalid) changes nothing. Kept out of the file on purpose: runtime state (last fire, status, run history), secret values, loops, runs an App schedules for itself, feature flags, and an App's access mode. An App's release config (`env`, `processes`, `mounts`, …) applies when you deploy: a release is the build plus the config it was deployed with, so a rollback runs an older config by design. `project.description` is informational.
 
 ## Migrate from kortix.toml
 

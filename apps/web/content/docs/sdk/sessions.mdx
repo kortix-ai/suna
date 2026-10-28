@@ -414,7 +414,7 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
 | `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/work/sessions#who-can-open-a-session). |
 | `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/work/sessions#public-links). |
-| `s.reminders.create(input)` | Schedules a prompt into this session. See [Triggers & reminders](/docs/connect/triggers). |
+| `s.reminders.create(input)` | Schedules a [loop](/docs/connect/triggers#loops) (SDK name: reminder): a prompt into this session, later or on repeat. |
 
 The full method list is in [SDK reference](/docs/sdk/reference).
 

@@ -332,7 +332,7 @@ Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 
 Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs/connect/connectors) and [Call connectors from code](/docs/connect/connectors#call-connectors-from-code).
 
-### Triggers and reminders
+### Triggers and loops
 
 | Method | What it does |
 | --- | --- |
@@ -343,9 +343,9 @@ Accounts, the account a call uses, typed calls and errors are explained in [Conn
 | `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fire the trigger again with the run's stored payload and the current spec. Returns `409 run_in_progress` while the run is queued or running, `409 payload_unverified` for an unverified webhook payload unless `confirmUnverified: true`, and `422 payload_truncated` for a payload over 64 KiB. |
 | `triggers.setActivation(paused)` | Pause or resume every trigger of the project. |
 | `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Connected apps with connector events (not Kortix Apps) · the event types of one connector or app. |
-| `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session you can open: list, pause or resume, delete. One session's reminders are `s.reminders`. |
+| `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | [Loops](/docs/connect/triggers#loops) (SDK name: reminders) on every session you can open: list, pause or resume, delete. One session's loops are `s.reminders`. |
 
-Every field of `create` is in [Triggers & reminders](/docs/connect/triggers#fields).
+Every field of `create` is in [Triggers & loops](/docs/connect/triggers#fields).
 
 ### Apps
 
@@ -434,7 +434,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
 | Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` (answers `awake_until` and `awake_cap_at`) |
-| Git and reminders | `commit(input?)`, `reminders.list` · `.create` · `.update` · `.remove` |
+| Git and loops | `commit(input?)`, `reminders.list` · `.create` · `.update` · `.remove` (loops; SDK name: reminders) |
 
 ## Framework-free modules
 
