@@ -123,20 +123,11 @@ Kortix is Apache 2.0 (`LICENSE`, `NOTICE`). Every file under a directory named
 `ee` is under the Kortix Enterprise License (`ee/LICENSE`): production use needs
 a subscription. Enterprise is exactly the `sso`, `scim`, `rbac` and
 `auditAccess` entitlements. Server code that only serves them goes in an `ee`
-directory (`accounts/iam/ee/`, `projects/routes/ee/`, `apps/api/src/ee/`). Core
-calls `ee/` only through `register…Routes()` and the SSO sign-in hook. Read
-`ee/README.md` before you add or move Enterprise code. Anyone may fork and
-rebrand Kortix; only the trademark rules in `TRADEMARKS.md` limit the name and
-logo.
-
-## License: Apache 2.0 core, `ee/` under the Kortix Enterprise License
-
-Kortix is Apache 2.0 (`LICENSE`, `NOTICE`). Every file under a directory named
-`ee` is under the Kortix Enterprise License (`ee/LICENSE`): production use needs
-a subscription. Enterprise is exactly the `sso`, `scim`, `rbac` and
-`auditAccess` entitlements. Server code that only serves them goes in an `ee`
-directory (`accounts/iam/ee/`, `projects/routes/ee/`, `apps/api/src/ee/`). Core
-calls `ee/` only through `register…Routes()` and the SSO sign-in hook. Read
+directory (`accounts/iam/ee/`, `repositories/ee/`, `shared/ee/`,
+`apps/api/src/ee/`), starts with `// SPDX-License-Identifier:
+LicenseRef-Kortix-Enterprise`, and gates its routes with `requireEntitlement`.
+Core calls `ee/` only through `register…Routes()`, the SSO sign-in checks and
+the audit webhook worker. Read
 `ee/README.md` before you add or move Enterprise code. Anyone may fork and
 rebrand Kortix; only the trademark rules in `TRADEMARKS.md` limit the name and
 logo.

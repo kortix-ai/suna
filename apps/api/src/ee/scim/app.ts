@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SCIM 2.0 protocol surface for Okta / Azure AD / JumpCloud / etc.
 //
 // Shared foundation for the SCIM router: the OpenAPIHono instance, the

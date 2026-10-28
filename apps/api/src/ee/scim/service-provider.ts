@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SCIM discovery route: /ServiceProviderConfig (capabilities discovery).
 // registerScimServiceProviderRoutes() registers these onto the shared scimRouter.
 

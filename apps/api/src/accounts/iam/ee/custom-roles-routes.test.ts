@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 

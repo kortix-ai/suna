@@ -2598,7 +2598,7 @@
       "count": 2
     }
   },
-  "src/repositories/scim.ts": {
+  "src/repositories/ee/scim.ts": {
     "no-console": {
       "count": 1
     }
@@ -2933,14 +2933,6 @@
       "count": 5
     }
   },
-  "src/shared/audit-webhooks.ts": {
-    "kortix-api/layers": {
-      "count": 2
-    },
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/shared/audit.ts": {
     "kortix-api/layers": {
       "count": 1
@@ -2953,6 +2945,14 @@
     },
     "no-restricted-properties": {
       "count": 3
+    }
+  },
+  "src/shared/ee/audit-webhooks.ts": {
+    "kortix-api/layers": {
+      "count": 2
+    },
+    "no-console": {
+      "count": 1
     }
   },
   "src/shared/instance.ts": {

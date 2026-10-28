@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 import { isUuid } from '../../shared/validate';
 
 export class InvalidGroupMemberError extends Error {}

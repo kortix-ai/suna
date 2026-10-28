@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // IAM V2 routes: account groups, group members, and group→project grants.
 
 import { createRoute, z } from '@hono/zod-openapi';

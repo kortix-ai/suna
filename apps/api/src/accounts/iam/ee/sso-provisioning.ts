@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // Self-serve SAML registration. The dashboard's "import your Entra metadata"
 // flow: instead of a Kortix operator running `supabase sso add` out of band, we
 // call Supabase's GoTrue admin SSO API server-side with the service-role key,

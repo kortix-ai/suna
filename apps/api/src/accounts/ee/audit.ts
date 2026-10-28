@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // Audit log read surface — backed by the existing kortix.audit_events table
 // the global middleware + IAM mutation helpers write to.
 //
@@ -33,7 +36,7 @@ import {
   deliverTestEvent,
   generateWebhookSecret,
   replayAuditWebhookDelivery,
-} from '../../shared/audit-webhooks';
+} from '../../shared/ee/audit-webhooks';
 import { db } from '../../shared/db';
 import {
   buildAuditCursorCondition,

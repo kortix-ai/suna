@@ -19,7 +19,7 @@ import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
-import { getSsoProvider } from '../repositories/sso';
+import { getSsoProvider } from '../repositories/ee/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
 

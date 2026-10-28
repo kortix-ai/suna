@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // IAM V2 routes: SAML SSO provider config + group mappings.
 // The Supabase auth.sso_providers row is created out-of-band (via Studio
 // or the auth admin API — admins paste the IdP metadata there). We just
@@ -25,7 +28,7 @@ import {
   upsertSsoProvider,
   isPersonalAccount,
   signOutNonSsoMembers,
-} from '../../../repositories/sso';
+} from '../../../repositories/ee/sso';
 import { logger } from '../../../lib/logger';
 import {
   iamRouter,

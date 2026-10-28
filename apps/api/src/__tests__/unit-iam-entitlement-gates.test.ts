@@ -10,7 +10,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import * as realSsoRepository from '../repositories/sso';
+import * as realSsoRepository from '../repositories/ee/sso';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
@@ -37,7 +37,7 @@ const scimTokenRow = {
   createdAt: new Date('2026-01-01T00:00:00Z'),
   expiresAt: null as Date | null,
 };
-mock.module('../repositories/scim', () => ({
+mock.module('../repositories/ee/scim', () => ({
   createScimToken: async () => scimTokenRow,
   listScimTokens: async () => [],
   revokeScimToken: async () => true,
@@ -68,7 +68,7 @@ const ssoMappingRow = {
 // Spread the real module: `mock.module` replaces it wholesale, and the SSO
 // router also imports the pure domain-verification helpers from it.
 let personalAccount = false;
-mock.module('../repositories/sso', () => ({
+mock.module('../repositories/ee/sso', () => ({
   ...realSsoRepository,
   isPersonalAccount: async () => personalAccount,
   getSsoProvider: async () => ssoProviderRow,

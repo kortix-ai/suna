@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SAML JIT (just-in-time) provisioning. Called from the auth middleware
 // once per request, but no-ops cheaply unless the JWT carries a SAML
 // sso_provider_id and that id is mapped to a kortix account.
@@ -27,7 +30,7 @@ import {
   getSsoProviderBySupabaseId,
   isSsoDomainVerified,
   listSsoGroupMappings,
-} from '../../repositories/sso';
+} from '../../repositories/ee/sso';
 
 interface SsoSyncOutcome {
   /** No SAML provider id on this JWT — sync skipped. */

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // Data layer for SCIM 2.0. Two responsibilities:
 //   1. SCIM bearer token lifecycle (mint, validate, list, revoke).
 //   2. Looking up + writing the SCIM-side mutations (users, groups, members).
@@ -8,7 +11,7 @@
 import { createHash, randomInt } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { scimTokens } from '@kortix/db';
-import { db } from '../shared/db';
+import { db } from '../../shared/db';
 
 const SCIM_TOKEN_PREFIX = 'kortix_scim_';
 const SCIM_TOKEN_BODY_LEN = 40; // base32-ish alphanumeric, ~200 bits of entropy

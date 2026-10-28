@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SAML SSO data access. The Supabase auth.sso_providers row drives the
 // SAML handshake itself; this module manages the kortix-side mapping —
 // which account owns which provider, plus claim-value → IAM group rules.
@@ -9,12 +12,12 @@ import {
   accountSsoProviders,
   accountGroups,
 } from '@kortix/db';
-import { isUuid } from '../shared/validate';
-import { db } from '../shared/db';
-import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
-import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
-import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
-import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
+import { isUuid } from '../../shared/validate';
+import { db } from '../../shared/db';
+import { nonSsoIdentitySql, ssoProviderIdOf } from '../../shared/auth-identity';
+import { selfHostOperatorAllowlist } from '../../shared/self-host-operator';
+import { accountGroupNameRow, ssoGroupByNameRow } from '../../iam/group-read';
+import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 
 export type SsoProvider = {
   ssoProviderId: string;

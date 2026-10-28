@@ -1152,7 +1152,7 @@ adminApp.openapi(
         isSsoDomainVerified,
         setSsoDomainVerified,
         signOutNonSsoMembers,
-      } = await import('../repositories/sso');
+      } = await import('../repositories/ee/sso');
       const before = await getSsoProvider(accountId);
       if (!before) return c.json({ error: 'no SSO provider configured' }, 404);
       if (body.verified && (await domainVerifiedByOtherAccount(accountId, before.primaryDomain))) {

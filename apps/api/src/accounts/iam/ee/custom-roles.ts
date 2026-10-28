@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // IAM v1 REST surface: DB-driven CUSTOM roles + their action sets + the
 // policies that bind a principal (member/group/token) to a role at a scope.
 // Backs the pre-built frontend SDK (apps/web/src/lib/iam-client.ts) whose

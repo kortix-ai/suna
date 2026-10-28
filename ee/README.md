@@ -11,14 +11,26 @@ Enterprise is four features. They match the `sso`, `scim`, `rbac` and
 
 | Feature | Server code |
 |---|---|
-| SAML single sign-on | `apps/api/src/accounts/iam/ee/sso.ts`, `sso-provisioning.ts`, `apps/api/src/iam/ee/sso-sync.ts` |
-| SCIM directory provisioning | `apps/api/src/ee/scim/`, `apps/api/src/accounts/iam/ee/scim-tokens.ts` |
+| SAML single sign-on | `apps/api/src/accounts/iam/ee/sso.ts`, `sso-provisioning.ts`, `apps/api/src/iam/ee/sso-sync.ts`, `apps/api/src/repositories/ee/sso.ts` |
+| SCIM directory provisioning | `apps/api/src/ee/scim/`, `apps/api/src/accounts/iam/ee/scim-tokens.ts`, `apps/api/src/repositories/ee/scim.ts` |
 | Custom roles, policies and groups | `apps/api/src/accounts/iam/ee/custom-roles.ts`, `custom-roles-policy.ts`, `groups.ts`, `apps/api/src/projects/routes/ee/group-grants.ts` |
-| Audit log access, export and webhooks | `apps/api/src/accounts/ee/audit.ts` |
+| Audit log access, export and webhooks | `apps/api/src/accounts/ee/audit.ts`, `apps/api/src/shared/ee/audit-webhooks.ts` |
+
+Every one of these files starts with the header
+`// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise`, so the license stays
+on a file that is copied out of its directory. `tests/unit/ee-license-headers.test.ts`
+fails when an `ee` file lacks it, or a file outside `ee` claims it.
+
+Each feature is also gated at run time by its entitlement: a route answers `402
+entitlement_required`, the SCIM API refuses the token, and audit webhooks stop
+delivering, unless the account is Licensed, in Demo, or the deployment holds a
+valid license key.
 
 Everything else is Apache 2.0, including:
 
-- the database schema and the repositories that the features read;
+- the database schema;
+- the role and policy engine that enforces built-in and custom roles
+  (`apps/api/src/iam/`), because every plan uses the built-in roles;
 - the audit trail itself (Kortix records audit events on every plan);
 - the web screens and the `@kortix/sdk` calls for these features, which do
   nothing without an Enterprise server;
@@ -62,10 +74,13 @@ requests that rebuild an `ee/` feature in the Apache core.
 ## For contributors
 
 - Code that only serves the four features above goes in an `ee` directory next
-  to the module it belongs to (`accounts/iam/ee/`, `projects/routes/ee/`), or in
-  `apps/api/src/ee/` for a whole module.
-- Core code calls `ee/` only through its `register…Routes()` functions and the
-  SSO sign-in hooks. Shared logic that core needs stays in core.
+  to the module it belongs to (`accounts/iam/ee/`, `repositories/ee/`,
+  `shared/ee/`), or in `apps/api/src/ee/` for a whole module, and starts with
+  the SPDX header above.
+- Gate every new Enterprise route with `requireEntitlement(c, accountId, '<key>')`.
+- Core code calls `ee/` only through its `register…Routes()` functions, the SSO
+  sign-in checks and the audit webhook worker's timer. Shared logic that core
+  needs stays in core.
 - Kortix does not merge outside pull requests into `ee/`: the Enterprise
   License gives Kortix no rights to a contributor's code. Contributions to the
   Apache core are licensed under Apache 2.0, section 5.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 import { userChanges, applyProfile } from './user-profile';
 // SCIM Users routes: GET (list + filter), GET/:id, POST, PATCH, DELETE.
 // registerScimUsersRoutes() registers these onto the shared scimRouter.

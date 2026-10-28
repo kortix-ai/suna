@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 /**
  * The SCIM authenticator names the directory token in the request audit.
  *
@@ -16,8 +19,8 @@ const ACCOUNT = '00000000-0000-4000-a000-000000000101';
 const OTHER = '00000000-0000-4000-a000-000000000102';
 let entitled = true;
 
-const realScim = await import('../../repositories/scim');
-mock.module('../../repositories/scim', () => ({
+const realScim = await import('../../repositories/ee/scim');
+mock.module('../../repositories/ee/scim', () => ({
   ...realScim,
   validateScimToken: async (token: string) =>
     token === 'scim-good'

@@ -114,7 +114,8 @@ directories named `ee` and is under the Kortix Enterprise License
 (`ee/LICENSE`, `ee/README.md`): production use needs a subscription. The
 commercial terms are the Enterprise Subscription Terms
 (`/legal?tab=enterprise`, `legal/enterprise-terms.ts`). A contract above is
-the order. New Enterprise server code goes in an `ee` directory.
+the order. New Enterprise server code goes in an `ee` directory and starts with
+`// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise`.
 
 Self-host has no contract row. A license key does the same job:
 

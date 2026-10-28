@@ -6,7 +6,7 @@ mock.module('../shared/db', () => ({
   db: { insert: () => ({ values: async (row: Record<string, unknown>) => { submissions.push(row); } }) },
 }));
 mock.module('../shared/audit', () => ({ recordAuditEvent: async () => {} }));
-mock.module('../repositories/sso', () => ({ ssoEnforcedForEmail: async () => null }));
+mock.module('../repositories/ee/sso', () => ({ ssoEnforcedForEmail: async () => null }));
 mock.module('../shared/access-control-cache', () => ({
   areSignupsEnabled: () => true,
   canSignUp: () => true,

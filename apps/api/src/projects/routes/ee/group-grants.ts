@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 /**
  * Project group grants — attach a group to a project at a role, change that
  * role, detach it, and read the project's grants with member counts.

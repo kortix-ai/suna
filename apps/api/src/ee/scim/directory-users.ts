@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 import { accountScimUsers } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { db } from '../../shared/db';

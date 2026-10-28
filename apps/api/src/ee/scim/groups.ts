@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SCIM Groups routes: GET (list), GET/:id, POST, PATCH (member add/remove,
 // rename), PUT (full-state replace — Okta group-push renames), DELETE.
 // registerScimGroupsRoutes() registers these onto the shared scimRouter.

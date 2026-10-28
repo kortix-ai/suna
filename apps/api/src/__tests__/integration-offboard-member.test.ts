@@ -36,7 +36,7 @@ const { app } = await import('../index');
 const { attributeYoloToken, mintYoloTokenForMember } = await import('../billing/services/yolo-tokens');
 const { attachComputerConnection } = await import('../connectors/computers');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { createScimToken } = await import('../repositories/scim');
+const { createScimToken } = await import('../repositories/ee/scim');
 const { saveDirectoryUser } = await import('../ee/scim/directory-users');
 
 async function seedUsers(ids: string[]): Promise<void> {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // Audit webhook delivery — fires HTTP POSTs to customer-configured URLs.
 // The database trigger queues matching deliveries in the SAME transaction as
 // each canonical event. The elected worker claims that durable queue with
@@ -6,13 +9,13 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, eq, getViewSelectedFields, sql } from 'drizzle-orm';
-import { accountHasEntitlement } from '../billing/services/entitlements';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
-import { serializeAuditEvent } from './audit-query';
+import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { assertAllowedSourceAddress } from '../../marketplace/catalog';
+import { serializeAuditEvent } from '../audit-query';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
-import { db } from './db';
-import { safeEgressFetch } from './ssrf-guard';
-import { exponentialBackoffMs } from './backoff';
+import { db } from '../db';
+import { safeEgressFetch } from '../ssrf-guard';
+import { exponentialBackoffMs } from '../backoff';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */

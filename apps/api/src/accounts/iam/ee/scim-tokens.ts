@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // IAM V2 routes: SCIM provisioning tokens.
 // Bearer credentials configured in the customer's IdP (Okta, Azure AD, …)
 // to drive /scim/v2/accounts/:accountId/*. Treated as account-admin-level
@@ -12,7 +15,7 @@ import {
   createScimToken,
   listScimTokens,
   revokeScimToken,
-} from '../../../repositories/scim';
+} from '../../../repositories/ee/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from '../app';
 import { auditIam, requireEntitlement } from '../http-helpers';
 import { readJsonObject } from '../../../shared/http-body';

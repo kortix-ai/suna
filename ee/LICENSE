@@ -3,8 +3,10 @@ Kortix Enterprise License
 Copyright 2024-present Kortix AI Corp.
 
 This license applies to every file under a directory named "ee" in the
-Kortix source code (the "Enterprise Software"). All other Kortix source code
-is licensed under the Apache License, Version 2.0.
+Kortix source code, and to every file whose header says
+"SPDX-License-Identifier: LicenseRef-Kortix-Enterprise" (the "Enterprise
+Software"). All other Kortix source code is licensed under the Apache
+License, Version 2.0.
 
 1. Subscription. "Subscription" means an active order with Kortix AI Corp
    ("Kortix") for Kortix Enterprise that covers your use, under the Kortix

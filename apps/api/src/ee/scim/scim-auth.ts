@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // Authentication for /scim/v2/* endpoints. The protocol uses long-lived
 // bearer tokens minted by the account admin and configured in the IdP
 // (Okta, Azure AD, JumpCloud, etc.). The token implies the account — its
@@ -8,7 +11,7 @@
 // We don't use Hono's HTTPException here so we can return that exact shape.
 
 import type { Context, Next } from 'hono';
-import { validateScimToken } from '../../repositories/scim';
+import { validateScimToken } from '../../repositories/ee/scim';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { bindAuditPrincipal } from '../../shared/audit-scope';
 

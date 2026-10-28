@@ -5,9 +5,10 @@ This product is licensed under the Apache License, Version 2.0 (the
 LICENSE file), with one exception:
 
   Every file under a directory named "ee" (for example ee/,
-  apps/api/src/ee/ and apps/api/src/accounts/iam/ee/) is licensed under
-  the Kortix Enterprise License in ee/LICENSE, not under the Apache
-  License. Production use of those files needs a Kortix Enterprise
+  apps/api/src/ee/ and apps/api/src/accounts/iam/ee/), and every file
+  whose header says "SPDX-License-Identifier: LicenseRef-Kortix-Enterprise",
+  is licensed under the Kortix Enterprise License in ee/LICENSE, not under
+  the Apache License. Production use of those files needs a Kortix Enterprise
   subscription. See ee/README.md.
 
 Third-party components keep their own licenses.

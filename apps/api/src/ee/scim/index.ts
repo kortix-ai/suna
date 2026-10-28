@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 // SCIM 2.0 protocol surface for Okta / Azure AD / JumpCloud / etc.
 //
 // Mounted at /scim/v2/accounts/:accountId/* — the URL carries the tenant

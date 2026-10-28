@@ -9,7 +9,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import * as realSsoRepository from '../repositories/sso';
+import * as realSsoRepository from '../repositories/ee/sso';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
@@ -74,7 +74,7 @@ const provider = {
 let current = { ...provider };
 let signOut: () => Promise<number> = async () => 0;
 const signOutCalls: Array<[string, string | null]> = [];
-mock.module('../repositories/sso', () => ({
+mock.module('../repositories/ee/sso', () => ({
   ...realSsoRepository,
   isPersonalAccount: async () => false,
   getSsoProvider: async () => current,

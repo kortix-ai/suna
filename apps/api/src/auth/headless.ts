@@ -26,7 +26,7 @@ import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../middleware/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
-import { ssoEnforcedForEmail } from '../repositories/sso';
+import { ssoEnforcedForEmail } from '../repositories/ee/sso';
 import { canSignUp } from '../shared/access-control-cache';
 import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';

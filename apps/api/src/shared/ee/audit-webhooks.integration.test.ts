@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise
+// Kortix Enterprise License (ee/LICENSE): production use needs a Kortix Enterprise subscription.
+
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { PgClient } from '../__tests__/helpers/pg-client';
+import { PgClient } from '../../__tests__/helpers/pg-client';
 import { replayAuditWebhookDelivery } from './audit-webhooks';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../workers/audit-webhook-worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from '../../workers/audit-webhook-worker';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
