@@ -21604,7 +21604,11 @@
     "inviteSent": "{email} に招待状を送信しました",
     "reschedule": "日時を変更する場合は招待状のリンクを使ってください。",
     "addToCalendar": "カレンダーに追加",
-    "done": "完了"
+    "done": "完了",
+    "errorName": "名前を入力してください。",
+    "errorEmail": "ご連絡のため、有効な勤務先のメールアドレスを入力してください。",
+    "errorCompany": "会社名を入力してください。",
+    "errorSize": "会社の規模を選んでください。"
   },
   "drives": {
     "title": "ドライブ",

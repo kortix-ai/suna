@@ -21604,7 +21604,11 @@
     "inviteSent": "Invite sent to {email}",
     "reschedule": "Need another time? Use the link in the invite.",
     "addToCalendar": "Add to calendar",
-    "done": "Done"
+    "done": "Done",
+    "errorName": "Enter your name.",
+    "errorEmail": "Enter a valid work email so we can reach you.",
+    "errorCompany": "Enter your company name.",
+    "errorSize": "Pick your company size."
   },
   "drives": {
     "title": "Files",

@@ -21604,7 +21604,11 @@
     "inviteSent": "邀请已发送至 {email}",
     "reschedule": "需要换个时间？请使用邀请中的链接。",
     "addToCalendar": "添加到日历",
-    "done": "完成"
+    "done": "完成",
+    "errorName": "请输入你的姓名。",
+    "errorEmail": "请输入有效的工作邮箱，方便我们联系你。",
+    "errorCompany": "请输入你的公司名称。",
+    "errorSize": "请选择公司规模。"
   },
   "drives": {
     "title": "云盘",

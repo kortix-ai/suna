@@ -21604,7 +21604,11 @@
     "inviteSent": "Pozivnica je poslata na {email}",
     "reschedule": "Treba vam drugi termin? Koristite link iz pozivnice.",
     "addToCalendar": "Dodaj u kalendar",
-    "done": "Gotovo"
+    "done": "Gotovo",
+    "errorName": "Unesite svoje ime.",
+    "errorEmail": "Unesite ispravnu poslovnu e-adresu kako bismo mogli da vas kontaktiramo.",
+    "errorCompany": "Unesite naziv svoje kompanije.",
+    "errorSize": "Izaberite veličinu kompanije."
   },
   "drives": {
     "title": "Диск",

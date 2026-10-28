@@ -5231,6 +5231,12 @@ The other handle methods:
 | `call(action, args, options?)` | The raw call result. A `200` and a `202` resolve. |
 | `uploadAttachment(content, input)` | Stage a file for a later call of this connector. |
 
+A Composio tool's file field (for example YouTube's `videoFile` or a Gmail `attachment`) takes a public `https` URL. Pass the URL as the field's value, or as the `s3key` or `url` of the file object. Kortix downloads the file through its egress guard (public hosts only, at most 100 MB), uploads it to Composio, and sends Composio's file reference. A failed download answers `file upload failed for <field>: …`.
+
+```bash
+kortix connectors call youtube multipart_upload_video '{"title":"Demo","videoFile":"https://example.com/demo.mp4"}'
+```
+
 `kortix connectors types --out kortix-connectors.d.ts` generates types for `run`, `call` and `paginate`. Without the file, args are any object and outputs are `unknown`.
 
 #### Connector errors

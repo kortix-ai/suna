@@ -21604,7 +21604,11 @@
     "inviteSent": "Invitation envoyée à {email}",
     "reschedule": "Besoin d’un autre créneau ? Utilisez le lien de l’invitation.",
     "addToCalendar": "Ajouter au calendrier",
-    "done": "Terminé"
+    "done": "Terminé",
+    "errorName": "Saisissez votre nom.",
+    "errorEmail": "Saisissez une adresse e-mail professionnelle valide pour que nous puissions vous joindre.",
+    "errorCompany": "Saisissez le nom de votre entreprise.",
+    "errorSize": "Choisissez la taille de votre entreprise."
   },
   "drives": {
     "title": "Drive",
