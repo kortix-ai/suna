@@ -1817,6 +1817,8 @@
     "drive": "ドライブ",
     "repo": "Repo",
     "customizeSidebar": "サイドバーをカスタマイズ",
+    "searchApps": "アプリを検索",
+    "appsNoMatches": "一致するものはありません",
     "customizeSidebarDescription": "2つのグループ間で項目をドラッグします。",
     "resetSidebar": "デフォルトに戻す",
     "reorderItem": "{name} を並べ替え",

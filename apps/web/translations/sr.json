@@ -1817,6 +1817,8 @@
     "drive": "Диск",
     "repo": "Repo",
     "customizeSidebar": "Prilagodi bočnu traku",
+    "searchApps": "Pretraži aplikacije",
+    "appsNoMatches": "Nema rezultata",
     "customizeSidebarDescription": "Prevuci stavke između dve grupe.",
     "resetSidebar": "Vrati podrazumevano",
     "reorderItem": "Promeni redosled: {name}",

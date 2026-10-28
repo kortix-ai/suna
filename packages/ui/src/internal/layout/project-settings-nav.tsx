@@ -10,7 +10,9 @@ import { useTranslations } from '../../i18n';
 import { useUiPathname } from '../../providers/ui-provider';
 
 import { CountBadge } from '../../primitives/count-badge';
+import { cn } from '../lib/utils';
 import {
+  CAPABILITY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
@@ -19,6 +21,45 @@ import { PROJECT_ACTIONS } from '../lib/project-actions';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { useProjectPageCans, type CanResult } from '../lib/use-project-can';
 import { useReviewSessionSummary } from '../hooks/use-review-session-summary';
+import { HubLink } from '../account-hub/account-hub-location';
+import { hubTarget } from '../stores/account-panel-store';
+import { HoverPrefetchLink } from '../components/hover-prefetch-link';
+import { NavHoverCardContent, NavHoverCardList, useNavHoverCard } from './nav-hover-card';
+import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
+import { MENU_SEPARATOR, menuRow } from '../../primitives/menu-recipe';
+import { Popover, PopoverAnchor } from '../../primitives/popover';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  AlarmIcon,
+  CalendarIcon,
+  CpuIcon,
+  GearSixIcon,
+  GitBranchIcon,
+  LockKeyIcon,
+  PlugIcon,
+  RobotIcon,
+  SquaresFourIcon,
+  TrayIcon,
+  UsersIcon,
+  type Icon,
+} from '@phosphor-icons/react';
+import { Fragment } from 'react';
+
+/** Each tab's glyph: the one the command palette shows for the same page (`menu-registry.ts`). */
+const TAB_ICONS: Record<CapabilityTab['key'], Icon> = {
+  agent: RobotIcon,
+  skills: SquaresFourIcon,
+  connectors: PlugIcon,
+  triggers: AlarmIcon,
+  reminders: CalendarIcon,
+  models: CpuIcon,
+  secrets: LockKeyIcon,
+  files: GitBranchIcon,
+  review: TrayIcon,
+  config: GearSixIcon,
+};
 
 /**
  * The one project-configuration entry in the sidebar:
@@ -279,26 +320,115 @@ export function ProjectCustomizeNavItem({ projectId }: { projectId: string }) {
     !!pathname &&
     (pathname === customizePath(projectId) || activeCapabilityTab(pathname) !== null);
 
+  const card = useNavHoverCard({ enabled: !!tab && !!projectId });
+
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.
   if (!projectId) return null;
 
   return (
-    <ProjectNavRow
-      active={isActive}
-      label={t('customize')}
-      href={capabilityTabHref(projectId, tab)}
-      prefetch
-    >
-      <span className="shrink-0">
-        <CustomizeGlyph />
-      </span>
-      {t('customize')}
-      {reviewCount > 0 ? (
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          <CountBadge count={reviewCount} tone="waiting" />
+    <Popover open={card.open} onOpenChange={card.setOpen}>
+      <PopoverAnchor virtualRef={card.anchorRef} />
+      <ProjectNavRow
+        active={isActive}
+        label={t('customize')}
+        href={capabilityTabHref(projectId, tab)}
+        prefetch
+        {...card.rowProps}
+      >
+        <span className="shrink-0">
+          <CustomizeGlyph />
         </span>
-      ) : null}
-    </ProjectNavRow>
+        {t('customize')}
+        {reviewCount > 0 ? (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <CountBadge count={reviewCount} tone="waiting" />
+          </span>
+        ) : null}
+      </ProjectNavRow>
+      <NavHoverCardContent {...card.contentProps}>
+        <CustomizeCardList
+          projectId={projectId}
+          tabs={access.tabs}
+          reviewCount={reviewCount}
+          onOpen={() => card.setOpen(false)}
+        />
+      </NavHoverCardContent>
+    </Popover>
+  );
+}
+
+/**
+ * The Customize card: every tab the caller may open, in the tab bar's order
+ * and with its seams (Agents | the library | Members and Settings), so the
+ * card and the bar read as one list. Members is the bar's launcher into the
+ * Access hub, gated the same way (`project.members.read`).
+ */
+function CustomizeCardList({
+  projectId,
+  tabs,
+  reviewCount,
+  onOpen,
+}: {
+  projectId: string;
+  tabs: readonly CapabilityTab['key'][];
+  reviewCount: number;
+  onOpen: () => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
+  const { data } = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const canReadMembers = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_MEMBERS_READ]?.allowed === true;
+  const accountId = data?.project?.account_id;
+  const allowed = new Set(tabs);
+  const shown = allTabs.filter((entry) => allowed.has(entry.key));
+  const rowClass = menuRow('sm', 'default', 'cursor-pointer');
+
+  const tabRow = (entry: CapabilityTab) => {
+    const TabIcon = TAB_ICONS[entry.key];
+    return (
+      <li key={entry.key}>
+        <HoverPrefetchLink href={capabilityTabHref(projectId, entry.key)} onClick={onOpen} className={rowClass}>
+          <TabIcon aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+          {entry.key === 'review' && reviewCount > 0 ? <CountBadge count={reviewCount} tone="waiting" /> : null}
+        </HoverPrefetchLink>
+      </li>
+    );
+  };
+
+  const primary = shown.filter((entry) => entry.key === 'agent');
+  const library = shown.filter((entry) => entry.key !== 'agent' && entry.key !== 'config');
+  const trailing = shown.filter((entry) => entry.key === 'config');
+  const members =
+    canReadMembers && accountId ? (
+      <li key="members">
+        <HubLink
+          to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}
+          onClick={onOpen}
+          className={rowClass}
+        >
+          <UsersIcon aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{tI18nComplete.raw('text1044a4c056d0')}</span>
+        </HubLink>
+      </li>
+    ) : null;
+  const groups = [primary.map(tabRow), library.map(tabRow), [members, ...trailing.map(tabRow)].filter(Boolean)].filter(
+    (group) => group.length > 0,
+  );
+
+  return (
+    <NavHoverCardList>
+      {groups.map((group, index) => (
+        <Fragment key={index}>
+          {index > 0 ? <li aria-hidden className={cn(MENU_SEPARATOR, '-mx-1')} /> : null}
+          {group}
+        </Fragment>
+      ))}
+    </NavHoverCardList>
   );
 }

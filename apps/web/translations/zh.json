@@ -1817,6 +1817,8 @@
     "drive": "云盘",
     "repo": "Repo",
     "customizeSidebar": "自定义侧边栏",
+    "searchApps": "搜索应用",
+    "appsNoMatches": "无匹配项",
     "customizeSidebarDescription": "在两个分组之间拖动项目。",
     "resetSidebar": "恢复默认",
     "reorderItem": "重新排序 {name}",
