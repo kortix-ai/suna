@@ -10,7 +10,7 @@ import {
 } from '@kortix/manifest-schema';
 import { isDeepStrictEqual } from 'node:util';
 import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
-import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
+import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo, resolveRemoteBranchTip } from './git';
 import type { ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -49,6 +49,30 @@ export const MAX_SCHEMA_VERSION = 3;
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 
+type ManifestRead = Awaited<ReturnType<typeof readManifestFromRepo>>;
+
+// replica-local: the connector sweep's last manifest read per project, keyed
+// by the default-branch tip it was read at. A new leader starts empty.
+const readsAtTip = new Map<string, { tip: string; candidates: string; found: ManifestRead }>();
+
+/**
+ * The connector sweep re-reads every project's manifest. Reading through the
+ * mirror forced a fetch per project, and a full clone once the mirror cache
+ * had evicted it: ~690 GB/day from GitHub on prod (2026-10-26). One
+ * `ls-remote` of the default branch proves an earlier read is still current.
+ */
+async function readManifestAtRemoteTip(project: GitBackedProject, candidates: string[]): Promise<ManifestRead> {
+  const tip = await resolveRemoteBranchTip(project, project.defaultBranch).catch(() => null);
+  const key = candidates.join('\u0000');
+  const hit = readsAtTip.get(project.projectId);
+  if (tip && hit?.tip === tip && hit.candidates === key) return hit.found;
+  const found = await readManifestFromRepo(project, candidates, project.defaultBranch, { forceRefresh: true });
+  // A push between the ls-remote and the read: keep nothing, the next sweep reads again.
+  if (tip && (found === null || found.commit === tip)) readsAtTip.set(project.projectId, { tip, candidates: key, found });
+  else readsAtTip.delete(project.projectId);
+  return found;
+}
+
 /**
  * Read + parse the project's manifest. Returns null if no manifest file is
  * present (so the caller can treat the repo as "not a Kortix project yet").
@@ -62,9 +86,14 @@ export const MAX_SCHEMA_VERSION = 3;
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
+  opts?: {
+    forceRefresh?: MirrorRefresh;
+    rethrowReadErrors?: boolean;
+    /** Reuse this replica's last read while the default branch tip is unchanged. */
+    reuseAtTip?: boolean;
+  },
 ): Promise<ParsedManifest | null> {
-  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
+  let found: ManifestRead;
   try {
     // manifest_path can still say kortix.toml (an older project, or a stale
     // default) even when the file actually on disk is kortix.yaml — so we
@@ -73,10 +102,12 @@ export async function readManifest(
     // per-agent env/connector scoping ON for a yaml-only project (a missing
     // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-    found = await readManifestFromRepo(project, candidates, project.defaultBranch, {
-      forceRefresh: opts?.forceRefresh,
-      strictRef: opts?.rethrowReadErrors,
-    });
+    found = opts?.reuseAtTip
+      ? await readManifestAtRemoteTip(project, candidates)
+      : await readManifestFromRepo(project, candidates, project.defaultBranch, {
+          forceRefresh: opts?.forceRefresh,
+          strictRef: opts?.rethrowReadErrors,
+        });
   } catch (err) {
     // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
     // THROWS when the read itself failed (mirror refresh, git-proxy hop,

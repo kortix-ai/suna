@@ -938,10 +938,9 @@ function gitCacheMaxBytes(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4 * 1024 * 1024 * 1024;
 }
 
-// Must stay SHORT: the connector sweep re-touches every mirror on the platform
-// each pass (~11min), so a grace window near the pass duration would shield the
-// whole cache from eviction. It only has to outlive a single in-flight git read
-// that started right after a refreshMirror() touch (seconds, not minutes).
+// Must stay SHORT: a long grace window shields busy mirrors from eviction for
+// no gain. It only has to outlive a single in-flight git read that started
+// right after a refreshMirror() touch (seconds, not minutes).
 const GIT_CACHE_EVICT_GRACE_MS = 5 * 60 * 1000;
 
 async function dirSizeBytes(root: string): Promise<number> {
@@ -960,11 +959,12 @@ async function dirSizeBytes(root: string): Promise<number> {
 }
 
 /**
- * Enforce a total size budget on the bare-mirror cache. The trigger/connector
- * sweeps walk EVERY active project's manifest through `refreshMirror()`, so the
- * leader pod accumulates a full clone of every repo on the platform — unbounded,
- * this fills the pod's ephemeral-storage limit and kubelet EVICTS the pod
- * (observed: 19 prod api evictions 2026-07-05→07 at the 8Gi cap). Evict
+ * Enforce a total size budget on the bare-mirror cache. The leader's connector
+ * sweep reads every active project's manifest, so a new leader clones every
+ * repo on the platform once — unbounded, this fills the pod's ephemeral-storage
+ * limit and kubelet EVICTS the pod (observed: 19 prod api evictions
+ * 2026-07-05→07 at the 8Gi cap). The sweep reads a mirror again only when that
+ * project's default branch moved (`readManifest` `reuseAtTip`). Evict
  * least-recently-used mirrors until under budget; a mirror touched within the
  * grace window is never removed (refreshMirror bumps mtime on every access, so
  * anything an in-flight git op could be reading is inside the grace window).
