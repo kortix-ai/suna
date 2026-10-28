@@ -169,11 +169,11 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
   const coordinators = (g.sessions ?? []).filter((s) => s.role === 'coordinator').map((s) => s.id);
   if (OPEN.has(g.status as string)) {
     if (facts.activeHeartbeats.length === 0) {
-      out.push('The goal is open and no heartbeat reminder is active on this session: arm one (kortix remind "Goal wake: <folder>. Load the kortix-goals skill and run one wake." --in 24h --every 1d) and store its id in "reminder_id".');
+      out.push('The goal is open and no heartbeat loop is active on this session: arm one (kortix loop "Goal wake: <folder>. Load the kortix-goals skill and run one wake." --in 24h --every 1d) and store its id in "reminder_id".');
     } else if (g.reminder_id && !facts.activeHeartbeats.includes(g.reminder_id)) {
-      out.push(`"reminder_id" ${g.reminder_id} is not an active reminder; set it to ${facts.activeHeartbeats[0]}.`);
+      out.push(`"reminder_id" ${g.reminder_id} is not an active loop; set it to ${facts.activeHeartbeats[0]}.`);
     } else if (facts.activeHeartbeats.length > 1) {
-      out.push(`${facts.activeHeartbeats.length} heartbeat reminders are active for this goal; keep one (kortix reminders rm <id>).`);
+      out.push(`${facts.activeHeartbeats.length} heartbeat loops are active for this goal; keep one (kortix loops rm <id>).`);
     }
     if (!facts.unattended) out.push('This session is not marked unattended: run kortix sessions update --meta unattended=true.');
   }
@@ -185,7 +185,7 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
     else if (coordinators.includes(g.verified_by)) out.push('"verified_by" is a coordinator: only a session that did none of the work may verify.');
   }
   if ((g.status === 'done' || g.status === 'abandoned') && facts.activeHeartbeats.length > 0) {
-    out.push(`The goal is closed and its heartbeat ${facts.activeHeartbeats.join(', ')} is still active: kortix reminders rm <id>.`);
+    out.push(`The goal is closed and its heartbeat ${facts.activeHeartbeats.join(', ')} is still active: kortix loops rm <id>.`);
   }
   return out;
 }

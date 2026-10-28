@@ -23,7 +23,7 @@ describe('goalViolations', () => {
 
   test('an open goal without a heartbeat, or not unattended, fails with the fix', () => {
     const v = goalViolations(base, { ...healthy, activeHeartbeats: [], unattended: false });
-    expect(v.join('\n')).toContain('no heartbeat reminder is active');
+    expect(v.join('\n')).toContain('no heartbeat loop is active');
     expect(v.join('\n')).toContain('kortix sessions update --meta unattended=true');
   });
 
