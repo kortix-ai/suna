@@ -17,20 +17,26 @@ const TABS: readonly CodeTab[] = [
   {
     id: 'agents',
     k: 'Declare your agents',
-    v: 'Each agent is a Markdown prompt, and one entry in kortix.yaml for what it may reach: connectors, secrets and skills. Access is deny-by-default.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [6, 29] },
+    v: 'One agent per job, grouped by team: engineering, marketing, sales. Each is a Markdown prompt and one entry that names its tools, connectors and skills. Access is deny-by-default.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [33, 64] },
+  },
+  {
+    id: 'connectors',
+    k: 'Connect your tools',
+    v: 'GitHub, LinkedIn, HubSpot and 3,000+ more. Credentials stay in Kortix. A rule can hold an action, such as a LinkedIn post, until a person approves it.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [10, 25] },
   },
   {
     id: 'triggers',
     k: 'Run them 24/7',
-    v: 'A trigger is what fires it and what runs: a cron schedule, a signed webhook or an app event, then an agent and a prompt.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [30, 43] },
+    v: 'A new GitHub issue, an inbound lead from your website, or a schedule starts the right agent with nobody at the keyboard.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [65, MANIFEST.length] },
   },
   {
     id: 'secrets',
     k: 'Keep secrets out of the repo',
-    v: 'kortix.yaml names the secrets a project needs. The values live encrypted in Kortix, and only the agents granted a secret can read it.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [3, 5] },
+    v: 'kortix.yaml names the secrets a project needs, such as the ones that sign its webhooks. The values live encrypted in Kortix.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [7, 9] },
   },
   {
     id: 'ship',

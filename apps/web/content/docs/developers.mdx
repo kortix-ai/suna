@@ -165,10 +165,10 @@ kortix doctor
 ### Next steps
 
 <CardGroup>
-  <Card icon="git-branch" title="Git" href="/docs/#git">Clone, push, session branches and change requests.</Card>
-  <Card icon="bot" title="Agents" href="/docs/#agents">Write agents and decide what each one may do.</Card>
-  <Card icon="plug" title="Connectors" href="/docs/#connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
-  <Card icon="clock" title="Automations" href="/docs/#automations">Start sessions or call your Apps on a schedule, a webhook or an App event.</Card>
+  <Card icon="git-branch" title="Git" href="/docs/developers#git">Clone, push, session branches and change requests.</Card>
+  <Card icon="bot" title="Agents" href="/docs/guide#agents">Write agents and decide what each one may do.</Card>
+  <Card icon="plug" title="Connectors" href="/docs/guide#connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
+  <Card icon="clock" title="Automations" href="/docs/guide#automations">Start sessions or call your Apps on a schedule, a webhook or an App event.</Card>
 </CardGroup>
 ## Git
 
@@ -930,8 +930,8 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
-| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Automations](/docs/#automations). |
-| `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/#connectors). |
+| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Automations](/docs/guide#automations). |
+| `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors). |
 | `apps` | map | — | App slug → App block. See [apps keys](#apps-keys). |
 | `skills` | map | the Kortix skills | Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. See [skills entries](#skills-entries). |
 | `tools` | map | the Kortix tools | Tool name → repository module. The Kortix tools are always registered. See [tools entries](#tools-entries). |
@@ -947,7 +947,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `description` | string | — | What the agent does. An agent that may start it as a subagent reads it to choose. |
-| `model` | string | the project default | `provider/model`. See [Models](/docs/#models). |
+| `model` | string | the project default | `provider/model`. See [Models](/docs/guide#models). |
 | `mode` | `primary`, `subagent`, `all` | `all` | `primary`: people and triggers run it; no agent starts it. `subagent`: only another agent starts it; agent pickers hide it. `all`: both. |
 | `variant` | string | — | The model's reasoning level: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, when the model offers it. |
 | `temperature` | number | the model's | Sampling temperature. A model that refuses a custom temperature ignores it. |
@@ -971,7 +971,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
 | `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
-| `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/#agents). |
+| `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
 | `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
 | `workspace.project_repository` | boolean | `false` | `true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load. |
 | `sandbox` | string | `sandbox.default` | A template slug, or `default` for the platform image. |
@@ -1127,7 +1127,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `apps.<slug>` | map | — | One App's deploy settings. Any other key is an error. Its keys: `path`, `type`, `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`, `display`. Full reference: [Configure in kortix.yaml](/docs/#configure-in-kortixyaml). |
+| `apps.<slug>` | map | — | One App's deploy settings. Any other key is an error. Its keys: `path`, `type`, `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`, `display`. Full reference: [Configure in kortix.yaml](/docs/developers#configure-in-kortixyaml). |
 
 {/* generated:kortix-yaml:end */}
 
@@ -1576,17 +1576,17 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `logout` | Sign out of the active host. Same as `kortix hosts logout`. | [Hosts](#hosts) |
 | `whoami` | The host, the signed-in user and the active account. | [Check who you are](#check-who-you-are) |
 | `token` | The token context: project, session, agent and grants. | [Check who you are](#check-who-you-are) |
-| `self-host <subcommand>` | Set up, start, update and stop your own Kortix instance from Docker images. | [Self-hosting](/docs/#self-hosting) |
+| `self-host <subcommand>` | Set up, start, update and stop your own Kortix instance from Docker images. | [Self-hosting](/docs/developers#self-hosting) |
 
 **Account, within the host**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `accounts <subcommand>` | List and switch accounts. | [Teams](/docs/#teams) |
-| `members <subcommand>` | Invite and remove people, and change their roles. | [Teams](/docs/#teams) |
-| `groups <subcommand>` | Groups of people that share a role. | [Teams](/docs/#teams) |
-| `tokens <subcommand>` | Personal access keys, service accounts and connected apps. | [Security](/docs/#security) |
-| `billing <subcommand>` | The plan, credits, transactions, and costs per project and per session. | [Billing](/docs/#billing) |
+| `accounts <subcommand>` | List and switch accounts. | [Teams](/docs/guide#teams) |
+| `members <subcommand>` | Invite and remove people, and change their roles. | [Teams](/docs/guide#teams) |
+| `groups <subcommand>` | Groups of people that share a role. | [Teams](/docs/guide#teams) |
+| `tokens <subcommand>` | Personal access keys, service accounts and connected apps. | [Security](/docs/guide#security) |
+| `billing <subcommand>` | The plan, credits, transactions, and costs per project and per session. | [Billing](/docs/guide#billing) |
 
 **Project, within the account**
 
@@ -1601,15 +1601,15 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | --- | --- | --- |
 | `sessions <subcommand>` | Start, talk to, follow, stop and delete sessions. | [Session commands](#session-commands) |
 | `chat [session-id]` | Talk to a session's agent: a line chat, or one prompt with `-p`. Same as `kortix sessions chat`. | [Session commands](#session-commands) |
-| `tui [options]` | The whole product as a terminal app. `kortix t` and `kortixt` start it too. Experimental. | [Everywhere](/docs/#everywhere) |
+| `tui [options]` | The whole product as a terminal app. `kortix t` and `kortixt` start it too. Experimental. | [Everywhere](/docs/guide#everywhere) |
 
 **Author and ship**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `ship` | Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command. | [Commit and push](/docs/#commit-and-push) |
+| `ship` | Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command. | [Commit and push](/docs/developers#commit-and-push) |
 | `validate` | Check `kortix.yaml` and the sandbox template Dockerfiles. | [Check and validate](#check-and-validate) |
-| `migrate [--write]` | Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it. | [Migrate to v3](/docs/#migrate-to-v3) |
+| `migrate [--write]` | Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it. | [Migrate to v3](/docs/developers#migrate-to-v3) |
 | `doctor [--no-session]` | Check the login and the project, then start a throwaway session and wait for an agent reply. | [Check and validate](#check-and-validate) |
 | `schema --version 3` | Print the `kortix.yaml` JSON Schema. | [Check and validate](#check-and-validate) |
 
@@ -1617,40 +1617,40 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `agents <subcommand>` | The default agent, model pins, scope and the full agent config. | [Agents](/docs/#agents) |
-| `tools <subcommand>` | List the tools sessions get; `eject` copies a Kortix tool into the project so you can change it. | [Agents](/docs/#agents) |
-| `models <subcommand>` | The models the project offers, and its default model. | [Models](/docs/#models) |
-| `gateway <subcommand>` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs/#models) |
-| `connectors <subcommand>` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/#connectors) |
-| `secrets <subcommand>` | Project secrets, their exposure and who can use them. | [Security](/docs/#security) |
-| `providers <subcommand>` | Connect model providers with an API key or OAuth. | [Models](/docs/#models) |
-| `env <subcommand>` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Security](/docs/#security) |
-| `channels <subcommand>` | Slack and Microsoft Teams connections, and the agent each channel runs. | [Channels](/docs/#channels) |
-| `sandboxes <subcommand>` | Sandbox templates, their builds and their health. | [Computers](/docs/#computers) |
-| `apps <subcommand>` | Deploy and manage Apps: sites and servers with stable Kortix URLs. | [Apps reference](/docs/#apps-reference) |
-| `marketplace <subcommand>` | Search, show, install and uninstall marketplace skills. | [Skills](/docs/#skills) |
+| `agents <subcommand>` | The default agent, model pins, scope and the full agent config. | [Agents](/docs/guide#agents) |
+| `tools <subcommand>` | List the tools sessions get; `eject` copies a Kortix tool into the project so you can change it. | [Agents](/docs/guide#agents) |
+| `models <subcommand>` | The models the project offers, and its default model. | [Models](/docs/guide#models) |
+| `gateway <subcommand>` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs/guide#models) |
+| `connectors <subcommand>` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/guide#connectors) |
+| `secrets <subcommand>` | Project secrets, their exposure and who can use them. | [Security](/docs/guide#security) |
+| `providers <subcommand>` | Connect model providers with an API key or OAuth. | [Models](/docs/guide#models) |
+| `env <subcommand>` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Security](/docs/guide#security) |
+| `channels <subcommand>` | Slack and Microsoft Teams connections, and the agent each channel runs. | [Channels](/docs/guide#channels) |
+| `sandboxes <subcommand>` | Sandbox templates, their builds and their health. | [Computers](/docs/guide#computers) |
+| `apps <subcommand>` | Deploy and manage Apps: sites and servers with stable Kortix URLs. | [Apps reference](/docs/developers#apps-reference) |
+| `marketplace <subcommand>` | Search, show, install and uninstall marketplace skills. | [Skills](/docs/guide#skills) |
 
 **Files, changes and triggers**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/#git) |
-| `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Memory and Drive](/docs/#memory-and-drive) |
-| `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/#git) |
-| `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/#git) |
-| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/#automations) |
-| `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/#automations) |
+| `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/developers#git) |
+| `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Drive](/docs/guide#drive) |
+| `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
+| `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
+| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/guide#automations) |
+| `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/guide#automations) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `access <subcommand>` | Grant, list and revoke role assignments for people, groups and agents. | [Teams](/docs/#teams) |
-| `roles <subcommand>` | System and custom roles, and what each one permits. | [Teams](/docs/#teams) |
-| `permissions <subcommand>` | The permission catalog roles are built from. `kortix perms` is the same command. | [Teams](/docs/#teams) |
-| `audit <subcommand>` | Read the account audit log. | [Teams](/docs/#teams) |
-| `grants <subcommand>` | Assign agents to members or groups. | [Teams](/docs/#teams) |
+| `access <subcommand>` | Grant, list and revoke role assignments for people, groups and agents. | [Teams](/docs/guide#teams) |
+| `roles <subcommand>` | System and custom roles, and what each one permits. | [Teams](/docs/guide#teams) |
+| `permissions <subcommand>` | The permission catalog roles are built from. `kortix perms` is the same command. | [Teams](/docs/guide#teams) |
+| `audit <subcommand>` | Read the account audit log. | [Teams](/docs/guide#teams) |
+| `grants <subcommand>` | Assign agents to members or groups. | [Teams](/docs/guide#teams) |
 
 **The CLI itself**
 

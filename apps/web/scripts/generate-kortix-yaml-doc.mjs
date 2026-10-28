@@ -108,9 +108,9 @@ const TABLES = [
       tools: 'See [tools entries](#tools-entries).',
       commands: 'See [commands entries](#commands-entries).',
       extensions: 'See [extensions entries](#extensions-entries).',
-      connectors: 'See [connectors keys](#connectors-keys) and [Connectors](/docs/#connectors).',
+      connectors: 'See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors).',
       apps: 'See [apps keys](#apps-keys).',
-      triggers: 'See [triggers keys](#triggers-keys) and [Automations](/docs/#automations).',
+      triggers: 'See [triggers keys](#triggers-keys) and [Automations](/docs/guide#automations).',
       policy: 'See [policy keys](#policy-keys).',
       policies: 'See [policy keys](#policy-keys).',
       approvals: 'See [policy keys](#policy-keys).',
@@ -121,10 +121,10 @@ const TABLES = [
     rows: (table) => rows(agent, '', table),
     expand: ['workspace'],
     see: {
-      model: 'See [Models](/docs/#models).',
+      model: 'See [Models](/docs/guide#models).',
       permission: 'See [Permission rules](#permission-rules).',
       policy_sets: 'See [Connector rules and approvals](#connector-rules-and-approvals).',
-      kortix_permissions: 'See [Agents](/docs/#agents).',
+      kortix_permissions: 'See [Agents](/docs/guide#agents).',
     },
   },
   { heading: '### Registry entries' },
@@ -212,7 +212,7 @@ const TABLES = [
         table,
       ),
     ],
-    see: { 'apps.<slug>': 'Full reference: [Configure in kortix.yaml](/docs/#configure-in-kortixyaml).' },
+    see: { 'apps.<slug>': 'Full reference: [Configure in kortix.yaml](/docs/developers#configure-in-kortixyaml).' },
   },
 ];
 
