@@ -1,6 +1,7 @@
 /**
- * Automations: one concept for triggers and loops. An automation is a SOURCE
- * (what fires it) plus a TARGET (what a fire does).
+ * Triggers: one concept for kortix.yaml triggers and loops. A trigger is a
+ * SOURCE (what fires it) plus a TARGET (what a fire does). A loop is a trigger
+ * that wakes the session that created it.
  *
  *   source  schedule (cron, every, at, in) · webhook · connector event ·
  *           App event · change request merged
@@ -8,10 +9,11 @@
  *           session  wake one existing session (a loop)
  *           app      call an App (`target: { app }`, unchanged)
  *
- * Storage stays where it was. A declared automation is a `triggers:` entry in
- * kortix.yaml. A runtime automation is a `project_trigger_runtime` row the
+ * Storage stays where it was. A declared trigger is a `triggers:` entry in
+ * kortix.yaml. A runtime trigger is a `project_trigger_runtime` row the
  * manifest never declares: a loop (`reminder.<hex>`, `lib/session-reminders.ts`)
- * or a row created through `POST /automations` (`automation.<hex>`). Its type
+ * or a row created through `POST /triggers/runtime` (`trigger.<hex>`; rows made
+ * before the rename carry `automation.<hex>` and stay valid). Its type
  * column is the source; `schedule_spec.reminder` set means the session target.
  * Code reads the row for both, never the slug prefix.
  */
@@ -19,7 +21,7 @@ import { randomBytes } from 'node:crypto';
 import { projectTriggerRuntime } from '@kortix/db';
 import type { TriggerList } from '@kortix/api-contract';
 import { formatDurationSeconds } from '@kortix/manifest-schema';
-import { and, asc, eq, like, sql } from 'drizzle-orm';
+import { and, asc, eq, like, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { triggerScheduleRevision } from '../trigger-schedule';
 import type { GitTriggerSpec, GitTriggerType } from '../triggers';
@@ -27,31 +29,33 @@ import { buildPublicWebhookUrl, draftToSpec, parseTriggerDraft } from './trigger
 import { normalizeString } from './serializers';
 import { type ReminderDraft, parseReminderDraft, reminderSpec, serializeSessionReminder } from './session-reminders';
 
-export const AUTOMATION_ID_PREFIX = 'automation.';
+export const RUNTIME_TRIGGER_ID_PREFIX = 'trigger.';
+/** The prefix `POST /automations` used before the rename. Still read, never written. */
+const LEGACY_RUNTIME_TRIGGER_ID_PREFIX = 'automation.';
 
-export type AutomationSource = 'schedule' | 'webhook' | 'event' | 'app' | 'change_request';
-export const AUTOMATION_SOURCES: readonly AutomationSource[] = ['schedule', 'webhook', 'event', 'app', 'change_request'];
+export type TriggerSource = 'schedule' | 'webhook' | 'event' | 'app' | 'change_request';
+export const TRIGGER_SOURCES: readonly TriggerSource[] = ['schedule', 'webhook', 'event', 'app', 'change_request'];
 
-export type AutomationTarget =
+export type TriggerTarget =
   | { kind: 'agent'; agent: string }
   | { kind: 'session'; session_id: string }
   | { kind: 'app'; app: string };
 
-export function newAutomationId(): string {
-  return `${AUTOMATION_ID_PREFIX}${randomBytes(6).toString('hex')}`;
+export function newRuntimeTriggerId(): string {
+  return `${RUNTIME_TRIGGER_ID_PREFIX}${randomBytes(6).toString('hex')}`;
 }
 
-/** A loop id or an `/automations` id. A manifest slug has no `.`; an App run (`apprun.`) is not an automation. */
-export function isRuntimeAutomationSlug(slug: string): boolean {
-  return /^(?:reminder|automation)\.[0-9a-f]{12}$/.test(slug);
+/** A loop id or a runtime trigger id. A manifest slug has no `.`; an App run (`apprun.`) is not a trigger. */
+export function isRuntimeTriggerSlug(slug: string): boolean {
+  return /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/.test(slug);
 }
 
-export function automationSourceOf(type: GitTriggerType): AutomationSource {
+export function triggerSourceOf(type: GitTriggerType): TriggerSource {
   return type === 'cron' ? 'schedule' : type;
 }
 
 /** What one fire does. `reminder` marks the session target; a pinned kortix.yaml trigger falls back to its agent, so it targets the agent. */
-export function automationTargetOf(spec: Pick<GitTriggerSpec, 'agent' | 'target' | 'reminder' | 'pinnedSessionId'>): AutomationTarget {
+export function triggerTargetOf(spec: Pick<GitTriggerSpec, 'agent' | 'target' | 'reminder' | 'pinnedSessionId'>): TriggerTarget {
   if (spec.target?.app) return { kind: 'app', app: spec.target.app };
   // A session row whose pin was lost still dispatches to the session path, which pauses it.
   if (spec.reminder) return { kind: 'session', session_id: spec.pinnedSessionId as string };
@@ -75,10 +79,10 @@ export function changeRequestMatches(spec: GitTriggerSpec, cr: Pick<MergedChange
   return true;
 }
 
-export interface RuntimeAutomationBody {
+export interface RuntimeTriggerBody {
   name: string | null;
   prompt: string;
-  source: AutomationSource;
+  source: TriggerSource;
   target: { kind: 'session'; session_id: string } | { kind: 'agent'; agent: string };
   /** Schedule into a session: the loop draft, parsed with the loop rules. */
   reminderDraft?: ReminderDraft;
@@ -90,11 +94,11 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * Parse `POST /automations`: `{ name?, prompt, source: { type, … }, target: { session_id } | { agent } }`.
+ * Parse `POST /triggers/runtime`: `{ name?, prompt, source: { type, … }, target: { session_id } | { agent } }`.
  * A schedule into a session keeps the loop rules (5-minute floor, `in`/`at`);
  * any other combination keeps the trigger rules of its source.
  */
-export function parseRuntimeAutomationBody(body: Record<string, unknown>, now: Date): RuntimeAutomationBody | { error: string } {
+export function parseRuntimeTriggerBody(body: Record<string, unknown>, now: Date): RuntimeTriggerBody | { error: string } {
   const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
   const name = normalizeString(body.name) ?? null;
   const source = isObject(body.source) ? body.source : null;
@@ -107,10 +111,10 @@ export function parseRuntimeAutomationBody(body: Record<string, unknown>, now: D
   if (!sessionId && !agent) return { error: 'target is required: { session_id } or { agent }' };
   const parsedTarget = sessionId ? { kind: 'session' as const, session_id: sessionId } : { kind: 'agent' as const, agent: agent! };
   const type = normalizeString(source.type);
-  if (!type || !(AUTOMATION_SOURCES as readonly string[]).includes(type)) {
-    return { error: `source.type must be one of ${AUTOMATION_SOURCES.join(', ')}` };
+  if (!type || !(TRIGGER_SOURCES as readonly string[]).includes(type)) {
+    return { error: `source.type must be one of ${TRIGGER_SOURCES.join(', ')}` };
   }
-  const kind = type as AutomationSource;
+  const kind = type as TriggerSource;
   const common = { name, prompt, source: kind, target: parsedTarget };
 
   if (kind === 'schedule' && parsedTarget.kind === 'session') {
@@ -154,10 +158,10 @@ export function parseRuntimeAutomationBody(body: Record<string, unknown>, now: D
   }
 }
 
-/** The spec a runtime automation stores and the scheduler/receivers fire. */
-export function runtimeAutomationSpec(input: {
+/** The spec a runtime trigger stores and the scheduler/receivers fire. */
+export function runtimeTriggerSpec(input: {
   id: string;
-  body: RuntimeAutomationBody;
+  body: RuntimeTriggerBody;
   /** The target agent, or the target session's own agent. */
   agent: string;
   now: Date;
@@ -180,7 +184,7 @@ export function runtimeAutomationSpec(input: {
   } else {
     const draft = parseTriggerDraft(
       { ...triggerBody, name: body.name ?? id, prompt_template: body.prompt, agent: input.agent },
-      { existingSlug: 'automation' },
+      { existingSlug: 'trigger' },
     );
     if ('error' in draft) return draft;
     spec = { ...draftToSpec(draft), slug: id, path: '', name: body.name ?? id };
@@ -205,7 +209,7 @@ function sourceFields(
   projectId: string,
   spec: Pick<GitTriggerSpec, 'slug' | 'type' | 'cron' | 'runAt' | 'timezone' | 'everySeconds' | 'secretEnv' | 'event' | 'app' | 'changeRequest' | 'reminder'>,
 ): Record<string, unknown> {
-  const type = automationSourceOf(spec.type);
+  const type = triggerSourceOf(spec.type);
   if (type === 'schedule') {
     const every = spec.everySeconds ?? spec.reminder?.everySeconds ?? null;
     return { type, cron: spec.cron, every: every ? formatDurationSeconds(every) : null, at: spec.runAt, timezone: spec.timezone };
@@ -216,11 +220,11 @@ function sourceFields(
   return { type, cr_id: spec.changeRequest?.crId ?? null, base: spec.changeRequest?.base ?? null };
 }
 
-/** One `GET /automations` row for a runtime automation (a loop or an `/automations` row). */
-export function serializeRuntimeAutomation(row: RuntimeRow, sessionName?: string | null) {
+/** One `GET /triggers/all` row for a runtime trigger (a loop or a `POST /triggers/runtime` row). */
+export function serializeRuntimeTrigger(row: RuntimeRow, sessionName?: string | null) {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
   const base = serializeSessionReminder(row);
-  const target = automationTargetOf(spec);
+  const target = triggerTargetOf(spec);
   return {
     ...base,
     origin: 'runtime' as const,
@@ -230,8 +234,8 @@ export function serializeRuntimeAutomation(row: RuntimeRow, sessionName?: string
   };
 }
 
-/** One `GET /automations` row for a kortix.yaml trigger, from its `GET /triggers` shape. */
-export function serializeDeclaredAutomation(projectId: string, trigger: TriggerList['triggers'][number]) {
+/** One `GET /triggers/all` row for a kortix.yaml trigger, from its `GET /triggers` shape. */
+export function serializeDeclaredTrigger(projectId: string, trigger: TriggerList['triggers'][number]) {
   const spec = {
     slug: trigger.slug,
     type: trigger.type as GitTriggerType,
@@ -263,19 +267,19 @@ export function serializeDeclaredAutomation(projectId: string, trigger: TriggerL
 
 const notSessionTarget = sql`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null`;
 
-/** `/automations` rows that start an agent session (session-target rows are listed with the loops). */
-export async function listRuntimeAgentAutomations(projectId: string): Promise<RuntimeRow[]> {
+/** Runtime rows that start an agent session (session-target rows are listed with the loops). */
+export async function listRuntimeAgentTriggers(projectId: string): Promise<RuntimeRow[]> {
   return db
     .select()
     .from(projectTriggerRuntime)
-    .where(and(eq(projectTriggerRuntime.projectId, projectId), like(projectTriggerRuntime.slug, `${AUTOMATION_ID_PREFIX}%`), notSessionTarget))
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), or(like(projectTriggerRuntime.slug, `${RUNTIME_TRIGGER_ID_PREFIX}%`), like(projectTriggerRuntime.slug, `${LEGACY_RUNTIME_TRIGGER_ID_PREFIX}%`)), notSessionTarget))
     .orderBy(asc(projectTriggerRuntime.slug))
     // ponytail: one page of 200, like the loop list; add a cursor when a project holds more.
     .limit(200);
 }
 
-export async function loadRuntimeAutomation(projectId: string, slug: string): Promise<RuntimeRow | null> {
-  if (!isRuntimeAutomationSlug(slug)) return null;
+export async function loadRuntimeTrigger(projectId: string, slug: string): Promise<RuntimeRow | null> {
+  if (!isRuntimeTriggerSlug(slug)) return null;
   const [row] = await db
     .select()
     .from(projectTriggerRuntime)
@@ -286,17 +290,17 @@ export async function loadRuntimeAutomation(projectId: string, slug: string): Pr
 
 /**
  * The webhook receiver's lookup for a runtime id: the stored spec of an
- * enabled webhook automation. `enabled` lives on the row (pause flips it),
+ * enabled runtime webhook trigger. `enabled` lives on the row (pause flips it),
  * so it overrides the spec's own flag.
  */
 export async function runtimeWebhookSpec(projectId: string, slug: string): Promise<GitTriggerSpec | null> {
-  const row = await loadRuntimeAutomation(projectId, slug);
+  const row = await loadRuntimeTrigger(projectId, slug);
   if (!row || row.triggerType !== 'webhook') return null;
   return { ...(row.scheduleSpec as unknown as GitTriggerSpec), enabled: row.enabled !== false };
 }
 
-/** Store an agent-target runtime automation. A schedule gets its first slot now. */
-export async function insertRuntimeAgentAutomation(input: {
+/** Store an agent-target runtime trigger. A schedule gets its first slot now. */
+export async function insertRuntimeAgentTrigger(input: {
   projectId: string;
   spec: GitTriggerSpec;
   createdBy: string;
@@ -324,7 +328,7 @@ export async function insertRuntimeAgentAutomation(input: {
   return row!;
 }
 
-export async function deleteRuntimeAutomation(projectId: string, slug: string): Promise<void> {
+export async function deleteRuntimeTrigger(projectId: string, slug: string): Promise<void> {
   await db
     .delete(projectTriggerRuntime)
     // A runtime id only: a kortix.yaml trigger's row is the manifest's, and reconcile owns it.

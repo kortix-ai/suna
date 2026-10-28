@@ -50,27 +50,27 @@ describe('notification emails follow the transactional email rules', () => {
     const href = absoluteAppUrl(failed.url);
     expect(href).toMatch(/^https?:\/\/[^/]+\/projects\//);
     expect(email.html).toContain(href.replace(/&/g, '&amp;'));
-    expect(email.text).toContain(`Open automations: ${href}`);
+    expect(email.text).toContain(`Open triggers: ${href}`);
   });
 
-  test('a loop alert says Open automations: loops are automations', () => {
-    // A row stored before 2026-10-28 carries `/admin/loops` or `/reminders`; both redirect to Automations.
+  test('a loop alert says Open triggers: loops are triggers', () => {
+    // A row stored before 2026-10-28 carries `/admin/loops` or `/reminders`; both redirect to Triggers.
     for (const url of [`/projects/${PID}/admin/loops?notification=n1`, `/projects/${PID}/reminders?notification=n1`]) {
       const email = renderImmediateNotificationEmail({ ...failed, url })!;
-      expect(email.text).toContain(`Open automations: ${absoluteAppUrl(url)}`);
+      expect(email.text).toContain(`Open triggers: ${absoluteAppUrl(url)}`);
       expect(`${email.html}\n${email.text}`).not.toContain('Open loops');
     }
   });
 
-  test('the failing alert names the automation and the error; user text is escaped', () => {
+  test('the failing alert names the trigger and the error; user text is escaped', () => {
     const email = renderImmediateNotificationEmail({ ...failed, title: '<b>Deploy</b>' })!;
-    expect(email.subject).toBe('Automation failing: <b>Deploy</b>');
+    expect(email.subject).toBe('Trigger failing: <b>Deploy</b>');
     expect(email.html).toContain('&lt;b&gt;Deploy&lt;/b&gt;');
     expect(email.html).not.toContain('<b>Deploy</b>');
     expect(email.text).toContain('Error: Insufficient credits');
   });
 
-  test('only automation kinds have an immediate email; the rest wait for the digest', () => {
+  test('only trigger alert kinds have an immediate email; the rest wait for the digest', () => {
     expect(renderImmediateNotificationEmail({ ...item(1), kind: 'question' })).toBeNull();
     expect(renderImmediateNotificationEmail({ ...item(1), kind: 'turn_done' })).toBeNull();
   });
@@ -109,7 +109,7 @@ describe('every notification email links to the notification settings', () => {
     const email = renderImmediateNotificationEmail(failed)!;
     expect(email.text).toContain('Nightly report is failing.');
     expect(email.text).not.toContain('did not run');
-    expect(email.text).not.toContain('watch this automation');
-    expect(email.text).toContain('you created or edited this automation, or you manage its project');
+    expect(email.text).not.toContain('watch this trigger');
+    expect(email.text).toContain('you created or edited this trigger, or you manage its project');
   });
 });

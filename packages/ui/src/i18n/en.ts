@@ -7286,11 +7286,11 @@ const catalog = {
   "automationsPause": {
     "groupTitle": "Automations",
     "groupDescription": "Schedules, loops, webhooks, app events and monitors in every project of this account.",
-    "label": "Pause all automations",
+    "label": "Pause all triggers",
     "description": "Nothing in any project runs on its own: no schedule, loop, webhook, app event or monitor. Running a trigger by hand still works.",
     "readOnlyDescription": "Only an owner or admin can pause or resume automations.",
     "pausedSince": "Paused since {date}.",
-    "pauseTitle": "Pause all automations?",
+    "pauseTitle": "Pause all triggers?",
     "pauseDescription": "Every project of this account stops starting sessions on its own until you resume. Webhooks are acknowledged and skipped.",
     "pauseConfirm": "Pause all",
     "resumeTitle": "Resume all automations?",

@@ -240,7 +240,7 @@ export const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Files, changes & automations',
+        title: 'Files, changes & triggers',
         commands: [
           {
             name: 'files',
@@ -259,15 +259,14 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "The project's review inbox: approve, reject, request changes",
           },
           {
-            name: 'automations',
+            name: 'triggers',
             args: '<subcommand>',
-            blurb: 'Triggers and loops in one list: a source (schedule, webhook, event, App, CR merged) plus a target (agent or session)',
+            blurb: 'kortix.yaml and runtime triggers: a source (schedule, webhook, event, App, CR merged) plus a target (agent or session)',
           },
-          { name: 'triggers', args: '<subcommand>', blurb: 'The kortix.yaml automations: list, fire, enable/disable (alias of automations)' },
           {
             name: 'loops',
             args: '<subcommand>',
-            blurb: 'A schedule into one session — a loop, a kind of automation (kortix loop "…" --in 24h; alias: reminders)',
+            blurb: 'A schedule into one session — a loop, a trigger that wakes its session (kortix loop "…" --in 24h; alias: reminders)',
           },
           {
             name: 'goals',

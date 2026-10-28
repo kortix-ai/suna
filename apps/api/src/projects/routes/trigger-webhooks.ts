@@ -25,7 +25,7 @@ import {
 import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookRejectedRunBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
-import { isRuntimeAutomationSlug, runtimeWebhookSpec } from '../lib/automations';
+import { isRuntimeTriggerSlug, runtimeWebhookSpec } from '../lib/runtime-triggers';
 
 const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 
@@ -52,8 +52,8 @@ export function registerTriggerWebhooksRoutes(): void {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
-    // A kortix.yaml slug, or a runtime automation id (`automation.<hex>`, `reminder.<hex>`).
-    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug) && !isRuntimeAutomationSlug(slug)) {
+    // A kortix.yaml slug, or a runtime trigger id (`trigger.<hex>`, `automation.<hex>` from before the rename, `reminder.<hex>`).
+    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug) && !isRuntimeTriggerSlug(slug)) {
       return c.json({ error: 'Invalid trigger slug' }, 400);
     }
 
@@ -87,8 +87,8 @@ export function registerTriggerWebhooksRoutes(): void {
     // Trigger CRUD can commit on another API replica. Refresh this replica's
     // mirror before authentication, but bound the unauthenticated Git work by
     // project. Rotating source IPs cannot force more than one refresh per 30s.
-    // A runtime automation lives in the database only: no manifest read for it.
-    const spec = isRuntimeAutomationSlug(slug)
+    // A runtime trigger lives in the database only: no manifest read for it.
+    const spec = isRuntimeTriggerSlug(slug)
       ? await runtimeWebhookSpec(projectId, slug)
       : await (async () => {
           if (consumeProjectWebhookManifestRefreshBudget(projectId)) invalidateProjectMirror(projectId);
@@ -184,7 +184,7 @@ export function registerTriggerWebhooksRoutes(): void {
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
     // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
-    // The account's Pause all automations stops it the same way (KRTX-1721).
+    // The account's Pause all triggers stops it the same way (KRTX-1721).
     const pausedReason = await automaticFirePauseReason(project);
     if (pausedReason) {
       const reason = pausedReason === PROJECT_TRIGGERS_PAUSED_REASON ? 'triggers are paused server-side for this project' : pausedReason;

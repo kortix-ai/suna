@@ -27,7 +27,7 @@ function status(pause: AccountAutomationPause | null, canChange: boolean) {
 }
 
 /**
- * Pause all automations (KRTX-1721): one switch per account stops every
+ * Pause all triggers (KRTX-1721): one switch per account stops every
  * automatic fire in every project — schedules, loops, webhooks, app events
  * and monitors (`accounts/automation-pause.ts`). Any member may read it; changing
  * it takes `account.write` (owners and admins by default).

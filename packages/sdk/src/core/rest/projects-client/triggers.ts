@@ -233,7 +233,7 @@ export interface ProjectTriggerListing {
    */
   triggers_paused?: boolean;
   /**
-   * The account's Pause all automations (`PATCH /accounts/:id/automations`):
+   * The account's Pause all triggers (`PATCH /accounts/:id/automations`):
    * true stops every automatic fire in every project of the account, this one
    * included. Manual `fire` still works. Older servers omit it.
    */
@@ -420,7 +420,7 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
 }
 
 /**
- * The account's Pause all automations: `paused` stops every automatic fire in
+ * The account's Pause all triggers: `paused` stops every automatic fire in
  * every project of the account — schedules, loops (reminders), webhooks, app events and
  * monitors. A manual fire still runs.
  */
@@ -437,7 +437,7 @@ export async function getAccountAutomations(accountId: string) {
   return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
 }
 
-/** Pause or resume every automation of the account. Needs account.write (owners and admins by default). */
+/** Pause or resume every trigger of the account. Needs account.write (owners and admins by default). */
 export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
   return unwrap(
     await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),

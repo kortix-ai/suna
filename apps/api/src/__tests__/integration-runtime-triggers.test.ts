@@ -1,18 +1,18 @@
 /**
- * Integration test (real PostgreSQL): runtime automations on the trigger tables
- * (`projects/lib/automations.ts`). Each case is one of the places that used to
+ * Integration test (real PostgreSQL): runtime triggers on the trigger tables
+ * (`projects/lib/runtime-triggers.ts`). Each case is one of the places that used to
  * assume an automation lives in kortix.yaml:
  *   1. the fire path dispatches a non-schedule session target to the session;
  *   2. the webhook receiver finds a runtime webhook automation;
- *   3. connector subscriptions reconcile runtime event automations;
+ *   3. connector subscriptions reconcile runtime event triggers;
  *   4. a merged change request fires the automations it matches, once.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, accounts, projectSessions, projectTriggerExecutions, projectTriggerRuntime, projects, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 
-import { newAutomationId, parseRuntimeAutomationBody, runtimeAutomationSpec, runtimeWebhookSpec } from '../projects/lib/automations';
-import { fireChangeRequestMergedAutomations } from '../projects/lib/change-request-automations';
+import { newRuntimeTriggerId, parseRuntimeTriggerBody, runtimeTriggerSpec, runtimeWebhookSpec } from '../projects/lib/runtime-triggers';
+import { fireChangeRequestMergedTriggers } from '../projects/lib/change-request-triggers';
 import { countActiveSessionReminders, insertSessionReminder } from '../projects/lib/session-reminders';
 import { fireGitTrigger } from '../projects/lib/trigger-fire';
 import { withRuntimeEventSpecs } from '../projects/trigger-events/subscriptions';
@@ -38,12 +38,12 @@ async function seedSession(): Promise<string> {
   return sessionId;
 }
 
-/** Store a session-target automation the way `POST /automations` does. */
+/** Store a session-target trigger the way `POST /automations` does. */
 async function seedSessionAutomation(sessionId: string, body: Record<string, unknown>): Promise<GitTriggerSpec> {
   const now = new Date();
-  const parsed = parseRuntimeAutomationBody({ ...body, target: { session_id: sessionId } }, now);
+  const parsed = parseRuntimeTriggerBody({ ...body, target: { session_id: sessionId } }, now);
   if ('error' in parsed) throw new Error(parsed.error);
-  const spec = runtimeAutomationSpec({ id: newAutomationId(), body: parsed, agent: 'kortix', now });
+  const spec = runtimeTriggerSpec({ id: newRuntimeTriggerId(), body: parsed, agent: 'kortix', now });
   if ('error' in spec) throw new Error(spec.error);
   await insertSessionReminder({ projectId: PROJECT, spec, createdBy: OWNER, firstFireAt: null, now });
   return spec;
@@ -75,7 +75,7 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-describe('runtime automations', () => {
+describe('runtime triggers', () => {
   test('a webhook into a session queues its rendered prompt into that session and counts as active', async () => {
     const sessionId = await seedSession();
     const spec = await seedSessionAutomation(sessionId, { prompt: 'Build {{ body.ref }}', source: { type: 'webhook', secret_env: 'CI_SECRET' } });
@@ -112,9 +112,9 @@ describe('runtime automations', () => {
     expect(await runtimeWebhookSpec(PROJECT, 'nightly')).toBeNull();
   });
 
-  test('connector subscriptions reconcile runtime event automations next to the manifest ones', async () => {
+  test('connector subscriptions reconcile runtime event triggers next to the manifest ones', async () => {
     const event: GitTriggerSpec = {
-      slug: newAutomationId(), path: '', name: 'pr', type: 'event', agent: 'kortix', model: null, enabled: true,
+      slug: newRuntimeTriggerId(), path: '', name: 'pr', type: 'event', agent: 'kortix', model: null, enabled: true,
       promptTemplate: 'x', cron: null, runAt: null, timezone: 'UTC', secretEnv: null, sessionMode: 'fresh',
       pinnedSessionId: null, sessionKey: null, filter: null,
       event: { connector: 'github', type: 'GITHUB_PULL_REQUEST_EVENT', config: {} },
@@ -142,9 +142,9 @@ describe('runtime automations', () => {
     const project = await projectRow();
     const cr = { cr_id: CR, number: 7, title: 'Fix', base_ref: 'main', head_ref: 'fix', merge_commit_sha: 'abc' };
 
-    expect(await fireChangeRequestMergedAutomations(project, [cr])).toBe(1);
+    expect(await fireChangeRequestMergedTriggers(project, [cr])).toBe(1);
     // A retried hook for the same merge queues nothing new (one key per merge and automation).
-    await fireChangeRequestMergedAutomations(project, [cr]);
+    await fireChangeRequestMergedTriggers(project, [cr]);
 
     const commands = await commandsOf(sessionId);
     expect(commands).toHaveLength(1);

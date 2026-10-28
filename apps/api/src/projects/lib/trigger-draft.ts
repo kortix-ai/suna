@@ -135,7 +135,7 @@ export async function loadTriggersForResponse(
       slug: spec.slug,
       path: spec.path,
       name: spec.name,
-      // A manifest trigger is never `change_request` (runtime only, lib/automations.ts).
+      // A manifest trigger is never `change_request` (runtime only, lib/runtime-triggers.ts).
       type: spec.type as Exclude<typeof spec.type, 'change_request'>,
       agent: spec.agent,
       model: spec.model,
@@ -201,7 +201,7 @@ export async function loadTriggersForResponse(
     // true, the platform won't auto-run any of them (cron sweep skips, webhooks
     // ignored), regardless of each trigger's own `enabled`.
     triggers_paused: triggersPausedForProject(project.metadata),
-    // The account's Pause all automations (KRTX-1721): true stops these triggers too.
+    // The account's Pause all triggers (KRTX-1721): true stops these triggers too.
     account_automations_paused: (await readAccountAutomationPause(project.accountId)) !== null,
     errors,
   };

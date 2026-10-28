@@ -1,9 +1,9 @@
 import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
 /**
- * The source of an automation (a trigger or a loop). `change_request` fires
- * when a change request of the project merges; only a runtime automation
- * (`lib/automations.ts`) can have it today, kortix.yaml cannot declare it.
+ * The source of a trigger (a kortix.yaml trigger or a loop). `change_request` fires
+ * when a change request of the project merges; only a runtime trigger
+ * (`lib/runtime-triggers.ts`) can have it today, kortix.yaml cannot declare it.
  */
 export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 
@@ -152,8 +152,8 @@ export interface GitTriggerSpec {
    */
   filter: TriggerFilter | null;
   /**
-   * Set only on an automation whose target is a session (`lib/session-reminders.ts`,
-   * `lib/automations.ts`): a DB-native row that wakes `pinnedSessionId`. A loop is
+   * Set only on a trigger whose target is a session (`lib/session-reminders.ts`,
+   * `lib/runtime-triggers.ts`): a DB-native row that wakes `pinnedSessionId`. A loop is
    * the schedule source of it; a webhook, connector event, App event or merged
    * change request can be its source too. The manifest never declares one, so
    * manifest reconcile skips these rows instead of pruning them. The field keeps

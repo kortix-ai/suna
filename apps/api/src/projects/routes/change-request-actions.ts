@@ -284,17 +284,17 @@ export function registerChangeRequestActionsRoutes(): void {
       });
 
       invalidateProjectMirror(projectId);
-      // SEAM (Automations, "change request merged" source): a merge wakes the
+      // SEAM (Triggers, "change request merged" source): a merge wakes the
       // goal the CR's origin session works on (lib/goal-wake.ts). Best-effort.
       void wakeGoalForMergedChangeRequest({ project: loaded.row, changeRequest: cr }).catch((error: unknown) =>
         logger.warn('[cr-merge] goal wake failed', { projectId, error: error instanceof Error ? error.message : String(error) }),
       );
-      // The `change_request` automation source: every automation this merge
-      // matches fires (lib/change-request-automations.ts). Best-effort and not
+      // The `change_request` trigger source: every trigger this merge
+      // matches fires (lib/change-request-triggers.ts). Best-effort and not
       // awaited: the merge is durable and its response must not wait on a fire.
-      void import('../lib/change-request-automations')
-        .then(({ fireChangeRequestMergedAutomations }) =>
-          fireChangeRequestMergedAutomations(loaded.row, [
+      void import('../lib/change-request-triggers')
+        .then(({ fireChangeRequestMergedTriggers }) =>
+          fireChangeRequestMergedTriggers(loaded.row, [
             {
               cr_id: cr.crId,
               number: cr.number,

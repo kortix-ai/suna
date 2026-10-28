@@ -723,7 +723,7 @@ export function ScheduleView({
             because a project that runs nothing on its own is something a
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
-            {/* The account's Pause all automations (KRTX-1721): it stops this
+            {/* The account's Pause all triggers (KRTX-1721): it stops this
                 project too, and it is changed in account settings. */}
             {accountPaused && showContent && (
               <Alert variant="warning">
