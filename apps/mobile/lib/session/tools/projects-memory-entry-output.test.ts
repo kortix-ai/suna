@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseMemoryEntryOutput } from './projects-memory-entry-output';
 
-// Port of apps/web `lib/utils/memory-entry-output.test.ts`.
+// Port of `parseMemoryEntryOutput` (`packages/shared/src/tool-output/memory-entry.ts`).
 
 describe('parseMemoryEntryOutput LTM format', () => {
   test('parses compact LTM fields without a backtracking expression', () => {

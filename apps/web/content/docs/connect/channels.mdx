@@ -362,7 +362,7 @@ In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives
 Open **Customize → Connectors**, select the **Channels** scope, and select **Connect** on the Telegram row. Paste the token and list the Telegram user ids that may talk to the bot. Kortix registers the bot's webhook and keeps the token on the server.
 </Step>
 <Step title="Message the bot">
-A message from an allowed user starts a session. Anyone else gets a reply that shows their user id; a project manager adds it under **Allowed users**.
+A message from an allowed user starts a session. Anyone else gets a reply that shows their user ID. When they write to the bot in a private chat, they also appear under **Allowed users → Wants access**, where a project manager allows them with one click or dismisses the request. You can still add a user by ID.
 </Step>
 </Steps>
 
@@ -372,6 +372,7 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **A tap on a question from before `/new` is refused** and its buttons are removed.
 - **The agent replies through the `kortix_telegram` connector:** `send_message`, `edit_message_text`, `delete_message`, `send_chat_action`, `get_chat` and `get_me`. The bot token never enters the sandbox.
 - **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.
+- **An access request keeps only who asked.** Kortix stores the sender's user ID, username, first and last name and when they last wrote, never the message. It keeps the newest 20 requests for 30 days. Allowing a user ID, one at a time or in the whole list, deletes its request. Disconnecting the bot, or connecting another bot, deletes all requests. **Allowed users** shows each person's name and photo from Telegram, read through Kortix: the bot token never reaches the browser. Seeing them needs `project.connector.read`.
 - **Groups run in Telegram's privacy mode by default:** the bot receives only commands, replies to it and mentions. Send `/setprivacy` to @BotFather, or make the bot a group admin, to let it read every message.
 - **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session, and never delivers the message twice.
 - **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When its computer fails to start, the bot says so and asks you to send `/new`. A failure the provider may clear (capacity, a rate limit) is retried automatically for a few minutes: the bot says so once, and if the agent does not reply, send `/new`. When the session is still starting, or waits behind other sessions of the project, the bot says so; the agent replies once it runs.
@@ -381,12 +382,17 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 
 | API | What it does |
 | --- | --- |
-| `GET /v1/projects/{id}/channels/telegram/installation` | The bot (`bot_id`, `username`, `allowed_user_ids`), or `null` |
+| `GET /v1/projects/{id}/channels/telegram/installation` | The bot (`bot_id`, `username`, `allowed_user_ids`, `access_request_count`), or `null` |
 | `POST /v1/projects/{id}/channels/telegram/connect` | Connect a bot: `bot_token`, optional `allowed_user_ids` |
 | `PUT /v1/projects/{id}/channels/telegram/allowed-users` | Replace the allowed list: `user_ids` |
-| `DELETE /v1/projects/{id}/channels/telegram` | Remove the webhook, the token and the install |
+| `GET /v1/projects/{id}/channels/telegram/users` | `allowed` and `requests`: each `user_id`, `username`, `first_name`, `last_name`, `photo_version`, `known`; a request adds `last_seen` |
+| `GET /v1/projects/{id}/channels/telegram/users/{user_id}/photo` | The profile photo (`image/jpeg`) of an allowed or requesting user; `?v=` is the `photo_version` |
+| `POST /v1/projects/{id}/channels/telegram/allowed-users` | Allow one user: `user_id`. Drops their request; 409 `telegram_allowed_users_full` at 200 users |
+| `DELETE /v1/projects/{id}/channels/telegram/allowed-users/{user_id}` | Remove one allowed user |
+| `DELETE /v1/projects/{id}/channels/telegram/access-requests/{user_id}` | Dismiss one request |
+| `DELETE /v1/projects/{id}/channels/telegram` | Remove the webhook, the token, the install and the requests |
 
-The SDK functions are `getTelegramInstallation`, `connectTelegram`, `setTelegramAllowedUsers` and `disconnectTelegram`.
+The SDK functions are `getTelegramInstallation`, `connectTelegram`, `setTelegramAllowedUsers`, `listTelegramUsers`, `allowTelegramUser`, `removeTelegramUser`, `dismissTelegramAccessRequest`, `getTelegramUserPhoto` and `disconnectTelegram`.
 
 ## Manage bindings
 

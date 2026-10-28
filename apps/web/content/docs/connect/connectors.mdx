@@ -763,6 +763,12 @@ kortix connectors upload /workspace/artifacts/report.pdf --connector outlook   #
 - One call carries at most 20 files and 25 MiB. A staged file is single-use, private to its session, and deleted after 24 hours.
 - `composio`, `pipedream` and `computer` connectors do not accept staged files (`connector_attachments_unsupported`).
 
+A Composio tool's file field (for example YouTube's `videoFile` or a Gmail `attachment`) takes a public `https` URL. Pass the URL as the field's value, or as the `s3key` or `url` of the file object. Kortix downloads the file through its egress guard (public hosts only, at most 100 MB), uploads it to Composio, and sends Composio's file reference. A failed download answers `file upload failed for <field>: …`.
+
+```bash
+kortix connectors call youtube multipart_upload_video '{"title":"Demo","videoFile":"https://example.com/demo.mp4"}'
+```
+
 From an MCP client, the [Kortix MCP server](/docs/connect/mcp) offers the same flow through `list_connectors`, `search_connector_actions`, `describe_connector_action`, `call_connector` and `upload_connector_attachment`.
 
 ## Call connectors from code

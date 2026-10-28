@@ -5,9 +5,11 @@ import { TelegramChatMock } from './channel-mocks';
 /**
  * Telegram as a channel row: connect a bot
  * by its BotFather token, pick who may talk to it, disconnect. The token goes
- * to the API once and never comes back to the browser.
+ * to the API once and never comes back to the browser. The allowed users
+ * dialog is `TelegramUsersPanel`.
  */
 import { Button } from '../../../primitives/button';
+import { CountBadge } from '../../../primitives/count-badge';
 import { Field, FieldDescription, FieldGroup, FieldTitle } from '../../../primitives/field';
 import { Input } from '../../../primitives/input';
 import Loading from '../../../primitives/loading';
@@ -25,10 +27,10 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from './channel-row';
+import { TelegramUsersPanel } from './telegram-users-panel';
 import {
   useConnectTelegram,
   useDisconnectTelegram,
-  useSetTelegramAllowedUsers,
   useTelegramInstall,
 } from '../../../internal/hooks/channels/use-channels-installations';
 import { useTranslations } from '../../../i18n';
@@ -66,6 +68,9 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
             <>
               <Button size="sm" variant="ghost" onClick={() => setDialog('users')}>
                 {t.raw('text2c3059c25723')}
+                {install.access_request_count ? (
+                  <CountBadge count={install.access_request_count} tone="waiting" />
+                ) : null}
               </Button>
               <ChannelDisconnectButton
                 pending={disconnect.isPending}
@@ -92,11 +97,7 @@ export function TelegramChannelRow({ projectId, canWrite }: { projectId: string;
           {dialog === 'connect' ? (
             <TelegramConnectForm projectId={projectId} onDone={() => setDialog(null)} />
           ) : dialog === 'users' ? (
-            <TelegramUsersForm
-              projectId={projectId}
-              initial={install?.allowed_user_ids ?? []}
-              onDone={() => setDialog(null)}
-            />
+            <TelegramUsersPanel projectId={projectId} onDone={() => setDialog(null)} />
           ) : null}
         </ModalContent>
       </Modal>
@@ -155,57 +156,6 @@ function TelegramConnectForm({ projectId, onDone }: { projectId: string; onDone:
         <Button type="submit" disabled={!token.trim() || !ids || connect.isPending}>
           {connect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
           {t.raw('text1a2303ede074')}
-        </Button>
-      </ModalFooter>
-    </form>
-  );
-}
-
-function TelegramUsersForm({
-  projectId,
-  initial,
-  onDone,
-}: {
-  projectId: string;
-  initial: string[];
-  onDone: () => void;
-}) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-  const save = useSetTelegramAllowedUsers();
-  const [users, setUsers] = useState(() => initial.join(', '));
-  const ids = parseTelegramUserIds(users);
-
-  return (
-    <form
-      className="space-y-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!ids) return;
-        save.mutate(
-          { projectId, userIds: ids },
-          {
-            onSuccess: () => {
-              successToast(t.raw('text2f95b1c9ee2b'));
-              onDone();
-            },
-            onError: (error) => errorToast(error.message),
-          },
-        );
-      }}
-    >
-      <ModalHeader>
-        <ModalTitle>{t.raw('text2c3059c25723')}</ModalTitle>
-      </ModalHeader>
-      <ModalBody>
-        <TelegramUsersField value={users} onChange={setUsers} invalid={!ids} />
-      </ModalBody>
-      <ModalFooter>
-        <Button type="button" variant="ghost" onClick={onDone}>
-          {t.raw('text19766ed6ccb2')}
-        </Button>
-        <Button type="submit" disabled={!ids || save.isPending}>
-          {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-          {t.raw('text1509f561f241')}
         </Button>
       </ModalFooter>
     </form>

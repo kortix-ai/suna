@@ -411,7 +411,6 @@
     "./progress": "./src/primitives/progress.tsx",
     "./progress-ring": "./src/primitives/progress-ring.tsx",
     "./project-icon-picker": "./src/primitives/project-icon-picker.tsx",
-    "./providers/session-ids": "./src/providers/session-ids.tsx",
     "./providers/ui-provider": "./src/providers/ui-provider.tsx",
     "./radio-group": "./src/primitives/radio-group.tsx",
     "./resizable": "./src/primitives/resizable.tsx",
@@ -2094,10 +2093,6 @@
       "./project-icon-picker": {
         "types": "./dist/primitives/project-icon-picker.d.ts",
         "import": "./dist/primitives/project-icon-picker.js"
-      },
-      "./providers/session-ids": {
-        "types": "./dist/providers/session-ids.d.ts",
-        "import": "./dist/providers/session-ids.js"
       },
       "./providers/ui-provider": {
         "types": "./dist/providers/ui-provider.d.ts",

@@ -243,7 +243,7 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // NOTE: parseMemoryEntryOutput's Tool/Prompt/Session/Created regexes don't
 // stop at a following "Facts:" label, so whichever of those fields sits
 // directly before Facts swallows the entire Facts block into its own value
-// (pre-existing bug in lib/utils/memory-entry-output.ts — present in its own
+// (pre-existing bug in `parseMemoryEntryOutput` — present in its own
 // passing test fixture too, just not asserted against). A second, related
 // bug collapses multi-bullet Facts sections into one entry. Both are out of
 // scope for this fixtures pass (see task-10-report.md); going straight from

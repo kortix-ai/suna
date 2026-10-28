@@ -67,7 +67,7 @@ export { approvalCallerOf } from './lib/http-approval-caller';
 export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
-export { listResolvedProjectSecrets } from './secrets';
+export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from './secrets';
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
 export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
 // One-off App runs (runAfter / runAt) on the trigger engine.

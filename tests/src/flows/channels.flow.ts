@@ -1880,7 +1880,7 @@ flow(
 
 // CHN-TG1 — Telegram channel connector: every project can connect a bot (no
 // flag), a malformed token is refused before any call to Telegram, and the
-// allowed-user list needs an install.
+// allowed-user list and every per-user route need an install.
 flow(
   "CHN-TG1",
   {
@@ -1890,6 +1890,11 @@ flow(
       "POST /v1/projects/:projectId/channels/telegram/connect",
       "PUT /v1/projects/:projectId/channels/telegram/allowed-users",
       "DELETE /v1/projects/:projectId/channels/telegram",
+      "GET /v1/projects/:projectId/channels/telegram/users",
+      "GET /v1/projects/:projectId/channels/telegram/users/:user_id/photo",
+      "POST /v1/projects/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:user_id",
+      "DELETE /v1/projects/:projectId/channels/telegram/access-requests/:user_id",
     ],
   },
   async (ctx) => {
@@ -1934,6 +1939,134 @@ flow(
         .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
       r.status([403, 404]);
     });
+
+    await ctx.step("without a bot, every user route answers 404 telegram_not_connected; a malformed user id → 400", async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      const params = { projectId: on.id };
+      const userParams = { projectId: on.id, user_id: "12345" };
+      (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params })).status(404).body().has("$.code", "telegram_not_connected");
+      (await owner.get("/v1/projects/:projectId/channels/telegram/users/:user_id/photo", { params: userParams }))
+        .status(404)
+        .body()
+        .has("$.code", "telegram_not_connected");
+      (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "@someone" }, { params }))
+        .status(400)
+        .body()
+        .has("$.code", "telegram_user_ids_invalid");
+      (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "12345" }, { params }))
+        .status(404)
+        .body()
+        .has("$.code", "telegram_not_connected");
+      (await owner.del("/v1/projects/:projectId/channels/telegram/allowed-users/:user_id", { params: userParams }))
+        .status(404)
+        .body()
+        .has("$.code", "telegram_not_connected");
+      (await owner.del("/v1/projects/:projectId/channels/telegram/access-requests/:user_id", { params: userParams }))
+        .status(404)
+        .body()
+        .has("$.code", "telegram_not_connected");
+    });
+  },
+);
+
+// CHN-TG3 — Telegram access requests: the installation counts the waiting
+// requests, the user list names them, a project read never carries them, and
+// an admin allows, removes and dismisses users one at a time. The install is
+// seeded directly (connect needs Telegram's getMe) and stores no bot token, so
+// the user list makes no call to Telegram.
+flow(
+  "CHN-TG3",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/:projectId/channels/telegram/installation",
+      "GET /v1/projects/:projectId/channels/telegram/users",
+      "GET /v1/projects/:projectId/channels/telegram/users/:user_id/photo",
+      "POST /v1/projects/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:user_id",
+      "DELETE /v1/projects/:projectId/channels/telegram/access-requests/:user_id",
+      "GET /v1/projects/:projectId",
+    ],
+  },
+  async (ctx) => {
+    // A bot install with one allowed user and one access request, as the webhook stores them.
+    const botId = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
+    const seeded = await ctx.fixtures.project({
+      metadata: {
+        telegram: {
+          allowedUserIds: ["700001"],
+          accessRequests: [
+            { id: "700002", username: "ke2e_requester", first_name: "Synthetic", last_name: null, last_seen: new Date().toISOString() },
+          ],
+        },
+      },
+    });
+    const params = { projectId: seeded.id };
+    try {
+      await withDb(ctx, (db) =>
+        db.query("INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('telegram', $1, $2)", [botId, seeded.id]),
+      );
+
+      await ctx.step("the installation counts the waiting request; the user list names it from the stored request", async () => {
+        const owner = ctx.client.as(ctx.P.OWNER);
+        (await owner.get("/v1/projects/:projectId/channels/telegram/installation", { params }))
+          .status(200)
+          .body()
+          .has("$.bot_id", botId)
+          .has("$.allowed_user_ids", ["700001"])
+          .has("$.access_request_count", 1);
+        (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params }))
+          .status(200)
+          .body()
+          .has("$.allowed", [
+            { user_id: "700001", username: null, first_name: null, last_name: null, photo_version: null, known: false },
+          ])
+          .has("$.requests[0].user_id", "700002")
+          .has("$.requests[0].username", "ke2e_requester")
+          .has("$.requests[0].first_name", "Synthetic")
+          .has("$.requests[0].known", true)
+          .exists("$.requests[0].last_seen");
+      });
+
+      await ctx.step("a project read never carries the Telegram lists in its metadata", async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+        r.status(200);
+        const metadata = r.json<{ metadata?: Record<string, unknown> }>().metadata ?? {};
+        if ("telegram" in metadata) throw new Error(`project metadata exposes telegram: ${JSON.stringify(metadata.telegram)}`);
+      });
+
+      await ctx.step("allow moves the request to the allowed list; remove and dismiss are idempotent", async () => {
+        const owner = ctx.client.as(ctx.P.OWNER);
+        (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "700002" }, { params }))
+          .status(200)
+          .body()
+          .has("$.allowed_user_ids", ["700001", "700002"])
+          .has("$.access_request_count", 0);
+        (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params })).status(200).body().has("$.requests", []);
+        for (let i = 0; i < 2; i++) {
+          (await owner.del("/v1/projects/:projectId/channels/telegram/allowed-users/:user_id", { params: { ...params, user_id: "700002" } }))
+            .status(200)
+            .body()
+            .has("$.allowed_user_ids", ["700001"]);
+          (await owner.del("/v1/projects/:projectId/channels/telegram/access-requests/:user_id", { params: { ...params, user_id: "700002" } }))
+            .status(200)
+            .body()
+            .has("$.access_request_count", 0);
+        }
+      });
+
+      await ctx.step("a non-member reads no Telegram identities and allows no one → 403/404", async () => {
+        const stranger = ctx.client.as(ctx.P.NONMEMBER);
+        (await stranger.get("/v1/projects/:projectId/channels/telegram/users", { params })).status([403, 404]);
+        (await stranger.get("/v1/projects/:projectId/channels/telegram/users/:user_id/photo", { params: { ...params, user_id: "700001" } })).status([403, 404]);
+        (await stranger.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "700003" }, { params })).status([403, 404]);
+      });
+    } finally {
+      await withDb(ctx, (db) =>
+        db.query("DELETE FROM kortix.chat_installs WHERE platform = 'telegram' AND workspace_id = $1", [botId]),
+      ).catch(() => {});
+    }
   },
 );
 

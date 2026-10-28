@@ -38,7 +38,7 @@ beforeAll(async () => {
     executablePath: Bun.which('chromium') ?? undefined,
     args: ['--no-sandbox'],
   });
-});
+}, 30_000);
 
 afterAll(async () => {
   await browser?.close();

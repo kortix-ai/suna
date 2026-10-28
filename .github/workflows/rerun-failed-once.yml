@@ -9,7 +9,7 @@ name: Rerun failed jobs once
 #
 # This is not a retry around an assertion. A job that fails twice stays red.
 # A job that fails once and then passes is a flake, so the comment names it:
-# fix it at the root or quarantine it (the **testing** skill, "Quarantine").
+# fix it at the root or delete it the same day (the **testing** skill, "No quarantine").
 #
 # Scope:
 # - `Tests - release` on a release pull request or a dispatched rehearsal.
@@ -90,7 +90,7 @@ jobs:
           {
             echo "$WORKFLOW attempt $attempt failed: \`${failed:-unknown}\`. Rerunning the failed jobs once: $RUN_URL"
             echo
-            echo "A job that passes on the rerun is a flake. Fix it at the root or quarantine it (the **testing** skill). A job that fails twice is real."
+            echo "A job that passes on the rerun is a flake. Fix it at the root or delete it the same day (the **testing** skill, No quarantine). A job that fails twice is real."
           } > /tmp/rerun.md
           cat /tmp/rerun.md >> "$GITHUB_STEP_SUMMARY"
           # promote.yml dispatches the gate on `release/*`, and a dispatched
