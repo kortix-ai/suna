@@ -518,6 +518,13 @@ describe('handleImageRequest', () => {
     expect(byok.usage[0].upstreamCost).toBeCloseTo((20 * 2 + 272 * 8) / 1_000_000, 10);
   });
 
+  test('the usage event names the image operation, so the host labels its usage row and debit', async () => {
+    const { usage, run } = setup();
+    await run({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+    await run({ model: 'codex/gpt-image-2', prompt: 'make it blue', images: [{ image_url: PNG_DATA_URL }] }, { operation: 'edits' });
+    expect(usage.map((event) => event.operation)).toEqual(['images.generations', 'images.edits']);
+  });
+
   test('a managed model takes the wallet admission once, and its hold settles with the usage', async () => {
     let billed = 0;
     const { usage, run } = setup(

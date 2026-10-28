@@ -30,7 +30,7 @@ Object.assign(process.env, {
 const { db } = await import('../shared/db');
 const { seedAccount } = await import('../__tests__/helpers/integration-fixtures');
 const { recordUsageEvent } = await import('../shared/usage-events');
-const { persistGatewayTrace, recordGatewayUsage } = await import('./hooks');
+const { recordGatewayUsage } = await import('./hooks');
 
 const ACTOR = '00000000-0000-4000-a000-000000009b02';
 let accountId: string;
@@ -312,26 +312,23 @@ withDb('gateway usage settlement is idempotent per request', () => {
     expect(await ledger()).toHaveLength(2);
   });
 
-  // The gateway posts an image request's usage, then its trace; only the trace
-  // names the operation.
-  test('an image usage event is recorded with the images route; a chat event keeps the chat route', async () => {
+  // The usage event names the image operation: the usage row and the debit's
+  // audit record carry the images route from the first write.
+  test('an image settlement names the images route on its usage row and its debit; chat keeps the chat route', async () => {
     const image = requestId('image');
     const chat = requestId('chat');
-    await recordGatewayUsage(event(image, { streaming: false }));
+    await recordGatewayUsage(event(image, { streaming: false, operation: 'images.edits' }));
     await recordGatewayUsage(event(chat));
-    const trace = (id: string, metadata: Record<string, unknown>) => ({
-      requestId: id, startedAt: new Date().toISOString(), accountId, actorUserId: ACTOR,
-      requestedModel: 'auto', resolvedModel: 'kortix/test', provider: 'kortix', billingMode: 'credits' as const,
-      streaming: false, status: 200, ok: true, latencyMs: 1, attempts: 1, candidatesTried: ['kortix/test'],
-      usage: { promptTokens: 1_000, completionTokens: 200, cachedTokens: 0, cacheWriteTokens: 0 },
-      upstreamCost: 0.05, finalCost: 0.05, request: null, response: null, metadata,
-    });
-    await persistGatewayTrace(trace(image, { operation: 'images.edits' }));
-    await persistGatewayTrace(trace(chat, {}));
-    const routeOf = async (id: string) =>
-      (await db.select({ route: usageEvents.route }).from(usageEvents).where(eq(usageEvents.requestId, id)))[0]?.route;
-    expect(await routeOf(image)).toBe('/v1/llm/images/edits');
-    expect(await routeOf(chat)).toBe('/v1/llm/chat/completions');
+    const routes = async (id: string) => {
+      const [row] = await db
+        .select({ eventId: usageEvents.eventId, route: usageEvents.route })
+        .from(usageEvents)
+        .where(eq(usageEvents.requestId, id));
+      const debit = (await ledger()).find((entry) => entry.idempotencyKey === `llm:${row!.eventId}`);
+      return { usage: row!.route, debit: (debit?.metadata as { route?: string } | null)?.route };
+    };
+    expect(await routes(image)).toEqual({ usage: '/v1/llm/images/edits', debit: '/v1/llm/images/edits' });
+    expect(await routes(chat)).toEqual({ usage: '/v1/llm/chat/completions', debit: '/v1/llm/chat/completions' });
   });
 
   test('an estimated settlement is marked on its row', async () => {

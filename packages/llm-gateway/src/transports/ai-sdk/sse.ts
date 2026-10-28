@@ -102,7 +102,7 @@ export function openAiSseFromFullStream(
   const base = { id, object: 'chat.completion.chunk', created, model: ctx.model };
 
   // Map AI SDK tool-call ids → dense OpenAI tool_call indices, and remember which
-  // ids already streamed their arguments so a terminal `tool-call` part for the
+  // ids already sent their arguments so a terminal `tool-call` part for the
   // same id doesn't re-emit them.
   const toolIndex = new Map<string, number>();
   let nextToolIndex = 0;
@@ -232,7 +232,8 @@ export function openAiSseFromFullStream(
           }
           case 'tool-call': {
             const tid = part.toolCallId as string;
-            if (streamedArgs.has(tid)) break; // already streamed via input-delta
+            if (streamedArgs.has(tid)) break; // already streamed via input-delta or an earlier tool-call
+            streamedArgs.add(tid);
             const opened = toolIndex.get(tid);
             if (opened !== undefined) {
               // Opened by input-start, but no argument delta came: the ChatGPT Codex

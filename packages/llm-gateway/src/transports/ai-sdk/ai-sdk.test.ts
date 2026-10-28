@@ -150,6 +150,62 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     expect((finishChunk as any).choices[0].finish_reason).toBe('tool_calls');
   });
 
+  // Each call's arguments arrive once: as deltas, or in its final `tool-call`
+  // part when no non-empty delta came. Assembled by `index`, as a chat client does.
+  describe('tool-call arguments reach the client exactly once', () => {
+    const assemble = async (...streamParts: Array<{ type: string; [k: string]: unknown }>) => {
+      const sse = await readAll(
+        openAiSseFromFullStream(
+          parts(...streamParts, { type: 'finish', finishReason: 'tool-calls', totalUsage: usage() }),
+          CTX,
+        ),
+      );
+      const calls = new Map<number, { id?: string; arguments: string }>();
+      for (const tc of frames(sse).flatMap((c: any) => c.choices?.[0]?.delta?.tool_calls ?? [])) {
+        const call = calls.get(tc.index) ?? { arguments: '' };
+        call.id ??= tc.id;
+        call.arguments += tc.function?.arguments ?? '';
+        calls.set(tc.index, call);
+      }
+      return [...calls.values()];
+    };
+
+    it('a step with one streamed call and one unstreamed call', async () => {
+      expect(
+        await assemble(
+          { type: 'tool-input-start', id: 'a', toolName: 'get_weather' },
+          { type: 'tool-input-start', id: 'b', toolName: 'get_weather' },
+          { type: 'tool-input-delta', id: 'a', delta: '{"city":"Paris"}' },
+          { type: 'tool-call', toolCallId: 'a', toolName: 'get_weather', input: { city: 'Paris' } },
+          { type: 'tool-call', toolCallId: 'b', toolName: 'get_weather', input: { city: 'Lima' } },
+        ),
+      ).toEqual([
+        { id: 'a', arguments: '{"city":"Paris"}' },
+        { id: 'b', arguments: '{"city":"Lima"}' },
+      ]);
+    });
+
+    it('an empty delta, then the final call', async () => {
+      expect(
+        await assemble(
+          { type: 'tool-input-start', id: 'a', toolName: 'get_weather' },
+          { type: 'tool-input-delta', id: 'a', delta: '' },
+          { type: 'tool-call', toolCallId: 'a', toolName: 'get_weather', input: { city: 'Paris' } },
+        ),
+      ).toEqual([{ id: 'a', arguments: '{"city":"Paris"}' }]);
+    });
+
+    it('a second tool-call part for the same id adds nothing', async () => {
+      const final = (id: string) => ({ type: 'tool-call', toolCallId: id, toolName: 'get_weather', input: { city: 'Paris' } });
+      expect(
+        await assemble({ type: 'tool-input-start', id: 'a', toolName: 'get_weather' }, final('a'), final('a'), final('b'), final('b')),
+      ).toEqual([
+        { id: 'a', arguments: '{"city":"Paris"}' },
+        { id: 'b', arguments: '{"city":"Paris"}' },
+      ]);
+    });
+  });
+
   it('emits a full tool_call when the provider gives no input-start/delta', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(

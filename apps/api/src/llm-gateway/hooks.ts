@@ -24,7 +24,7 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { tokenRefusalReason } from '../shared/session-lease-refusal';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
-import { recordUsageEvent, setUsageEventRoute } from '../shared/usage-events';
+import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { type BudgetCrossing, checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
@@ -448,6 +448,14 @@ async function byokFeeFor(event: UsageEvent): Promise<number> {
   }
 }
 
+/** The public route of each image operation; any other event is a chat completion. */
+const IMAGE_ROUTES = new Map<unknown, string>([
+  ['images.generations', '/v1/llm/images/generations'],
+  ['images.edits', '/v1/llm/images/edits'],
+]);
+
+const routeOf = (event: UsageEvent) => IMAGE_ROUTES.get(event.operation) ?? '/v1/llm/chat/completions';
+
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   // The request is over: its cost is in the logged spend (or it cost nothing),
   // so its in-flight budget reservation must stop counting.
@@ -467,7 +475,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
         sessionId: event.sessionId ?? null,
         provider: event.provider,
         model: event.model,
-        route: '/v1/llm/chat/completions',
+        route: routeOf(event),
         inputTokens: event.promptTokens,
         outputTokens: event.completionTokens,
         cachedTokens: event.cachedTokens,
@@ -554,7 +562,7 @@ async function settleLlmUsage(
           ...(event.upstreamCost != null ? { upstreamCostUsd: event.upstreamCost } : {}),
           ...(markup != null ? { markup } : {}),
           ...(event.actorUserId ? { actorUserId: event.actorUserId } : {}),
-          route: '/v1/llm/chat/completions',
+          route: routeOf(event),
         }
       : undefined,
   });
@@ -635,12 +643,6 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
   }
 }
 
-/** The public route of each image operation (`metadata.operation` on a gateway trace). */
-const IMAGE_ROUTES = new Map<unknown, string>([
-  ['images.generations', '/v1/llm/images/generations'],
-  ['images.edits', '/v1/llm/images/edits'],
-]);
-
 /** Persist a request trace to gateway_request_logs (skips unauthenticated traces), then evaluate warn budgets. */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   // Unknown credentials carry no accountId — nothing useful to attribute.
@@ -685,11 +687,6 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
       ...(trace.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
     },
   });
-  // A UsageEvent names no operation, so `recordGatewayUsage` writes the chat
-  // route. The gateway posts an image request's usage before its trace: the
-  // trace's operation sets the row's route. Only an answered request has a row.
-  const imageRoute = trace.ok ? IMAGE_ROUTES.get(trace.metadata?.operation) : undefined;
-  if (imageRoute) await setUsageEventRoute(trace.requestId, imageRoute);
   // Off the latency path: a session whose model could not serve moves to the
   // fallback that answered, so its next prompt names the working model.
   const fallback = fallbackSwitchOf(trace);

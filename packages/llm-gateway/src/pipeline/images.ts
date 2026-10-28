@@ -567,6 +567,7 @@ async function settle(run: Run, descriptor: UpstreamDescriptor, model: string, r
       billingMode: descriptor.billingMode,
       streaming: false,
       requestId: run.id,
+      operation: `images.${run.req.operation}` as const,
       ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
     });
   } catch (error) {
