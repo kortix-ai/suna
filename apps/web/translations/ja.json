@@ -22632,6 +22632,7 @@
       "waiting_external": "待機中",
       "verifying": "検証中",
       "done": "完了",
+      "stopped": "停止",
       "abandoned": "中止"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "前回の起動が遅れています。",
       "ask_overdue": "依頼の期限が過ぎています。",
       "verification_stalled": "検証開始から24時間以上経過しています。",
-      "unreadable": "goal.json がないか、有効な JSON ではありません。"
+      "unreadable": "GOAL.md がないか、ゴールのフロントマターがありません。"
     },
     "sessionChip": "ゴール",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "期限 {time}",
     "sessions": "セッション",
     "role": {
+      "owner": "担当",
       "coordinator": "メインセッション",
       "worker": "作業者",
       "verifier": "検証者"
@@ -22687,7 +22689,35 @@
     "verification": "検証",
     "notes": "メモ",
     "log": "ログ",
-    "notFound": "このゴールはもう存在しません。"
+    "notFound": "このゴールはもう存在しません。",
+    "allGoals": "すべて",
+    "assignedToMe": "自分の担当",
+    "noneAssigned": "担当のゴールはありません",
+    "forYou": "あなた向け",
+    "forMember": "チームメンバー向け",
+    "lastWake": "最終起動 {time}",
+    "assignedUser": "対象",
+    "assignedAgent": "エージェント",
+    "you": "あなた",
+    "anotherMember": "チームメンバー",
+    "wakesToday": "今日の起動回数",
+    "ofMax": "{count} / {max}",
+    "links": "リンク",
+    "context": "コンテキスト",
+    "share": "共有",
+    "stop": "ゴールを停止",
+    "stopTitle": "このゴールを停止しますか？",
+    "stopDescription": "今後は起動しません。フォルダはファイルに残ります。",
+    "stopReason": "ゴールページから停止",
+    "stoppedToast": "ゴールを停止しました",
+    "stopError": "ゴールを停止できませんでした。もう一度お試しください。",
+    "reply": "回答を送信",
+    "replyPlaceholder": "あなたの回答。ゴールを起動します。",
+    "replySent": "回答を送信しました。ゴールが起動します。",
+    "replyError": "回答を送信できませんでした。もう一度お試しください。",
+    "makeGoal": "これをゴールにする",
+    "makeGoalSent": "このチャットにゴール化を依頼しました",
+    "makeGoalError": "依頼できませんでした。もう一度お試しください。"
   },
   "agentEditor": {
     "manage": "管理",

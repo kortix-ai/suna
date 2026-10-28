@@ -4,8 +4,11 @@ import { Button } from '@kortix/ui/button';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { Skeleton } from '@kortix/ui/skeleton';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { useUiViewerId } from '@kortix/ui';
 import {
   formatGoalTime,
+  goalAssignedTo,
   GoalHealthDot,
   goalHref,
   goalNeedsYou,
@@ -26,13 +29,16 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { ProjectGoal } from '@kortix/sdk';
 import { useProjectConfig, useProjectGoals } from '@kortix/sdk/react';
 import Link from 'next/link';
+import { useState } from 'react';
 
 /**
  * /projects/[id]/goals — every goal the viewer can see, in three groups: the
  * ones that wait on a person or need attention, the other open ones, and the
- * closed ones. Each row shows status, health, progress and the next wake, and
- * re-reads every 60 seconds (`useProjectGoals`), so an overdue wake or a
- * paused heartbeat shows up without a reload.
+ * closed ones. Each row shows state, health, the assigned agent and user,
+ * progress and the last and next wake, and re-reads every 60 seconds
+ * (`useProjectGoals`), so an overdue wake or a paused heartbeat shows up
+ * without a reload. "Assigned to me" keeps the goals whose GOAL.md names the
+ * viewer as `assigned_user`.
  */
 export function GoalsPage({ projectId }: { projectId: string }) {
   const t = useTranslations('goals');
@@ -45,7 +51,11 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const { spaces, groups, spaceOf } = spaceScope(goals.data ?? [], config, spacesOn, (goal: ProjectGoal) => goal.goal);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
   const [space, setSpace] = useSpaceFilter(projectId);
-  const all = (goals.data ?? []).filter((goal) => space === ALL_SPACES || spaceOf(goal) === space);
+  const viewerId = useUiViewerId();
+  const [mine, setMine] = useState(false);
+  const all = (goals.data ?? []).filter(
+    (goal) => (space === ALL_SPACES || spaceOf(goal) === space) && (!mine || goalAssignedTo(goal, viewerId)),
+  );
   const spaceLabel = (goal: ProjectGoal) => (spacesOn && space === ALL_SPACES ? labels.get(spaceOf(goal)) : undefined);
   const needsYou = all.filter(goalNeedsYou);
   const open = all.filter((g) => g.health.state !== 'closed' && !goalNeedsYou(g));
@@ -75,8 +85,26 @@ export function GoalsPage({ projectId }: { projectId: string }) {
             <EmptyState title={t('empty')} description={t('emptyHint')} />
           ) : (
             <>
-              <SpaceFilterTabs spaces={spaces} groups={groups} value={space} onValueChange={setSpace} />
-              {all.length === 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Tabs value={mine ? 'mine' : 'all'} onValueChange={(value) => setMine(value === 'mine')}>
+                  <TabsListCompact aria-label={t('assignedToMe')}>
+                    <TabsTriggerCompact value="all">{t('allGoals')}</TabsTriggerCompact>
+                    <TabsTriggerCompact value="mine">{t('assignedToMe')}</TabsTriggerCompact>
+                  </TabsListCompact>
+                </Tabs>
+                <SpaceFilterTabs spaces={spaces} groups={groups} value={space} onValueChange={setSpace} />
+              </div>
+              {all.length === 0 && mine ? (
+                <EmptyState
+                  size="sm"
+                  title={t('noneAssigned')}
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setMine(false)}>
+                      {t('showAll')}
+                    </Button>
+                  }
+                />
+              ) : all.length === 0 ? (
                 <EmptyState
                   size="sm"
                   title={t('spaceEmpty', { space: spaceFilterLabel(space, spaces, tSpaces('projectWide')) })}
@@ -130,14 +158,22 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
   const locale = useLocale();
   const now = useGoalClock();
   const issueText = useGoalIssueText();
+  const viewerId = useUiViewerId();
   const href = goalHref(projectId, goal);
   const doc = goal.goal;
+  const who = [
+    doc?.agent,
+    doc?.assigned_user ? (goalAssignedTo(goal, viewerId) ? t('forYou') : t('forMember')) : null,
+    goal.heartbeat?.last_fired_at ? t('lastWake', { time: formatGoalTime(goal.heartbeat.last_fired_at, locale, now) }) : null,
+  ].filter(Boolean);
   const progress = goalProgress(doc);
   const asks = goalOpenAsks(doc);
   const detail = goal.health.issues[0]
     ? issueText(goal.health.issues[0], goal)
-    : asks[0]
-      ? t('waitingFor', { title: asks[0].title })
+    : doc?.status === 'waiting_on_user' && doc.waiting_on
+      ? t('waitingFor', { title: doc.waiting_on })
+      : asks[0]
+        ? t('waitingFor', { title: asks[0].title })
       : goal.health.state === 'closed'
         ? doc?.summary || t(`status.${doc?.status ?? 'done'}`)
         : goal.heartbeat?.next_fire_at
@@ -156,7 +192,9 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-foreground truncate text-sm">{doc?.objective ?? goal.slug}</span>
-          <span className="text-muted-foreground truncate text-xs">{detail}</span>
+          <span className="text-muted-foreground truncate text-xs">
+            {[detail, ...who].join(' · ')}
+          </span>
         </span>
         <span className="flex shrink-0 items-center gap-3">
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">

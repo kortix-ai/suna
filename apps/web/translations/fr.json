@@ -22632,6 +22632,7 @@
       "waiting_external": "En attente",
       "verifying": "Vérification",
       "done": "Terminé",
+      "stopped": "Arrêté",
       "abandoned": "Abandonné"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "Le dernier réveil est en retard.",
       "ask_overdue": "Une demande a dépassé son échéance.",
       "verification_stalled": "La vérification a commencé il y a plus de 24 heures.",
-      "unreadable": "goal.json est absent ou n'est pas un JSON valide."
+      "unreadable": "GOAL.md est absent ou n’a pas d’en-tête d’objectif."
     },
     "sessionChip": "Objectif",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Échéance {time}",
     "sessions": "Sessions",
     "role": {
+      "owner": "Responsable",
       "coordinator": "Session principale",
       "worker": "Exécutant",
       "verifier": "Vérificateur"
@@ -22687,7 +22689,35 @@
     "verification": "Vérification",
     "notes": "Notes",
     "log": "Journal",
-    "notFound": "Cet objectif n'existe plus."
+    "notFound": "Cet objectif n'existe plus.",
+    "allGoals": "Tous",
+    "assignedToMe": "Qui me sont assignés",
+    "noneAssigned": "Aucun objectif ne vous est assigné",
+    "forYou": "pour vous",
+    "forMember": "pour un collègue",
+    "lastWake": "Dernier réveil {time}",
+    "assignedUser": "Pour",
+    "assignedAgent": "Agent",
+    "you": "Vous",
+    "anotherMember": "Un collègue",
+    "wakesToday": "Réveils aujourd’hui",
+    "ofMax": "{count} sur {max}",
+    "links": "Liens",
+    "context": "Contexte",
+    "share": "Partager",
+    "stop": "Arrêter l’objectif",
+    "stopTitle": "Arrêter cet objectif ?",
+    "stopDescription": "Plus rien ne le réveille. Son dossier reste dans Fichiers.",
+    "stopReason": "Arrêté depuis la page de l’objectif",
+    "stoppedToast": "Objectif arrêté",
+    "stopError": "Impossible d’arrêter l’objectif. Réessayez.",
+    "reply": "Envoyer la réponse",
+    "replyPlaceholder": "Votre réponse. Elle réveille l’objectif.",
+    "replySent": "Réponse envoyée. L’objectif se réveille avec elle.",
+    "replyError": "Impossible d’envoyer la réponse. Réessayez.",
+    "makeGoal": "En faire un objectif",
+    "makeGoalSent": "Demande envoyée à ce chat pour en faire un objectif",
+    "makeGoalError": "Demande impossible. Réessayez."
   },
   "agentEditor": {
     "manage": "Gérer",

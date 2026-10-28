@@ -59,6 +59,7 @@ export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
 export * from './goals';
+export * from './goal-file';
 export * from './notifications';
 
 // Cross-cutting types that originally lived in this module. Re-exported

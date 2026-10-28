@@ -22632,6 +22632,7 @@
       "waiting_external": "En espera",
       "verifying": "Verificando",
       "done": "Hecho",
+      "stopped": "Detenido",
       "abandoned": "Abandonado"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "El último despertar está atrasado.",
       "ask_overdue": "Una solicitud ha vencido.",
       "verification_stalled": "La verificación empezó hace más de 24 horas.",
-      "unreadable": "goal.json falta o no es JSON válido."
+      "unreadable": "GOAL.md falta o no tiene el encabezado del objetivo."
     },
     "sessionChip": "Objetivo",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Vence {time}",
     "sessions": "Sesiones",
     "role": {
+      "owner": "Responsable",
       "coordinator": "Sesión principal",
       "worker": "Trabajador",
       "verifier": "Verificador"
@@ -22687,7 +22689,35 @@
     "verification": "Verificación",
     "notes": "Notas",
     "log": "Registro",
-    "notFound": "Este objetivo ya no existe."
+    "notFound": "Este objetivo ya no existe.",
+    "allGoals": "Todos",
+    "assignedToMe": "Asignados a mí",
+    "noneAssigned": "No tienes objetivos asignados",
+    "forYou": "para ti",
+    "forMember": "para un compañero",
+    "lastWake": "Último despertar {time}",
+    "assignedUser": "Para",
+    "assignedAgent": "Agente",
+    "you": "Tú",
+    "anotherMember": "Un compañero",
+    "wakesToday": "Despertares hoy",
+    "ofMax": "{count} de {max}",
+    "links": "Enlaces",
+    "context": "Contexto",
+    "share": "Compartir",
+    "stop": "Detener objetivo",
+    "stopTitle": "¿Detener este objetivo?",
+    "stopDescription": "Nada lo vuelve a despertar. Su carpeta sigue en Archivos.",
+    "stopReason": "Detenido desde la página del objetivo",
+    "stoppedToast": "Objetivo detenido",
+    "stopError": "No se pudo detener el objetivo. Inténtalo de nuevo.",
+    "reply": "Enviar respuesta",
+    "replyPlaceholder": "Tu respuesta. Despierta el objetivo.",
+    "replySent": "Respuesta enviada. El objetivo se despierta con ella.",
+    "replyError": "No se pudo enviar la respuesta. Inténtalo de nuevo.",
+    "makeGoal": "Convertir en objetivo",
+    "makeGoalSent": "Se pidió a este chat que lo convierta en objetivo",
+    "makeGoalError": "No se pudo pedir. Inténtalo de nuevo."
   },
   "agentEditor": {
     "manage": "Gestionar",

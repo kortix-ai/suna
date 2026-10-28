@@ -267,7 +267,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'goals',
             args: '<subcommand>',
-            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+            blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',
             featureFlag: 'goals',
           },
           {

@@ -22632,6 +22632,7 @@
       "waiting_external": "In attesa",
       "verifying": "In verifica",
       "done": "Completato",
+      "stopped": "Fermato",
       "abandoned": "Abbandonato"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "L'ultimo risveglio è in ritardo.",
       "ask_overdue": "Una richiesta è scaduta.",
       "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
-      "unreadable": "goal.json manca o non è un JSON valido."
+      "unreadable": "GOAL.md manca o non ha l’intestazione dell’obiettivo."
     },
     "sessionChip": "Obiettivo",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Scadenza {time}",
     "sessions": "Sessioni",
     "role": {
+      "owner": "Responsabile",
       "coordinator": "Sessione principale",
       "worker": "Esecutore",
       "verifier": "Verificatore"
@@ -22687,7 +22689,35 @@
     "verification": "Verifica",
     "notes": "Note",
     "log": "Registro",
-    "notFound": "Questo obiettivo non esiste più."
+    "notFound": "Questo obiettivo non esiste più.",
+    "allGoals": "Tutti",
+    "assignedToMe": "Assegnati a me",
+    "noneAssigned": "Nessun obiettivo ti è assegnato",
+    "forYou": "per te",
+    "forMember": "per un collega",
+    "lastWake": "Ultimo risveglio {time}",
+    "assignedUser": "Per",
+    "assignedAgent": "Agente",
+    "you": "Tu",
+    "anotherMember": "Un collega",
+    "wakesToday": "Risvegli oggi",
+    "ofMax": "{count} di {max}",
+    "links": "Link",
+    "context": "Contesto",
+    "share": "Condividi",
+    "stop": "Ferma obiettivo",
+    "stopTitle": "Fermare questo obiettivo?",
+    "stopDescription": "Niente lo risveglia più. La sua cartella resta in File.",
+    "stopReason": "Fermato dalla pagina dell’obiettivo",
+    "stoppedToast": "Obiettivo fermato",
+    "stopError": "Impossibile fermare l’obiettivo. Riprova.",
+    "reply": "Invia risposta",
+    "replyPlaceholder": "La tua risposta. Risveglia l’obiettivo.",
+    "replySent": "Risposta inviata. L’obiettivo si risveglia con essa.",
+    "replyError": "Impossibile inviare la risposta. Riprova.",
+    "makeGoal": "Rendilo un obiettivo",
+    "makeGoalSent": "Chiesto a questa chat di renderlo un obiettivo",
+    "makeGoalError": "Impossibile chiedere. Riprova."
   },
   "agentEditor": {
     "manage": "Gestisci",

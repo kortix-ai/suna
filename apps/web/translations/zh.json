@@ -22632,6 +22632,7 @@
       "waiting_external": "等待中",
       "verifying": "验证中",
       "done": "已完成",
+      "stopped": "已停止",
       "abandoned": "已放弃"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "上次唤醒已逾期。",
       "ask_overdue": "有一项请求已过期。",
       "verification_stalled": "验证已开始超过 24 小时。",
-      "unreadable": "goal.json 缺失或不是有效的 JSON。"
+      "unreadable": "GOAL.md 不存在或缺少目标的 front matter。"
     },
     "sessionChip": "目标",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "截止 {time}",
     "sessions": "会话",
     "role": {
+      "owner": "负责会话",
       "coordinator": "主会话",
       "worker": "执行者",
       "verifier": "验证者"
@@ -22687,7 +22689,35 @@
     "verification": "验证",
     "notes": "笔记",
     "log": "日志",
-    "notFound": "此目标已不存在。"
+    "notFound": "此目标已不存在。",
+    "allGoals": "全部",
+    "assignedToMe": "分配给我",
+    "noneAssigned": "没有分配给你的目标",
+    "forYou": "给你",
+    "forMember": "给团队成员",
+    "lastWake": "上次唤醒 {time}",
+    "assignedUser": "负责人",
+    "assignedAgent": "智能体",
+    "you": "你",
+    "anotherMember": "团队成员",
+    "wakesToday": "今日唤醒",
+    "ofMax": "{count} / {max}",
+    "links": "链接",
+    "context": "背景",
+    "share": "共享",
+    "stop": "停止目标",
+    "stopTitle": "停止此目标？",
+    "stopDescription": "不会再唤醒它。它的文件夹仍保留在文件中。",
+    "stopReason": "从目标页面停止",
+    "stoppedToast": "目标已停止",
+    "stopError": "无法停止目标。请重试。",
+    "reply": "发送回答",
+    "replyPlaceholder": "你的回答会唤醒目标。",
+    "replySent": "回答已发送。目标会随之唤醒。",
+    "replyError": "无法发送回答。请重试。",
+    "makeGoal": "将此设为目标",
+    "makeGoalSent": "已请此对话将其设为目标",
+    "makeGoalError": "无法发送请求。请重试。"
   },
   "agentEditor": {
     "manage": "管理",

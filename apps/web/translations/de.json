@@ -22632,6 +22632,7 @@
       "waiting_external": "Wartet",
       "verifying": "Wird geprüft",
       "done": "Erledigt",
+      "stopped": "Gestoppt",
       "abandoned": "Aufgegeben"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "Der letzte Weckruf ist überfällig.",
       "ask_overdue": "Eine Anfrage ist überfällig.",
       "verification_stalled": "Die Prüfung läuft seit mehr als 24 Stunden.",
-      "unreadable": "goal.json fehlt oder ist kein gültiges JSON."
+      "unreadable": "GOAL.md fehlt oder hat keinen Front-Matter-Block mit dem Ziel."
     },
     "sessionChip": "Ziel",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Fällig {time}",
     "sessions": "Sitzungen",
     "role": {
+      "owner": "Verantwortlich",
       "coordinator": "Hauptsitzung",
       "worker": "Mitarbeiter",
       "verifier": "Prüfer"
@@ -22687,7 +22689,35 @@
     "verification": "Prüfung",
     "notes": "Notizen",
     "log": "Protokoll",
-    "notFound": "Dieses Ziel existiert nicht mehr."
+    "notFound": "Dieses Ziel existiert nicht mehr.",
+    "allGoals": "Alle",
+    "assignedToMe": "Mir zugewiesen",
+    "noneAssigned": "Dir sind keine Ziele zugewiesen",
+    "forYou": "für dich",
+    "forMember": "für ein Teammitglied",
+    "lastWake": "Zuletzt geweckt {time}",
+    "assignedUser": "Für",
+    "assignedAgent": "Agent",
+    "you": "Du",
+    "anotherMember": "Ein Teammitglied",
+    "wakesToday": "Weckrufe heute",
+    "ofMax": "{count} von {max}",
+    "links": "Links",
+    "context": "Kontext",
+    "share": "Teilen",
+    "stop": "Ziel stoppen",
+    "stopTitle": "Dieses Ziel stoppen?",
+    "stopDescription": "Nichts weckt es mehr. Sein Ordner bleibt in Dateien.",
+    "stopReason": "Auf der Zielseite gestoppt",
+    "stoppedToast": "Ziel gestoppt",
+    "stopError": "Das Ziel konnte nicht gestoppt werden. Versuche es erneut.",
+    "reply": "Antwort senden",
+    "replyPlaceholder": "Deine Antwort. Sie weckt das Ziel.",
+    "replySent": "Antwort gesendet. Das Ziel wird damit geweckt.",
+    "replyError": "Die Antwort konnte nicht gesendet werden. Versuche es erneut.",
+    "makeGoal": "Daraus ein Ziel machen",
+    "makeGoalSent": "Dieser Chat macht daraus ein Ziel",
+    "makeGoalError": "Anfrage fehlgeschlagen. Versuche es erneut."
   },
   "agentEditor": {
     "manage": "Verwalten",

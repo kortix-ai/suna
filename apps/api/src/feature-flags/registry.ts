@@ -401,7 +401,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
       'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
       'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
-      'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
+      'flag through the API outside a box (apps/cli/src/commands/goals.ts). SERVER: off, a merged change request ' +
+      'wakes no goal (projects/lib/goal-wake.ts wakeGoal). The other server parts goals use ' +
       '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
   {
