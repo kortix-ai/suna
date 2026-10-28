@@ -92,6 +92,8 @@ kortix providers login opencode-go   # OpenCode Go
 
 In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCode Zen login runs only from the CLI. Zen and Go each need their own login. An OpenCode login lasts 30 days, and Kortix renews it one day before it expires. When a renewal is refused, requests return `provider_reauth_required`: sign in again.
 
+**A ChatGPT plan also generates images.** With a connected ChatGPT account, the agent can generate and edit images in a session with the `image_gen` tool. It uses `gpt-image-2` on your plan, and Kortix charges no credits for it. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. See [Generate images](/docs/project/tools#generate-images).
+
 **A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL and one or more models (an id and a name each). Kortix stores the endpoint in the project. The gateway calls `<base_url>/chat/completions` with the OpenAI chat-completions format. The key is optional: Kortix saves it as the project secret `CUSTOM_<ID>_API_KEY` and sends it as a Bearer token. Budgets, logs, access rules and routing apply as for any other model. Kortix charges no credits for a custom endpoint. Both harnesses, OpenCode and pi, can use its models. A model id is `<id>/<model>`, for example `my-vllm/qwen-3`.
 
 From the CLI:
