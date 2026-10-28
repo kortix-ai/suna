@@ -20,6 +20,7 @@ import { type IntegrationEvent, registerEventConsumer } from '../../integrations
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { isUuid } from '../../shared/validate';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import {
@@ -135,7 +136,8 @@ const QUESTION_BODY_MAX = 3900;
  */
 /** A tap on a question nothing can answer any more: its session is gone, or the chat moved on. */
 const EARLIER_QUESTION = 'This question is from an earlier conversation. Send your answer as a message.';
-const QUESTION_BUTTON = /^kq:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d)$/;
+// `kq:<question id>:<option index>`; the id is checked with isUuid.
+const QUESTION_BUTTON = /^kq:([^:]+):(\d)$/;
 
 /** At most `max` UTF-16 units, never half an emoji: Telegram refuses a lone surrogate. */
 function clip(text: string, max: number): string {
@@ -404,7 +406,7 @@ export async function handleTelegramPress(
   const button = QUESTION_BUTTON.exec(press.data ?? '');
   const message = press.message;
   // A button Kortix did not post (the agent may post its own keyboards).
-  if (!button || !message) return void (await answer());
+  if (!button || !isUuid(button[1]) || !message) return void (await answer());
 
   const asked = await getPendingQuestion(event.projectId, button[1]!);
   const option = asked?.questions[0]?.options[Number(button[2])];
