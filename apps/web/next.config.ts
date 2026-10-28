@@ -564,7 +564,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/projects/:id/customize/reminders',
-        destination: '/projects/:id/admin/loops',
+        destination: '/projects/:id/admin/triggers',
         permanent: false,
       },
       {

@@ -662,7 +662,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-triggers',
-    label: 'Triggers',
+    label: 'Automations',
     icon: AlarmClock,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -676,21 +676,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
-      'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
-  },
-  {
-    // The Project admin Loops page (formerly Reminders; `remindersHref`,
-    // #10261). Gated in `command-palette.tsx` on the tab's own verdict
-    // (flag + trigger rule).
-    id: 'proj-reminders',
-    label: 'Loops',
-    icon: Calendar,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/admin/loops',
-    requiresProject: true,
-    keywords: 'loops loop reminders reminder remind check back later follow up repeat recurring nudge calendar',
+      'automations automation schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring loops loop reminders reminder remind check back later follow up repeat nudge change request merged',
   },
   {
     id: 'proj-secrets',

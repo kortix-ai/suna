@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "Não foi possível verificar seu acesso",
       "text078931e34187": "A administração do projeto precisa da permissão de configurações",
       "textb24d48611918": "Ela precisa de {grant}. Qualquer pessoa que gerencia este projeto pode concedê-la.",
-      "textce53edc1b757": "Ciclo da sessão executado agora"
+      "textce53edc1b757": "Ciclo da sessão executado agora",
+      "text6d65ed5c7500": "automação",
+      "textdb87a63d537e": "Nova automação",
+      "textbdff71b20b9c": "Pesquisar automações",
+      "textb777509a8aea": "Ainda não há automações",
+      "text8fbb8c347fc0": "Execute agentes ou acorde uma sessão com um agendamento, um evento de app, um webhook ou uma solicitação de mudança mesclada.",
+      "textf09c738f5caf": "Crie uma automação e seu agente roda sozinho, sem prompt.",
+      "text5ffd973e20ed": "Solicitação de mudança mesclada",
+      "text41bec5c0977c": "Criada em tempo de execução",
+      "text8898c02a816e": "Armazenada no banco de dados, não no kortix.yaml. Agentes e a CLI as criam.",
+      "textb3c0ab96930c": "Próxima execução",
+      "text89919c510d89": "Acorda {value0}",
+      "textba6393ea2b12": "Inicia {value0}",
+      "textd7846b4e605e": "Chama {value0}",
+      "text0f393e09c59d": "Excluir esta automação?",
+      "textf4f30f5b483c": "Ela deixa de disparar. Isso não pode ser desfeito."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

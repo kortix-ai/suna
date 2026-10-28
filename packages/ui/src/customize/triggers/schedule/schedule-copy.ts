@@ -445,13 +445,13 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  * each row's own type (via {@link KIND_COPY}) for anything kind-specific.
  */
 export const TRIGGERS_COPY = {
-  title: 'Triggers',
-  description: 'Run agents on a schedule, an app event, or a webhook.',
-  noun: 'trigger',
-  createLabel: 'New trigger',
-  searchPlaceholder: 'Search triggers',
-  emptyTitle: 'No triggers yet',
-  emptyBody: 'Create a trigger and your agent runs on its own, no prompt needed.',
+  title: 'Automations',
+  description: 'Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.',
+  noun: 'automation',
+  createLabel: 'New automation',
+  searchPlaceholder: 'Search automations',
+  emptyTitle: 'No automations yet',
+  emptyBody: 'Create an automation and your agent runs on its own, no prompt needed.',
 } as const;
 
 export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {

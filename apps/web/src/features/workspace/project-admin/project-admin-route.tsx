@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, type ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 
 import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
 import {
@@ -8,17 +8,12 @@ import {
   type ProjectAdminHostSections,
 } from '@kortix/ui/workspace/admin/project-admin-dashboard';
 
-/* The Project admin section whose page lives in this app, not in
-   `@kortix/ui`. Lazy, like every other section: only the open one loads.
-   Apps is not one: its page is the sidebar's Apps (`/projects/:id/apps`), and
-   `/admin/apps` redirects there, so the library has one home. */
-const HOST_SECTIONS: ProjectAdminHostSections = {
-  loops: lazy(() =>
-    import('@/features/workspace/project-reminders/project-reminders-view').then((m) => ({
-      default: m.ProjectRemindersView,
-    })),
-  ),
-};
+/* Project admin sections whose page lives in this app, not in `@kortix/ui`.
+   None today: the Loops page (and its calendar) was removed on 2026-10-28;
+   loops are automations on the package's Automations page (`/admin/triggers`,
+   `/admin/loops` resolves there). Apps is not one either: its page is the
+   sidebar's Apps (`/projects/:id/apps`), and `/admin/apps` redirects there. */
+const HOST_SECTIONS: ProjectAdminHostSections = {};
 
 /**
  * Every `/projects/[id]/admin/**` route: Project admin on one section, and

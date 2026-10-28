@@ -1252,7 +1252,6 @@ export function CommandPalette() {
         // who can act on reviews gets the list.
         'review-changes': customizeTabs.split(' ').includes('review'),
         // Customize tabs with their own row: shown exactly when the tab is.
-        'proj-reminders': customizeTabs.split(' ').includes('reminders'),
         'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };

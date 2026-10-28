@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "无法检查你的访问权限",
       "text078931e34187": "项目管理需要设置权限",
       "textb24d48611918": "需要 {grant}。管理此项目的任何人都可以授予。",
-      "textce53edc1b757": "已立即运行会话循环"
+      "textce53edc1b757": "已立即运行会话循环",
+      "text6d65ed5c7500": "自动化",
+      "textdb87a63d537e": "新建自动化",
+      "textbdff71b20b9c": "搜索自动化",
+      "textb777509a8aea": "还没有自动化",
+      "text8fbb8c347fc0": "按计划、应用事件、Webhook 或已合并的变更请求运行智能体或唤醒会话。",
+      "textf09c738f5caf": "创建自动化后，你的智能体会自动运行，无需提示。",
+      "text5ffd973e20ed": "变更请求已合并",
+      "text41bec5c0977c": "运行时创建",
+      "text8898c02a816e": "存储在数据库中，而非 kortix.yaml。由智能体和 CLI 创建。",
+      "textb3c0ab96930c": "下次运行",
+      "text89919c510d89": "唤醒 {value0}",
+      "textba6393ea2b12": "启动 {value0}",
+      "textd7846b4e605e": "调用 {value0}",
+      "text0f393e09c59d": "删除此自动化？",
+      "textf4f30f5b483c": "它将停止触发。此操作无法撤销。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
