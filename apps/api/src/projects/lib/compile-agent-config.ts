@@ -45,6 +45,7 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   HARNESS_TOOL_NAMES,
+  isDefaultOnKortixTool,
   KORTIX_TOOL_NAMES,
   kortixToolRef,
   parseManifestText,
@@ -284,8 +285,9 @@ export function compileAgentConfig(
  * Top-level `tools`. `project_tools`: the valid name → module entries;
  * `validateManifest` reports the rest. A harness tool's name never compiles:
  * two tools with one name break the model request. `kortix_tools`: the names
- * listed as `kortix:<name>`, only when the manifest has a `tools` key (even
- * an empty one); without it the daemon loads every Kortix tool.
+ * listed as `kortix:<name>` plus each `DEFAULT_ON_KORTIX_TOOLS` name the map
+ * does not name, only when the manifest has a `tools` key (even an empty one);
+ * without it the daemon loads every Kortix tool.
  */
 function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'kortix_tools'> {
   const map = tools && typeof tools === 'object' && !Array.isArray(tools) ? (tools as Record<string, unknown>) : {};
@@ -296,7 +298,9 @@ function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'k
   });
   return {
     ...(entries.length > 0 ? { project_tools: Object.fromEntries(entries) } : {}),
-    ...(tools !== undefined ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name) } : {}),
+    ...(tools !== undefined
+      ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name || (isDefaultOnKortixTool(name) && !Object.hasOwn(map, name))) }
+      : {}),
   };
 }
 

@@ -2302,6 +2302,18 @@
                   }
                 ]
               },
+              "image_gen": {
+                "anyOf": [
+                  {
+                    "const": "kortix:image_gen",
+                    "description": "The Kortix image_gen tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
               "scrape_webpage": {
                 "anyOf": [
                   {
@@ -7985,6 +7997,7 @@
                   "enum": [
                     "web_search",
                     "image_search",
+                    "image_gen",
                     "scrape_webpage",
                     "memory",
                     "show"

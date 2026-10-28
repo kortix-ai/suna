@@ -5,6 +5,63 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added (image generation card)
+- `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
+  card draws from its `ToolCallBlock`, for any image model and for one to four images per call.
+  The call: `phase` (`generating`, `ready`, `failed` or `stopped`), `action`, `prompts` (the
+  call's `prompts`, or a Phase 1 call's one `prompt`), `aspectRatio` (the requested ratio, the same in
+  every phase, for a layout of several images), `startedAt`, `model` and `provider` (from
+  the tool output once the call completed, else `null`), `error` (the whole call's failure).
+  `images` holds one frame per image: one per prompt while the call runs, then each image the call
+  made and each prompt that failed, in prompt order; empty when the whole call failed or stopped.
+  A frame has `prompt`, `phase` (`generating`, `ready` or `failed`), `aspectRatio` (`"<w> / <h>"`,
+  from the delivered size, else the requested `aspect_ratio` (`16:9` is `16 / 9`), else a legacy
+  requested `size`, else `1 / 1`), `imagePath` (a sandbox file: `.png`, `.jpg` or `.webp`),
+  `directUrl` (legacy outputs without a path, http(s) only) and `error`. An error has `message`,
+  `suggestion?`, `code?`, `retryAfterSeconds?` and `connectModel` (true for a trailing
+  `[image_model_unavailable]`, `[provider_not_connected]` or `[provider_reauth_required]` code).
+  Older one-image outputs (`{"path"}`, a Replicate URL, a bare path) render as one frame.
+  `live: false` reads an open call as `stopped`. The single-image fields of the unreleased branch
+  (`prompt`, `aspectRatio`, `imagePath`, `directUrl` on the view, `connectChatGpt`) never shipped.
+- `imageGenRetryDelay(seconds)`: `{ value, unit }` in seconds below 90 s, minutes below 90 min,
+  else hours. `formatImageGenElapsed(ms)`: `m:ss`.
+- `imagePathsShownByImageGen(blocks)`, `withoutImageGenDuplicates(items, paths)` and
+  `showDrawnByImageGen(call, paths)`: a `show` of an image that an `image_gen` card of the same
+  turn already drew (every image of a batch) is left out, and a `show` call whose every file is
+  such an image draws nothing.
+- A frame's `sha256?`: the lowercase hex digest of the saved file's bytes, when the `image_gen`
+  output names it (kortixd adds it; older outputs have none; a malformed value is dropped).
+- `imageDigestsShownByImageGen(blocks)`: the digests of every image the turn's `image_gen` calls
+  drew. `withoutImageGenDuplicates(items, paths, digests?)` and `showDrawnByImageGen(call, paths,
+  digests?)` take it as an optional third argument: a `show` of the same bytes at another path (a
+  Drive copy) is left out too. Items carry their digest as `sha256?`.
+- `showItemDigest(call, path)`: the `sha256` a `show` call's output gives the file at `path` (its
+  single `entry` or one of its `items`), with or without the `/workspace/` prefix.
+  `sessionLogShowGroupCall` items carry it as `sha256` too.
+- `imageGenGrid(views)` and the `ImageGenGrid` / `ImageGenGridTile` types: the one grid of a run of
+  `image_gen` calls. `tiles` are in call order (`image`, `call`, `first`); a call that failed or
+  stopped as a whole keeps one slot per prompt. `rows` is each row's tile count: up to four is one
+  bento, five and more are rows of three (or of four when that divides evenly) and one or two rows
+  of two (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4).
+- `sessionLogImageGenRuns(segments, { paths, digests })`: the runs of `image_gen` calls that draw
+  as one grid, by block id: standalone calls with no visible non-image deliverable between them.
+  The host draws the grid at `run[0]` and nothing for the others, live and settled alike.
+- `createImageCache({ maxEntries, maxBytes?, dispose? })` and the `ImageCache`, `ImageCacheEntry`,
+  `ImageCacheOptions` and `ImageCacheRef` types: a framework-free store of loaded images, by path
+  key and by sha256. A lookup with a sha256 finds only those bytes, never a path entry of other
+  bytes. `retain` holds an entry against eviction; past the bounds the least recently used entry
+  nothing holds is evicted and handed to `dispose`. `link`, `setSize`, `forget`, `clear` and
+  `subscribe` complete it.
+- Narration counts the images of one `image_gen` call: "Made 3 images" (the images it made, else
+  the prompts it asked for). `getToolInfo('image_gen', input).subtitle` is the first prompt.
+- `getToolPrimaryArg` reads an `image_gen` call as its first prompt (60 characters) and, for a batch,
+  how many more (`A fox in a shuttle (+2)`), never its arguments as JSON (a script card's call row).
+
+### Changed (image_gen is a deliverable)
+- `NO_GROUP_ACTIVITY_TOOLS`, and with it `STANDALONE_TOOLS`, include `image_gen`. An `image_gen`
+  call is a `standalone` segment, never folds into a burst, and `splitTurnWork` /
+  `splitSessionLogTurnWork` hoist it above the final text like `show`.
+
 ### Deprecated (app form)
 - `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
   and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call

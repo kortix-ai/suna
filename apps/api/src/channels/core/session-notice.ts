@@ -56,7 +56,11 @@ export async function notifySessionChannel(notice: SessionNotice, opts: { once?:
 export async function postSessionQuestion(ask: SessionQuestion): Promise<ChannelPlatform | null> {
   try {
     const chat = await findSessionChat(ask.sessionId);
-    return chat?.port.postQuestion && (await chat.port.postQuestion(chat.target, ask)) ? chat.target.platform : null;
+    if (!chat?.port.questions) return null;
+    // Imported on use: the projects routes import this file, and questions.ts
+    // imports projects/surface. A static import closes that cycle.
+    const { postQuestion } = await import('./questions');
+    return (await postQuestion(chat.port.questions, chat.target, ask)) ? chat.target.platform : null;
   } catch (error) {
     logger.warn('[channel] session question not posted', { sessionId: ask.sessionId, error: String(error) });
     return null;

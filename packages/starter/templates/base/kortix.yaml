@@ -65,10 +65,12 @@ skills: {}
 
 # ─── Tools ───────────────────────────────────────────────────────────────
 # name → a module in this repo. The Kortix tools (web_search, image_search,
-# scrape_webpage, memory, show) are always registered; a project tool with
-# one of those names replaces it. `kortix tools eject <name>` copies a Kortix
+# image_gen, scrape_webpage, memory, show) are always registered; a project
+# tool with one of those names replaces it. image_gen generates images with an
+# image model the project can use. `kortix tools eject <name>` copies a Kortix
 # tool here for you to change. Every agent gets every tool unless it narrows
-# them (`agents.<name>.tools`).
+# them (`agents.<name>.tools`): turn image_gen off for one agent with
+# `image_gen: false` in its `tools`, or `image_gen: deny` in its permission.
 #
 # tools:
 #   lookup_order: tools/lookup_order.ts

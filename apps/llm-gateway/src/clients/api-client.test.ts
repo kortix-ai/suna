@@ -135,6 +135,31 @@ describe('ApiClient', () => {
     });
   });
 
+  test('resolveRoute sends requires.imageOutput and re-throws a route refusal as a typed error', async () => {
+    let seenBody: Record<string, unknown> = {};
+    const c = client(async (_url, init) => {
+      seenBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return jsonResponse({
+        route: null,
+        resolutionError: {
+          code: 'image_model_unavailable',
+          message: 'No image model is available for this project.',
+          suggestion: 'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.',
+        },
+      });
+    });
+    const input = { requestedModel: 'auto', requires: { imageInput: false, imageOutput: true } };
+
+    const refused = await c.resolveRoute(principal, input).catch((error: unknown) => error);
+
+    expect(seenBody).toEqual({ principal, input });
+    expect(refused).toBeInstanceOf(GatewayResolutionError);
+    expect((refused as GatewayResolutionError).code).toBe('image_model_unavailable');
+    expect((refused as GatewayResolutionError).suggestion).toBe(
+      'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.',
+    );
+  });
+
   test('refreshCredential sends the login, never its token, and keeps the pool identity', async () => {
     let sent: { path: string; body: Record<string, unknown> } | undefined;
     const stale = {
