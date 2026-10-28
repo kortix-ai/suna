@@ -7,20 +7,26 @@
  * loads it (DEFAULT_ON_KORTIX_TOOLS). `kortix tools eject image_gen` copies it
  * to `tools/image_gen.ts` for the project to own.
  *
- * A call goes to the Kortix LLM gateway (`KORTIX_LLM_BASE_URL`) with the
- * session token (`KORTIX_TOKEN`); the platform picks the model (`auto`, or
- * the one asked for) and resolves its credential, so the box never holds it.
- * The image is saved under `<checkout>/output/images/` with the extension its
- * bytes prove (png, jpg, webp), and the output is
- * `{ path, action, model, provider, size }`: never image bytes. `size` is read
- * from the saved image's header.
+ * A call takes one to four prompts and sends one request per prompt to the
+ * Kortix LLM gateway (`KORTIX_LLM_BASE_URL`), all at once, with the session
+ * token (`KORTIX_TOKEN`); the platform picks the model (`auto`, or the one
+ * asked for) and resolves its credential, so the box never holds it. Each
+ * image is saved under `<checkout>/output/images/<slug of its prompt>-<time>`
+ * with the extension its bytes prove (png, jpg, webp), and the output is
+ * `{ action, model, provider, images: [{ path, size, prompt }], failed?: [{ prompt, error }] }`:
+ * never image bytes. `size` is read from the saved image's header; `model`
+ * and `provider` are what answered the first saved image. A prompt that
+ * fails is in `failed`; when every prompt fails the call throws the first
+ * failure.
  *
  * Untrusted text can ask the model to misuse this tool, so the limits are
- * code: a call cap per turn and per session, reference images only from
- * inside the checkout and only real images, an output file name that is a
- * name and never overwrites. The turn cap keys on the run's abort signal: a
- * subagent run or a transient-error retry counts afresh; the session cap
- * bounds them all.
+ * code: an image cap per turn and per session (a batch that would pass one
+ * is refused whole, before any request), reference images only from inside
+ * the checkout and only real images, file names that never leave
+ * output/images and never overwrite. The turn cap keys on the run's abort
+ * signal: a subagent run or a transient-error retry counts afresh; the
+ * session cap bounds them all. The caps count before the first await, so
+ * calls that run in parallel never pass a cap together.
  *
  * The web UI renders a call from the output JSON. A changed copy must keep
  * that shape, or the UI shows the raw output.
@@ -40,15 +46,15 @@ export const IMAGE_GEN_TURN_LIMIT = 10
 export const IMAGE_GEN_SESSION_LIMIT = 50
 const ASPECT_RATIOS = ['auto', '1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4']
 const QUALITIES = ['auto', 'low', 'medium', 'high']
+const MAX_PROMPTS = 4
 const MAX_REFERENCES = 5
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024
 /** 5 × 20 MiB as base64 is over the gateway's 128 MiB body cap. */
 const MAX_REFERENCE_TOTAL_BYTES = 50 * 1024 * 1024
 const TIMEOUT_MS = 300_000
 const IMAGE_EXTENSIONS: Record<string, 'png' | 'jpeg' | 'webp'> = { '.png': 'png', '.jpg': 'jpeg', '.jpeg': 'jpeg', '.webp': 'webp' }
-const OUTPUT_NAME = /^[a-z0-9._-]{1,80}$/
 
-// Calls per turn (keyed by the turn's abort signal) and per session, in this process.
+// Images per turn (keyed by the turn's abort signal) and per session, in this process.
 const turnCalls = new WeakMap<AbortSignal, number>()
 const sessionCalls = new Map<string, number>()
 
@@ -149,24 +155,50 @@ async function refusal(response: Response): Promise<Error> {
   return new Error(`Image generation failed (${response.status}): ${detail}`)
 }
 
-/** Count a call against the turn and session caps, or refuse it. */
-function admit({ sessionId, signal }: ToolContext): void {
+/** Count `count` images against the turn and session caps, or refuse the whole batch. Synchronous: no await between check and count. */
+function admit({ sessionId, signal }: ToolContext, count: number): void {
   const turn = turnCalls.get(signal) ?? 0
   const session = sessionCalls.get(sessionId) ?? 0
-  if (turn >= IMAGE_GEN_TURN_LIMIT) throw new Error(`Image limit for this turn reached (${IMAGE_GEN_TURN_LIMIT}).`)
-  if (session >= IMAGE_GEN_SESSION_LIMIT) throw new Error(`Image limit for this session reached (${IMAGE_GEN_SESSION_LIMIT}).`)
-  turnCalls.set(signal, turn + 1)
-  sessionCalls.set(sessionId, session + 1)
+  if (turn + count > IMAGE_GEN_TURN_LIMIT) throw new Error(`Image limit for this turn reached (${IMAGE_GEN_TURN_LIMIT} images; ${turn} used, ${count} asked).`)
+  if (session + count > IMAGE_GEN_SESSION_LIMIT) throw new Error(`Image limit for this session reached (${IMAGE_GEN_SESSION_LIMIT} images; ${session} used, ${count} asked).`)
+  turnCalls.set(signal, turn + count)
+  sessionCalls.set(sessionId, session + count)
+}
+
+/** One prompt: one gateway request (`n: 1`), its image saved under `dir`. */
+async function generateOne(url: string, token: string, body: Record<string, unknown>, prompt: string, dir: string, signal: AbortSignal) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...body, prompt }),
+    signal,
+  })
+  if (!response.ok) throw await refusal(response)
+  const data = (await response.json()) as { model?: string; provider?: string; data?: Array<{ b64_json?: string }>; size?: string }
+  const b64 = data.data?.[0]?.b64_json
+  if (!b64) throw new Error('Image generation returned no image.')
+  const bytes = Buffer.from(b64, 'base64')
+  // The bytes, not the answer's mime_type, decide the type: a mislabelled image keeps its real extension, and anything else (an SVG) is never written.
+  const type = imageType(bytes)
+  if (!type) throw new Error('Image generation returned an image that is not png, jpeg or webp.')
+  const path = writeNew(dir, defaultName(prompt), type === 'jpeg' ? 'jpg' : type, bytes)
+  return { path, size: headerSize(bytes, type) ?? data.size, prompt, model: data.model, provider: data.provider }
 }
 
 export default {
   description:
-    'Generate or edit an image with an image model this project can use, for example gpt-image-2 with a ChatGPT plan, Gemini image models with a Google key, or OpenRouter image models. Saves the image under /workspace/output/images/ and returns its path.',
+    'Generate or edit one to four images with an image model this project can use, for example gpt-image-2 with a ChatGPT plan, Gemini image models with a Google key, or OpenRouter image models. Saves the images under /workspace/output/images/ and returns their paths.',
   parameters: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['generate', 'edit'], description: '`generate` a new image, or `edit` the reference images.' },
-      prompt: { type: 'string', description: 'What the image shows, or what to change.' },
+      prompts: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: MAX_PROMPTS,
+        description: 'One prompt per image, 1–4: what the image shows, or what to change. The images are generated at the same time.',
+      },
       model: {
         type: 'string',
         description:
@@ -175,32 +207,25 @@ export default {
       reference_images: {
         type: 'array',
         items: { type: 'string' },
-        description: 'For `edit`: 1–5 workspace paths of png, jpg, jpeg or webp images, each at most 20 MiB, 50 MiB in total.',
+        description: 'For `edit`: 1–5 workspace paths of png, jpg, jpeg or webp images, each at most 20 MiB, 50 MiB in total. Every prompt uses them.',
       },
       aspect_ratio: { type: 'string', enum: ASPECT_RATIOS, description: 'Width to height. Default: auto.' },
       quality: { type: 'string', enum: QUALITIES, description: 'Default: auto.' },
       transparent_background: { type: 'boolean', description: 'Default: false.' },
-      output_name: {
-        type: 'string',
-        description: 'File base name, matching [a-z0-9._-]{1,80}. The extension follows the image type (png, jpg or webp) and replaces a given one. An existing file is never replaced; a suffix is added.',
-      },
     },
-    required: ['action', 'prompt'],
+    required: ['action', 'prompts'],
   },
   async execute(args: Record<string, any>, context: ToolContext): Promise<string> {
     const action = args.action
     if (action !== 'generate' && action !== 'edit') throw new Error("'action' must be 'generate' or 'edit'.")
-    const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-    if (!prompt) throw new Error("'prompt' is required.")
+    const prompts: string[] = Array.isArray(args.prompts) ? args.prompts.map((prompt: unknown) => (typeof prompt === 'string' ? prompt.trim() : '')) : []
+    if (prompts.length < 1 || prompts.length > MAX_PROMPTS || prompts.includes('')) throw new Error(`'prompts' must be a list of 1 to ${MAX_PROMPTS} non-empty strings.`)
     if (args.model != null && typeof args.model !== 'string') throw new Error("'model' must be a model id.")
     const model = args.model?.trim() || 'auto'
     const aspectRatio = args.aspect_ratio ?? 'auto'
     if (!ASPECT_RATIOS.includes(aspectRatio)) throw new Error(`'aspect_ratio' must be one of ${ASPECT_RATIOS.join(', ')}.`)
     const quality = args.quality ?? 'auto'
     if (!QUALITIES.includes(quality)) throw new Error(`'quality' must be one of ${QUALITIES.join(', ')}.`)
-    const outputName = String(args.output_name ?? defaultName(prompt))
-    const name = outputName.replace(/\.(png|jpe?g|webp)$/, '')
-    if (!OUTPUT_NAME.test(outputName) || !name) throw new Error("'output_name' must be a base name matching [a-z0-9._-]{1,80}.")
     const references: unknown[] = args.reference_images ?? []
     if (!Array.isArray(references)) throw new Error("'reference_images' must be a list of paths.")
     if (action === 'edit' && references.length === 0) throw new Error("'reference_images' is required for action 'edit'.")
@@ -215,31 +240,21 @@ export default {
     const token = context.env.KORTIX_TOKEN?.trim()
     if (!token) throw new Error('KORTIX_TOKEN is not set.')
     const dir = outputDir(context.directory)
-    admit(context)
+    admit(context, prompts.length)
 
-    const response = await fetch(`${base}/images/${action === 'edit' ? 'edits' : 'generations'}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt,
-        aspect_ratio: aspectRatio,
-        quality,
-        background: args.transparent_background === true ? 'transparent' : 'auto',
-        n: 1,
-        ...(images.length ? { images } : {}),
-      }),
-      signal: AbortSignal.any([context.signal, AbortSignal.timeout(TIMEOUT_MS)]),
+    const url = `${base}/images/${action === 'edit' ? 'edits' : 'generations'}`
+    const body = { model, aspect_ratio: aspectRatio, quality, background: args.transparent_background === true ? 'transparent' : 'auto', n: 1, ...(images.length ? { images } : {}) }
+    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(TIMEOUT_MS)])
+    const settled = await Promise.allSettled(prompts.map((prompt) => generateOne(url, token, body, prompt, dir, signal)))
+    const saved = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+    const failed = settled.flatMap((result, i) => (result.status === 'rejected' ? [{ prompt: prompts[i], error: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : []))
+    if (!saved.length) throw (settled[0] as PromiseRejectedResult).reason
+    return JSON.stringify({
+      action,
+      model: saved[0]!.model,
+      provider: saved[0]!.provider,
+      images: saved.map(({ path, size, prompt }) => ({ path, size, prompt })),
+      ...(failed.length ? { failed } : {}),
     })
-    if (!response.ok) throw await refusal(response)
-    const data = (await response.json()) as { model?: string; provider?: string; data?: Array<{ b64_json?: string }>; size?: string }
-    const b64 = data.data?.[0]?.b64_json
-    if (!b64) throw new Error('Image generation returned no image.')
-    const bytes = Buffer.from(b64, 'base64')
-    // The bytes, not the answer's mime_type, decide the type: a mislabelled image keeps its real extension, and anything else (an SVG) is never written.
-    const type = imageType(bytes)
-    if (!type) throw new Error('Image generation returned an image that is not png, jpeg or webp.')
-    const path = writeNew(dir, name, type === 'jpeg' ? 'jpg' : type, bytes)
-    return JSON.stringify({ path, action, model: data.model, provider: data.provider, size: headerSize(bytes, type) ?? data.size })
   },
 }

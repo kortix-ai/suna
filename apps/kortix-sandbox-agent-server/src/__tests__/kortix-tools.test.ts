@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -173,6 +173,10 @@ describe('image_gen', () => {
   let session = 0
   beforeEach(() => void session++)
   const ictx = (): ToolContext => ({ ...ctx(), sessionId: `ses_image_gen_${session}` })
+  /** One call: `generate` with one prompt unless `args` says otherwise. */
+  const gen = (args: Record<string, unknown> = {}, context: ToolContext = ictx()) => Promise.resolve(imageGen.execute({ action: 'generate', prompts: ['x'], ...args }, context))
+  const genJson = async (args: Record<string, unknown> = {}, context?: ToolContext) => JSON.parse(out(await gen(args, context)))
+  const refusal = (code: string, message: string, status = 400) => Response.json({ code, message }, { status })
 
   /** The LLM gateway fake: the tool posts to `${KORTIX_LLM_BASE_URL}/images/*` with the session token. */
   function gateway(handle: (call: Call) => unknown | Response = () => generated): void {
@@ -184,43 +188,116 @@ describe('image_gen', () => {
 
   test('generate posts to the gateway images route with the session token and saves the PNG', async () => {
     gateway()
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'A red cube on a white table' }, ictx())))
+    const result = await genJson({ prompts: ['A red cube on a white table'] })
     expect(calls).toHaveLength(1)
     expect(calls[0]!.path).toBe('/v1/llm/images/generations')
     expect(calls[0]!.headers.authorization).toBe('Bearer tok')
     expect(calls[0]!.body).toEqual({ model: 'auto', prompt: 'A red cube on a white table', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 })
-    // The header holds no size here, so the answer's size is the output size (Ruling R2).
-    expect(result).toEqual({ path: expect.any(String), action: 'generate', model: 'codex/gpt-image-2', provider: 'openai-codex', size: '1254x1254' })
-    expect(result.path).toStartWith(`${imagesDir()}/a-red-cube-on-a-white-table-`)
-    expect(result.path).toMatch(/-\d{8}-\d{6}\.png$/)
-    expect(readFileSync(result.path).subarray(0, 8)).toEqual(PNG.subarray(0, 8))
+    // The header holds no size here, so the answer's size is the output size (Ruling R2). No failure: no `failed`.
+    expect(result).toEqual({
+      action: 'generate',
+      model: 'codex/gpt-image-2',
+      provider: 'openai-codex',
+      images: [{ path: expect.any(String), size: '1254x1254', prompt: 'A red cube on a white table' }],
+    })
+    const [image] = result.images
+    expect(image.path).toStartWith(`${imagesDir()}/a-red-cube-on-a-white-table-`)
+    expect(image.path).toMatch(/-\d{8}-\d{6}\.png$/)
+    expect(readFileSync(image.path).subarray(0, 8)).toEqual(PNG.subarray(0, 8))
+  })
+
+  test('three prompts run concurrently', async () => {
+    // The fake holds every request open until it has seen three in flight, then answers them all.
+    // A tool that sends them one by one never reaches three: the 2 s fallback answers it, and `peak` says 1.
+    let inFlight = 0
+    let peak = 0
+    let releaseAll!: () => void
+    const all = new Promise<void>((resolve) => (releaseAll = resolve))
+    gateway(async (call) => {
+      peak = Math.max(peak, ++inFlight)
+      if (inFlight === 3) releaseAll()
+      await Promise.race([all, Bun.sleep(2_000)])
+      inFlight--
+      const side = { 'a red cube': 64, 'a green cone': 96, 'a blue sphere': 128 }[call.body.prompt as string]!
+      return answer(pngOf(side, side), 'image/png')
+    })
+    const result = await genJson({ prompts: ['a red cube', 'a green cone', 'a blue sphere'] })
+    expect(peak).toBe(3)
+    expect(calls.map((call) => call.body.prompt).sort()).toEqual(['a blue sphere', 'a green cone', 'a red cube'])
+    expect(calls.every((call) => call.body.n === 1)).toBe(true)
+    // In prompt order, each with its own file and size.
+    expect(result.images.map((image: { prompt: string; size: string }) => [image.prompt, image.size])).toEqual([
+      ['a red cube', '64x64'],
+      ['a green cone', '96x96'],
+      ['a blue sphere', '128x128'],
+    ])
+    expect(new Set(result.images.map((image: { path: string }) => image.path)).size).toBe(3)
+    expect(readdirSync(imagesDir())).toHaveLength(3)
+    expect(result.failed).toBeUndefined()
+  })
+
+  test('one failed prompt is reported in failed[] and the others are saved', async () => {
+    gateway((call) => (call.body.prompt === 'blocked' ? refusal('content_policy', 'The prompt was refused.') : generated))
+    const result = await genJson({ prompts: ['a cat', 'blocked', 'a dog'] })
+    expect(result.images.map((image: { prompt: string }) => image.prompt)).toEqual(['a cat', 'a dog'])
+    expect(result.failed).toEqual([{ prompt: 'blocked', error: 'Image generation failed (400): The prompt was refused. [content_policy]' }])
+    expect(readdirSync(imagesDir())).toHaveLength(2)
+  })
+
+  test('all prompts failing throws the first failure in the R11 format', async () => {
+    gateway((call) =>
+      call.body.prompt === 'first'
+        ? Response.json({ code: 'provider_not_connected', message: 'Connect Codex to use this model.', suggestion: 'Connect your ChatGPT account in Settings.' }, { status: 400 })
+        : refusal('rate_limited', 'Image limit reached.', 429),
+    )
+    await expect(gen({ prompts: ['first', 'second'] })).rejects.toThrow(
+      'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]',
+    )
+    expect(calls).toHaveLength(2)
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('prompts must be 1–4 non-empty strings', async () => {
+    gateway()
+    const message = "'prompts' must be a list of 1 to 4 non-empty strings."
+    for (const prompts of [undefined, [], ['a', 'b', 'c', 'd', 'e'], [''], ['a', '   '], [42], 'a cube', null]) {
+      await expect(gen({ prompts })).rejects.toThrow(message)
+    }
+    // The old single-prompt shape is not read.
+    await expect(Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'a cube' }, ictx()))).rejects.toThrow(message)
+    expect(calls).toHaveLength(0)
+    // Four is the most; each prompt is trimmed.
+    const result = await genJson({ prompts: [' a ', 'b', 'c', 'd'] })
+    expect(result.images.map((image: { prompt: string }) => image.prompt)).toEqual(['a', 'b', 'c', 'd'])
   })
 
   test('model and aspect_ratio are forwarded; absent model sends auto', async () => {
     gateway()
-    await imageGen.execute({ action: 'generate', prompt: 'x', model: ' google/gemini-2.5-flash-image ', aspect_ratio: '16:9', quality: 'low', transparent_background: true }, ictx())
-    await imageGen.execute({ action: 'generate', prompt: 'y', model: '' }, ictx())
+    await gen({ prompts: ['x'], model: ' google/gemini-2.5-flash-image ', aspect_ratio: '16:9', quality: 'low', transparent_background: true })
+    await gen({ prompts: ['y'], model: '' })
     expect(calls.map((call) => call.body)).toEqual([
       { model: 'google/gemini-2.5-flash-image', prompt: 'x', aspect_ratio: '16:9', quality: 'low', background: 'transparent', n: 1 },
       { model: 'auto', prompt: 'y', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 },
     ])
   })
 
-  test('a bad aspect_ratio or model is refused before any request; size is no longer a parameter', async () => {
+  test('a bad aspect_ratio or model is refused before any request; prompts replaces prompt and output_name', async () => {
     gateway()
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x', aspect_ratio: '1024x1024' }, ictx())).rejects.toThrow("'aspect_ratio' must be one of auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4.")
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x', model: 42 }, ictx())).rejects.toThrow("'model' must be a model id.")
+    await expect(gen({ aspect_ratio: '1024x1024' })).rejects.toThrow("'aspect_ratio' must be one of auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4.")
+    await expect(gen({ model: 42 })).rejects.toThrow("'model' must be a model id.")
     expect(calls).toHaveLength(0)
-    expect(Object.keys(imageGen.parameters.properties).sort()).toEqual(['action', 'aspect_ratio', 'model', 'output_name', 'prompt', 'quality', 'reference_images', 'transparent_background'])
+    expect(Object.keys(imageGen.parameters.properties).sort()).toEqual(['action', 'aspect_ratio', 'model', 'prompts', 'quality', 'reference_images', 'transparent_background'])
+    expect(imageGen.parameters.required).toEqual(['action', 'prompts'])
+    expect(imageGen.parameters.properties.prompts).toMatchObject({ type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4 })
   })
 
   test('a jpeg answer is saved as .jpg and size is read from the image header', async () => {
     gateway(() => answer(jpegOf(0xc0, 1536, 1024), 'image/jpeg', { size: '1024x1024' }))
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'a cat' }, ictx())))
-    expect(result.path).toMatch(/\/a-cat-\d{8}-\d{6}\.jpg$/)
+    const [image] = (await genJson({ prompts: ['a cat'] })).images
+    expect(image.path).toMatch(/\/a-cat-\d{8}-\d{6}\.jpg$/)
     // The saved bytes win over the answer's size.
-    expect(result.size).toBe('1536x1024')
-    expect(readFileSync(result.path).subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
+    expect(image.size).toBe('1536x1024')
+    expect(readFileSync(image.path).subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
   })
 
   test('each image type is saved with its extension and its header size', async () => {
@@ -235,8 +312,8 @@ describe('image_gen', () => {
     let next = 0
     gateway(() => answer(cases[next]![0], cases[next++]![1], { size: '1x1' }))
     for (const [, , expected] of cases) {
-      const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())))
-      expect(`${result.size}.${result.path.split('.').pop()}`).toBe(expected)
+      const [image] = (await genJson()).images
+      expect(`${image.size}.${image.path.split('.').pop()}`).toBe(expected)
     }
   })
 
@@ -246,39 +323,44 @@ describe('image_gen', () => {
     let next = 0
     gateway(() => [answer(svg, 'image/svg+xml'), answer(gif, 'image/gif'), answer(svg, 'image/png')][next++])
     for (let i = 0; i < 3; i++) {
-      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('Image generation returned an image that is not png, jpeg or webp.')
+      await expect(gen()).rejects.toThrow('Image generation returned an image that is not png, jpeg or webp.')
     }
     expect(readdirSync(imagesDir())).toEqual([])
   })
 
   test('the output names the model and provider that answered', async () => {
     gateway(() => answer(pngOf(1024, 1024), 'image/png', { model: 'openrouter/google/gemini-2.5-flash-image', provider: 'openrouter', size: undefined }))
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', model: 'auto' }, ictx())))
-    expect(result).toEqual({ path: expect.any(String), action: 'generate', model: 'openrouter/google/gemini-2.5-flash-image', provider: 'openrouter', size: '1024x1024' })
+    const result = await genJson({ model: 'auto' })
+    expect(result).toEqual({
+      action: 'generate',
+      model: 'openrouter/google/gemini-2.5-flash-image',
+      provider: 'openrouter',
+      images: [{ path: expect.any(String), size: '1024x1024', prompt: 'x' }],
+    })
   })
 
   test('the size falls back to the answer when the header has none', async () => {
     gateway(() => answer(PNG, 'image/png', { size: '1536x1024' }))
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', aspect_ratio: '3:2' }, ictx())))
-    expect(result.size).toBe('1536x1024')
+    expect((await genJson({ aspect_ratio: '3:2' })).images[0].size).toBe('1536x1024')
   })
 
-  test('edit sends each reference image as a data URL', async () => {
+  test('edit sends each reference image as a data URL, with every prompt', async () => {
     gateway()
     writeFileSync(join(dir, 'a.png'), PNG)
     mkdirSync(join(dir, 'refs'))
     writeFileSync(join(dir, 'refs', 'b.jpg'), JPEG)
-    const result = JSON.parse(out(await imageGen.execute({ action: 'edit', prompt: 'merge them', reference_images: ['a.png', join(dir, 'refs/b.jpg')] }, ictx())))
-    expect(calls[0]!.path).toBe('/v1/llm/images/edits')
-    expect(calls[0]!.body.images).toEqual([{ image_url: `data:image/png;base64,${PNG.toString('base64')}` }, { image_url: `data:image/jpeg;base64,${JPEG.toString('base64')}` }])
-    expect(calls[0]!.body.images[1].image_url).toStartWith('data:image/jpeg;base64,')
+    const result = await genJson({ action: 'edit', prompts: ['merge them', 'merge them at night'], reference_images: ['a.png', join(dir, 'refs/b.jpg')] })
+    const images = [{ image_url: `data:image/png;base64,${PNG.toString('base64')}` }, { image_url: `data:image/jpeg;base64,${JPEG.toString('base64')}` }]
+    expect(calls.map((call) => call.path)).toEqual(['/v1/llm/images/edits', '/v1/llm/images/edits'])
+    expect(calls.map((call) => call.body.images)).toEqual([images, images])
     expect(result.action).toBe('edit')
+    expect(result.images).toHaveLength(2)
   })
 
   test('a missing reference image is refused before any request', async () => {
     gateway()
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['nope.png'] }, ictx())).rejects.toThrow('nope.png')
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x' }, ictx())).rejects.toThrow('reference_images')
+    await expect(gen({ action: 'edit', reference_images: ['nope.png'] })).rejects.toThrow('nope.png')
+    await expect(gen({ action: 'edit' })).rejects.toThrow('reference_images')
     expect(calls).toHaveLength(0)
   })
 
@@ -288,7 +370,7 @@ describe('image_gen', () => {
       writeFileSync(join(dir, `${n}.png`), PNG)
       return `${n}.png`
     })
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: names }, ictx())).rejects.toThrow('At most 5 reference images')
+    await expect(gen({ action: 'edit', reference_images: names })).rejects.toThrow('At most 5 reference images')
     expect(calls).toHaveLength(0)
   })
 
@@ -299,41 +381,40 @@ describe('image_gen', () => {
         { status: 400 },
       ),
     )
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow(
-      'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]',
-    )
+    await expect(gen()).rejects.toThrow('Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]')
     expect(readdirSync(imagesDir())).toEqual([])
   })
 
   test('an OpenAI-shaped error and a rate limit name their message, retry time and code', async () => {
     gateway(() => Response.json({ error: { message: 'Image limit reached.', code: 'rate_limited' } }, { status: 429, headers: { 'retry-after': '120' } }))
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('(429): Image limit reached. Retry after 120 s. [rate_limited]')
+    await expect(gen()).rejects.toThrow('(429): Image limit reached. Retry after 120 s. [rate_limited]')
   })
 
   test('a long refusal message is cut at 500 characters; no code means no bracket', async () => {
     gateway(() => Response.json({ message: 'm'.repeat(2000) }, { status: 500 }))
-    const error = (await Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).catch((err: Error) => err)) as Error
+    const error = (await gen().catch((err: Error) => err)) as Error
     expect(error.message).toBe(`Image generation failed (500): ${'m'.repeat(500)}`)
   })
 
   test('no gateway env names what is missing', async () => {
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('KORTIX_LLM_BASE_URL')
+    await expect(gen()).rejects.toThrow('KORTIX_LLM_BASE_URL')
     process.env.KORTIX_LLM_BASE_URL = 'http://127.0.0.1:1/v1/llm'
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('KORTIX_TOKEN')
+    await expect(gen()).rejects.toThrow('KORTIX_TOKEN')
   })
 
-  test('an aborted turn aborts the request and writes no file', async () => {
+  test('an aborted turn aborts every request and writes no file', async () => {
     const turn = new AbortController()
-    let arrived!: () => void
-    const received = new Promise<void>((resolve) => (arrived = resolve))
+    let arrived = 0
+    let bothArrived!: () => void
+    const received = new Promise<void>((resolve) => (bothArrived = resolve))
     let release!: () => void
     const held = new Promise<void>((resolve) => (release = resolve))
     gateway(async () => {
-      arrived()
+      if (++arrived === 2) bothArrived()
       await held
       return generated
     })
-    const call = Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, { ...ictx(), signal: turn.signal }))
+    const call = gen({ prompts: ['x', 'y'] }, { ...ictx(), signal: turn.signal })
     await received
     turn.abort()
     await expect(call).rejects.toThrow()
@@ -341,23 +422,44 @@ describe('image_gen', () => {
     expect(readdirSync(imagesDir())).toEqual([])
   })
 
-  test('the eleventh call in one turn is refused', async () => {
+  test('the eleventh image in one turn is refused', async () => {
     gateway()
     const turn = { ...ctx(), sessionId: 'ses_turn_cap', signal: new AbortController().signal }
-    for (let i = 0; i < IMAGE_GEN_TURN_LIMIT; i++) await imageGen.execute({ action: 'generate', prompt: `x${i}` }, turn)
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, turn)).rejects.toThrow('Image limit for this turn reached')
+    for (let i = 0; i < IMAGE_GEN_TURN_LIMIT; i++) await gen({ prompts: [`x${i}`] }, turn)
+    await expect(gen({}, turn)).rejects.toThrow('Image limit for this turn reached')
     expect(IMAGE_GEN_TURN_LIMIT).toBe(10)
     expect(calls).toHaveLength(10)
     // The next turn starts again.
-    await imageGen.execute({ action: 'generate', prompt: 'next turn' }, { ...turn, signal: new AbortController().signal })
+    await gen({ prompts: ['next turn'] }, { ...turn, signal: new AbortController().signal })
     expect(calls).toHaveLength(11)
   })
 
-  test('the fifty-first call in one session is refused', async () => {
+  test('a batch that would pass the turn cap is refused before any request', async () => {
+    gateway()
+    const turn = { ...ctx(), sessionId: 'ses_turn_batch_cap', signal: new AbortController().signal }
+    await gen({ prompts: ['a', 'b', 'c', 'd'] }, turn)
+    await gen({ prompts: ['e', 'f', 'g', 'h'] }, turn)
+    // 8 used: 3 more would be 11.
+    await expect(gen({ prompts: ['i', 'j', 'k'] }, turn)).rejects.toThrow('Image limit for this turn reached (10 images; 8 used, 3 asked).')
+    expect(calls).toHaveLength(8)
+    // Exactly 10 is allowed; then nothing.
+    await gen({ prompts: ['i', 'j'] }, turn)
+    expect(calls).toHaveLength(10)
+    await expect(gen({}, turn)).rejects.toThrow('Image limit for this turn reached')
+    // Two calls of one step, as pi runs them in parallel: the caps count before either awaits.
+    const step = { ...turn, signal: new AbortController().signal }
+    const both = await Promise.allSettled([gen({ prompts: ['1', '2', '3', '4'] }, step), gen({ prompts: ['5', '6', '7', '8'] }, step), gen({ prompts: ['9', '10', '11'] }, step)])
+    expect(both.map((settled) => settled.status)).toEqual(['fulfilled', 'fulfilled', 'rejected'])
+    expect(calls).toHaveLength(18)
+  })
+
+  test('the fifty-first image in one session is refused, and a batch that would pass it', async () => {
     gateway()
     const session = () => ({ ...ctx(), sessionId: 'ses_session_cap' })
-    for (let i = 0; i < IMAGE_GEN_SESSION_LIMIT; i++) await imageGen.execute({ action: 'generate', prompt: `x${i}` }, session())
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, session())).rejects.toThrow('Image limit for this session reached')
+    for (let i = 0; i < 12; i++) await gen({ prompts: ['a', 'b', 'c', 'd'] }, session())
+    await expect(gen({ prompts: ['a', 'b', 'c'] }, session())).rejects.toThrow('Image limit for this session reached (50 images; 48 used, 3 asked).')
+    await gen({ prompts: ['a', 'b'] }, session())
+    await expect(gen({}, session())).rejects.toThrow('Image limit for this session reached')
     expect(IMAGE_GEN_SESSION_LIMIT).toBe(50)
     expect(calls).toHaveLength(50)
   })
@@ -373,7 +475,7 @@ describe('image_gen', () => {
       writeFileSync(join(dir, 'text.png'), 'not an image at all')
       const relative = join('..', outside.split('/').pop()!, 'x.png')
       for (const path of ['.env', 'passwd.png', 'link.png', relative, join(outside, 'x.png'), 'text.png']) {
-        await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: [path] }, ictx())).rejects.toThrow(path)
+        await expect(gen({ action: 'edit', reference_images: [path] })).rejects.toThrow(path)
       }
       expect(calls).toHaveLength(0)
     } finally {
@@ -385,7 +487,7 @@ describe('image_gen', () => {
     gateway()
     writeFileSync(join(dir, 'big.png'), PNG)
     truncateSync(join(dir, 'big.png'), 20 * MiB + 1)
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['big.png'] }, ictx())).rejects.toThrow('Reference image big.png is larger than 20 MiB.')
+    await expect(gen({ action: 'edit', reference_images: ['big.png'] })).rejects.toThrow('Reference image big.png is larger than 20 MiB.')
     expect(calls).toHaveLength(0)
   })
 
@@ -396,7 +498,7 @@ describe('image_gen', () => {
       writeFileSync(join(dir, name), PNG)
       truncateSync(join(dir, name), 18 * MiB)
     }
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: names }, ictx())).rejects.toThrow('Reference images are larger than 50 MiB in total.')
+    await expect(gen({ action: 'edit', reference_images: names })).rejects.toThrow('Reference images are larger than 50 MiB in total.')
     expect(calls).toHaveLength(0)
   })
 
@@ -404,8 +506,8 @@ describe('image_gen', () => {
     gateway()
     writeFileSync(join(dir, 'photo.jpg'), PNG)
     writeFileSync(join(dir, 'pic.webp'), JPEG)
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['photo.jpg'] }, ictx())).rejects.toThrow('Reference image photo.jpg is not a jpeg image.')
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['pic.webp'] }, ictx())).rejects.toThrow('Reference image pic.webp is not a webp image.')
+    await expect(gen({ action: 'edit', reference_images: ['photo.jpg'] })).rejects.toThrow('Reference image photo.jpg is not a jpeg image.')
+    await expect(gen({ action: 'edit', reference_images: ['pic.webp'] })).rejects.toThrow('Reference image pic.webp is not a webp image.')
     expect(calls).toHaveLength(0)
   })
 
@@ -414,11 +516,11 @@ describe('image_gen', () => {
     const outside = mkdtempSync(join(tmpdir(), 'pi-kortix-outside-'))
     try {
       symlinkSync(outside, join(dir, 'output'))
-      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('output/images is outside the workspace.')
+      await expect(gen()).rejects.toThrow('output/images is outside the workspace.')
       rmSync(join(dir, 'output'))
       mkdirSync(join(dir, 'output'))
       symlinkSync(outside, join(dir, 'output', 'images'))
-      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('output/images is outside the workspace.')
+      await expect(gen()).rejects.toThrow('output/images is outside the workspace.')
       expect(calls).toHaveLength(0)
       expect(readdirSync(outside).filter((name) => name.endsWith('.png'))).toEqual([])
     } finally {
@@ -426,35 +528,37 @@ describe('image_gen', () => {
     }
   })
 
-  test('output_path cannot leave output/images or overwrite a file', async () => {
+  test('each file is named after its prompt inside output/images and never replaces a file', async () => {
     gateway()
-    for (const output_name of ['../kortix.yaml', '../../x.png', 'a/b.png', 'Upper.png', '.png', 'x'.repeat(81), '']) {
-      await expect(imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ictx())).rejects.toThrow('output_name')
+    setSystemTime(new Date('2026-10-28T10:30:00Z'))
+    try {
+      mkdirSync(imagesDir(), { recursive: true })
+      writeFileSync(join(imagesDir(), 'cube-20261028-103000.png'), 'mine')
+      // A path in a prompt is only text: its slug never leaves output/images. `output_name` is not read.
+      const result = await genJson({ prompts: ['cube', 'cube', '../../kortix.yaml', '.git/hooks/pre-commit'], output_name: '../kortix.yaml' })
+      expect(result.images.map((image: { path: string }) => image.path)).toEqual([
+        join(imagesDir(), 'cube-20261028-103000-2.png'),
+        join(imagesDir(), 'cube-20261028-103000-3.png'),
+        join(imagesDir(), 'kortix-yaml-20261028-103000.png'),
+        join(imagesDir(), 'git-hooks-pre-commit-20261028-103000.png'),
+      ])
+      expect(readFileSync(join(imagesDir(), 'cube-20261028-103000.png'), 'utf8')).toBe('mine')
+      expect(readdirSync(dir).sort()).toEqual(['output'])
+    } finally {
+      setSystemTime()
     }
-    expect(calls).toHaveLength(0)
-    mkdirSync(imagesDir(), { recursive: true })
-    writeFileSync(join(imagesDir(), 'cube.png'), 'mine')
-    const first = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ictx())))
-    const second = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube' }, ictx())))
-    expect([first.path, second.path]).toEqual([join(imagesDir(), 'cube-2.png'), join(imagesDir(), 'cube-3.png')])
-    expect(readFileSync(join(imagesDir(), 'cube.png'), 'utf8')).toBe('mine')
   })
 
-  test('output_name replaces a given extension', async () => {
-    let next = 0
-    gateway(() => [answer(PNG, 'image/png'), answer(jpegOf(0xc0, 8, 8), 'image/jpeg'), answer(vp8(8, 8), 'image/webp'), answer(PNG, 'image/png')][next++])
-    const paths: string[] = []
-    for (const output_name of ['hero.jpg', 'hero.png', 'logo.v2', 'cover.jpeg']) {
-      paths.push(JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ictx()))).path)
-    }
-    expect(paths).toEqual([join(imagesDir(), 'hero.png'), join(imagesDir(), 'hero.jpg'), join(imagesDir(), 'logo.v2.webp'), join(imagesDir(), 'cover.png')])
-  })
-
-  test('the output is a small JSON object with a path and never the image bytes', async () => {
+  test('the output is a small JSON object with paths and never the image bytes', async () => {
     gateway()
-    const text = out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ictx()))
+    const text = out(await gen({ prompts: ['x', 'y'] }))
     expect(text).not.toContain(PNG.toString('base64'))
-    expect(Object.keys(JSON.parse(text)).sort()).toEqual(['action', 'model', 'path', 'provider', 'size'])
+    const result = JSON.parse(text)
+    expect(Object.keys(result).sort()).toEqual(['action', 'images', 'model', 'provider'])
+    expect(result.images.map((image: Record<string, unknown>) => Object.keys(image).sort())).toEqual([
+      ['path', 'prompt', 'size'],
+      ['path', 'prompt', 'size'],
+    ])
   })
 })
 

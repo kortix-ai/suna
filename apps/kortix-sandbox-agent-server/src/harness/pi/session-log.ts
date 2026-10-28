@@ -404,7 +404,8 @@ function deriveThread(input: {
         const signed = c.thinkingSignature || c.redacted
         m.blocks.push({ type: 'reasoning', id: blockId('reasoning', i), text: c.thinking ?? '', ...(c.redacted ? { redacted: true } : {}), ...(signed ? { ext: { pi: { version: PI_VERSION, data: { thinkingSignature: c.thinkingSignature } } } } : {}) })
       } else if (c.type === 'toolCall') {
-        const part = pool.take('tool', (p) => p.tool === c.name)
+        // By call id first: a script's nested call to a native-part tool has a part of its own (runtime.ts `onSessionEvent`) that a name match could take.
+        const part = pool.take('tool', (p) => p.callID === c.id) ?? pool.take('tool', (p) => p.tool === c.name)
         const block = toolCall(c, part, results.get(c.id), edits, `${id}-n${i}`, input.images)
         if (!block.result) {
           if (streaming) block.status = 'running'
