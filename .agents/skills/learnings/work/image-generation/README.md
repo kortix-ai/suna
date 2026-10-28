@@ -424,3 +424,73 @@ test('a new image_gen output never renders a remote URL')                     //
   - Add a weekly changelog line.
   - Tell the team that `image_gen` loads by default (D3) and how to opt out.
   - Check the gateway image traces after 7 days: success rate and distinct projects.
+
+---
+
+## Phase 2 — universal image models (2026-10-28)
+
+Jay: image generation is not ChatGPT-only. Any model that can generate images (Gemini image models, OpenAI `gpt-image-*` with an API key, xAI, OpenRouter image models, and Kortix-managed models when the lineup has one) goes through one shared tool and one shared card.
+
+### Live probe (2026-10-28, dev keys, cheapest models)
+
+| Protocol | Call | Status | Latency | Response |
+|---|---|---|---|---|
+| OpenAI Images | `api.openai.com/v1/images/generations`, `gpt-image-1-mini`, low | 200 | 9.2 s | `data[0].b64_json`, `output_format: png`, `size: 1024x1024`, `usage {input_tokens, output_tokens, *_details.image_tokens}` |
+| OpenAI Images | `/v1/images/edits` JSON `images: [{image_url: data:…}]` | 200 | 8.8 s | same shape; edits work as JSON |
+| Chat + image output | `openrouter.ai/api/v1/chat/completions`, `google/gemini-2.5-flash-image`, `modalities: ["image","text"]`, `image_config: {aspect_ratio: "3:2"}` | 200 | 6.5 s | `choices[0].message.images[0].image_url.url` = `data:image/png;base64,…`; `usage.cost` 0.0387 USD |
+| Chat + image output | same, user content `[{type:text},{type:image_url}]` (edit) | 200 | 8.2 s | same |
+| OpenAI Images (xAI) | `api.x.ai/v1/images/generations`, `grok-imagine-image`, `response_format: b64_json` | 200 | 6.1 s | `data[0].{b64_json, mime_type: image/jpeg}`; `usage.cost_in_usd_ticks` (1e10 ticks = 1 USD) |
+| Gemini native | `generativelanguage.googleapis.com/v1beta/models/<m>:generateContent` | not probed | — | no Google key on this machine; contract from Google docs: `generationConfig.responseModalities: ["IMAGE"]`, `imageConfig.aspectRatio`, response `candidates[0].content.parts[].inlineData {mimeType, data}`, `usageMetadata` |
+
+### Decisions (Phase 2)
+
+- **U-D1 — One request contract, owned by Kortix, OpenAI-shaped.** `POST /images/generations` and `/images/edits` accept `{model, prompt, aspect_ratio?, quality?, background?, n?, images?}`. `model` is a Kortix model id (`codex/gpt-image-2`, `openai/gpt-image-1`, `google/gemini-2.5-flash-image`, `xai/grok-imagine-image`, `openrouter/google/gemini-2.5-flash-image`, a managed id) or `"auto"` / absent. The response is always `{created, model, provider, data: [{b64_json, mime_type}], size?, usage?}` whatever the upstream protocol, so the tool and any OpenAI-compatible client read one shape. `model` = the routed Kortix id that answered; `provider` = the public provider name.
+- **U-D2 — The API owns which model answers.** The gateway sends `resolveRoute(principal, { requestedModel, requires: { imageInput, imageOutput: true } })`. The API returns a `ModelRoutePlan` (`policyId: 'image'`, primary + fallbacks, `fallbackOn: 'any-error'`):
+  - explicit model: allowed only if the catalog says its output modalities include `image` (or it is `codex/gpt-image-2`); otherwise refuse `not_an_image_model`, naming up to 5 image models the project can use;
+  - `auto`: the image models the project can reach right now, in this order: ChatGPT connection (`codex/gpt-image-2`) → each connected BYOK provider's preferred image model (`openai`, `google`, `openrouter`, `xai`, in that order; preference lists are constants, filtered by catalog presence) → managed lineup models with image output. Empty → `image_model_unavailable`.
+- **U-D3 — Three protocol adapters in the gateway, chosen from the descriptor, never from the model name alone:**
+  - `openai-images` — provider `openai-codex`, a genuine `api.openai.com` base, or `api.x.ai`. Sends `response_format: "b64_json"` except for `gpt-image*` / `chatgpt-image*` models (they reject it and always return base64). `aspect_ratio` maps to `size`: `1:1`→`1024x1024`; `3:2`, `4:3`, `16:9`→`1536x1024`; `2:3`, `3:4`, `9:16`→`1024x1536`; `auto`→`auto` (`size` omitted for xAI).
+  - `gemini` — a `generativelanguage.googleapis.com` base (the catalog stores the OpenAI-compat base `…/v1beta/openai`; the adapter uses `…/v1beta`). API key in `x-goog-api-key`. `imageConfig.aspectRatio` unless `auto`. Edits send `inlineData` parts.
+  - `chat-image` — every other OpenAI-compatible descriptor (OpenRouter, managed, custom). `modalities: ["image","text"]`, `image_config: {aspect_ratio}` unless `auto`; edits send `image_url` content parts.
+  - Any other descriptor kind (Anthropic, Bedrock) → skip that candidate with `image_model_unsupported`.
+- **U-D4 — Billing reuses the chat pipeline.** Each answered call records one `UsageEvent` through `hooks.recordUsage`, so ChatGPT plans (`billingMode: none`) cost nothing, BYOK gets the existing BYOK treatment, and managed is charged. Upstream cost: the provider's own figure when it sends one (`usage.cost` from OpenRouter, `cost_in_usd_ticks / 1e10` from xAI), else tokens × `descriptor.pricing`. A managed candidate with neither is skipped (`image_model_unpriced`): Kortix never serves a managed image it cannot charge. Managed candidates take the same billing admission/hold as chat; BYOK and ChatGPT never touch the wallet.
+- **U-D5 — The tool is model-neutral.** New params `model?` and `aspect_ratio?` (`auto`, `1:1`, `3:2`, `2:3`, `16:9`, `9:16`, `4:3`, `3:4`); `size` is removed. The image is saved with the extension of its mime type (`png`, `jpeg`→`jpg`, `webp`); `output_name` is a base name (`[a-z0-9._-]{1,80}`, any given image extension is replaced). Output `{path, action, model, provider, size}`, where `size` is read from the saved image's header (`WxH`). Description stays factual (no behavioral hints).
+- **U-D6 — The card is provider-neutral.** The placeholder ratio comes from `input.aspect_ratio` (legacy `input.size` still read). The ready card shows the model that made the image. Failed codes `image_model_unavailable`, `provider_not_connected`, `provider_reauth_required` show one generic action that opens the project's model/provider settings (web); mobile shows the message (R13). The SDK field `connectChatGpt` becomes `connectModel` (unpublished branch: no compatibility shim).
+- **U-D7 — Error codes added:** `image_model_unavailable` (no image model reachable; suggestion: "Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings."), `not_an_image_model`, `image_model_unpriced`. Existing: `image_model_unsupported`, `provider_not_connected`, `provider_reauth_required`, `image_rate_limited`. Rulings R6 (an image 429 never cools a login for chat) and R11 (trailing `[code]` in tool errors) still hold.
+
+### Task 12: API image-model policy
+
+**Files:** `apps/api/src/llm-gateway/routing/` (resolve-route and a new `image-models.ts`), `apps/api/src/llm-gateway/models/catalog-models.ts` (an `imageOutput` capability from `modalities.output`), `apps/api/src/llm-gateway/internal-routes.ts` (accept `requires.imageOutput` on the RPC), tests beside each.
+
+**Interfaces:** Consumes `ModelRouteInput.requires.imageOutput?: boolean` (`packages/llm-gateway/src/domain/routing.ts`, already added). Produces the U-D2 plan and refusals as `GatewayResolutionError(code, message, suggestion)` the RPC already carries.
+
+- [ ] Tests first: `auto with only a ChatGPT connection plans codex/gpt-image-2`; `auto with a Google key and a ChatGPT connection plans codex first, then google`; `auto with no image-capable credential refuses image_model_unavailable`; `an explicit text model refuses not_an_image_model and names available image models`; `an explicit catalog image model passes through as the primary`; `requires.imageOutput absent keeps chat routing unchanged` (regression). Run each file with `pnpm --filter kortix-api test <file>`.
+- [ ] Implement; typecheck; `pnpm --filter kortix-api lint` rules (layering, no process.env, no console).
+
+### Task 13: Gateway protocol adapters and billing
+
+**Files:** `packages/llm-gateway/src/pipeline/images.ts` (+ new `pipeline/image-adapters.ts`), tests; `apps/llm-gateway/src/clients/api-client.ts` (send `requires.imageOutput`).
+
+**Interfaces:** Consumes the U-D2 plan. Produces the U-D1 response. Keeps every Phase 1 guarantee: allowlisted fields, `n` forced to 1, abort, 300 s timeout, R6, R3 headers for ChatGPT, traces without prompt/image/token.
+
+- [ ] Tests first (fake upstreams, one per protocol, shapes from the live probe table): `openai-images generate and edit`, `xAI gets response_format b64_json and no size`, `gemini native generate with aspect ratio and an edit with inlineData`, `chat-image reads message.images data URL`, `auto falls back to the next planned model when the first is not connected`, `anthropic descriptor is skipped as image_model_unsupported`, `managed without a price is skipped as image_model_unpriced`, `usage event per answered call: ChatGPT none, BYOK byok, OpenRouter cost taken from usage.cost, xAI cost from ticks`, `response is normalized to {created, model, provider, data[{b64_json, mime_type}]}`.
+- [ ] Implement; package typecheck.
+
+### Task 14: Model-neutral `image_gen` tool
+
+**Files:** `apps/kortix-sandbox-agent-server/src/services/tools/kortix/image_gen.ts`, `src/__tests__/kortix-tools.test.ts`, regenerated CLI snapshot.
+
+- [ ] Tests first: `model and aspect_ratio are forwarded; absent model sends auto`; `a jpeg answer is saved as .jpg and size is read from the image header`; `output_name replaces a given extension`; `the output names the model and provider that answered`; all Phase 1 security tests stay green.
+- [ ] Implement per U-D5; regenerate `apps/cli/src/kortix-tools.generated.json`.
+
+### Task 15: Provider-neutral card (SDK, web, mobile)
+
+**Files:** `packages/sdk/src/core/turns/tools/image-gen-view.ts` (+ test, snapshots, CHANGELOG), `packages/ui/src/session/tool/tools/image-gen-tool.tsx` (+ tests), `apps/mobile/components/session/tool/tools/image-gen-tool.tsx` (+ tests), i18n catalogs (web 9, mobile 8).
+
+- [ ] Tests first: `aspect_ratio 16:9 gives a 16 / 9 placeholder`, `legacy size still works`, `image_model_unavailable maps to connectModel`, `the ready view exposes the model`.
+- [ ] Implement per U-D6. Web action opens the project's model/provider settings through the existing navigation used by the model picker's connect actions. Brand audit, eslint, both typechecks, mobile tsc.
+
+### Task 16: Docs, plan, PR
+
+- [ ] `apps/web/content/docs/project/tools.mdx` and `models.mdx`: image generation works with any connected image model; list the providers and the auto order; limits unchanged. SDK reference for the renamed field.
+- [ ] Update the PR body (#10990) to the universal scope.
