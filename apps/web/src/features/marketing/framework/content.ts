@@ -46,6 +46,20 @@ export const MANIFEST = [
   "      prompt: Summarize yesterday's orders and post the top three in Slack.",
 ] as const;
 
+/** agents/support.md: the agent's behavior. Frontmatter keys as in the starter's agents/kortix.md. */
+export const SUPPORT_AGENT = [
+  '---',
+  'description: Answers Northwind support tickets in Slack.',
+  'mode: primary',
+  'permission: ask',
+  '---',
+  '',
+  'You answer support tickets for Northwind.',
+  'Look up the order with lookup_order, follow',
+  'the triage-ticket skill, and ask a person',
+  'before you refund anything.',
+] as const;
+
 /** The repository the manifest sits in. `depth` indents; `open` marks the file shown. */
 export const TREE = [
   { name: 'agents', depth: 0, dir: true },
