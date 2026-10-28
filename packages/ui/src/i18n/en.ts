@@ -1326,6 +1326,8 @@ const catalog = {
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Customize sidebar",
+    "searchApps": "Search apps",
+    "appsNoMatches": "No matches",
     "customizeSidebarDescription": "Drag rows between the two groups.",
     "resetSidebar": "Reset to default",
     "reorderItem": "Reorder {name}",

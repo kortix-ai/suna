@@ -1817,6 +1817,8 @@
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Personnaliser la barre latérale",
+    "searchApps": "Rechercher des apps",
+    "appsNoMatches": "Aucun résultat",
     "customizeSidebarDescription": "Faites glisser les éléments d'un groupe à l'autre.",
     "resetSidebar": "Rétablir par défaut",
     "reorderItem": "Déplacer {name}",

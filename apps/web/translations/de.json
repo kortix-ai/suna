@@ -1817,6 +1817,8 @@
     "drive": "Drive",
     "repo": "Repo",
     "customizeSidebar": "Seitenleiste anpassen",
+    "searchApps": "Apps durchsuchen",
+    "appsNoMatches": "Keine Treffer",
     "customizeSidebarDescription": "Ziehe Elemente zwischen den beiden Gruppen.",
     "resetSidebar": "Auf Standard zurücksetzen",
     "reorderItem": "{name} verschieben",
