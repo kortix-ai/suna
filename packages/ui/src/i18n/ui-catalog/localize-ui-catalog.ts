@@ -30,6 +30,9 @@ const DISPLAY_PROPERTIES = new Set([
   'tooltip',
 ]);
 
+/** Structural keys: a discriminant or an address, never copy. Translating one breaks the shape (2026-10-28: Italian turned `kind: 'steps'` into 'passaggi' and the /it/slack build crashed). */
+const STRUCTURAL_PROPERTIES = new Set(['kind', 'type', 'id', 'href', 'variant', 'icon', 'tone', 'status']);
+
 export function translateUiCatalogText(
   value: string,
   tI18nComplete: UiTranslator,
@@ -57,6 +60,7 @@ export function localizeUiCatalog<T>(
 
   return Object.fromEntries(
     Object.entries(value).map(([key, entry]) => {
+      if (STRUCTURAL_PROPERTIES.has(key)) return [key, entry];
       if (typeof entry === 'string' && DISPLAY_PROPERTIES.has(key)) {
         return [key, translateUiCatalogText(entry, tI18nComplete, translationKeys)];
       }
