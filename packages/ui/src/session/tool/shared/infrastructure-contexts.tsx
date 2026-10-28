@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import { type ToolOutcome } from '@kortix/sdk';
-import { isEmptyShowPart } from '@kortix/sdk';
+import { isInvisibleActivityPart } from '@kortix/sdk';
 import { toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export const ToolRunningContext = createContext(false);
@@ -115,9 +115,9 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
 
 export function shouldShowToolPartInActionsPanel(call: ToolCallBlock): boolean {
   if (MEMORY_LOOKUP_TOOL_NAMES.has(call.name)) return false;
-  // A `show` that handed nothing over renders an empty card, so its stepper row
+  // A `show` that handed nothing over, or a read of an empty memory folder,
   // would open onto blank space. Same verdict the chat transcript reaches.
-  if (isEmptyShowPart(call)) return false;
+  if (isInvisibleActivityPart(call)) return false;
   // A skill row opens its SKILL.md in the detail panel, so it has no Actions
   // row of its own. (It used to raise a side sheet; that sheet is gone.)
   if (toolKind(call.name) === 'skill') return false;

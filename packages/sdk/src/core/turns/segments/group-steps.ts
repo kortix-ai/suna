@@ -11,7 +11,7 @@
 import type { ToolPart } from '../../runtime/client';
 import { asToolPart } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
-import { isEmptyShowPart, isNoGroupActivityTool } from './session-activity-groups';
+import { isInvisibleActivityPart, isNoGroupActivityTool } from './session-activity-groups';
 import { type StepFamily, familyForTool, narrateFailedStep, narrateStep } from './narration';
 
 /** A step of v1 tool parts, or of session-log tool call blocks: `parts` holds what `groupSteps` was given. */
@@ -85,10 +85,11 @@ export function groupSteps<P extends ToolPart | ToolCallBlock = ToolPart>(given:
     const f = familyForTool(part.tool);
     if (f === 'hidden') continue; // dropped, and must not split a run
 
-    // A `show` that handed nothing over is hidden for the same reason: its own
-    // step would narrate "Showed you the result" and open onto an empty card.
-    // Dropped here, before the standalone branch, so it also cannot split a run.
-    if (isEmptyShowPart(part)) continue;
+    // A `show` that handed nothing over, or a read of an empty memory folder,
+    // is hidden for the same reason: its own step would narrate an action and
+    // open onto an empty card. Dropped here, before the standalone branch, so
+    // it also cannot split a run.
+    if (isInvisibleActivityPart(part)) continue;
 
     // The deliverables (show / show_user / image_gen) each stand alone.
     if (isNoGroupActivityTool(part.tool)) {

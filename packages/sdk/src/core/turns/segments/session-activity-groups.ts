@@ -1,3 +1,4 @@
+import { parseMemoryView } from '../tools/memory-helpers';
 import { isShowPayloadEmpty } from '../tools/show-availability';
 import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
@@ -74,12 +75,20 @@ export function writeActivityGroupLabel(count: number, running: boolean): string
  * the renderer is not enough. The step still wraps it in a row, the chain still
  * draws its rail, and the reader gets a blank gap where a deliverable should
  * be. The part has to be dropped before segmentation, not after.
+ *
+ * A settled `memory` read of an empty memory folder is dropped for the same
+ * reason (see `isEmptyMemoryViewPart`).
+ *
+ * It takes a session-log `ToolCallBlock` too, so the Actions panel reaches the
+ * same verdict as the transcript.
  */
-export function isInvisibleActivityPart(part: ActivityPartLike): boolean {
+export function isInvisibleActivityPart(call: ActivityPartLike | ToolCallBlock): boolean {
+  const part: ActivityPartLike = isToolCallBlock(call) ? toolPartOf(call) : call;
   if (part.type === 'snapshot' || part.type === 'patch') return true;
   if (part.type === 'step-start' || part.type === 'step-finish') return true;
   if (part.type === 'text' && !part.text?.trim()) return true;
   if (isEmptyShowPart(part)) return true;
+  if (isEmptyMemoryViewPart(part)) return true;
   return false;
 }
 
@@ -89,7 +98,32 @@ export interface ActivityPartLike {
   type?: string;
   text?: string;
   tool?: string;
-  state?: { status?: string; input?: Record<string, unknown> | null } | null;
+  state?: { status?: string; input?: Record<string, unknown> | null; output?: unknown } | null;
+}
+
+/**
+ * A settled `memory` `view` of the memory folder that found nothing in it.
+ *
+ * The agent reads memory at the start of most tasks. On a project with no
+ * memory yet, the chat drew a "Memory read" row whose card said "Memory is
+ * empty." That row tells the reader nothing, so it is dropped.
+ *
+ * "Empty" is the renderers' own test: `parseMemoryView` reads a directory
+ * listing with no entry below the viewed folder. The tool lists the folder
+ * itself on the first line; it is skipped with or without a trailing slash.
+ * A listing with any file, a view of a file, a missing path, and a
+ * `pending`/`running`/`error` call all stay visible.
+ */
+function isEmptyMemoryViewPart(part: ActivityPartLike): boolean {
+  if (normalizeActivityToolName(part.tool) !== 'memory') return false;
+  if (part.state?.status !== 'completed') return false;
+  const input = part.state.input;
+  const output = part.state.output;
+  if (input?.command !== 'view' || typeof input.path !== 'string' || typeof output !== 'string') return false;
+  const view = parseMemoryView(output, input.path);
+  if (view?.type !== 'dir') return false;
+  const root = input.path.replace(/\/$/, '');
+  return view.entries.every((entry) => entry.path.replace(/\/$/, '') === root);
 }
 
 /**

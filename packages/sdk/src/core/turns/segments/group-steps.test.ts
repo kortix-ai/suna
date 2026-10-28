@@ -122,3 +122,16 @@ describe('error handling (W7)', () => {
     expect(steps[0].label).toBe("Couldn't write budget.csv");
   });
 });
+
+describe('groupSteps — the empty memory read', () => {
+  // The Actions panel and the merged steps read `groupSteps`, so an empty
+  // memory read must drop here too, not only in `segmentTurn`.
+  it('drops an empty memory view, without splitting the run', () => {
+    const memory = part('memory', 'completed', { command: 'view', path: 'memory' });
+    (memory.state as { output?: string }).output =
+      "Here're the files and directories up to 2 levels deep in memory, excluding hidden items and node_modules:\n4K\tmemory";
+    const steps = groupSteps([part('read'), memory, part('read')]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].parts).toHaveLength(2);
+  });
+});
