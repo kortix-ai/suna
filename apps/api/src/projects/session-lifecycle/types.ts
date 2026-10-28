@@ -19,6 +19,7 @@ export type SessionInvocationSource =
   | 'trigger:event'
   | 'trigger:app'
   | 'trigger:reminder'
+  | 'trigger:change_request'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'

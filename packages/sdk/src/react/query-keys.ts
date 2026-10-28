@@ -563,6 +563,8 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listProjectAutomations` — `GET /projects/:id/automations`: triggers and loops in one list. */
+    automations: (id: string) => [...qk.project.scope(id), 'automations'] as const,
     /** `listProjectSpaces` — the project's channels and the caller's DMs. */
     spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
     /** `listProjectSessionGroups` — the project's session groups, in order. */

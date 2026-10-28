@@ -144,6 +144,8 @@ export async function claimDueScheduleSlots(input: {
           slug: candidate.slug,
           scheduleRevision,
           scheduledFor,
+          // The run's real origin: a loop's slot is `reminder`, every other slot `cron`.
+          source: spec.reminder ? 'reminder' : 'cron',
           status: missed ? 'skipped' : 'queued',
           lastError: missed,
           completedAt: missed ? input.now : null,

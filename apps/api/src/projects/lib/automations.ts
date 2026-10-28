@@ -284,6 +284,17 @@ export async function loadRuntimeAutomation(projectId: string, slug: string): Pr
   return row?.scheduleSpec ? row : null;
 }
 
+/**
+ * The webhook receiver's lookup for a runtime id: the stored spec of an
+ * enabled webhook automation. `enabled` lives on the row (pause flips it),
+ * so it overrides the spec's own flag.
+ */
+export async function runtimeWebhookSpec(projectId: string, slug: string): Promise<GitTriggerSpec | null> {
+  const row = await loadRuntimeAutomation(projectId, slug);
+  if (!row || row.triggerType !== 'webhook') return null;
+  return { ...(row.scheduleSpec as unknown as GitTriggerSpec), enabled: row.enabled !== false };
+}
+
 /** Store an agent-target runtime automation. A schedule gets its first slot now. */
 export async function insertRuntimeAgentAutomation(input: {
   projectId: string;

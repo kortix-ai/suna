@@ -168,7 +168,8 @@ async function executeTriggerExecution(
         project,
         payload,
         renderedPrompt,
-        source: 'cron',
+        // The slot's own origin (`cron`, or `reminder` for a loop's slot).
+        source: row.source === 'reminder' ? 'reminder' : 'cron',
         idempotencyKey,
       }),
       triggerFireTimeoutMs(),

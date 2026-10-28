@@ -20,6 +20,14 @@ export function bindProjectOperationsAdmin(projectId: string) {
       removeMany: (...a: DropFirst<Parameters<typeof P.deleteSessionReminders>>) =>
         P.deleteSessionReminders(projectId, ...a),
     },
+    /** Triggers and loops as one list; runtime ones change here — see `listProjectAutomations`. */
+    automations: {
+      list: () => P.listProjectAutomations(projectId),
+      create: (...a: DropFirst<Parameters<typeof P.createProjectAutomation>>) => P.createProjectAutomation(projectId, ...a),
+      update: (...a: DropFirst<Parameters<typeof P.updateProjectAutomation>>) => P.updateProjectAutomation(projectId, ...a),
+      run: (...a: DropFirst<Parameters<typeof P.runProjectAutomation>>) => P.runProjectAutomation(projectId, ...a),
+      remove: (...a: DropFirst<Parameters<typeof P.deleteProjectAutomation>>) => P.deleteProjectAutomation(projectId, ...a),
+    },
     /** Conversations between sessions and people (flag `agent_rooms`) — see `listRooms`. */
     rooms: {
       list: (...a: DropFirst<Parameters<typeof P.listRooms>>) => P.listRooms(projectId, ...a),

@@ -135,7 +135,8 @@ export async function loadTriggersForResponse(
       slug: spec.slug,
       path: spec.path,
       name: spec.name,
-      type: spec.type,
+      // A manifest trigger is never `change_request` (runtime only, lib/automations.ts).
+      type: spec.type as Exclude<typeof spec.type, 'change_request'>,
       agent: spec.agent,
       model: spec.model,
       enabled: spec.enabled,

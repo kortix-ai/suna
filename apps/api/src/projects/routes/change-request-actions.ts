@@ -283,6 +283,24 @@ export function registerChangeRequestActionsRoutes(): void {
       });
 
       invalidateProjectMirror(projectId);
+      // The `change_request` automation source: every automation this merge
+      // matches fires (lib/change-request-automations.ts). Best-effort and not
+      // awaited: the merge is durable and its response must not wait on a fire.
+      void import('../lib/change-request-automations')
+        .then(({ fireChangeRequestMergedAutomations }) =>
+          fireChangeRequestMergedAutomations(loaded.row, [
+            {
+              cr_id: cr.crId,
+              number: cr.number,
+              title: cr.title,
+              base_ref: cr.baseRef,
+              head_ref: cr.headRef,
+              merge_commit_sha: result.merge_commit_sha,
+            },
+            ...alsoMerged.map((other) => ({ cr_id: other.cr_id, number: other.number, base_ref: cr.baseRef, merge_commit_sha: result.merge_commit_sha })),
+          ]),
+        )
+        .catch(() => {});
       // The merge moved the CR's base branch. Sessions on it converge.
       void import('../lib/config-convergence-triggers')
         .then((triggers) => triggers.notifyBaseBranchMoved(projectId, cr.baseRef, 'change-request-merge'))

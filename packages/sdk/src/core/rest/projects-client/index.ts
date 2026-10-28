@@ -48,6 +48,7 @@ export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './session-reminders';
+export * from './automations';
 export * from './rooms';
 export * from './artifacts';
 export * from './tokens';
