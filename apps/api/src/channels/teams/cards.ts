@@ -735,6 +735,9 @@ export interface TeamsQuestion {
   custom?: boolean;
 }
 
+/** A press on a question card that answers nothing: its session is gone, or the conversation moved on. */
+export const QUESTION_EARLIER = 'This question is from an earlier conversation.';
+
 const MAX_BUTTON_OPTIONS = 6;
 /** Past this, a column of radios stops being scannable and a dropdown wins. */
 const MAX_EXPANDED_CHOICES = 6;
