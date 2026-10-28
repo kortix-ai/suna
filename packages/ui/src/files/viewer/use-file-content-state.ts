@@ -395,7 +395,7 @@ export function useFileContentState({
   // case the surface itself has to speak for.
   //
   // A HEIC whose CONVERSION fails is deliberately not one of them:
-  // `use-heic-url.ts` catches the `heic2any` rejection and falls back to a blob
+  // `use-heic-url.ts` catches the HEIC decoder rejection and falls back to a blob
   // URL over the raw bytes, which a browser with native HEIC support then
   // renders correctly. So `heicImageUrl` is set, this predicate is false, and
   // ImageRenderer mounts. Where the browser also cannot decode it, the release
