@@ -2,7 +2,7 @@ import type { AuthorizeResult, UpstreamDescriptor } from '../domain';
 import { GatewayResolutionError } from '../errors';
 import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import { trimTrailingSlash } from '../transports/ai-sdk/model';
-import { clampRetryAfterSeconds, gatewayErrorBody } from './error-response';
+import { gatewayErrorBody } from './error-response';
 import { type HandlerRuntime, authorize, bearer, identity, requestId } from './simple-handler';
 import { createTraceEmitter } from './trace';
 
@@ -68,12 +68,16 @@ function limitHeaders(upstream: Headers): Record<string, string> {
   return out;
 }
 
-function restSeconds(upstream: Headers): number | undefined {
-  const seconds = Number.parseFloat(
-    upstream.get('retry-after') ?? upstream.get('x-codex-primary-reset-after-seconds') ?? '',
-  );
-  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : undefined;
+/** Seconds until the image limit resets: `retry-after`, else the ChatGPT reset header, else 60. */
+function restSeconds(upstream: Headers): number {
+  for (const name of ['retry-after', 'x-codex-primary-reset-after-seconds']) {
+    const seconds = Number.parseFloat(upstream.get(name) ?? '');
+    if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds);
+  }
+  return 60;
 }
+
+const SAFETY_REFUSAL = /moderation|content[_ ]policy|safety/i;
 
 export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequest): Promise<Response> {
   const { hooks, logger } = runtime;
@@ -104,14 +108,13 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
       suggestion,
       responseStatus: status,
     });
-    const retryHeader = clampRetryAfterSeconds(extra.retryAfter?.toString());
     return new Response(
       JSON.stringify(extra.retryAfter !== undefined ? { ...body, retry_after: extra.retryAfter } : body),
       {
         status,
         headers: {
           'content-type': 'application/json',
-          ...(retryHeader !== undefined ? { 'retry-after': String(retryHeader) } : {}),
+          ...(extra.retryAfter !== undefined ? { 'retry-after': String(extra.retryAfter) } : {}),
           ...extra.headers,
         },
       },
@@ -232,7 +235,7 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
   };
 
   let refreshed = false;
-  let rateLimited: { rest?: number; headers: Record<string, string> } | null = null;
+  let rateLimited = { rest: 60, headers: {} as Record<string, string> };
   emit.mark('dispatch');
   for (let index = 0; index < candidates.length; index += 1) {
     let descriptor = candidates[index];
@@ -280,13 +283,10 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
 
     if (upstream.status === 429) {
       await upstream.body?.cancel();
-      const rest = restSeconds(upstream.headers);
-      rateLimited = { rest, headers: limitHeaders(upstream.headers) };
-      if (descriptor.poolSecretId && hooks.notePoolRateLimit) {
-        await hooks.notePoolRateLimit(principal, descriptor.poolSecretId, rest ?? 60).catch((error: unknown) => {
-          logger.warn(`[gateway] ${id}: pool cooldown not recorded — ${error instanceof Error ? error.message : String(error)}`);
-        });
-      }
+      // The image quota is separate from chat, and the pool cooldown is keyed
+      // per secret: noting it here would block chat on this login (R6). Try
+      // the next pooled account within this request only.
+      rateLimited = { rest: restSeconds(upstream.headers), headers: limitHeaders(upstream.headers) };
       continue;
     }
 
@@ -295,12 +295,15 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
       return refuse(401, 'provider_reauth_required', 'The ChatGPT login expired.', 'Reconnect ChatGPT in Models, then retry.');
     }
 
-    const { message } = parseUpstreamErrorBody(await upstream.text().catch(() => ''));
+    const { message, code } = parseUpstreamErrorBody(await upstream.text().catch(() => ''));
+    const refusal = upstream.status < 500 && SAFETY_REFUSAL.test(`${code ?? ''} ${message}`);
     return refuse(
       upstream.status >= 500 ? 502 : upstream.status,
       'image_upstream_error',
       message || `ChatGPT answered ${upstream.status}.`,
-      upstream.status >= 500 ? 'Retry the request.' : 'Change the prompt or the reference images, then retry.',
+      refusal
+        ? 'Change the prompt or the reference images, then retry.'
+        : 'Retry, or check the ChatGPT connection in project settings.',
     );
   }
 
@@ -309,6 +312,6 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
     'image_rate_limited',
     'The ChatGPT image limit is reached.',
     'Wait for the limit to reset, then retry.',
-    { retryAfter: rateLimited?.rest, headers: rateLimited?.headers },
+    { retryAfter: rateLimited.rest, headers: rateLimited.headers },
   );
 }

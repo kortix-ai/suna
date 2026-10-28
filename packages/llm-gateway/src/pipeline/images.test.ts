@@ -161,33 +161,68 @@ describe('handleImageRequest', () => {
     expect(calls).toHaveLength(1);
   });
 
-  test('429 notes the pool cooldown and answers image_rate_limited', async () => {
+  test('an image 429 never cools the login for chat', async () => {
     const cooldowns: unknown[][] = [];
     const { run } = setup(
       { notePoolRateLimit: async (...args) => { cooldowns.push(args); } },
       async () => new Response('{"detail":"limit"}', {
         status: 429,
-        headers: { 'retry-after': '120', 'x-codex-primary-reset-after-seconds': '120' },
+        headers: { 'retry-after': '120', 'x-codex-primary-reset-after-seconds': '3600' },
       }),
     );
     const response = await run({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
-    expect(cooldowns).toEqual([[principal, 'secret-1', 120]]);
+    expect(cooldowns).toEqual([]);
     expect(response.status).toBe(429);
-    expect(response.headers.get('x-codex-primary-reset-after-seconds')).toBe('120');
+    expect(response.headers.get('retry-after')).toBe('120');
+    expect(response.headers.get('x-codex-primary-reset-after-seconds')).toBe('3600');
     const body = (await response.json()) as { code: string; retry_after: number };
     expect(body.code).toBe('image_rate_limited');
     expect(body.retry_after).toBe(120);
   });
 
-  test('a 429 on one pooled account moves to the next', async () => {
+  test('a 429 retry time falls back to the ChatGPT reset header, then 60 s', async () => {
+    for (const [headers, expected] of [
+      [{ 'x-codex-primary-reset-after-seconds': '900' }, 900],
+      [{}, 60],
+    ] as const) {
+      const { run } = setup({}, async () => new Response('limit', { status: 429, headers }));
+      const response = await run({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+      expect(response.status).toBe(429);
+      expect(response.headers.get('retry-after')).toBe(String(expected));
+      expect(((await response.json()) as { retry_after: number }).retry_after).toBe(expected);
+    }
+  });
+
+  test('a 429 on one pooled account moves to the next without a cooldown', async () => {
     let n = 0;
+    const cooldowns: unknown[][] = [];
     const { calls, run } = setup(
-      { resolveUpstream: async () => [codex, { ...codex, apiKey: 'access-b', poolSecretId: 'secret-2' }] },
+      {
+        resolveUpstream: async () => [codex, { ...codex, apiKey: 'access-b', poolSecretId: 'secret-2' }],
+        notePoolRateLimit: async (...args) => { cooldowns.push(args); },
+      },
       async () => (n++ === 0 ? new Response('limit', { status: 429, headers: { 'retry-after': '60' } }) : okImage()),
     );
     const response = await run({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
     expect(response.status).toBe(200);
     expect(calls.map((c) => header(c, 'authorization'))).toEqual(['Bearer access-1', 'Bearer access-b']);
+    expect(cooldowns).toEqual([]);
+  });
+
+  test('an upstream 4xx suggests a new prompt only for a safety refusal', async () => {
+    const cases = [
+      [400, '{"error":{"message":"Your request was rejected by the safety system.","code":"moderation_blocked"}}', 'Change the prompt or the reference images, then retry.'],
+      [403, '{"error":{"message":"Forbidden for this account."}}', 'Retry, or check the ChatGPT connection in project settings.'],
+    ] as const;
+    for (const [status, raw, suggestion] of cases) {
+      const { run } = setup({}, async () => new Response(raw, { status, headers: { 'content-type': 'application/json' } }));
+      const response = await run({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+      expect(response.status).toBe(status);
+      const body = (await response.json()) as { code: string; message: string; suggestion: string };
+      expect(body.code).toBe('image_upstream_error');
+      expect(body.message).toBe(JSON.parse(raw).error.message);
+      expect(body.suggestion).toBe(suggestion);
+    }
   });
 
   test('a missing bearer token is 401 before the body is read', async () => {
