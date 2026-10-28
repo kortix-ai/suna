@@ -22951,7 +22951,8 @@
       "networkEgressNone": "Није декларисано",
       "requiredConnectors": "Обавезни конектори",
       "requiredConnectorsHelp": "Наведени у kortix.yaml (connectors_required). Не примењује се: сесије почињу без њих.",
-      "models": "Модели"
+      "models": "Модели",
+      "tabCapabilities": "Mogućnosti"
     },
     "myKortix": {
       "allowed": "Дозвољено",

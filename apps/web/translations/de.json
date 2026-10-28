@@ -22951,7 +22951,8 @@
       "networkEgressNone": "Nicht deklariert",
       "requiredConnectors": "Erforderliche Konnektoren",
       "requiredConnectorsHelp": "In kortix.yaml aufgeführt (connectors_required). Nicht durchgesetzt: Sitzungen starten auch ohne sie.",
-      "models": "Modelle"
+      "models": "Modelle",
+      "tabCapabilities": "Fähigkeiten"
     },
     "myKortix": {
       "allowed": "Erlaubt",

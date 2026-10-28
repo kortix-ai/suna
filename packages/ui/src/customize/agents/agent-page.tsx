@@ -113,8 +113,9 @@ import {
   AgentIdentityHeader,
   AgentPageSkeleton,
   AgentStatePage,
-  AgentRail,
+  AgentTabBar,
   type AgentRailItem,
+  type AgentTabGroup,
   AgentTabBody,
   type HeaderFact,
   LeaveDialog,
@@ -496,11 +497,30 @@ function useRailItems(
   ];
 }
 
-/** The rail and the body beside it, under the header's rule. */
-function RailLayout({ rail, children }: { rail: ReactNode; children: ReactNode }) {
+/**
+ * The rail rows as the page's top tabs: Overview, Model, Capabilities (the
+ * grants of what the agent can do), Access (what it can reach), Workspace,
+ * Triggers. A tab with several views shows them as pills.
+ */
+function useTabGroups(items: AgentRailItem[]): AgentTabGroup[] {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const pick = (keys: readonly string[]) => keys.flatMap((key) => items.filter((item) => item.key === key));
+  const one = (key: string) => ({ key, label: items.find((item) => item.key === key)?.label ?? key, items: pick([key]) });
+  return [
+    one('overview'),
+    one('model'),
+    { key: 'capabilities', label: t('tabCapabilities'), items: pick(['tools', 'skills', 'subagents', 'commands', 'extensions']) },
+    { key: 'access', label: t('tabAccess'), items: pick(['connectors', 'secrets', 'apps', 'actions', 'drives']) },
+    one('workspace'),
+    one('triggers'),
+  ];
+}
+
+/** The tabs over the one scroller. */
+function TabLayout({ tabs, children }: { tabs: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-t md:flex-row">
-      {rail}
+    <div className="flex min-h-0 flex-1 flex-col">
+      {tabs}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
@@ -796,6 +816,7 @@ function EditableAgentPage({
     model: modelName(editor.oc.model),
     workspace: draft.sandbox,
   });
+  const tabGroups = useTabGroups(railItems);
   const dirtyItems = useMemo(() => changedItems(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
   const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
     dirtyItems.map((key) => railItems.find((item) => item.key === key)?.label ?? key),
@@ -950,17 +971,9 @@ function EditableAgentPage({
             />
           }
         />
-        <RailLayout
-          rail={
-            <AgentRail
-              items={railItems}
-              active={railKeyOf(location)}
-              dirty={dirtyItems}
-            />
-          }
-        >
+        <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} dirty={dirtyItems} />}>
           {body}
-        </RailLayout>
+        </TabLayout>
         <SaveBar
           dirty={editor.isDirty}
           pending={update.isPending}
@@ -1044,6 +1057,7 @@ function ReadOnlyAgentPage({
     model: modelName(block.behavior?.model),
     workspace: block.sandbox,
   });
+  const tabGroups = useTabGroups(railItems);
   const name = agentDisplayName(agent.name);
   // A reader has a page for Kortix permissions and Model only. Every other
   // Access row shows its grant by name on the Overview and links nowhere.
@@ -1137,16 +1151,9 @@ function ReadOnlyAgentPage({
           />
         }
       />
-      <RailLayout
-        rail={
-          <AgentRail
-            items={railItems}
-            active={railKeyOf(location)}
-          />
-        }
-      >
+      <TabLayout tabs={<AgentTabBar groups={tabGroups} active={railKeyOf(location)} />}>
         {body}
-      </RailLayout>
+      </TabLayout>
     </div>
   );
 }

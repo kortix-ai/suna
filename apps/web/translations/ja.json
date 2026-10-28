@@ -22951,7 +22951,8 @@
       "networkEgressNone": "未宣言",
       "requiredConnectors": "必須コネクタ",
       "requiredConnectorsHelp": "kortix.yaml に記載（connectors_required）。適用されません。セッションはこれらなしで開始します。",
-      "models": "モデル"
+      "models": "モデル",
+      "tabCapabilities": "機能"
     },
     "myKortix": {
       "allowed": "許可",

@@ -520,13 +520,12 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .first()
           .click();
         await expect(page).toHaveURL(/\/customize\/agents\/kortix/);
-        // The agent page's underline tabs (People is the header's Share dialog).
-        for (const name of ["Access", "Runtime", "Triggers", "Overview"]) {
-          const tab = page
-            .getByRole("tablist", { name: "Agent sections" })
-            .getByRole("tab", { name, exact: true });
+        // The agent page's top tabs (People is the header's Share dialog).
+        // By test id: the Triggers tab's name carries its count.
+        for (const key of ["capabilities", "access", "triggers", "overview"]) {
+          const tab = page.getByTestId(`agent-tab-${key}`);
           await tab.click();
-          await expect(tab).toHaveAttribute("aria-selected", "true");
+          await expect(tab).toHaveAttribute("aria-current", "page");
           await expect(page.locator("main main")).toBeVisible();
           await expect(page.locator("main main")).toContainText(/\S/);
         }

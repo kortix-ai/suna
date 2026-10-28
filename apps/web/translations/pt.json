@@ -22951,7 +22951,8 @@
       "networkEgressNone": "Não declarado",
       "requiredConnectors": "Conectores obrigatórios",
       "requiredConnectorsHelp": "Listados no kortix.yaml (connectors_required). Não aplicado: as sessões começam sem eles.",
-      "models": "Modelos"
+      "models": "Modelos",
+      "tabCapabilities": "Capacidades"
     },
     "myKortix": {
       "allowed": "Permitido",

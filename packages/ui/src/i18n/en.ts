@@ -7594,6 +7594,7 @@ const catalog = {
       "tabOverview": "Overview",
       "tabInstructions": "Instructions",
       "tabAccess": "Access",
+      "tabCapabilities": "Capabilities",
       "tabRuntime": "Runtime",
       "tabTriggers": "Triggers",
       "tabPeople": "People",

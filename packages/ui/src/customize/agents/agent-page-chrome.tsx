@@ -1,20 +1,17 @@
 'use client';
 
 /**
- * The agent page's frame: one identity header, then one rail beside the
- * content. No breadcrumb, no second bar.
+ * The agent page's frame: one identity header, one row of tabs under it, and
+ * the content below, all on one left edge. No rail beside the content: the
+ * app sidebar is the only column (2026-10-28).
  *
  *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
  *   │   ● Enabled · Space: workspace · People start it                 │
- *   ├──────────────┬───────────────────────────────────────────────────┤
- *   │ Overview     │ content (the one scroller)                        │
- *   │ Model   Kimi │                                                   │
- *   │ Workspace    │                                                   │
- *   │ Triggers   1 │                                                   │
- *   │ Access       │                                                   │
- *   │  Connectors None                                                 │
- *   │  Skills  All │                                                   │
- *   └──────────────┴───── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
+ *   │ Overview  Model  Capabilities  Access  Workspace  Triggers 1     │
+ *   ├──────────────────────────────────────────────────────────────────┤
+ *   │ [Tools All] [Skills All] [Agents None] [Commands 6] …            │
+ *   │ content (the one scroller)                                       │
+ *   └──────────────────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
  * The header echoes the Space channel header (`space-page.tsx`): a tile, the
  * name at `text-xl font-medium`, one muted line. It is also the window's
@@ -42,11 +39,9 @@ import { Kbd } from '../../primitives/kbd';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Skeleton } from '../../primitives/skeleton';
 import { StatusDot, type StatusTone } from '../../primitives/status';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { UiLink as Link } from '../../providers/ui-provider';
 import { AnimatePresence, m } from 'motion/react';
 
-import { RAIL_HORIZONTAL_ROW_CLASS, RAIL_ROW_CLASS, RailGroup } from '../../internal/components/nav-rail';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 
 import type { AgentRailKey } from './agent-tabs';
@@ -125,71 +120,97 @@ export interface AgentRailItem {
   count?: number | string;
 }
 
+/** One top tab of the agent page: one view, or several shown as pills. */
+export interface AgentTabGroup {
+  key: string;
+  label: string;
+  items: AgentRailItem[];
+}
+
 /**
- * The agent page's one navigation: every tab and every Access and Runtime
- * view in a single list, so a grant is one click away and its state (All,
- * None, a count) reads on the row. From `md` it is the left rail in Project
- * admin's dialect (`nav-rail.tsx`); below `md` the same rows run as one
- * horizontal strip. A row holding an unsaved edit carries a dot.
+ * The agent page's navigation: one row of tabs under the header, and, when the
+ * active tab holds several views, one row of pills for them. Every
+ * `agents.<name>` key in kortix.yaml lives on exactly one tab or pill
+ * (`YAML_KEY_ROW`). A tab or pill holding an unsaved edit carries a dot. The
+ * row scrolls sideways on a narrow window instead of wrapping.
  */
-export function AgentRail({
-  items,
+export function AgentTabBar({
+  groups,
   active,
   dirty,
 }: {
-  items: AgentRailItem[];
+  groups: AgentTabGroup[];
   active: AgentRailKey;
   dirty?: readonly AgentRailKey[];
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
-  const row = (item: AgentRailItem, horizontal: boolean) => (
-    <TabsTrigger
-      key={item.key}
-      value={item.key}
-      asChild
-      size={horizontal ? undefined : 'md'}
-      className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
-    >
-      <Link href={item.href} prefetch={false}>
-        {/* The label never truncates; a long value ("Project default") does. */}
-        <span className="shrink-0">{item.label}</span>
-        {dirty?.includes(item.key) ? (
-          <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />
-        ) : null}
-        {item.count !== undefined ? (
-          <span className={cn('text-muted-foreground min-w-0 truncate font-normal tabular-nums', !horizontal && 'ml-auto')}>
-            {item.count}
-          </span>
-        ) : null}
-      </Link>
-    </TabsTrigger>
-  );
+  const shown = groups.filter((group) => group.items.length > 0);
+  const current = shown.find((group) => group.items.some((item) => item.key === active)) ?? shown[0];
+  const dot = <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />;
   return (
     <>
-      <nav aria-label={t('tabsLabel')} className="shrink-0 border-b md:hidden">
-        <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="py-2">
-          <Tabs value={active} className="w-fit px-4">
-            <TabsList orientation="horizontal" className="w-fit">
-              {items.map((item) => row(item, true))}
-            </TabsList>
-          </Tabs>
+      <nav aria-label={t('tabsLabel')} className="shrink-0 border-b">
+        <FadedScrollArea orientation="horizontal" fadeColor="from-background">
+          <div className="flex w-max items-center gap-1 px-4 md:px-8">
+            {shown.map((group) => {
+              const on = group === current;
+              const single = group.items.length === 1 ? group.items[0] : null;
+              return (
+                <Link
+                  key={group.key}
+                  href={group.items[0].href}
+                  prefetch={false}
+                  aria-current={on ? 'page' : undefined}
+                  data-testid={`agent-tab-${group.key}`}
+                  className={cn(
+                    '-mb-px flex h-10 items-center gap-1.5 border-b-2 px-2 text-sm whitespace-nowrap transition-colors',
+                    on ? 'border-foreground text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent',
+                  )}
+                >
+                  {group.label}
+                  {group.items.some((item) => dirty?.includes(item.key)) ? dot : null}
+                  {single && single.key === 'triggers' && single.count !== undefined ? (
+                    <span className="text-muted-foreground tabular-nums">{single.count}</span>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </div>
         </FadedScrollArea>
       </nav>
-      <aside className="hidden w-56 shrink-0 flex-col border-r md:flex">
-        <nav
-          aria-label={t('tabsLabel')}
-          className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col overflow-y-auto px-2 pt-3 pb-24"
-        >
-          <Tabs value={active} orientation="vertical" className="gap-3">
-            <RailGroup>{items.map((item) => row(item, false))}</RailGroup>
-          </Tabs>
-        </nav>
-      </aside>
+      {current && current.items.length > 1 ? (
+        <div className="shrink-0">
+          <FadedScrollArea orientation="horizontal" fadeColor="from-background">
+            <div className="flex w-max items-center gap-1 px-4 pt-4 md:px-8">
+              {current.items.map((item) => {
+                const on = item.key === active;
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    prefetch={false}
+                    aria-current={on ? 'page' : undefined}
+                    data-testid={`agent-view-${item.key}`}
+                    className={cn(
+                      'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-colors',
+                      on ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+                    )}
+                  >
+                    {item.label}
+                    {dirty?.includes(item.key) ? dot : null}
+                    {item.count !== undefined ? <span className="text-muted-foreground tabular-nums">{item.count}</span> : null}
+                  </Link>
+                );
+              })}
+            </div>
+          </FadedScrollArea>
+        </div>
+      ) : null}
     </>
   );
 }
 
-/** The scroller beside the rail, on the page gutter. */
+/** The scroller under the tabs, on the page gutter. */
 export function AgentTabBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

@@ -22951,7 +22951,8 @@
       "networkEgressNone": "未声明",
       "requiredConnectors": "必需的连接器",
       "requiredConnectorsHelp": "已在 kortix.yaml 中列出（connectors_required）。不强制执行：会话在没有它们的情况下启动。",
-      "models": "模型"
+      "models": "模型",
+      "tabCapabilities": "能力"
     },
     "myKortix": {
       "allowed": "已允许",
