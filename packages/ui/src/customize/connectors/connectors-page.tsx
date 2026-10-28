@@ -577,6 +577,36 @@ export function ConnectorsPage({
     );
   };
 
+  // The project's connectors over the whole catalogue: the All tab in
+  // project mode, and the agent view in agent mode (rows carry its switch).
+  const catalogSection = (
+    <>
+      {ownMatches.length > 0 ? (
+        <div className="space-y-3">
+          <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+          <AccessList items={connectorRows(ownMatches)} />
+        </div>
+      ) : null}
+      {/* The catalogue's own header: its filters sit with what they
+          filter, under the project's own connectors. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
+        <div className="flex flex-wrap items-center gap-4">{catalogFilters}</div>
+      </div>
+      <ConnectorBrowse
+        state={catalog}
+        connectedKeys={connectedKeys}
+        hrefFor={catalogHref}
+        install={catalogInstall}
+        emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+        emptyDescription={tI18nComplete.raw('textf652a621153e')}
+        // A slug search that only the project's own connector answers
+        // must not ALSO read "No matches" under its card (KRTX-2531).
+        suppressNoMatch={ownMatches.length > 0}
+      />
+    </>
+  );
+
   return (
     // Global rules open in a SplitSheet: the page narrows to make room instead
     // of being covered. `PoliciesPanel` is a long CRUD list whose save bar
@@ -657,10 +687,11 @@ export function ConnectorsPage({
           }
         >
           {agentScoped ? (
-            /* Agent mode: the project's connectors, one switch each, then the
-               agent's rule sets. Installing lives behind New, as in project mode. */
+            /* Agent mode: the same catalogue as project mode (the project's
+               connectors, one switch each, then every app), then the agent's
+               rule sets. One library, two modes (Marko, 2026-10-28). */
             <div className="space-y-6">
-              {listBody(ownMatches)}
+              {settled && !isError ? catalogSection : listBody(ownMatches)}
               {agentPanel}
             </div>
           ) : channelsActive ? (
@@ -669,31 +700,7 @@ export function ConnectorsPage({
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
-            <>
-              {ownMatches.length > 0 ? (
-                <div className="space-y-3">
-                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
-                  <AccessList items={connectorRows(ownMatches)} />
-                </div>
-              ) : null}
-              {/* The catalogue's own header: its filters sit with what they
-                  filter, under the project's own connectors. */}
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <h2 className="text-sm font-medium">{tPages('allApps')}</h2>
-                <div className="flex flex-wrap items-center gap-4">{catalogFilters}</div>
-              </div>
-              <ConnectorBrowse
-                state={catalog}
-                connectedKeys={connectedKeys}
-                hrefFor={catalogHref}
-                install={catalogInstall}
-                emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-                emptyDescription={tI18nComplete.raw('textf652a621153e')}
-                // A slug search that only the project's own connector answers
-                // must not ALSO read "No matches" under its card (KRTX-2531).
-                suppressNoMatch={ownMatches.length > 0}
-              />
-            </>
+            catalogSection
           ) : (
             <>
               <ConnectorMovesBanner projectId={projectId} />

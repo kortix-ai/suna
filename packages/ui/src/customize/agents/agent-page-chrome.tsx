@@ -8,12 +8,12 @@
  *   │   ● Enabled · Space: workspace · People start it                 │
  *   ├──────────────┬───────────────────────────────────────────────────┤
  *   │ Overview     │ content (the one scroller)                        │
+ *   │ Model   Kimi │                                                   │
+ *   │ Workspace    │                                                   │
  *   │ Triggers   1 │                                                   │
  *   │ Access       │                                                   │
  *   │  Connectors None                                                 │
  *   │  Skills  All │                                                   │
- *   │ Runtime      │                                                   │
- *   │  Model       │                                                   │
  *   └──────────────┴───── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
  * The header echoes the Space channel header (`space-page.tsx`): a tile, the
@@ -123,8 +123,8 @@ export interface AgentRailItem {
   label: string;
   href: string;
   count?: number | string;
-  /** The rail group under which the row sits; none for Overview and Triggers. */
-  group?: 'access' | 'runtime';
+  /** `access` for a grant row; none for Overview, Model, Workspace and Triggers. */
+  group?: 'access';
 }
 
 /**
@@ -143,7 +143,7 @@ export function AgentRail({
   items: AgentRailItem[];
   active: AgentRailKey;
   dirty?: readonly AgentRailKey[];
-  groupLabels: Record<'access' | 'runtime', string>;
+  groupLabels: Record<'access', string>;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const row = (item: AgentRailItem, horizontal: boolean) => (
@@ -170,7 +170,6 @@ export function AgentRail({
   const groups: { label?: string; rows: AgentRailItem[] }[] = [
     { rows: items.filter((item) => !item.group) },
     { label: groupLabels.access, rows: items.filter((item) => item.group === 'access') },
-    { label: groupLabels.runtime, rows: items.filter((item) => item.group === 'runtime') },
   ].filter((group) => group.rows.length > 0);
   return (
     <>

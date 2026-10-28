@@ -30,11 +30,12 @@ export const ACCESS_VIEWS = [
   'skills',
   'tools',
   'extensions',
-  'drives',
-  'apps',
-  'actions',
   'subagents',
   'commands',
+  'apps',
+  'actions',
+  // Last: the one row that is not an `agents.<name>` key (Files folder grants).
+  'drives',
 ] as const satisfies readonly AgentConfigSectionKey[];
 export type AccessView = (typeof ACCESS_VIEWS)[number];
 

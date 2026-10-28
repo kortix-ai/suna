@@ -133,7 +133,6 @@ import {
   closestAgentName,
   resolveAgentLocation,
   railKeyOf,
-  RUNTIME_VIEWS,
   sectionLocationHref,
 } from './agent-tabs';
 import { PlatformAgentOverview } from './platform-agent-overview';
@@ -466,38 +465,41 @@ function useSaveShortcut(dirty: boolean, onSave: () => void) {
 }
 
 /**
- * The rail's rows: Overview, Triggers, then every Access and Runtime view the
- * agent has, labelled, with its count (`countOf`) and href.
+ * The rail's rows, in the shape of `agents.<name>` in `kortix.yaml`:
+ * Overview, Model and Workspace (the agent's own settings), Triggers, then
+ * one Access row per grant key with its state (`countOf`). `modelLabel` is
+ * the Model row's value.
  */
 function useRailItems(
   pathname: string,
   views: readonly AgentConfigSectionKey[],
   counts: { triggerCount?: number },
   countOf?: (view: AgentConfigSectionKey) => string | null,
+  modelLabel?: string,
 ): AgentRailItem[] {
   const t = useI18nTranslations('agentEditor.tabs');
   const catalog = useLocalizedAgentConfigCatalog();
   const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
-  const viewRows = (own: readonly AgentConfigSectionKey[], group: 'access' | 'runtime') =>
-    own
-      .filter((view) => views.includes(view))
-      .map((view) => ({
-        key: view,
-        label: labelOf(view),
-        href: sectionLocationHref(pathname, view),
-        count: countOf?.(view) ?? undefined,
-        group,
-      }));
+  const viewRow = (view: AgentConfigSectionKey, count?: string) => ({
+    key: view,
+    label: labelOf(view),
+    href: sectionLocationHref(pathname, view),
+    count,
+  });
   return [
     { key: 'overview', label: t('tabOverview'), href: agentLocationHref(pathname, 'overview') },
+    ...(views.includes('model') ? [viewRow('model', modelLabel)] : []),
+    ...(views.includes('workspace') ? [viewRow('workspace')] : []),
     {
       key: 'triggers',
       label: t('tabTriggers'),
       href: agentLocationHref(pathname, 'triggers'),
       count: counts.triggerCount || undefined,
     },
-    ...viewRows(ACCESS_VIEWS, 'access'),
-    ...viewRows(RUNTIME_VIEWS, 'runtime'),
+    ...ACCESS_VIEWS.filter((view) => views.includes(view)).map((view) => ({
+      ...viewRow(view, countOf?.(view) ?? undefined),
+      group: 'access' as const,
+    })),
   ];
 }
 
@@ -798,7 +800,15 @@ function EditableAgentPage({
       ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
       : grantLabel(value);
   };
-  const railItems = useRailItems(pathname, views, facts, countOf);
+  // Subagents and Commands list only where there is something to grant (another
+  // subagent-mode agent, a `commands:` entry) or the block already grants one.
+  const railViews = views.filter(
+    (view) =>
+      (view !== 'subagents' && view !== 'commands') ||
+      registryOptions[view].length > 0 ||
+      grantedAny(draft[view]),
+  );
+  const railItems = useRailItems(pathname, railViews, facts, countOf, modelName(editor.oc.model));
   const dirtyItems = useMemo(() => changedItems(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
   const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
     dirtyItems.map((key) => railItems.find((item) => item.key === key)?.label ?? key),
@@ -967,7 +977,7 @@ function EditableAgentPage({
               items={railItems}
               active={railKeyOf(location)}
               dirty={dirtyItems}
-              groupLabels={{ access: t('tabAccess'), runtime: t('tabRuntime') }}
+              groupLabels={{ access: t('tabAccess') }}
             />
           }
         >
@@ -1157,7 +1167,7 @@ function ReadOnlyAgentPage({
           <AgentRail
             items={railItems}
             active={railKeyOf(location)}
-            groupLabels={{ access: t('tabAccess'), runtime: t('tabRuntime') }}
+            groupLabels={{ access: t('tabAccess') }}
           />
         }
       >
@@ -1221,4 +1231,16 @@ function PlatformAgentPage({
 /** Whether a Kortix permissions grant lets the agent open project Apps. */
 function grantsAppRead(grant: AgentGrantSetV2 | null | undefined): boolean {
   return grant === 'all' || (Array.isArray(grant) && grant.includes('project.app.read'));
+}
+
+/** Whether a grant names anything: `all`, `{ exclude }` or a non-empty list. */
+function grantedAny(grant: unknown): boolean {
+  if (grant === 'all') return true;
+  if (Array.isArray(grant)) return grant.length > 0;
+  return !!grant && typeof grant === 'object';
+}
+
+/** The Model row's value: the model id after its provider (`kortix/kimi-k2` → `kimi-k2`). */
+function modelName(model: string | undefined): string | undefined {
+  return model ? model.slice(model.lastIndexOf('/') + 1) : undefined;
 }
