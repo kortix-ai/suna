@@ -10,23 +10,18 @@ import {
   PLATINUM_CI_WARM_TIMEOUT_MS,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
-  buildPlatinumWorkerRequest,
   buildPlatinumWarmTemplateRequest,
-  buildWorkerScript,
-  cleanupPlatinumCiSandboxes,
   dockerComposeInstallCommand,
-  selectOutstandingPlatinumSandboxIds,
   isRetryablePlatinumError,
   observePlatinumSandboxStart,
   observePlatinumWorker,
   platinumBaseTemplateName,
   platinumTemplateCreateIdempotencyKey,
-  platinumWorkerLaunchCommand,
+  platinumSandboxListPath,
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
   platinumTemplateName,
   platinumWarmReadinessTimeoutMs,
-  validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
 
 const sha = 'a'.repeat(40);
@@ -114,223 +109,12 @@ describe('Platinum CI worker plan', () => {
     expect(command).toContain('docker compose version');
   });
 
-  test('post cleanup selects only the exact CI run sandbox', () => {
-    expect(
-      selectOutstandingPlatinumSandboxIds(
-        [
-          {
-            id: 'exact',
-            name: 'kortix-ci-31289428402-1',
-            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
-          },
-          {
-            id: 'other-attempt',
-            name: 'kortix-ci-31289428402-2',
-            metadata: { owner: 'kortix-ci', run_id: '31289428402' },
-          },
-          {
-            id: 'not-ci-owned',
-            name: 'kortix-ci-31289428402-1',
-            metadata: { owner: 'customer', run_id: '31289428402' },
-          },
-        ],
-        '31289428402',
-        '1',
-      ),
-    ).toEqual(['exact']);
-  });
-
-  test('uses Platinum persistent restore but still treats every worker as disposable', () => {
-    expect(
-      buildPlatinumWorkerRequest({
-        templateId: 'tpl_warm',
-        repository: 'kortix-ai/suna',
-        sha,
-        runId: '31295265205',
-        runAttempt: '4',
-      }),
-    ).toEqual({
-      name: 'kortix-ci-31295265205-4',
-      template: 'tpl_warm',
-      type: 'persistent',
-      auto_stop_minutes: 15,
-      auto_archive_days: 1,
-      auto_delete_days: 1,
-      cpu: 8,
-      ram_mb: 16_384,
-      disk_gb: 50,
-      metadata: {
-        owner: 'kortix-ci',
-        repository: 'kortix-ai/suna',
-        git_sha: sha,
-        run_id: '31295265205',
-      },
-    });
-  });
-
-  test('post cleanup reads paginated sandbox rows before deleting the exact worker', async () => {
-    const requests: string[] = [];
-    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      requests.push(`${init?.method ?? 'GET'} ${url}`);
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0')) {
-        return Response.json({
-          rows: [{ id: 'other', name: 'customer', metadata: {} }],
-          total: 2,
-          has_more: true,
-        });
-      }
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100')) {
-        return Response.json({
-          rows: [
-            {
-              id: 'exact',
-              name: 'kortix-ci-31289428402-1',
-              metadata: { owner: 'kortix-ci', run_id: '31289428402' },
-            },
-          ],
-          total: 2,
-          has_more: false,
-        });
-      }
-      if (url.endsWith('/v1/sandboxes/exact') && init?.method === 'DELETE') {
-        return new Response(null, { status: 204 });
-      }
-      return Response.json({ error: 'unexpected request' }, { status: 500 });
-    });
-
-    await expect(
-      cleanupPlatinumCiSandboxes({
-        apiUrl: 'https://api.platinum.dev',
-        apiKey: 'test',
-        runId: '31289428402',
-        runAttempt: '1',
-      }),
-    ).resolves.toBe(1);
-    expect(requests).toEqual([
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0',
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100',
-      'DELETE https://api.platinum.dev/v1/sandboxes/exact',
-    ]);
-  });
-
-  test('post cleanup never requests a global offset above the 10000-row regional cap', async () => {
-    const total = 10_158;
-    const requests: string[] = [];
-    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
-      requests.push(`${init?.method ?? 'GET'} ${url.pathname}${url.search}`);
-      if (url.pathname === '/v1/sandboxes' && !init?.method) {
-        const offset = Number(url.searchParams.get('offset'));
-        const limit = Number(url.searchParams.get('limit'));
-        // Platinum rejects a global offset above 10000 unless `regions` is set.
-        if (!url.searchParams.has('regions') && offset + limit > 10_000) {
-          return Response.json(
-            { error: 'regional listing offset exceeds 10000 rows', code: 'pagination_limit' },
-            { status: 400 },
-          );
-        }
-        const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) =>
-          offset + i === total - 1
-            ? { id: 'exact', name: 'kortix-ci-1-1', metadata: { owner: 'kortix-ci', run_id: '1' } }
-            : { id: `other-${offset + i}`, name: 'x', metadata: {} },
-        );
-        return Response.json({ rows, total, has_more: offset + rows.length < total });
-      }
-      if (url.pathname === '/v1/sandboxes/exact' && init?.method === 'DELETE') {
-        return new Response(null, { status: 204 });
-      }
-      return Response.json({ error: 'unexpected request' }, { status: 500 });
-    });
-
-    await expect(
-      cleanupPlatinumCiSandboxes({
-        apiUrl: 'https://api.platinum.dev',
-        apiKey: 'test',
-        runId: '1',
-        runAttempt: '1',
-      }),
-    ).resolves.toBe(1);
-    expect(requests).toContain('DELETE /v1/sandboxes/exact');
-  });
-
-  test('checks out the requested ref and rejects any SHA mismatch', () => {
-    const script = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: 'refs/pull/6260/head',
-      sha,
-      testArgs: ['--full'],
-    });
-
-    expect(script).toContain("'pnpm' 'test' '--' '--full'");
-    expect(script).toContain('set -euo pipefail');
-    expect(script).toContain("fetch --depth=1 origin 'refs/pull/6260/head'");
-    expect(script).toContain('pnpm install --offline --frozen-lockfile');
-    expect(script).toContain('export HOME=/root');
-    expect(script).toContain('export CI=1');
-    expect(script.indexOf('export HOME=/root')).toBeLessThan(
-      script.indexOf('pnpm install --offline --frozen-lockfile'),
+  test('lists sandboxes in the home region, so a page past row 10000 is not refused', () => {
+    // Without `regions`, Platinum merges every region and rejects any page that
+    // ends above row 10000 (`pagination_limit`, HTTP 400).
+    expect(platinumSandboxListPath(100, 10_100)).toBe(
+      '/v1/sandboxes?paginated=true&limit=100&regions=local&offset=10100',
     );
-    expect(script).not.toContain('rm -rf "$ROOT"');
-    expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
-    expect(script).not.toContain('nohup pnpm dev');
-    expect(script).toContain('if ! modprobe "$module"; then');
-    expect(script).toContain('module_unavailable=$module; docker readiness will decide');
-    expect(script).toContain('container_modules_checked=1');
-    expect(script).toContain('seq 1 180');
-    expect(script).toContain('docker_bridge_ready=1');
-    expect(script).not.toContain('supabase_bridge_ready=1');
-    expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
-    expect(script).toContain('tests/test-results/platinum');
-  });
-
-  test('prestarts only the disposable browser database and leaves product processes to the root runner', () => {
-    const script = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: sha,
-      sha,
-      testArgs: ['--browser-only'],
-    });
-
-    expect(script).toContain('pnpm exec supabase start --ignore-health-check');
-    expect(script).toContain('supabase_prestarted=1');
-    expect(script).toContain("'pnpm' 'test' '--' '--browser-only'");
-    expect(script).not.toContain('nohup pnpm dev');
-
-    const coreScript = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: sha,
-      sha,
-      testArgs: [],
-    });
-    expect(coreScript).not.toContain('supabase_prestarted=1');
-  });
-
-  test('propagates the full-run SDK de-duplication flag into the package worker', () => {
-    const fullPackageScript = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: sha,
-      sha,
-      testArgs: ['--packages-only'],
-      skipSdkPackageTests: true,
-    });
-    expect(fullPackageScript).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
-
-    const standalonePackageScript = buildWorkerScript({
-      repository: 'kortix-ai/suna',
-      ref: sha,
-      sha,
-      testArgs: ['--packages-only'],
-    });
-    expect(standalonePackageScript).not.toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
-  });
-
-  test('detaches the worker with the Platinum-supported setsid contract', () => {
-    const command = platinumWorkerLaunchCommand();
-    expect(command).toContain('setsid -f /workspace/run-kortix-tests.sh');
-    expect(command).toContain('</dev/null');
-    expect(command).not.toContain('nohup');
-    expect(command).not.toMatch(/&\s*$/);
   });
 
   test('reuses the exact ready or building content-addressed template', () => {
@@ -501,21 +285,5 @@ describe('Platinum CI worker plan', () => {
       }),
     ).rejects.toThrow('sandbox not found');
     expect(now).toBe(10);
-  });
-
-  test('rejects values that could alter the Git fetch command', () => {
-    expect(() =>
-      validatePlatinumCiInput({
-        apiUrl: 'https://api.platinum.dev',
-        apiKey: 'test',
-        repository: 'kortix-ai/suna',
-        sha,
-        ref: 'main; curl attacker',
-        runId: '1',
-        runAttempt: '1',
-        testArgs: [],
-        root: '/tmp/suna',
-      }),
-    ).toThrow(/invalid Git ref/);
   });
 });

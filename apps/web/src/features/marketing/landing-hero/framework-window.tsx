@@ -77,7 +77,7 @@ export function FrameworkWindow({ className, onInteract }: { className?: string;
               </ul>
               <div className="flex min-h-0 min-w-0 flex-col">
                 <div className="text-muted-foreground border-b px-5 py-2.5 font-mono text-xs">{open}</div>
-                <ol className="min-h-0 flex-1 overflow-hidden py-3 font-mono text-sm leading-relaxed">
+                <ol className="min-h-0 flex-1 overflow-y-auto py-3 font-mono text-sm leading-relaxed">
                   {lines.map((line, i) => (
                     <li key={`${open}-${i}`} className="flex gap-5 px-5 whitespace-pre">
                       <span className="text-muted-foreground w-6 shrink-0 text-right tabular-nums select-none">

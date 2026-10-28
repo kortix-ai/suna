@@ -16,7 +16,7 @@ export const isolationSummary = {
   ],
   cells: [
     { k: 'One sandbox per session', v: 'Enforced in the database, not by convention.' },
-    { k: 'A microVM on Platinum', v: 'Cloud Hypervisor on Kortix compute. Daytona is a legacy fallback.' },
+    { k: 'A microVM on Platinum', v: 'Cloud Hypervisor on Kortix compute.' },
     { k: 'One branch per session', v: 'Every edit and commit lives on that branch.' },
     { k: 'Disposable', v: 'A bad install goes away with the machine.' },
   ],

@@ -50,3 +50,25 @@ CVE-2026-93748
 # projects carry it in their repos; it moves with kortixd. Remove when the
 # workspace moves to zod 4.
 CVE-2023-54404
+
+# CVE-2026-93753 (deepmerge 4.3.1): no fixed release exists (4.3.1 is the newest).
+# Only the mobile app pulls it, through expo and @expo/ui. Remove when a fix ships.
+CVE-2026-93753
+
+# CVE-2026-116587 (go-jose): go-jose/v4 is held at the fixed 4.1.6 in the App
+# runtime's Caddy (apps/kortix-app-runtime/caddy/go.mod). go-jose/v3 3.0.5 has no
+# fixed release; Caddy's caddypki module requires it. Remove when v3 is fixed or
+# Caddy drops it.
+CVE-2026-116587
+
+# better-auth (apps/white-label/lumen only): GHSA-965c-763c-88jm / CVE-2026-114607,
+# GHSA-r4xp-prcw-77qf, GHSA-q84f-53jg-9ppm, GHSA-44jh-23m7-hpcf, all fixed only in
+# better-auth 1.7.7+. @convex-dev/better-auth (latest 0.12.6) requires better-auth
+# <1.7.0, and 1.7 breaks it. Lumen is a demo app that no workflow builds or deploys,
+# and it uses none of the affected features (magic link, OAuth proxy, device login).
+# The same 4 ids are exempt in ci.yml's root audit step. Remove when lumen can move.
+CVE-2026-114607
+GHSA-965c-763c-88jm
+GHSA-r4xp-prcw-77qf
+GHSA-q84f-53jg-9ppm
+GHSA-44jh-23m7-hpcf

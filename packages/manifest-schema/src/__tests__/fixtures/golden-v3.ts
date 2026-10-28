@@ -27,7 +27,6 @@ commands:
 
 extensions:
   audit:
-    opencode: extensions/audit.opencode.ts
     pi: extensions/audit.pi.ts
   web-access:
     pi: npm:pi-web-access@0.30.0

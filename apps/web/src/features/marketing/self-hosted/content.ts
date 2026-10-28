@@ -35,8 +35,8 @@ import type { UiTranslator } from '@/i18n/translator';
  *     isolated topologies to `/enterprise`.
  *  5. There is no Redis and no separate worker service in this stack. Do not
  *     add either to the diagram.
- *  6. Link `/docs/host`, never `/docs/guides/self-hosting` — that path does not
- *     exist (the redirect in `next.config.ts` points at a missing page).
+ *  6. Link the docs section `/docs/#self-hosting`. `/docs/host` and
+ *     `/docs/self-hosting` are only redirects to it (`next.config.ts`).
  */
 
 export const hero = {
@@ -45,7 +45,7 @@ export const hero = {
   titleMuted: 'Built to self-host, in your own tenant.',
   sub: 'Kortix is self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your own servers, from the same images the managed cloud runs. Your database, files, repos and policies stay on infrastructure you control. It is open source, so what you run is code you can read.',
   ctaPrimary: 'Self-host free',
-  ctaPrimaryHref: '/docs/host',
+  ctaPrimaryHref: '/docs/#self-hosting',
   ctaSecondary: 'Use Kortix Cloud',
   ctaSecondaryHref: '/auth',
   microline: 'Self-hosting native · One command · Any model, your keys',
@@ -60,7 +60,7 @@ export const hero = {
 
 /* ── 1 · what you keep ─────────────────────────────────────────────────────
    HONESTY GATE. The control plane is genuinely yours. Sandbox compute is NOT,
-   by default — the API reaches Platinum (or legacy Daytona) over egress, and
+   by default — the API reaches Platinum over egress, and
    the instance must be publicly reachable so the sandbox can call back. Both
    columns below are drawn from that reality, not from a wish. */
 export const yours = {
@@ -85,7 +85,7 @@ export const yours = {
       'Agent sandboxes, which run on the provider you configure',
       'The image registry the stack pulls from, which needs no credentials',
     ],
-    note: 'Sandbox compute runs on Platinum. Daytona remains a legacy fallback, and its removal is scheduled. Fully isolated topologies are scoped with us rather than self-served.',
+    note: 'Sandbox compute runs on Platinum. Fully isolated topologies are scoped with us rather than self-served.',
   },
 } as const;
 
@@ -357,7 +357,7 @@ export const closing = {
   title: 'Run it yourself, or let us run it.',
   sub: 'Self-hosting is free and always will be. Kortix Cloud is the same product with the box, the upgrades and the sandbox tier taken off your hands.',
   ctaPrimary: 'Self-host free',
-  ctaPrimaryHref: '/docs/host',
+  ctaPrimaryHref: '/docs/#self-hosting',
   ctaSecondary: 'Use Kortix Cloud',
   ctaSecondaryHref: '/auth',
   tertiary: 'Need it inside your own network, with SSO and a license? Talk to us.',

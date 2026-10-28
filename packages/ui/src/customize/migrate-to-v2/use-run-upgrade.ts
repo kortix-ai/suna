@@ -3,9 +3,9 @@
 /**
  * useRunUpgrade — start any agent-led upgrade session from Customize: mint a
  * fresh session, stash the given prompt as its first message, close the
- * overlay, and drop the user into the thread. The generic engine behind both
- * the registry entries in `upgrade-defs.ts` and the one-off prompt runner;
- * `useMigrateToV2` is the v2-specific wrapper kept for its button.
+ * overlay, and drop the user into the thread. The engine behind the registry
+ * entries in `upgrade-defs.ts`, the one-off prompt runner and the sidebar
+ * upgrade alert.
  *
  * Deliberately does NOT pass `agent_name` — the session boots the project's
  * default agent (the one with git/CR powers).

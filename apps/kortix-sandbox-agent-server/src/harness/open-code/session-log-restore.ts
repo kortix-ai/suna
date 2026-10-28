@@ -15,13 +15,11 @@
  * row. A row of any table still keyed to the holding session fails the restore
  * before that delete, which would cascade it away. The store's rows equal one
  * import per thread except the write times (a message's `time_updated`, a part's
- * times): `opencode-session-log-restore-one-import.test.ts` compares them row by row. It
- * costs one process start instead of one per thread plus `--version` (about 2 s
+ * times). It costs one process start instead of one per thread plus `--version` (about 2 s
  * each on a 2-vCPU Platinum box). The restore first removes
  * every session from the store, so the store holds exactly the log. A running
  * OpenCode (a warm seed) needs no stop: it reads sessions from the store per
- * request, also a session it served before the restore
- * (`opencode-session-log-restore-golden-cases.test.ts` proves both).
+ * request, also a session it served before the restore.
  *
  * PRECONDITION (the caller's, P6.4). The removal deletes every session in the
  * store, work the journal has not sent included. Run the restore only when the
@@ -85,6 +83,7 @@ import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
   toV1,
+  visibleMessageIds,
   type CompactionBlock,
   type ExportCursor,
   type ModelRef,
@@ -97,7 +96,7 @@ import {
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
-import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
+import { attachmentBytes, type BytesReader } from '../shared/session-log-restore'
 import { readOpencodeVersion } from './assets'
 import { OpencodeDb } from './opencode-db'
 import { writeOpenCodeSessionPin } from './runtime-state'
@@ -331,7 +330,7 @@ function compactionRows(m: SessionLogMessage, block: CompactionBlock, msgs: Sess
 /** One thread's rows in seq order, each message's rows in OpenCode's order with strictly increasing times. */
 function threadRows(log: SessionLog, t: SessionLogThread, ctx: Omit<Ctx, 'thread' | 'drop' | 'children' | 'model' | 'lastUser'>, drop: (kind: string) => void): Row[] {
   const msgs = [...t.messages].sort((a, b) => a.seq - b.seq)
-  const visible = visibleMessageIds(t)
+  const visible = visibleMessageIds(t.messages)
   let current = ''
   const children = new Map<string, string>()
   for (const child of log.threads) if (child.parent_thread_id === t.thread_id && child.spawned_by) children.set(child.spawned_by.call_id, child.thread_id)

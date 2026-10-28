@@ -68,9 +68,9 @@ export const DB_BUSY_TIMEOUT_MS = 2_000
  *
  * Duplicated, not imported: this daemon ships inside the sandbox image and
  * cannot import from the monorepo (same constraint `proxy.ts` documents for
- * `isBlockingTurnRequest`). `opencode-db.test.ts` asserts the pin in
- * `packages/shared/src/runtime-versions.json` is still covered here, so a bump
- * that outruns this list fails a test instead of a production read.
+ * `isBlockingTurnRequest`). No test checks this list against the pin in
+ * `packages/shared/src/runtime-versions.json` any more (OpenCode sunset): a bump
+ * that outruns it fails a production read.
  * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const SQLITE_READER_SUPPORTED_MINORS = ['1.18'] as const

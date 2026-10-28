@@ -1,6 +1,6 @@
 ---
 name: kortix-goals
-description: "Own an outcome until it is verifiably done, across days or months: a goal folder in Files (`goal.json`, `log.md`, `notes.md`, `docs/`, `evidence/`) run with the `kortix goals` CLI, a daily heartbeat reminder, chasing people for what only they can give, worker sessions, and an independent verifier before done. Load when the user gives an objective rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"/goal\"), when a prompt names a goal folder or `goal.json`, when a reminder says \"Goal wake\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
+description: "Own an outcome until it is verifiably done, across days or months: a goal folder in Drive (`goal.json`, `log.md`, `notes.md`, `docs/`, `evidence/`) run with the `kortix goals` CLI, a daily heartbeat reminder, chasing people for what only they can give, worker sessions, and an independent verifier before done. Load when the user gives an objective rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"/goal\"), when a prompt names a goal folder or `goal.json`, when a reminder says \"Goal wake\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
 metadata:
   kortix-feature-flag: goals
 ---
@@ -13,7 +13,7 @@ A goal is an outcome you own until it is true, not a task you attempt once.
 Accelerator funding" are goals. The user gives the objective once and walks
 away. You plan, act, wait, chase, and verify until it is done.
 
-A goal is a folder in Files. Sessions come and go; the folder is the goal's
+A goal is a folder in Drive. Sessions come and go; the folder is the goal's
 memory and the only state that counts. A new session with no transcript must
 be able to continue from the folder alone.
 
@@ -56,7 +56,7 @@ session of an open goal.
 
 Add `--json` to any of them for machine-readable output.
 
-`new` needs three project features on: `goals`, `volumes` (Files) and
+`new` needs three project features on: `goals`, `volumes` (Drive) and
 `reminders`. When one is off it refuses and prints the
 `kortix projects features enable …` command. Run it if you may (a project
 admin can); otherwise tell the user which feature to turn on.
@@ -218,7 +218,7 @@ can answer". Write the question in plain text, send it on a channel, record the
 - Act on anything inside the goal's constraints (`notes.md`) without asking.
   Report it in `log.md` and `summary`.
 - A constraint is a hard limit. An action outside it becomes an `ask`.
-- Do not ask for what you can find: search Files, the connectors, the web and
+- Do not ask for what you can find: search Drive, the connectors, the web and
   earlier goal folders first.
 - Credentials go in the Secrets Manager, never in the goal folder. Ask for a
   missing one with a setup link (the `kortix-system` skill).
@@ -275,7 +275,7 @@ them, and the next wake.
   already moved to you.
 - **One writer for `goal.json`.** Only the coordinator writes it. A clash
   leaves a `(conflict ...)` copy beside it: merge the two, then delete the copy.
-- **The user's edits win.** A field the user changed in Files is the truth.
+- **The user's edits win.** A field the user changed in Drive is the truth.
 - **Absolute dates.** Write "2026-11-04", never "next Tuesday".
 - **No secrets in the folder**, and no customer data beyond what the goal needs
   in a shared folder.

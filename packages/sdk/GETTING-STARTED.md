@@ -17,12 +17,9 @@ token, and talk to a real cloud sandbox from a script, a server, or a plain
 | **Docker** | local Supabase runs in containers | `docker info` |
 | **dotenvx keys** | `apps/api/.env` / `apps/web/.env` are committed **encrypted**; you need the private keys (Dotenv Armor) to decrypt locally | `dotenvx get SUPABASE_SERVICE_ROLE_KEY -f apps/api/.env` prints a value |
 
-Sandboxes are real cloud sandboxes. Platinum is the reference provider:
-`PLATINUM_API_KEY` is the one sandbox key a deployment needs. Daytona is a
-legacy fallback provider; its removal is scheduled, and it gets no new
-features. E2B support is discontinued. `ALLOWED_SANDBOX_PROVIDERS` lists the
-enabled providers; the keys live in the encrypted `apps/api/.env` or the
-gitignored `.env.local`. Every session you start provisions real provider
+Sandboxes are real cloud sandboxes on Platinum. `PLATINUM_API_KEY` is the one
+sandbox key a deployment needs. It lives in the encrypted `apps/api/.env` or the
+gitignored `.env.local`. Every session you start provisions real Platinum
 compute.
 
 Then, once per checkout:
@@ -69,11 +66,10 @@ The SDK has exactly one auth seam: `getToken`. For scripts you want a
 **Personal Access Token** (`kortix_pat_…`):
 
 1. Open `http://localhost:3000`, create an account / sign in.
-2. Click your avatar (user menu) → **User settings** → **API keys** tab
-   (under the "Account" group) → **Create API key**. Copy the token — it is
-   shown once. Fastest path: command palette (`⌘K`) → type "API keys".
-   (In code this is `kortix.accounts.tokens.create()`; the UI lives in
-   `apps/web/src/features/accounts/settings/cli-tokens-tab.tsx`.)
+2. Open **Settings → Personal access keys** and create a key. Copy the token —
+   it is shown once. The CLI does the same:
+   `kortix tokens new my-script --expires 90d`. In code this is
+   `kortix.accounts.tokens.create()`.
 3. Export it for the examples:
 
 ```bash
@@ -83,8 +79,9 @@ export KORTIX_API_KEY=kortix_pat_...
 
 Programmatic alternative (no browser): mint a Supabase JWT against the local
 stack — admin-create a confirmed user, then password-grant — exactly as
-`tests/e2e/helpers/auth.ts` does; the root `AGENTS.md` ("Authenticating to the
-live API") walks through the four calls. A JWT works everywhere a PAT does.
+`tests/e2e/helpers/session-auth.ts` does; the root `AGENTS.md` ("Authenticating
+to the live API") walks through the four calls. A JWT works everywhere a PAT
+does.
 
 ## 4. Create a project and a session
 
@@ -92,8 +89,8 @@ Easiest: do it in the web UI at `localhost:3000` (create a project, open a
 session) and copy the ids out of the URL:
 
 ```bash
-export KORTIX_PROJECT_ID=proj_...
-export KORTIX_SESSION_ID=...
+export KORTIX_PROJECT_ID=<project_id>
+export KORTIX_SESSION_ID=<session_id>
 ```
 
 Scripted alternative, using the SDK itself:
@@ -181,34 +178,40 @@ import { createScopedKortix } from '@kortix/sdk/server'; // Node servers (async_
 ```
 
 Point `backendUrl` at your stack (`http://localhost:8008/v1` locally,
-`https://api.kortix.com/v1` in production) and supply `getToken`. The 20
+`https://api.kortix.com/v1` in production) and supply `getToken`. The 21
 older subpaths (`/projects-client`, `/turns`, …) still work but are
 `@deprecated` — import from the root.
 
-> **React Native / Expo:** REST works; **streaming does not** (RN's `fetch`
-> has no `response.body`). Don't build on it yet.
+> **React Native / Expo:** REST works. Live streaming works with a host
+> transport: pass `eventStreamTransport` to `createKortix` (for example over
+> `react-native-sse`), because React Native's `fetch` cannot stream a response
+> body. `apps/mobile` runs `useSession` this way.
 
 ## 7. Verify your checkout (the package gates)
 
 ```bash
 pnpm --filter @kortix/sdk typecheck          # tsc + examples, exit 0
+pnpm --filter @kortix/sdk test src/root-canonical.test.ts   # one test file
 pnpm --filter @kortix/sdk test               # full suite incl. tripwires
 pnpm --filter @kortix/sdk run build:bundles  # CDN ESM + IIFE into dist/
 pnpm --filter @kortix/sdk run smoke:install  # pack → install → import, hermetic
 ```
 
-`test` without built bundles skips the 2 bundle-content tests; run it after
-`build:bundles` for the full count. If you change anything here, read
-[AGENTS.md](../../AGENTS.md) first — this package is live on npm, and the rules
-(TDD, never weaken a test, exported names are forever) are enforced by the
-tripwires you just ran.
+On macOS the whole-suite `test` refuses and exits `2`: pass the test file(s), or
+set `KORTIX_FULL_TEST=1`. `test` without built bundles skips the 2
+bundle-content tests; run it after `build:bundles` for the full count. If you
+change anything here, read the **sdk** skill
+([`.agents/skills/sdk/SKILL.md`](../../.agents/skills/sdk/SKILL.md)) first — this
+package is live on npm, and the rules (TDD, never weaken a test, exported names
+are forever) are enforced by the tripwires you just ran.
 
 ## 8. When something breaks
 
 | Symptom | Likely cause → fix |
 |---|---|
 | API 503 on every call | local DB missing the `kortix` schema → `pnpm --filter @kortix/db migrate` |
-| `401` from the SDK | stale/wrong PAT → re-mint in the **API keys** settings tab; check you exported `KORTIX_API_KEY` |
+| `401` from the SDK | stale/wrong PAT → re-mint under **Settings → Personal access keys**; check you exported `KORTIX_API_KEY` |
 | `SessionNotReadyError` | you called `previewUrl()`/runtime accessors before `ensureReady()`/`send()` — that's deliberate; ready the session first |
 | Streaming connects but nothing arrives | stack tunnel down or sandbox still booting → check `pnpm dev` output; first boot takes longest |
-| `bun test <dir>` says `Ran 0 tests` and exits 0 | you pointed it at a dir with no test files — run the full `pnpm --filter @kortix/sdk test` |
+| `bun test <dir>` says `Ran 0 tests` and exits 0 | you pointed it at a dir with no test files — pass a test file: `pnpm --filter @kortix/sdk test <file>` |
+| `pnpm --filter @kortix/sdk test` exits `2` on a Mac | the whole-suite guard (`scripts/test-guard.mjs`) → pass the test file(s), or set `KORTIX_FULL_TEST=1` |

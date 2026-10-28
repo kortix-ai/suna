@@ -1318,9 +1318,9 @@
       "oneOffDescription": "Describe un solo cambio. Una sesión lo realiza, lo valida y abre una solicitud de cambio.",
       "oneOffPlaceholder": "p. ej. Cambia el agente release-bot a deploy-bot en todas las referencias",
       "runUpgrade": "Ejecutar actualización",
-      "manifestV2": {
-        "title": "Migrar el manifiesto a v2 (kortix.yaml)",
-        "description": "Convierte el kortix.toml v1 al kortix.yaml orientado a gobernanza, actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla."
+      "manifestV3": {
+        "title": "Actualizar el manifiesto a v3 (kortix.yaml)",
+        "description": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla."
       },
       "agentEditorHint": "Este proyecto usa un manifiesto de la versión 1. Actualízalo a <code>kortix.yaml</code> versión 3 para editar aquí las instrucciones, el modelo, los permisos de herramientas y el acceso de este agente."
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "Tu ordenador"
     },
     "manifestUpgrade": {
-      "title": "Actualizar a v2",
-      "description": "Este proyecto todavía usa <toml>kortix.toml</toml>. Un agente lo convierte a <yaml>kortix.yaml</yaml>, actualiza las habilidades administradas y abre una solicitud de cambio. Nada cambia hasta que la apruebes.",
+      "title": "Actualizar a v3",
+      "description": "Este proyecto usa un manifiesto anterior. Un agente lo lleva a <yaml>kortix.yaml</yaml> versión 3, actualiza las habilidades administradas y abre una solicitud de cambio. Nada cambia hasta que la apruebes.",
       "start": "Iniciar actualización"
     },
     "filter": {
@@ -2803,6 +2803,7 @@
     "signInWithEmail": "Iniciar sesión con email",
     "createNewAccount": "Crear nueva cuenta",
     "byContinuingYouAgreeSimple": "Al continuar, aceptas nuestra",
+    "customerLogoNotice": "Kortix puede mostrar el nombre y el logotipo de tu organización como cliente, en cualquier plan. Puedes excluirla en cualquier momento en legal@kortix.com.",
     "phoneVerification": {
       "title": "Verifica tu número de teléfono",
       "titleOtp": "Ingresa el código de verificación",
@@ -16802,7 +16803,7 @@
       "textc3bf78fdd3b9": "No se pudo enviar tu solicitud",
       "textc3c25857485f": "Sí hace",
       "textc3c709a999c1": "Leyendo memoria…",
-      "textc3d1545dd522": "Convierte el kortix.toml v1 en el kortix.yaml centrado en la gobernanza, actualiza las habilidades gestionadas por la plataforma a la base más reciente del marketplace y abre una solicitud de cambio para revisión.",
+      "text7823a1f3af93": "Lleva kortix.toml o un kortix.yaml de la versión 2 a la versión 3: el proyecto registra habilidades, herramientas, comandos y extensiones, y cada agente los habilita por nombre. Actualiza las habilidades gestionadas por la plataforma y abre una solicitud de cambio para revisarla.",
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Términos y condiciones",
       "textc3e58a73609d": "Destructivo",
@@ -17537,7 +17538,7 @@
       "textd83a0d814c59": "API Status muestra un «Enabled» en verde, el parámetro «SCIM Username» está asignado a Email y el aprovisionamiento está habilitado sin la retención de aprobación del administrador.",
       "textd84b8be91e7b": "Kortix — Presentaciones",
       "textd84ee1e1e08b": "prueba kortix init o / para ver los comandos",
-      "textd85a383e851d": "Migrar el manifiesto a v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Actualizar el manifiesto a v3 (kortix.yaml)",
       "text848f54e89660": "Ejecuciones",
       "textb098a09c78aa": "Probar con payload",
       "text99733344956d": "Payload",
@@ -20805,7 +20806,14 @@
     "sessionModel": "Modelo {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Sin límite · el gasto es ilimitado",
-    "tokensSub": "{in} entrada · {out} salida"
+    "tokensSub": "{in} entrada · {out} salida",
+    "unknownValue": "Desconocido",
+    "estimateCoverageUnavailable": "Cobertura de la estimación no disponible.",
+    "estimatesSeparate": "El gasto real de arriba es aparte. Las estimaciones nunca se suman a los cargos.",
+    "estimatedUsageValueLabel": "Valor de uso estimado del LLM (no es una factura):",
+    "pricedRequests": "{count} solicitudes con precio",
+    "unpricedRequests": "{count} solicitudes sin precio",
+    "llmEstimateLabel": "Estimación del LLM:"
   },
   "triggerComposer": {
     "every": "Cada",
@@ -21199,6 +21207,18 @@
     "emailHeroLede": "Conecta tu cuenta de Resend y elige una dirección en tu dominio. La gente escribe a esa dirección, y el agente lee el hilo y responde en él.",
     "telegramHeroTitle": "Lleva tu agente a Telegram",
     "telegramHeroLede": "Conecta un bot que creas con BotFather. La gente le escribe al bot y el agente responde en el chat.",
+    "telegramUsersDescription": "Solo estas personas pueden hablar con el bot. Si alguien más le escribe en privado, aparece aquí.",
+    "telegramRequestsTitle": "Quiere acceso",
+    "telegramAllowedTitle": "Permitidos",
+    "telegramUsersEmptyTitle": "Las personas que permitas aparecerán aquí",
+    "telegramUsersEmptyDescription": "Pide a alguien que le escriba al bot y luego permite su solicitud o añade su ID de usuario.",
+    "telegramUsersLoadError": "No se pudieron cargar los usuarios de Telegram.",
+    "telegramAddByIdLabel": "Añadir por ID de usuario",
+    "telegramAddByIdHint": "El bot responde a quien no conoce con su ID de usuario.",
+    "telegramAddByIdInvalid": "Un ID de usuario de Telegram es un número, por ejemplo 123456789.",
+    "telegramAllowAria": "Permitir a {name}",
+    "telegramRemoveTitle": "¿Quitar a {name}?",
+    "telegramRemoveDescription": "{name} ya no podrá hablar con el bot. Para permitirle el acceso de nuevo, añade su ID de usuario o permite su próxima solicitud.",
     "otherWaysToConnect": "Otras formas de conectar",
     "computerHeroTitle": "Lleva tu agente a tu ordenador",
     "computerConnectedTitle": "{count, plural, one {Tu ordenador está conectado} other {# ordenadores conectados}}",

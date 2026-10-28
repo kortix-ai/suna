@@ -838,7 +838,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/legacy-toml',
-        destination: '/docs#migrate-from-kortixtoml',
+        destination: '/docs#migrate-to-v3',
         permanent: true,
       },
       {

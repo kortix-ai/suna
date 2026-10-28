@@ -40,7 +40,7 @@ Each secret has one EXPOSURE — can agent code read the value?
                webhook signing, JWT assertions, SSH/PEM keys) and for anything
                that is not HTTPS.
   enforced     EXPERIMENTAL — requires the project's \`secrets_egress\` feature
-               flag (Settings → Feature flags), off by default. The env var
+               flag (Settings → Feature flags), on by default. The env var
                holds a HANDLE, not the value. Kortix substitutes the real value
                outside the sandbox, only on the approved hosts, and rewrites any
                echo of it to [REDACTED].

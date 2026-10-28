@@ -356,7 +356,7 @@ export function planMigration(root: string, manifestPath: string, raw: Table): M
     TOP_LEVEL_ORDER,
   );
   const manifest = renderManifest(next);
-  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 2 → 3: agents inline, registries, per-agent grants', content: manifest });
+  changes.unshift({ path: manifestPath, action: 'rewrite', note: 'kortix_version 3: agents inline, registries, per-agent grants', content: manifest });
   const issues = validateManifest(manifest, 'yaml').issues;
   return { manifest, next, changes, dropped, issues, valid: !issues.some((issue) => issue.severity === 'error') };
 }

@@ -26,8 +26,15 @@ kortix marketplace search "<query>" --json    # find items (parse the JSON)
 kortix marketplace show <id> --json           # inspect one item: type, files, source repo
 ```
 
-Read-only. There is no `install` / `update` / `remove` subcommand anymore —
-adding an item is the import flow below.
+`search`, `list` and `show` are read-only. There is no `update` subcommand.
+
+- `kortix marketplace install <id>` starts a project session that runs the
+  import flow below, and waits for it to finish. It exits `0` only
+  when the item's files are on the default branch, and `3` when the change
+  request still waits for approval or setup. Inside a session, run the
+  import flow yourself instead.
+- `kortix marketplace uninstall <folder> --yes` deletes one project skill
+  folder, including edits.
 </discovery>
 
 <importing>
@@ -41,15 +48,19 @@ adding an item is the import flow below.
    - a `SKILL.md` → a **skill**,
    - an agent definition (an `agents/*.md`) → an **agent**,
    - a tool file (a `tools/*.ts`) → a **tool**.
-3. **Merge what fits into this project**, in the right place:
-   - skills → `skills/<name>/`,
-   - agents → `agents/<name>.md`, declared under `agents:` in `kortix.yaml`,
-   - tools → `tools/<name>.ts`, declared under `tools:` in `kortix.yaml`, so every harness runs it. An item written as an OpenCode tool (`tool({ args, execute })`) is converted to the harness-neutral contract (`kortix-system` → `references/kortix/tools.md`); keep it in `harnesses/opencode/tools/` only if it needs OpenCode-only context,
+3. **Merge what fits into this project**, in the right place. Every file
+   reaches an agent only through `kortix.yaml`:
+   - skills → `skills/<name>/`, registered as `skills: { <name>: skills/<name> }`
+     and added to the `skills` grant of each agent that should load it,
+   - agents → the prompt in `agents/<name>.md`, plus an `agents.<name>` block
+     with `prompt_file: agents/<name>.md` and its model, permission and grants,
+   - tools → `tools/<name>.ts`, registered as `tools: { <name>: tools/<name>.ts }`.
+     Every agent gets it unless its `agents.<name>.tools` narrows the list,
    - for a **whole project**: pull in its skills/agents/tools and reconcile its
-     `kortix.yaml` into this project's (merge connectors/triggers/agents — never
-     blindly overwrite the user's manifest). Use judgment; keep what's relevant.
-   Projects created before 2026-09 keep agents, skills and tools under
-   `.kortix/opencode/`. Both layouts work; put new files in the root layout.
+     `kortix.yaml` into this project's (merge registries, connectors, triggers
+     and agents — never blindly overwrite the user's manifest). Use judgment;
+     keep what's relevant.
+   `kortix validate` checks the result before you commit.
 4. **Adapt it to this project.** If a skill carries a "TODO: make this yours"
    placeholder or generic copy, tailor it to what this project actually does.
 5. **Wire up its needs.** If the item requires a connector/secret, don't hardcode

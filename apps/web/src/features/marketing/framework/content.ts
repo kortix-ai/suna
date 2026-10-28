@@ -1,33 +1,50 @@
 /*
  * The Kortix framework, as the home slider and /framework show it.
  *
- * ACCURACY GATE: the manifest is a valid kortix_version 2 file built only
- * from keys in packages/starter/templates/base/kortix.yaml and the
- * "kortix.yaml reference" docs section: governance-only `agents:` entries
- * with `file:`, `env:` for every secret an agent or a webhook reads,
- * `triggers:` in the `on:` / `run:` form. `kortix_slack` and `kortix_email`
- * always count as declared connectors. It passes `validateManifest` and the
- * CLI's `lintProject` (checked against a scratch repo with this TREE). Every new session
+ * ACCURACY GATE: the manifest is a valid kortix_version 3 file built only
+ * from keys in the "kortix.yaml reference" docs section: `agents:` blocks
+ * with `prompt_file:` that enable skills, connectors and secrets by name,
+ * `workspace.project_repository` on every agent that reads memory/ or opens a
+ * change request, `env:` for every secret an agent or a webhook reads,
+ * `triggers:` in the `on:` / `run:` form, and the `skills:` registry.
+ * `kortix_slack` and `kortix_email` always count as declared connectors. It
+ * passes `kortix validate` with 0 issues (checked against a scratch repo
+ * built from FILES). Every new session
  * runs the open-source pi coding agent (@earendil-works/pi-coding-agent)
  * inside kortixd (apps/kortix-sandbox-agent-server/src/harness/README.md).
  * Sample data: Northwind.
  */
 
 export const MANIFEST = [
-  'kortix_version: 2',
+  'kortix_version: 3',
   'default_agent: kortix',
-  '',
-  'project:',
-  '  name: Northwind Operations',
   '',
   'env:',
   '  required: [HELPDESK_WEBHOOK_SECRET, STRIPE_API_KEY]',
   '',
   'agents:',
-  '  kortix:  { file: agents/kortix.md, connectors: all, skills: all }',
-  '  support: { file: agents/support.md, connectors: [kortix_email], skills: [triage-ticket] }',
-  '  finance: { file: agents/finance.md, secrets: [STRIPE_API_KEY], skills: [close-the-books] }',
-  '  sales:   { file: agents/sales.md, connectors: [kortix_slack], skills: [weekly-pipeline] }',
+  '  kortix:',
+  '    prompt_file: agents/kortix.md',
+  '    connectors: all',
+  '    skills: all',
+  '    workspace: { project_repository: true }',
+  '  support:',
+  '    prompt_file: agents/support.md',
+  '    permission: ask',
+  '    connectors: [kortix_email]',
+  '    skills: [triage-ticket]',
+  '    workspace: { project_repository: true }',
+  '  finance:',
+  '    prompt_file: agents/finance.md',
+  '    permission: ask',
+  '    secrets: [STRIPE_API_KEY]',
+  '    skills: [close-the-books]',
+  '    workspace: { project_repository: true }',
+  '  sales:',
+  '    prompt_file: agents/sales.md',
+  '    connectors: [kortix_slack]',
+  '    skills: [weekly-pipeline]',
+  '    workspace: { project_repository: true }',
   '',
   'triggers:',
   '  - slug: morning-brief',
@@ -42,12 +59,17 @@ export const MANIFEST = [
   '  - slug: weekly-pipeline',
   '    on: { cron: "0 0 8 * * 1", timezone: Europe/Berlin }',
   '    run: { agent: sales, prompt: "Summarize the pipeline for Monday\'s sales meeting." }',
+  '',
+  'skills:',
+  '  triage-ticket: skills/triage-ticket',
+  '  close-the-books: skills/close-the-books',
+  '  weekly-pipeline: skills/weekly-pipeline',
 ] as const;
 
 /**
  * Every file the framework window can open, by repository path. Formats as in
- * packages/starter/templates/base: an agent `.md` is frontmatter (description,
- * mode, permission) and its prompt; a SKILL.md is frontmatter (name,
+ * packages/starter/templates/base: an agent `.md` is its prompt only (its
+ * settings live in kortix.yaml); a SKILL.md is frontmatter (name,
  * description), a heading and the steps; memory/MEMORY.md is the index, one
  * `- [file](file) — what it holds` line per memory file. Sample data only.
  */
@@ -61,44 +83,20 @@ export const FILES: Record<string, readonly string[]> = {
     'Every change lands through a change request.',
   ],
   'agents/kortix.md': [
-    '---',
-    'description: The default agent for any task.',
-    'mode: primary',
-    'permission: allow',
-    '---',
-    '',
     'You are the general agent for Northwind.',
     'Read memory/MEMORY.md before you start.',
   ],
   'agents/support.md': [
-    '---',
-    'description: Answers support tickets.',
-    'mode: primary',
-    'permission: ask',
-    '---',
-    '',
     'You answer Northwind support tickets.',
     'Follow the triage-ticket skill and reply by email.',
     'Ask a person before you refund anything.',
   ],
   'agents/finance.md': [
-    '---',
-    'description: Closes the books and reconciles Stripe.',
-    'mode: primary',
-    'permission: ask',
-    '---',
-    '',
     'You run finance for Northwind.',
     'Follow the close-the-books skill.',
     'Never move money. Open a change request for every entry.',
   ],
   'agents/sales.md': [
-    '---',
-    'description: Reports on the sales pipeline.',
-    'mode: primary',
-    'permission: allow',
-    '---',
-    '',
     'You report on the Northwind pipeline.',
     'Follow the weekly-pipeline skill and post in Slack.',
   ],

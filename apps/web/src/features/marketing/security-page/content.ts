@@ -109,7 +109,7 @@ export const isolation = {
     {
       id: 'microvm',
       k: 'microVM where you ask for it',
-      v: 'On Platinum, Kortix’s own compute and the reference provider, a sandbox is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and its removal is scheduled. We will tell you which one you are on rather than blur them together.',
+      v: 'On Platinum, Kortix’s own compute, a sandbox is a Cloud Hypervisor microVM.',
     },
     {
       id: 'branch',

@@ -74,24 +74,28 @@ my-project/
 ```
 
 `kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
-commands and extensions; each agent block enables them by name. A v3 session
-reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
-<https://kortix.com/docs/project/manifest>.
+commands and extensions; each agent block enables them by name. Every starter
+agent sets `workspace: { project_repository: true }`, so its sessions get a
+checkout of the repository. A v3 session reads no `harnesses/`, `.kortix/`,
+`.opencode/` or `.pi/` folder. Reference:
+<https://kortix.com/docs/#kortixyaml-reference>.
 
-Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
-frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
-and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
-`kortix migrate --write` writes it.
+Projects on `kortix_version` 1 or 2 keep their layout and still run. To
+upgrade one to v3:
+
+- `kortix migrate` prints the v3 manifest and changes nothing.
+  `kortix migrate --write` writes it. It converts a v1 `kortix.toml` and a v2
+  `kortix.yaml`.
+- `kortix projects upgrade` starts an agent session that runs `kortix migrate`
+  and opens the result as a change request for review.
 
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
 receive native discovery links to the canonical sources. Claude Code uses
-`.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
-`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
-`AGENTS.md` pointer. Sessions in the cloud never read these links.
+`.claude/skills` and `.claude/agents`. Codex uses `.agents/skills`. Pi uses
+`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+Sessions in the cloud never read these links.
 
-A cloud session runs pi. OpenCode is deprecated: only a session that started
-on it before 2026-10-23 still runs it. The CLI talks to the same Kortix routes
-on both.
+A cloud session runs pi.
 
 Create a project with:
 

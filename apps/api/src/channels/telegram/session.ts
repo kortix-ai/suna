@@ -3,7 +3,8 @@
  * update in the integration event inbox; this consumer turns a stored message
  * into a session turn through the conversation core (channels/core/conversation.ts):
  *
- *   unknown sender  → a pairing reply naming their user id, no session (fail closed)
+ *   unknown sender  → a pairing reply naming their user id, no session (fail closed);
+ *                     in a private chat, also an access request an admin can allow
  *   `/start`        → a welcome reply
  *   `/new`          → forget the chat's session; the next message starts a new one
  *   anything else   → the core: a follow-up into the chat's session, or a new
@@ -14,17 +15,18 @@
  * the bot token never enters the sandbox.
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
-import { chatThreads, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { databaseErrorSummary } from '../../shared/database-errors';
+import { isUuid } from '../../shared/validate';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import {
   getPendingQuestion,
-  reconcileStoredSessionAgentGrant,
   releaseRuntimeQuestion,
   renderAnswerPrompt,
   resolvePendingQuestion,
@@ -35,7 +37,7 @@ import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { TELEGRAM_UPDATES, telegramCall } from './api';
-import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret, recordTelegramAccessRequest } from './installs';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -43,7 +45,7 @@ export interface TelegramMessage {
   message_id: number;
   date?: number;
   chat: { id: number; type: string; title?: string };
-  from?: { id?: number; username?: string; is_bot?: boolean };
+  from?: { id?: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean };
   text?: string;
   caption?: string;
   message_thread_id?: number;
@@ -134,7 +136,10 @@ const QUESTION_BODY_MAX = 3900;
  * A question button's `callback_data`: `kq:<question row id>:<option index>`,
  * 41 bytes (Telegram allows 64). Persisted in chats: never change the format.
  */
-const QUESTION_BUTTON = /^kq:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d)$/;
+/** A tap on a question nothing can answer any more: its session is gone, or the chat moved on. */
+const EARLIER_QUESTION = 'This question is from an earlier conversation. Send your answer as a message.';
+// `kq:<question id>:<option index>`; the id is checked with isUuid.
+const QUESTION_BUTTON = /^kq:([^:]+):(\d)$/;
 
 /** At most `max` UTF-16 units, never half an emoji: Telegram refuses a lone surrogate. */
 function clip(text: string, max: number): string {
@@ -179,13 +184,15 @@ export const telegramPort: ChannelPort = {
   },
   /**
    * The agent's question, posted as the agent would post it with `send_message`
-   * and only where that call runs without approval (an admin's `risk` mode, a
-   * block rule or a policy set still decide). One single-select question with
+   * and only where that call would run without approval for the agent's own
+   * principal (its connector account, an admin's `risk` mode, a block rule or a
+   * policy set still decide). One single-select question with
    * up to MAX_BUTTONS options gets one button per option; anything else, or a
    * bot that cannot take presses, gets a numbered list to reply to.
    */
-  async postQuestion(target, { sessionId, pendingId, questions }) {
+  async postQuestion(target, { sessionId, pendingId, questions, principal }) {
     try {
+      if (principal.projectId !== target.projectId || principal.sessionId !== sessionId) return false;
       const token = await loadTelegramBotToken(target.projectId);
       if (!token) return false;
       const [chatId, topicId] = target.threadId.split(':');
@@ -211,9 +218,8 @@ export const telegramPort: ChannelPort = {
             }
           : {}),
       });
-      const grant = await reconcileStoredSessionAgentGrant({ projectId: target.projectId, sessionId });
       const runsUnattended = (args: Record<string, unknown>) =>
-        connectorActionAlwaysRuns({ projectId: target.projectId, slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args, grant });
+        connectorActionAlwaysRuns({ principal, slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args });
       let body = message(oneTap);
       if (!(await runsUnattended(body))) {
         logger.info('[telegram] question left to the agent: send_message needs approval', { sessionId });
@@ -223,7 +229,8 @@ export const telegramPort: ChannelPort = {
         body = message(false);
         if (!(await runsUnattended(body))) return false;
       }
-      await telegramCall(token, 'sendMessage', body);
+      const sent = await telegramCall<{ message_id: number }>(token, 'sendMessage', body);
+      if ('reply_markup' in body) await rememberQuestionButtons(target, sent.message_id, pendingId);
       logger.info('[telegram] question posted', { sessionId, buttons: 'reply_markup' in body });
       return true;
     } catch (error) {
@@ -254,6 +261,48 @@ async function subscribeToButtons(token: string, projectId: string): Promise<boo
   } catch (error) {
     logger.warn('[telegram] button subscription failed; the question is posted as text', { projectId, error: String(error) });
     return false;
+  }
+}
+
+/**
+ * A question with buttons stays answerable until someone answers it another
+ * way. Its chat message is kept for 7 days on the TTL key table, so the next
+ * message in the chat can take the buttons away (`clearQuestionButtons`).
+ * Key: `telegram:question-buttons:<project>:<bot>:<thread>|<message id>|<question id>`.
+ */
+const questionButtonsPrefix = (target: Pick<ChannelTarget, 'projectId' | 'workspaceId' | 'threadId'>) =>
+  `telegram:question-buttons:${target.projectId}:${target.workspaceId}:${target.threadId}|`;
+
+async function rememberQuestionButtons(target: ChannelTarget, messageId: number, pendingId: string): Promise<void> {
+  await db
+    .insert(chatEventDedup)
+    .values({ eventId: `${questionButtonsPrefix(target)}${messageId}|${pendingId}`, expiresAt: new Date(Date.now() + 7 * 24 * 3600_000) })
+    .onConflictDoNothing()
+    .catch((error) => logger.warn('[telegram] question buttons not remembered', { error: String(error) }));
+}
+
+/**
+ * Take the buttons off every question still showing them in this chat, and say
+ * why in the message's last line: the person answered in the chat, or started
+ * over with /new. Best-effort: a failed edit leaves the buttons, and a later
+ * tap is answered as before.
+ */
+async function clearQuestionButtons(token: string, target: ChannelTarget, footer: string): Promise<void> {
+  const prefix = questionButtonsPrefix(target);
+  const rows = await db
+    .delete(chatEventDedup)
+    .where(like(chatEventDedup.eventId, `${prefix}%`))
+    .returning({ key: chatEventDedup.eventId })
+    .catch(() => []);
+  for (const { key } of rows) {
+    const [messageId, pendingId] = key.slice(prefix.length).split('|');
+    const asked = pendingId ? await getPendingQuestion(target.projectId, pendingId).catch(() => null) : null;
+    await telegramCall(token, 'editMessageText', {
+      chat_id: target.threadId.split(':')[0],
+      message_id: Number(messageId),
+      text: asked ? telegramQuestionText(asked.questions, footer) : footer,
+      reply_markup: { inline_keyboard: [] },
+    }).catch((error) => logger.warn('[telegram] question buttons not cleared', { error: String(error) }));
   }
 }
 
@@ -318,18 +367,36 @@ export async function handleTelegramEvent(
   const reply = (body: string) => sendTelegramReply(token, target, body);
 
   if (!senderId || !install.allowedUserIds.includes(senderId)) {
+    // Only a private chat asks for access: there the sender wrote to the bot itself.
+    const asks = !!senderId && message.chat.type === 'private';
+    const waiting =
+      asks &&
+      (await recordTelegramAccessRequest(event.projectId, install, message.from!).catch((error) => {
+        // A failed query's message carries its parameters, the sender's names among them.
+        logger.warn('[telegram] access request not recorded', {
+          projectId: event.projectId,
+          error: databaseErrorSummary(error) ?? String(error),
+        });
+        return false;
+      }));
     await reply(
       `This bot belongs to a Kortix project, and your Telegram account is not allowed to use it yet. ` +
-        `Ask a project admin to allow your Telegram user id ${senderId || '(unknown)'} under Channels → Telegram.`,
+        (waiting
+          ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Telegram. Your Telegram user ID is ${senderId}.`
+          : `Ask a project admin to allow your Telegram user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → Telegram${asks ? '' : ', or message this bot privately to ask for access'}.`),
     );
     return;
   }
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
+  const startingOver = /^\/new(@\w+)?\b/.test(text);
+  if (!/^\/start(@\w+)?\b/.test(text)) {
+    await clearQuestionButtons(token, target, startingOver ? 'A new conversation started.' : 'Answered in the chat.');
+  }
   if (/^\/start(@\w+)?\b/.test(text)) {
     await reply('Connected to Kortix. Send a message to start working with the agent. /new starts a new conversation.');
     return;
   }
-  if (/^\/new(@\w+)?\b/.test(text)) {
+  if (startingOver) {
     await forgetChatThread(target, createClaim);
     await reply('Started a new conversation. Your next message goes to a new session.');
     return;
@@ -396,13 +463,13 @@ export async function handleTelegramPress(
   // The same gate as a typed message. An alert, never a chat message: in a group
   // the pairing reply would reach everyone.
   if (!install.allowedUserIds.includes(String(press.from.id))) {
-    await answer(`Your Telegram account is not allowed to use this bot. Ask a project admin to allow user id ${press.from.id} under Channels → Telegram.`, true);
+    await answer(`Your Telegram account is not allowed to use this bot. Ask a project admin to allow user ID ${press.from.id} under Customize → Connectors → Channels → Telegram.`, true);
     return;
   }
   const button = QUESTION_BUTTON.exec(press.data ?? '');
   const message = press.message;
   // A button Kortix did not post (the agent may post its own keyboards).
-  if (!button || !message) return void (await answer());
+  if (!button || !isUuid(button[1]) || !message) return void (await answer());
 
   const asked = await getPendingQuestion(event.projectId, button[1]!);
   const option = asked?.questions[0]?.options[Number(button[2])];
@@ -415,7 +482,7 @@ export async function handleTelegramPress(
       reply_markup: { inline_keyboard: [] },
     }).catch((error) => logger.warn('[telegram] question message not edited', { error: String(error) }));
   if (!asked || !option || !threadId) {
-    await answer('This question is from an earlier conversation. Send your answer as a message.');
+    await answer(EARLIER_QUESTION);
     await telegramCall(token, 'editMessageReplyMarkup', {
       chat_id: message.chat.id,
       message_id: message.message_id,
@@ -427,6 +494,11 @@ export async function handleTelegramPress(
   const answers = [[option.label]];
   await answer(`Answered: ${option.label}`);
   await edit(telegramQuestionText(asked.questions, `Answered: ${option.label}`));
+  // A later message in the chat must not rewrite this answer.
+  await db
+    .delete(chatEventDedup)
+    .where(like(chatEventDedup.eventId, `${questionButtonsPrefix({ projectId: event.projectId, workspaceId: install.botId, threadId })}${message.message_id}|%`))
+    .catch(() => undefined);
   // The server could not release the question when it was posted, so it still
   // blocks the turn: answer it there, as the web does (routes/turn-questions.ts).
   // A retry finds its own answer stored and tries the release again.
@@ -438,10 +510,20 @@ export async function handleTelegramPress(
   if (inTurn) {
     const released = await releaseRuntimeQuestion(asked.sessionId, asked.requestId, answers);
     if (released === 'released') return;
-    // A follow-up would wait behind the turn the question blocks (up to the
-    // waiting-turn bound). Retry; the last attempt delivers it as a follow-up.
-    if (released === 'unreachable' && !run.finalAttempt) throw new Error('telegram question release unreachable');
+    // A running session's follow-up would wait behind the turn the question
+    // blocks (up to the waiting-turn bound): retry, and the last attempt
+    // follows up. A parked or ended session has no such turn: follow up now.
+    if (released === 'unreachable' && !run.finalAttempt && (await sessionStatus(asked.sessionId)) === 'running') {
+      throw new Error('telegram question release unreachable');
+    }
   }
+
+  // Nothing reaches the agent (its session is gone, or the chat moved on to
+  // another): the message must not keep saying "Answered".
+  const undelivered = async () => {
+    await edit(telegramQuestionText(asked.questions, EARLIER_QUESTION));
+    return null;
+  };
 
   const [, topicId] = threadId.split(':');
   const reply: TelegramMessage = {
@@ -456,7 +538,7 @@ export async function handleTelegramPress(
     // new message) since the check refuses it.
     {
       ...telegramPort,
-      prepareFollowUp: async (_target, thread) => (thread.sessionId === asked.sessionId ? 'deliver' : 'refuse'),
+      prepareFollowUp: async (_target, thread) => (thread.sessionId === asked.sessionId ? 'deliver' : (await undelivered(), 'refuse')),
     },
     {
       target: { platform: 'telegram', workspaceId: install.botId, threadId, projectId: event.projectId, messageId: String(message.message_id) },
@@ -467,10 +549,15 @@ export async function handleTelegramPress(
       },
       followUp: { text: renderTelegramPrompt(reply, 'follow-up') },
       // A press never starts a session.
-      plan: async () => null,
+      plan: undelivered,
     },
     run,
   );
+}
+
+async function sessionStatus(sessionId: string): Promise<string | null> {
+  const [row] = await db.select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+  return row?.status ?? null;
 }
 
 /** The session's thread in this chat (the chat itself, or one of its forum topics), on this bot. */

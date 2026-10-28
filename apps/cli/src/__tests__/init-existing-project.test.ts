@@ -50,7 +50,7 @@ describe("init in an existing cloned project", () => {
     );
     // A legacy checkout: every link points at .kortix/opencode, none dangles.
     expect(readlinkSync(resolve(repo, ".agents", "skills"))).toBe("../.kortix/opencode/skills");
-    expect(readlinkSync(resolve(repo, ".opencode"))).toBe(".kortix/opencode");
+    expect(() => lstatSync(resolve(repo, ".opencode"))).toThrow();
     expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
     expect(
       lstatSync(resolve(repo, ".claude", "skills")).isSymbolicLink(),

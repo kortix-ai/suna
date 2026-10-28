@@ -117,9 +117,9 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await dismissOnboarding(page);
   }
 
-  /** A direct API that needs a credential. Creating it also creates its
-   *  empty project account; returns that account's id. */
-  async function createBearerHttp(slug: string): Promise<string> {
+  /** A direct API that needs a credential. Since KRTX-2317 (#10214, default
+   *  since #10866) creating it seeds no empty "Everyone" account. */
+  async function createBearerHttp(slug: string): Promise<void> {
     await api(
       session.access_token,
       "POST",
@@ -127,9 +127,7 @@ test.describe("49 — Connector connect lands on the connector page", () => {
       { slug, provider: "http", baseUrl: "https://crm.example.com", auth: { type: "bearer" } },
       200,
     );
-    const rows = await accountsOf(slug);
-    expect(rows.map((row) => row.owner_type)).toEqual(["project"]);
-    return rows[0]!.connection_id;
+    expect(await accountsOf(slug)).toEqual([]);
   }
 
   async function accountsOf(slug: string) {
@@ -268,16 +266,17 @@ test.describe("49 — Connector connect lands on the connector page", () => {
   test("with no account of your own, Set credential opens Add account, not the shared account", async ({
     page,
   }) => {
-    // The caller has only the connector's empty shared account.
+    // The connector has no account yet.
     const slug = `e2e-banner-${Date.now().toString(36)}`;
     await createBearerHttp(slug);
     await openConnectorPage(page, slug);
 
-    // The empty shared account is not listed: nothing reads "Everyone".
-    const notice = page.getByRole("alert").filter({ hasText: "has no account" });
-    await expect(notice).toBeVisible({ timeout: 60_000 });
+    // No account exists, so nothing reads "Everyone". The page opens on the
+    // Accounts tab, which carries the one Add account (its no-account notice hides there).
+    const addAccount = page.getByRole("button", { name: /Add account/ }).first();
+    await expect(addAccount).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText(/^Everyone in /)).toHaveCount(0);
-    await notice.getByRole("button", { name: /Add account/ }).click();
+    await addAccount.click();
 
     const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     await expect(addDialog).toBeVisible();
@@ -296,46 +295,8 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     expect(created.request().postDataJSON()).toEqual(expect.objectContaining({ connector_alias: slug }));
     expect(created.ok(), `POST connections/me answered ${created.status()}`).toBe(true);
 
-    // Read back: a private account now sits beside the untouched shared one.
-    expect((await accountsOf(slug)).map((row) => row.owner_type).sort()).toEqual([
-      "member",
-      "project",
-    ]);
-  });
-
-  test("Everyone signs in the empty shared account, never a second one", async ({ page }) => {
-    // Two unpinned shared accounts leave the connector with no default, and a
-    // sign-in on a non-default shared account never loads the tools.
-    const slug = `e2e-everyone-${Date.now().toString(36)}`;
-    const slotId = await createBearerHttp(slug);
-    await openConnectorPage(page, slug);
-
-    const notice = page.getByRole("alert").filter({ hasText: "has no account" });
-    await expect(notice).toBeVisible({ timeout: 60_000 });
-    await notice.getByRole("button", { name: /Add account/ }).click();
-    const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
-    await expect(addDialog).toBeVisible();
-    await addDialog.getByRole("radio", { name: /^Everyone in / }).check();
-
-    // A new shared account is `POST /connections`: it must not be sent.
-    const sharedCreates: string[] = [];
-    page.on("request", (request) => {
-      if (
-        request.method() === "POST" &&
-        request.url().endsWith(`/projects/${project.id}/connections`)
-      ) {
-        sharedCreates.push(request.url());
-      }
-    });
-    await addDialog.getByRole("button", { name: "Continue", exact: true }).click();
-    // Credential entry opens for the empty shared account itself.
-    await expect(page.getByText(/^Set credential for /)).toBeVisible({ timeout: 60_000 });
-    expect(sharedCreates).toEqual([]);
-
-    // Read back: still exactly one shared account, the same row.
-    expect(
-      (await accountsOf(slug)).map((row) => [row.connection_id, row.owner_type]),
-    ).toEqual([[slotId, "project"]]);
+    // Read back: the caller's private account is the only one.
+    expect((await accountsOf(slug)).map((row) => row.owner_type)).toEqual(["member"]);
   });
 
   test("removing a connector lands on the list with no connector-not-found error", async ({

@@ -22,7 +22,7 @@ its releases, machines and volumes. A static App is files Kortix serves itself
 `snapshots` when it has volumes. Branch on capabilities only.
 
 Kortix chooses and operates the provider. Never select Cloudflare, Vercel, or
-another host. Volumes need Platinum (the default on Kortix Cloud).
+another host.
 
 ## Preflight
 
@@ -79,8 +79,8 @@ The command waits for `ready` for up to 1200 s. Use `--app <slug>` (or the
 `kortix.yaml` block) for every later release of the same App. Never create a
 new slug for a normal update.
 
-Declare Apps in `kortix.yaml` `apps.<slug>` (kortix-system,
-`references/kortix/kortix-yaml.md`). The file owns `resources`,
+Declare Apps in `kortix.yaml` `apps.<slug>` (`kortix schema --version 3`
+prints every key). The file owns `resources`,
 `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses`: a write
 from the web, CLI, SDK or API commits to `apps.<slug>` first, and a push
 applies them on sync without a deploy. Deleting an App removes its block. The
@@ -125,11 +125,10 @@ An App never starts an agent itself. It posts an **App event**; a trigger in
 (`…/v1/projects/<project_id>/apps/<app_id>/events`).
 
 **Build an App for this last.** Before you write a watcher App, check in this
-order: (1) a connector event (the service already emits it; needs the project
-flag `event_triggers`, off by default: ask the user), (2) a webhook (the
-service can call a URL), (3) a schedule (a fixed cadence is enough). Build the
-App only when none fits: no events and no webhook, code must decide what
-deserves an agent, or the watch needs a connection that stays open.
+order: (1) a webhook (the service can call a URL), (2) a schedule (a fixed
+cadence is enough). Build the App only when neither fits: no webhook, code
+must decide what deserves an agent, or the watch needs a connection that
+stays open.
 
 1. Post one event `{name, data?, id?}` or `{events: [...]}` (at most 50):
    ```bash

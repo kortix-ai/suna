@@ -1318,9 +1318,9 @@
       "oneOffDescription": "Уместо тога опишите једну измену. Сесија је извршава, проверава и отвара захтев за измену.",
       "oneOffPlaceholder": "нпр. Преименујте агента release-bot у deploy-bot на свим местима",
       "runUpgrade": "Покрени надоградњу",
-      "manifestV2": {
-        "title": "Пребаци манифест на v2 (kortix.yaml)",
-        "description": "Претвара v1 kortix.toml у kortix.yaml усмерен на управљање, ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
+      "manifestV3": {
+        "title": "Надогради манифест на v3 (kortix.yaml)",
+        "description": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа."
       },
       "agentEditorHint": "Овај пројекат користи манифест верзије 1. Надоградите га на <code>kortix.yaml</code> верзије 3 да бисте овде уређивали упутства, модел, дозволе алата и приступ овог агента."
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "Ваш рачунар"
     },
     "manifestUpgrade": {
-      "title": "Надогради на v2",
-      "description": "Овај пројекат и даље користи <toml>kortix.toml</toml>. Агент га претвара у <yaml>kortix.yaml</yaml>, освежава управљане вештине и отвара захтев за измену. Ништа се не мења док га не одобрите.",
+      "title": "Надогради на v3",
+      "description": "Овај пројекат користи старији манифест. Агент га преводи у <yaml>kortix.yaml</yaml> верзије 3, освежава управљане вештине и отвара захтев за измену. Ништа се не мења док га не одобрите.",
       "start": "Покрени надоградњу"
     },
     "filter": {
@@ -2803,6 +2803,7 @@
     "signInWithEmail": "Пријавите се путем е-поште",
     "createNewAccount": "Направи нови налог",
     "byContinuingYouAgreeSimple": "Ако наставите, слажете се са нашим",
+    "customerLogoNotice": "Kortix може да прикаже назив и лого ваше организације као клијента, на било ком плану. Можете се одјавити у сваком тренутку на legal@kortix.com.",
     "phoneVerification": {
       "title": "Потврдите свој број телефона",
       "titleOtp": "Enter Верификациони код",
@@ -16802,7 +16803,7 @@
       "textc3bf78fdd3b9": "Слање пријаве није успело",
       "textc3c25857485f": "Ради",
       "textc3c709a999c1": "Читање меморије…",
-      "textc3d1545dd522": "Конвертује v1 kortix.toml у governance-first kortix.yaml, освежава вештине којима управља платформа на најновију основу marketplace-а и отвара захтев за измену на преглед.",
+      "text7823a1f3af93": "Преводи kortix.toml или kortix.yaml верзије 2 у верзију 3: пројекат региструје вештине, алате, команде и проширења, а сваки агент их укључује по имену. Ажурира вештине којима управља платформа и отвара захтев за измену ради прегледа.",
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
@@ -17537,7 +17538,7 @@
       "textd83a0d814c59": "API Status приказује зелено „Enabled“, параметар „SCIM Username“ је мапиран на Email, а provisioning је омогућен без задржавања због одобрења администратора.",
       "textd84b8be91e7b": "Kortix — Презентације",
       "textd84ee1e1e08b": "покушајте kortix init или / за команде",
-      "textd85a383e851d": "Мигрирај манифест на v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Надогради манифест на v3 (kortix.yaml)",
       "text848f54e89660": "Покретања",
       "textb098a09c78aa": "Тестирај са payload-ом",
       "text99733344956d": "Payload",
@@ -20805,7 +20806,14 @@
     "sessionModel": "Модел {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Без ограничења · потрошња је неограничена",
-    "tokensSub": "{in} улаз · {out} излаз"
+    "tokensSub": "{in} улаз · {out} излаз",
+    "unknownValue": "Nepoznato",
+    "estimateCoverageUnavailable": "Pokrivenost procene nije dostupna.",
+    "estimatesSeparate": "Stvarna potrošnja iznad je odvojena. Procene se nikada ne dodaju troškovima.",
+    "estimatedUsageValueLabel": "Procenjena vrednost LLM upotrebe (nije račun):",
+    "pricedRequests": "{count} zahteva sa cenom",
+    "unpricedRequests": "{count} zahteva bez cene",
+    "llmEstimateLabel": "LLM procena:"
   },
   "triggerComposer": {
     "every": "Сваких",
@@ -21199,6 +21207,18 @@
     "emailHeroLede": "Poveži svoj Resend nalog i izaberi adresu na svom domenu. Ljudi pišu na nju, a agent čita prepisku i odgovara u njoj.",
     "telegramHeroTitle": "Dovedi agenta na Telegram",
     "telegramHeroLede": "Poveži bota koga napraviš preko BotFather-a. Ljudi pišu botu, a agent odgovara u četu.",
+    "telegramUsersDescription": "Samo ovi ljudi mogu da pričaju sa botom. Kad mu neko drugi piše privatno, pojaviće se ovde.",
+    "telegramRequestsTitle": "Traži pristup",
+    "telegramAllowedTitle": "Dozvoljeni",
+    "telegramUsersEmptyTitle": "Ljudi kojima dozvoliš pojaviće se ovde",
+    "telegramUsersEmptyDescription": "Zamoli nekoga da piše botu, pa dozvoli njegov zahtev ili dodaj njegov korisnički ID.",
+    "telegramUsersLoadError": "Nije moguće učitati Telegram korisnike.",
+    "telegramAddByIdLabel": "Dodaj po korisničkom ID-u",
+    "telegramAddByIdHint": "Bot svakome koga ne poznaje odgovara njegovim korisničkim ID-em.",
+    "telegramAddByIdInvalid": "Telegram korisnički ID je broj, na primer 123456789.",
+    "telegramAllowAria": "Dozvoli: {name}",
+    "telegramRemoveTitle": "Ukloniti {name}?",
+    "telegramRemoveDescription": "{name} više ne može da priča sa botom. Da ga ponovo dozvoliš, dodaj njegov korisnički ID ili dozvoli njegov sledeći zahtev.",
     "otherWaysToConnect": "Drugi načini povezivanja",
     "computerHeroTitle": "Dovedi agenta na svoj računar",
     "computerConnectedTitle": "{count, plural, one {Tvoj računar je povezan} few {# računara su povezana} other {# računara je povezano}}",

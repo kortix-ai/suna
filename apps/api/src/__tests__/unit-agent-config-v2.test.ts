@@ -267,7 +267,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     // Sanity: the bug this guards against — a raw object with no
     // `kortix_version` key reads as unversioned to `validateRoot`.
-    expect(manifest.raw.kortix_version).toBe(2);
+    expect(manifest.raw.kortix_version).toBe(3);
 
     const applied = applyDefaultAgentV2(manifest, 'kortix');
     expect(applied.ok).toBe(true);
@@ -292,7 +292,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     // The write result still carries kortix_version — a second edit in the
     // same request (or a subsequent PUT before the first commit lands) must
     // keep validating too, not just the very first one.
-    expect(applied.raw.kortix_version).toBe(2);
+    expect(applied.raw.kortix_version).toBe(3);
     const reapplied = applyDefaultAgentV2({ ...manifest, raw: applied.raw }, 'release-bot');
     expect(reapplied.ok).toBe(true);
   });

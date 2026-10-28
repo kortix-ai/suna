@@ -1,1156 +1,300 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps (sites, servers, backends with volumes) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the session harness: pi runs every new session; OpenCode is deprecated. Covers `kortix.yaml` versions 1 and 2, App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know what the session runtime (pi) can and cannot do, and edit `kortix.yaml` (kortix_version 3). Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or reminder; or asks to save, persist, schedule or ship work."
 ---
 
 <skill name="kortix-system">
 
 <live-skills>
-The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
-`kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-marketplace` — are served fresh by the CLI,
-so their instructions always match the platform version you're running on (no
-re-install, no image re-bake):
+## Skills, served live
 
-- `kortix system-skills` — list the Kortix system skills.
-- `kortix system-skills get <name>` — print one skill's current SKILL.md body.
-- `kortix system-skills get <name> --full` — also include its referenced files.
+Your system prompt lists every skill your agent may load, with its path. Read
+a skill's `SKILL.md` with `read` before you work on its topic. Paths inside a
+skill are relative to its folder.
 
-`kortix skills` is a permanent compatibility alias. Optional, non-system
-skills are marketplace items. Browse them with
-`kortix marketplace list --type skill`.
+The Kortix skills (`kortix-*`) come from the deployed platform, not from the
+repository, and update in a running session. Never edit or commit a copy.
+For one your list lacks, or outside a session:
 
-Before answering anything about Kortix internals — Apps, connectors and connections,
-project memory, Slack/channels, reaching a connected computer, or sending a
-notetaker into a meeting — load the matching skill with
-`kortix system-skills get <name>` and follow it. Prefer this over any stale
-local copy. The CLI reflects the deployed platform.
+- `kortix system-skills` lists the Kortix skills this host serves.
+- `kortix system-skills get <name>` prints one `SKILL.md` and its reference paths.
+- `kortix system-skills file <name> <path>` prints one reference.
 
-For App deployment or lifecycle work, load `kortix-apps`. It contains the
-source-type decision tree, fast paths, blocking behavior, and verification
-contract.
+A skill behind a project feature flag exists only while the flag is on.
+`kortix skills` is an alias. Optional skills: `kortix marketplace search
+<query>` (the `kortix-marketplace` skill).
 </live-skills>
 
 <overview>
-A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one unit of agent work = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
+## The model
 
-The repo keeps harness-neutral content at the root and harness-specific files
-under `harnesses/`:
-
-- **Kortix config** — `kortix.yaml`: agents and what each may access,
-  triggers, env, sandbox templates.
-- **Agents** — `agents/<name>.md`, one file per agent (frontmatter + prompt).
-  `kortix.yaml` names it as `agents.<name>.file`.
-- **Skills** — `skills/<name>/SKILL.md`. Every harness loads them.
-- **Memory** — `memory/`, the project brain (`kortix-memory` skill).
-- **Tools** — `kortix.yaml` `tools:` lists the Kortix tools the project keeps
-  (`<name>: kortix:<name>`) and its own tools, one module each
-  (`tools/<name>.ts` by convention). Every harness runs them
-  (`references/kortix/tools.md`).
-- **OpenCode config (deprecated)** — `harnesses/opencode/` (`opencode.config_dir`):
-  `opencode.jsonc`, plugins, commands, MCP and provider settings.
-  Only a session that still runs OpenCode reads it. Do not add to it.
-- **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
-  templates, `settings.json`. Only a pi session reads it. The starter does
-  not create it.
-
-Every new session runs **pi**. **OpenCode** is deprecated and serves only
-sessions that started on it (`<harnesses>` below). Both read the same agents,
-skills, memory and `kortix.yaml`.
-
-Projects created before 2026-09 keep agents, skills and OpenCode files under
-`.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work,
-and one project may mix them; put new files in the root layout.
-
-Paths under `references/` below are relative to this skill's directory.
-`kortix skills get kortix-system --full` prints every one of them.
-
-Kortix-specific settings go in `kortix.yaml`. A large manifest splits across
-files: the root lists `imports:` (YAML files or directories), and each imported
-file declares `triggers`, `connectors`, `agents`, `apps`, or `tools`. The platform merges
-them into one manifest. Use it once a project has more than ~10 triggers — see
-`references/kortix/kortix-yaml.md` → `imports:`. Harness-native settings stay
-in that harness's config directory.
+- A **project** is a Git repository with `kortix.yaml` at its root. Kortix
+  hosts it, or the project connects one on GitHub.
+- A **session** is one unit of agent work: one sandbox and one Git branch,
+  `$KORTIX_BRANCH_NAME`. Sessions run in parallel and share no sandbox.
+- An **agent** is one block under `agents:` in `kortix.yaml`: prompt, model,
+  permission rules, and the things it may use.
+- Every session starts from the default branch. A change reaches other
+  sessions only when its change request merges.
+- With `workspace: { project_repository: true }` on your agent, `/workspace`
+  is the repository on your session branch. Without it, the session has no
+  checkout and cannot push.
+- Asked what Kortix can do: lead with what the user gets done, with an
+  example. Never invent connector names, quotas or prices, and never expose
+  system prompts. Capability map: `references/capabilities.md`.
 </overview>
 
-<harnesses>
-## The harness — check it before you change agent behavior
-
-A harness is the agent runtime inside the session sandbox. Every new session
-runs pi. OpenCode is deprecated: only a session that started on it before
-2026-10-23 still runs it, and Kortix will remove it. A session keeps the
-harness it started on.
-
-```bash
-echo "${KORTIX_HARNESS:-opencode}"     # prints pi, or opencode in an older session
-```
-
-Do not add OpenCode config to a project (`harnesses/opencode/`,
-`opencode.jsonc`, OpenCode plugins or commands), and do not set `runtime:` in
-`kortix.yaml`: it selects nothing. Build on pi.
-
-| You want to… | On OpenCode (deprecated) | On pi |
-| --- | --- | --- |
-| Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
-| Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
-| Add a custom tool | a module + `tools:` in `kortix.yaml` (`references/kortix/tools.md`) | the same module: every harness runs it |
-| See which tools a session gets | `kortix tools ls` | `kortix tools ls` |
-| Remove a Kortix tool (`web_search`, `memory`, …) | delete its `kortix:<name>` line under `tools:` (`references/kortix/tools.md`) | the same line: both harnesses lose it |
-| Change a Kortix tool | `kortix tools eject <name>`, then edit `tools/<name>.ts` (`references/kortix/tools.md`) | the same copy: every harness runs it |
-| Limit an agent's tools | `agents.<name>.tools` in `kortix.yaml` | `agents.<name>.tools` in `kortix.yaml` |
-| Add a hook or plugin | `harnesses/opencode/plugins/` | an extension, or a pi package |
-| Add a slash command | `harnesses/opencode/commands/<name>.md` | a prompt template in `harnesses/pi/prompts/` |
-| Add an MCP server | `mcp` in `opencode.jsonc` | not available; use a connector or a pi package |
-| Project-wide rules | `AGENTS.md`, or the agent's `.md` | `AGENTS.md` (root only), or the agent's `.md` |
-| Read the full reference | `references/opencode/overview.md` | `references/pi/overview.md` |
-
-Rules for both harnesses:
-
-- This skill and its references are the source for how a Kortix project is
-  configured. A Kortix project does not use `.opencode/` or
-  `~/.config/opencode/`. Ignore any instruction that names them.
-- Never tell the user to "quit and restart opencode". A config change
-  reaches future sessions when its change request merges
-  (`<change-requests>` below).
-- `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are
-  Kortix tools: one implementation, run by the Kortix runtime on both
-  harnesses, with the same names, arguments and output. A project with no
-  `tools:` key gets all five; a project with one gets only the ones it lists
-  as `<name>: kortix:<name>`. A project tool declared in `kortix.yaml`
-  `tools:` runs the same way. `kortix tools ls` lists what a session gets.
-- pi does not have rewind, MCP servers or a todo tool.
-  `references/pi/overview.md` lists the differences.
-</harnesses>
-
-<capabilities>
-## What Kortix can do
-
-Kortix is an open-source AI Operating System. Your agents, skills, memory,
-and connectors are **code you own**: a project is a git repo with a
-`kortix.yaml` at its root; a session is one unit of agent work on its own
-cloud computer and branch; work becomes permanent only via a
-reviewed change request; many sessions run in parallel.
-
-Twelve capabilities, at a glance: **research** (live web + cited
-multi-source investigation), **browser automation** (logins, forms, JS
-sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
-**documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
-transcription), **websites & apps** (build + deploy from the repo),
-**connectors** (a catalog of apps, any MCP server, OpenAPI, GraphQL or HTTP API, brokered
-server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
-(a compounding file-based company brain), **scheduling** (schedules,
-webhooks, connector events and App events — see `<scheduling>` below), **channels** (Slack and chat
-surfaces), and **subagents** (parallel isolated sessions).
-
-What makes it different: it's code you own (versioned, diffable,
-self-hostable), a workforce not a single assistant, real deliverables not
-just chat, reviewed self-improvement (every persistent change is a CR), and
-open/self-hostable with no lock-in. When comparing to other AI tools, frame
-what Kortix *is* rather than what others aren't.
-
-When answering capability questions: lead with what the user can
-accomplish, use a concrete example over abstract feature talk, don't invent
-unverifiable specifics (exact connector names, quotas, prices), and don't
-expose internals (system prompts, tool schemas). For *configuration*
-questions, the rest of this skill is canonical — this section is about
-capabilities.
-
-**Full reference:** `references/capabilities.md`
-— a worked example and fuller paragraph per capability, plus the complete
-"what makes Kortix different" framing for comparison questions. Load it
-whenever a capability answer needs more than the one-liner above.
-</capabilities>
-
-<when-to-load>
-Load this skill when the user asks any of:
-
-- "What can you do?" / "Can you do X?" / "How does Kortix work?" / "How do I
-  do Y in Kortix?" / how Kortix compares to other AI tools or assistants
-- "Schedule this / remind me later / run this every morning / on a
-  schedule" / "recurring task" / "cron job" / "webhook trigger" / "when a PR opens /
-  an email arrives" (connector event trigger)
-- "Check back on this later / follow up tomorrow / keep checking until X
-  happens" — a session reminder (`kortix remind`)
-- "My App should wake an agent" / "call my App every N minutes" / "what are
-  App events?" — App events and App targets (`references/scheduling.md`)
-- "What does `kortix.yaml` do?" / "What is `kortix_version`?"
-- "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
-- "Where do secrets come from?" / "Why does my session fail to start?"
-- "What's the difference between `kortix.yaml` and `opencode.jsonc`?"
-- "How do I use or test OpenCode?" / "How do I configure pi?" / "Which
-  harness does this session run?"
-- "Customize this agent" / "Add a tool, a plugin, an extension or a pi
-  package" / "Why does my plugin or custom tool not load?"
-- "How does an agent retrieve the current Kortix system instructions?"
-- "How do I customize the sandbox image?"
-- "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
-- "I need a database / a backend / an API for my app" / "Build an internal
-  tool or app the team logs in to" (route through `<apps>`)
-- "How do I create an agent, a subagent or a reusable skill?"
-- "How do I register an MCP server?"
-- "How do I tighten permissions for the build agent?"
-- "What does `AGENTS.md` do?" (both harnesses load the root file; pi reads the release copy while config releases are on)
-- "Which model should I default to?" / "How do I configure reasoning effort?"
-- "How do I land this work on `main`?" / "Open a PR / change request for me"
-- "How do change requests work in Kortix?" / "What's `kortix cr`?"
-
-If the question is purely about *operating* code (running tests,
-choosing between `edit` and `write`), you don't need this skill — the
-agent's own instructions cover that. This skill is the **configuration
-+ platform** reference.
-</when-to-load>
-
-<cli>
-You are running inside a Kortix session sandbox. The **`kortix` CLI**
-is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
-this exact project — a project-scoped token is already injected as
-`$KORTIX_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
-You can run `kortix …` from any shell with zero setup.
-
-**Reach for the CLI** whenever the user asks for something that touches
-Kortix cloud state — not just files in the repo. Examples:
-
-| The user says… | Use… |
-| --- | --- |
-| "list / read project secrets" | `kortix secrets ls` |
-| "set / unset a secret" | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME` |
-| "pull / push my `.env`" | `kortix env pull`, `kortix env push --from .env` |
-| "what sessions are running right now?" | `kortix sessions ls` *(add `--json` to parse)* |
-| "show all parallel agents at a glance — what's everyone doing?" | `kortix sessions status` *(mission control; `--all`, `--json`)* |
-| "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
-| "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
-| "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
-| "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
-| "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
-| "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
-| "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
-| "show open change requests" | `kortix cr ls` |
-| "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
-| "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
-| "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
-| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …] [--policy-set <slug>=<name>]` · `kortix agents config <agent>` |
-| "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
-| "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
-| "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
-| "call Gmail / a CRM / any connector from an App (a backend included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
-| "build a dashboard / custom UI / chat over Kortix sessions" (an App or any React host) | `@kortix/sdk` + `@kortix/ui`, never a raw API `fetch` · `kortix system-skills file kortix-ui references/custom-dashboard.md` (modules: `references/modules.md`) |
-| "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
-| "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
-| "show me every connector event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **Connector events** |
-| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers`, off by default (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → Composio event triggers |
-| "when my App sees X, start an agent" | `kortix triggers add <slug> --type app --app <app-slug> --prompt "…" --apply` (the App posts `$KORTIX_APP_EVENTS_URL`) · playbook: `references/scheduling.md` → App events |
-| "call my App every 5 minutes" (no agent) | `kortix triggers add <slug> --every 5m --target-app <app-slug> --target-path /tick --apply` · `references/scheduling.md` → Call an App |
-| "list triggers of one kind" | `kortix triggers ls --type cron\|webhook\|event\|app` |
-| "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
-| "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
-| "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
-
-**Everything is scriptable — drive Kortix like the dashboard.** Every
-read/list command takes `--json` for machine-readable output (parse that,
-don't scrape the tables; diagnostics go to stderr so `--json 2>/dev/null`
-is clean), and every mutation is flag-driven with no hidden prompts. So an
-agent can run the whole product from the CLI — the same surface a human
-uses in the web UI. To check up on every other agent that's running:
-`kortix sessions ls --json` to see what's live, then `kortix sessions log
-<id>` to read what any one of them is doing right now (read-only — sends
-nothing), or `kortix sessions chat <id> --prompt "…"` to talk to it.
-
-**Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
-do (commits, file edits, running tests, local search). The CLI is the
-cloud-state surface; everything else is local.
-
-**Token scope reminder.** The CLI's token (`$KORTIX_TOKEN`, a
-`kortix_pat_…` bound to this session) is project-scoped — it cannot
-enumerate other projects or hit account-level routes, and a route that
-names a session accepts only this session. Trying `kortix projects ls` from
-inside the sandbox returns 403; that's intentional. Use `kortix projects info` to inspect **this** project.
-
-**Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
-value-free JSON catalog for this session. Check it before asking for a
-credential. It lists only secrets allowed by both the agent grant and session
-scope. Four entry kinds — `sandbox` is the common, default case; `network` and
-`https_broker` appear only when the project has enabled the experimental network
-enforcement feature:
-
-- `sandbox` — the named environment variable holds the REAL value. This is the
-  default kind. Treat it as radioactive: never print it, never echo it, never
-  write it to a file.
-- `network` — appears only under the experimental network enforcement feature.
-  The named environment variable holds a HANDLE, not the value. Use
-  the variable exactly as you would use the real credential (header, query
-  string, body). Kortix swaps the handle for the real value OUTSIDE the sandbox,
-  and only on the `hosts` the entry lists, over HTTPS. Sent anywhere else the
-  handle arrives as a literal string and the request fails. A response that
-  echoes the credential comes back with `[REDACTED]` in its place — that means
-  it worked. An empty reply or a connection error on a listed host is a REAL
-  failure. The value is not in this sandbox in any form: do not search for it,
-  do not ask the user for it. The entry's `notes` carry the full rules.
-- `https_broker` — appears only under the experimental network enforcement
-  feature. Use `kortix secrets call IDENTIFIER URL [options]`; Kortix adds the
-  value server-side only after the request matches the stored policy. This is
-  also the fallback when a request cannot be relayed transparently.
-- `kortix_service` — spent only by its named service, such as a connector or
-  the LLM gateway. It has no sandbox presence at all.
-
-Never print or return a secret value or a handle. Use `kortix secrets ls
---json` when you need the complete stored policy.
-
-**Getting a credential — never punt to the dashboard.** If the human already
-gave you the value (pasted in chat, in a file, "use this key"), **store it
-yourself in the same turn** with `kortix secrets set NAME=-`
-(`--scope connector` for a connector credential) —
-no link, no second entry, never echo it back. A `403` means your agent lacks
-secret-write permission: fall back to a link. If you do NOT have the value,
-**mint a setup link and surface the URL in the same turn** with
-`kortix secrets request` / `kortix connectors connect`. The human gets a
-fill-in modal (web) or a tappable link (Slack). Never tell them to "open
-Customize → Connectors". Full playbook in the **credentials-and-setup-links**
-reference below.
-
-**Exception — connecting Slack itself.** Slack is a built-in channel, not a
-connector or a secret. `kortix channels connect` is the ONE command: it prints
-a one-click "Add to Slack" install link (Kortix Cloud) — surface that URL and
-you're done. No manifest, no bot token, no secret-intake link. Details in the
-`kortix-slack` skill.
-
-**Full reference:** `references/kortix/kortix-cli.md`
-— every command, every flag, every env var, common workflows. Load it
-when you need exact syntax.
-</cli>
-
-<mcp-client>
-## Connect an MCP client
-
-Kortix has one hosted MCP server: `https://api.kortix.com/v1/mcp` (on another
-deployment, `<api origin>/v1/mcp`). An MCP client (Claude, ChatGPT, Cursor,
-VS Code, Codex) that adds the URL signs the person in with OAuth and acts as
-them, with their permissions, in every project they can open. Nothing to
-install. Claude Code:
-
-```bash
-claude mcp add --transport http kortix https://api.kortix.com/v1/mcp
-```
-
-A client without OAuth sends a personal access token as
-`Authorization: Bearer kortix_pat_…` (`kortix tokens new <name>`). A person
-revokes an OAuth client with `kortix tokens apps rm <client-id>` or in
-Settings → Personal access keys → Connected apps. A connected app cannot mint
-personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
-accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
-
-The server also exposes a project's connectors, the `kortix connectors` CLI as
-MCP tools: `list_connectors` → `search_connector_actions` →
-`describe_connector_action` → `call_connector` (pass `reason` on a write whose
-args are only ids; a `pending_approval` result carries a link the person
-opens, then call again with the same args). `connect_connector` returns the
-link that connects an account. `upload_connector_attachment` stages a file.
-`search_connector_apps` finds an app in the catalogue, `get_connector_app`
-lists its ways to connect and their tools, and `add_connector` and
-`remove_connector` change which connectors the project has.
-
-The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
-`kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
-context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `stderr`. Discover with
-`["--help"]` and `["<group>", "--help"]`. Prefer the first-class tools for
-sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
-`login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
-`connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
-(a local directory: use `run_command` in a session sandbox), with the reason
-and the alternative. `read_skill` with
-`project_id` lists the project's own skills.
-</mcp-client>
-
-<apps>
-## Kortix Apps — sites, servers and backends
-
-An **App** is a project-scoped thing with one stable Kortix URL. Kortix runs it
-as releases, machines and volumes:
-
-- A **release** (`vN`) is immutable: an artifact plus its resolved config. A
-  failed release never replaces the live one. A rollback is a new release from
-  an older one.
-- A **machine** runs a release for one process group. It keeps its id across
-  releases; each release replaces its box, so its root disk resets.
-- A **volume** is a persistent disk. It outlives every release and machine,
-  with daily snapshots, restore and fork.
-
-Every App is the same primitive. Clients branch on `capabilities`, never on a
-type. `labels` (for example `backend`) only group and filter Apps.
-
-- A **static App** (`--type static`) is files that Kortix serves itself: no
-  machine, no cold start, no compute bill, instant rollback. Build a Vite,
-  React, or exported Next.js App here and deploy its output directory.
-- A **server App** (`--type dockerfile`, or `--image`) runs machines. It runs
-  **always on** (the default, 24/7) or **on demand** (`--on-demand`: stops
-  after `idle_timeout_seconds`, 120–86400, without requests and wakes on the
-  next request or trigger; a stop keeps the disk and loses memory). An always-on App bills its machines
-  24/7; an on-demand App bills only while awake. Apps have no monthly budget:
-  account credits pay. `--budget` is retired.
-- A **backend** (database, server functions, realtime, file storage) is a
-  server App with a volume. `kortix apps launch --template convex`
-  writes and deploys a self-hosted Convex backend (`backend`, data on a volume) and
-  an admins-only dashboard (`backend-dashboard`). Its code lives in
-  `apps/backend/convex/` and ships with `npx convex deploy`.
-
-Apps are generally available in every project. Use Apps directly; no feature
-flag or enablement request is required.
-
-New Apps are private and **unlisted**: an App is a card on the Apps page
-only with `display.listed: true` (`--listed`); every other App sits in the
-**Background** list and opens to an overview. Deploy an App people open (a
-site, a UI, a dashboard) with `--listed`; leave backends, workers and pollers
-unlisted.
-
-An App reports what it sees by posting **App events** (`$KORTIX_APP_EVENTS_URL`
-with `$KORTIX_APP_TOKEN`); a trigger decides which agent runs. An App never
-starts an agent itself. A trigger with `run: { app, path }` calls an App on a
-schedule or an event. See `references/scheduling.md`.
-
-New Apps are private. Use `kortix apps access <app>` to select creator-only,
-whole-project, restricted member/group, public, or password access. Never store
-an App password in `kortix.yaml`.
-
-Each App's code lives in its own folder, `apps/<slug>/` by default (`path` is
-free-form; group by team or topic when that fits better). Deploy that folder:
-
-```sh
-kortix apps deploy apps/storefront/dist --type static --spa --listed
-kortix apps deploy apps/api --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
-kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
-kortix apps launch --template convex
-kortix apps releases api          # vN, status, strategy; the live one marked
-kortix apps machines api          # machines per process group, their volumes
-kortix apps scale count api 2 --process worker
-kortix apps volumes snapshot backend data
-kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
-```
-
-For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`
-(the App's release config: `processes`, `http_service`, `services`, `mounts`, `vm`,
-`deploy`, `labels`), then run `kortix apps deploy --manifest-app <name>`, or a
-bare `kortix apps deploy` for every block that has a `path` or `image`.
-kortix.yaml is the source of truth for App settings (`resources`,
-`idle_timeout_seconds`, `always_on`, `labels`, `display`, `uses`): every write
-(web, CLI, SDK, API) commits to `apps.<slug>` first, and a push applies them on
-sync without a deploy. The manifest stores non-secret
-environment values and maps runtime environment keys to **project secret
-identifiers**. It never stores secret values.
-
-A server App supports HTTP services (each on its own host), HTTP streaming,
-SSE and WebSockets. Apps do not support TCP or UDP services, private
-networking between Apps, private registries, or custom domains yet.
-
-**Build a product: what to create.**
-
-| The user wants | Build |
-| --- | --- |
-| A website or UI with no stored data | A static App |
-| An app with data, login or realtime | `kortix apps launch --template convex` + a static App that uses it (`kortix apps link <ui> --uses backend`) |
-| A backend (data, functions, realtime) or an API only | The `convex` template, or a server App with a volume |
-| A call to an external system from an App | The connector gateway (`kortix-connectors`) |
-| Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
-| Code that watches a source with no events and no webhook | An App that posts App events: the last resort (`references/scheduling.md` → App events) |
-
-Load the `kortix-apps` system skill before you deploy or operate an App, and
-before you write Convex code.
-**Full reference:** `references/kortix/apps.md` — workload selection, manifest
-fields, every lifecycle command, run modes and cost, ignore rules, secrets,
-cold starts, rollback, retention, limits, and failure handling.
-</apps>
-
-
-<marketplace>
-The **Kortix Marketplace** is the project skill library and the normal way to
-discover, install, inspect, and update optional capabilities. Search it before
-creating a new skill from scratch.
-
-Use the consumer CLI surface:
-
-```sh
-kortix marketplace search <query> --json
-kortix marketplace show <name> --json
-kortix marketplace install <name> --project <project-id>
-kortix marketplace status --project <project-id> --json
-kortix marketplace updates --project <project-id> --json
-kortix marketplace update <name> --project <project-id>
-kortix marketplace update --all --project <project-id>
-```
-
-The web equivalent is the project's Marketplace/Customize surface. Normal
-agents should not use `kortix registry build/validate/publish`; those are
-developer-authoring tools for producing registries, not for consuming skills in
-a project.
-
-Marketplace installs are git-native: installing or updating writes files into
-`skills/...` (agents into `agents/`), updates `registry-lock.json`, and commits the
-change to the project repo. Installed state and update detection come from the
-lock file's target paths and content hashes, not from a hidden database flag.
-`update --all` uses one server-side batch update so all outdated skills land in
-one commit.
-
-**Full reference:** `references/kortix/marketplace.md`
-— load it whenever you need to pick skills, explain installed/update status,
-debug marketplace behavior, or decide whether to create a new skill.
-</marketplace>
-
-<authoring-skills>
-## Authoring a new skill
-
-A skill is a **directory** with `SKILL.md` at its root — frontmatter
-(`name`, `description`, required) plus a markdown body — under
-`skills/<name>/SKILL.md`. The directory name must equal
-`name`. Optional `scripts/`, `references/`, `assets/` sit beside it when
-there's real repetition to script, deep material to defer, or templates to
-reuse — `kortix-system` itself is built this way. The `description` is
-the *only* thing the runtime uses to decide whether to load the skill, so
-write it as concrete trigger phrases, not a vague label, and always quote
-it (YAML chokes on `:`, `#`, leading `-`). Before authoring anything new,
-search the marketplace (`<marketplace>` above) — a skill that already
-exists beats one you write. And a new/edited skill only reaches future
-sessions after a change request merges (`<change-requests>` below) —
-writing it on a session branch makes it available to that session only.
-
-`skills/` is the canonical git source for project skills, and every harness
-loads it (legacy projects: `.kortix/opencode/skills/`). The managed `kortix-*`
-skills are platform-owned: every session receives the latest copy at boot, so
-a stale committed copy never wins. Do not edit them in the repo.
-
-**Full reference:** `references/authoring-skills.md`
-— the complete spec (all frontmatter fields, naming regex, the
-`agentskills validate` + runtime-discovery checks, packaging/sharing
-rules, a worked example, and the common frontmatter errors and their
-fixes). Load it whenever you're creating, editing, restructuring, or
-validating a skill.
-</authoring-skills>
-
-<scheduling>
-## Scheduling — running work later, on a schedule, or on an event
-
-Kortix runs work on a schedule through **triggers** — a durable entry in
-the project's `kortix.yaml` (`triggers:`): `on:` (what fires it) plus `run:`
-(what runs). When one fires, the platform spins up a session and hands the
-agent a prompt, exactly as if a teammate had typed it — or, with
-`run: { app, path }`, calls one of the project's Apps (no session, no model) — there's no separate "scheduler tool" to call at runtime, you
-*declare* a trigger and the platform's sweep fires it. A trigger may live in
-`kortix.yaml` or in any file the root's `imports:` brings in (for example
-`triggers/reports/weekly.yaml`); before adding one, check where the
-project keeps its triggers and follow that layout.
-
-Decide the mechanism first:
-
-- **Follow up on THIS task later** — did the email arrive, is the deploy
-  green, did they reply → a **reminder**, not a trigger:
-  `kortix remind "Did the vendor email arrive? If yes, act on it, then remove this reminder." --in 24h --every 1h`.
-  One command, no `kortix.yaml` change. It re-prompts THIS session (full
-  context) at each fire, waking it if parked, until you remove it. `--in`/
-  `--at` alone fires once; `--every` (≥5m) or `--cron` repeats. A reminder
-  is a trigger scoped to one session: it lives in the database and pauses
-  itself if the session is deleted. This is the native mid-task
-  pause/resume: set a reminder, end the turn. Always remove a recurring
-  reminder once its condition is met — every fire is a model turn.
-  Reminders are a per-project feature flag (`reminders`, off by default).
-  If `kortix remind` answers "Reminders is not enabled for this project",
-  tell the user and name the switch (`kortix projects features enable
-  reminders`, or Settings → Feature flags); turning it on is their call, not
-  yours. Until then, use a one-off `run_at` trigger instead.
-- **Recurring project work** anyone should see (daily digest) →
-  `on: { cron: "<6-field>", timezone }`, or a fixed period
-  `on: { every: 5m }` (≥60s).
-- **One-off project job** not tied to this session → `on: { at: <ISO-8601> }`
-  (flat `run_at`).
-- **Run project code on a cadence, no agent** (a poller, a sync) →
-  `run: { app: <slug>, path: /tick }` with any `on:`.
-- **Reacts to an event in a connected app** ("when a PR opens", "when an
-  email arrives", "when an issue changes") → `type: event` + `connector` +
-  `event`. `connector` is the profile; add `account: <label>` only to pick
-  one of several shared accounts on it. `source` names the event source
-  adapter and defaults to the connector's provider; Composio is one adapter.
-  The event id belongs to the adapter. Kortix subscribes for you: no
-  webhook, no secret, no signature. Needs the project flag `event_triggers`
-  (**Composio event triggers**), off by default: ask the user to run
-  `kortix projects features enable event_triggers`.
-  Use `type: webhook` + `secret_env` only for a system that has no app
-  connector.
-
-**React to something outside Kortix in this order:** (1) a connector event
-(flag on — ask the user), (2) a webhook, (3) a schedule, (4) an App that
-posts App events — only when none fits (no events, no webhook, code must
-decide what deserves an agent, or a connection that stays open). An App
-never starts an agent itself; it posts events (`on: { event, app }`) and a
-trigger decides.
-
-For triggers, `session` (flat `session_mode`) governs every fire:
-`"fresh"` (default, clean session, no chat history — right for digests),
-`"reuse"` (re-prompts the same long-lived session), `"pinned"` or `"keyed"`. Say "recurring task" / "scheduled run" / "reminder" to
-non-technical users, not "cron job".
-
-Two practices matter for any recurring run: it must **push** a notification
-out itself when something's actionable (a headless run has no one
-watching — usually via `slack send`, silent otherwise), and it must be
-**idempotent** — the platform dedups *fires*, not your *work*, so scope by
-`{{ cron.last_scheduled_for }}` and track what's already been handled.
-
-**Full references:**
-- `references/kortix/kortix-yaml.md`
-  — the complete `triggers:` field schema (cron/webhook/event fields, prompt
-  template variables, webhook signature + response codes, `session_mode`,
-  the project-wide `triggers_paused` kill-switch).
-- `references/scheduling.md` — the
-  operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
-  trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
-  idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, a pre-ship checklist, and the **Composio event triggers**
-  playbook (autonomous setup recipe, statuses, noise control).
-- `references/kortix/kortix-cli.md`
-  — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and
-  `kortix reminders` command reference.
-</scheduling>
-
-<continual-harness>
-## Continual harness — the project refines its own scaffolding
-
-Everything that shapes agent behavior in this project — agent prompts,
-sub-agents, skills/tools, memory — is the **harness**, and it lives in git:
-`agents/`, `skills/`, `memory/`, and `harnesses/` (legacy projects: `.kortix/`). Kortix treats the harness as continuously improvable
-from trajectory evidence, on two loops:
-
-1. **In-session refinement (self-invoked)** — every agent runs the
-   four-pass protocol from the `kortix-harness-refinement` skill over its
-   own recent turns the moment a failure signature costs it twice (and as
-   a checkpoint on long sessions). Edits apply in place — they take
-   effect next turn — committed `harness: …` to the session branch, with
-   one CR kept updated toward `main`.
-2. **Cross-session reflection** — the `harness-reflector` agent (daily
-   cron trigger, on by default) fans out read-only `session-reviewer`
-   sub-agents, one per recent session, to work through full session
-   histories; it aggregates their findings, refines the shared harness,
-   and opens a `harness: …` CR against `main`.
-
-Any agent may also invoke the protocol itself when a failure signature
-costs it twice — load `kortix-harness-refinement`
-(`kortix skills get kortix-harness-refinement` if it is not on disk)
-for the failure signatures, the four passes, and the guardrails (never
-edit managed `kortix-*` skills, never merge your own harness CR, no-op
-is valid).
-</continual-harness>
+<storage>
+## Where files last
+
+- `/workspace` holds this session's files, kept for the life of the session.
+- `/drives` (Drive) holds your files and the company's files, shared across
+  sessions and kept until deleted.
+- Anything else (home directory, `/tmp`, installed packages) can be gone when
+  the session reopens. Put tools in a sandbox template.
+
+Save what the user keeps in `/drives/me` (the `kortix-drives` skill). Commit
+what the project keeps (agents, skills, code) and land it through a change
+request. No `/drives` means the project has Drive off.
+</storage>
 
 <change-requests>
-**This is the single most important rule for any agent running in a
-Kortix session: if you want your work to land on `main`, you MUST open
-a change request (CR).**
+## Land work through a change request
 
-Sessions run on ephemeral branches (`session-<id>`). The session VM
-dies when the session ends; the branch persists in git, but
-**nothing on it reaches `main` automatically.** A session-branch
-commit is invisible to every future session — they all boot from
-`main`. The only sanctioned merge path is a CR — the user reviews
-the diff in the dashboard or CLI and merges it (or asks for changes,
-or closes it).
+A commit that stays on your session branch reaches no other session. A
+change request (CR) is the only way to the default branch. Do every step:
 
-### The mandate
+1. Sync: `git fetch origin && git rebase origin/main` (`main` or the default
+   branch `kortix projects info` names). Resolve conflicts now.
+2. Commit small, working commits. Run `kortix validate` after a `kortix.yaml`
+   change. Keep big files out of Git (`<gotchas>`).
+3. Push: `git push origin HEAD`. Rejected because the remote branch moved?
+   `git fetch origin && git push --force-with-lease origin HEAD`. Force only
+   your own session branch.
+4. Open: `kortix cr open --title "<imperative summary>" --description "<what,
+   why, how you tested, risks>"`. It takes `$KORTIX_BRANCH_NAME` as the head.
+   `422 CR_HEAD_NOT_AHEAD` means the push did not land: push, then retry.
+5. Check: `kortix cr diff <n>` shows your diff. Empty: push again and check
+   the same CR. Never open a second CR for the same work.
+6. Tell the user the CR number and title. The web app shows a **Review**
+   button under your reply. Name `kortix cr merge <n>` only to a CLI or
+   channel user.
+7. Wait. Merge your own CR only when the user asks. The API refuses a
+   self-merge (`403 CR_SELF_MERGE_REFUSED`) unless your agent holds
+   `project.gitops.merge`.
 
-When you, as an agent, have changes you believe should persist:
+- Never push to the default branch, even when your grant allows it
+  (`project.gitops.ref.any`): the push skips review.
+- "Committed on my branch" is not persisted. Never ask the user to copy files
+  out of the sandbox.
+- A merge that changes `agents` or `default_agent` also needs
+  `project.agent.write`; `triggers` needs `project.trigger.create|update|delete`.
+  `503 CR_GOVERNANCE_UNVERIFIED`: nothing merged, retry after `Retry-After`.
 
-1. **Sync with the base first.** `main` may have advanced while you
-   worked (other sessions merge CRs, the dashboard commits config):
-   ```sh
-   git fetch origin && git log HEAD..origin/main --oneline
-   ```
-   If the base moved, rebase onto it (`git rebase origin/main`) and
-   resolve any conflicts NOW — a CR whose head is behind or in conflict
-   with base can't be applied, and the conflict is yours to fix, not
-   the reviewer's.
-2. **Commit on the session branch.** Small, working commits. Never
-   rewrite history that isn't yours. Run `kortix validate` first, and
-   never commit a large binary or generated file (see `<gotchas>`:
-   keep big static assets out of Git).
-3. **Push the branch.** This step is NOT optional — a commit that
-   never leaves the sandbox produces an empty, un-appliable CR:
-   ```sh
-   git push origin HEAD
-   ```
-   If the push is rejected because the remote session branch moved
-   (the platform can advance it to the latest base), run
-   `git fetch origin` then `git push --force-with-lease origin HEAD`.
-   Force-pushing is accepted ONLY for your own session branch; the
-   proxy refuses it for `main` or anyone else's branch, so there is
-   nothing to be careful about — it simply will not go through.
-4. **Open a CR.** From inside the sandbox the CLI reads
-   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_TOKEN`
-   automatically:
-   ```sh
-   kortix cr open \
-     --title  "Short, imperative summary" \
-     --description "What changed and why. Test plan. Risks."
-   ```
-   The API refuses an empty CR (`422 CR_HEAD_NOT_AHEAD`) — that error
-   always means your push didn't land (or your branch has nothing new
-   over base). Fix the push and retry; don't work around it.
-5. **Verify the CR carries your diff.**
-   ```sh
-   kortix cr diff <n>
-   ```
-   If it shows no changes, your push didn't land — push and re-check
-   the SAME CR (the diff recomputes live from the refs). Never open a
-   duplicate CR for the same work.
-6. **Surface the CR to the user.** Name the CR number and title in your
-   reply (`kortix cr ls` gives you both). In the web app a **Review**
-   button appears under your reply: tell the user to use it to see and
-   apply the changes. Mention `kortix cr merge <n>` only when the user
-   works from the CLI or a channel without the web app.
-7. **Wait.** The user applies the CR (the Review button, the dashboard,
-   or `kortix cr merge <n>`), or asks for changes. *You do not merge your
-   own CRs.*
-
-### Don't bypass this
-
-- **You cannot push to `main` directly — the platform refuses it.**
-  A session's git credential may write exactly one ref: its own
-  session branch. A push to `main`, to another session's branch, to
-  any other branch, or to a tag comes back as
-  `! [remote rejected] <ref> (a session may only push its own
-  branch ...)`. That is not a bug to work around; it is the review
-  contract. Commit on your branch, push it, open a CR.
-- **You cannot merge your own CR.** The API refuses it with
-  `CR_SELF_MERGE_REFUSED`. A person merges it.
-- **Don't paper over with "I committed it on my branch."** That isn't
-  persistence. The session branch dissolves; only `main` survives.
-- **Don't ask the user to copy-paste files out of the session.** The
-  CR exists precisely so they don't have to.
-
-### How a CR composes with the rest of the system
-
-| Surface       | How it interacts with the CR                                                              |
-| ------------- | ----------------------------------------------------------------------------------------- |
-| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_TOKEN`. Branch tip is the session HEAD. |
-| Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
-| CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
-| `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
-| Skills        | New skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
-| Triggers      | Trigger edits reach the scheduler **only** after the CR merges to `main`.                 |
-
-Full reference: `references/kortix/change-requests.md`.
+For people: https://kortix.com/docs/#git
 </change-requests>
 
-<contract>
-The boundary between project config and runtime config:
+<cli>
+## The `kortix` CLI in the sandbox
 
-| Surface | Owner | File | Read by |
-| --- | --- | --- | --- |
-| Kortix config | Kortix | `kortix.yaml` + optional custom sandbox files | Kortix platform |
-| Agents and skills | Kortix | `agents/`, `skills/` | every harness |
-| OpenCode native config | OpenCode | `harnesses/opencode/` | an OpenCode session |
-| pi native config | pi | `harnesses/pi/` | a pi session |
+`kortix` is on `$PATH` and signed in: `$KORTIX_TOKEN` is this session's
+project-scoped token, `$KORTIX_API_URL` its API. Use it for Kortix cloud
+state. Use `git` and the file tools for files and commits.
 
-Version 2 declares each harness's config directory through
-`opencode.config_dir` and `pi.config_dir` (legacy projects:
-`.kortix/opencode/`, which also holds their agents and skills, and
-`.kortix/pi/`). `runtime:` selects the harness, and `harnesses.pi.packages`
-lists the pi packages a pi session loads.
+- Read commands take `--json`: parse it, never scrape tables. Diagnostics go
+  to stderr. Mutations take flags and never prompt.
+- `kortix <group> --help` lists every subcommand and flag. Read it before
+  you guess a flag.
+- The token cannot reach other projects or account routes (`kortix projects
+  ls` answers `403`). `kortix whoami --token-only` prints your agent's grant.
+- Never send the user to a settings page for something the CLI does.
 
-Do not duplicate harness config in `kortix.yaml`. The manifest owns
-launchability, grants, triggers, and project settings. The agent's `.md` owns
-its prompt, model and permissions. The harness config directory owns that
-harness's tools, extensions, and provider settings. Dashboard edits to
-triggers and env round-trip through `kortix.yaml`.
-</contract>
-
-<canonical-schema>
-## The canonical manifest schema — one URL, always correct
-
-The starter uses `kortix_version: 2`. Check the top
-`# yaml-language-server: $schema=...` line in `kortix.yaml`. That URL is the
-public, versioned JSON Schema, generated from `@kortix/manifest-schema` (the
-same package that backs `kortix validate` and the CR-merge gate — one source
-of truth, no separate spec to keep in sync by hand):
-
-| URL | Covers |
+| Task | Command |
 | --- | --- |
-| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` agent governance map |
-| `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
-| `https://kortix.com/schema/kortix.schema.json` | All published versions; dispatches on `kortix_version` |
+| What every session does, talk to one | `kortix sessions status`, `sessions log <id>` (read-only), `sessions chat <id> --prompt "…"` |
+| Parallel work in its own sandbox | `kortix sessions new --prompt "…" --json`, then `sessions wait-for <id>` (the turn ends) |
+| Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls` |
+| Triggers | `kortix triggers ls\|info\|fire\|add\|set\|enable\|disable` |
+| Reminders on this session | `kortix remind "…" --in 24h`, `kortix reminders ls\|pause\|resume\|rm` |
+| Secrets | `kortix secrets ls\|set\|request\|sync` |
+| Connectors and accounts | `kortix connectors …` (the `kortix-connectors` skill) |
+| Apps: sites, servers, backends | `kortix apps …` (the `kortix-apps` skill) |
+| Drive files and sharing | `kortix drive …` (the `kortix-drives` skill) |
+| Connect Slack or Teams | `kortix channels connect` (the `kortix-slack` skill) |
+| Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
+| Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
+| The manifest | `kortix validate [--scopes]`, `kortix schema --version 3` |
 
-`kortix schema` (from any session — the CLI is always pre-authenticated, see
-`<cli>` above) prints the same document locally: `kortix schema --version 2`,
-or `kortix schema --url` for just the URL. If you are AUTHORING or EDITING
-`kortix.yaml` and unsure whether a field/shape is legal, this schema — not
-this skill's prose, which can drift — is the authoritative structural spec;
-`kortix validate` is the authoritative behavioral one (it also catches
-cross-field rules the static schema can't express, e.g. `default_agent` must
-name a declared agent).
+`kortix triggers add|rm|enable|disable` edit the local `kortix.yaml` for
+your CR. With `--apply` they commit to the default branch through the API,
+gated by your `kortix_permissions`. For people: https://kortix.com/docs/#cli
+</cli>
 
-**v2 in one paragraph** (see `<agent-authorization>` below for the fuller
-write-up): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
-and every block is **governance only** —
-`enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`/`workspace`. `env` was
-renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
-`prompt` on the manifest side at all in v2 — every one of those is agent
-behavior and lives in that agent's own `.md` frontmatter — the file
-`agents.<name>.file` names, default `agents/<name>.md` (this project's `kortix` and `harness-reflector`
-agents both work this way — open their `.md` files to see what they
-actually do). `default_agent` is required and must resolve to a declared,
-enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
-dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
-grant set (an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`
-resolves to `none`, not `all`).
+<credentials>
+## Credentials: never send the user to a settings page
 
-</canonical-schema>
+1. Read `$KORTIX_SECRET_CAPABILITIES` first: a JSON list of the secrets this
+   session may use, without values. Each entry's `delivery`:
+   - `sandbox`: the named env var holds the real value. Never print, echo or
+     write it to a file.
+   - `network`: the env var holds a handle. Use it as the credential: Kortix
+     puts in the value outside the sandbox, only on the listed `hosts`, over
+     HTTPS. `[REDACTED]` in a response means it worked. Experimental.
+   - `https_broker`: run the entry's `command` (`kortix secrets call …`).
+   - `kortix_service`: a connector or the LLM gateway spends it. Nothing is
+     in the sandbox.
+2. The user gave you a value (chat, a file): store it in the same turn,
+   value on stdin: `printf '%s' "$VALUE" | kortix secrets set NAME=-`
+   (`--scope connector` for a connector's key). `403`: go to step 3.
+3. You lack the value: mint a link, put the URL in your reply, end the turn.
+   A key your code reads: `kortix secrets request NAME --scope runtime`
+   (the default scope, `connector`, never reaches the sandbox). An app account:
+   `kortix connectors connect <slug> --label "<name>"` (`--owner project` for
+   a shared company account). Never ask for a key in chat.
 
-<agent-authorization>
-## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
+Slack is a channel, not a secret: `kortix channels connect` prints its
+install link. Owners, accounts, `not granted`, `undecryptable`:
+`references/kortix/credentials-and-setup-links.md`.
+</credentials>
 
-In v2, a logical agent maps by name to an agent file. The manifest
-owns **launchability and authority**. Agent behavior stays outside the
-manifest, in the agent's `.md`, which both harnesses read.
+<scheduling>
+## Scheduling: pick the mechanism first
+
+| The user wants | Use |
+| --- | --- |
+| Follow up on THIS task later ("check tomorrow if they replied") | A reminder: `kortix remind "<what to check, what to do>" --in 24h [--every 1h]` |
+| Wait mid-task, resume with full context | A reminder, then end the turn |
+| Recurring project work (a daily digest) | A trigger: `on: { cron: "0 0 9 * * 1-5", timezone: <IANA> }` or `on: { every: 1h }` |
+| A one-off project job | A trigger: `on: { at: <ISO-8601> }` |
+| Project code on a cadence, no agent | A trigger: `run: { app: <slug>, path: /tick }` |
+| React to a system that can call a URL | A webhook trigger: `on: { webhook: { secret: <SECRET_NAME> } }` |
+| React to a source that sends nothing | A schedule that checks; last resort, an App that posts App events |
+
+- A reminder re-prompts THIS session and wakes it. No `kortix.yaml` change.
+  Remove a recurring one (`kortix reminders rm <id>`) as soon as its
+  condition holds: every fire is a model turn.
+  `403 feature_disabled`: the project turned Reminders off. Tell the user
+  (`kortix projects features enable reminders`); use an `at` trigger meanwhile.
+- A trigger lives in `kortix.yaml` `triggers:` or an imported file. It fires
+  only after its CR merges, or after `kortix triggers add … --apply`.
+- Nobody watches a scheduled run. Push the result (`slack send`, a connector)
+  when it matters; stay silent when nothing changed.
+- Kortix fires each slot once but does not dedupe your work. Scope each run
+  by `{{ cron.last_scheduled_for }}` and record what you handled.
+- Run `kortix triggers fire <slug>` once the trigger is live.
+- Say "scheduled run" or "reminder" to people, not "cron job".
+
+Playbook: `references/scheduling.md`. Fields: `references/kortix/kortix-yaml.md`.
+</scheduling>
+
+<runtime>
+## The session runtime: pi
+
+Every session runs pi inside the Kortix daemon. Every model call goes through
+the Kortix LLM gateway. pi has:
+
+- `bash`, `read`, `write`, `edit` on `/workspace`; `glob`, `grep`, `question`.
+- The Kortix tools `web_search`, `image_search`, `scrape_webpage`, `memory`,
+  `show`; the project's registered tools; `codemode`.
+- Subagents through `task`: the agents your `subagents` grant names.
+- Compaction near the context limit and on demand (`kortix sessions compact <id>`).
+- Slash commands from `commands:` and granted skills; pi extensions and
+  packages from `extensions:`.
+- Steering: a message sent during a turn is read at its next step.
+
+pi does not have rewind or edit-and-resend (`501 feature_not_supported`),
+MCP servers (use connectors), a todo list, shell turns, session fork, or an
+attachable terminal client. No `webfetch`: use `scrape_webpage`. Its
+`capabilities` include `session.subagents`, `session.compact`,
+`session.commands`, `session.steer`. Say plainly what is missing.
+
+pi puts the root `AGENTS.md` (else `CLAUDE.md`) in every system prompt. It
+reads that file, agents, skills, tools and commands from the default
+branch's config release: a change takes effect after its CR merges, in
+running sessions too. Extensions and `codemode` load at runtime start.
+Tools, permissions, extensions: `references/pi.md`.
+</runtime>
+
+<manifest>
+## kortix.yaml, kortix_version 3
+
+The project registers things by name. Each agent enables what it uses.
+Grants are deny-by-default. Unknown keys are errors.
 
 ```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+kortix_version: 3
+default_agent: kortix
+project: { name: Acme ops }
+env: { optional: [ORDERS_API_KEY] }       # secret names; values live in Kortix
+skills: { triage: skills/triage }         # folder that holds triage/SKILL.md
+tools: { lookup_order: tools/lookup_order.ts }
+commands:
+  standup: { description: Post the standup summary., prompt_file: commands/standup.md }
+extensions:
+  audit: { pi: extensions/audit.ts }      # or "npm:<package>@1.2.3"
 agents:
-  release-bot:
-    file: agents/release-bot.md         # the agent's .md: frontmatter + prompt
-    sandbox: ml                         # default environment for this agent
-    connectors: [github]                # which connectors it may call   (default: none)
-    apps: [reports-dashboard]           # Kortix App slugs it may open when the App is restricted/private (default: none)
-    kortix_permissions: [project.write, project.cr.open]    # what it may do to the project — CLI, API, git (default: none)
+  kortix:
+    description: Front-door agent.
+    mode: primary                         # primary | subagent | all
+    prompt_file: agents/kortix.md         # or prompt: "…"
+    permission: { bash: { "git push --force *": ask, "*": allow } }
+    workspace: { project_repository: true }
+    skills: all                           # omitted = none, Kortix skills too
+    subagents: [researcher]
+    commands: [standup]
+    extensions: [audit]
+    connectors: all
+    secrets: [ORDERS_API_KEY]
+    kortix_permissions: [project.read, project.gitops.push]
+  researcher:
+    mode: subagent
+    prompt: Research the question. Cite every source.
+    tools: [read, grep, web_search, scrape_webpage]
+    skills: [kortix-system, triage]
+triggers:
+  - slug: daily-digest
+    on: { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }
+    run: { agent: kortix, prompt: "Summarize yesterday's merged change requests." }
 ```
 
-**Which file owns what — never duplicate across the boundary:**
+- An agent gets nothing it does not grant. Without `skills` it loads no
+  skill, `kortix-system` included.
+- A grant is `all`, `none` or a list of registered names. `subagents` names
+  declared agents with `mode: subagent` or `all`.
+- `tools`: `all` (default), `none`, a list, or `{ exclude: [names] }`. The
+  Kortix tools are always registered; a `tools:` entry with a Kortix tool's
+  name replaces it.
+- `permission`: per key `allow | ask | deny`, or a pattern map where the
+  longest matching pattern wins. Omitted: `allow`.
+- `kortix_permissions`: what the agent may do to the project.
+  `kortix validate --scopes` lists the values. You grant only what you hold.
+- `env.required` is advisory: a session starts without the value.
+- A skill: `skills/<name>/SKILL.md`, the folder named like the skill, not
+  `kortix-*`; frontmatter `name` and a quoted `description` that says when
+  to load it. Register it, grant it, land it through a CR.
+- Connectors: the `kortix-connectors` skill. Apps: the `kortix-apps` skill.
+- Check every edit: `kortix validate` exits 0. `kortix schema --version 3`
+  prints the full schema.
 
-| Setting | Lives in |
-| --- | --- |
-| v2 system prompt, `model`, `mode`, and `permission` | the agent's `.md` (`agents.<name>.file`); on OpenCode also `opencode.jsonc` |
-| connectors, secrets, skills, `apps`, `kortix_permissions`, `tools`, workspace, enabled | manifest `agents:` map |
+Keys, `imports:`, sandbox templates, triggers: `references/kortix/kortix-yaml.md`.
+Tools: `references/kortix/tools.md`. People: https://kortix.com/docs/#kortixyaml-reference
 
-**How the grant resolves at session start:**
-- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
-- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from the OpenCode config directory. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
-- **You are the acting principal.** Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission). `all`, `"*"`, and any list containing `"*"` mean every permission, including `project.members.manage` and `project.delete`. The one exception is `project.credentials.issue` (`403 agent_human_only_action`): a token you mint would carry none of your permissions. The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
-  - `project.read` in your own project is always granted.
-  - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent; `agent_grant_escalation` → you tried to give an agent (yourself included) a permission, connector, secret or App you do not hold. Never claim an authority the code says you lack.
-  - **You grant only what you hold.** Any agent grant you write — through the agent editor, the scope or secret-grant routes, or a CR you merge — may add only what your own effective grant holds. A person widens an agent beyond you. A push straight to the default branch also needs you to hold every grant; otherwise open a CR.
-- Editing the manifest only takes effect once the **CR is merged** (read from the default branch). A CR that changes `agents.*` needs `project.agent.write`, `triggers` needs `project.trigger.create|update|delete`, `default_agent` needs `project.customize.write` — on top of `project.gitops.merge`. With `kortix_permissions: all` you hold them all and merge such a CR yourself. A push straight to the default branch needs `project.gitops.ref.any` plus all of those. A `503 CR_GOVERNANCE_UNVERIFIED` means the manifest could not be read; nothing merged, retry after `Retry-After` seconds. An older server answers `403 CR_AGENT_GOVERNANCE_CHANGE`; only a person can merge it there.
-- Check what you hold with `kortix whoami --token-only`. If it says `none` right after a `kortix.yaml` change, the change broke your grant: revert it before anything else.
-- Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
-
-**Discovery contract:**
-- Declaring `agents:` (v2) or `[[agents]]` (v1) opts into declarative,
-  server-side agent discovery. Agent files can exist without becoming
-  launchable logical agents.
-- Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox runtime.
-- Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local provider list, so connected-provider policy and billing stay server-owned.
-- New projects use v2 declarative discovery. Older `kortix.toml` (v1)
-  projects stay in legacy mode until they migrate.
-
-**`kortix_permissions` — the grantable enum** (`kortix_cli` is the deprecated spelling, still accepted with a validation warning; project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent. One project
-action is **HUMAN_ONLY** — `project.credentials.issue`: it validates in the manifest, but an agent never holds it).
-Run `kortix validate --scopes` to print this list:
-
-```
-project.read  project.write
-project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
-project.session.read  project.session.start  project.session.stop  project.session.bindings.write
-project.members.read
-project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
-project.gateway.logs.read  project.gateway.spend.read  project.gateway.budget.set
-project.agent.read  project.agent.write
-project.skill.read  project.skill.write
-project.command.read  project.command.write
-project.file.read  project.file.write
-project.settings.write  project.sandbox.write
-project.model.read  project.model.write
-project.gitops.read  project.gitops.push  project.gitops.merge
-project.secret.read  project.secret.write
-project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
-project.app.read  project.app.write  project.app.deploy  project.app.admin   # admin: exec, volume restore/destroy, admins-only services
-project.review.read  project.review.submit  project.review.act
-```
-
-`kortix validate` validates `agents:` (v2) / `[[agents]]` (v1) — rejecting unknown /
-account-scoped actions — and prints each agent's resolved scope. Use `kortix validate --scopes`
-to see the full enum.
-</agent-authorization>
-
-<references>
-
-<reference path="references/capabilities.md">
-  The full capabilities reference behind the `<capabilities>` summary
-  above: a worked-example paragraph per capability (research, browser,
-  code/data, documents, media, websites/apps, connectors, secrets,
-  memory, scheduling, channels, subagents, models), "What Kortix is," and
-  "What makes Kortix different" for comparison questions. Load whenever a
-  capability question needs more than the one-liner in SKILL.md.
-</reference>
-
-<reference path="references/kortix/credentials-and-setup-links.md">
-  How to get a credential — an API key, or an app connected. A value you
-  already have (the human gave it in chat) is stored directly with
-  `kortix secrets set`; a value you lack is requested with a
-  short-lived **setup link** instead of punting the human to the dashboard. Covers
-  the two link kinds (secret intake / Composio connect), how to mint each
-  (`kortix secrets request` / `kortix connectors connect`), what the human sees
-  (web modal vs Slack link), how to verify it
-  landed, and the security model. Load this whenever you hit "I need an API key /
-  I need this app connected" — it is the canonical, autonomous flow.
-</reference>
-
-<reference path="references/kortix/kortix-cli.md">
-  In-depth `kortix` CLI reference. Every subcommand (login, hosts,
-  projects, secrets, env, sessions, triggers, cr, init, update,
-  uninstall), every flag, every env var the CLI reads. Includes the
-  project-scoped token model and what the CLI can do **from inside a
-  session sandbox** (where `KORTIX_TOKEN` + `KORTIX_API_URL` are
-  pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
-  `kortix cr ls` all work out of the box). Load this when you want to
-  drive the Kortix cloud from a terminal or agent.
-</reference>
-
-<reference path="references/kortix/apps.md">
-  Kortix Apps deployment and operations reference. Covers static hosting and
-  server Apps (bundle, Dockerfile, and OCI workloads); always-on and on-demand
-  run modes and cost; the v2 manifest `apps:` map; archive
-  ignore rules; environment and secret mappings; stable URLs; cold wake and
-  idle stop; lifecycle commands; rollback and retention; resource limits; and
-  current boundaries. Load before deploying or operating an App.
-</reference>
-
-<reference path="references/kortix/marketplace.md">
-  In-depth Kortix Marketplace reference. What the marketplace is, when to use
-  it before authoring a new skill, CLI and web workflows, install/update/remove
-  semantics, `registry-lock.json`, default starter skills, source registries,
-  and the difference between consumer `kortix marketplace` commands and
-  developer-only `kortix registry` commands.
-</reference>
-
-<reference path="references/authoring-skills.md">
-  Full guide to authoring an Agent Skill to the agentskills.io spec: skill
-  anatomy (`SKILL.md` + optional `scripts/`/`references/`/`assets/`), every
-  frontmatter field and the `name`/`description` rules, the full authoring
-  workflow, keeping `SKILL.md` lean via progressive disclosure, the two
-  validation checks (spec validator + runtime discovery), how to land a
-  skill via CR and package it for sharing, a worked example, and common
-  frontmatter errors with fixes. Load whenever creating, editing,
-  restructuring, or validating a skill.
-</reference>
-
-<reference path="references/kortix/tools.md">
-  Tools on every harness: the three kinds (harness, Kortix, project), which
-  Kortix tools a session gets (`kortix:<name>` in `kortix.yaml` `tools:`,
-  all five with no `tools:` key), `kortix tools ls` and
-  `kortix tools eject <name>`, one checklist per task (add a tool, remove a
-  Kortix tool, change a Kortix tool, limit tools per agent), the
-  harness-neutral module contract (`description`, JSON Schema `parameters`,
-  `execute(args, context)` with `sessionId`, `agent`, `directory`, `env`,
-  `signal`), the `kortix validate` errors and warnings, per-agent access with
-  `agents.<name>.tools` (`all`, `none`, a list, `exclude`), output size,
-  imports, when a change takes effect, and moving an OpenCode-only tool out of
-  `harnesses/opencode/tools/`. Load before writing, changing, removing or
-  restricting a tool.
-</reference>
-
-<reference path="references/kortix/kortix-yaml.md">
-  In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
-  `imports:` (splitting the manifest across YAML files and directories);
-  every shared top-level key (`project:`,
-  `env:`, `sandbox:`); every trigger form (`on:`/`run:` and flat): cron,
-  every, at, webhook, connector event, App event, App target, incl.
-  `session_mode` and the project-wide `triggers_paused` kill-switch); the
-  rule that kortix.yaml owns what it declares, the prompt template variables, the secrets contract, the
-  schema versioning, common gotchas, and a
-  legacy note on the v1 `kortix.toml` TOML format. Load this when
-  editing or debugging the manifest.
-</reference>
-
-<reference path="references/scheduling.md">
-  The triggers **operational playbook** — deciding which mechanism to use
-  (one-off `at` vs recurring `cron` / `every` vs connector event vs
-  `webhook` vs App events, in that order of preference), App events, calling
-  an App, App-scheduled runs, the full croner
-  cheat-sheet and gotchas (DOM+DOW OR-not-AND trap, no exact-minute
-  gates), fresh-vs-reuse `session_mode` decision guidance, notifying the
-  user (Slack push, when to stay silent), idempotency/dedup patterns for
-  recurring runs, the pause-and-wait re-fire pattern for mid-task waits,
-  worked examples, and a pre-ship checklist. Companion to
-  `kortix-yaml.md` (schema) and `kortix-cli.md` (commands). Load whenever
-  the user wants something scheduled, recurring, reminded, or
-  webhook-triggered.
-</reference>
-
-<reference path="references/kortix/change-requests.md">
-  Full Kortix change-request reference. The data model (the
-  `change_requests` table — `cr_id`, `number`, `head_ref`, `base_ref`,
-  `status`, `head_commit_sha`, `base_commit_sha`, `origin_session_id`,
-  `merge_commit_sha`), the lifecycle (`open` → `merged` | `closed`,
-  reopen path), the CLI surface (`kortix cr ls / show / diff / open /
-  merge / close / reopen`) with every flag, the REST API endpoints under
-  `/v1/projects/:projectId/change-requests/...`, the merge-preview /
-  conflict story, the agent mandate ("MUST open a CR for changes to
-  land on `main`"), and common gotchas (force-pushes, merged-CR diffs,
-  origin_session_id orphaning). Load this whenever the user mentions
-  change requests, CRs, merging, landing work, opening a PR-equivalent,
-  or asks how Kortix handles the GitHub-PR gap.
-</reference>
-
-<reference path="references/pi/overview.md">
-  How pi fits into a Kortix project: how to tell which harness a session
-  runs, what pi reads from the repository (the root `AGENTS.md` among it)
-  and what it ignores (`opencode.jsonc`, `plugins/`, `tools/`, `commands/`), the pi
-  config directory (`pi.config_dir`, `harnesses/pi/`), the features pi does
-  not support, and when a change takes effect. Load it first for any
-  customization request in a pi session.
-</reference>
-
-<reference path="references/pi/tools.md">
-  The tools of a pi session (`bash`, `read`, `write`, `edit`, `glob`,
-  `grep`, `question`, `task`, the Kortix tools `web_search`,
-  `image_search`, `scrape_webpage`, `memory`, `show` that the project's
-  `kortix.yaml` lists, and the project's own tools), their arguments, the OpenCode tools pi does not have
-  and what to use instead, and the `permission` rules that govern each tool.
-</reference>
-
-<reference path="references/pi/agents.md">
-  Agent files on pi (the frontmatter fields pi applies), subagents through
-  the `task` tool (`general`, `explore`, project agents), and how pi finds
-  and loads skills.
-</reference>
-
-<reference path="references/pi/extensions.md">
-  pi extensions (`harnesses/pi/extensions/*.ts`: tools, hooks, commands) and
-  pi packages (`harnesses.pi.packages` in `kortix.yaml`, per-agent
-  `exclude`), with a worked extension and the test procedure. The pi
-  counterpart of OpenCode plugins and custom tools.
-</reference>
-
-<reference path="references/opencode/overview.md">
-  OpenCode sessions only. How OpenCode fits into a Kortix project — where each primitive lives
-  (`agents/`, `skills/`, `harnesses/opencode/`), how the same files drive both the remote
-  sandbox and local `opencode` runs — plus the index into the per-feature
-  pages mirrored from opencode.ai/docs/.
-</reference>
-
-<reference path="references/opencode/agents.md">
-  Agent personas. Primary vs subagent, frontmatter schema, permission
-  keys, configuration in `opencode.jsonc` or markdown. Mirrored from
-  <https://opencode.ai/docs/agents/>.
-</reference>
-
-<reference path="references/opencode/skills.md">
-  On-demand `SKILL.md` definitions. Discovery paths, frontmatter rules,
-  name validation, permission gating. Mirrored from
-  <https://opencode.ai/docs/skills/>.
-</reference>
-
-<reference path="references/opencode/commands.md">
-  Custom `/`-prefixed slash commands. Frontmatter, `$ARGUMENTS`,
-  positional args, shell-output and file-reference placeholders.
-  Mirrored from <https://opencode.ai/docs/commands/>.
-</reference>
-
-<reference path="references/opencode/tools.md">
-  Built-in tools (bash, edit, write, read, grep, glob, lsp, apply_patch,
-  skill, todowrite, webfetch, websearch, question) AND custom tools
-  (`.opencode/tools/<file>.ts` via `@opencode-ai/plugin`'s `tool()`
-  helper, polyglot via `Bun.$`). Mirrors
-  <https://opencode.ai/docs/tools/> and
-  <https://opencode.ai/docs/custom-tools/>.
-</reference>
-
-<reference path="references/opencode/plugins.md">
-  Plugin hooks (`tool.execute.before`, `session.idle`, `shell.env`,
-  `experimental.session.compacting`, etc.), npm vs local loading,
-  TypeScript types, examples (notifications, .env protection, custom
-  tools, compaction). Mirrored from <https://opencode.ai/docs/plugins/>.
-</reference>
-
-<reference path="references/opencode/mcp-servers.md">
-  Local + remote MCP servers, OAuth handling, the `mcp` config key,
-  glob-based tool gating, per-agent enablement, common examples
-  (Sentry, Context7, Grep). Mirrored from
-  <https://opencode.ai/docs/mcp-servers/>.
-</reference>
-
-<reference path="references/opencode/permissions.md">
-  The `permission` config — global `*`, per-tool, pattern-based bash
-  rules, `external_directory`, defaults (including `.env` deny),
-  per-agent overrides, what "ask" actually does. Mirrored from
-  <https://opencode.ai/docs/permissions/>.
-</reference>
-
-<reference path="references/opencode/rules.md">
-  `AGENTS.md` — the project-wide instructions file OpenCode auto-loads.
-  Project vs global, Claude Code (`CLAUDE.md`) compatibility, precedence
-  rules, the `instructions` config key for referencing external files.
-  Mirrored from <https://opencode.ai/docs/rules/>.
-</reference>
-
-<reference path="references/opencode/models.md">
-  Model selection (`/models`), recommended models, default config,
-  per-provider options, custom variants, model loading priority order.
-  Mirrored from <https://opencode.ai/docs/models/>.
-</reference>
-
-</references>
+**Not on version 3?** Another `kortix_version`, or a TOML manifest: this
+sheet does not apply. Upgrade first, as a CR: `kortix migrate` (preview),
+`kortix migrate --write`, `kortix validate`, commit, `kortix cr open`. Or the
+user runs **Settings → Upgrades**.
+</manifest>
 
 <gotchas>
-Things that surprise people:
+## Gotchas
 
-- **The workspace IS global — sessions are not.** A Kortix project is
-  one big GitHub repo everyone shares. Persistent changes happen by
-  committing to the session branch and **opening a change request**
-  that merges back to `main`. Every session — even thousands running
-  concurrently — gets its own isolated sandbox + ephemeral branch.
-  Branches can `git pull` from `main` to pick up the latest. Merging
-  back to `main` is how anything becomes persistent, and the *only*
-  sanctioned path is `kortix cr open` → user review → merge.
-- **Merging to `main` is a CR — there is no other path.** Direct
-  pushes to `main` from inside the sandbox skip the user-review
-  contract and surprise the user. If an agent has changes worth
-  keeping, the next move is *always* `kortix cr open`, never a force
-  push, never asking the user to copy files out. See the
-  `<change-requests>` section above.
-- **Keep big static assets out of Git.** Every session builds its agent
-  config from the whole repository at the base commit (history and `.git`
-  do not count), and downloads every file. A new session takes the files
-  from its own checkout, whatever the size. A running session picks up a
-  base-branch change through the project snapshot, built up to 512 MiB
-  compressed; above that it keeps the config it runs until a new session
-  starts. Put videos, images, datasets, model weights and generated media
-  in object storage (S3, R2, GCS) or a CDN, and download them at runtime.
-  Add build output (`dist/`, `out/`, `node_modules/`) to `.gitignore`.
-  `kortix validate` warns about any file of 10 MiB or more and a
-  repository over 512 MiB; run it before you commit. A path that must stay in Git but that no agent reads can be
-  left out of the agent config with `<path> export-ignore` in
-  `.gitattributes`.
-- **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped
-  triggers under `.opencode/triggers/<slug>.md` — that's gone.
-  Centralized in the manifest now, parsed as `triggers:`.
-- **Harness-neutral files live at the repo root; harness files under
-  `harnesses/`.** Agents (`agents/`), skills (`skills/`) and memory
-  (`memory/`) serve every harness, and so do the tools `kortix.yaml` declares
-  under `tools:`. OpenCode's own files — commands, plugins, MCP, providers —
-  sit in `harnesses/opencode/`, declared through
-  `opencode.config_dir`. pi's own files — extensions, prompt templates,
-  `settings.json` — sit in `harnesses/pi/`, declared through `pi.config_dir`.
-  The pre-2026-09 `.kortix/opencode/` layout still works.
-- **A harness reads only its own directory.** An OpenCode plugin, a tool in
-  `harnesses/opencode/tools/`, a command or an `opencode.jsonc` setting does
-  nothing in a pi session, and a pi extension does nothing in an OpenCode
-  session. Check the harness first (`<harnesses>` above). Write a new tool as
-  a project tool (`kortix.yaml` `tools:`): both harnesses run it.
-- **An agent is two halves.** Its `.md` holds behavior; its `agents:` entry
-  in `kortix.yaml` holds what it may access. Declaring an agent there is a
-  separate Kortix decision.
-- **Provider verification is a real prompt.** A generic key check cannot prove
-  a model, region, entitlement, and API dialect together. Test the exact
-  model through a session prompt.
-- **Manifest schema is versioned.** `kortix_version` lets the platform
-  evolve safely. A manifest declaring a higher version than the platform
-  knows about is rejected outright — better than silent misread.
-- **`env.required` is advisory, not enforced.** The platform surfaces
-  `required` to the dashboard so the user knows what to set, but session
-  bootstrap won't block on missing values today. Treat `required` as a
-  contract with the user, not the platform.
+- Keep big files out of Git: every session downloads the whole repository.
+  `kortix validate` warns at 10 MiB per file and at 512 MiB in total. Above
+  512 MiB compressed, running sessions stop picking up config changes. Put
+  media and datasets in object storage; add build output to `.gitignore`.
+- A v3 session reads no harness folder (`harnesses/`, `.kortix/`). Do not add
+  one: declare everything in `kortix.yaml`.
 </gotchas>
 
 </skill>

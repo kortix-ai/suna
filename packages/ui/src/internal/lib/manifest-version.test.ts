@@ -50,7 +50,7 @@ describe('manifestFilename', () => {
 });
 
 describe('manifestNeedsUpgrade', () => {
-  test('only a v1 project is offered an upgrade; v3 is opt-in', () => {
-    expect([1, 2, 3, null].map((v) => manifestNeedsUpgrade(v as ManifestVersion | null))).toEqual([true, false, false, false]);
+  test('a v1 or v2 project is offered the upgrade to v3; v3 and an unresolved read are not', () => {
+    expect([1, 2, 3, null].map((v) => manifestNeedsUpgrade(v as ManifestVersion | null))).toEqual([true, true, false, false]);
   });
 });

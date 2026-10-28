@@ -37,6 +37,7 @@
           },
           "project": {
             "type": "object",
+            "description": "`name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository.",
             "properties": {
               "name": {
                 "type": "string"
@@ -49,20 +50,23 @@
           },
           "env": {
             "type": "object",
+            "description": "The secret names the project expects. Values live in Secrets, never in this file.",
             "properties": {
               "required": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the project needs: uppercase letters, digits and `_`, not starting with a digit. The dashboard and `kortix ship` ask for a missing value. A missing value does not block a session."
               },
               "optional": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the same prompts offer. Values live in Secrets, never in this file."
               }
             },
             "additionalProperties": true
@@ -83,6 +87,7 @@
           },
           "sandbox": {
             "type": "object",
+            "description": "Sandbox templates and the project's default template. Default: the platform image.",
             "properties": {
               "image": false,
               "dockerfile": false,
@@ -113,30 +118,42 @@
                             "const": "default"
                           }
                         }
-                      ]
+                      ],
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the template picker. Default: the slug."
                     },
                     "entrypoint": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Overrides the container entrypoint. Default: the image's."
                     },
-                    "image": {},
-                    "dockerfile": {},
+                    "image": {
+                      "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both."
+                    },
+                    "dockerfile": {
+                      "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
+                    },
                     "cpu": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "vCPU cores. Above 32 is a warning, and Kortix uses 32. Default: the platform default."
                     },
                     "memory": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of memory. Above 128 is a warning, and Kortix uses 128. Default: the platform default."
                     },
                     "disk": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of disk. Above 500 is a warning, and Kortix uses 500. Default: the platform default."
                     },
                     "container_runtime": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false,
+                      "description": "`true`: Docker runs inside the sandbox."
                     }
                   },
                   "oneOf": [
@@ -188,11 +205,14 @@
                       }
                     }
                   ]
-                }
+                },
+                "description": "Named sandbox images."
               },
               "default": {
                 "type": "string",
-                "pattern": "\\S"
+                "pattern": "\\S",
+                "default": "default",
+                "description": "A slug from `sandbox.templates`, or `default` for the platform image."
               }
             },
             "additionalProperties": true
@@ -200,6 +220,7 @@
           "sandboxes": false,
           "triggers": {
             "type": "array",
+            "description": "Schedules, webhooks and App events that start agent work.",
             "items": {
               "anyOf": [
                 {
@@ -220,13 +241,15 @@
                         "webhook",
                         "event",
                         "app"
-                      ]
+                      ],
+                      "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },
                     "name": {
                       "type": "string"
                     },
                     "agent": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.agent`."
                     },
                     "agent_name": {
                       "type": "string"
@@ -259,10 +282,12 @@
                         {
                           "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "Flat form of `run.session`."
                     },
                     "session_key": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_key`."
                     },
                     "sessionKey": {
                       "type": "string"
@@ -401,20 +426,26 @@
                       ]
                     },
                     "session_id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_id`."
                     },
                     "sessionId": {
                       "type": "string"
                     },
                     "prompt": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.prompt`."
+                    },
+                    "model": {
+                      "description": "Flat form of `run.model`."
                     },
                     "prompt_template": {
                       "type": "string"
                     },
                     "cron": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.cron`, with `type: cron`."
                     },
                     "schedule": {
                       "type": "string",
@@ -422,14 +453,16 @@
                     },
                     "run_at": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.at`, with `type: cron`."
                     },
                     "runAt": {
                       "type": "string",
                       "minLength": 1
                     },
                     "timezone": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `on.timezone`."
                     },
                     "max_lateness": {
                       "type": "string",
@@ -452,7 +485,8 @@
                     },
                     "secret_env": {
                       "type": "string",
-                      "pattern": "^[A-Z_][A-Z0-9_]*$"
+                      "pattern": "^[A-Z_][A-Z0-9_]*$",
+                      "description": "Flat form of `on.webhook.secret`, with `type: webhook`."
                     },
                     "secretEnv": {
                       "type": "string",
@@ -479,9 +513,11 @@
                     },
                     "app": {
                       "type": "string",
-                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                      "description": "Flat form of `on.app`, with `type: app`."
                     },
                     "target": {
+                      "description": "Flat form of `run.app`, `run.path`, `run.method` and `run.payload`: `{ app, path, method, payload }`.",
                       "type": "object",
                       "required": [
                         "app"
@@ -510,7 +546,8 @@
                     },
                     "every": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Flat form of `on.every`, with `type: cron`."
                     }
                   },
                   "additionalProperties": true,
@@ -820,10 +857,12 @@
                   "properties": {
                     "slug": {
                       "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the dashboard. Default: the slug."
                     },
                     "type": false,
                     "enabled": {
@@ -838,7 +877,9 @@
                           "type": "string",
                           "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
                         }
-                      ]
+                      ],
+                      "default": true,
+                      "description": "`false`: the trigger does not fire."
                     },
                     "filter": {
                       "type": "object",
@@ -955,28 +996,35 @@
                             }
                           }
                         ]
-                      }
+                      },
+                      "description": "Payload path → a value (equals), or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. A fire runs only when every path matches."
                     },
                     "max_runs_per_hour": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "default": 60,
+                      "description": "Runs the trigger starts in any 60 minutes."
                     },
                     "max_runs_per_day": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "Runs the trigger starts in a UTC day."
                     },
                     "max_lateness": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
                     },
                     "overlap": {
                       "type": "string",
                       "enum": [
                         "skip",
                         "allow"
-                      ]
+                      ],
+                      "description": "`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others."
                     },
                     "on": {
+                      "description": "What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.",
                       "oneOf": [
                         {
                           "type": "object",
@@ -987,10 +1035,13 @@
                           "properties": {
                             "cron": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "A 6-field cron expression, seconds first: `\"0 0 9 * * 1\"` is 09:00 every Monday. A trigger fires at most once every 60 seconds."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -1003,10 +1054,13 @@
                           "properties": {
                             "every": {
                               "type": "string",
-                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                              "description": "A fixed period: an integer and `s`, `m`, `h` or `d`, at least `60s`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -1019,10 +1073,13 @@
                           "properties": {
                             "at": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "One fire at an ISO-8601 time, such as `2026-06-01T09:00:00Z`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -1042,9 +1099,11 @@
                               "properties": {
                                 "secret": {
                                   "type": "string",
-                                  "pattern": "^[A-Z_][A-Z0-9_]*$"
+                                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                                  "description": "The name of the secret that signs requests to the trigger's webhook."
                                 }
-                              }
+                              },
+                              "description": "Fire on a signed request to the trigger's webhook URL."
                             }
                           }
                         },
@@ -1087,11 +1146,13 @@
                           "properties": {
                             "event": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "With `on.app`: the App event name, or `\"*\"` for every event."
                             },
                             "app": {
                               "type": "string",
-                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                              "description": "The App's slug. The trigger fires on that App's events."
                             }
                           }
                         }
@@ -1099,6 +1160,7 @@
                     },
                     "run": {
                       "type": "object",
+                      "description": "What a fire runs: an agent turn, or a call to an App.",
                       "additionalProperties": false,
                       "anyOf": [
                         {
@@ -1115,11 +1177,13 @@
                       "properties": {
                         "agent": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "A declared agent. Default: `default_agent`."
                         },
                         "prompt": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The first message of the run. Required unless `run.app` is set."
                         },
                         "session": {
                           "type": "string",
@@ -1135,36 +1199,45 @@
                             {
                               "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                             }
-                          ]
+                          ],
+                          "default": "fresh",
+                          "description": "`fresh`: a new session for each fire. `reuse`: the last session this trigger created, or a new one when none can continue. `pinned`: the session `run.session_id`. `keyed`: one session for each value of `run.session_key`."
                         },
                         "session_key": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "With `keyed`: a template over the payload, such as `\"{{ body.chat_id }}\"`. A key that renders empty runs `fresh`."
                         },
                         "session_id": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The session to run in. Required with `pinned`."
                         },
                         "model": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "`provider/model`. Default: the agent's model."
                         },
                         "app": {
                           "type": "string",
-                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                          "description": "The fire calls this App instead of an agent."
                         },
                         "path": {
                           "type": "string",
-                          "pattern": "^/"
+                          "pattern": "^/",
+                          "description": "With `run.app`: the request path. Starts with `/`."
                         },
                         "method": {
                           "type": "string",
                           "enum": [
                             "POST",
                             "GET"
-                          ]
+                          ],
+                          "description": "With `run.app`: the request method."
                         },
                         "payload": {
-                          "type": "object"
+                          "type": "object",
+                          "description": "With `run.app`: the request body."
                         }
                       }
                     }
@@ -1176,6 +1249,7 @@
           },
           "connectors": {
             "type": "array",
+            "description": "Apps and APIs agents can call.",
             "items": {
               "type": "object",
               "required": [
@@ -1185,11 +1259,17 @@
               "properties": {
                 "slug": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
-                  "pattern": "\\S"
+                  "pattern": "\\S",
+                  "description": "The label. Default: the slug."
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "`false`: the connector is off."
                 },
                 "provider": {
                   "type": "string",
@@ -1209,19 +1289,24 @@
                     {
                       "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "description": "How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel."
                 },
                 "app": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`composio` and `pipedream`: the app. Required for them."
                 },
                 "url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`mcp`: the server URL. Required."
                 },
                 "endpoint": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`graphql`: the endpoint. Required."
                 },
                 "base_url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`http`: the base URL. Required."
                 },
                 "baseUrl": {
                   "type": "string"
@@ -1238,10 +1323,13 @@
                     {
                       "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "default": "http",
+                  "description": "`mcp` only."
                 },
                 "spec": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`openapi` and `postman`: the spec URL or repository path. Without it the connector does not load."
                 },
                 "platform": {
                   "type": "string",
@@ -1273,11 +1361,17 @@
                       "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
                     }
                   ],
-                  "default": "project"
+                  "default": "project",
+                  "description": "`project`: the connector's accounts belong to the project. `user`: each person connects their own account."
+                },
+                "sensitive": {
+                  "default": false,
+                  "description": "`true`: a call that no rule matches needs approval, reads included."
                 },
                 "agent_scope": {},
                 "auth": {
                   "type": "object",
+                  "description": "How Kortix sends the credential. The credential lives in Kortix, never in this file.",
                   "required": [
                     "type"
                   ],
@@ -1301,14 +1395,26 @@
                         {
                           "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "`oauth1` works on `openapi`, `postman` and `http` only."
                     },
-                    "secret": false
+                    "secret": false,
+                    "in": {
+                      "default": "header",
+                      "description": "Where the credential goes."
+                    },
+                    "name": {
+                      "description": "The header, query or cookie name. Required for `custom` and `api_key`."
+                    },
+                    "prefix": {
+                      "description": "Text before the credential value, such as `Bearer`."
+                    }
                   },
                   "additionalProperties": true
                 },
                 "headers": {
                   "type": "object",
+                  "description": "Static request headers, at most 32. The values are plain text in Git.",
                   "maxProperties": 32,
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
@@ -1331,7 +1437,8 @@
                     "properties": {
                       "match": {
                         "type": "string",
-                        "pattern": "\\S"
+                        "pattern": "\\S",
+                        "description": "A glob over the connector's tool names, such as `send_*`."
                       },
                       "action": {
                         "type": "string",
@@ -1346,9 +1453,11 @@
                           {
                             "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                           }
-                        ]
+                        ],
+                        "description": "What a matching call does."
                       },
                       "conditions": {
+                        "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -1371,7 +1480,8 @@
                         }
                       }
                     }
-                  }
+                  },
+                  "description": "The base rules: `{ match, action, conditions }`."
                 },
                 "policy_sets": false
               },
@@ -2908,6 +3018,7 @@
           },
           "project": {
             "type": "object",
+            "description": "`name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository.",
             "properties": {
               "name": {
                 "type": "string"
@@ -2920,20 +3031,23 @@
           },
           "env": {
             "type": "object",
+            "description": "The secret names the project expects. Values live in Secrets, never in this file.",
             "properties": {
               "required": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the project needs: uppercase letters, digits and `_`, not starting with a digit. The dashboard and `kortix ship` ask for a missing value. A missing value does not block a session."
               },
               "optional": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the same prompts offer. Values live in Secrets, never in this file."
               }
             },
             "additionalProperties": true
@@ -2954,6 +3068,7 @@
           },
           "sandbox": {
             "type": "object",
+            "description": "Sandbox templates and the project's default template. Default: the platform image.",
             "properties": {
               "image": false,
               "dockerfile": false,
@@ -2984,30 +3099,42 @@
                             "const": "default"
                           }
                         }
-                      ]
+                      ],
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the template picker. Default: the slug."
                     },
                     "entrypoint": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Overrides the container entrypoint. Default: the image's."
                     },
-                    "image": {},
-                    "dockerfile": {},
+                    "image": {
+                      "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both."
+                    },
+                    "dockerfile": {
+                      "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
+                    },
                     "cpu": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "vCPU cores. Above 32 is a warning, and Kortix uses 32. Default: the platform default."
                     },
                     "memory": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of memory. Above 128 is a warning, and Kortix uses 128. Default: the platform default."
                     },
                     "disk": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of disk. Above 500 is a warning, and Kortix uses 500. Default: the platform default."
                     },
                     "container_runtime": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false,
+                      "description": "`true`: Docker runs inside the sandbox."
                     }
                   },
                   "oneOf": [
@@ -3059,11 +3186,14 @@
                       }
                     }
                   ]
-                }
+                },
+                "description": "Named sandbox images."
               },
               "default": {
                 "type": "string",
-                "pattern": "\\S"
+                "pattern": "\\S",
+                "default": "default",
+                "description": "A slug from `sandbox.templates`, or `default` for the platform image."
               }
             },
             "additionalProperties": true
@@ -3071,6 +3201,7 @@
           "sandboxes": false,
           "triggers": {
             "type": "array",
+            "description": "Schedules, webhooks and App events that start agent work.",
             "items": {
               "anyOf": [
                 {
@@ -3091,14 +3222,16 @@
                         "webhook",
                         "event",
                         "app"
-                      ]
+                      ],
+                      "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },
                     "name": {
                       "type": "string"
                     },
                     "agent": {
                       "type": "string",
-                      "pattern": "\\S"
+                      "pattern": "\\S",
+                      "description": "Flat form of `run.agent`."
                     },
                     "agent_name": {
                       "type": "string"
@@ -3131,10 +3264,12 @@
                         {
                           "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "Flat form of `run.session`."
                     },
                     "session_key": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_key`."
                     },
                     "sessionKey": {
                       "type": "string"
@@ -3273,20 +3408,26 @@
                       ]
                     },
                     "session_id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_id`."
                     },
                     "sessionId": {
                       "type": "string"
                     },
                     "prompt": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.prompt`."
+                    },
+                    "model": {
+                      "description": "Flat form of `run.model`."
                     },
                     "prompt_template": {
                       "type": "string"
                     },
                     "cron": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.cron`, with `type: cron`."
                     },
                     "schedule": {
                       "type": "string",
@@ -3294,14 +3435,16 @@
                     },
                     "run_at": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.at`, with `type: cron`."
                     },
                     "runAt": {
                       "type": "string",
                       "minLength": 1
                     },
                     "timezone": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `on.timezone`."
                     },
                     "max_lateness": {
                       "type": "string",
@@ -3324,7 +3467,8 @@
                     },
                     "secret_env": {
                       "type": "string",
-                      "pattern": "^[A-Z_][A-Z0-9_]*$"
+                      "pattern": "^[A-Z_][A-Z0-9_]*$",
+                      "description": "Flat form of `on.webhook.secret`, with `type: webhook`."
                     },
                     "secretEnv": {
                       "type": "string",
@@ -3351,9 +3495,11 @@
                     },
                     "app": {
                       "type": "string",
-                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                      "description": "Flat form of `on.app`, with `type: app`."
                     },
                     "target": {
+                      "description": "Flat form of `run.app`, `run.path`, `run.method` and `run.payload`: `{ app, path, method, payload }`.",
                       "type": "object",
                       "required": [
                         "app"
@@ -3382,7 +3528,8 @@
                     },
                     "every": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Flat form of `on.every`, with `type: cron`."
                     }
                   },
                   "additionalProperties": true,
@@ -3692,10 +3839,12 @@
                   "properties": {
                     "slug": {
                       "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the dashboard. Default: the slug."
                     },
                     "type": false,
                     "enabled": {
@@ -3710,7 +3859,9 @@
                           "type": "string",
                           "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
                         }
-                      ]
+                      ],
+                      "default": true,
+                      "description": "`false`: the trigger does not fire."
                     },
                     "filter": {
                       "type": "object",
@@ -3827,28 +3978,35 @@
                             }
                           }
                         ]
-                      }
+                      },
+                      "description": "Payload path → a value (equals), or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. A fire runs only when every path matches."
                     },
                     "max_runs_per_hour": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "default": 60,
+                      "description": "Runs the trigger starts in any 60 minutes."
                     },
                     "max_runs_per_day": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "Runs the trigger starts in a UTC day."
                     },
                     "max_lateness": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
                     },
                     "overlap": {
                       "type": "string",
                       "enum": [
                         "skip",
                         "allow"
-                      ]
+                      ],
+                      "description": "`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others."
                     },
                     "on": {
+                      "description": "What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.",
                       "oneOf": [
                         {
                           "type": "object",
@@ -3859,10 +4017,13 @@
                           "properties": {
                             "cron": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "A 6-field cron expression, seconds first: `\"0 0 9 * * 1\"` is 09:00 every Monday. A trigger fires at most once every 60 seconds."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -3875,10 +4036,13 @@
                           "properties": {
                             "every": {
                               "type": "string",
-                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                              "description": "A fixed period: an integer and `s`, `m`, `h` or `d`, at least `60s`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -3891,10 +4055,13 @@
                           "properties": {
                             "at": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "One fire at an ISO-8601 time, such as `2026-06-01T09:00:00Z`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -3914,9 +4081,11 @@
                               "properties": {
                                 "secret": {
                                   "type": "string",
-                                  "pattern": "^[A-Z_][A-Z0-9_]*$"
+                                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                                  "description": "The name of the secret that signs requests to the trigger's webhook."
                                 }
-                              }
+                              },
+                              "description": "Fire on a signed request to the trigger's webhook URL."
                             }
                           }
                         },
@@ -3959,11 +4128,13 @@
                           "properties": {
                             "event": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "With `on.app`: the App event name, or `\"*\"` for every event."
                             },
                             "app": {
                               "type": "string",
-                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                              "description": "The App's slug. The trigger fires on that App's events."
                             }
                           }
                         }
@@ -3971,6 +4142,7 @@
                     },
                     "run": {
                       "type": "object",
+                      "description": "What a fire runs: an agent turn, or a call to an App.",
                       "additionalProperties": false,
                       "anyOf": [
                         {
@@ -3987,11 +4159,13 @@
                       "properties": {
                         "agent": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "A declared agent. Default: `default_agent`."
                         },
                         "prompt": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The first message of the run. Required unless `run.app` is set."
                         },
                         "session": {
                           "type": "string",
@@ -4007,36 +4181,45 @@
                             {
                               "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                             }
-                          ]
+                          ],
+                          "default": "fresh",
+                          "description": "`fresh`: a new session for each fire. `reuse`: the last session this trigger created, or a new one when none can continue. `pinned`: the session `run.session_id`. `keyed`: one session for each value of `run.session_key`."
                         },
                         "session_key": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "With `keyed`: a template over the payload, such as `\"{{ body.chat_id }}\"`. A key that renders empty runs `fresh`."
                         },
                         "session_id": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The session to run in. Required with `pinned`."
                         },
                         "model": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "`provider/model`. Default: the agent's model."
                         },
                         "app": {
                           "type": "string",
-                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                          "description": "The fire calls this App instead of an agent."
                         },
                         "path": {
                           "type": "string",
-                          "pattern": "^/"
+                          "pattern": "^/",
+                          "description": "With `run.app`: the request path. Starts with `/`."
                         },
                         "method": {
                           "type": "string",
                           "enum": [
                             "POST",
                             "GET"
-                          ]
+                          ],
+                          "description": "With `run.app`: the request method."
                         },
                         "payload": {
-                          "type": "object"
+                          "type": "object",
+                          "description": "With `run.app`: the request body."
                         }
                       }
                     }
@@ -4048,6 +4231,7 @@
           },
           "connectors": {
             "type": "array",
+            "description": "Apps and APIs agents can call.",
             "items": {
               "type": "object",
               "required": [
@@ -4057,11 +4241,17 @@
               "properties": {
                 "slug": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
-                  "pattern": "\\S"
+                  "pattern": "\\S",
+                  "description": "The label. Default: the slug."
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "`false`: the connector is off."
                 },
                 "provider": {
                   "type": "string",
@@ -4081,19 +4271,24 @@
                     {
                       "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "description": "How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel."
                 },
                 "app": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`composio` and `pipedream`: the app. Required for them."
                 },
                 "url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`mcp`: the server URL. Required."
                 },
                 "endpoint": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`graphql`: the endpoint. Required."
                 },
                 "base_url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`http`: the base URL. Required."
                 },
                 "baseUrl": {
                   "type": "string"
@@ -4110,10 +4305,13 @@
                     {
                       "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "default": "http",
+                  "description": "`mcp` only."
                 },
                 "spec": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`openapi` and `postman`: the spec URL or repository path. Without it the connector does not load."
                 },
                 "platform": {
                   "type": "string",
@@ -4157,11 +4355,17 @@
                       "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
                     }
                   ],
-                  "default": "project"
+                  "default": "project",
+                  "description": "`project`: the connector's accounts belong to the project. `user`: each person connects their own account."
+                },
+                "sensitive": {
+                  "default": false,
+                  "description": "`true`: a call that no rule matches needs approval, reads included."
                 },
                 "agent_scope": false,
                 "auth": {
                   "type": "object",
+                  "description": "How Kortix sends the credential. The credential lives in Kortix, never in this file.",
                   "required": [
                     "type"
                   ],
@@ -4185,14 +4389,26 @@
                         {
                           "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "`oauth1` works on `openapi`, `postman` and `http` only."
                     },
-                    "secret": false
+                    "secret": false,
+                    "in": {
+                      "default": "header",
+                      "description": "Where the credential goes."
+                    },
+                    "name": {
+                      "description": "The header, query or cookie name. Required for `custom` and `api_key`."
+                    },
+                    "prefix": {
+                      "description": "Text before the credential value, such as `Bearer`."
+                    }
                   },
                   "additionalProperties": true
                 },
                 "headers": {
                   "type": "object",
+                  "description": "Static request headers, at most 32. The values are plain text in Git.",
                   "maxProperties": 32,
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
@@ -4215,7 +4431,8 @@
                     "properties": {
                       "match": {
                         "type": "string",
-                        "pattern": "\\S"
+                        "pattern": "\\S",
+                        "description": "A glob over the connector's tool names, such as `send_*`."
                       },
                       "action": {
                         "type": "string",
@@ -4230,9 +4447,11 @@
                           {
                             "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                           }
-                        ]
+                        ],
+                        "description": "What a matching call does."
                       },
                       "conditions": {
+                        "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -4255,11 +4474,12 @@
                         }
                       }
                     }
-                  }
+                  },
+                  "description": "The base rules: `{ match, action, conditions }`."
                 },
                 "policy_sets": {
                   "type": "object",
-                  "description": "Named rule sets an agent can be given (agents.<name>.policy_sets). A set's rules run before the base `policies`; project `policies` still run first. kortix_version 2 and 3.",
+                  "description": "Set name → `{ description, policies }`: a rule set an agent can be given with `agents.<name>.policy_sets`. A set name is lowercase letters, digits, `-` and `_`, at most 64 characters, and not `base`. At most 32 sets of 200 rules each. Not on `channel` connectors.",
                   "maxProperties": 32,
                   "propertyNames": {
                     "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
@@ -4284,7 +4504,8 @@
                           "properties": {
                             "match": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "A glob over the connector's tool names, such as `send_*`."
                             },
                             "action": {
                               "type": "string",
@@ -4299,9 +4520,11 @@
                                 {
                                   "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                                 }
-                              ]
+                              ],
+                              "description": "What a matching call does."
                             },
                             "conditions": {
+                              "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
                               "type": "array",
                               "items": {
                                 "type": "object",
@@ -4615,6 +4838,7 @@
           },
           "apps": {
             "type": "object",
+            "description": "App slug → App block.",
             "propertyNames": {
               "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
             },
@@ -5147,7 +5371,8 @@
                     }
                   }
                 }
-              ]
+              ],
+              "description": "One App's deploy settings. Any other key is an error."
             }
           },
           "pi": {
@@ -5174,10 +5399,12 @@
             "description": "Behavior for one agent — lives in its .md frontmatter (agents.<name>.file, default agents/<name>.md), never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
             "properties": {
               "description": {
-                "type": "string"
+                "type": "string",
+                "description": "What the agent does. An agent that may start it as a subagent reads it to choose."
               },
               "model": {
-                "type": "string"
+                "type": "string",
+                "description": "`provider/model`. Default: the project default."
               },
               "mode": {
                 "type": "string",
@@ -5185,22 +5412,29 @@
                   "primary",
                   "subagent",
                   "all"
-                ]
+                ],
+                "default": "all",
+                "description": "`primary`: people and triggers run it; no agent starts it. `subagent`: only another agent starts it; agent pickers hide it. `all`: both."
               },
               "variant": {
-                "type": "string"
+                "type": "string",
+                "description": "The model's reasoning level: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, when the model offers it."
               },
               "temperature": {
-                "type": "number"
+                "type": "number",
+                "description": "Sampling temperature. A model that refuses a custom temperature ignores it. Default: the model's."
               },
               "top_p": {
-                "type": "number"
+                "type": "number",
+                "description": "Nucleus sampling. Default: the model's."
               },
               "steps": {
                 "type": "integer",
-                "minimum": 1
+                "minimum": 1,
+                "description": "Model requests in one run. The request that reaches the limit gets no tools, so the model answers. Default: no limit."
               },
               "color": {
+                "description": "Accepted. Sessions do not use it.",
                 "oneOf": [
                   {
                     "type": "string",
@@ -5221,13 +5455,16 @@
                 ]
               },
               "hidden": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": false,
+                "description": "`true`: agent pickers do not list the agent."
               },
               "disable": {
                 "type": "boolean"
               },
               "options": {
-                "type": "object"
+                "type": "object",
+                "description": "Accepted. Sessions do not use it."
               },
               "permission": {
                 "oneOf": [
@@ -5343,10 +5580,12 @@
         },
         "properties": {
           "kortix_version": {
-            "const": 3
+            "const": 3,
+            "description": "`3`. A higher version is an error."
           },
           "imports": {
             "type": "array",
+            "description": "YAML files or folders whose collections merge into this file.",
             "items": {
               "type": "string",
               "pattern": "^(?![/\\s])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\*?\\[\\]{}]*[^\\\\*?\\[\\]{}\\s/]/?$"
@@ -5354,7 +5593,8 @@
           },
           "default_agent": {
             "type": "string",
-            "pattern": "\\S"
+            "pattern": "\\S",
+            "description": "The agent a session or trigger runs when it names none. A declared agent that is enabled and whose `mode` is `primary` or `all`."
           },
           "runtime": {
             "type": "string",
@@ -5367,6 +5607,7 @@
           },
           "project": {
             "type": "object",
+            "description": "`name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository.",
             "properties": {
               "name": {
                 "type": "string"
@@ -5379,26 +5620,30 @@
           },
           "env": {
             "type": "object",
+            "description": "The secret names the project expects. Values live in Secrets, never in this file.",
             "properties": {
               "required": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the project needs: uppercase letters, digits and `_`, not starting with a digit. The dashboard and `kortix ship` ask for a missing value. A missing value does not block a session."
               },
               "optional": {
                 "type": "array",
                 "items": {
                   "type": "string",
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                },
+                "description": "Secret names the same prompts offer. Values live in Secrets, never in this file."
               }
             },
             "additionalProperties": true
           },
           "sandbox": {
             "type": "object",
+            "description": "Sandbox templates and the project's default template. Default: the platform image.",
             "properties": {
               "image": false,
               "dockerfile": false,
@@ -5429,30 +5674,42 @@
                             "const": "default"
                           }
                         }
-                      ]
+                      ],
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 64 characters. `default` is reserved."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the template picker. Default: the slug."
                     },
                     "entrypoint": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Overrides the container entrypoint. Default: the image's."
                     },
-                    "image": {},
-                    "dockerfile": {},
+                    "image": {
+                      "description": "An image with a tag or a digest. No tag is an error. `:latest` is a warning. Set `image` or `dockerfile`, not both."
+                    },
+                    "dockerfile": {
+                      "description": "A repository path to a Dockerfile. `kortix validate` lints it: no `COPY` from the repository, no `RUN` heredoc, a Debian-family base image."
+                    },
                     "cpu": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "vCPU cores. Above 32 is a warning, and Kortix uses 32. Default: the platform default."
                     },
                     "memory": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of memory. Above 128 is a warning, and Kortix uses 128. Default: the platform default."
                     },
                     "disk": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "GiB of disk. Above 500 is a warning, and Kortix uses 500. Default: the platform default."
                     },
                     "container_runtime": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false,
+                      "description": "`true`: Docker runs inside the sandbox."
                     }
                   },
                   "oneOf": [
@@ -5504,17 +5761,21 @@
                       }
                     }
                   ]
-                }
+                },
+                "description": "Named sandbox images."
               },
               "default": {
                 "type": "string",
-                "pattern": "\\S"
+                "pattern": "\\S",
+                "default": "default",
+                "description": "A slug from `sandbox.templates`, or `default` for the platform image."
               }
             },
             "additionalProperties": true
           },
           "triggers": {
             "type": "array",
+            "description": "Schedules, webhooks and App events that start agent work.",
             "items": {
               "anyOf": [
                 {
@@ -5535,14 +5796,16 @@
                         "webhook",
                         "event",
                         "app"
-                      ]
+                      ],
+                      "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },
                     "name": {
                       "type": "string"
                     },
                     "agent": {
                       "type": "string",
-                      "pattern": "\\S"
+                      "pattern": "\\S",
+                      "description": "Flat form of `run.agent`."
                     },
                     "agent_name": {
                       "type": "string"
@@ -5575,10 +5838,12 @@
                         {
                           "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "Flat form of `run.session`."
                     },
                     "session_key": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_key`."
                     },
                     "sessionKey": {
                       "type": "string"
@@ -5717,20 +5982,26 @@
                       ]
                     },
                     "session_id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.session_id`."
                     },
                     "sessionId": {
                       "type": "string"
                     },
                     "prompt": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `run.prompt`."
+                    },
+                    "model": {
+                      "description": "Flat form of `run.model`."
                     },
                     "prompt_template": {
                       "type": "string"
                     },
                     "cron": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.cron`, with `type: cron`."
                     },
                     "schedule": {
                       "type": "string",
@@ -5738,14 +6009,16 @@
                     },
                     "run_at": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Flat form of `on.at`, with `type: cron`."
                     },
                     "runAt": {
                       "type": "string",
                       "minLength": 1
                     },
                     "timezone": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Flat form of `on.timezone`."
                     },
                     "max_lateness": {
                       "type": "string",
@@ -5768,7 +6041,8 @@
                     },
                     "secret_env": {
                       "type": "string",
-                      "pattern": "^[A-Z_][A-Z0-9_]*$"
+                      "pattern": "^[A-Z_][A-Z0-9_]*$",
+                      "description": "Flat form of `on.webhook.secret`, with `type: webhook`."
                     },
                     "secretEnv": {
                       "type": "string",
@@ -5795,9 +6069,11 @@
                     },
                     "app": {
                       "type": "string",
-                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                      "description": "Flat form of `on.app`, with `type: app`."
                     },
                     "target": {
+                      "description": "Flat form of `run.app`, `run.path`, `run.method` and `run.payload`: `{ app, path, method, payload }`.",
                       "type": "object",
                       "required": [
                         "app"
@@ -5826,7 +6102,8 @@
                     },
                     "every": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Flat form of `on.every`, with `type: cron`."
                     }
                   },
                   "additionalProperties": true,
@@ -6136,10 +6413,12 @@
                   "properties": {
                     "slug": {
                       "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                      "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters."
                     },
                     "name": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "The label in the dashboard. Default: the slug."
                     },
                     "type": false,
                     "enabled": {
@@ -6154,7 +6433,9 @@
                           "type": "string",
                           "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
                         }
-                      ]
+                      ],
+                      "default": true,
+                      "description": "`false`: the trigger does not fire."
                     },
                     "filter": {
                       "type": "object",
@@ -6271,28 +6552,35 @@
                             }
                           }
                         ]
-                      }
+                      },
+                      "description": "Payload path → a value (equals), or one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. A fire runs only when every path matches."
                     },
                     "max_runs_per_hour": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "default": 60,
+                      "description": "Runs the trigger starts in any 60 minutes."
                     },
                     "max_runs_per_day": {
                       "type": "integer",
-                      "minimum": 1
+                      "minimum": 1,
+                      "description": "Runs the trigger starts in a UTC day."
                     },
                     "max_lateness": {
                       "type": "string",
-                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                      "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                      "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
                     },
                     "overlap": {
                       "type": "string",
                       "enum": [
                         "skip",
                         "allow"
-                      ]
+                      ],
+                      "description": "`skip` holds a fire while the previous run is active. Only with `run.session: fresh`. Default: `skip` for a schedule, `allow` for others."
                     },
                     "on": {
+                      "description": "What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event.",
                       "oneOf": [
                         {
                           "type": "object",
@@ -6303,10 +6591,13 @@
                           "properties": {
                             "cron": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "A 6-field cron expression, seconds first: `\"0 0 9 * * 1\"` is 09:00 every Monday. A trigger fires at most once every 60 seconds."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -6319,10 +6610,13 @@
                           "properties": {
                             "every": {
                               "type": "string",
-                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                              "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                              "description": "A fixed period: an integer and `s`, `m`, `h` or `d`, at least `60s`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -6335,10 +6629,13 @@
                           "properties": {
                             "at": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "One fire at an ISO-8601 time, such as `2026-06-01T09:00:00Z`."
                             },
                             "timezone": {
-                              "type": "string"
+                              "type": "string",
+                              "default": "UTC",
+                              "description": "An IANA time zone for `cron` and `at`."
                             }
                           }
                         },
@@ -6358,9 +6655,11 @@
                               "properties": {
                                 "secret": {
                                   "type": "string",
-                                  "pattern": "^[A-Z_][A-Z0-9_]*$"
+                                  "pattern": "^[A-Z_][A-Z0-9_]*$",
+                                  "description": "The name of the secret that signs requests to the trigger's webhook."
                                 }
-                              }
+                              },
+                              "description": "Fire on a signed request to the trigger's webhook URL."
                             }
                           }
                         },
@@ -6403,11 +6702,13 @@
                           "properties": {
                             "event": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "With `on.app`: the App event name, or `\"*\"` for every event."
                             },
                             "app": {
                               "type": "string",
-                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                              "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                              "description": "The App's slug. The trigger fires on that App's events."
                             }
                           }
                         }
@@ -6415,6 +6716,7 @@
                     },
                     "run": {
                       "type": "object",
+                      "description": "What a fire runs: an agent turn, or a call to an App.",
                       "additionalProperties": false,
                       "anyOf": [
                         {
@@ -6431,11 +6733,13 @@
                       "properties": {
                         "agent": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "A declared agent. Default: `default_agent`."
                         },
                         "prompt": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The first message of the run. Required unless `run.app` is set."
                         },
                         "session": {
                           "type": "string",
@@ -6451,36 +6755,45 @@
                             {
                               "pattern": "^\\s*(?:[fF][rR][eE][sS][hH]|[rR][eE][uU][sS][eE]|[pP][iI][nN][nN][eE][dD]|[kKK][eE][yY][eE][dD])\\s*$(?![\\s\\S])"
                             }
-                          ]
+                          ],
+                          "default": "fresh",
+                          "description": "`fresh`: a new session for each fire. `reuse`: the last session this trigger created, or a new one when none can continue. `pinned`: the session `run.session_id`. `keyed`: one session for each value of `run.session_key`."
                         },
                         "session_key": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "With `keyed`: a template over the payload, such as `\"{{ body.chat_id }}\"`. A key that renders empty runs `fresh`."
                         },
                         "session_id": {
                           "type": "string",
-                          "pattern": "\\S"
+                          "pattern": "\\S",
+                          "description": "The session to run in. Required with `pinned`."
                         },
                         "model": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "`provider/model`. Default: the agent's model."
                         },
                         "app": {
                           "type": "string",
-                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                          "description": "The fire calls this App instead of an agent."
                         },
                         "path": {
                           "type": "string",
-                          "pattern": "^/"
+                          "pattern": "^/",
+                          "description": "With `run.app`: the request path. Starts with `/`."
                         },
                         "method": {
                           "type": "string",
                           "enum": [
                             "POST",
                             "GET"
-                          ]
+                          ],
+                          "description": "With `run.app`: the request method."
                         },
                         "payload": {
-                          "type": "object"
+                          "type": "object",
+                          "description": "With `run.app`: the request body."
                         }
                       }
                     }
@@ -6492,6 +6805,7 @@
           },
           "connectors": {
             "type": "array",
+            "description": "Apps and APIs agents can call.",
             "items": {
               "type": "object",
               "required": [
@@ -6501,11 +6815,17 @@
               "properties": {
                 "slug": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "description": "Unique. Lowercase letters, digits, `-` and `_`, at most 128 characters. `kortix_slack`, `kortix_teams`, `kortix_email` and `computer` are reserved for the built-in connectors."
                 },
                 "name": {
                   "type": "string",
-                  "pattern": "\\S"
+                  "pattern": "\\S",
+                  "description": "The label. Default: the slug."
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "`false`: the connector is off."
                 },
                 "provider": {
                   "type": "string",
@@ -6525,19 +6845,24 @@
                     {
                       "pattern": "^\\s*(?:[pP][iI][pP][eE][dD][rR][eE][aA][mM]|[cC][oO][mM][pP][oO][sS][iI][oO]|[mM][cC][pP]|[oO][pP][eE][nN][aA][pP][iI]|[pP][oO][sS][tT][mM][aA][nN]|[gG][rR][aA][pP][hH][qQ][lL]|[hH][tT][tT][pP]|[cC][hH][aA][nN][nN][eE][lL])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "description": "How Kortix reaches the app or API. Kortix writes the `channel` entry when you connect a channel."
                 },
                 "app": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`composio` and `pipedream`: the app. Required for them."
                 },
                 "url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`mcp`: the server URL. Required."
                 },
                 "endpoint": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`graphql`: the endpoint. Required."
                 },
                 "base_url": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`http`: the base URL. Required."
                 },
                 "baseUrl": {
                   "type": "string"
@@ -6554,10 +6879,13 @@
                     {
                       "pattern": "^\\s*(?:[hH][tT][tT][pP]|[sS][sS][eE])\\s*$(?![\\s\\S])"
                     }
-                  ]
+                  ],
+                  "default": "http",
+                  "description": "`mcp` only."
                 },
                 "spec": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`openapi` and `postman`: the spec URL or repository path. Without it the connector does not load."
                 },
                 "platform": {
                   "type": "string",
@@ -6601,11 +6929,17 @@
                       "pattern": "^\\s*(?:[pP][rR][oO][jJ][eE][cC][tT]|[uU][sS][eE][rR])\\s*$(?![\\s\\S])"
                     }
                   ],
-                  "default": "project"
+                  "default": "project",
+                  "description": "`project`: the connector's accounts belong to the project. `user`: each person connects their own account."
+                },
+                "sensitive": {
+                  "default": false,
+                  "description": "`true`: a call that no rule matches needs approval, reads included."
                 },
                 "agent_scope": false,
                 "auth": {
                   "type": "object",
+                  "description": "How Kortix sends the credential. The credential lives in Kortix, never in this file.",
                   "required": [
                     "type"
                   ],
@@ -6629,14 +6963,26 @@
                         {
                           "pattern": "^\\s*(?:[bB][eE][aA][rR][eE][rR]|[bB][aA][sS][iI][cC]|[cC][uU][sS][tT][oO][mM]|[aA][pP][iI]_[kKK][eE][yY]|[oO][aA][uU][tT][hH]1|[hH][mM][aA][cC]|[aA][wW][sS]_[sS][iI][gG][vV]4|[mM][tT][lL][sS]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                         }
-                      ]
+                      ],
+                      "description": "`oauth1` works on `openapi`, `postman` and `http` only."
                     },
-                    "secret": false
+                    "secret": false,
+                    "in": {
+                      "default": "header",
+                      "description": "Where the credential goes."
+                    },
+                    "name": {
+                      "description": "The header, query or cookie name. Required for `custom` and `api_key`."
+                    },
+                    "prefix": {
+                      "description": "Text before the credential value, such as `Bearer`."
+                    }
                   },
                   "additionalProperties": true
                 },
                 "headers": {
                   "type": "object",
+                  "description": "Static request headers, at most 32. The values are plain text in Git.",
                   "maxProperties": 32,
                   "propertyNames": {
                     "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
@@ -6659,7 +7005,8 @@
                     "properties": {
                       "match": {
                         "type": "string",
-                        "pattern": "\\S"
+                        "pattern": "\\S",
+                        "description": "A glob over the connector's tool names, such as `send_*`."
                       },
                       "action": {
                         "type": "string",
@@ -6674,9 +7021,11 @@
                           {
                             "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                           }
-                        ]
+                        ],
+                        "description": "What a matching call does."
                       },
                       "conditions": {
+                        "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -6699,11 +7048,12 @@
                         }
                       }
                     }
-                  }
+                  },
+                  "description": "The base rules: `{ match, action, conditions }`."
                 },
                 "policy_sets": {
                   "type": "object",
-                  "description": "Named rule sets an agent can be given (agents.<name>.policy_sets). A set's rules run before the base `policies`; project `policies` still run first. kortix_version 2 and 3.",
+                  "description": "Set name → `{ description, policies }`: a rule set an agent can be given with `agents.<name>.policy_sets`. A set name is lowercase letters, digits, `-` and `_`, at most 64 characters, and not `base`. At most 32 sets of 200 rules each. Not on `channel` connectors.",
                   "maxProperties": 32,
                   "propertyNames": {
                     "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
@@ -6728,7 +7078,8 @@
                           "properties": {
                             "match": {
                               "type": "string",
-                              "pattern": "\\S"
+                              "pattern": "\\S",
+                              "description": "A glob over the connector's tool names, such as `send_*`."
                             },
                             "action": {
                               "type": "string",
@@ -6743,9 +7094,11 @@
                                 {
                                   "pattern": "^\\s*(?:[aA][lL][wW][aA][yY][sS]_[rR][uU][nN]|[rR][eE][qQ][uU][iI][rR][eE]_[aA][pP][pP][rR][oO][vV][aA][lL]|[bB][lL][oO][cC][kKK])\\s*$(?![\\s\\S])"
                                 }
-                              ]
+                              ],
+                              "description": "What a matching call does."
                             },
                             "conditions": {
+                              "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it.",
                               "type": "array",
                               "items": {
                                 "type": "object",
@@ -7059,6 +7412,7 @@
           },
           "apps": {
             "type": "object",
+            "description": "App slug → App block.",
             "propertyNames": {
               "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
             },
@@ -7591,7 +7945,8 @@
                     }
                   }
                 }
-              ]
+              ],
+              "description": "One App's deploy settings. Any other key is an error."
             }
           },
           "skills": {
@@ -7599,18 +7954,20 @@
               "object",
               "null"
             ],
-            "description": "Skills: name → repository folder that holds SKILL.md, named after the skill. Kortix skills (kortix-*) are always registered.",
+            "description": "Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. Default: the Kortix skills.",
             "propertyNames": {
               "type": "string",
               "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
               "maxLength": 64,
               "not": {
                 "pattern": "^kortix-"
-              }
+              },
+              "description": "Lowercase letters and digits in words joined by `-`, at most 64 characters. A name that starts with `kortix-` is an error."
             },
             "additionalProperties": {
               "type": "string",
-              "pattern": "^(?!-)(?!\\.?/)(?!(?:.*/)?\\.\\.?(?:/|$))[^\\s:]+$"
+              "pattern": "^(?!-)(?!\\.?/)(?!(?:.*/)?\\.\\.?(?:/|$))[^\\s:]+$",
+              "description": "The repository folder that holds the skill's `SKILL.md`. The folder's last segment is the name: `skills/pdf` for `pdf`. The `SKILL.md` frontmatter has `name: <name>`."
             }
           },
           "tools": {
@@ -7618,7 +7975,7 @@
               "object",
               "null"
             ],
-            "description": "Tools: name → repository .ts/.js module. Kortix tools are always registered; a project tool with a Kortix tool name replaces it.",
+            "description": "Tool name → repository module. The Kortix tools are always registered. Default: the Kortix tools.",
             "propertyNames": {
               "anyOf": [
                 {
@@ -7655,11 +8012,13 @@
                   "execute",
                   "plan_exit"
                 ]
-              }
+              },
+              "description": "snake_case: a lowercase letter, then letters, digits or `_`, at most 64 characters. A built-in tool name or a `pty_` name is an error. A Kortix tool's name replaces that Kortix tool. `kortix tools eject <name>` copies a Kortix tool into `tools/<name>.ts` and writes its entry."
             },
             "additionalProperties": {
               "type": "string",
-              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$",
+              "description": "A repository path to a `.ts`, `.js`, `.mts`, `.mjs`, `.cts` or `.cjs` module. The module default-exports `{ description, parameters, execute(args, context) }`. `parameters` is a JSON Schema object. `execute` returns a string or a JSON value."
             }
           },
           "commands": {
@@ -7667,25 +8026,30 @@
               "object",
               "null"
             ],
-            "description": "Slash commands: name → { description, prompt | prompt_file }. $ARGUMENTS, $1, $2 … take the arguments.",
+            "description": "Slash command name → command.",
             "propertyNames": {
               "type": "string",
               "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-              "maxLength": 64
+              "maxLength": 64,
+              "description": "Lowercase letters and digits in words joined by `-`, at most 64 characters. In the `/` menu, a command hides a skill with the same name."
             },
             "additionalProperties": {
               "type": "object",
+              "description": "One slash command. An agent runs it only when its `commands` grant names it. Any other agent gets `403` `{\"error\": \"command_not_enabled\", \"command\": \"<name>\", \"agent\": \"<agent>\"}`.",
               "properties": {
                 "description": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Shown in the `/` menu."
                 },
                 "prompt": {
                   "type": "string",
-                  "pattern": "\\S"
+                  "pattern": "\\S",
+                  "description": "The template. `$ARGUMENTS` takes the text after the command. `$1`, `$2` and on take the words in order, and the highest one takes the rest. A template with neither gets the arguments appended. Set `prompt` or `prompt_file`, not both."
                 },
                 "prompt_file": {
                   "type": "string",
-                  "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.md$"
+                  "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.md$",
+                  "description": "A repository path to a `.md` file. The whole file is the template, frontmatter included."
                 }
               },
               "additionalProperties": false,
@@ -7708,18 +8072,22 @@
               "object",
               "null"
             ],
-            "description": "Extensions: name → one implementation per harness. opencode: a repository plugin module. pi: an exact npm pin or a repository path.",
+            "description": "Extension name → package.",
             "propertyNames": {
               "type": "string",
               "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-              "maxLength": 64
+              "maxLength": 64,
+              "description": "Lowercase letters and digits in words joined by `-`, at most 64 characters."
             },
             "additionalProperties": {
               "type": "object",
+              "description": "One package: runtime extensions, skills, prompts or themes for the agent runtime.",
               "properties": {
                 "opencode": {
                   "type": "string",
-                  "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$",
+                  "deprecated": true,
+                  "description": "Selects nothing for new sessions: every new session runs pi."
                 },
                 "pi": {
                   "oneOf": [
@@ -7755,36 +8123,42 @@
                                 "pattern": "^npm:"
                               }
                             }
-                          ]
+                          ],
+                          "description": "The npm pin or the repository path. Required in the map form."
                         },
                         "extensions": {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "description": "Load only the package's extension files that match these globs. `[]` loads none. Default: every one."
                         },
                         "skills": {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "description": "Load only the package's skill files that match these globs. `[]` loads none. Default: every one."
                         },
                         "prompts": {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "description": "Load only the package's prompt files that match these globs. `[]` loads none. Default: every one."
                         },
                         "themes": {
                           "type": "array",
                           "items": {
                             "type": "string"
-                          }
+                          },
+                          "description": "Load only the package's theme files that match these globs. `[]` loads none. Default: every one."
                         }
                       },
                       "additionalProperties": false
                     }
-                  ]
+                  ],
+                  "description": "`npm:<package>@<x.y.z>` with an exact version, or a repository path such as `extensions/audit.ts` (no leading `./`), or `{ source, extensions, skills, prompts, themes }`. A version range is an error. Set it on every extension: one without it loads in no new session."
                 }
               },
               "additionalProperties": false,
@@ -7792,24 +8166,48 @@
             }
           },
           "policy": {
-            "type": "object"
+            "type": "object",
+            "description": "The decision for a connector call that no rule matches.",
+            "properties": {
+              "default_mode": {
+                "default": "allow_all",
+                "description": "`allow_all`: the call runs. `risk`: a read runs, and a write or a delete waits for approval."
+              }
+            }
           },
           "policies": {
-            "type": "array"
+            "type": "array",
+            "description": "Connector rules for the whole project. They run before every policy set and base rule.",
+            "items": {
+              "properties": {
+                "match": {
+                  "description": "Required. A glob over `<connector-slug>.<tool>`, such as `gmail.send_*` or `*.delete*`. Case-insensitive."
+                },
+                "action": {
+                  "description": "Required. What a matching call does."
+                },
+                "conditions": {
+                  "description": "Every condition must hold. Each is `{ arg, match, negate }`: `arg` is a dot path into the call's arguments, `match` is a glob or a `/regex/`, and `negate: true` inverts it."
+                }
+              }
+            }
           },
           "approvals": {
             "type": "object",
+            "description": "How long a held connector call waits for a decision.",
             "properties": {
               "ttl": {
                 "type": "string",
                 "pattern": "^[0-9]+[mhd]$",
-                "description": "How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h."
+                "default": "24h",
+                "description": "An integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days."
               }
             },
             "additionalProperties": false
           },
           "agents": {
             "type": "object",
+            "description": "Agent name → agent block. At least 1 agent, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters.",
             "minProperties": 1,
             "propertyNames": {
               "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
@@ -7818,10 +8216,12 @@
               "type": "object",
               "properties": {
                 "description": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "What the agent does. An agent that may start it as a subagent reads it to choose."
                 },
                 "model": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "`provider/model`. Default: the project default."
                 },
                 "mode": {
                   "type": "string",
@@ -7829,22 +8229,29 @@
                     "primary",
                     "subagent",
                     "all"
-                  ]
+                  ],
+                  "default": "all",
+                  "description": "`primary`: people and triggers run it; no agent starts it. `subagent`: only another agent starts it; agent pickers hide it. `all`: both."
                 },
                 "variant": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The model's reasoning level: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, when the model offers it."
                 },
                 "temperature": {
-                  "type": "number"
+                  "type": "number",
+                  "description": "Sampling temperature. A model that refuses a custom temperature ignores it. Default: the model's."
                 },
                 "top_p": {
-                  "type": "number"
+                  "type": "number",
+                  "description": "Nucleus sampling. Default: the model's."
                 },
                 "steps": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "description": "Model requests in one run. The request that reaches the limit gets no tools, so the model answers. Default: no limit."
                 },
                 "color": {
+                  "description": "Accepted. Sessions do not use it.",
                   "oneOf": [
                     {
                       "type": "string",
@@ -7865,10 +8272,13 @@
                   ]
                 },
                 "hidden": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "default": false,
+                  "description": "`true`: agent pickers do not list the agent."
                 },
                 "options": {
-                  "type": "object"
+                  "type": "object",
+                  "description": "Accepted. Sessions do not use it."
                 },
                 "permission": {
                   "oneOf": [
@@ -7951,21 +8361,23 @@
                       }
                     }
                   ],
-                  "description": "Tool policy. Omitted: allow. `skill` and `task` belong to `skills` and `subagents`."
+                  "default": "allow",
+                  "description": "Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`."
                 },
                 "prompt": {
                   "type": "string",
                   "pattern": "\\S",
-                  "description": "The system prompt."
+                  "description": "The system prompt. Set `prompt` or `prompt_file`, not both."
                 },
                 "prompt_file": {
                   "type": "string",
                   "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.md$",
-                  "description": "Repository path of a Markdown file that holds the system prompt."
+                  "description": "A repository path to a `.md` file. The whole file is the system prompt."
                 },
                 "enabled": {
                   "type": "boolean",
-                  "description": "false: no session can start with this agent. Default true."
+                  "default": true,
+                  "description": "`false`: no session starts with the agent, and no agent starts it as a subagent."
                 },
                 "codemode": {
                   "type": "string",
@@ -7974,10 +8386,12 @@
                     "only",
                     "off"
                   ],
-                  "description": "pi codemode tool: on (default), only, off."
+                  "default": "on",
+                  "description": "`on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`."
                 },
                 "tools": {
-                  "description": "Tools this agent may use: harness, Kortix and registered tools. all (default), none, a list, or { exclude: [...] }.",
+                  "default": "all",
+                  "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
                   "oneOf": [
                     {
                       "type": "string",
@@ -8012,7 +8426,7 @@
                   ]
                 },
                 "skills": {
-                  "description": "Registered and Kortix skills this agent may load. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Registered skills and Kortix skills the agent may load.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8040,10 +8454,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "subagents": {
-                  "description": "Declared subagents this agent may start. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8071,10 +8486,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "commands": {
-                  "description": "Registered slash commands this agent runs. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Registered commands the agent runs.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8102,10 +8518,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "extensions": {
-                  "description": "Registered extensions a session of this agent loads. \"all\", \"none\" (default) or a list of names.",
+                  "description": "Registered extensions that a session of the agent loads.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8133,10 +8550,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "connectors": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                  "description": "Connector slugs the agent may call.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8164,7 +8582,8 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "connectors_required": {
                   "type": "array",
@@ -8172,18 +8591,18 @@
                     "type": "string",
                     "pattern": "\\S"
                   },
-                  "description": "Connector slugs that must resolve before the session starts."
+                  "description": "Connector slugs, a subset of `connectors`. Sessions do not check it."
                 },
                 "policy_sets": {
                   "type": "object",
-                  "description": "Connector slug → the policy set (connectors[].policy_sets) this agent gets on it. Absent: the base rules.",
+                  "description": "Connector slug → the name of a policy set on that connector. Default: the base rules.",
                   "additionalProperties": {
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
                   }
                 },
                 "secrets": {
-                  "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                  "description": "Secret names the agent's sandbox receives.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8211,10 +8630,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "apps": {
-                  "description": "Kortix Apps (by App slug) this agent may open when the App is restricted or private. Deny by default.",
+                  "description": "App slugs the agent may open when the App's access is restricted or private.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8242,10 +8662,11 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "kortix_permissions": {
-                  "description": "Kortix permissions: the project.* IAM actions this agent may exercise, or \"all\" / \"none\".",
+                  "description": "Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error.",
                   "oneOf": [
                     {
                       "type": "array",
@@ -8334,23 +8755,25 @@
                         }
                       ]
                     }
-                  ]
+                  ],
+                  "default": "none"
                 },
                 "workspace": {
-                  "description": "What new sessions of this agent get in /workspace.",
+                  "description": "What new sessions of this agent get in /workspace. Any other key under `workspace` is an error.",
                   "type": "object",
                   "properties": {
                     "project_repository": {
                       "type": "boolean",
                       "default": false,
-                      "description": "Check out the project repository and allow repository access. Defaults to false: an agent that reads or changes the repository sets true."
+                      "description": "`true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load."
                     }
                   },
                   "additionalProperties": false
                 },
                 "sandbox": {
                   "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+                  "description": "A template slug, or `default` for the platform image. Default: `sandbox.default`."
                 },
                 "network_egress": {
                   "type": "object",
@@ -8372,7 +8795,7 @@
                     }
                   },
                   "additionalProperties": false,
-                  "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
+                  "description": "Only `{ version: 1, default: deny, rules: [] }`. It validates with a warning: Kortix does not enforce it."
                 }
               },
               "additionalProperties": false,

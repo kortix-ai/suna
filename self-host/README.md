@@ -2,10 +2,9 @@
 
 Run your own private instance of Kortix — the full stack (frontend, API, LLM
 gateway, and the official Supabase distribution) as one Docker Compose
-project, on any box you control. Agent sessions still run on a cloud sandbox
-provider — Platinum, set with `PLATINUM_API_KEY` — and sandboxes are managed
-compute, not part of this box. Daytona is a legacy fallback: its removal is
-scheduled and it gets no support guarantee. E2B support is discontinued.
+project, on any box you control. Agent sessions still run on Platinum, a
+cloud sandbox provider set with `PLATINUM_API_KEY`. Sandboxes are managed
+compute, not part of this box.
 
 This is the whole self-contained distribution: a Terraform module for
 provisioning an AWS/EC2 box declaratively, plus this README.
@@ -48,12 +47,11 @@ for real use) running Linux, and a domain you control.
       evaluation only; see the runbook for the tradeoffs).
    2. **Admin email** — which account gets platform-admin on first sign-up.
    3. **Deployment shape** — whether you hold an Enterprise license (SSO/SCIM/RBAC/audit).
-   4. **Sandbox provider** — `platinum` (the default) and its
-      `PLATINUM_API_KEY`. `daytona` remains only as a legacy fallback.
-   5. **Pipedream** (optional) — the 3,000+ app connector catalog; skip or
-      configure its OAuth app credentials.
-   6. **Update policy** — auto-update on/off, channel (`stable`/`latest`), and
-      the daily update window.
+   4. **Sandbox provider** — your Platinum API key (`PLATINUM_API_KEY`).
+   5. **Composio** (optional) — the 3,000+ app connector catalog; skip or
+      enter its API key.
+   6. **Update policy** — auto-update on/off and the daily update window.
+      Pin a channel with `--channel stable|latest`.
 
 3. **Start the stack:**
 

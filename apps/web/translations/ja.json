@@ -1318,9 +1318,9 @@
       "oneOffDescription": "代わりに1つの変更を記述できます。セッションが変更と検証を行い、変更リクエストを開きます。",
       "oneOffPlaceholder": "例: release-bot エージェントをすべての参照で deploy-bot に変更する",
       "runUpgrade": "アップグレードを実行",
-      "manifestV2": {
-        "title": "マニフェストを v2 (kortix.yaml) に移行",
-        "description": "v1 kortix.toml をガバナンス重視の kortix.yaml に変換し、プラットフォーム管理スキルを更新して、レビュー用の変更リクエストを開きます。"
+      "manifestV3": {
+        "title": "マニフェストを v3 (kortix.yaml) にアップグレード",
+        "description": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。"
       },
       "agentEditorHint": "このプロジェクトはバージョン 1 のマニフェストを使用しています。<code>kortix.yaml</code> バージョン 3 にアップグレードすると、このエージェントの指示、モデル、ツール権限、アクセスをここで編集できます。"
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "あなたのコンピューター"
     },
     "manifestUpgrade": {
-      "title": "v2 にアップグレード",
-      "description": "このプロジェクトはまだ <toml>kortix.toml</toml> を使用しています。エージェントが <yaml>kortix.yaml</yaml> に変換し、管理対象スキルを更新して変更リクエストを作成します。承認するまで変更は適用されません。",
+      "title": "v3 にアップグレード",
+      "description": "このプロジェクトは古いマニフェストを使用しています。エージェントが <yaml>kortix.yaml</yaml> バージョン 3 に移行し、管理対象スキルを更新して変更リクエストを作成します。承認するまで変更は適用されません。",
       "start": "アップグレードを開始"
     },
     "filter": {
@@ -2803,6 +2803,7 @@
     "signInWithEmail": "メールでログイン",
     "createNewAccount": "新しいアカウントを作成",
     "byContinuingYouAgreeSimple": "続行することで、",
+    "customerLogoNotice": "Kortix は、プランを問わず、あなたの組織の名称とロゴを顧客として掲載することがあります。legal@kortix.com までご連絡いただければ、いつでも掲載を停止できます。",
     "phoneVerification": {
       "title": "電話番号を確認",
       "titleOtp": "確認コードを入力",
@@ -16802,7 +16803,7 @@
       "textc3bf78fdd3b9": "申請を送信できませんでした",
       "textc3c25857485f": "すること",
       "textc3c709a999c1": "メモリを読み取り中…",
-      "textc3d1545dd522": "v1のkortix.tomlをガバナンス優先のkortix.yamlに変換し、プラットフォーム管理のスキルを最新のマーケットプレース基準に更新して、レビュー用の変更リクエストを開きます。",
+      "text7823a1f3af93": "kortix.toml またはバージョン 2 の kortix.yaml をバージョン 3 に移行します。プロジェクトがスキル、ツール、コマンド、拡張機能を登録し、各エージェントが名前で有効にします。プラットフォーム管理スキルを更新し、レビュー用の変更リクエストを開きます。",
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
@@ -17537,7 +17538,7 @@
       "textd83a0d814c59": "API Statusに緑色の「Enabled」が表示され、「SCIM Username」パラメーターがEmailにマッピングされ、管理者承認による保留なしでプロビジョニングが有効になっていることを確認します。",
       "textd84b8be91e7b": "Kortix — プレゼンテーション",
       "textd84ee1e1e08b": "kortix init を試すか、コマンドには / を入力",
-      "textd85a383e851d": "マニフェストを v2 (kortix.yaml) に移行",
+      "text08edd5b6dcdc": "マニフェストを v3 (kortix.yaml) にアップグレード",
       "text848f54e89660": "実行履歴",
       "textb098a09c78aa": "ペイロードでテスト",
       "text99733344956d": "ペイロード",
@@ -20805,7 +20806,14 @@
     "sessionModel": "モデル {cost}",
     "sessionSandbox": "サンドボックス {cost}",
     "noCapUnlimited": "上限なし · 支出は無制限",
-    "tokensSub": "入力 {in} · 出力 {out}"
+    "tokensSub": "入力 {in} · 出力 {out}",
+    "unknownValue": "不明",
+    "estimateCoverageUnavailable": "見積もりの対象範囲を取得できません。",
+    "estimatesSeparate": "上の実際の支出は別に扱われます。見積もりが請求額に加算されることはありません。",
+    "estimatedUsageValueLabel": "LLM の推定利用額(請求ではありません):",
+    "pricedRequests": "料金計算済みリクエスト {count} 件",
+    "unpricedRequests": "料金未計算リクエスト {count} 件",
+    "llmEstimateLabel": "LLM の推定:"
   },
   "triggerComposer": {
     "every": "間隔",
@@ -21199,6 +21207,18 @@
     "emailHeroLede": "Resend アカウントを接続し、自分のドメインのアドレスを選びます。そのアドレスにメールが届くと、エージェントがスレッドを読みそのまま返信します。",
     "telegramHeroTitle": "エージェントを Telegram に",
     "telegramHeroLede": "BotFather で作ったボットを接続します。ボットにメッセージすると、エージェントがチャットで答えます。",
+    "telegramUsersDescription": "ボットと話せるのはこれらのユーザーだけです。ほかの人がボットに個別メッセージを送ると、ここに表示されます。",
+    "telegramRequestsTitle": "アクセスを希望",
+    "telegramAllowedTitle": "許可済み",
+    "telegramUsersEmptyTitle": "許可したユーザーがここに表示されます",
+    "telegramUsersEmptyDescription": "ボットにメッセージを送ってもらい、そのリクエストを許可するか、ユーザー ID を追加します。",
+    "telegramUsersLoadError": "Telegram ユーザーを読み込めませんでした。",
+    "telegramAddByIdLabel": "ユーザー ID で追加",
+    "telegramAddByIdHint": "ボットは知らない相手に、その人のユーザー ID を返信します。",
+    "telegramAddByIdInvalid": "Telegram のユーザー ID は数字です（例: 123456789）。",
+    "telegramAllowAria": "{name} を許可",
+    "telegramRemoveTitle": "{name} を削除しますか？",
+    "telegramRemoveDescription": "{name} はボットと話せなくなります。再び許可するには、ユーザー ID を追加するか、次のリクエストを許可します。",
     "otherWaysToConnect": "その他の接続方法",
     "computerHeroTitle": "エージェントをあなたのコンピューターに",
     "computerConnectedTitle": "{count, plural, other {# 台のコンピューターが接続済み}}",

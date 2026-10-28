@@ -25,6 +25,7 @@ import { logger } from '../../lib/logger';
 import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
+import type { ConnectorPrincipal } from '../../connectors/router-contract';
 import {
   type ChatThreadKey,
   claimThreadCreate,
@@ -113,6 +114,8 @@ export interface SessionQuestion {
   /** The stored question (`session_pending_questions.id`) a button answers. */
   pendingId: string;
   questions: RuntimeQuestion[];
+  /** The agent's connector principal: a post stands in for its own call, and runs only where that call would. */
+  principal: ConnectorPrincipal;
 }
 
 /** What one chat platform does for the core. */

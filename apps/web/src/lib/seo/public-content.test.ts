@@ -35,6 +35,7 @@ function expectCleanAgentMarkdown(markdown: string, label: string): void {
   expect(prose, label).not.toMatch(/^\s*(?:import|export)\s/m);
   expect(prose, label).not.toMatch(UNRESOLVED_MDX_COMPONENT);
   expect(prose, label).not.toMatch(LINE_START_UNRESOLVED_JSX);
+  expect(prose, label).not.toContain('{/*');
 }
 
 beforeEach(() => {
@@ -157,6 +158,9 @@ Do not drop this meaningful content.
   <Stat value="3 systems" label="One agent" />
 </StatGrid>
 
+{/* generated:sample:start */}
+Keep the line {/* VERIFY: an editor note */} without the note.
+
 <Tabs>
 <Tab title="Claude Code">
 Run the add command.
@@ -169,6 +173,7 @@ Run the add command.
     expect(markdown).toContain('> Figure: A truthful diagram');
     expect(markdown).toContain('- **3 systems:** One agent');
     expect(markdown).toContain('**Claude Code**\nRun the add command.');
+    expect(markdown).toContain('Keep the line without the note.');
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 
@@ -379,6 +384,21 @@ describe('bounded public agent index', () => {
     const types = new Set((unfilteredBody.data as any[]).map((item) => item.type));
     expect(types.has('docs')).toBe(true);
     expect(types.has('marketing')).toBe(true);
+  });
+
+  test('a limit that is not a whole decimal number answers 400; an empty one is the default (KRTX-3261)', async () => {
+    for (const [index, limit] of ['1e3', '1%20', '25.5', '0', '-1', '0x10', '%2B5'].entries()) {
+      const response = getAgentIndex(
+        new Request(`https://kortix.com/api/ai?limit=${limit}`, { headers: { 'x-real-ip': `192.0.2.${40 + index}` } }),
+      );
+      expect({ limit, status: response.status }).toEqual({ limit, status: 400 });
+      expect(((await response.json()) as any).error).toBe('invalid_limit');
+    }
+    const empty = getAgentIndex(new Request('https://kortix.com/api/ai?limit=', { headers: { 'x-real-ip': '192.0.2.60' } }));
+    expect(empty.status).toBe(200);
+    expect(((await empty.json()) as any).pagination.limit).toBe(25);
+    const capped = getAgentIndex(new Request('https://kortix.com/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.61' } }));
+    expect(((await capped.json()) as any).pagination.limit).toBe(50);
   });
 
   test('rejects malformed pagination and enforces the documented rate limit', async () => {

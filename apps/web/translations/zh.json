@@ -1318,9 +1318,9 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV2": {
-        "title": "将清单迁移到 v2 (kortix.yaml)",
-        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
+      "manifestV3": {
+        "title": "将清单升级到 v3 (kortix.yaml)",
+        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
       },
       "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v2",
-      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v3",
+      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -2803,6 +2803,7 @@
     "signInWithEmail": "使用邮箱登录",
     "createNewAccount": "创建新账户",
     "byContinuingYouAgreeSimple": "继续即表示您同意我们的",
+    "customerLogoNotice": "无论使用何种套餐，Kortix 都可能将您所在组织的名称和标志作为客户展示。您可随时发送邮件至 legal@kortix.com 退出。",
     "phoneVerification": {
       "title": "验证您的手机号码",
       "titleOtp": "输入验证码",
@@ -16802,7 +16803,7 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -17537,7 +17538,7 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "text848f54e89660": "运行记录",
       "textb098a09c78aa": "使用负载测试",
       "text99733344956d": "负载",
@@ -20805,7 +20806,14 @@
     "sessionModel": "模型 {cost}",
     "sessionSandbox": "沙盒 {cost}",
     "noCapUnlimited": "无上限 · 支出不受限制",
-    "tokensSub": "输入 {in} · 输出 {out}"
+    "tokensSub": "输入 {in} · 输出 {out}",
+    "unknownValue": "未知",
+    "estimateCoverageUnavailable": "无法获取估算覆盖范围。",
+    "estimatesSeparate": "上方的实际支出单独计算。估算从不计入费用。",
+    "estimatedUsageValueLabel": "LLM 估算使用价值(非账单):",
+    "pricedRequests": "{count} 个已计价请求",
+    "unpricedRequests": "{count} 个未计价请求",
+    "llmEstimateLabel": "LLM 估算:"
   },
   "triggerComposer": {
     "every": "每隔",
@@ -21199,6 +21207,18 @@
     "emailHeroLede": "连接你的 Resend 账户，并在你的域名上选择一个地址。人们给它发邮件，智能体读取邮件串并在其中回复。",
     "telegramHeroTitle": "把你的智能体带到 Telegram",
     "telegramHeroLede": "连接你用 BotFather 创建的机器人。人们给机器人发消息，智能体在聊天中回复。",
+    "telegramUsersDescription": "只有这些人可以和机器人对话。其他人私聊机器人时，会显示在这里。",
+    "telegramRequestsTitle": "申请访问",
+    "telegramAllowedTitle": "已允许",
+    "telegramUsersEmptyTitle": "你允许的人会显示在这里",
+    "telegramUsersEmptyDescription": "请对方给机器人发消息，然后允许其请求，或添加其用户 ID。",
+    "telegramUsersLoadError": "无法加载 Telegram 用户。",
+    "telegramAddByIdLabel": "按用户 ID 添加",
+    "telegramAddByIdHint": "机器人会把用户 ID 回复给它不认识的人。",
+    "telegramAddByIdInvalid": "Telegram 用户 ID 是一个数字，例如 123456789。",
+    "telegramAllowAria": "允许 {name}",
+    "telegramRemoveTitle": "移除 {name}？",
+    "telegramRemoveDescription": "{name} 将无法再和机器人对话。要重新允许，请添加其用户 ID 或允许其下一次请求。",
     "otherWaysToConnect": "其他连接方式",
     "computerHeroTitle": "把你的智能体带到你的电脑",
     "computerConnectedTitle": "{count, plural, other {已连接 # 台电脑}}",

@@ -82,8 +82,7 @@ const LINK_LABELS: Record<string, string> = { email: 'Email', x: 'X', linkedin: 
  * (`kit/page-frame.tsx`) like /security and /about: the hero, the openings in
  * a band, the bar as hairline cells, and how to apply. Applications go
  * through `ApplyModal` into the same lead pipeline as "Book your demo". The
- * accuracy gate (locations, no invented comp, the OpenCode distinction)
- * lives in `content.ts`.
+ * accuracy gate (locations, no invented comp) lives in `content.ts`.
  */
 export function CareersPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
