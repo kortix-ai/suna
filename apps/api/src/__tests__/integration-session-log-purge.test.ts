@@ -488,9 +488,6 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'session_log_threads.session_id': 'purged',
   'session_log_messages.session_id': 'purged',
   'session_log_blobs.session_id': 'purged',
-  // The retired v1 mirror (P8.2): no code reads it since Release B2; Release B3 drops it with every row.
-  'session_transcript_messages.session_id': 'kept: the retired v1 mirror, dropped by Release B3',
-  'session_transcript_mirrors.session_id': 'kept: the retired v1 mirror, dropped by Release B3',
   'voice_call_turns.session_id': 'purged',
   'session_pending_questions.session_id': 'purged',
   'session_runtime_projections.session_id': 'purged',
