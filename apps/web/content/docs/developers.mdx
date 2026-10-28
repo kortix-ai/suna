@@ -974,7 +974,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `prompt` | string | — | The system prompt. Set `prompt` or `prompt_file`, not both. |
 | `prompt_file` | string | — | A repository path to a `.md` file. The whole file is the system prompt. |
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
-| `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
+| `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. On pi, a subagent gets `codemode` only when its own agent sets `on` or `only`; the session agent's value does not apply. In `only`, the subagent's model gets `codemode` and `show`. A subagent's own `tools` list does not need to name them. A `deny` rule or the session agent's `tools` turns them off, and the subagent keeps its direct tools. |
 | `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
 | `skills` | grant | `none` | Registered skills and Kortix skills the agent may load. |
 | `subagents` | grant | `none` | Agents this agent may start with the `task` tool: declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
