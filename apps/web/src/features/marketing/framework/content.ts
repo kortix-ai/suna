@@ -47,14 +47,15 @@ export const MANIFEST = [
 /** agents/support.md: the agent's behavior. Frontmatter keys as in the starter's agents/kortix.md. */
 export const SUPPORT_AGENT = [
   '---',
-  'description: Answers Northwind support tickets.',
+  'description: Answers tickets.',
   'mode: primary',
   'permission: ask',
   '---',
   '',
-  'You answer support tickets for Northwind.',
-  'Follow the triage-ticket skill, reply',
-  'by email, and ask a person before you',
+  'You answer Northwind tickets.',
+  'Follow the triage-ticket',
+  'skill and reply by email.',
+  'Ask a person before you',
   'refund anything.',
 ] as const;
 
