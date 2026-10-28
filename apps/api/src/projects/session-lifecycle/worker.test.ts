@@ -23,7 +23,7 @@ mock.module('./drain', () => ({
     return {};
   },
 }));
-const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('./worker');
+const { startSessionLifecycleWorker, stopSessionLifecycleWorker } = await import('../../workers/session-lifecycle-worker');
 const { wakeAt, DRAIN_FALLBACK_MS, MIN_DRAIN_GAP_MS } = await import('../../workers/session-lifecycle-worker');
 // A fake clock: the worker's 1 s tick, its wake timers, Date.now() and the
 // mocked drain's sleep all advance only through `elapse`, so every case runs in

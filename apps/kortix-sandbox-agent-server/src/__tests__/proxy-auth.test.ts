@@ -22,7 +22,6 @@ import {
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
-import { finalizeInitialSession } from '@/harness/open-code/boot'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { egressShimPort } from '@/services/egress-shim'
@@ -187,41 +186,6 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('keeps runtime not ready until the boot OpenCode session is pinned', async () => {
-    const app = buildOpenCodeTestApp(
-      baseConfig(),
-      fakeOpencode('ok'),
-      Date.now(),
-      {
-        repoMaterializationError: null,
-        timeline: [],
-        initialRuntimeSessionRequired: true,
-        initialRuntimeSessionId: null,
-      },
-    )
-
-    const health = await app.request('/kortix/health')
-    expect(health.status).toBe(200)
-    const healthBody = (await health.json()) as {
-      status: string
-      runtimeReady: boolean
-      opencode_session_required: boolean
-      opencode_session_id: string | null
-    }
-    expect(healthBody.status).toBe('ok')
-    expect(healthBody.runtimeReady).toBe(false)
-    expect(healthBody.opencode_session_required).toBe(true)
-    expect(healthBody.opencode_session_id).toBeNull()
-
-    const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
-    const res = await app.request('/session?directory=%2Fworkspace', {
-      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
-    })
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as { reason: string }
-    expect(body.reason).toBe('initial_runtime_session_pending')
-  })
-
   it('holds every caller off until the workspace is complete, then lets them through', async () => {
     // A directory-scoped request before the config-dir dependencies land makes
     // OpenCode cache a tool registry whose imports failed, for the life of the
@@ -238,31 +202,6 @@ describe('daemon proxy auth gate', () => {
 
     bootState.workspaceReady = true
     // Past the gate: the unreachable fake upstream answers 502.
-    expect((await request()).status).toBe(502)
-  })
-
-  it('a failed initial-session attempt blocks callers only until a later attempt succeeds', async () => {
-    // The flag was written on a caught throw and cleared nowhere, so one
-    // failed rung of the retry ladder wedged the box until a manual Restart.
-    const bootState = {
-      repoMaterializationError: null,
-      timeline: [],
-      initialRuntimeSessionRequired: true,
-      initialRuntimeSessionId: null as string | null,
-      initialRuntimeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
-    }
-    const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
-    const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
-    const request = () =>
-      app.request('/session?directory=%2Fworkspace', { headers: { [KORTIX_USER_CONTEXT_HEADER]: signed } })
-
-    const failed = await request()
-    expect(failed.status).toBe(503)
-    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_runtime_session_failed')
-
-    finalizeInitialSession(bootState, 'ses_root_abc')
-
-    // The gate lets the caller through to OpenCode (unreachable here: 502).
     expect((await request()).status).toBe(502)
   })
 

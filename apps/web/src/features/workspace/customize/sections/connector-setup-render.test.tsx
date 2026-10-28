@@ -51,7 +51,6 @@ const teamsHooks = () => ({
   useConnectTeams: () => mutation,
   useTeamsManifest: () => ({ data: '{}' }),
 });
-mock.module('@/hooks/channels/use-teams-installations', teamsHooks);
 mock.module('@kortix/sdk/react', () => ({ ...realSdkReact, ...teamsHooks() }));
 const uiSelectMock = () =>
   Object.fromEntries(

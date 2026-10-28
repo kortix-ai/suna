@@ -3,7 +3,8 @@
  * update in the integration event inbox; this consumer turns a stored message
  * into a session turn through the conversation core (channels/core/conversation.ts):
  *
- *   unknown sender  → a pairing reply naming their user id, no session (fail closed)
+ *   unknown sender  → a pairing reply naming their user id, no session (fail closed);
+ *                     in a private chat, also an access request an admin can allow
  *   `/start`        → a welcome reply
  *   `/new`          → forget the chat's session; the next message starts a new one
  *   anything else   → the core: a follow-up into the chat's session, or a new
@@ -20,6 +21,7 @@ import { type IntegrationEvent, registerEventConsumer } from '../../integrations
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { databaseErrorSummary } from '../../shared/database-errors';
 import { isUuid } from '../../shared/validate';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
@@ -35,7 +37,7 @@ import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { TELEGRAM_UPDATES, telegramCall } from './api';
-import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret, recordTelegramAccessRequest } from './installs';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -43,7 +45,7 @@ export interface TelegramMessage {
   message_id: number;
   date?: number;
   chat: { id: number; type: string; title?: string };
-  from?: { id?: number; username?: string; is_bot?: boolean };
+  from?: { id?: number; username?: string; first_name?: string; last_name?: string; is_bot?: boolean };
   text?: string;
   caption?: string;
   message_thread_id?: number;
@@ -365,9 +367,23 @@ export async function handleTelegramEvent(
   const reply = (body: string) => sendTelegramReply(token, target, body);
 
   if (!senderId || !install.allowedUserIds.includes(senderId)) {
+    // Only a private chat asks for access: there the sender wrote to the bot itself.
+    const asks = !!senderId && message.chat.type === 'private';
+    const waiting =
+      asks &&
+      (await recordTelegramAccessRequest(event.projectId, install, message.from!).catch((error) => {
+        // A failed query's message carries its parameters, the sender's names among them.
+        logger.warn('[telegram] access request not recorded', {
+          projectId: event.projectId,
+          error: databaseErrorSummary(error) ?? String(error),
+        });
+        return false;
+      }));
     await reply(
       `This bot belongs to a Kortix project, and your Telegram account is not allowed to use it yet. ` +
-        `Ask a project admin to allow your Telegram user id ${senderId || '(unknown)'} under Channels → Telegram.`,
+        (waiting
+          ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Telegram. Your Telegram user ID is ${senderId}.`
+          : `Ask a project admin to allow your Telegram user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → Telegram${asks ? '' : ', or message this bot privately to ask for access'}.`),
     );
     return;
   }
@@ -447,7 +463,7 @@ export async function handleTelegramPress(
   // The same gate as a typed message. An alert, never a chat message: in a group
   // the pairing reply would reach everyone.
   if (!install.allowedUserIds.includes(String(press.from.id))) {
-    await answer(`Your Telegram account is not allowed to use this bot. Ask a project admin to allow user id ${press.from.id} under Channels → Telegram.`, true);
+    await answer(`Your Telegram account is not allowed to use this bot. Ask a project admin to allow user ID ${press.from.id} under Customize → Connectors → Channels → Telegram.`, true);
     return;
   }
   const button = QUESTION_BUTTON.exec(press.data ?? '');

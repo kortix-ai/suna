@@ -24,8 +24,8 @@ import { claimOnce } from './access-notices';
 import { sendAlertEmail } from './owner-alerts';
 
 const LEGAL_EMAIL = 'legal@kortix.com';
-// ponytail: fixed batch, 48k emails a day; raise it if the email provider's quota allows and the notice runs late.
-const BATCH = 2000;
+// ponytail: fixed batch, 240k emails a day (prod had 412k users on 2026-10-28: ~41 h); lower it if the email provider quota is smaller.
+const BATCH = 10_000;
 
 export type TermsChange = { version: string; effectiveDate: string; changes: readonly string[] };
 

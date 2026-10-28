@@ -235,7 +235,6 @@
     "./markdown/setup-links/connector-link-info",
     "./markdown/setup-links/secret-intake-form",
     "./markdown/setup-links/util",
-    "./providers/session-ids",
     "./providers/ui-provider",
     "./session/actions/session-label",
     "./session/composer/attachment-tiles",

@@ -391,7 +391,9 @@ export function serializeProject(
 
 export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {};
-  const source = metadata as Record<string, unknown>;
+  // Telegram allowed user ids and access requests are personal data: only the
+  // Telegram channel routes serve them.
+  const { telegram: _telegram, ...source } = metadata as Record<string, unknown>;
   if (!source.git || typeof source.git !== 'object') return source;
   const git = source.git as Record<string, unknown>;
   if (!Object.hasOwn(git, 'fast_boot')) return source;
