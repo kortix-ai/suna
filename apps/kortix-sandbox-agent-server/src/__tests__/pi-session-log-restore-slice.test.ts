@@ -54,6 +54,8 @@ async function written(log: SessionLog, seqMax: Record<string, number>) {
   return {
     root: buildSessionProjection(dump.entries as SessionEntry[]).messages,
     children: Object.fromEntries((dump.children ?? []).map((c) => [c.id, c.agentMessages])),
+    // The id pi's rebuilt system prompt takes: the journal replaces that context record instead of adding one per restore.
+    contextIds: [dump.contextId, ...(dump.children ?? []).map((c) => c.contextId)],
     dropped,
   }
 }
@@ -81,6 +83,7 @@ describe('pi writes a model_view slice as it writes the whole log', () => {
       for (const [id, messages] of Object.entries(whole.children)) expect(sent(part.children[id]!)).toEqual(sent(messages))
       expect(Object.keys(part.children)).toEqual(Object.keys(whole.children))
       expect(part.dropped).toEqual(whole.dropped)
+      expect(part.contextIds).toEqual(whole.contextIds)
       // The raw projection: the same messages, but for the failed replies pi-ai skips.
       const ok = (messages: unknown[]) => messages.filter((m) => !failed([m]).length)
       expect(ok(part.root)).toEqual(ok(whole.root))
