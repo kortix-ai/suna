@@ -124,6 +124,24 @@ describe('deriveSessionFiles', () => {
     });
   });
 
+  test('lists every image of a batch image_gen call, and none for a failed prompt', () => {
+    const output = JSON.stringify({
+      action: 'generate',
+      images: [
+        { path: '/workspace/output/images/fox.png', size: '1024x1024', prompt: 'a fox' },
+        { path: '/workspace/output/images/hare.jpg', size: '1024x1024', prompt: 'a hare' },
+      ],
+      failed: [{ prompt: 'an owl', error: 'Image generation failed (500): Upstream error.' }],
+    });
+    const files = deriveSessionFiles([
+      msg('assistant', [tool('image_gen', { action: 'generate', prompts: ['a fox', 'an owl', 'a hare'] }, { output })]),
+    ]);
+    expect(files.map((f) => [f.name, f.kind])).toEqual([
+      ['fox.png', 'image'],
+      ['hare.jpg', 'image'],
+    ]);
+  });
+
   test('one row per file: an absolute write and a relative patch of it merge, the later one wins', () => {
     const files = deriveSessionFiles([
       msg('assistant', [

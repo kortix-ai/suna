@@ -614,15 +614,35 @@ function ActionBar({
   setComposing: (v: boolean) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (item.status !== 'needs_you') {
-    return (
+  // Decisions and native approvals decide inside their body, with their own session link.
+  if (item.kind === 'decision' || item.kind === 'approval') {
+    return item.status === 'needs_you' ? null : (
       <span className="text-muted-foreground text-xs">
         {reviewStatusLabel(item.status, tI18nComplete)} · {formatItemAgeLong(item.createdAt)}
       </span>
     );
   }
-  // Decisions and native approvals decide inside their body.
-  if (item.kind === 'decision' || item.kind === 'approval') return null;
+  // The session that produced this item is where its reasoning lives.
+  const openSession =
+    item.sessionId && actions.openSession ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => actions.openSession?.(item.sessionId as string)}
+      >
+        {tI18nComplete.raw('textb205bb47f81a')}
+      </Button>
+    ) : null;
+  if (item.status !== 'needs_you') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground text-xs">
+          {reviewStatusLabel(item.status, tI18nComplete)} · {formatItemAgeLong(item.createdAt)}
+        </span>
+        {openSession}
+      </div>
+    );
+  }
 
   // change · output · batch. Each control shows only for a verdict the viewer
   // may give (KRTX-1720). Ship it on a change merges it; the conflict fix stands
@@ -633,6 +653,7 @@ function ActionBar({
 
   return (
     <div className="flex items-center gap-2">
+      {openSession}
       {secondaryLabel && !composing && actions.allows(item, 'changes') && (
         <Button variant="ghost" size="sm" onClick={() => setComposing(true)}>
           {secondaryLabel}

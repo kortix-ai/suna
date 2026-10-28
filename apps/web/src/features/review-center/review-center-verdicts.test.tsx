@@ -116,6 +116,7 @@ function mount(items: ReviewItem[], cans: Leaves) {
               calls.push(`bulk ${ids.join(',')} ${verdict}`);
             }}
             verdictAllowed={(item, verdict) => reviewVerdictAllowed(item, verdict, cans)}
+            onOpenSession={(sessionId) => calls.push(`open ${sessionId}`)}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -219,6 +220,18 @@ describe('the review page of one item', () => {
     mount([CHANGE], REVIEWER);
     expect(buttons()).toContain('Ask for changes');
     expect(buttons()).not.toContain('Ship it');
+  });
+
+  test('a change request opens the session that proposed it, before Ask for changes', () => {
+    const fromSession = { ...CHANGE, sessionId: 'ses_origin' } as ReviewItem;
+    search = `id=${fromSession.id}`;
+    mount([fromSession], REVIEWER);
+    const labels = buttons();
+    expect(labels.indexOf('Open session')).toBeGreaterThan(-1);
+    expect(labels.indexOf('Open session')).toBeLessThan(labels.indexOf('Ask for changes'));
+    const open = [...host!.querySelectorAll('button')].find((b) => b.textContent === 'Open session');
+    act(() => open!.click());
+    expect(calls).toContain('open ses_origin');
   });
 
   test('a built-in member gets neither on a change request', () => {

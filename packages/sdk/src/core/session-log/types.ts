@@ -238,9 +238,19 @@ export type CompactionBlock = BlockBase & {
 export type SubtaskBlock = BlockBase & { type: 'subtask'; thread_id: string; agent: string; description: string; call_id?: string; call_ids?: string[] }
 export type StepBlock = BlockBase & { type: 'step'; phase: 'start' | 'finish'; ext?: Ext }
 /**
- * A block only this harness understands. F10: a tool result whose call is gone is kept as
- * `{ harness, kind: 'orphan_output', data: <native payload>, model_visible: false, fallback_text: <its output> }`
- * in its own assistant message (Codex adapter). No dedicated field exists for it.
+ * A block only this harness understands. `kind` is a pass-through string, except the reserved
+ * kinds below: each means its data shape on every harness, and no adapter uses the name for
+ * another shape. A reader that does not know a kind ignores the block.
+ *  - `orphan_output` (F10): a tool result whose call is gone, kept as
+ *    `{ harness, kind: 'orphan_output', data: <native payload>, model_visible: false, fallback_text: <its output> }`
+ *    in its own assistant message (Codex adapter). No dedicated field exists for it.
+ *  - `nested_part`: a tool call a codemode script made (the model saw only the script's call),
+ *    right after its parent's `tool_call` block, in call order:
+ *    `{ harness, kind: 'nested_part', data: { parent_call_id: string, part }, model_visible: false }`.
+ *    `part` is the call's `kortix.transcript.v1` tool part (`type: 'tool'`, `callID`, `tool`,
+ *    `state`) without `id`, `sessionID` and `messageID`. `toV1` gives `part` back under the
+ *    block's ids, and the SDK turn layer draws it as that part's tool call, so a reload draws
+ *    the card the live turn drew. Written by the pi adapter from 1.2.0.
  */
 export type HarnessBlock = BlockBase & { type: 'harness'; harness: string; kind: string; data: unknown; model_visible: boolean; fallback_text?: string }
 

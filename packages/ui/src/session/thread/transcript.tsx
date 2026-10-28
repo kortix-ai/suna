@@ -107,7 +107,14 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitiv
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
-import { RecoveredCallsContext } from '../tool/shared/infrastructure';
+import {
+  ImageGenDigestsContext,
+  ImageGenPathsContext,
+  ImageGenRunsContext,
+  InTranscriptTurnContext,
+  RecoveredCallsContext,
+} from '../tool/shared/infrastructure';
+import { imageDigestsShownByImageGen, imagePathsShownByImageGen, sessionLogImageGenRuns, showDrawnByImageGen } from '@kortix/sdk';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
@@ -1644,6 +1651,22 @@ function TurnToolBlocks(
     () => (working ? NO_RECOVERED_CALLS : recoveredShellFailures(turnBlocks(turn))),
     [turn, working],
   );
+  // D5: a `show` of an image this turn's `image_gen` already drew does not draw it again.
+  // Read from the segments, not the raw blocks: a script's nested call (a v2 `nested_part`
+  // block) is a real `image_gen` call there. Keyed by its content so the context keeps one
+  // identity across stream frames.
+  // R38: the same bytes at another path (a Drive copy) count too, by sha256.
+  const [imageGenPathsKey, imageGenDigestsKey] = useMemo(() => {
+    const blocks = segments.flatMap((s) => (s.kind === 'burst' || s.kind === 'show-group' ? s.blocks : [s.block]));
+    return [[...imagePathsShownByImageGen(blocks)].join('\n'), [...imageDigestsShownByImageGen(blocks)].join('\n')];
+  }, [segments]);
+  const imageGenPaths = useMemo(() => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []), [imageGenPathsKey]);
+  const imageGenDigests = useMemo(() => new Set(imageGenDigestsKey ? imageGenDigestsKey.split('\n') : []), [imageGenDigestsKey]);
+  // R38: consecutive image_gen deliverables draw as one grid at the first call, live and settled.
+  const imageGenRuns = useMemo(
+    () => sessionLogImageGenRuns(segments, { paths: imageGenPaths, digests: imageGenDigests }),
+    [segments, imageGenPaths, imageGenDigests],
+  );
   const renderSegment = (segment: TurnSegments[number]) => {
     const key = turnSegmentKey(segment);
     if (key === null) return null;
@@ -1691,6 +1714,10 @@ function TurnToolBlocks(
       // See `TurnLiveContext`.
       <TurnLiveContext.Provider value={working}>
        <RecoveredCallsContext.Provider value={recovered}>
+       <ImageGenPathsContext.Provider value={imageGenPaths}>
+       <ImageGenDigestsContext.Provider value={imageGenDigests}>
+       <ImageGenRunsContext.Provider value={imageGenRuns}>
+       <InTranscriptTurnContext.Provider value>
         <div className="space-y-3">
           {/* One keyed array in both states, so the hoisted deliverables and
               the final text keep their instances at settle: a `show` iframe
@@ -1708,6 +1735,10 @@ function TurnToolBlocks(
               ]
             : segments.map(renderSegment)}
         </div>
+       </InTranscriptTurnContext.Provider>
+       </ImageGenRunsContext.Provider>
+       </ImageGenDigestsContext.Provider>
+       </ImageGenPathsContext.Provider>
        </RecoveredCallsContext.Provider>
       </TurnLiveContext.Provider>
     )}
@@ -1758,6 +1789,12 @@ function TurnSegment({
   disableNavigation: boolean | undefined;
   conversationDensity: ConversationDensity;
 }) {
+  // A `show` whose every file this turn's `image_gen` already drew renders nothing,
+  // not even ToolPartRenderer's wrapper (it would leave a gap in the stack).
+  const imageGenPaths = useContext(ImageGenPathsContext);
+  const imageGenDigests = useContext(ImageGenDigestsContext);
+  const imageGenRuns = useContext(ImageGenRunsContext);
+  const drawnByImageGen = (call: ToolCallBlock) => showDrawnByImageGen(call, imageGenPaths, imageGenDigests);
   if (segment.kind === 'burst') {
     return (
       <ActivityBurst
@@ -1771,7 +1808,8 @@ function TurnSegment({
     );
   }
   if (segment.kind === 'show-group') {
-    const visible = segment.blocks.filter(shouldShowToolPart);
+    const visible = segment.blocks.filter((block) => shouldShowToolPart(block) && !drawnByImageGen(block));
+    if (visible.length === 0) return null;
     if (visible.length === 1) {
       return (
         <ToolPartRenderer call={visible[0]} sessionId={sessionId} disableNavigation={disableNavigation} />
@@ -1780,7 +1818,10 @@ function TurnSegment({
     return <ShowGroupRenderer calls={visible} sessionId={sessionId} disableNavigation={disableNavigation} />;
   }
   if (segment.kind === 'standalone') {
-    if (!shouldShowToolPart(segment.block)) return null;
+    if (!shouldShowToolPart(segment.block) || drawnByImageGen(segment.block)) return null;
+    // A later call of an image_gen run draws in the first call's grid (R38).
+    const run = imageGenRuns.get(segment.block.id);
+    if (run && run[0] !== segment.block) return null;
     return (
       <ToolPartRenderer
         call={segment.block}
