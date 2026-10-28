@@ -52,19 +52,36 @@ export function SessionGoalIndicator() {
   });
 
   if (gate.enabled && projectId && sessionId && !isLoading && !goal) {
+    // Asking sends a message into this chat, so the person confirms first.
     return (
-      <Hint label={t('makeGoal')}>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t('makeGoal')}
-          disabled={makeGoal.isPending || makeGoal.isSuccess}
-          onClick={() => makeGoal.mutate()}
-          data-testid="session-make-goal"
-        >
-          <TargetIcon className="text-muted-foreground size-4" />
-        </Button>
-      </Hint>
+      <Popover open={open} onOpenChange={setOpen}>
+        <Hint label={t('makeGoal')}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t('makeGoal')}
+              disabled={makeGoal.isPending || makeGoal.isSuccess}
+              data-testid="session-make-goal"
+            >
+              <TargetIcon className="text-muted-foreground size-4" />
+            </Button>
+          </PopoverTrigger>
+        </Hint>
+        <PopoverContent align="end" className="flex w-72 flex-col gap-3 p-4">
+          <p className="text-foreground text-sm font-medium">{t('makeGoal')}</p>
+          <p className="text-muted-foreground text-xs">{t('makeGoalConfirm')}</p>
+          <Button
+            size="sm"
+            className="w-fit"
+            disabled={makeGoal.isPending}
+            onClick={() => makeGoal.mutate(undefined, { onSettled: () => setOpen(false) })}
+            data-testid="session-make-goal-confirm"
+          >
+            {t('makeGoalSend')}
+          </Button>
+        </PopoverContent>
+      </Popover>
     );
   }
   if (!goal || !role || !projectId) return null;

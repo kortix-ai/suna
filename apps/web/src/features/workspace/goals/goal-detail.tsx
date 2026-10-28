@@ -6,13 +6,11 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Textarea } from '@kortix/ui/textarea';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import Loading from '@kortix/ui/loading';
-import { uiRoutes, useUiViewerId } from '@kortix/ui';
+import { uiRoutes } from '@kortix/ui';
 import {
   formatGoalTime,
-  goalAssignedTo,
+  goalLastWake,
   GoalHealthDot,
   goalOpenAsks,
   goalProgress,
@@ -20,9 +18,10 @@ import {
   ProjectPageHeader,
   useGoalClock,
   useGoalIssueText,
+  useGoalPerson,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { replyToProjectGoal, stopProjectGoal, type ProjectGoal } from '@kortix/sdk';
+import { stopProjectGoal, type ProjectGoal } from '@kortix/sdk';
 import { useProjectGoalFiles, useProjectGoals, useProjectSession } from '@kortix/sdk/react';
 import { useMutation } from '@tanstack/react-query';
 import { ArrowLeftIcon, CheckCircleIcon, CircleIcon, FolderOpenIcon, ShareNetworkIcon } from '@phosphor-icons/react';
@@ -125,7 +124,7 @@ function GoalBody({
   const doc = goal.goal;
   const progress = goalProgress(doc);
   const asks = goalOpenAsks(doc);
-  const viewerId = useUiViewerId();
+  const personOf = useGoalPerson(projectId);
   const driveHref = uiRoutes().drive(projectId);
   const fileHref = (relative: string) =>
     driveHref ? `${driveHref}?path=${encodeURIComponent(`${goal.folder}/${relative.split('/').slice(0, -1).join('/')}`.replace(/\/$/, ''))}` : null;
@@ -136,79 +135,35 @@ function GoalBody({
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <GoalStatusBadge status={doc?.status} />
-          <span className="text-muted-foreground text-xs">{t(`scope.${goal.scope}`)}</span>
+          {goal.scope === 'personal' ? <span className="text-muted-foreground text-xs">{t('scope.personal')}</span> : null}
           <span className="text-muted-foreground text-xs tabular-nums">{t('criteria', { met: progress.met, total: progress.total })}</span>
         </div>
         {doc?.summary ? <p className="text-foreground text-sm">{doc.summary}</p> : null}
         <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
           <dt>{t('assignedUser')}</dt>
           <dd className="text-foreground">
-            {!doc?.assigned_user ? '—' : goalAssignedTo(goal, viewerId) ? t('you') : t('anotherMember')}
+            {personOf(doc?.assigned_user) ?? '—'}
           </dd>
           <dt>{t('assignedAgent')}</dt>
           <dd className="text-foreground">{doc?.agent ?? '—'}</dd>
         </dl>
       </div>
 
-      {doc?.status === 'waiting_on_user' ? (
+      {doc?.status === 'waiting_on_user' || asks.length > 0 ? (
         <Section title={t('needsYou')}>
-          <ReplyBox projectId={projectId} goal={goal} question={doc.waiting_on ?? null} />
-        </Section>
-      ) : null}
-
-      <Section title={t('healthTitle')}>
-        <div className="flex flex-col gap-2 text-sm" data-testid="goal-health">
-          <div className="flex items-center gap-2">
-            <GoalHealthDot goal={goal} />
-            <span className="text-foreground">{t(`health.${goal.health.state}`)}</span>
-          </div>
-          {goal.health.issues.map((issue) => (
-            <p key={issue} className="text-muted-foreground pl-4 text-xs">
-              {issueText(issue, goal)}
-            </p>
-          ))}
-          <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pl-4 text-xs">
-            <dt>{t('heartbeat')}</dt>
-            <dd className="text-foreground">
-              {heartbeat?.state === 'active' && heartbeat.next_fire_at
-                ? t('nextWake', { time: formatGoalTime(heartbeat.next_fire_at, locale, now) })
-                : heartbeat?.state === 'paused'
-                  ? t('heartbeatPaused')
-                  : t('noWake')}
-            </dd>
-            <dt>{t('lastWakeLabel')}</dt>
-            <dd className="text-foreground">{formatGoalTime(heartbeat?.last_fired_at, locale, now)}</dd>
-            {doc?.format === 'goal.md' ? (
-              <>
-                <dt>{t('wakesToday')}</dt>
-                <dd className="text-foreground tabular-nums">
-                  {t('ofMax', {
-                    count: doc.wake_day === new Date(now).toISOString().slice(0, 10) ? (doc.wake_count ?? 0) : 0,
-                    max: doc.max_wakes_per_day ?? 12,
-                  })}
-                </dd>
-                <dt>{t('sessions')}</dt>
-                <dd className="text-foreground tabular-nums">
-                  {t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}
-                </dd>
-              </>
-            ) : null}
-          </dl>
-        </div>
-      </Section>
-
-      {asks.length > 0 ? (
-        <Section title={t('needsYou')}>
-          <ul className="flex flex-col gap-1 text-sm">
-            {asks.map((ask) => (
-              <li key={ask.id} className="flex items-baseline justify-between gap-3">
-                <span className="text-foreground min-w-0">{ask.title}</span>
-                {ask.due ? (
-                  <span className="text-muted-foreground shrink-0 text-xs">{t('due', { time: formatGoalTime(ask.due, locale, now) })}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          {asks.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-sm">
+              {asks.map((ask) => (
+                <li key={ask.id} className="flex items-baseline justify-between gap-3">
+                  <span className="text-foreground min-w-0">{ask.title}</span>
+                  {ask.due ? (
+                    <span className="text-muted-foreground shrink-0 text-xs">{t('due', { time: formatGoalTime(ask.due, locale, now) })}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {doc?.status === 'waiting_on_user' ? <WaitingOn projectId={projectId} goal={goal} question={doc.waiting_on ?? null} /> : null}
         </Section>
       ) : null}
 
@@ -256,6 +211,47 @@ function GoalBody({
           </ul>
         </Section>
       ) : null}
+
+      <Section title={t('healthTitle')}>
+        <div className="flex flex-col gap-2 text-sm" data-testid="goal-health">
+          <div className="flex items-center gap-2">
+            <GoalHealthDot goal={goal} />
+            <span className="text-foreground">{t(`health.${goal.health.state}`)}</span>
+          </div>
+          {goal.health.issues.map((issue) => (
+            <p key={issue} className="text-muted-foreground pl-4 text-xs">
+              {issueText(issue, goal)}
+            </p>
+          ))}
+          <dl className="text-muted-foreground grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pl-4 text-xs">
+            <dt>{t('heartbeat')}</dt>
+            <dd className="text-foreground">
+              {heartbeat?.state === 'active' && heartbeat.next_fire_at
+                ? t('nextWake', { time: formatGoalTime(heartbeat.next_fire_at, locale, now) })
+                : heartbeat?.state === 'paused'
+                  ? t('heartbeatPaused')
+                  : t('noWake')}
+            </dd>
+            <dt>{t('lastWakeLabel')}</dt>
+            <dd className="text-foreground">{formatGoalTime(goalLastWake(goal), locale, now)}</dd>
+            {doc?.format === 'goal.md' ? (
+              <>
+                <dt>{t('wakesToday')}</dt>
+                <dd className="text-foreground tabular-nums">
+                  {t('ofMax', {
+                    count: doc.wake_day === new Date(now).toISOString().slice(0, 10) ? (doc.wake_count ?? 0) : 0,
+                    max: doc.max_wakes_per_day ?? 12,
+                  })}
+                </dd>
+                <dt>{t('sessions')}</dt>
+                <dd className="text-foreground tabular-nums">
+                  {t('ofMax', { count: doc.sessions.length, max: doc.max_sessions ?? 10 })}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </Section>
 
       {doc?.format === 'goal.json' ? (
       <Section title={t('items')}>
@@ -368,44 +364,19 @@ function LinkTarget({ link, folder, driveHref }: { link: string; folder: string;
   );
 }
 
-/** The assigned user's answer: queued into the owner session, which wakes with it. */
-function ReplyBox({ projectId, goal, question }: { projectId: string; goal: ProjectGoal; question: string | null }) {
+/** What the goal waits on, and the way to answer: in the chat of the session that asked. */
+function WaitingOn({ projectId, goal, question }: { projectId: string; goal: ProjectGoal; question: string | null }) {
   const t = useTranslations('goals');
-  const [text, setText] = useState('');
-  const reply = useMutation({
-    mutationFn: () => replyToProjectGoal(projectId, goal, text.trim()),
-    onSuccess: () => {
-      setText('');
-      successToast(t('replySent'));
-    },
-    onError: () => errorToast(t('replyError')),
-  });
+  const href = goal.coordinatorSessionId ? uiRoutes().session(projectId, goal.coordinatorSessionId) : null;
   return (
-    <form
-      className="flex flex-col gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (text.trim()) reply.mutate();
-      }}
-    >
+    <div className="flex flex-col items-start gap-3">
       {question ? <p className="text-foreground text-sm">{question}</p> : null}
-      <Textarea
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder={t('replyPlaceholder')}
-        aria-label={t('reply')}
-        rows={3}
-      />
-      <Button
-        type="submit"
-        size="sm"
-        className="w-fit"
-        disabled={!text.trim() || reply.isPending || !goal.coordinatorSessionId}
-      >
-        {reply.isPending ? <Loading className="size-4 shrink-0" /> : null}
-        {t('reply')}
-      </Button>
-    </form>
+      {href ? (
+        <Button asChild size="sm" variant="secondary">
+          <Link href={href}>{t('answerInChat')}</Link>
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

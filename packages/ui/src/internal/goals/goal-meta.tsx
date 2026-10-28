@@ -12,6 +12,12 @@ import { formatFireTime } from '../reminders/reminder-format';
 import { useTranslations } from '../../i18n';
 import { StatusBadge, StatusDot, type StatusTone } from '../../primitives/status';
 import { uiRoutes } from '../../lib/routes';
+import { useUiViewerId } from '../../providers/ui-provider';
+import { useAccountMembers } from '../account-hub/use-account-members';
+import { useNewProjectSession } from '../hooks/projects/use-new-project-session';
+import { MAKE_GOAL_PROMPT } from '@kortix/sdk';
+import { useProjectAccountId } from '@kortix/sdk/react';
+import { useCallback, useMemo } from 'react';
 
 const STATUS_TONE: Record<ProjectGoalStatus, StatusTone> = {
   draft: 'neutral',
@@ -55,11 +61,49 @@ export function goalOpenAsks(goal: ProjectGoalDocument | null): ProjectGoalItem[
   return (goal?.items ?? []).filter((i) => i.kind === 'ask' && i.status === 'open' && i.owner !== 'agent');
 }
 
-/** The goal needs a person: it waits on its assigned user, has an open ask, or a health issue. */
+/** The goal waits on a person: its state is `waiting_on_user`, or it has an open ask. */
 export function goalNeedsYou(goal: ProjectGoal): boolean {
-  if (goal.health.state === 'attention') return true;
   if (goal.health.state === 'closed') return false;
   return goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal).length > 0;
+}
+
+/** The goal runs into a problem no person was asked about: a health issue (no heartbeat, a failed wake, …). */
+export function goalNeedsAttention(goal: ProjectGoal): boolean {
+  return goal.health.state === 'attention' && !goalNeedsYou(goal);
+}
+
+/** When the goal last woke: the heartbeat's last run, else the wake GOAL.md records. */
+export function goalLastWake(goal: Pick<ProjectGoal, 'goal' | 'heartbeat'>): string | null {
+  return goal.heartbeat?.last_fired_at ?? goal.goal?.last_wake_at ?? null;
+}
+
+/** Who a goal is for, by name: "You", the member's email, else "A teammate". */
+export function useGoalPerson(projectId: string) {
+  const t = useTranslations('goals');
+  const viewerId = useUiViewerId();
+  const members = useAccountMembers(useProjectAccountId(projectId) ?? undefined);
+  const emails = useMemo(() => new Map((members.data ?? []).map((m) => [m.user_id, m.email])), [members.data]);
+  return useCallback(
+    (userId: string | null | undefined): string | null =>
+      !userId ? null : userId === viewerId ? t('you') : (emails.get(userId) ?? t('anotherMember')),
+    [emails, viewerId, t],
+  );
+}
+
+/**
+ * Start a goal from its outcome: a new session whose first message is the
+ * outcome plus `MAKE_GOAL_PROMPT`, so the agent writes GOAL.md and its done
+ * criteria (the same request "Make this a goal" sends from a chat).
+ */
+export function useStartGoal(projectId: string) {
+  const newSession = useNewProjectSession(projectId);
+  return useCallback(
+    (outcome: string) =>
+      newSession({
+        create: { pending_prompt: { text: `${outcome.trim()}\n\n${MAKE_GOAL_PROMPT}`, agent: null, model: null, variant: null } },
+      }),
+    [newSession],
+  );
 }
 
 /** The goal is for this person (GOAL.md `assigned_user`). */
