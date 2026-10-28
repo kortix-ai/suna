@@ -77,7 +77,7 @@ A new project starts from the general starter. It commits these files to the def
 
 A new project has no other agent, no trigger and no harness folder. Every new session runs pi.
 
-Kortix adds 12 managed `kortix-*` skills to every session when it boots, `kortix-cli` among them. They overwrite a committed copy with the same name. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
+Kortix adds its managed `kortix-*` skills to every session when it boots (19 today, `kortix-cli` among them). A skill tied to a feature flag, such as `kortix-goals` or `kortix-rooms`, is added only while that flag is on. They overwrite a committed copy with the same name. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
 
 ### Add a reflection loop
 

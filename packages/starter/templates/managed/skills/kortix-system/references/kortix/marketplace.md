@@ -119,15 +119,16 @@ history cleaner and avoids half-updated skill sets.
 
 ## Default Starter Skills
 
-New projects are scaffolded from the minimal runtime floor, then selected
-starter skills are installed through the marketplace pipeline. This means the
-skills show as installed because the lock records them, not because the UI keeps
-a separate "starter included" flag.
+A new project gets the general-knowledge skill kit committed into its repo
+under `skills/`: `agent-browser`, `convert-documents-to-markdown`,
+`design-foundations`, `docx`, `pdf`, `presentations`,
+`web-publishing-and-deployments`, `webapp`, `website-building` and `xlsx`.
+They are plain project files, not marketplace installs: the marketplace lock
+does not list them, and a project changes or deletes them like any other file.
 
-Default starter skills are intentionally optional skills, not Kortix-managed
-runtime floor files. The current starter selection is biased toward broadly
-useful knowledge work: research, reports, document review, PDF, DOCX, XLSX,
-presentations, website building, and browser automation.
+They are optional skills, not Kortix-managed runtime files. Removing one
+removes it from the project; the managed `kortix-*` skills are added at boot
+whatever the repo holds.
 
 ## Kortix-Managed vs Starter Skills
 
