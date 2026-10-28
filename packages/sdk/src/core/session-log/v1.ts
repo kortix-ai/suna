@@ -66,7 +66,10 @@
  *   producer `kortix-v1-import`) marks a v1-derived message. On one, an `opencode` or `pi`
  *   harness block's `data` is the v1 part and passes through. On a native v2 record (no such
  *   ext, as the pi adapter writes), `toV1` skips `system` and `context` messages (an old
- *   client would draw them as user bubbles) and never passes a harness block's `data` through.
+ *   client would draw them as user bubbles) and never passes a harness block's `data` through,
+ *   except a `nested_part` block: a tool call a codemode script made, which the model never saw,
+ *   as `data: { parent_call_id, part }`, `part` its v1 tool part without ids. It gives `part`
+ *   back under the block's ids, so a reload draws the part the runtime published live.
  *   A native completed call's `state.metadata` is its display data (`result.details`, else the
  *   `details` of its adapter's ext: pi), as the harness's own v1 part carries it.
  * - Output never aliases input: `fromV1` and `toV1` clone their input.
@@ -255,6 +258,7 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
     };
     case 'harness':
       if (c.fromV1 && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
+      if (b.kind === 'nested_part' && isObj(b.data) && isObj(b.data.part)) return { ...b.data.part, ...base };
       return b.model_visible && b.fallback_text !== undefined ? { ...base, type: 'text', text: b.fallback_text, synthetic: true } : undefined;
     case 'subtask': return undefined;
   }

@@ -621,6 +621,18 @@ describe('toV1 on native v2 records', () => {
     expect(row.parts.some((p) => (p as { anything?: boolean }).anything)).toBe(false);
   });
 
+  test('a nested_part block (a script\'s nested call, model-invisible) is its v1 part under the block\'s ids, in block order, on any harness', () => {
+    const log = json(fromV1(piFixture(), { harness: 'pi' }));
+    delete log.threads[0].ext;
+    const m = log.threads[0].messages[1];
+    m.producer = { harness: 'pi', harness_version: '1.2.0', adapter_version: '1.2.0' };
+    const part = { type: 'tool', callID: 'call_s/1', tool: 'image_gen', state: { status: 'completed', input: { prompts: ['a'] }, output: '{"images":[]}', title: 'image_gen', metadata: {}, time: { start: 1, end: 2 } } };
+    m.blocks.splice(1, 0, { type: 'harness', id: 'h_nested', harness: 'pi', kind: 'nested_part', data: { parent_call_id: 'call_s', part: { ...part, id: 'stale', messageID: 'stale' } }, model_visible: false });
+    const row = toV1(log).rows.find((r) => r.info.id === m.message_id)!;
+    const sessionID = (row.info as { sessionID?: string }).sessionID;
+    expect(row.parts[1] as unknown).toEqual({ ...part, id: 'h_nested', messageID: m.message_id, ...(sessionID !== undefined && { sessionID }) });
+  });
+
   test('a native tool call: its display data is the v1 state.metadata, as the harness v1 part has it (result.details, else the adapter ext details)', () => {
     const log = JSON.parse(readFileSync(join(FIXTURE_DIR, 'pi.v2.json'), 'utf8')) as SessionLog;
     const parts = toV1(log).rows.flatMap((r) => r.parts as Array<{ type: string; tool?: string; state?: { status: string; metadata?: unknown } }>);

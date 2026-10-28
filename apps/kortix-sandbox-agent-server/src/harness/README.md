@@ -1055,10 +1055,15 @@ default: the other tools stay declared), `only` (requests declare codemode alone
 - **Session log.** The call is `kind: 'code'`. `result.details` is `{ calls, complete }` from
   pi's bounded `nestedCalls` (256 calls, 8 kB of input each, 32 kB in all, 500-character
   errors, no outputs): display data, never `tool_call` blocks, because the model never saw them.
-  A nested native part is therefore not in the log: the runtime's own transcript has it, and a
-  transcript rebuilt from the log (`toV1`) shows the call only in the codemode part's
-  `metadata.calls`. A `tool_call` block takes the v1 part with its own call id first, then the
-  first one with its tool name, so a direct call never takes a nested part's id.
+  A nested native part is a model-invisible harness block after its parent's `tool_call` block:
+  `{ harness: 'pi', kind: 'nested_part', data: { parent_call_id, part }, model_visible: false }`,
+  `part` = the v1 part the runtime published, without ids (adapter 1.2.0). `toV1` gives `part`
+  back under the block's ids, so a cold reload, a share and a restore draw the same card as the
+  live turn, once (the log's row replaces the live row by message id). At rest a nested part
+  still `pending`/`running` is closed as `error` "No result provided", like its parent. modelView
+  and the restore's pi entries skip the block; the restore's v1 transcript keeps it, so the next
+  export finds it again. A `tool_call` block takes the v1 part with its own call id first, then
+  the first one with its tool name, so a direct call never takes a nested part's id.
   `store()` values fold into the root thread's `ext.pi.data.codemode_store`; the restore writes
   both back (`nestedCalls`, one `codemode-store` entry).
 - **Build.** The compiled daemon embeds `quickjs-wasi/quickjs.wasm` (`setEmbeddedQuickJSWasmPath`,

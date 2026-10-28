@@ -26,6 +26,10 @@
  *   attachment: the model never saw it, so a restore must not present it.
  * - Reasoning is display only (C3); its signature stays in `ext.pi`.
  * - A call with no result, at rest, is closed (C2/F11) with pi-ai's own text.
+ * - A codemode script's nested call to a native-part tool (`show`, `image_gen`)
+ *   is a harness block `{ kind: 'nested_part', data: { parent_call_id, part },
+ *   model_visible: false }` after its parent's block: `part` is its v1 part
+ *   without ids, which `toV1` gives back, so a reload draws its card (1.2.0).
  * - An errored or aborted reply is out of context: pi-ai never replays one.
  *   A context edit with no replacement takes a message out of context
  *   (`failed_attempt` for a reply, `retracted` for a user message).
@@ -143,7 +147,7 @@ export interface PiSessionSnapshot {
 }
 
 export const PI_VERSION = PI_HARNESS_VERSION.split('@').pop() ?? PI_HARNESS_VERSION
-export const PI_ADAPTER_VERSION = '1.1.0'
+export const PI_ADAPTER_VERSION = '1.2.0'
 const PRODUCER = { harness: 'pi', harness_version: PI_VERSION, adapter_version: PI_ADAPTER_VERSION }
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const
 /** What pi-ai sends for a call whose result is missing. */
@@ -417,6 +421,19 @@ function deriveThread(input: {
         m.blocks.push(block)
       }
     })
+    // A script's nested call to a native-part tool keeps the part the runtime published for it, after its parent (`toV1` gives it back).
+    for (const part of pool.rest('tool')) {
+      const parent = m.blocks.findLastIndex((b) => b.type === 'tool_call' && String(part.callID).startsWith(`${b.call_id}/`))
+      if (parent < 0) continue
+      let at = parent + 1
+      while (m.blocks[at]?.type === 'harness' && (m.blocks[at] as { kind: string }).kind === 'nested_part') at++
+      const { id, sessionID: _s, messageID: _m, ...rest } = part
+      // At rest, a nested call that never ended is closed like its parent (C2).
+      if (!streaming && (rest.state?.status === 'pending' || rest.state?.status === 'running')) {
+        rest.state = { status: 'error', input: rest.state.input ?? {}, error: PI_NO_RESULT, time: { start: rest.state.time?.start ?? 0, end: rest.state.time?.start ?? 0 } }
+      }
+      m.blocks.splice(at, 0, { type: 'harness', id, harness: 'pi', kind: 'nested_part', data: { parent_call_id: (m.blocks[parent] as ToolCallBlock).call_id, part: rest }, model_visible: false })
+    }
     if (open) {
       m.status = 'streaming'
       m.completed_at = null

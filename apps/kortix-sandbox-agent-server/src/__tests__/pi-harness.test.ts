@@ -32,7 +32,7 @@ import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
-import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { SESSION_LOG_EVENTS, toV1, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
 import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
@@ -4251,6 +4251,9 @@ describe('pi codemode', () => {
       ['image_gen', 'complete'],
       ['show', 'complete'],
     ])
+    // The saved transcript (a cold reload, a restore) gives back each nested part as it was published live.
+    const saved = toV1(log).rows.flatMap((row) => row.parts as unknown as Part[]).filter((p) => p.type === 'tool' && p.tool !== 'codemode')
+    expect(saved).toEqual([cube!, sphere!, show!])
   })
 
   test("the session log maps a direct image_gen call to its own part, not to a script's nested one before it", async () => {

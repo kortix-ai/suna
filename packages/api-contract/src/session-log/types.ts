@@ -284,6 +284,9 @@ export type StepBlock = BlockBase & { type: 'step'; phase: 'start' | 'finish'; e
  * A block only this harness understands. F10: a tool result whose call is gone is kept as
  * `{ harness, kind: 'orphan_output', data: <native payload>, model_visible: false, fallback_text: <its output> }`
  * in its own assistant message (Codex adapter). No dedicated field exists for it.
+ * A tool call a codemode script made (the model saw only the script's call) is kept as
+ * `{ harness, kind: 'nested_part', data: { parent_call_id, part: <its v1 tool part, no ids> }, model_visible: false }`
+ * after its parent's block (pi adapter); `toV1` gives `part` back under the block's ids.
  */
 export type HarnessBlock = BlockBase & { type: 'harness'; harness: string; kind: string; data: unknown; model_visible: boolean; fallback_text?: string }
 
