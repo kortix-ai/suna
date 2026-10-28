@@ -5,7 +5,7 @@
  * image). Native surfaces are host stand-ins; `imageGenView` stays real.
  */
 
-import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, jest, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
@@ -34,6 +34,8 @@ const EN: Record<string, string> = {
   'imageGen.stopped': 'Stopped',
   'imageGen.failed': 'The image was not generated.',
   'imageGen.retryHour': 'Try again in {{count}} hours.',
+  'imageGen.notLoaded': 'The image did not load.',
+  'common.retry': 'Try again',
 };
 mock.module('react-i18next', () => ({
   useTranslation: () => ({
@@ -46,9 +48,11 @@ mock.module('@/components/ui/button', () => ({ Button: host('button') }));
 mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: Text }));
 mock.module('@/components/session/dot-matrix/session-dot-matrix', () => ({ SessionDotMatrix: () => null }));
 mock.module('@/components/session/dot-matrix/use-reduce-motion', () => ({ useReduceMotion: () => false }));
+/** What every `useSandboxImage` mount reports: `error` stands for a load the native loader gave up on. */
+let imagePhase: 'load' | 'error' = 'load';
 mock.module('@/components/session/turn/use-sandbox-image', () => ({
   useSandboxImage: (path: string) => ({
-    phase: 'load',
+    phase: imagePhase,
     source: { uri: `sandbox:${path}` },
     sizeBytes: null,
     attempt: 0,
@@ -81,6 +85,8 @@ beforeAll(async () => {
 afterEach(async () => {
   if (tree) await act(async () => tree?.unmount());
   tree = undefined;
+  imagePhase = 'load';
+  jest.useRealTimers();
 });
 
 const INPUT = { action: 'generate', prompt: 'A paper-cutout fox', size: '1536x1024' };
@@ -150,5 +156,31 @@ describe('ImageGenTool', () => {
     expect(images).toHaveLength(1);
     expect(images[0]!.props.source).toEqual({ uri: 'sandbox:/workspace/output/images/fox.png', headers: undefined });
     expect(texts()).toContain('Loading image');
+  });
+
+  test('the generating frame holds the requested aspect ratio', async () => {
+    await render(call({ status: 'running' }), true);
+    const frame = tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { aspectRatio?: number } | undefined)?.aspectRatio !== undefined) ?? [];
+    expect((frame[0]!.props.style as { aspectRatio: number }).aspectRatio).toBe(1.5);
+  });
+
+  test('a load that keeps failing says so after the retries, and Try again starts over', async () => {
+    jest.useFakeTimers();
+    imagePhase = 'error';
+    const output = JSON.stringify({ path: '/workspace/output/images/fox.png', action: 'generate', size: '1254x836', model: 'gpt-image-2' });
+    await render(call({ status: 'completed', output }), false);
+    expect(texts()).toContain('Loading image');
+    for (let i = 0; i < 21; i++) {
+      await act(async () => {
+        jest.advanceTimersByTime(3000);
+      });
+    }
+    expect(texts()).toContain('The image did not load.');
+    const retry = tree?.root.findAll((node) => node.type === 'button') ?? [];
+    expect(retry).toHaveLength(1);
+    imagePhase = 'load';
+    await act(async () => (retry[0]!.props.onPress as () => void)());
+    expect(texts()).not.toContain('The image did not load.');
+    expect(tree?.root.findAll((node) => node.type === 'image')).toHaveLength(1);
   });
 });

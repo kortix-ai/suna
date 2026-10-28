@@ -1,7 +1,7 @@
 /**
  * `image-gen`. Port of packages/ui `session/tool/tools/image-gen-tool.tsx`
  * and its frame (`files/renderers/image-frame.tsx`); the state mapping is
- * `imageGenView` (`lib/session/tools/image-gen-view.ts`, tests ported).
+ * `imageGenView` from `@kortix/sdk`, the one both cards read.
  *
  * No disclosure row: the card is the image.
  * - generating: a flat `muted` frame at the requested aspect ratio, the
@@ -22,13 +22,15 @@
  *   suggestion only;
  * - the native image loader cannot tell a waking sandbox's 503 from any other
  *   failure, so a failed load retries every 3 s for about a minute before it
- *   says the image did not load (web polls only on a not-ready 503).
+ *   says the image did not load, with a Try again button (web polls only on a
+ *   not-ready 503).
  */
 
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
+import { formatImageGenElapsed, imageGenRetryDelay, imageGenView } from '@kortix/sdk';
 import { formatMegabytes } from '@kortix/sdk/react';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
@@ -36,15 +38,12 @@ import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-moti
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { aspectRatioValue, formatElapsed, imageGenView, retryDelay } from '@/lib/session/tools/image-gen-view';
 import { webSpace } from '@/lib/session/user-message';
 import { TurnLiveContext, isLocalSandboxFilePath, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-/** Web `max-w-md`. */
-const CARD_MAX_WIDTH = 448;
 const WAKE_RETRY_MS = 3000;
 const WAKE_RETRIES = 20;
 const RETRY_KEY = { second: 'imageGen.retrySecond', minute: 'imageGen.retryMinute', hour: 'imageGen.retryHour' } as const;
@@ -68,11 +67,17 @@ function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; st
       </TextShimmer>
       {timed ? (
         <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground, fontVariant: ['tabular-nums'] }]}>
-          {formatElapsed(now - (startedAt ?? mountedAt))}
+          {formatImageGenElapsed(now - (startedAt ?? mountedAt))}
         </Text>
       ) : null}
     </View>
   );
+}
+
+/** `'3 / 2'` → `1.5`: React Native's `aspectRatio` takes a number; a bad string → `1`. */
+function aspectRatioValue(ratio: string): number {
+  const [w, h] = ratio.split('/').map(Number);
+  return w && h ? w / h : 1;
 }
 
 function Overlay({ children }: { children: ReactNode }) {
@@ -190,7 +195,12 @@ function SandboxImage(props: SandboxImageProps) {
   if (round > WAKE_RETRIES) {
     return (
       <Overlay>
-        <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{t('imageGen.notLoaded')}</Text>
+        <View style={{ alignItems: 'center', gap: TURN_SPACE.gap2 }}>
+          <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{t('imageGen.notLoaded')}</Text>
+          <Button variant="secondary" size="sm" onPress={() => setRound(0)}>
+            <Text>{t('common.retry')}</Text>
+          </Button>
+        </View>
       </Overlay>
     );
   }
@@ -222,7 +232,7 @@ export function ImageGenTool({ call }: ToolProps) {
   let body: ReactNode;
   if (view.phase === 'failed' || view.phase === 'stopped') {
     const error = view.error;
-    const wait = error?.retryAfterSeconds !== undefined ? retryDelay(error.retryAfterSeconds) : null;
+    const wait = error?.retryAfterSeconds !== undefined ? imageGenRetryDelay(error.retryAfterSeconds) : null;
     body = (
       <View style={[plate, { alignItems: 'flex-start', gap: webSpace(1) }]}>
         {error ? (
@@ -297,7 +307,7 @@ export function ImageGenTool({ call }: ToolProps) {
   }
 
   return (
-    <View style={{ width: '100%', maxWidth: CARD_MAX_WIDTH, gap: webSpace(2) }}>
+    <View className="w-full max-w-md" style={{ gap: webSpace(2) }}>
       {body}
       {view.prompt ? (
         <Text numberOfLines={2} style={xs(palette.mutedForeground)}>

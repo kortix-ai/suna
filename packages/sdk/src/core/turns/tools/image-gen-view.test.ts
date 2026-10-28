@@ -1,13 +1,16 @@
-import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
+// Moved from packages/ui `session/tool/tools/image-gen-view.test.ts` (Ruling R15).
 import { describe, expect, test } from 'bun:test';
 
-import type { ToolPart } from '../../../internal/session-types';
+import type { ToolPart } from '../../runtime/client';
+import { toolCallBlock } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
+import * as root from '../../../index';
 import {
-  formatElapsed,
+  formatImageGenElapsed,
+  imageGenPathKey,
+  imageGenRetryDelay,
   imageGenView,
-  imagePathKey,
   imagePathsShownByImageGen,
-  retryDelay,
   showDrawnByImageGen,
   withoutImageGenDuplicates,
 } from './image-gen-view';
@@ -32,6 +35,17 @@ const OUTPUT = JSON.stringify({
   action: 'generate',
   size: '1254x836',
   model: 'gpt-image-2',
+});
+
+test('the root barrel exports the image card mapping', () => {
+  expect(root.imageGenView).toBe(imageGenView);
+  expect(root.showDrawnByImageGen).toBe(showDrawnByImageGen);
+});
+
+test('a legacy output that is a bare image path renders it', () => {
+  const view = imageGenView(call({ status: 'completed', input: INPUT, output: '"/workspace/legacy/out.png"' }));
+  expect(view.phase).toBe('ready');
+  expect(view.imagePath).toBe('/workspace/legacy/out.png');
 });
 
 describe('imageGenView', () => {
@@ -187,17 +201,17 @@ describe('imageGenView', () => {
   });
 });
 
-test('retryDelay picks the largest whole unit', () => {
-  expect(retryDelay(45)).toEqual({ value: 45, unit: 'second' });
-  expect(retryDelay(600)).toEqual({ value: 10, unit: 'minute' });
-  expect(retryDelay(7200)).toEqual({ value: 2, unit: 'hour' });
+test('imageGenRetryDelay picks the largest whole unit', () => {
+  expect(imageGenRetryDelay(45)).toEqual({ value: 45, unit: 'second' });
+  expect(imageGenRetryDelay(600)).toEqual({ value: 10, unit: 'minute' });
+  expect(imageGenRetryDelay(7200)).toEqual({ value: 2, unit: 'hour' });
 });
 
-test('formatElapsed prints minutes and zero-padded seconds', () => {
-  expect(formatElapsed(0)).toBe('0:00');
-  expect(formatElapsed(42_900)).toBe('0:42');
-  expect(formatElapsed(125_000)).toBe('2:05');
-  expect(formatElapsed(-5)).toBe('0:00');
+test('formatImageGenElapsed prints minutes and zero-padded seconds', () => {
+  expect(formatImageGenElapsed(0)).toBe('0:00');
+  expect(formatImageGenElapsed(42_900)).toBe('0:42');
+  expect(formatImageGenElapsed(125_000)).toBe('2:05');
+  expect(formatImageGenElapsed(-5)).toBe('0:00');
 });
 
 describe('one image renders once (D5)', () => {
@@ -211,24 +225,32 @@ describe('one image renders once (D5)', () => {
   });
 
   test('a show path matches with or without the /workspace prefix', () => {
-    expect(imagePathKey('/workspace/output/images/fox.png')).toBe(imagePathKey('output/images/fox.png'));
+    expect(imageGenPathKey('/workspace/output/images/fox.png')).toBe(imageGenPathKey('output/images/fox.png'));
   });
 
   test('a show of only that image is drawn already; a show that adds a PDF is not', () => {
     const paths = imagePathsShownByImageGen([imageGen]);
-    expect(showDrawnByImageGen({ type: 'image', path: '/workspace/output/images/fox.png' }, paths)).toBe(true);
+    expect(showDrawnByImageGen(show({ type: 'image', path: '/workspace/output/images/fox.png' }), paths)).toBe(true);
     const items = [
       { type: 'image', path: 'output/images/fox.png' },
       { type: 'file', path: '/workspace/report.pdf' },
     ];
-    expect(showDrawnByImageGen({ items }, paths)).toBe(false);
-    expect(showDrawnByImageGen({ items: JSON.stringify(items) }, paths)).toBe(false);
+    expect(showDrawnByImageGen(show({ items }), paths)).toBe(false);
+    expect(showDrawnByImageGen(show({ items: JSON.stringify(items) }), paths)).toBe(false);
     expect(withoutImageGenDuplicates(items, paths)).toEqual([{ type: 'file', path: '/workspace/report.pdf' }]);
+  });
+
+  test('only a show call can be drawn already: show_user and show-user count, other tools never do', () => {
+    const paths = imagePathsShownByImageGen([imageGen]);
+    const input = { type: 'image', path: '/workspace/output/images/fox.png' };
+    expect(showDrawnByImageGen(call({ status: 'completed', input, output: '' }, 'show_user'), paths)).toBe(true);
+    expect(showDrawnByImageGen(call({ status: 'completed', input, output: '' }, 'show-user'), paths)).toBe(true);
+    expect(showDrawnByImageGen(call({ status: 'completed', input, output: '' }, 'read'), paths)).toBe(false);
   });
 
   test('nothing is dropped without an image_gen image', () => {
     const paths = imagePathsShownByImageGen([show({ type: 'image', path: '/workspace/x.png' })]);
     expect(paths.size).toBe(0);
-    expect(showDrawnByImageGen({ type: 'image', path: '/workspace/x.png' }, paths)).toBe(false);
+    expect(showDrawnByImageGen(show({ type: 'image', path: '/workspace/x.png' }), paths)).toBe(false);
   });
 });

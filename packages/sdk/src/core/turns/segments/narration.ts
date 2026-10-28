@@ -23,18 +23,8 @@ import type { ToolCallBlock } from '../../session-log/types';
 import { inputPath, type ToolKind, toolKind } from '../tool-kind';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
+import { safeHttpUrl } from '../safe-url';
 import { stripTrailingSlashes } from '../text-scan';
-
-/** An absolute http(s) URL, normalised, or `null` for anything else. */
-function safeHttpUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 export type StepFamily =
   | 'explore'

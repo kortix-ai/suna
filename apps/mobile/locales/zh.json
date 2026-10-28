@@ -1271,11 +1271,8 @@
     "failed": "图像未生成。",
     "notLoaded": "图像未能加载。",
     "tapToLoad": "轻点加载（{{size}}）",
-    "retrySecond_one": "{{count}}秒后重试。",
     "retrySecond_other": "{{count}}秒后重试。",
-    "retryMinute_one": "{{count}}分钟后重试。",
     "retryMinute_other": "{{count}}分钟后重试。",
-    "retryHour_one": "{{count}}小时后重试。",
     "retryHour_other": "{{count}}小时后重试。"
   }
 }

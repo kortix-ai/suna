@@ -107,8 +107,8 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitiv
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
-import { ImageGenPathsContext, InTranscriptTurnContext, partInput, RecoveredCallsContext } from '../tool/shared/infrastructure';
-import { imagePathsShownByImageGen, showDrawnByImageGen } from '../tool/tools/image-gen-view';
+import { ImageGenPathsContext, InTranscriptTurnContext, RecoveredCallsContext } from '../tool/shared/infrastructure';
+import { imagePathsShownByImageGen, showDrawnByImageGen } from '@kortix/sdk';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
 import { cn } from '../../lib/utils';
@@ -1773,8 +1773,7 @@ function TurnSegment({
   // A `show` whose every file this turn's `image_gen` already drew renders nothing,
   // not even ToolPartRenderer's wrapper (it would leave a gap in the stack).
   const imageGenPaths = useContext(ImageGenPathsContext);
-  const drawnByImageGen = (call: ToolCallBlock) =>
-    (call.name === 'show' || call.name === 'show-user' || call.name === 'show_user') && showDrawnByImageGen(partInput(call), imageGenPaths);
+  const drawnByImageGen = (call: ToolCallBlock) => showDrawnByImageGen(call, imageGenPaths);
   if (segment.kind === 'burst') {
     return (
       <ActivityBurst

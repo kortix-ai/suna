@@ -43,7 +43,9 @@ import {
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
+  imagePathsShownByImageGen,
   shouldShowToolPart,
+  showDrawnByImageGen,
   type SessionLogTurn,
 } from '@kortix/sdk';
 import type { PermissionRequest, QuestionRequest, SessionStatus } from '@/lib/session/types';
@@ -73,8 +75,6 @@ import {
   type TurnSegment,
 } from '@/lib/session/turn-body';
 import { turnDurationMs } from '@/lib/session/turn-meta';
-import { partInput } from '@/lib/session/tool-part-accessors';
-import { imagePathsShownByImageGen, showDrawnByImageGen } from '@/lib/session/tools/image-gen-view';
 import type { ChangeItem } from '@/lib/session/session-change-requests';
 import { BUSY_RETRY_LABEL } from '@/lib/session/busy-status';
 import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/session/user-message';
@@ -100,8 +100,6 @@ const TURN_STACK_GAP = webSpace(2.5);
 const SEGMENT_STACK_GAP = webSpace(3);
 /** Web busy slot / answered-question list `space-y-2`. */
 const SMALL_STACK_GAP = webSpace(2);
-/** The tool names the `show` card renders. */
-const SHOW_TOOLS = new Set(['show', 'show_user', 'show-user']);
 
 /** One stable reference for every burst (`ActivityBurst` memo compares it). */
 const displayPath = (path: string) => toDisplayPath(path);
@@ -398,7 +396,7 @@ function SessionTurnImpl({
       if (segment.kind === 'standalone') {
         if (!shouldShowToolPart(segment.block)) return null;
         // A `show` whose every file is an image drawn above renders nothing, not even the row.
-        if (SHOW_TOOLS.has(segment.block.name) && showDrawnByImageGen(partInput(segment.block), imageGenPaths)) return null;
+        if (showDrawnByImageGen(segment.block, imageGenPaths)) return null;
         return (
           <LoopMotionContext.Provider key={segment.block.id} value={shimmerSegment}>
             <ToolPartRenderer

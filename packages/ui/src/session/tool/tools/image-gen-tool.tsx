@@ -10,9 +10,8 @@ import { ToolRegistry } from '../shared/registry';
 import { ShowFileActions } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
 import { useLocale, useTranslations } from '../../../i18n';
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, isSandboxNotReadyError } from '@kortix/sdk';
 import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { formatElapsed, imageGenView, retryDelay } from './image-gen-view';
 
 /** The one busy signal over the flat frame. Elapsed time counts from the call's start, so a reload keeps it. */
 function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; startedAt?: number | null }) {
@@ -30,7 +29,7 @@ function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; st
       <TextShimmer duration={1} spread={2} className="text-xs">
         {label}
       </TextShimmer>
-      {timed ? <span className="tabular-nums">{formatElapsed(now - (startedAt ?? mountedAt))}</span> : null}
+      {timed ? <span className="tabular-nums">{formatImageGenElapsed(now - (startedAt ?? mountedAt))}</span> : null}
     </span>
   );
 }
@@ -40,7 +39,7 @@ function useRetryLine(seconds: number | undefined): string | null {
   const t = useTranslations('imageGen');
   const locale = useLocale();
   if (seconds === undefined) return null;
-  const { value, unit } = retryDelay(seconds);
+  const { value, unit } = imageGenRetryDelay(seconds);
   // The Serbian catalog is Latin; Intl's `sr` is Cyrillic.
   const when = new Intl.RelativeTimeFormat(locale === 'sr' ? 'sr-Latn' : locale, { numeric: 'always' }).format(value, unit);
   return t('retry', { when });

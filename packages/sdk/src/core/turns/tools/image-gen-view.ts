@@ -1,16 +1,16 @@
 /**
- * What the `image_gen` card draws, from the call alone: no React, no DOM, so
- * the mobile card ports the same mapping and its tests.
+ * What an `image_gen` card draws, from the call alone: pure data, no
+ * framework, so the web card (`@kortix/ui`) and the mobile card read one
+ * mapping.
  *
  * The tool returns `{"path", "action", "size", "model"}`. A gateway refusal
  * throws `Image generation failed (<status>): <message> <suggestion>
  * [Retry after N s.] [<code>]`; the code is the last bracketed token, present
- * only when the gateway sent one (`image_gen.ts`, `refusal`).
+ * only when the gateway sent one (kortixd `image_gen.ts`, `refusal`).
  */
-import type { SessionLogBlock, ToolCallBlock } from '@kortix/sdk';
-import { safeHttpUrl } from '@kortix/shared';
-
-import { parseImageOutput } from '../../media/image-output-path';
+import type { SessionLogBlock, ToolCallBlock } from '../../session-log/types';
+import { safeHttpUrl } from '../safe-url';
+import { normalizeName } from './tool-meta';
 
 export type ImageGenPhase = 'generating' | 'ready' | 'failed' | 'stopped';
 
@@ -50,6 +50,31 @@ const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
  * out.") or an upstream error is a failure, not a stop.
  */
 const STOPPED_TEXTS = new Set(['Operation aborted', 'The operation was aborted.', 'No result provided']);
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
+
+/**
+ * The tool's output → a sandbox path and/or a URL. Every `image_gen` (the
+ * kortixd tool and the retired Replicate tool) returned JSON; a bare,
+ * possibly quoted image path is read too.
+ */
+function imageOutput(text: string): { imagePath: string | null; directUrl: string | null } {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      const p = parsed.path || parsed.image_path || parsed.output_path || null;
+      const url = parsed.replicate_url || parsed.url || parsed.image_url || null;
+      return { imagePath: p ? String(p).trim() : null, directUrl: url ? String(url).trim() : null };
+    }
+  } catch {
+    // not JSON
+  }
+  const bare = text.replace(/^["'`]+|["'`]+$/g, '').trim();
+  if (IMAGE_EXT.test(bare) && !/\s/.test(bare)) {
+    return { imagePath: bare.startsWith('workspace/') ? `/${bare}` : bare, directUrl: null };
+  }
+  return { imagePath: null, directUrl: null };
+}
 
 function gcd(a: number, b: number): number {
   return b ? gcd(b, a % b) : a;
@@ -135,7 +160,7 @@ export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView 
   if (call.status !== 'complete') return live === false ? { ...view, phase: 'stopped' } : view;
 
   const text = resultText(call);
-  const { imagePath, directUrl } = parseImageOutput(text);
+  const { imagePath, directUrl } = imageOutput(text);
   // S6: a path means a sandbox file. A URL beside it is never loaded.
   const remote = imagePath ? null : directUrl ? safeHttpUrl(directUrl) : null;
   if (!imagePath && !remote) return { ...view, phase: 'failed', error: failure(text) };
@@ -155,30 +180,30 @@ export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView 
 }
 
 /** The retry wait in the largest whole unit a person reads: `{ value: 2, unit: 'hour' }`. */
-export function retryDelay(seconds: number): { value: number; unit: 'second' | 'minute' | 'hour' } {
+export function imageGenRetryDelay(seconds: number): { value: number; unit: 'second' | 'minute' | 'hour' } {
   if (seconds < 90) return { value: Math.max(1, Math.ceil(seconds)), unit: 'second' };
   if (seconds < 90 * 60) return { value: Math.ceil(seconds / 60), unit: 'minute' };
   return { value: Math.ceil(seconds / 3600), unit: 'hour' };
 }
 
 /** `0:42`, `2:05`. */
-export function formatElapsed(ms: number): string {
+export function formatImageGenElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /** One key per sandbox file, with or without the `/workspace/` prefix. */
-export function imagePathKey(path: string): string {
+export function imageGenPathKey(path: string): string {
   return path.trim().replace(/^\/?workspace\//, '');
 }
 
-/** The images the turn's `image_gen` calls already drew, as `imagePathKey`s. */
+/** The images the turn's `image_gen` calls already drew, as `imageGenPathKey`s. */
 export function imagePathsShownByImageGen(blocks: readonly SessionLogBlock[]): Set<string> {
   const paths = new Set<string>();
   for (const block of blocks) {
     if (block.type !== 'tool_call' || !/^image[-_]gen$/.test(block.name)) continue;
     const view = imageGenView(block);
-    if (view.phase === 'ready' && view.imagePath) paths.add(imagePathKey(view.imagePath));
+    if (view.phase === 'ready' && view.imagePath) paths.add(imageGenPathKey(view.imagePath));
   }
   return paths;
 }
@@ -186,12 +211,18 @@ export function imagePathsShownByImageGen(blocks: readonly SessionLogBlock[]): S
 /** The `show` items an `image_gen` card of the same turn did not draw already. */
 export function withoutImageGenDuplicates<T extends { path?: string }>(items: T[], paths: ReadonlySet<string>): T[] {
   if (!paths.size) return items;
-  return items.filter((item) => !item.path || !paths.has(imagePathKey(item.path)));
+  return items.filter((item) => !item.path || !paths.has(imageGenPathKey(item.path)));
 }
 
-/** True when every file a `show` input names is an image the turn's `image_gen` already drew. */
-export function showDrawnByImageGen(input: Record<string, unknown>, paths: ReadonlySet<string>): boolean {
-  if (!paths.size) return false;
+const SHOW_TOOLS = new Set(['show', 'show_user']);
+
+/**
+ * True when `call` is a `show` / `show_user` and every file it names is an
+ * image the turn's `image_gen` already drew: the host renders nothing for it.
+ */
+export function showDrawnByImageGen(call: ToolCallBlock, paths: ReadonlySet<string>): boolean {
+  if (!paths.size || !SHOW_TOOLS.has(normalizeName(call.name))) return false;
+  const input = inputOf(call);
   let items: unknown = input.items;
   if (typeof items === 'string') {
     try {

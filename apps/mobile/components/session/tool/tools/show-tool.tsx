@@ -29,7 +29,13 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
+import {
+  isShowContentUnavailable,
+  isShowPayloadEmpty,
+  parseLocalhostUrl,
+  withoutImageGenDuplicates,
+  type ShowLoadStatus,
+} from '@kortix/sdk';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -48,7 +54,6 @@ import {
   showRowModel,
   showUnavailableLabel,
 } from '@/lib/session/tools/web-show';
-import { withoutImageGenDuplicates } from '@/lib/session/tools/image-gen-view';
 import { webSpace } from '@/lib/session/user-message';
 import { THEME } from '@/lib/utils/theme';
 import {

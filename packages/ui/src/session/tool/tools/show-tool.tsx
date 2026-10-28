@@ -39,7 +39,7 @@ import {
   useServicePreview,
 } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
-import { showDrawnByImageGen, withoutImageGenDuplicates } from './image-gen-view';
+import { showDrawnByImageGen, withoutImageGenDuplicates } from '@kortix/sdk';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
@@ -229,7 +229,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     () => isShowPayloadEmpty({ items, path, url, content }),
     [items, path, url, content],
   );
-  if (!running && (hasNothingToShow || showDrawnByImageGen(input, drawnByImageGen))) return null;
+  if (!running && (hasNothingToShow || showDrawnByImageGen(call, drawnByImageGen))) return null;
 
   const unavailable = isShowContentUnavailable({
     running,

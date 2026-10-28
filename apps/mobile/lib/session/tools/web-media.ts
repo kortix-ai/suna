@@ -1,7 +1,7 @@
 /**
  * Pure logic behind the media tool renderers: `image-search-tool.tsx`,
  * `video-gen-tool.tsx`, `presentation-gen-tool.tsx`. `image-gen-tool.tsx`
- * reads `image-gen-view.ts`, which uses `parseImageOutput` from here.
+ * reads `imageGenView` from `@kortix/sdk`.
  *
  * Ported from apps/web:
  * - `tool/tools/image-search-tool.tsx` output parsing, tiles, badge;
