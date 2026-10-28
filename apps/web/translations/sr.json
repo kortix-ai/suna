@@ -20805,7 +20805,14 @@
     "sessionModel": "Модел {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Без ограничења · потрошња је неограничена",
-    "tokensSub": "{in} улаз · {out} излаз"
+    "tokensSub": "{in} улаз · {out} излаз",
+    "unknownValue": "Nepoznato",
+    "estimateCoverageUnavailable": "Pokrivenost procene nije dostupna.",
+    "estimatesSeparate": "Stvarna potrošnja iznad je odvojena. Procene se nikada ne dodaju troškovima.",
+    "estimatedUsageValueLabel": "Procenjena vrednost LLM upotrebe (nije račun):",
+    "pricedRequests": "{count} zahteva sa cenom",
+    "unpricedRequests": "{count} zahteva bez cene",
+    "llmEstimateLabel": "LLM procena:"
   },
   "triggerComposer": {
     "every": "Сваких",

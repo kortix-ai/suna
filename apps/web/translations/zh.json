@@ -20805,7 +20805,14 @@
     "sessionModel": "模型 {cost}",
     "sessionSandbox": "沙盒 {cost}",
     "noCapUnlimited": "无上限 · 支出不受限制",
-    "tokensSub": "输入 {in} · 输出 {out}"
+    "tokensSub": "输入 {in} · 输出 {out}",
+    "unknownValue": "未知",
+    "estimateCoverageUnavailable": "无法获取估算覆盖范围。",
+    "estimatesSeparate": "上方的实际支出单独计算。估算从不计入费用。",
+    "estimatedUsageValueLabel": "LLM 估算使用价值(非账单):",
+    "pricedRequests": "{count} 个已计价请求",
+    "unpricedRequests": "{count} 个未计价请求",
+    "llmEstimateLabel": "LLM 估算:"
   },
   "triggerComposer": {
     "every": "每隔",
