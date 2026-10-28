@@ -2803,7 +2803,7 @@
     "signInWithEmail": "メールでログイン",
     "createNewAccount": "新しいアカウントを作成",
     "byContinuingYouAgreeSimple": "続行することで、",
-    "customerLogoNotice": "組織として登録した場合、Kortix はその名称とロゴを顧客として掲載することがあります。legal@kortix.com までご連絡いただければ、いつでも掲載を停止できます。",
+    "customerLogoNotice": "Kortix は、プランを問わず、あなたの組織の名称とロゴを顧客として掲載することがあります。legal@kortix.com までご連絡いただければ、いつでも掲載を停止できます。",
     "phoneVerification": {
       "title": "電話番号を確認",
       "titleOtp": "確認コードを入力",

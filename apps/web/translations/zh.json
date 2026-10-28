@@ -2803,7 +2803,7 @@
     "signInWithEmail": "使用邮箱登录",
     "createNewAccount": "创建新账户",
     "byContinuingYouAgreeSimple": "继续即表示您同意我们的",
-    "customerLogoNotice": "如果您代表组织注册，Kortix 可能会将其名称和标志作为客户展示。您可随时发送邮件至 legal@kortix.com 退出。",
+    "customerLogoNotice": "无论使用何种套餐，Kortix 都可能将您所在组织的名称和标志作为客户展示。您可随时发送邮件至 legal@kortix.com 退出。",
     "phoneVerification": {
       "title": "验证您的手机号码",
       "titleOtp": "输入验证码",

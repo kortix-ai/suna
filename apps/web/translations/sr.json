@@ -2803,7 +2803,7 @@
     "signInWithEmail": "Пријавите се путем е-поште",
     "createNewAccount": "Направи нови налог",
     "byContinuingYouAgreeSimple": "Ако наставите, слажете се са нашим",
-    "customerLogoNotice": "Ако се региструјете за организацију, Kortix може да прикаже њен назив и лого као клијента. Можете се одјавити у сваком тренутку на legal@kortix.com.",
+    "customerLogoNotice": "Kortix може да прикаже назив и лого ваше организације као клијента, на било ком плану. Можете се одјавити у сваком тренутку на legal@kortix.com.",
     "phoneVerification": {
       "title": "Потврдите свој број телефона",
       "titleOtp": "Enter Верификациони код",

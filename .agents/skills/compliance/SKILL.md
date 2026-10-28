@@ -83,20 +83,25 @@ customers. A signed Order keeps the Terms version it names.
    key `auth.customerLogoNotice` for the publicity clause).
 4. Merge to `dev`. The notice ships with the next prod release.
 
-`runTermsNoticeSweep` (`apps/api/src/billing/services/terms-notices.ts`) works
-like the subprocessor sweep: hourly, prod only, once per paid account, Reply-To
-legal@kortix.com, audit event `legal.terms_notice.sent` (`resource_id` =
-`TERMS_VERSION`), and a report per sweep to legal@kortix.com. "Terms notice
-gave only N days" means the release was late: move `TERMS_EFFECTIVE`.
-Free accounts get the notice on the Terms page and in the signup line.
+`runTermsNoticeSweep` (`apps/api/src/billing/services/terms-notices.ts`) runs
+hourly in the billing worker, on prod only. It emails every signed-up user
+once, free or paid (`auth.users` with an email, not deleted, not anonymous),
+at most 2,000 per sweep. Reply-To is legal@kortix.com. Each sent email leaves
+an audit event `legal.terms_notice.sent` (`resource_id` = `TERMS_VERSION`,
+`output_summary.user_id`). legal@kortix.com gets one report when every user
+has the notice, and one per sweep while it runs late: "Terms notice gave only
+N days" means move `TERMS_EFFECTIVE`.
 
 ### Customer logos (Terms section 10, from version 2026-10-28)
 
-Kortix may show an organization customer's name and logo in customer lists.
-It may not publish a quote, case study or endorsement without written
-approval. An opt-out arrives at legal@kortix.com: remove the name and logo
-from Kortix websites within 30 days. Never use a logo before
-`TERMS_EFFECTIVE`, or for a customer whose signed Order excludes it.
+The clause covers every account on every plan, free plans and trials
+included. Kortix may show the name and logo of the customer's organization,
+also one known only from a user's email domain, in customer lists. It never
+publishes the name of an individual person, and never a quote, case study or
+endorsement without written approval. An opt-out arrives at legal@kortix.com:
+remove the name and logo from Kortix websites within 30 days. Never use a
+logo before `TERMS_EFFECTIVE`, or for a customer whose signed Order excludes
+it.
 
 ## Staff access to a customer account (act-as)
 
