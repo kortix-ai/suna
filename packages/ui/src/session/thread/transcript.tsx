@@ -107,7 +107,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../primitiv
 import { useUserPreferencesStore, type ConversationDensity } from '../../internal/stores/user-preferences-store';
 import { SubSessionModal } from './sub-session-modal';
 import { ToolPartRenderer, TurnLiveContext } from '../tool/tool-renderers';
-import { ImageGenPathsContext, partInput, RecoveredCallsContext } from '../tool/shared/infrastructure';
+import { ImageGenPathsContext, InTranscriptTurnContext, partInput, RecoveredCallsContext } from '../tool/shared/infrastructure';
 import { imagePathsShownByImageGen, showDrawnByImageGen } from '../tool/tools/image-gen-view';
 import { recoveredShellFailures } from '../turn/recovered-failures';
 import { type SentAttachment } from '../composer/sent-attachment-previews';
@@ -1647,7 +1647,7 @@ function TurnToolBlocks(
   );
   // D5: a `show` of an image this turn's `image_gen` already drew does not draw it again.
   // Keyed by its content so the context keeps one identity across stream frames.
-  const imageGenPathsKey = useMemo(() => [...imagePathsShownByImageGen(turn.blocks)].join('\n'), [turn]);
+  const imageGenPathsKey = useMemo(() => [...imagePathsShownByImageGen(turnBlocks(turn))].join('\n'), [turn]);
   const imageGenPaths = useMemo(
     () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
     [imageGenPathsKey],
@@ -1700,6 +1700,7 @@ function TurnToolBlocks(
       <TurnLiveContext.Provider value={working}>
        <RecoveredCallsContext.Provider value={recovered}>
        <ImageGenPathsContext.Provider value={imageGenPaths}>
+       <InTranscriptTurnContext.Provider value>
         <div className="space-y-3">
           {/* One keyed array in both states, so the hoisted deliverables and
               the final text keep their instances at settle: a `show` iframe
@@ -1717,6 +1718,7 @@ function TurnToolBlocks(
               ]
             : segments.map(renderSegment)}
         </div>
+       </InTranscriptTurnContext.Provider>
        </ImageGenPathsContext.Provider>
        </RecoveredCallsContext.Provider>
       </TurnLiveContext.Provider>
@@ -1772,7 +1774,7 @@ function TurnSegment({
   // not even ToolPartRenderer's wrapper (it would leave a gap in the stack).
   const imageGenPaths = useContext(ImageGenPathsContext);
   const drawnByImageGen = (call: ToolCallBlock) =>
-    (call.name === 'show' || call.name === 'show-user') && showDrawnByImageGen(partInput(call), imageGenPaths);
+    (call.name === 'show' || call.name === 'show-user' || call.name === 'show_user') && showDrawnByImageGen(partInput(call), imageGenPaths);
   if (segment.kind === 'burst') {
     return (
       <ActivityBurst

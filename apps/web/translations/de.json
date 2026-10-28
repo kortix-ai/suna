@@ -23370,6 +23370,7 @@
     "editing": "Bild wird bearbeitet",
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
-    "failed": "Das Bild wurde nicht erstellt."
+    "failed": "Das Bild wurde nicht erstellt.",
+    "retry": "Versuchen Sie es {when} erneut."
   }
 }

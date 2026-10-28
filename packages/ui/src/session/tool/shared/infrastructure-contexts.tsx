@@ -86,7 +86,14 @@ export const RecoveredCallsContext = createContext<ReadonlySet<string>>(new Set(
  */
 export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
 
-export const ToolDurationContext =createContext<number | undefined>(undefined);
+/**
+ * True inside a transcript turn's steps, where `TurnLiveContext` is a fact
+ * about the owning turn rather than its `false` default. The image card reads
+ * both to tell a stopped generation from one still running.
+ */
+export const InTranscriptTurnContext = createContext(false);
+
+export const ToolDurationContext = createContext<number | undefined>(undefined);
 
 // Background memory plumbing (searches/gets and raw memory/ reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')

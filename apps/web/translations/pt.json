@@ -23370,6 +23370,7 @@
     "editing": "Editando imagem",
     "loading": "Carregando imagem",
     "stopped": "Interrompido",
-    "failed": "A imagem não foi gerada."
+    "failed": "A imagem não foi gerada.",
+    "retry": "Tente novamente {when}."
   }
 }

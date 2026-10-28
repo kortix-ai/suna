@@ -8057,7 +8057,8 @@ const catalog = {
     "editing": "Editing image",
     "loading": "Loading image",
     "stopped": "Stopped",
-    "failed": "The image was not generated."
+    "failed": "The image was not generated.",
+    "retry": "Try again {when}."
   }
 };
 

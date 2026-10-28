@@ -7,6 +7,7 @@ import {
   imageGenView,
   imagePathKey,
   imagePathsShownByImageGen,
+  retryDelay,
   showDrawnByImageGen,
   withoutImageGenDuplicates,
 } from './image-gen-view';
@@ -75,36 +76,67 @@ describe('imageGenView', () => {
       call({
         status: 'error',
         input: INPUT,
-        error: 'Connect Codex to use this model. Connect your ChatGPT account in the model picker, then try again.',
+        error:
+          'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Models, then retry. [provider_not_connected]',
       }),
     );
     expect(view.phase).toBe('failed');
     expect(view.error).toEqual({
       message: 'Connect Codex to use this model.',
-      suggestion: 'Connect your ChatGPT account in the model picker, then try again.',
+      suggestion: 'Connect your ChatGPT account in Models, then retry.',
+      code: 'provider_not_connected',
       connectChatGpt: true,
     });
   });
 
-  test('an error that names the reauth code also offers the connect action', () => {
+  test('the reauth code also offers the connect action', () => {
     const view = imageGenView(
-      call({ status: 'error', input: INPUT, error: 'provider_reauth_required: Your ChatGPT login expired.' }),
+      call({
+        status: 'error',
+        input: INPUT,
+        error: 'Image generation failed (401): The ChatGPT login expired. Reconnect ChatGPT in Models, then retry. [provider_reauth_required]',
+      }),
     );
-    expect(view.phase).toBe('failed');
-    expect(view.error?.connectChatGpt).toBe(true);
-    expect(view.error?.message).toBe('Your ChatGPT login expired.');
+    expect(view.error).toMatchObject({ message: 'The ChatGPT login expired.', code: 'provider_reauth_required', connectChatGpt: true });
   });
 
-  test('a rate limit error is failed without the connect action', () => {
+  test('prose that talks about connecting ChatGPT, with no code, offers no connect action', () => {
     const view = imageGenView(
-      call({ status: 'error', input: INPUT, error: 'Image limit reached. Try again in 2 hours.' }),
+      call({ status: 'error', input: INPUT, error: 'Connect your ChatGPT account to generate images.' }),
     );
     expect(view.phase).toBe('failed');
-    expect(view.error).toEqual({ message: 'Image limit reached.', suggestion: 'Try again in 2 hours.', connectChatGpt: false });
+    expect(view.error?.connectChatGpt).toBe(false);
+    expect(view.error?.code).toBeUndefined();
+  });
+
+  test('a rate limit keeps the retry time and the code out of the text', () => {
+    const view = imageGenView(
+      call({
+        status: 'error',
+        input: INPUT,
+        error:
+          'Image generation failed (429): The ChatGPT image limit is reached. Wait for the limit to reset, then retry. Retry after 7200 s. [image_rate_limited]',
+      }),
+    );
+    expect(view.phase).toBe('failed');
+    expect(view.error).toEqual({
+      message: 'The ChatGPT image limit is reached.',
+      suggestion: 'Wait for the limit to reset, then retry.',
+      code: 'image_rate_limited',
+      retryAfterSeconds: 7200,
+      connectChatGpt: false,
+    });
+  });
+
+  test('a tool refusal with no gateway code stays a plain failure', () => {
+    const view = imageGenView(call({ status: 'error', input: INPUT, error: 'Image limit for this turn reached (10).' }));
+    expect(view.error).toEqual({ message: 'Image limit for this turn reached (10).', connectChatGpt: false });
   });
 
   test('an aborted call maps to stopped', () => {
+    // The tool's own fetch abort (Bun), and pi's tool loop on a stopped turn.
     expect(imageGenView(call({ status: 'error', input: INPUT, error: 'The operation was aborted.' })).phase).toBe('stopped');
+    expect(imageGenView(call({ status: 'error', input: INPUT, error: 'Operation aborted' })).phase).toBe('stopped');
     // A call the run left open, closed at rest by the C2 rule.
     const interrupted: ToolCallBlock = {
       ...call({ status: 'running', input: INPUT }),
@@ -114,6 +146,20 @@ describe('imageGenView', () => {
     const view = imageGenView(interrupted);
     expect(view.phase).toBe('stopped');
     expect(view.error).toBeNull();
+  });
+
+  test('an error that only mentions an interruption or a timeout is a failure, not a stop', () => {
+    expect(imageGenView(call({ status: 'error', input: INPUT, error: 'Upstream connection interrupted.' })).phase).toBe('failed');
+    expect(imageGenView(call({ status: 'error', input: INPUT, error: 'The operation timed out.' })).phase).toBe('failed');
+  });
+
+  test('an open call on a turn that ended is stopped; a live or unknown turn keeps it generating', () => {
+    const running = call({ status: 'running', input: INPUT });
+    expect(imageGenView(running, false).phase).toBe('stopped');
+    expect(imageGenView(running, true).phase).toBe('generating');
+    expect(imageGenView(running).phase).toBe('generating');
+    // A finished call keeps its own outcome whatever the turn says.
+    expect(imageGenView(call({ status: 'completed', input: INPUT, output: OUTPUT }), false).phase).toBe('ready');
   });
 
   test('elapsed time counts from the part start', () => {
@@ -139,6 +185,12 @@ describe('imageGenView', () => {
       imageGenView(call({ status: 'completed', input: INPUT, output: JSON.stringify({ url: 'javascript:alert(1)' }) })).directUrl,
     ).toBeNull();
   });
+});
+
+test('retryDelay picks the largest whole unit', () => {
+  expect(retryDelay(45)).toEqual({ value: 45, unit: 'second' });
+  expect(retryDelay(600)).toEqual({ value: 10, unit: 'minute' });
+  expect(retryDelay(7200)).toEqual({ value: 2, unit: 'hour' });
 });
 
 test('formatElapsed prints minutes and zero-padded seconds', () => {

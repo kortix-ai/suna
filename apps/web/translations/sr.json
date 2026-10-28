@@ -23370,6 +23370,7 @@
     "editing": "Uređivanje slike",
     "loading": "Učitavanje slike",
     "stopped": "Zaustavljeno",
-    "failed": "Slika nije generisana."
+    "failed": "Slika nije generisana.",
+    "retry": "Pokušajte ponovo {when}."
   }
 }

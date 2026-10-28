@@ -8,7 +8,7 @@ export interface ImageFrameProps {
   aspectRatio: string;
   src: string | null;
   alt: string;
-  /** Draws the sheen: the image does not exist yet, or its bytes are on the way. */
+  /** The image does not exist yet, or its bytes are on the way. */
   pending: boolean;
   /** Centered over the frame: the busy line, or a note. */
   label?: ReactNode;
@@ -18,33 +18,24 @@ export interface ImageFrameProps {
 }
 
 /**
- * The box an image takes before, while and after it exists. It holds the
- * requested aspect ratio before any pixel arrives, so the layout does not jump
- * when the image lands, then fades the image in.
+ * The box an image takes before, while and after it exists: a flat `bg-muted`
+ * surface that holds the requested aspect ratio before any pixel arrives, so
+ * the layout does not jump when the image lands, then fades the image in.
+ * The frame itself never moves: the busy signal is the label (one waiting
+ * channel, kortix-brand `layout.md` States).
  */
 export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className }: ImageFrameProps) {
-  const sheen = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [natural, setNatural] = useState<string | null>(null);
 
-  // One slow diagonal sheen, transform only, on the compositor (WAAPI, no
-  // keyframes in a stylesheet). Reduced motion keeps the still frame.
-  useEffect(() => {
-    const el = sheen.current;
-    if (!pending || !el?.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    const animation = el.animate(
-      [{ transform: 'translateX(-100%) skewX(-20deg)' }, { transform: 'translateX(200%) skewX(-20deg)' }],
-      { duration: 1800, easing: 'ease-in-out', iterations: Infinity }, // audit:allow a busy loop like TextShimmer, not a transition: one slow pass reads as waiting
-
-    );
-    return () => animation.cancel();
-  }, [pending]);
-
-  // A new source starts hidden again; a cached one may be complete before React sees `load`.
+  // A new source starts hidden at the requested ratio again; a cached one may
+  // be complete before React sees `load`.
   useEffect(() => {
     const el = img.current;
-    setLoaded(!!el?.complete && el.naturalWidth > 0);
+    const complete = !!el?.complete && el.naturalWidth > 0;
+    setLoaded(complete);
+    setNatural(complete && el ? `${el.naturalWidth} / ${el.naturalHeight}` : null);
   }, [src]);
 
   const onLoad = () => {
@@ -73,14 +64,6 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
       className={cn('bg-muted relative w-full overflow-hidden rounded-md', className)}
       style={{ aspectRatio: natural ?? aspectRatio }}
     >
-      {pending && (
-        <div
-          ref={sheen}
-          aria-hidden
-          className="via-background/60 pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-linear-to-r from-transparent to-transparent"
-          style={{ transform: 'translateX(-100%) skewX(-20deg)' }}
-        />
-      )}
       {image && onOpen ? (
         <button
           type="button"

@@ -2,8 +2,10 @@
  * What the `image_gen` card draws, from the call alone: no React, no DOM, so
  * the mobile card ports the same mapping and its tests.
  *
- * The tool returns `{"path", "action", "size", "model"}` and fails with the
- * gateway's text, `<message> <suggestion>`.
+ * The tool returns `{"path", "action", "size", "model"}`. A gateway refusal
+ * throws `Image generation failed (<status>): <message> <suggestion>
+ * [Retry after N s.] [<code>]`; the code is the last bracketed token, present
+ * only when the gateway sent one (`image_gen.ts`, `refusal`).
  */
 import type { SessionLogBlock, ToolCallBlock } from '@kortix/sdk';
 import { safeHttpUrl } from '@kortix/shared';
@@ -23,14 +25,31 @@ export interface ImageGenView {
   directUrl: string | null;
   /** The call's start (epoch ms), so the elapsed time survives a reload. */
   startedAt: number | null;
-  error: { message: string; suggestion?: string; connectChatGpt: boolean } | null;
+  error: {
+    message: string;
+    suggestion?: string;
+    /** The gateway's stable code (`provider_not_connected`, `image_rate_limited`, …). */
+    code?: string;
+    /** Seconds until the ChatGPT image limit resets (`retry-after`). */
+    retryAfterSeconds?: number;
+    /** True only for the trailing `[provider_not_connected]` / `[provider_reauth_required]` code. */
+    connectChatGpt: boolean;
+  } | null;
 }
 
 const SQUARE = '1 / 1';
-const CONNECT_CODES = /\b(provider_not_connected|provider_reauth_required)\b/;
-const CONNECT_TEXT = /\b(re)?connect\b[^.]*\b(chatgpt|codex)\b/i;
-const LEADING_CODE = /^(?:error:\s*)?(?:[a-z]+(?:_[a-z]+)+:\s*)?/i;
-const STOPPED_TEXT = /\b(aborted|interrupted)\b|^No result provided/i;
+const CONNECT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
+const TRAILING_CODE = /\s*\[([a-z][a-z0-9_]*)\]\s*$/;
+const TRAILING_RETRY = /\s*Retry after (\d+) s\.\s*$/;
+const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
+/**
+ * The exact texts a stop leaves on the call: pi's tool loop when the turn's
+ * signal aborted (`Operation aborted`), the tool's own fetch abort in Bun
+ * (`The operation was aborted.`), pi's close of a call that never returned
+ * (`No result provided`, also `synthetic`). A timeout ("The operation timed
+ * out.") or an upstream error is a failure, not a stop.
+ */
+const STOPPED_TEXTS = new Set(['Operation aborted', 'The operation was aborted.', 'No result provided']);
 
 function gcd(a: number, b: number): number {
   return b ? gcd(b, a % b) : a;
@@ -69,15 +88,31 @@ function inputOf(call: ToolCallBlock): Record<string, unknown> {
 }
 
 function failure(text: string): NonNullable<ImageGenView['error']> {
-  const connectChatGpt = CONNECT_CODES.test(text) || CONNECT_TEXT.test(text);
-  const clean = text.replace(LEADING_CODE, '').trim();
-  // The gateway joins its message and its suggestion with a space: split after the first sentence.
-  const cut = clean.search(/(?<=[.!?])\s+/);
-  if (cut < 0) return { message: clean, connectChatGpt };
-  return { message: clean.slice(0, cut), suggestion: clean.slice(cut).trim(), connectChatGpt };
+  let rest = text.trim();
+  const code = TRAILING_CODE.exec(rest);
+  if (code) rest = rest.slice(0, code.index);
+  const retry = TRAILING_RETRY.exec(rest);
+  if (retry) rest = rest.slice(0, retry.index);
+  rest = rest.replace(REFUSAL_PREFIX, '').trim();
+  const error: NonNullable<ImageGenView['error']> = {
+    message: rest,
+    connectChatGpt: !!code && CONNECT_CODES.has(code[1]!),
+    ...(code && { code: code[1] }),
+    ...(retry && { retryAfterSeconds: Number(retry[1]) }),
+  };
+  // The tool joins the gateway's message and suggestion with a space: split after the first sentence.
+  const cut = rest.search(/(?<=[.!?])\s+/);
+  if (cut < 0) return error;
+  return { ...error, message: rest.slice(0, cut), suggestion: rest.slice(cut).trim() };
 }
 
-export function imageGenView(call: ToolCallBlock): ImageGenView {
+/**
+ * `live`: whether the turn that owns the call still runs, when the host knows
+ * it (the transcript does). A call still open on a turn that ended was stopped:
+ * the transcript hands a call the closure rule closed back as open
+ * (`sessionLogOpenCall`), so its own status cannot say so.
+ */
+export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView {
   const input = inputOf(call);
   const started = call.started_at ? Date.parse(call.started_at) : NaN;
   const view: ImageGenView = {
@@ -93,11 +128,11 @@ export function imageGenView(call: ToolCallBlock): ImageGenView {
 
   if (call.status === 'error') {
     const text = call.result?.error?.message || resultText(call);
-    const stopped = call.result?.error?.code === 'interrupted' || call.result?.synthetic || STOPPED_TEXT.test(text);
+    const stopped = call.result?.error?.code === 'interrupted' || call.result?.synthetic || STOPPED_TEXTS.has(text.trim());
     if (stopped) return { ...view, phase: 'stopped' };
     return { ...view, phase: 'failed', error: failure(text) };
   }
-  if (call.status !== 'complete') return view;
+  if (call.status !== 'complete') return live === false ? { ...view, phase: 'stopped' } : view;
 
   const text = resultText(call);
   const { imagePath, directUrl } = parseImageOutput(text);
@@ -117,6 +152,13 @@ export function imageGenView(call: ToolCallBlock): ImageGenView {
     imagePath,
     directUrl: remote,
   };
+}
+
+/** The retry wait in the largest whole unit a person reads: `{ value: 2, unit: 'hour' }`. */
+export function retryDelay(seconds: number): { value: number; unit: 'second' | 'minute' | 'hour' } {
+  if (seconds < 90) return { value: Math.max(1, Math.ceil(seconds)), unit: 'second' };
+  if (seconds < 90 * 60) return { value: Math.ceil(seconds / 60), unit: 'minute' };
+  return { value: Math.ceil(seconds / 3600), unit: 'hour' };
 }
 
 /** `0:42`, `2:05`. */

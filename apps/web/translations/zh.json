@@ -23370,6 +23370,7 @@
     "editing": "正在编辑图像",
     "loading": "正在加载图像",
     "stopped": "已停止",
-    "failed": "图像未生成。"
+    "failed": "图像未生成。",
+    "retry": "{when}重试。"
   }
 }
