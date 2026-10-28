@@ -49,23 +49,19 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
-        // The root project layout: harness-neutral folders at the root, the
-        // OpenCode-only files under harnesses/opencode, and no .kortix/ folder.
-        for (const path of [
-          'agents/kortix.md',
-          'skills/kortix-cli/SKILL.md',
-          'memory/MEMORY.md',
-          'harnesses/opencode/opencode.jsonc',
-        ]) {
+        // The kortix_version 3 layout: every folder at the root, no harness
+        // folder and no .kortix/ folder.
+        for (const path of ['agents/kortix.md', 'skills/kortix-cli/SKILL.md', 'memory/MEMORY.md']) {
           check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
         }
+        check('no harnesses/ folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
-          'kortix.yaml names the agent file and the OpenCode dir',
-          manifest.includes('file: agents/kortix.md') && manifest.includes('config_dir: harnesses/opencode'),
+          'kortix.yaml is kortix_version 3 and names the agent prompt file',
+          manifest.includes('kortix_version: 3') && manifest.includes('prompt_file: agents/kortix.md'),
           true,
-          manifest.includes('file: agents/kortix.md'),
+          manifest.includes('kortix_version: 3'),
         );
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
@@ -110,7 +106,7 @@ flow('INIT-2', { domain: 'cli', routes: [] }, async (ctx) => {
 
 flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
   await ctx.step(
-    'kortix init --primary opencode --agents claude,cursor -y → chosen agents wired via symlinks + AGENTS.md',
+    'kortix init --primary codex --agents claude,cursor -y → chosen agents wired via symlinks + AGENTS.md',
     async () => {
       const sb = new CliSandbox('init3');
       ctx.track('cli-sandbox', sb.cwd);
@@ -119,23 +115,18 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           'init',
           'wired',
           '--primary',
-          'opencode',
+          'codex',
           '--agents',
           'claude,cursor',
           '-y',
           '--no-git',
         ]);
         check('exit 0', r.exitCode === 0, 0, r.exitCode);
-        // Selected agents' native dirs are symlinks onto the OpenCode config dir;
+        // Selected agents' native dirs are symlinks onto the shared folders;
         // existsSync follows the link, so a resolving path proves it works.
+        check('no .opencode link', !sb.exists('wired/.opencode'), false, sb.exists('wired/.opencode'));
         check(
-          '.opencode → harnesses/opencode resolves',
-          sb.exists('wired/.opencode/opencode.jsonc'),
-          true,
-          sb.exists('wired/.opencode/opencode.jsonc'),
-        );
-        check(
-          '.agents/skills → skills resolves (OpenCode reads it natively)',
+          '.agents/skills → skills resolves (Codex reads it natively)',
           sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
           true,
           sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
@@ -162,8 +153,7 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           false,
           sb.exists('wired/.cursor'),
         );
-        // `.agents/skills` is shared by OpenCode and Codex, so the unselected-tool
-        // check uses pi: it was NOT selected → no .pi link.
+        // pi was NOT selected → no .pi link.
         check(
           'unselected pi not wired',
           !sb.exists('wired/.pi'),
