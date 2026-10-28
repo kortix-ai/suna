@@ -148,6 +148,10 @@ describe('tags and types', () => {
     expect(rowDestination(row({ session_id: 'ses-b' }))).toBe('session');
     const alert = { kind: 'automation_failed', session_id: null } as const;
     expect(
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/admin/loops?notification=n1' })),
+    ).toBe('reminders');
+    // A row stored before 2026-10-28 carries the old path.
+    expect(
       rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
     ).toBe('reminders');
     expect(

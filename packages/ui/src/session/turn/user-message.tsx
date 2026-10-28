@@ -4,6 +4,7 @@ import { attachmentMime } from '../../internal/lib/attachment-mime';
 import { AttachmentPreview } from './attachment-preview';
 import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
+import { remindersHref } from '../../internal/lib/capability-tab-routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
 import { MESSAGE_TEXT_CLASS, RowToolbar } from './message-row';
@@ -255,15 +256,15 @@ function PlatformPromptMessage({
 }
 
 /**
- * A reminder fire (`[REMINDER reminder.<id> …]`). The pill says Reminder and
- * whether it repeats; its card carries the id and a link to the project's
- * reminders for this session.
+ * A loop fire (`[REMINDER reminder.<id> …]`, the wire name). The pill says
+ * Loop and whether it repeats; its card carries the id and a link to the
+ * project's Loops page, filtered to this session.
  */
 function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('reminders');
   const ids = useSessionIds();
-  const manageHref =
-    ids.projectId && ids.sessionId ? uiRoutes().customize(ids.projectId, `reminders?session=${ids.sessionId}`) : null;
+  const loopsHref = ids.projectId ? remindersHref(ids.projectId) : null;
+  const manageHref = loopsHref && ids.sessionId ? `${loopsHref}?session=${ids.sessionId}` : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"

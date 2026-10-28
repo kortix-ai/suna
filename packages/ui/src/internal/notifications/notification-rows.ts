@@ -93,7 +93,9 @@ export function notificationTag(row: InboxNotification): string {
 export function rowDestination(row: InboxNotification): 'room' | 'session' | 'reminders' | 'triggers' {
   if (row.room_id) return 'room';
   if (row.session_id) return 'session';
-  return new URL(row.url, 'http://kortix.invalid').pathname.endsWith('/reminders') ? 'reminders' : 'triggers';
+  const path = new URL(row.url, 'http://kortix.invalid').pathname;
+  // `/admin/loops` since 2026-10-28; a row stored before carries `/reminders`.
+  return path.endsWith('/admin/loops') || path.endsWith('/reminders') ? 'reminders' : 'triggers';
 }
 
 /** The message `public/sw.js` posts to a tab already on a clicked notification's page. */

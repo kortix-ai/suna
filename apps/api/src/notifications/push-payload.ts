@@ -74,17 +74,20 @@ export function notificationUrl(input: {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
   }
   if (input.projectId && input.triggerSlug) {
-    // The Triggers page lists kortix.yaml triggers only; reminders are runtime rows.
-    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'reminders' : 'admin/triggers';
+    // The Triggers page lists kortix.yaml triggers only; loops (reminder rows) are runtime rows.
+    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'admin/loops' : 'admin/triggers';
     return `/projects/${encodeURIComponent(input.projectId)}/${page}${query}`;
   }
   if (input.projectId) return `/projects/${encodeURIComponent(input.projectId)}${query}`;
   return `/projects${query}`;
 }
 
-/** True when a `notificationUrl` result opens a project's Reminders page. */
+/**
+ * True when a `notificationUrl` result opens a project's Loops page. A row
+ * stored before 2026-10-28 carries `/reminders`, which redirects there.
+ */
 export function opensRemindersPage(url: string): boolean {
-  return /^\/projects\/[^/?]+\/reminders\?/.test(url);
+  return /^\/projects\/[^/?]+\/(?:admin\/loops|reminders)\?/.test(url);
 }
 
 export function buildPushContent(input: {

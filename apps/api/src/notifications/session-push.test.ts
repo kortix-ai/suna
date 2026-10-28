@@ -505,14 +505,14 @@ describe('Expo copy of the session kinds (Spec §4)', () => {
 });
 
 // The Triggers page lists kortix.yaml triggers only. A reminder is a runtime
-// row (`reminder.<hex>`), so its alert must open the Reminders page.
+// row (`reminder.<hex>`), so its alert must open the Loops page.
 describe('the page an automation alert opens', () => {
   const alertUrl = (kind: 'automation_failed' | 'automation_recovered', triggerSlug: string) =>
     buildPushContent({ notificationId: 'n1', kind, title: 'Daily check', body: '', projectId: PROJECT, sessionId: null, triggerSlug }).payload.url;
 
-  test('a reminder alert opens Reminders; a kortix.yaml trigger alert opens Triggers', () => {
+  test('a loop alert opens Loops; a kortix.yaml trigger alert opens Triggers', () => {
     for (const kind of ['automation_failed', 'automation_recovered'] as const) {
-      expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/reminders?notification=n1`);
+      expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/admin/loops?notification=n1`);
       expect(alertUrl(kind, 'nightly-report')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
     }
   });
@@ -520,6 +520,8 @@ describe('the page an automation alert opens', () => {
   test('opensRemindersPage reads that url back, and only that one', () => {
     expect(opensRemindersPage(alertUrl('automation_failed', 'reminder.0a1b2c3d4e5f'))).toBe(true);
     expect(opensRemindersPage(alertUrl('automation_failed', 'nightly-report'))).toBe(false);
+    // A row stored before 2026-10-28 carries the old path, which redirects to Loops.
+    expect(opensRemindersPage(`/projects/${PROJECT}/reminders?notification=n1`)).toBe(true);
     expect(opensRemindersPage(`/projects/${PROJECT}/sessions/reminders?notification=n1`)).toBe(false);
   });
 });
