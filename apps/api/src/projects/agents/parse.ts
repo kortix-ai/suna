@@ -311,16 +311,6 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
 }
 
 /**
- * One v2/v3 `agents.<name>` block as an `AgentSpec`, or the parse error. The
- * same parser every kortix.yaml block goes through; the built-in My Kortix
- * block (`MY_KORTIX_BLOCK`) is parsed here too (agents/grants.ts).
- */
-export function parseAgentBlock(name: string, block: unknown, filename: string, version: number): AgentSpec | AgentParseError {
-  const result = parseAgentEntryV2(name, block, filename, version);
-  return result.ok ? result.spec : result.error;
-}
-
-/**
  * Parse one v2 `agents.<name>` block (a map entry, not an array table) into
  * an `AgentSpec`. Reuses `resolveGrantSet` from `@kortix/manifest-schema` so
  * v2's deny-by-default default (an omitted grant → `'none'`) is shared, not

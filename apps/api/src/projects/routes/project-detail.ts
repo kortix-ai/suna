@@ -22,7 +22,8 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { MANIFEST_PROJECT_NAME_KEY, commitProjectName } from '../lib/manifest-project-name';
-import { projectBuiltinAgents, withMyKortixAgent } from '../lib/builtin-agents';
+import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
+import { projectBuiltinAgents } from '../lib/builtin-agents';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
@@ -169,7 +170,7 @@ export function registerProjectDetailRoutes(): void {
       // exactly the repo-declared surface.
       const builtinAgents = projectBuiltinAgents(rawConfig.manifest, loaded.row.metadata);
       const withAgents = {
-        ...(builtinAgents.my_kortix ? withMyKortixAgent(filteredConfig) : filteredConfig),
+        ...(builtinAgents.my_kortix ? addPlatformMetaAgent(filteredConfig) : filteredConfig),
         builtin_agents: builtinAgents,
       };
       // A Kortix skill behind a feature flag is listed only while the flag is on: the box does

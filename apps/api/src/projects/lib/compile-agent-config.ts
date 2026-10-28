@@ -73,10 +73,7 @@ import {
   type PermissionRuleV2,
   type RuntimeV2,
 } from '@kortix/manifest-schema';
-import { META_AGENT_NAME } from '@kortix/shared';
-import { logger } from '../../lib/logger';
 import { parseAgentMarkdown } from './agent-markdown';
-import { MY_KORTIX_BLOCK } from './platform-meta-agent';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -913,71 +910,6 @@ export async function resolveCompiledAgentConfigForSession(
     );
     if (manifestVersion === 3) throw err;
     return null;
-  }
-}
-
-/**
- * The manifest My Kortix compiles from: `raw` with `MY_KORTIX_BLOCK` as
- * `agents.meta`. A v1/v2 manifest, or none, contributes nothing: My Kortix
- * then compiles alone. The v3 validator reserves `agents.meta`, so validate
- * `raw` BEFORE this injection, never after it.
- */
-export function withMyKortixAgent(raw: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  const base = raw && manifestSchemaVersion(raw) === 3 ? raw : { kortix_version: 3 };
-  return { ...base, agents: { ...mapOf<unknown>(base.agents), [META_AGENT_NAME]: MY_KORTIX_BLOCK } };
-}
-
-/**
- * My Kortix's compiled set: the v3 compiler for the selected agent `meta` over
- * `withMyKortixAgent(raw)`. It holds My Kortix, the project agents it may start
- * (`subagents: all`: every enabled agent whose mode is `subagent` or `all`) and
- * the project commands. `files` are the prompt files `raw` names.
- */
-export function compileMyKortixAgentConfig(
-  raw: Record<string, unknown> | null | undefined,
-  files: Record<string, string> = {},
-): CompiledAgents {
-  return compileSelectedAgentConfig(withMyKortixAgent(raw), META_AGENT_NAME, 'opencode', files);
-}
-
-/**
- * Read the project's manifest at `baseRef` and compile My Kortix from it.
- * Never throws: a missing, invalid or uncompilable manifest compiles My Kortix
- * alone, so a broken kortix.yaml never takes My Kortix (the agent that fixes
- * it) down with it. `onManifest` sees the injected manifest.
- */
-export async function resolveMyKortixAgentConfigForSession(
-  project: GitBackedProject | null,
-  baseRef?: string | null,
-  options: CompileReadOptions = {},
-): Promise<string> {
-  let raw: Record<string, unknown> | null = null;
-  let files: Record<string, string> = {};
-  if (project) {
-    const ref = baseRef?.trim() || project.defaultBranch;
-    try {
-      const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
-      const found = await readManifestFromRepo(project, candidates, ref, { forceRefresh: options.forceRefresh });
-      const format = found ? manifestFormatForPath(found.path) : null;
-      const parsed = found && format ? parseManifestText(found.content, format) : null;
-      if (parsed && format && manifestSchemaVersion(parsed) === 3) {
-        const validation = validateManifest(parsed, format);
-        if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
-        files = await readPromptFilesV3(project, parsed, ref);
-        raw = parsed;
-      }
-    } catch (err) {
-      logger.warn('[compile-agent-config] My Kortix compiles without project agents', { projectId: project.projectId, err: (err as Error).message });
-      raw = null;
-      files = {};
-    }
-  }
-  options.onManifest?.(withMyKortixAgent(raw));
-  try {
-    return JSON.stringify(compileMyKortixAgentConfig(raw, files));
-  } catch (err) {
-    logger.warn('[compile-agent-config] My Kortix compiles alone', { err: (err as Error).message });
-    return JSON.stringify(compileMyKortixAgentConfig(null));
   }
 }
 

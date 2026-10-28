@@ -62,13 +62,14 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { myKortixGrant, resolveAgentGrant } from '../../projects/agents';
+import { resolveAgentGrant } from '../../projects/agents';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
+import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { resolveSessionOnBehalfOf } from '../../projects/lib/on-behalf-of';
 import { agentPrincipalModeFor } from '../../iam/agent-principal';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
@@ -178,11 +179,11 @@ export async function mintSessionToken(opts: {
   gitProject: GitBackedProject;
 }): Promise<string> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
-  // My Kortix's grant comes from its server-side block (`myKortixGrant`). It
-  // acts as the launching user and has no standing service account
-  // (platform-meta-agent.ts header, difference (b)).
+  // The reserved coordinator uses a platform-owned full project grant. It acts
+  // as the launching user and never resolves through a project-declared agent
+  // or standing service account.
   const [agentGrant, serviceAccountId] = platformMetaAgent
-    ? [myKortixGrant(), null]
+    ? [platformMetaAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
         // service account in parallel. Grant resolution must throw on failure.

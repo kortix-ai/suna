@@ -39,8 +39,6 @@ export {
   grantsByAgent,
   grantsOfManifestText,
   isLaunchableAgentName,
-  MY_KORTIX_SPEC,
-  myKortixGrant,
   legacyReadWorkspaceFromLoadedAgents,
   projectRequiresDeclaredAgents,
   repositoryAccessFromLoadedAgents,
