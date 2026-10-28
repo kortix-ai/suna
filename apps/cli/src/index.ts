@@ -488,6 +488,10 @@ function closestCommand(input: string): string | undefined {
 }
 
 function printActiveHostNotice(argv: readonly string[]): void {
+  // An agent in a session box runs the CLI from its shell, which captures
+  // stderr into the chat: the host line repeated on every call. It is for a
+  // person at a terminal, so a box without a TTY gets none.
+  if (process.env.KORTIX_SESSION_ID && !process.stderr.isTTY) return;
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
 }
