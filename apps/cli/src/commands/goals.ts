@@ -53,7 +53,9 @@ Options:
   --slug <slug>       new: the folder name (default: from the objective).
   --shared            new: create it in /drives/company (the project) instead of
                       /drives/me (only you).
-  --space <slug>      new, bind: the space the goal is grouped in.
+  --space <slug>      new, bind: the space the goal is grouped in. Spaces are
+                      Work in progress: shown only with the project flag
+                      \`project_channels\` on (off by default).
   --agent <name>      new, bind: the owning agent (new default: $KORTIX_AGENT_NAME).
   --clear             bind: remove the space and the agent (project-wide).
   --enforce           check: on a violation, queue a prompt to this session that

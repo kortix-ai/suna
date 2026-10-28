@@ -1008,6 +1008,13 @@ tabs after it are configured here. A space is display and grouping only:
 it grants nothing. Agent grants (`agents.<name>.apps`, `.skills`,
 `.connectors`, …) stay the only permission source.
 
+**Work in progress.** Spaces show only while the project flag
+`project_channels` is on. It is off by default. While it is off, no page,
+sidebar entry, filter or menu shows a space, and the keys below are kept but
+have no effect. A space's room needs `agent_rooms`; a Goals tab needs `goals`.
+Both are Work in progress and off by default. Do not build a space unless the
+user asks for it and `kortix projects features` lists `project_channels` on.
+
 ```yaml
 spaces:
   sales:                       # the space slug: ^[a-z0-9][a-z0-9_-]{0,62}$

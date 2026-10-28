@@ -907,7 +907,7 @@ agents:
     connectors: []
     secrets: []
     kortix_permissions: [project.session.read]
-    space: research            # the space (`spaces.research`) it works in
+    space: research            # optional: the space it works in (Work in progress, flag `project_channels`)
 ```
 
 Least privilege, in order: start from nothing, add each tool, skill,
@@ -924,8 +924,9 @@ Each write is one commit on the default branch and needs
 its prompt, tools and model are maintained by Kortix, and a write to
 `agents/meta/config` answers `409 builtin_agent_managed`. It acts with the
 permissions of the person who started the session, in this project only. It
-runs every other agent: it starts their sessions, configures them, drives
-Goals and builds Spaces. The slug `meta` is reserved: a declared
+runs every other agent: it starts their sessions and configures them. With
+the Work-in-progress flags on (off by default), it also drives Goals (`goals`)
+and builds Spaces (`project_channels`). The slug `meta` is reserved: a declared
 `agents.meta` block is a validation error, with the switch on or off.
 `builtin_agents: { my_kortix: false }` turns it off: new sessions start with
 `default_agent`, a session create that names `meta` answers

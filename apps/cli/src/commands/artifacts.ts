@@ -50,7 +50,9 @@ Subcommands:
                              the page's <title>), --description "<sentence>",
                              --visibility private|project|public (default private),
                              --space <slug>, --agent <name> (where it is grouped;
-                             default agent: this session's agent)
+                             default agent: this session's agent; spaces are
+                             Work in progress, shown only with the project flag
+                             \`project_channels\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
                              its folder). Same options.
@@ -62,7 +64,8 @@ Subcommands:
   ls                         Artifacts you may view, newest first.
                              --mine, --shared (others shared), --pinned,
                              --type doc|html, --search "<text>",
-                             --space <slug> (bound to that space)
+                             --space <slug> (bound to that space; flag
+                             \`project_channels\`)
   info <artifact>            Title, type, path in Files, files, links.
   cat <artifact> [<path>]    Print one file (default the entry).
                              --version <id> reads an old version.
