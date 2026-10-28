@@ -1896,7 +1896,8 @@ const catalog = {
     "projectGroup": "Project",
     "secretsEmptyProject": "No project secrets yet.",
     "secretsEmptyTitle": "No secrets yet",
-    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
+    "connectorsSearch": "Search connectors"
   },
   "notifications": {
     "title": "Notifications",
@@ -4645,7 +4646,7 @@ const catalog = {
       "textbb68ff20e011": "Retry on",
       "textbb6aea287396": "Audit",
       "textbb742be18fc7": "Scaffold & ship",
-      "textbb74cc7dce98": "Project secrets handed to this agent's sessions as environment variables. Click one to edit it.",
+      "textbb74cc7dce98": "Project secrets handed to this agent's sessions as environment variables.",
       "textbba9af131107": "Hosts",
       "textbbbf43b8819c": "Built-in channel",
       "textbbc5a3f2ca48": "Your changes to {value0} are not saved. Leave now and they are lost.",

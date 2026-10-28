@@ -67,8 +67,6 @@ const BUILTIN_TOOL_GROUPS = ['workspace', 'interaction', 'kortix'] as const;
 export interface CapabilityAgent {
   name: string;
   editor: AgentDraft;
-  /** The manifest version: an agent's extension grant exists from 3 on. */
-  schemaVersion: number;
 }
 
 /**
@@ -103,13 +101,15 @@ function catalogRows(
   view: CapabilityView,
   catalog: ProjectCapabilities,
   t: ReturnType<typeof useI18nTranslations>,
+  agentMode: boolean,
 ): { project: AccessItem[]; builtin: AccessItem[]; ids: string[] } {
   if (view === 'skills') {
     const item = (skill: ProjectCapabilities['skills'][number]): AccessItem => ({ id: skill.id, description: skill.description, disabled: !skill.available });
     return {
       project: catalog.skills.filter((s) => s.group === 'project').map(item),
       builtin: catalog.skills.filter((s) => s.group === 'builtin').map(item),
-      ids: catalog.skills.map((s) => s.id),
+      // Specific names only skills a session can load: a flagged skill whose flag is off is not one.
+      ids: catalog.skills.filter((s) => s.available).map((s) => s.id),
     };
   }
   if (view === 'tools') {
@@ -130,7 +130,9 @@ function catalogRows(
   }
   const item = (ext: ProjectCapabilities['extensions'][number]): AccessItem => ({
     id: ext.id,
-    description: ext.controlled_by ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
+    // "Follows the agent tool switch" only where that switch is on screen.
+    description:
+      ext.controlled_by && agentMode ? `${ext.description ?? ''} ${t('followsTool', { tool: ext.controlled_by })}` : ext.description,
     status: ext.required ? <span className="text-muted-foreground text-xs">{t('alwaysOn')}</span> : undefined,
   });
   // A required platform extension (permission rules on script calls, the show
@@ -213,7 +215,7 @@ export function CapabilityLibrary({
   const [search, setSearch] = useState('');
   const skills = useSkillManagement(projectId, view === 'skills');
 
-  const rows = useMemo(() => (catalog ? catalogRows(view, catalog, t) : null), [catalog, view, t]);
+  const rows = useMemo(() => (catalog ? catalogRows(view, catalog, t, !!agent) : null), [catalog, view, t, agent]);
   const match = (row: AccessItem) => {
     const q = search.trim().toLowerCase();
     return !q || row.id.toLowerCase().includes(q) || String(row.description ?? '').toLowerCase().includes(q);
@@ -240,7 +242,8 @@ export function CapabilityLibrary({
     );
     project = project.map((row) => ({ ...row, onOpen: skills.open(row.id) }));
   }
-  const extensionGrant = view !== 'extensions' || (agent?.schemaVersion ?? 3) >= 3;
+  // Agents get an extension grant from kortix_version 3; before it the view is the platform list in both modes.
+  const extensionGrant = view !== 'extensions' || (catalog?.schema_version ?? 3) >= 3;
   if (agent && catalog) {
     if (extensionGrant) project = withSwitches(view, project, catalog, agent.editor);
     builtin = withSwitches(view, builtin, catalog, agent.editor);

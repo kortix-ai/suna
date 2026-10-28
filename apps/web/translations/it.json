@@ -21016,7 +21016,8 @@
     "projectGroup": "Project",
     "secretsEmptyProject": "No project secrets yet.",
     "secretsEmptyTitle": "No secrets yet",
-    "secretsEmptyDescription": "Secrets added to the project show up here for this agent."
+    "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
+    "connectorsSearch": "Search connectors"
   },
   "connectorsAppReturn": {
     "done": "Fatto. Torna all’app Kortix"

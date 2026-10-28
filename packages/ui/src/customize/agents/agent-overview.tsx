@@ -103,8 +103,16 @@ export function grantOf(block: AgentConfigBlock, view: AgentConfigSectionKey): A
     case 'commands':
     case 'extensions':
       return block[view];
-    case 'tools':
-      return block.tools ?? 'all';
+    case 'tools': {
+      // `codemode: off` removes codemode as an exclude does, so the counts agree.
+      const tools = block.tools ?? 'all';
+      if (block.codemode !== 'off') return tools;
+      if (tools === 'all') return { exclude: ['codemode'] };
+      if (typeof tools === 'object' && !Array.isArray(tools) && 'exclude' in tools) {
+        return tools.exclude.includes('codemode') ? tools : { exclude: [...tools.exclude, 'codemode'] };
+      }
+      return Array.isArray(tools) ? tools.filter((id) => id !== 'codemode') : tools;
+    }
     default:
       return undefined;
   }

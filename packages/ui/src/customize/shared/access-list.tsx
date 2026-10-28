@@ -43,6 +43,9 @@ export interface AccessItem {
   disabled?: boolean;
 }
 
+/** A one-line description reads as text: Markdown code ticks (a skill's routing text) are dropped. */
+const plain = (text: string) => text.replace(/`([^`]*)`/g, '$1');
+
 function AccessText({ item, quiet }: { item: AccessItem; quiet: boolean }) {
   return (
     <>
@@ -58,9 +61,9 @@ function AccessText({ item, quiet }: { item: AccessItem; quiet: boolean }) {
       {item.description ? (
         <span
           className="text-muted-foreground block truncate text-xs"
-          title={typeof item.description === 'string' ? item.description : undefined}
+          title={typeof item.description === 'string' ? plain(item.description) : undefined}
         >
-          {item.description}
+          {typeof item.description === 'string' ? plain(item.description) : item.description}
         </span>
       ) : null}
     </>
@@ -97,7 +100,7 @@ export function AccessList({ items, quiet = false }: { items: AccessItem[]; quie
               checked={item.checked ?? false}
               disabled={item.disabled}
               onCheckedChange={item.onCheckedChange}
-              aria-label={t('toggle', { name: item.id })}
+              aria-label={t('toggle', { name: typeof item.title === 'string' ? item.title : item.id })}
             />
           ) : null}
         </li>

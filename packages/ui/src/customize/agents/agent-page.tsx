@@ -56,6 +56,7 @@ import {
   agentConfigNeedsUpgrade,
   useAgentConfig,
   useUpdateAgentConfig,
+  useProjectCapabilities,
 } from '../../internal/hooks/projects/use-agent-config';
 import { useNewProjectSession } from '../../internal/hooks/projects/use-new-project-session';
 import { agentHref, capabilityTabHref } from '../../internal/lib/capability-tab-routes';
@@ -106,7 +107,7 @@ import { AgentModel, AgentScope } from './agent-detail-aside';
 import { AgentDrivesSection } from './agent-drives-section';
 import { pruneRequiredConnectors } from './connectors-required';
 import { useGrantLabel } from './agent-access-text';
-import { AgentOverview, grantOf, type OverviewFacts } from './agent-overview';
+import { AgentOverview, grantExcluded, grantOf, type OverviewFacts } from './agent-overview';
 import {
   AgentIdentityHeader,
   AgentPageSkeleton,
@@ -727,6 +728,7 @@ function EditableAgentPage({
   const locale = useLocale();
   const editor = useAgentDraft(initial);
   const options = useAgentEditorOptions(projectId);
+  const capabilities = useProjectCapabilities(projectId);
   const update = useUpdateAgentConfig(projectId, agent.name);
   const configure = useConfigureThread(projectId);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -805,9 +807,17 @@ function EditableAgentPage({
   const accessViews = ACCESS_VIEWS.filter((v) => views.includes(v));
   const runtimeViews = RUNTIME_VIEWS.filter((v) => views.includes(v));
   const grantLabel = useGrantLabel();
+  // A tool's aliases go off with it (`agent` takes `task`): the tab counts tools, not names.
+  const toolAliases = new Set((capabilities.data?.tools ?? []).flatMap((tool) => tool.aliases));
   // v2 has no extension grant: that view lists switches, no count.
-  const countOf = (view: AgentConfigSectionKey) =>
-    view === 'drives' || (view === 'extensions' && schemaVersion < 3) ? null : grantLabel(grantOf(draft, view));
+  const countOf = (view: AgentConfigSectionKey) => {
+    if (view === 'drives' || (view === 'extensions' && schemaVersion < 3)) return null;
+    const value = grantOf(draft, view);
+    const excluded = grantExcluded(value);
+    return view === 'tools' && excluded.length > 0
+      ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
+      : grantLabel(value);
+  };
   const switcher =
     location.tab === 'access' && location.view ? (
       <ViewSwitcher label={t('tabAccess')} views={accessViews} active={location.view} hrefFor={viewHref} countOf={countOf} />
@@ -880,7 +890,7 @@ function EditableAgentPage({
             <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
               <Page
                 projectId={projectId}
-                agent={{ name: agent.name, editor, schemaVersion }}
+                agent={{ name: agent.name, editor }}
                 footer={
                   view === 'tools' ? (
                     <EditorSectionStyleProvider value="panel">

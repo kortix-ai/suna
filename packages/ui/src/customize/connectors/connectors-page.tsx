@@ -596,7 +596,7 @@ export function ConnectorsPage({
                 </InputGroupSearchIcon>
                 <InputGroupSearchInput
                   ref={searchRef}
-                  placeholder={tI18nComplete.raw('textc386cb852691')}
+                  placeholder={agentScoped ? tAgentScope('connectorsSearch') : tI18nComplete.raw('textc386cb852691')}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   variant="popover"

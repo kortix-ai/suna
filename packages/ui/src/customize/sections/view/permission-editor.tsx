@@ -115,26 +115,33 @@ function PermissionRuleRow({
   onChange: (next: PermissionRule | undefined) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  // One rule is a default plus patterns. Alone, the default is a bare action;
+  // with patterns it is the map's `*` entry, the form both harnesses read.
   const isMap = rule !== undefined && typeof rule === 'object';
-  const bare = typeof rule === 'string' ? (rule as PermissionAction) : undefined;
-  const map = isMap ? (rule as Record<string, PermissionAction>) : {};
+  const full = isMap ? (rule as Record<string, PermissionAction>) : {};
+  const bare = typeof rule === 'string' ? (rule as PermissionAction) : full['*'];
+  const map = Object.fromEntries(Object.entries(full).filter(([pattern]) => pattern !== '*'));
   const [showRules, setShowRules] = useState(isMap);
   const ruleCount = Object.keys(map).length;
 
-  const setBare = (v: PermissionAction | undefined) => onChange(v);
-  const setRuleEntry = (pattern: string, action: PermissionAction) =>
-    onChange({ ...map, [pattern]: action });
+  /** Write a default and patterns back in the smallest form. */
+  const write = (fallback: PermissionAction | undefined, patterns: Record<string, PermissionAction>) => {
+    if (Object.keys(patterns).length === 0) return onChange(fallback);
+    onChange(fallback ? { ...patterns, '*': fallback } : patterns);
+  };
+  const setBare = (v: PermissionAction | undefined) => write(v, map);
+  const setRuleEntry = (pattern: string, action: PermissionAction) => write(bare, { ...map, [pattern]: action });
   const removeRuleEntry = (pattern: string) => {
     const next = { ...map };
     delete next[pattern];
-    onChange(Object.keys(next).length ? next : undefined);
+    write(bare, next);
   };
-  const addRule = () => onChange({ ...map, '': 'deny' });
+  const addRule = () => write(bare, { ...map, '': 'deny' });
   const renameRule = (from: string, to: string) => {
     if (from === to) return;
     const next: Record<string, PermissionAction> = {};
     for (const [k, v] of Object.entries(map)) next[k === from ? to : k] = v;
-    onChange(next);
+    write(bare, next);
   };
 
   return (
@@ -143,7 +150,7 @@ function PermissionRuleRow({
         <PermissionKeyName permKey={label} />
         <div className="flex shrink-0 items-center gap-1.5">
           <ActionSelect
-            value={isMap ? undefined : bare}
+            value={bare}
             onChange={setBare}
             inheritLabel={tI18nComplete.raw('text3f72f0385768')}
             label={tI18nComplete('textfaaaefbff336', {
