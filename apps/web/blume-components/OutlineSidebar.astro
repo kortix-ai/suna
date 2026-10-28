@@ -15,7 +15,10 @@ interface Props {
   items: Node[];
   currentRoute: string;
 }
-const { items, currentRoute } = Astro.props;
+import { OUTLINE } from './outline';
+
+const { currentRoute } = Astro.props;
+const items: Node[] = OUTLINE.map((group) => ({ label: group.label, children: [...group.items] }));
 // The page a link points at, without the /docs base: "/" or "/developers".
 const pageOf = (target: string) => {
   const path = target.split('#')[0].replace(/^\/docs(?=\/|$)/, '').replace(/\/$/, '');
