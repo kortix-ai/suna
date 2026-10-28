@@ -703,7 +703,7 @@ Account owners, admins and project managers get an email at 80% and at 100% of a
 
 Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
-The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`).
+The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
 
 ## Outcomes
 
@@ -1883,6 +1883,8 @@ For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>
 #### Delete
 
 `kortix projects rm <project_id>` deletes a project. It needs `project.delete`. Deleting a project deletes its managed repository. A repository you connected yourself is left untouched.
+
+Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
 
 ## kortix.yaml reference
 

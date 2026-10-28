@@ -8,23 +8,38 @@ import Link from 'next/link';
 
 import { faqHeading } from './content';
 
+/** One question and its answer, as the FAQ renders them. */
+export type FaqItem = { id: string; question: string; answer: string };
+
+/** The home page FAQ: questions from `faq/content.ts` (and its translations). */
+export function LandingFaqSection() {
+  const { items } = useLocalizedUiCatalog(faq);
+  return <FaqSection title={faqHeading.title} titleMuted={faqHeading.titleMuted} items={items} />;
+}
+
 /**
  * The FAQ in Buio's shape (faqs/Faq.astro): the two-tone title and a line to
  * the team in the left third, the questions in the right two thirds on
  * hairlines. Each row is a native `details`, so Enter and Space work without
  * script, and its "+" turns a quarter of the way round into "×" when open.
- * Questions and answers come from `faq/content.ts` (and its translations).
+ * The home page and /services both render it.
  */
-export function LandingFaqSection() {
-  const { items } = useLocalizedUiCatalog(faq);
-
+export function FaqSection({
+  title,
+  titleMuted,
+  items,
+}: {
+  title: string;
+  titleMuted: string;
+  items: readonly FaqItem[];
+}) {
   return (
     <section id="faq" className="scroll-mt-16 px-8 py-14 lg:px-28 lg:py-20">
       <div className="grid grid-cols-1 gap-y-12 lg:grid-cols-3">
         <div className="lg:pr-8">
           <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
-            {faqHeading.title}
-            <span className="text-muted-foreground block">{faqHeading.titleMuted}</span>
+            {title}
+            <span className="text-muted-foreground block">{titleMuted}</span>
           </h2>
           <p className="text-muted-foreground mt-4 text-base text-balance">
             Anything else,{' '}

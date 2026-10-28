@@ -36,6 +36,7 @@ export const MEGA_MENUS: MegaMenu[] = [
         links: [
           { label: 'Multiplayer AI', href: '/#multiplayer' },
           { label: 'Company as code', href: '/#company-as-code' },
+          { label: 'Framework', href: '/framework' },
           { label: 'Sovereign and open', href: '/#sovereign' },
           { label: 'Outcomes, 24/7', href: '/#use-cases' },
         ],

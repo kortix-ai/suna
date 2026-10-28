@@ -4,13 +4,13 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
 import { cn } from '@kortix/ui';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   BriefcaseIcon,
   CellTowerIcon,
   ChartLineUpIcon,
-  CheckIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -93,7 +93,7 @@ function CaseStudyCard({ item, className }: { item: CaseStudy; className?: strin
       <ul className="mt-auto grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
         {item.facts.map((fact) => (
           <li key={fact} className="text-foreground flex items-start gap-2">
-            <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <SolidCheckIcon className="text-ring mt-0.5" />
             {fact}
           </li>
         ))}

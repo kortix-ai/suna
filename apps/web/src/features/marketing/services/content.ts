@@ -37,14 +37,6 @@ export const hero = {
   title: 'AI Transformation, done for you.',
   titleMuted: 'We map your company, unify your data and build your apps.',
   sub: 'Our team works inside your company, from strategy to shipped software, on Kortix. One flat monthly fee. You own every line.',
-  /** The offer as five tiles, right under the call to action. */
-  does: [
-    { id: 'map', icon: 'map', k: 'Map your company', v: 'Every team, role and workflow.' },
-    { id: 'unify', icon: 'data', k: 'Unify your data', v: 'Every system in one place.' },
-    { id: 'automate', icon: 'loop', k: 'Automate the work', v: 'Agents on the recurring jobs.' },
-    { id: 'build', icon: 'app', k: 'Build custom apps', v: 'Internal tools on your data.' },
-    { id: 'train', icon: 'train', k: 'Train your team', v: 'To run it and build the next one.' },
-  ],
   /** One quiet line under the buttons. */
   terms: `${PRICE.now} a month, flat · Strategy and build, one team · Everything in a repo you own`,
   /** The logo row: products built on Kortix (case-studies/content.ts naming rules). */
@@ -82,8 +74,8 @@ export const platform = {
 export const caseCta = 'See what we would build for your company.';
 
 export const intro = {
-  title: 'Book an intro call',
-  body: 'Meet the team. We look at how your company works and pick the first function together.',
+  title: "Let's meet first.",
+  body: 'Book an intro call with the team. We look at how your company works and pick the first function together.',
 } as const;
 
 /** How an engagement starts. No durations: none is set (ACCURACY). */
@@ -303,6 +295,7 @@ export const pricing = {
   title: 'One membership.',
   titleMuted: 'Everything included.',
   plan: 'AI Transformation',
+  includedTitle: 'Everything included',
   lock: 'One flat monthly fee. No day rates, no change orders.',
   includes: [
     'An AI strategy and a ranked roadmap',

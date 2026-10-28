@@ -5,7 +5,7 @@ import Link from '@/components/site-link';
 import { DitherField } from '@/features/marketing/kit/dither-field';
 import { cn } from '@kortix/ui';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
-import { ArrowRightIcon, ArrowsClockwiseIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 
@@ -24,26 +24,10 @@ export type UseCaseItem = { slug: string; url: string; title: string; team: Team
  * titles — link through to the write-ups.
  */
 
-// The outcome loop (kortix-brand D18) heads this section: hand Kortix an
-// outcome, agents run it 24/7, for every team below. The loop is triggers,
-// sessions, change requests and memory, all shipped (founder, 2026-10-27: no
-// early-access label).
 const COPY = {
   eyebrow: 'Outcomes',
   title: 'Give it an outcome. Agents run it 24/7.',
   titleMuted: 'End to end, for every team.',
-  sub: 'Agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and through a change request you approve, then learn from it. Every run makes the next one better.',
-  loop: ['Outcome', 'Plan', 'Work', 'Verify', 'Learn'],
-  points: [
-    {
-      k: 'Delegate real work',
-      v: 'Agents start on their own when something happens: a new email, a Slack message, a change in your CRM, or a schedule.',
-    },
-    {
-      k: 'Keep people in the loop',
-      v: 'You decide what agents do alone and what needs approval. When they need you, they ask.',
-    },
-  ],
   you: 'You',
 };
 
@@ -92,7 +76,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   const [selected, setSelected] = useState(() =>
     Math.max(
       0,
-      teams.findIndex((t) => t.id === 'engineering'),
+      teams.findIndex((t) => t.id === 'marketing'),
     ),
   );
   /** Pointer position along the rule, 0–1; null when the pointer is away. */
@@ -150,9 +134,10 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   return (
     <section
       id="use-cases"
-      className="bg-background text-foreground relative z-20 border-y py-12 lg:py-16"
+      className="kx-rail-fade bg-background text-foreground relative z-20 border-y py-12 lg:py-16"
     >
-      {/* The page rails, redrawn above this band's background. */}
+      {/* The page rails, redrawn above this band's background. Its top and
+          bottom hairlines fade out past them (`kx-rail-fade`). */}
       <div
         aria-hidden
         className="bg-border pointer-events-none absolute inset-y-0 left-4 w-px lg:left-17"
@@ -170,32 +155,6 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
           {copy.title}
           <span className="text-muted-foreground block">{copy.titleMuted}</span>
         </h2>
-        <p className="text-muted-foreground max-w-2xl text-base text-pretty">{copy.sub}</p>
-        <ol
-          aria-label="The outcome loop"
-          className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 text-sm"
-        >
-          {copy.loop.map((step, i) => (
-            <li key={step} className="flex items-center gap-2">
-              {i > 0 ? (
-                <ArrowRightIcon aria-hidden className="text-muted-foreground size-3.5" />
-              ) : null}
-              <span className="text-foreground bg-muted rounded-sm px-2 py-1">{step}</span>
-            </li>
-          ))}
-          <li className="flex items-center gap-2">
-            <ArrowsClockwiseIcon aria-hidden className="text-muted-foreground size-3.5" />
-            <span className="text-muted-foreground">24/7</span>
-          </li>
-        </ol>
-        <dl className="grid max-w-3xl grid-cols-1 gap-6 pt-4 text-left sm:grid-cols-2">
-          {copy.points.map((point) => (
-            <div key={point.k}>
-              <dt className="text-foreground text-base font-medium">{point.k}</dt>
-              <dd className="text-muted-foreground mt-1 text-sm text-pretty">{point.v}</dd>
-            </div>
-          ))}
-        </dl>
       </div>
 
       {/* The ruler runs rail to rail. Seven team names sit over one
@@ -275,13 +234,16 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
         </div>
       </div>
 
+      {/* One fixed height for every team (lg: the row; below lg: the copy
+          column), sized for the longest headline, body and four links, so
+          switching teams never moves the page. */}
       <div
         role="tabpanel"
         id="use-case-panel"
         aria-labelledby={`use-case-tab-${team.id}`}
-        className="grid grid-cols-1 gap-10 px-8 pt-8 lg:grid-cols-2 lg:gap-16 lg:px-28"
+        className="grid grid-cols-1 gap-10 px-8 pt-8 lg:h-128 lg:grid-cols-2 lg:gap-16 lg:px-28"
       >
-        <div className="relative py-2">
+        <div className="relative min-h-132 py-2 lg:min-h-0">
           {/* The copy swaps in place when the team changes: no fade, slide
               or blur, so the headline reads at once. */}
           <div className="flex h-full flex-col justify-between gap-8">
@@ -308,7 +270,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
 
         {/* One finished exchange on a dithered field: what you asked, and
             what Kortix came back with on which model. */}
-        <div className="border-border bg-card relative flex h-96 items-center justify-center self-start overflow-hidden border p-6 sm:p-10">
+        <div className="border-border bg-card relative flex h-96 items-center justify-center overflow-hidden border p-6 sm:p-10 lg:h-full">
           <div
             aria-hidden
             className="text-foreground pointer-events-none absolute inset-0 opacity-40"

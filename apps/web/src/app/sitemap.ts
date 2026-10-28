@@ -31,6 +31,7 @@ export const LOCALIZED_ROUTES = [
   '/self-hosted',
   '/services',
   '/case-studies',
+  '/framework',
   '/white-label',
   '/cli',
   '/desktop',

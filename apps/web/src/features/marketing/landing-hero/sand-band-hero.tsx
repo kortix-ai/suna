@@ -5,7 +5,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { SessionWindow } from './session-window';
+import { WorkspaceFramework } from './workspace-framework';
 
 // The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
 const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible', 'open'];
@@ -80,12 +80,12 @@ export function SandBandHero() {
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
         <div className="bg-card relative flex flex-col items-center gap-7 overflow-hidden px-4 py-7 lg:gap-10 lg:px-0 lg:pt-17 lg:pb-10">
           <div id="demo" className="relative w-full max-w-304 scroll-mt-24">
-            <SessionWindow />
+            <WorkspaceFramework />
           </div>
-          {/* Leads into the works-with strip directly below the band. */}
+          {/* What the two views show, in one line. */}
           <p className="text-foreground px-4 text-center text-base font-medium text-balance">
-            Runs any model, connects every tool.{' '}
-            <span className="text-muted-foreground">Claude, GPT, Gemini and the apps you already use.</span>
+            A workspace for your team. Everything underneath is code.{' '}
+            <span className="text-muted-foreground">The same project, as files in a git repo you own.</span>
           </p>
         </div>
       </div>
