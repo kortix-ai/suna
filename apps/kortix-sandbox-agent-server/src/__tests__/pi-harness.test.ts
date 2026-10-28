@@ -643,7 +643,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -661,8 +661,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -890,6 +890,17 @@ describe('pi harness', () => {
     expect(tool.state.status).toBe('error')
     expect(tool.state.error).toContain('denies this write call')
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
+  })
+
+  test('edit deny denies image_gen', async () => {
+    const r = await boot({
+      script: [{ tool: 'image_gen', args: { action: 'generate', prompt: 'a red cube' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies this image_gen call')
+    expect(existsSync(join(r.workspace, 'output'))).toBe(false)
   })
 
   test('a path deny holds for every spelling of the path the read tool resolves', async () => {
@@ -1527,7 +1538,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -2129,14 +2140,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -4023,7 +4034,7 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
     expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
   })
@@ -4035,7 +4046,7 @@ describe('pi codemode', () => {
     })
     const first = gateway.sampling.length
     const [part] = await run(r)
-    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
     expect(part?.tool).toBe('show')
     expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
     expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
@@ -4113,6 +4124,22 @@ describe('pi codemode', () => {
     expect(part!.state.output).toContain('rejected:Call task directly, not from a script.')
     expect(part!.state.output).toContain('rejected:Call question directly, not from a script.')
     expect(r.service.runtime()!.questions.list()).toHaveLength(0)
+  })
+
+  test('image_gen called from a codemode script is refused with call it directly', async () => {
+    const r = await boot({
+      script: [script("const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompt: 'a red cube' })]); return o.status + ':' + (o.reason?.message ?? '')"), { text: 'done' }],
+    })
+    const [part] = await run(r)
+    expect(part!.tool).toBe('codemode')
+    expect(part!.state.output).toContain('rejected:Call image_gen directly, not from a script.')
+  })
+
+  test('codemode only still declares image_gen to the model', async () => {
+    const r = await boot({ script: [{ text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
+    const first = gateway.sampling.length
+    await run(r)
+    expect(gateway.sampling[first]!.toolNames).toContain('image_gen')
   })
 
   test('the session log keeps one code call with its nested calls, and a restore brings back the store', async () => {

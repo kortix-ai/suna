@@ -38,6 +38,7 @@ import {
   HARNESS_TOOL_NAMES,
   HEX_COLOR_RE_V2,
   KORTIX_TOOL_NAMES,
+  DEFAULT_ON_KORTIX_TOOLS,
   RETIRED_KORTIX_TOOLS,
   kortixToolRef,
   PI_PACKAGE_NAME_RE,
@@ -1043,7 +1044,8 @@ function isFiniteNumber(value: unknown): value is number {
  * path of the module that implements it (the folder is the author's choice),
  * or `kortix:<name>` for a Kortix tool under its own name. A Kortix tool name
  * with a module path replaces the Kortix tool. A `tools` key also selects the
- * Kortix tools: only the ones it lists load (`selectedKortixTools`).
+ * Kortix tools: the ones it lists load, plus `DEFAULT_ON_KORTIX_TOOLS` it does
+ * not name (`selectedKortixTools`).
  */
 export function validateToolsV2(value: unknown, path: string, issues: ManifestIssue[]): void {
   if (value === undefined) return;
@@ -1067,10 +1069,12 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
       issues.push({ path: where, message: toolValueMessage(name), severity: 'error' });
     }
   }
-  if (selectedKortixTools(value).length === 0) {
+  // A default-on tool loads anyway; the warning is about the tools a list must name.
+  const optIn = KORTIX_TOOL_NAMES.filter((name) => !(DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name));
+  if (!selectedKortixTools(value).some((name) => optIn.includes(name as (typeof optIn)[number]))) {
     issues.push({
       path,
-      message: `Sessions of this project get no Kortix tool (${KORTIX_TOOL_NAMES.join(', ')}). Add \`<name>: kortix:<name>\` to keep one.`,
+      message: `Sessions of this project get no Kortix tool (${optIn.join(', ')}). Add \`<name>: kortix:<name>\` to keep one.`,
       severity: 'warning',
     });
   }

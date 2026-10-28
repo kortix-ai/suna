@@ -219,6 +219,8 @@ const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',
+  // It writes a file under output/images: `edit: deny` stops it as it stops `write`.
+  image_gen: 'edit',
 }
 
 /**

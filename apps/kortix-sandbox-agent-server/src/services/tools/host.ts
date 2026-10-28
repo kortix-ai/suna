@@ -12,6 +12,7 @@ import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
+import imageGen from './kortix/image_gen'
 import imageSearch from './kortix/image_search'
 import memory from './kortix/memory'
 import scrapeWebpage from './kortix/scrape_webpage'
@@ -30,6 +31,7 @@ export type { KortixTool, ToolContext } from './tool'
 export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   web_search: webSearch,
   image_search: imageSearch,
+  image_gen: imageGen,
   scrape_webpage: scrapeWebpage,
   memory,
   show,

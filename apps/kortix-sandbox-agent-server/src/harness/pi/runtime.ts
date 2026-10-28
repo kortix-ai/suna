@@ -202,6 +202,8 @@ export type TurnOutcome = 'completed' | 'error' | 'aborted'
  * pi's `compaction_end` text when `AgentSession.compact()` refuses (pi 1.2.0 gives no code, only
  * these two messages). Exact strings: a pi bump that rewords them fails the pi-harness tests.
  */
+/** Tools whose call renders as its own transcript part (a card), never as a codemode script's nested call. */
+const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
 const PI_COMPACTION_REFUSALS = new Set(['Compaction failed: Nothing to compact (session too small)', 'Compaction failed: Already compacted'])
 
 export interface TurnEnd {
@@ -1377,8 +1379,8 @@ export class PiRuntime {
         pi.on('tool_call', (event) => {
           const parent = event.parentToolCallId
           if (!parent) return undefined
-          // A subagent thread links to its root `task` call, and a question renders on its own part.
-          if (event.toolName === 'task' || event.toolName === 'question') {
+          // A subagent thread links to its root `task` call; a question and a native-part tool render on their own part.
+          if (event.toolName === 'task' || event.toolName === 'question' || NATIVE_PART_TOOLS.includes(event.toolName)) {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
           return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(parent))
@@ -1393,8 +1395,8 @@ export class PiRuntime {
       name: 'kortix-presentation',
       hidden: true,
       factory: (pi) => {
-        const show = this.baseTools.find((tool) => tool.name === 'show')
-        if (this.codemodeMode === 'only' && show) pi.registerTool({ ...show, exposure: 'model-only' })
+        if (this.codemodeMode !== 'only') return
+        for (const tool of this.baseTools) if (NATIVE_PART_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
       },
     }
   }
