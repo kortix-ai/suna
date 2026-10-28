@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "チャンネル",
           "description": "作業をチャンネルで整理します。チャンネルでの新しいメッセージや、エージェントとのダイレクトメッセージはそれぞれスレッドを開始します。サイドバーのセッション一覧を置き換えます。"
+        },
+        "session_groups": {
+          "name": "セッショングループ",
+          "description": "サイドバーのセッションを、プロジェクト全員で共有する名前付きフォルダーにまとめます（例：ストアやクライアントごとに1つ）。メニューまたはドラッグでセッションをグループに移動し、グループを並べ替えたり折りたたんだりできます。"
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, other {# 件のセッションを変更できませんでした}}",
       "showArchived": "アーカイブ済みのセッション",
       "pinnedMark": "ピン留め済み"
+    },
+    "sessionGroups": {
+      "newGroup": "新しいグループ",
+      "newGroupFromMenu": "新しいグループ…",
+      "createTitle": "新しいグループ",
+      "createDescription": "このプロジェクトの全員がこのグループを見られます。セッションのメニューから移動するか、セッションをグループにドラッグします。",
+      "namePlaceholder": "グループ名",
+      "create": "グループを作成",
+      "created": "グループを作成しました",
+      "createFailed": "グループを作成できませんでした",
+      "rename": "グループ名を変更",
+      "save": "保存",
+      "renamed": "グループ名を変更しました",
+      "renameFailed": "グループ名を変更できませんでした",
+      "nameTaken": "このプロジェクトには同じ名前のグループがすでにあります。",
+      "limit": "1つのプロジェクトに作成できるグループは最大50個です。",
+      "cancel": "キャンセル",
+      "delete": "グループを削除",
+      "deleteTitle": "このグループを削除しますか？",
+      "deleteDescription": "{name} はこのプロジェクトの全員に対して削除されます。グループ内のセッションは残り、どのグループにも属さなくなります。この操作は元に戻せません。",
+      "deleted": "グループを削除しました",
+      "deleteFailed": "グループを削除できませんでした",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "reorderFailed": "グループを並べ替えできませんでした",
+      "moveTo": "グループに移動",
+      "removeFromGroup": "グループから外す",
+      "moved": "セッションを移動しました",
+      "noGroup": "グループなし",
+      "moveFailed": "セッションを移動できませんでした",
+      "empty": "ここに移動したセッションはここに表示されます。",
+      "groupOptions": "グループのオプション"
     },
     "recentlyDeleted": {
       "view": "最近削除した項目",
@@ -2767,6 +2803,7 @@
     "signInWithEmail": "メールでログイン",
     "createNewAccount": "新しいアカウントを作成",
     "byContinuingYouAgreeSimple": "続行することで、",
+    "customerLogoNotice": "Kortix は、プランを問わず、あなたの組織の名称とロゴを顧客として掲載することがあります。legal@kortix.com までご連絡いただければ、いつでも掲載を停止できます。",
     "phoneVerification": {
       "title": "電話番号を確認",
       "titleOtp": "確認コードを入力",
@@ -20428,7 +20465,9 @@
       "text7c0a91e5b3d2": "未分類のツール",
       "text9d2b6f0c41ae": "ツールとルール",
       "openThreadAction": "スレッドを開く",
-      "untitledThread": "無題のスレッド"
+      "untitledThread": "無題のスレッド",
+      "text314ae71b8c8d": "アーティファクト",
+      "textfe204b549282": "アーティファクト ドキュメント スライド プレゼンテーション ボード デザイン ダッシュボード ページ 公開 共有"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20767,7 +20806,14 @@
     "sessionModel": "モデル {cost}",
     "sessionSandbox": "サンドボックス {cost}",
     "noCapUnlimited": "上限なし · 支出は無制限",
-    "tokensSub": "入力 {in} · 出力 {out}"
+    "tokensSub": "入力 {in} · 出力 {out}",
+    "unknownValue": "不明",
+    "estimateCoverageUnavailable": "見積もりの対象範囲を取得できません。",
+    "estimatesSeparate": "上の実際の支出は別に扱われます。見積もりが請求額に加算されることはありません。",
+    "estimatedUsageValueLabel": "LLM の推定利用額(請求ではありません):",
+    "pricedRequests": "料金計算済みリクエスト {count} 件",
+    "unpricedRequests": "料金未計算リクエスト {count} 件",
+    "llmEstimateLabel": "LLM の推定:"
   },
   "triggerComposer": {
     "every": "間隔",
@@ -22913,8 +22959,8 @@
         "restoreShort": "復元",
         "viewing": "{time}のバージョンを表示中",
         "backToCurrent": "現在の版に戻る",
-        "added": "+{count}行",
-        "removed": "−{count}行",
+        "added": "+{count, plural, other {#行}}",
+        "removed": "−{count, plural, other {#行}}",
         "viewingBy": "作成者: {author}",
         "created": "ページを作成",
         "edited": "ページを編集"
@@ -23165,7 +23211,7 @@
       "rosterTitlePeople": "メンバー",
       "rosterTitleAgents": "エージェント",
       "viewAllMembers": "すべてのメンバーを表示",
-      "agentThreads": "{count}件のスレッド",
+      "agentThreads": "{count, plural, other {#件のスレッド}}",
       "threadFilter": {
         "search": "スレッドを検索",
         "filter": "フィルター",
@@ -23298,8 +23344,8 @@
       "inviteByEmail": "メールで招待",
       "confirmEmpty": "メンバーを追加",
       "confirm": "{what}を追加",
-      "peopleCount": "{count}人",
-      "agentsCount": "{count}個のエージェント",
+      "peopleCount": "{count, plural, other {#人}}",
+      "agentsCount": "{count, plural, other {#個のエージェント}}",
       "both": "{people}と{agents}",
       "added": "#{name} に{what}を追加しました。",
       "failed": "メンバーを追加できませんでした。もう一度お試しください。",
@@ -23309,6 +23355,22 @@
       "agentsFailedPeopleAdded": "#{name} に{what}を追加しました。エージェントは追加できませんでした。選択したままです。",
       "allAdded": "プロジェクトの全員がすでに参加しています。",
       "noMatches": "「{query}」に一致する項目はありません。"
+    },
+    "privateNotIn": {
+      "row": "参加していないプライベートチャンネル",
+      "title": "参加していないプライベートチャンネル",
+      "description": "名前の変更、アーカイブ、メンバーの追加ができます。チャンネルの内容を読めるのはメンバーだけなので、自分を追加することはできません。",
+      "meta": "{count, plural, =0 {メンバーなし} other {#人のメンバー}} · 作成者: {name}",
+      "metaNoCreator": "{count, plural, =0 {メンバーなし} other {#人のメンバー}}",
+      "archived": "アーカイブ済み",
+      "menu": "#{name} のオプション",
+      "addPeople": "メンバーを追加",
+      "rename": "名前を変更",
+      "archive": "アーカイブ",
+      "unarchive": "アーカイブを解除",
+      "archivedToast": "#{name} をアーカイブしました",
+      "unarchivedToast": "#{name} のアーカイブを解除しました",
+      "failed": "#{name} を更新できませんでした。もう一度お試しください。"
     }
   }
 }

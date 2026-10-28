@@ -8,33 +8,64 @@
  * keeps what only its platform has: webhook verification and intake, the
  * sender gate, commands, typing, prompts and the wording of every notice.
  *
+ *   a message whose create started → nothing: the lifecycle delivers it (a retry)
  *   a known thread       → a follow-up into its session
  *   its session is gone  → forget the thread, start a new session ("revived")
  *   a new thread         → claim the first create, start one session bound to it;
  *                          a racing message waits for that session and follows up
  *
- * Telegram and Email run on it. Slack and Teams still route themselves.
+ * A platform adapter supplies its port and keeps its own intake. Adapters that
+ * predate the core still route themselves.
+ * Session-addressed notices (a failed run, a failed start) go through session-notice.ts.
  */
 import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
+import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
-import { type ChatThreadKey, dropChatThread, findChatThread, touchChatThread } from './threads';
+import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
+import type { ConnectorPrincipal } from '../../connectors/router-contract';
+import {
+  type ChatThreadKey,
+  claimThreadCreate,
+  dropChatThread,
+  findChatThread,
+  releaseThreadCreate,
+  touchChatThread,
+} from './threads';
 
 type CreateError = NonNullable<Awaited<ReturnType<typeof createSession>>['error']>;
 
 /** `chat_threads.platform` = `metadata.source` = the lifecycle `source` of a channel session. */
 export type ChannelPlatform = (typeof CHANNEL_PLATFORMS)[number];
 
+/** The error detail a sandbox relays when a turn ends in an error. */
+export interface TurnErrorInfo {
+  /** The runtime's error name, e.g. `APIError` / `ProviderAuthError` / `MessageAbortedError`. */
+  name?: string;
+  message?: string;
+  /** Upstream HTTP status for an `APIError` (e.g. 402 = credits, 429 = rate limit). */
+  statusCode?: number;
+  /** The runtime's own transient/permanent signal. */
+  isRetryable?: boolean;
+  /** Names the provider in the copy (`ProviderAuthError`). */
+  providerID?: string;
+  /** The daemon's classification, when it sends one. */
+  code?: TurnErrorCode;
+}
+
 /** One conversation, and the inbound message an answer anchors to. */
 export interface ChannelTarget extends ChatThreadKey {
   platform: ChannelPlatform;
   /** Follow-ups are confined to it; ports read the install's secrets with it. */
   projectId: string;
-  /** The message a notice answers (a Telegram `message_id`, an email id). */
-  messageId: string;
+  /**
+   * The inbound message a notice answers (the platform's message id).
+   * Absent on a target found from a session (session-notice.ts): `chat_threads`
+   * keeps no message id, so that notice is posted unanchored.
+   */
+  messageId?: string;
 }
 
 /** An outcome the agent will not report itself. The port words it, or stays silent. */
@@ -46,14 +77,55 @@ export type ChannelNotice =
   /** The create failed for good; the thread is free again. */
   | { kind: 'create_failed'; error: CreateError }
   /** Last attempt: the thread's session refused the message (a failed session). */
-  | { kind: 'follow_up_failed' };
+  | { kind: 'follow_up_failed' }
+  /**
+   * Session-addressed: a root turn closed in a non-abort error that no live
+   * channel turn carried (channels/turn-relay.ts). `promptSource`: the lifecycle source of the prompt the
+   * turn answered, when known; a turn another surface prompted (the web, a
+   * reminder) is not the chat's to hear.
+   */
+  | { kind: 'run_failed'; sessionId: string; error?: TurnErrorInfo; promptSource?: string | null }
+  /**
+   * Session-addressed: the session's sandbox failed to start for a reason a retry
+   * does not clear, and the session is `failed`. `reason`: the classified
+   * user-facing cause, or null when only internal text exists.
+   */
+  | { kind: 'start_failed'; sessionId: string; reason: string | null }
+  /**
+   * Session-addressed: the sandbox failed to start for a reason the provider may
+   * clear (capacity, a rate limit); the lifecycle retries it for a few minutes.
+   * `reason`: the classified user-facing cause. Told once per session.
+   */
+  | { kind: 'start_retrying'; sessionId: string; reason: string };
+
+/** The notices a port receives with a target found from a session (session-notice.ts). */
+export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;
+
+/**
+ * What happens to a message in a thread whose session exists: deliver it,
+ * refuse it (the port logs why), or restart the thread (forget its session
+ * and start a new one, which knows it is a revival).
+ */
+export type FollowUpVerdict = 'deliver' | 'refuse' | 'restart';
+
+/** An agent question addressed by session (session-notice.ts `postSessionQuestion`). */
+export interface SessionQuestion {
+  sessionId: string;
+  /** The stored question (`session_pending_questions.id`) a button answers. */
+  pendingId: string;
+  questions: RuntimeQuestion[];
+  /** The agent's connector principal: a post stands in for its own call, and runs only where that call would. */
+  principal: ConnectorPrincipal;
+}
 
 /** What one chat platform does for the core. */
 export interface ChannelPort {
   /** Tell the conversation an outcome. Send errors are logged, not thrown. */
   notify(target: ChannelTarget, notice: ChannelNotice): Promise<void>;
-  /** Runs before every follow-up into an existing session; false drops the message (the port logs why). */
-  prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<boolean>;
+  /** Post the agent's question in the conversation. True when posted. Never throws. */
+  postQuestion?(target: ChannelTarget, ask: SessionQuestion): Promise<boolean>;
+  /** Runs before every follow-up into an existing session; absent = deliver. */
+  prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
 }
 
 /** One verified, deduped, sender-gated inbound message. */
@@ -95,10 +167,9 @@ export interface ChannelSessionPlan {
 /** Up to 8 s for a racing message's create to bind the thread. */
 const CREATE_WAIT_POLL_MS = 250;
 const CREATE_WAIT_POLLS = 32;
-/** A claim outlives a create that never finishes (a crash) by at most this long. */
-const CREATE_CLAIM_TTL_MS = 10 * 60_000;
 
 const defaultLifecycle = {
+  createCommandStatus,
   createSession,
   deliverThroughQueue,
   resolveProjectAutomationActor,
@@ -125,11 +196,25 @@ export async function routeChannelMessage(
   run: { finalAttempt: boolean },
 ): Promise<void> {
   const { target, keys } = message;
+  // A retry of a message whose create already started (its replica died, a
+  // write after the bind threw, or its job was claimed again during a long
+  // create): the lifecycle delivers its first prompt. Routing it again would
+  // follow up under another key, and the message would arrive twice.
+  const create = await lifecycle.createCommandStatus(keys.create, target.projectId);
+  if (createStarted(create)) {
+    logger.info('[channel] create already started; the retry routes nothing', {
+      platform: target.platform,
+      projectId: target.projectId,
+      status: create,
+    });
+    return;
+  }
   const existing = await findChatThread(target);
   if (existing) {
     if ((await followUp(port, message, existing, run)) !== 'no-session') return;
-    // Its session is gone, or it belongs to another project.
-    await dropChatThread(target);
+    // Its session is gone, or it belongs to another project. Drop only that
+    // mapping: a racing message may have bound a new session since our read.
+    await dropChatThread(target, existing.sessionId);
   }
 
   const plan = await message.plan(existing !== null);
@@ -144,7 +229,7 @@ export async function routeChannelMessage(
   if (!claim) {
     const thread = await waitForThreadSession(target);
     if (thread) {
-      await followUp(port, message, thread, run);
+      await followUpJustBound(port, message, thread, run);
       return;
     }
     if (!run.finalAttempt) throw new Error(`${target.platform} thread create in flight`);
@@ -158,7 +243,7 @@ export async function routeChannelMessage(
   const bound = await findChatThread(target);
   if (bound) {
     await releaseThreadCreate(keys.createClaim, claim);
-    await followUp(port, message, bound, run);
+    await followUpJustBound(port, message, bound, run);
     return;
   }
 
@@ -177,26 +262,40 @@ export async function routeChannelMessage(
       queuePolicy: 'on_backpressure',
       idempotencyKey: keys.create,
       postCreate: [
-        { type: 'bind_chat_thread', platform: target.platform, workspaceId: target.workspaceId, threadId: target.threadId },
+        {
+          type: 'bind_chat_thread',
+          platform: target.platform,
+          workspaceId: target.workspaceId,
+          threadId: target.threadId,
+          createClaim: { key: keys.createClaim, token: claim.toISOString() },
+        },
         { type: 'deliver_prompt', source: target.platform, text: plan.prompt, userId },
       ],
     });
   } catch (error) {
     // Free the thread so the transport's retry creates under the same key,
-    // instead of waiting for a thread this attempt never bound.
-    await releaseThreadCreate(keys.createClaim, claim);
+    // instead of waiting for a thread this attempt never bound. Unless the
+    // lifecycle holds the create: the retry returns above, and the bind (or
+    // the create's dead letter) frees the claim, so no other message starts a
+    // second session while the create runs. A failed read keeps it: the claim
+    // expires.
+    // ponytail: a create whose replica dies keeps the claim only for its TTL
+    // (10 min); the lifecycle reclaims that create after its lease and grace
+    // (5 + 5 min). A message in the gap can start a second session. Upgrade:
+    // refresh the claim from the create's lease heartbeat.
+    const owner = await lifecycle.createCommandStatus(keys.create, target.projectId).catch(() => 'unknown' as const);
+    if (owner !== 'unknown' && !createStarted(owner)) await releaseThreadCreate(keys.createClaim, claim);
     throw error;
   }
 
   if (result.sessionId && !result.error) {
-    // The create bound the thread: later messages find it, so the claim is spent.
+    // The create bound the thread and freed the claim (a deduped older create
+    // may carry another token, so free ours too).
     await releaseThreadCreate(keys.createClaim, claim);
     return;
   }
   if (!result.error || result.requeued) {
-    // ponytail: the claim stays until it expires; the drain binds the thread but
-    // never releases it, so a session that dies within 10 min of a queued create
-    // blocks a new one until then. Fix: a release post-create action.
+    // The drain binds the thread, then frees this claim with its token.
     await port.notify(target, { kind: 'create_pending' });
     return;
   }
@@ -209,6 +308,31 @@ export async function routeChannelMessage(
   });
   await releaseThreadCreate(keys.createClaim, claim);
   await port.notify(target, { kind: 'create_failed', error: result.error });
+}
+
+/**
+ * A follow-up into a thread a racing message just bound. When that session
+ * cannot take it (it is gone, or the port restarts the thread), retry the
+ * message: the retry finds the thread and starts it over. The last attempt
+ * drops it.
+ */
+async function followUpJustBound(
+  port: ChannelPort,
+  message: ChannelMessage,
+  thread: { sessionId: string; projectId: string },
+  run: { finalAttempt: boolean },
+): Promise<void> {
+  if ((await followUp(port, message, thread, run)) !== 'no-session') return;
+  if (!run.finalAttempt) throw new Error(`${message.target.platform} thread session cannot take the message`);
+  logger.warn('[channel] the thread session a racing message bound cannot take this one; dropped', {
+    platform: message.target.platform,
+    sessionId: thread.sessionId,
+  });
+}
+
+/** A create the lifecycle owns: it binds the thread and delivers the first prompt. */
+function createStarted(status: Awaited<ReturnType<typeof createCommandStatus>>): boolean {
+  return status === 'queued' || status === 'running' || status === 'succeeded';
 }
 
 /** Forget a conversation (a `/new` command): the next message starts a new session. */
@@ -225,7 +349,9 @@ async function followUp(
   thread: { sessionId: string; projectId: string },
   run: { finalAttempt: boolean },
 ): Promise<Awaited<ReturnType<typeof deliverThroughQueue>> | 'refused'> {
-  if (port.prepareFollowUp && !(await port.prepareFollowUp(target, thread))) return 'refused';
+  const verdict = port.prepareFollowUp ? await port.prepareFollowUp(target, thread) : 'deliver';
+  if (verdict === 'refuse') return 'refused';
+  if (verdict === 'restart') return 'no-session';
   const outcome = await lifecycle.deliverThroughQueue({
     source: target.platform,
     idempotencyKey: keys.followUp,
@@ -240,31 +366,6 @@ async function followUp(
     await port.notify(target, { kind: 'follow_up_failed' });
   }
   return outcome;
-}
-
-/**
- * Claim the first create of a thread. An expired claim (a create that never
- * finished) is taken over in the same statement. Returns the owner token for
- * `releaseThreadCreate`, or null while another create holds it. A DB error
- * throws: no create runs unclaimed.
- */
-async function claimThreadCreate(key: string): Promise<Date | null> {
-  const expiresAt = new Date(Date.now() + CREATE_CLAIM_TTL_MS);
-  const rows = await db
-    .insert(chatEventDedup)
-    .values({ eventId: key, expiresAt })
-    .onConflictDoUpdate({
-      target: chatEventDedup.eventId,
-      set: { expiresAt },
-      setWhere: sql`${chatEventDedup.expiresAt} < now()`,
-    })
-    .returning({ eventId: chatEventDedup.eventId });
-  return rows.length > 0 ? expiresAt : null;
-}
-
-/** Release only our own claim: after a takeover, the row belongs to the new owner. */
-async function releaseThreadCreate(key: string, token: Date): Promise<void> {
-  await db.delete(chatEventDedup).where(and(eq(chatEventDedup.eventId, key), eq(chatEventDedup.expiresAt, token)));
 }
 
 async function waitForThreadSession(thread: ChatThreadKey): Promise<{ sessionId: string; projectId: string } | null> {

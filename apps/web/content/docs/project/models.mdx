@@ -185,6 +185,8 @@ kortix gateway routing reset
 
 When a fallback model answers, the composer shows **Running on** and the model name. The turn details name the model that answered and the model it replaced. **Costs** counts the spend under the model that answered.
 
+A project chain also takes over when the requested model id is unknown or retired (`404`). Every gateway answer therefore carries two headers: `x-kortix-requested-model` names the model the request asked for, and `x-kortix-model` names the model that answered. When they differ, a fallback served the request.
+
 ## Shared keys and ChatGPT accounts
 
 By default, a provider key belongs to the whole project. A personal override of a provider key returns `llm_credentials_project_wide`.
@@ -234,6 +236,7 @@ Read spend and requests:
 ```bash
 kortix gateway usage --days 7      # requests, errors and cost by model
 kortix gateway sources --hours 24  # spend by trigger, member, channel and API
+kortix gateway logs --limit 100    # the 100 newest requests (1 to 100, default 50)
 kortix gateway logs --failed       # recent failed requests
 kortix gateway logs <log-id>       # one request in full
 kortix gateway test deepseek-v4.1-flash glm-5.3-flash --prompt "Say hi"
@@ -315,3 +318,23 @@ Limits:
 | `context_length_exceeded` | The conversation is longer than the model's context window. | Compact the session, or switch to a model with a larger window. |
 
 Slack and Microsoft Teams show the same failures in their own words. See [Models and keys in a channel](/docs/connect/channels#models-and-keys-in-a-channel).
+
+### Charges and estimated LLM usage value
+
+Gateway usage reports keep actual recorded spend separate from estimated retail
+usage value. An estimate is not a bill and is never added to charges or budgets.
+OAuth or subscription requests can have zero per-request charges and a nonzero
+usage estimate. Source and session reporting use the same request ledger.
+
+Rate version `models.dev:2026-10-27:v1` covers exact `gpt-6.1-sol` requests from
+`openai` and `openai-codex`, using the [models.dev OpenAI catalog](https://models.dev/api.json).
+Prices are USD per million tokens: input 2, output 10, cached input 0.1, cache
+write 2.5. Above 272,000 input tokens these rates are 4, 15, 0.2, and 5.
+Input totals include cache tokens; cache reads and writes replace plain input,
+not add to it. Rates apply per request, before aggregation.
+
+Unsupported models, invalid counts, and estimated rather than provider-reported
+token counts have unknown value. Reports show priced and unpriced request counts;
+a partial estimate covers only priced requests. Subscription fees are unknown
+without a verified invoice amount. No subscription fee is inferred or allocated
+across shared projects. This estimate excludes compute and browser costs.

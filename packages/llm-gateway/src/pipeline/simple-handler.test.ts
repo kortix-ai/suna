@@ -473,14 +473,16 @@ describe('simple gateway pipeline', () => {
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ promptTokens: 10, completionTokens: 4 });
     expect(traces).toHaveLength(1);
+    expect(traces[0]?.metadata.usageEstimated).toBe(false);
   });
 
   test('a non-stream 200 with no usage object settles an estimate, not zero tokens', async () => {
     const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
     const body = JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'z'.repeat(800) } }] });
     const response = await handleChatCompletions(
       {
-        hooks: hooks(usage, []),
+        hooks: hooks(usage, traces),
         logger: { info() {}, warn() {}, error() {} },
         fetchImpl: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
       },
@@ -494,6 +496,7 @@ describe('simple gateway pipeline', () => {
     // 800 output chars / 4 = 200 tokens; 4,000 prompt chars / 4 + framing >= 1,000 tokens.
     expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 200 });
     expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+    expect(traces[0]?.metadata.usageEstimated).toBe(true);
   });
 
   test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {
@@ -1111,6 +1114,9 @@ describe('model fallback chains (route.fallbackModels)', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('from fallback');
     expect(resolved).toEqual(['primary-model', 'fallback-model']);
+    // KRTX-3369: the answer names what the client asked for and what served it.
+    expect(response.headers.get('x-kortix-requested-model')).toBe('requested-model');
+    expect(response.headers.get('x-kortix-model')).toBe('fallback-model');
     // Each model gets its own generation defaults; a client value wins on every attempt.
     expect(calls.map((c) => [new URL(c.url).host, c.body.model, c.body.temperature, c.body.max_tokens, c.body.top_p])).toEqual([
       ['primary.example', 'primary-model', 0.9, 100, 0.5],
@@ -1134,6 +1140,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
   test('a request its own model answers names that model and no fallback', async () => {
     const { response, traces } = await run({ respond: () => ok('from primary') });
     expect(response.status).toBe(200);
+    expect(response.headers.get('x-kortix-model')).toBe('primary-model');
     expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
     expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
   });

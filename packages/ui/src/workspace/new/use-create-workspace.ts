@@ -856,7 +856,7 @@ export async function runCreate(
  * target account (`resolveTargetAccountId`) without a second, page-specific
  * query.
  */
-export function useCreateWorkspace(): {
+export function useCreateWorkspace(options?: { enterProject?: (projectId: string) => void }): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
   status: CreateStatus;
   error: string | null;
@@ -969,7 +969,8 @@ export function useCreateWorkspace(): {
         // decision reads `projectsCachedForAccount`), so its onboarding wizard
         // opens on the landing (KRTX-2092).
         completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
-        enterProject: (projectId) => router.replace(uiRoutes().project(encodeURIComponent(projectId))),
+        enterProject: options?.enterProject ?? ((projectId) =>
+          router.replace(uiRoutes().project(encodeURIComponent(projectId)))),
         now: Date.now,
       });
 
@@ -979,7 +980,7 @@ export function useCreateWorkspace(): {
         setLastError(result.error);
       }
     },
-    [creatableAccounts, queryClient, router, viewerId],
+    [creatableAccounts, queryClient, router, viewerId, options?.enterProject],
   );
 
   const retry = useCallback(() => {

@@ -110,7 +110,11 @@ beforeAll(async () => {
 beforeEach(() => {
   calls = [];
   answer = (url, method) =>
-    method === 'DELETE' ? new Response(null, { status: 204 }) : Response.json({ region: url.origin === PT_US ? 'us-east' : 'eu-west' });
+    method === 'DELETE'
+      ? new Response(null, { status: 204 })
+      : url.pathname.endsWith('/health')
+        ? Response.json({ status: 'ok', reason: null })
+        : Response.json({ region: url.origin === PT_US ? 'us-east' : 'eu-west' });
   config.KORTIX_WORKSPACE_VOLUMES = '';
   config.KORTIX_SANDBOX_IDLE_DELETE_MINUTES = 60;
   __resetPlatinumSandboxOriginsForTests();
@@ -207,8 +211,8 @@ describe('workspace_volume', () => {
     const recent = await volumeSessionWithBox('sbx-recent', { stoppedAt: new Date(now.getTime() - 10 * 60_000).toISOString() });
     const waking = await volumeSessionWithBox('sbx-waking', { stoppedAt: longAgo, runtimeWakeId: 'wake-1' });
 
-    expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 1, removed: 1, failed: 0 });
-    expect(callLines()).toEqual([`DELETE ${PT}/v1/sandboxes/sbx-idle`]);
+    expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 1, removed: 1, failed: 0, held: 0 });
+    expect(callLines()).toEqual([`GET ${PT}/v1/volumes/kws-${idle}/health?probe=false`, `DELETE ${PT}/v1/sandboxes/sbx-idle`]);
     const row = await boxRow(idle);
     expect(isRetiredSandboxRow(row)).toBe(true);
     expect(row.metadata).toMatchObject({ ephemeralRetiredExternalId: 'sbx-idle', idleRetiredAt: now.toISOString(), providerRemovedAt: now.toISOString() });
@@ -218,14 +222,60 @@ describe('workspace_volume', () => {
 
     // -1 turns the lane off.
     config.KORTIX_SANDBOX_IDLE_DELETE_MINUTES = -1;
-    expect(await retireIdleVolumeBoxes(new Date(now.getTime() + 24 * HOUR))).toEqual({ retired: 0, removed: 0, failed: 0 });
+    expect(await retireIdleVolumeBoxes(new Date(now.getTime() + 24 * HOUR))).toEqual({ retired: 0, removed: 0, failed: 0, held: 0 });
+  });
+
+  test('the idle lane keeps a box whose volume is not ok, and asks again an hour later', async () => {
+    config.KORTIX_SANDBOX_IDLE_DELETE_MINUTES = 60;
+    const now = new Date();
+    const longAgo = new Date(now.getTime() - 2 * HOUR).toISOString();
+    const unsaved = await volumeSessionWithBox('sbx-unsaved', { stoppedAt: longAgo });
+    const unreachable = await volumeSessionWithBox('sbx-unreachable', { stoppedAt: longAgo });
+    const forged = await newSession('forged');
+    await stoppedBox(forged, 'sbx-forged', { stoppedAt: longAgo });
+    answer = (url) =>
+      url.pathname === `/v1/volumes/kws-${unsaved}/health`
+        ? Response.json({ status: 'degraded', reason: 'mount vm_1 (/workspace on sbx-unsaved) has committed changes that are not on the head yet' })
+        : Response.json({ error: 'volume not found', code: 'volume_not_found' }, { status: 404 });
+
+    expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 0, removed: 0, failed: 0, held: 3 });
+    // A forged record never reaches Platinum; no box is removed.
+    // Both sides sorted: the volume ids are random UUIDs.
+    expect(callLines().sort()).toEqual([
+      `GET ${PT}/v1/volumes/kws-${unreachable}/health?probe=false`,
+      `GET ${PT}/v1/volumes/kws-${unsaved}/health?probe=false`,
+    ].sort());
+    for (const [id, ext] of [[unsaved, 'sbx-unsaved'], [unreachable, 'sbx-unreachable'], [forged, 'sbx-forged']] as const) {
+      const row = await boxRow(id);
+      expect(row.externalId).toBe(ext);
+      expect(row.metadata).toMatchObject({ idleDeleteHeldAt: now.toISOString() });
+    }
+    expect((await boxRow(unsaved)).metadata).toMatchObject({ idleDeleteHeldReason: expect.stringContaining('is degraded: mount vm_1') });
+    expect((await boxRow(unreachable)).metadata).toMatchObject({ idleDeleteHeldReason: expect.stringContaining('health check failed') });
+
+    // Within the hour no held box is asked about again.
+    calls = [];
+    expect(await retireIdleVolumeBoxes(new Date(now.getTime() + 30 * 60_000))).toEqual({ retired: 0, removed: 0, failed: 0, held: 0 });
+    expect(calls).toEqual([]);
+
+    // An hour later the saved volume lets its box go.
+    answer = (url, method) =>
+      method === 'DELETE' ? new Response(null, { status: 204 }) : url.pathname === `/v1/volumes/kws-${unsaved}/health`
+        ? Response.json({ status: 'ok', reason: null })
+        : Response.json({ status: 'stuck', reason: 'a merge job is stalled' });
+    const later = new Date(now.getTime() + 61 * 60_000);
+    // (Rows of earlier tests in this database may be idle by then too; they are held, never retired.)
+    expect(await retireIdleVolumeBoxes(later)).toMatchObject({ retired: 1, removed: 1, failed: 0 });
+    expect(isRetiredSandboxRow(await boxRow(unsaved))).toBe(true);
+    expect((await boxRow(unreachable)).externalId).toBe('sbx-unreachable');
+    expect((await boxRow(forged)).externalId).toBe('sbx-forged');
   });
 
   test('an open removes a retired box whose removal failed before it boots a new one', async () => {
     const now = new Date();
     const sessionId = await volumeSessionWithBox('sbx-stuck', { stoppedAt: new Date(now.getTime() - 2 * HOUR).toISOString() });
-    answer = () => new Response('upstream', { status: 503 });
-    expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 1, removed: 0, failed: 1 });
+    answer = (url) => (url.pathname.endsWith('/health') ? Response.json({ status: 'ok' }) : new Response('upstream', { status: 503 }));
+    expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 1, removed: 0, failed: 1, held: 0 });
     const retired = await boxRow(sessionId);
     expect(isRetiredSandboxRow(retired)).toBe(true);
     expect(await idleRetiredBoxRemoved(retired)).toBe(false);

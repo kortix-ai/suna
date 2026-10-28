@@ -224,6 +224,7 @@ A toggle of these flags also updates running state. The API response does not wa
 | `volumes` | Volumes | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared Files for the project: the Files page and the `drives` flag. See [Files](/docs/work/runtime#files). |
 | `goals` | Goals | Off | Experimental | With Platinum (`PLATINUM_API_KEY`) | An agent owns an objective until an independent check confirms it: it plans, works, waits, chases people, and keeps its state in a `Goals/` folder in Files. Needs `volumes` and `reminders` on. Off: `kortix goals new` refuses; a goal that already exists keeps running. |
 | `email_channel` | Email channel | Off | Experimental | Always | An email to the project's [Resend inbox](/docs/connect/channels#email) starts a session, and a reply continues it. Off: Email is on no surface, and its routes answer `403 feature_disabled`. |
+| `session_groups` | Session groups | Off | Experimental | Always | Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; drag a group to reorder it, and collapse the ones you are not using. Off: the `/projects/:id/session-groups` routes answer `403 feature_disabled` and the sidebar lists every session; the groups stay stored. See [Session groups](/docs/sdk/sessions#session-groups-experimental). |
 | `drives` | Files | Follows the project's `volumes` flag | Experimental | With Platinum (`PLATINUM_API_KEY`) | Shared folders under `/drives` in new sessions. See [Files](/docs/work/runtime#files). |
 
 ### When a flag is off
@@ -257,6 +258,8 @@ Branch on `code`, never on `error`. The SDK exports `isFeatureDisabledError(erro
 From the CLI, run `kortix projects rm [<project_id>]`. It acts on the linked project when you pass no id. `-y` skips the confirmation. Both need `project.delete`. A delete cannot be undone.
 
 Kortix deletes a managed repository with the project. A repository you connected yourself is left untouched.
+
+Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
 
 | Way in | After the delete |
 | --- | --- |

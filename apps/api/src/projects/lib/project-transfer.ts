@@ -21,6 +21,8 @@
 import { eq, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import {
+  artifacts,
+  projectSessionGroups,
   projectSpaces,
   rooms,
   sessionIdleWatches,
@@ -92,6 +94,7 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   projectTriggerEventSubscriptions,
   projectTriggerEventPolls,
   projectMonitorBoxes,
+  projectSessionGroups,
   projectSpaces,
   rooms,
   sessionIdleWatches,
@@ -122,6 +125,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   promptAttachments,
   connectorAttachments,
   drives,
+  // An artifact is a path in the project drive: it moves with the drive.
+  artifacts,
 ];
 
 /**

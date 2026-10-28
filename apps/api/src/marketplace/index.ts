@@ -16,7 +16,6 @@ import {
   _resetExternalCache,
   assertAllowedSourceAddress,
   catalogStatus,
-  clampMarketplaceItemsLimit,
   FEATURED_MARKETPLACES,
   getCatalogItemDetail,
   getCatalogItemFile,
@@ -24,11 +23,13 @@ import {
   listCatalogItemsPage,
   listFeaturedMarketplaces,
   listMarketplaces,
+  MARKETPLACE_ITEMS_MAX_LIMIT,
   registerMarketplaceSourceProvider,
   warmMarketplaceCatalog,
 } from './catalog';
 import { addSource, listSources, removeSource } from './sources-store';
 import { readJsonObject } from '../shared/http-body';
+import { rethrowDatabaseError } from '../shared/database-errors';
 
 // The browse list is anonymous and can return the whole catalog (6 MB on the
 // hosted deployment). A content-addressed ETag makes repeats a 304 and the
@@ -50,6 +51,12 @@ function cachedCatalogJson(c: Context<AppEnv>, payload: unknown, maxAgeSeconds: 
   c.header('ETag', etag);
   if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
   return c.json(payload as Record<string, unknown>);
+}
+
+/** A page query value of decimal digits as a number; null when absent; NaN for anything else. */
+function pageQuery(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
 }
 
 // Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
@@ -83,17 +90,20 @@ marketplaceApp.openapi(
         source: z.string().optional(),
         limit: z.string().optional().openapi({
           description:
-            'Page size, a decimal integer. Opt-in: omit it, or send a value that is not a number, for the whole filtered catalog. 0 and negative values read as 1, values above 200 as 200. Items come bundles first, then by name, then by id, so an offset always lands on the same item.',
+            'Page size, an integer from 1 to 200. Opt-in: omit it for the whole filtered catalog. Any other value answers 400. Items come bundles first, then by name, then by id, so an offset always lands on the same item.',
         }),
         offset: z.string().optional().openapi({
-          description: 'Items to skip before the page. Read only with `limit`. A negative or non-numeric value reads as 0.',
+          description: 'Items to skip before the page, an integer from 0. Read only with `limit`. Any other value answers 400. A page past the end is empty.',
         }),
       }),
     },
     responses: {
-      200: json(z.any(), 'Catalog items'),
+      200: json(
+        z.any(),
+        'Catalog items: `{items, total, hasMore, loading, pending, sources}`. A page (`limit` sent) also returns the `limit` and `offset` it applied.',
+      ),
       304: { description: 'Not modified — the caller already has this catalog' },
-      ...errors(429),
+      ...errors(400, 429),
     },
   }),
   async (c: Context<AppEnv>) => {
@@ -114,25 +124,25 @@ marketplaceApp.openapi(
         429,
       );
     }
-    // Pagination is opt-in: only a present, numeric `limit` triggers slicing —
-    // absent/non-numeric `limit` must still return the full filtered list
+    // Pagination is opt-in: an absent `limit` returns the full filtered list
     // (existing callers, e.g. the web's default-project-skills lookup, filter
-    // client-side and rely on getting everything back). A present-but-out-of-
-    // range `limit` (e.g. 0, negative, >200) still opts in, clamped to [1,200].
-    // 200 (not 100) so the explore landing's `MARKETPLACE_EXPLORE_LANDING_LIMIT`
-    // (120) is actually honored instead of silently truncated by this clamp.
+    // client-side and rely on getting everything back). A present `limit` must
+    // be an integer from 1 to 200, and a present `offset` an integer from 0:
+    // anything else answers 400. A typo such as `limit=abc` used to return the
+    // whole 6 MB catalog, and `limit=500` was clamped in silence (KRTX-3314).
     //
     // The full list is the expensive response (6 MB on the hosted deployment),
     // so it is served with an ETag: a repeat caller gets a 304 with no body
     // instead of re-transferring the catalog (pentest 2026-10-22, 55,956x
     // amplification). The payload stays byte-identical for clients that do not
     // revalidate.
-    const parsedLimit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : NaN;
-    const hasLimit = Number.isFinite(parsedLimit);
-    const parsedOffset = q.offset !== undefined ? Number.parseInt(q.offset, 10) : NaN;
-    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
-    if (hasLimit) {
-      const limit = clampMarketplaceItemsLimit(parsedLimit);
+    const limit = pageQuery(q.limit);
+    if (limit !== null && !(limit >= 1 && limit <= MARKETPLACE_ITEMS_MAX_LIMIT)) {
+      return c.json({ error: `limit must be an integer from 1 to ${MARKETPLACE_ITEMS_MAX_LIMIT}` }, 400);
+    }
+    const offset = pageQuery(q.offset) ?? 0;
+    if (!Number.isSafeInteger(offset)) return c.json({ error: 'offset must be a non-negative integer' }, 400);
+    if (limit !== null) {
       const { items, total } = await listCatalogItemsPage({
         query: q.query,
         type: q.type,
@@ -144,7 +154,7 @@ marketplaceApp.openapi(
       // poll, and show a spinner per still-resolving source.
       return cachedCatalogJson(
         c,
-        { items, total, hasMore: offset + items.length < total, ...catalogStatus() },
+        { items, total, hasMore: offset + items.length < total, limit, offset, ...catalogStatus() },
         30,
       );
     }
@@ -315,6 +325,7 @@ marketplaceApp.openapi(
       warmMarketplaceCatalog();
       return c.json({ source });
     } catch (err) {
+      rethrowDatabaseError(err);
       return c.json({ error: (err as Error).message }, 400);
     }
   },

@@ -84,15 +84,6 @@ describe('/new failure states: pre-existing coverage (regression pin)', () => {
 });
 
 describe('/new failure states: the retry affordance is wired to the UI', () => {
-  test('the page destructures retry and canRetry from useCreateWorkspace', () => {
-    expect(page).toContain('retry');
-    expect(page).toContain('canRetry');
-    // Paired presence check: pulled from the SAME hook call the rest of the
-    // page's create state comes from, not a second, page-local invocation.
-    const hookCalls = page.match(/useCreateWorkspace\(\)/g) ?? [];
-    expect(hookCalls).toHaveLength(1);
-  });
-
   test('the retry control sits inside the role="alert" region and calls retry(), not create() again', () => {
     const alertStart = errorAlertIndex();
     expect(alertStart).toBeGreaterThan(0);

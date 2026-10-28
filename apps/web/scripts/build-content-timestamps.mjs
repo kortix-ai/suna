@@ -58,6 +58,11 @@ const MARKETING_SOURCES = {
   changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
   'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
+  desktop: 'apps/web/src/app/[locale]/(public)/(marketing)/desktop/page.tsx',
+  mobile: 'apps/web/src/app/[locale]/(public)/(marketing)/mobile/page.tsx',
+  cli: 'apps/web/src/app/[locale]/(public)/(marketing)/cli/page.tsx',
+  slack: 'apps/web/src/app/[locale]/(public)/(marketing)/slack/page.tsx',
+  teams: 'apps/web/src/app/[locale]/(public)/(marketing)/teams/page.tsx',
 };
 
 function gitAvailable() {

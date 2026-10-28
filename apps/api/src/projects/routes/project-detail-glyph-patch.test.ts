@@ -113,6 +113,14 @@ mock.module('../lib/access', () => ({
   projectCapabilityAllowed: async () => true,
 }));
 
+// ── kortix.yaml owns project.name (#10883): a rename commits the file first.
+// No repository here, so the commit succeeds without one.
+const realManifestName = await import('../lib/manifest-project-name');
+mock.module('../lib/manifest-project-name', () => ({
+  ...realManifestName,
+  commitProjectName: async () => ({ ok: true }),
+}));
+
 // Registers project-detail.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT imported,
 // so these requests need no Authorization header.
@@ -225,12 +233,12 @@ describe('PATCH /:projectId — malformed value is NOT a clear', () => {
 });
 
 describe('PATCH /:projectId — neither key present', () => {
-  test('a name-only patch writes no metadata at all', async () => {
+  test('a name-only patch writes only the kortix.yaml name marker', async () => {
     const res = await patch({ name: 'renamed-only' });
 
     expect(res.status).toBe(200);
     expect(lastSet().name).toBe('renamed-only');
-    expect('metadata' in lastSet()).toBe(false);
+    expect(metadataQuery().params).toEqual(['{"manifest_project_name":"renamed-only"}']);
   });
 
   test('an empty patch writes no metadata either', async () => {

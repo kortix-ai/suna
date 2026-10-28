@@ -831,6 +831,10 @@ const catalog = {
         "project_channels": {
           "name": "Channels",
           "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
+        },
+        "session_groups": {
+          "name": "Session groups",
+          "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
         }
       },
       "channelsSwitch": {
@@ -1278,6 +1282,38 @@ const catalog = {
       "showArchived": "Archived sessions",
       "pinnedMark": "Pinned"
     },
+    "sessionGroups": {
+      "newGroup": "New group",
+      "newGroupFromMenu": "New group…",
+      "createTitle": "New group",
+      "createDescription": "Everyone in this project sees the group. Move a session into it from the session's menu, or drag the session onto it.",
+      "namePlaceholder": "Group name",
+      "create": "Create group",
+      "created": "Group created",
+      "createFailed": "Could not create the group",
+      "rename": "Rename group",
+      "save": "Save",
+      "renamed": "Group renamed",
+      "renameFailed": "Could not rename the group",
+      "nameTaken": "Another group in this project has that name.",
+      "limit": "A project has at most 50 groups.",
+      "cancel": "Cancel",
+      "delete": "Delete group",
+      "deleteTitle": "Delete this group?",
+      "deleteDescription": "{name} is deleted for everyone in this project. Its sessions stay, in no group. This cannot be undone.",
+      "deleted": "Group deleted",
+      "deleteFailed": "Could not delete the group",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "reorderFailed": "Could not reorder the groups",
+      "moveTo": "Move to group",
+      "removeFromGroup": "Remove from group",
+      "moved": "Session moved",
+      "noGroup": "No group",
+      "moveFailed": "Could not move the session",
+      "empty": "Sessions you move here will show up here.",
+      "groupOptions": "Group options"
+    },
     "recentlyDeleted": {
       "view": "Recently deleted",
       "empty": "Sessions you delete will show up here for {days} days.",
@@ -1595,6 +1631,7 @@ const catalog = {
     "signInWithEmail": "Sign in with email",
     "createNewAccount": "Create new account",
     "byContinuingYouAgreeSimple": "By continuing, you agree to our",
+    "customerLogoNotice": "Kortix may show your organization's name and logo as a customer, on any plan. Opt out anytime at legal@kortix.com.",
     "phoneVerification": {
       "title": "Verify Your Phone Number",
       "titleOtp": "Enter Verification Code",
@@ -6140,7 +6177,14 @@ const catalog = {
     "sessionModel": "Model {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "No cap · spend is unlimited",
-    "tokensSub": "{in} in · {out} out"
+    "tokensSub": "{in} in · {out} out",
+    "unknownValue": "Unknown",
+    "estimateCoverageUnavailable": "Estimate coverage unavailable.",
+    "estimatesSeparate": "Actual spend above is separate. Estimates are never added to charges.",
+    "estimatedUsageValueLabel": "LLM estimated usage value (not a bill):",
+    "pricedRequests": "{count} priced requests",
+    "unpricedRequests": "{count} unpriced requests",
+    "llmEstimateLabel": "LLM estimate:"
   },
   "triggerComposer": {
     "every": "Every",

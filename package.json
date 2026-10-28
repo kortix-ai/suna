@@ -66,6 +66,13 @@
   },
   "packageManager": "pnpm@8.11.0",
   "pnpm": {
+    "auditConfig": {
+      "ignoreCves": [
+        "CVE-2023-54404",
+        "CVE-2026-93748",
+        "CVE-2026-45822"
+      ]
+    },
     "overrides": {
       "shell-quote@<1.11.0": "1.11.0",
       "@icons-pack/react-simple-icons@>=13.11.2 <14": "13.11.1",
@@ -82,7 +89,7 @@
       "@opentelemetry/api": "1.9.0",
       "@opentelemetry/sdk-node@>=0.0.0 <0.217.0": "0.217.0",
       "@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0": "0.217.0",
-      "fast-uri@>=3.0.0 <3.1.8": "3.1.8",
+      "fast-uri@>=3.0.0 <3.1.9": "3.1.9",
       "sharp@>=0.0.0 <0.35.5": "0.35.5",
       "@modelcontextprotocol/sdk@<1.32.0": "1.32.0",
       "katex@<0.18.7": "0.18.7",
@@ -92,6 +99,12 @@
       "hono@>=4.0.0 <4.13.11": "4.13.11",
       "next-intl@>=4.0.0 <4.13.4": "4.13.4",
       "icu-minify@>=4.0.0 <4.9.2": "4.9.2",
+      "zod@>=4.0.0 <4.6.6": "4.6.7",
+      "nodemailer@>=10.0.0 <10.1.4": "10.2.1",
+      "node-forge@<1.4.1": "1.4.1",
+      "body-parser@>=2.0.0 <2.4.0": "2.4.0",
+      "qs@>=6.7.0 <6.16.1": "6.16.1",
+      "postcss-selector-parser@>=6.0.0 <6.1.5": "6.1.5",
       "uuid@>=7.0.0 <11.1.1": "11.1.1",
       "uuid@>=13.0.0 <13.0.1": "13.0.1",
       "postcss@>=8.0.0 <8.5.23": "8.5.23",

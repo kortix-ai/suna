@@ -95,7 +95,7 @@ describe('DELETE /projects/:projectId step order', () => {
     const res = await deleteProject();
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
+    expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: true });
     expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'archive:archived', 'revoke-tokens']);
   });
 

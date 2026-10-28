@@ -53,7 +53,7 @@ import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
-import { auth, errors, json } from '../../openapi';
+import { auth, boundedIssues, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
 import { assertProjectCapability, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -276,7 +276,7 @@ export function registerSessionLogRoutes(): void {
       if (!parsed.success) {
         const issues = parsed.error.issues.slice(0, 5);
         journalRejected(scope, 400, 'invalid_body', { issues: issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
-        return c.json({ error: 'Invalid journal body', issues }, 400);
+        return c.json({ error: 'Invalid journal body', ...boundedIssues(parsed.error.issues) }, 400);
       }
       // The body as sent: the parse would drop fields this API does not know.
       const outcome = await ingestSessionLogJournal(scope, read.body as SessionLogJournalRequest);

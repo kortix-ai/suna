@@ -30,7 +30,8 @@ import { useTranslations } from '../../i18n';
 
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
-import { SessionFilesExplorer } from './session-files-explorer';
+import { SessionFilesBooting, SessionFilesExplorer } from './session-files-explorer';
+import { SessionBootStatus } from '../status/session-starting-loader';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
 import { OutputPathsContext } from '../../markdown/code/output-paths-context';
 import { useIsMobile } from '../../hooks/use-mobile';
@@ -62,7 +63,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AppPreview } from './easy/app-preview';
+import { AppPreview, AppPreviewBooting } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
   isWideDeliverable,
@@ -87,6 +88,9 @@ export interface SessionPanelValue {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  /** The session's computer is still starting (the boot shell). Tool cards
+   *  draw their chrome around a status body until it is up. */
+  booting?: boolean;
 
   /** Card data — everything the floating overlay renders. */
   files: OutputItem[];
@@ -130,11 +134,21 @@ export function useOptionalSessionPanel(): SessionPanelValue | null {
   return useContext(SessionPanelContext);
 }
 
+/**
+ * A tool card's body: `boot` while the session's computer starts, `children`
+ * once it is up. Read at render time, not when the card opens, so a card
+ * opened during boot turns live in place.
+ */
+export function SessionBootGate({ boot, children }: { boot: ReactNode; children: ReactNode }) {
+  return useOptionalSessionPanel()?.booting ? boot : children;
+}
+
 export function SessionPanelProvider({
   sessionId,
   isSessionBusy = false,
   projectId,
   projectSessionId,
+  booting = false,
   children,
 }: {
   /** The runtime session id: the root thread of the session log. */
@@ -146,6 +160,8 @@ export function SessionPanelProvider({
    *  case the palette's "Open Audit" consume below becomes a no-op. */
   projectId?: string;
   projectSessionId?: string;
+  /** See `SessionPanelValue.booting`. */
+  booting?: boolean;
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -444,18 +460,26 @@ export function SessionPanelProvider({
           padded: false,
           nav,
           body: (
-            <AppPreview
-              url={output.url ?? ''}
-              name={displayName}
-              projectId={projectId}
-              shareContext={
-                projectId && projectSessionId
-                  ? { projectId, sessionId: projectSessionId }
-                  : undefined
+            <SessionBootGate
+              boot={
+                <AppPreviewBooting onClose={closeDetail}>
+                  <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+                </AppPreviewBooting>
               }
-              onClose={closeDetail}
-              onSendToAgent={() => sendAppToAgent(output)}
-            />
+            >
+              <AppPreview
+                url={output.url ?? ''}
+                name={displayName}
+                projectId={projectId}
+                shareContext={
+                  projectId && projectSessionId
+                    ? { projectId, sessionId: projectSessionId }
+                    : undefined
+                }
+                onClose={closeDetail}
+                onSendToAgent={() => sendAppToAgent(output)}
+              />
+            </SessionBootGate>
           ),
         });
         setPanelSplit(split);
@@ -556,13 +580,21 @@ export function SessionPanelProvider({
         title: changes ? 'Changes' : 'Files',
         padded: false,
         body: (
-          <SessionFilesExplorer
-            chatSessionId={sessionId}
-            projectId={projectId}
-            projectSessionId={projectSessionId}
-            ephemeral
-            initialMode={changes ? 'changes' : 'files'}
-          />
+          <SessionBootGate
+            boot={
+              <SessionFilesBooting mode={changes ? 'changes' : 'files'}>
+                <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+              </SessionFilesBooting>
+            }
+          >
+            <SessionFilesExplorer
+              chatSessionId={sessionId}
+              projectId={projectId}
+              projectSessionId={projectSessionId}
+              ephemeral
+              initialMode={changes ? 'changes' : 'files'}
+            />
+          </SessionBootGate>
         ),
       });
     },
@@ -706,6 +738,7 @@ export function SessionPanelProvider({
       sessionId,
       projectId,
       projectSessionId,
+      booting,
       files,
       context,
       apps,
@@ -727,6 +760,7 @@ export function SessionPanelProvider({
       sessionId,
       projectId,
       projectSessionId,
+      booting,
       files,
       context,
       apps,

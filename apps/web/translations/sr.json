@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Kanali",
           "description": "Organizujte rad u kanalima. Svaka nova poruka u kanalu ili u direktnoj poruci sa agentom započinje nit. Zamenjuje listu sesija u bočnoj traci."
+        },
+        "session_groups": {
+          "name": "Групе сесија",
+          "description": "Груписање сесија у бочној траци у именоване фасцикле које дели цео пројекат, на пример једну по продавници или клијенту. Премести сесију у групу из њеног менија или превлачењем; преуреди и скупи групе."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {# сесију није могуће променити} few {# сесије није могуће променити} other {# сесија није могуће променити}}",
       "showArchived": "Архивиране сесије",
       "pinnedMark": "Закачена"
+    },
+    "sessionGroups": {
+      "newGroup": "Нова група",
+      "newGroupFromMenu": "Нова група…",
+      "createTitle": "Нова група",
+      "createDescription": "Сви у овом пројекту виде групу. Премести сесију у групу из њеног менија или је превуци на групу.",
+      "namePlaceholder": "Назив групе",
+      "create": "Направи групу",
+      "created": "Група је направљена",
+      "createFailed": "Групу није могуће направити",
+      "rename": "Преименуј групу",
+      "save": "Сачувај",
+      "renamed": "Група је преименована",
+      "renameFailed": "Групу није могуће преименовати",
+      "nameTaken": "Друга група у овом пројекту већ има тај назив.",
+      "limit": "Пројекат може имати највише 50 група.",
+      "cancel": "Откажи",
+      "delete": "Обриши групу",
+      "deleteTitle": "Обрисати ову групу?",
+      "deleteDescription": "{name} се брише за све у овом пројекту. Њене сесије остају, без групе. Ово се не може опозвати.",
+      "deleted": "Група је обрисана",
+      "deleteFailed": "Групу није могуће обрисати",
+      "moveUp": "Помери нагоре",
+      "moveDown": "Помери надоле",
+      "reorderFailed": "Групе није могуће преуредити",
+      "moveTo": "Премести у групу",
+      "removeFromGroup": "Уклони из групе",
+      "moved": "Сесија је премештена",
+      "noGroup": "Без групе",
+      "moveFailed": "Сесију није могуће преместити",
+      "empty": "Сесије које овде преместиш појавиће се овде.",
+      "groupOptions": "Опције групе"
     },
     "recentlyDeleted": {
       "view": "Недавно обрисане",
@@ -2767,6 +2803,7 @@
     "signInWithEmail": "Пријавите се путем е-поште",
     "createNewAccount": "Направи нови налог",
     "byContinuingYouAgreeSimple": "Ако наставите, слажете се са нашим",
+    "customerLogoNotice": "Kortix може да прикаже назив и лого ваше организације као клијента, на било ком плану. Можете се одјавити у сваком тренутку на legal@kortix.com.",
     "phoneVerification": {
       "title": "Потврдите свој број телефона",
       "titleOtp": "Enter Верификациони код",
@@ -20428,7 +20465,9 @@
       "text7c0a91e5b3d2": "Некласификовани алати",
       "text9d2b6f0c41ae": "Алати и правила",
       "openThreadAction": "Отвори тему",
-      "untitledThread": "Тема без наслова"
+      "untitledThread": "Тема без наслова",
+      "text314ae71b8c8d": "Артефакти",
+      "textfe204b549282": "артефакти документи документ слајдови презентација табла дизајн контролна табла страница објављено дели"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20767,7 +20806,14 @@
     "sessionModel": "Модел {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Без ограничења · потрошња је неограничена",
-    "tokensSub": "{in} улаз · {out} излаз"
+    "tokensSub": "{in} улаз · {out} излаз",
+    "unknownValue": "Nepoznato",
+    "estimateCoverageUnavailable": "Pokrivenost procene nije dostupna.",
+    "estimatesSeparate": "Stvarna potrošnja iznad je odvojena. Procene se nikada ne dodaju troškovima.",
+    "estimatedUsageValueLabel": "Procenjena vrednost LLM upotrebe (nije račun):",
+    "pricedRequests": "{count} zahteva sa cenom",
+    "unpricedRequests": "{count} zahteva bez cene",
+    "llmEstimateLabel": "LLM procena:"
   },
   "triggerComposer": {
     "every": "Сваких",
@@ -23309,6 +23355,22 @@
       "agentsFailedPeopleAdded": "У #{name} је додато: {what}. Агенти нису додати и остају изабрани.",
       "allAdded": "Сви из пројекта су већ овде.",
       "noMatches": "Ништа не одговара „{query}“."
+    },
+    "privateNotIn": {
+      "row": "Приватни канали у којима ниси",
+      "title": "Приватни канали у којима ниси",
+      "description": "Можеш да преименујеш, архивираш и додаш људе. Само чланови читају садржај канала, па не можеш да додаш себе.",
+      "meta": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}} · аутор: {name}",
+      "metaNoCreator": "{count, plural, =0 {Нема чланова} one {# члан} few {# члана} other {# чланова}}",
+      "archived": "Архивиран",
+      "menu": "Опције за #{name}",
+      "addPeople": "Додај људе",
+      "rename": "Преименуј",
+      "archive": "Архивирај",
+      "unarchive": "Врати из архиве",
+      "archivedToast": "#{name} је архивиран",
+      "unarchivedToast": "#{name} је враћен из архиве",
+      "failed": "Ажурирање канала #{name} није успело. Покушај поново."
     }
   }
 }
