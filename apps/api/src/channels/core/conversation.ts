@@ -14,7 +14,8 @@
  *   a new thread         → claim the first create, start one session bound to it;
  *                          a racing message waits for that session and follows up
  *
- * Telegram and Email run on it. Slack and Teams still route themselves.
+ * A platform adapter supplies its port and keeps its own intake. Adapters that
+ * predate the core still route themselves.
  * Session-addressed notices (a failed run, a failed start) go through session-notice.ts.
  */
 import { chatEventDedup } from '@kortix/db';
@@ -23,7 +24,7 @@ import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
-import type { TurnErrorInfo } from '../slack/errors';
+import type { TurnErrorCode } from '@kortix/api-contract/transcript';
 import {
   type ChatThreadKey,
   claimThreadCreate,
@@ -38,13 +39,28 @@ type CreateError = NonNullable<Awaited<ReturnType<typeof createSession>>['error'
 /** `chat_threads.platform` = `metadata.source` = the lifecycle `source` of a channel session. */
 export type ChannelPlatform = (typeof CHANNEL_PLATFORMS)[number];
 
+/** The error detail a sandbox relays when a turn ends in an error. */
+export interface TurnErrorInfo {
+  /** The runtime's error name, e.g. `APIError` / `ProviderAuthError` / `MessageAbortedError`. */
+  name?: string;
+  message?: string;
+  /** Upstream HTTP status for an `APIError` (e.g. 402 = credits, 429 = rate limit). */
+  statusCode?: number;
+  /** The runtime's own transient/permanent signal. */
+  isRetryable?: boolean;
+  /** Names the provider in the copy (`ProviderAuthError`). */
+  providerID?: string;
+  /** The daemon's classification, when it sends one. */
+  code?: TurnErrorCode;
+}
+
 /** One conversation, and the inbound message an answer anchors to. */
 export interface ChannelTarget extends ChatThreadKey {
   platform: ChannelPlatform;
   /** Follow-ups are confined to it; ports read the install's secrets with it. */
   projectId: string;
   /**
-   * The inbound message a notice answers (a Telegram `message_id`, an email id).
+   * The inbound message a notice answers (the platform's message id).
    * Absent on a target found from a session (session-notice.ts): `chat_threads`
    * keeps no message id, so that notice is posted unanchored.
    */
@@ -62,8 +78,8 @@ export type ChannelNotice =
   /** Last attempt: the thread's session refused the message (a failed session). */
   | { kind: 'follow_up_failed' }
   /**
-   * Session-addressed: a root turn closed in a non-abort error that no Slack or
-   * Teams turn carried. `promptSource`: the lifecycle source of the prompt the
+   * Session-addressed: a root turn closed in a non-abort error that no live
+   * channel turn carried (channels/turn-relay.ts). `promptSource`: the lifecycle source of the prompt the
    * turn answered, when known; a turn another surface prompted (the web, a
    * reminder) is not the chat's to hear.
    */

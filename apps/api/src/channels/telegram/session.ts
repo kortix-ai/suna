@@ -20,6 +20,7 @@ import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { registerSessionPort } from '../core/session-notice';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
@@ -256,3 +257,4 @@ export function renderTelegramPrompt(message: TelegramMessage, kind: 'new' | 'fo
 }
 
 registerEventConsumer('telegram.', handleTelegramEvent);
+registerSessionPort('telegram', telegramPort);
