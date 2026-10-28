@@ -610,8 +610,9 @@ DB `change_requests` (per-project `number`, `status open|merged|closed`).
 `CR-8` `POST …/:crId/close` · `POST …/:crId/reopen` → `write`.
 `CR-8b` `POST …/:crId/request-changes {feedback}` → **`write` required** → 200 `{change_request, delivering}` — persists the note under CR metadata `requested_changes` + delivers it to the origin session's agent (Review Center "request changes"). Missing `feedback` → 400; not-open → 409.
 `CR-9` CLI mirror: `kortix cr ls|show|diff|open|merge|close|reopen` (reads `KORTIX_PROJECT_ID` inside sandbox).
-`CR-10` response envelopes (assert shape): list → `{change_requests:[…], next_cursor}`, get → `{change_request:{…}}`, merge → `{change_request, merge}`. (Project DELETE returns `{ok:true}`, not an echoed status.)
+`CR-10` response envelopes (assert shape): list → `{change_requests:[…], next_cursor}`, get → `{change_request:{…}}`, merge → `{change_request, merge, also_merged}`. (Project DELETE returns `{ok, deleted, archived, repo_deleted}`, not an echoed status; see `PROJ-8`.)
 `CR-13` the list is bounded (KRTX-2316): `GET /projects/:id/change-requests` returns one page, newest number first, 50 rows by default, and `next_cursor` (null on the last page); passing it back as `cursor` returns the rows numbered below it. `limit` 1–500; `limit=501` → 400 (no clamp); `limit=0` or a word → 400; a `cursor` that is not a CR number → 400. `kortix cr ls` and `kortix cr show <number>` follow the cursor, so they still reach every change request.
+`CR-14` a merge marks the requests it carried (KRTX-3371): with CR A on branch `a`, CR B on branch `b` (stacked on `a`) and CR C on an unrelated branch, all into the same base, merging B returns `also_merged:[{cr_id,number}]` naming A only. A then reads `status:"merged"` with B's `merge_commit_sha`; C stays `open`. `kortix cr merge` prints `Also merged #<n>`.
 
 ---
 
