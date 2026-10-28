@@ -1,10 +1,13 @@
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import Link from 'next/link';
 
 // Facts: framework/content.ts (accuracy gate) and /framework. Naming pi here
 // is decision D24: the framework surfaces may name the harness.
-const FRAMEWORK = {
+const sourceFRAMEWORK = {
   title: 'A workspace for your team.',
   titleMuted: 'A framework underneath.',
   body: [
@@ -20,6 +23,13 @@ const FRAMEWORK = {
 };
 
 export function FrameworkBand() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { FRAMEWORK } = localizeUiCatalog(
+    { FRAMEWORK: sourceFRAMEWORK },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   return (
     <FeatureSplit
       id="framework"
@@ -28,7 +38,7 @@ export function FrameworkBand() {
       after={
         <div className="mt-8 px-8 lg:px-28">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-            <Link href="/framework">See the architecture</Link>
+            <Link href="/framework">{tMarketing('text95b74a4f4d4b')}</Link>
           </MarketingButton>
         </div>
       }

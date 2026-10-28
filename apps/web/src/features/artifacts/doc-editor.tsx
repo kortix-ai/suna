@@ -112,13 +112,13 @@ export function DocEditor({
   };
 
   const showConflict = () => {
-    const { t: tr, artifact: current } = latest.current;
-    errorToast(tr('conflict'), {
+    const { t: t, artifact: current } = latest.current;
+    errorToast(t('conflict'), {
       id: `artifact-conflict-${current.artifact_id}`,
       duration: Infinity,
       actions: [
-        { label: tr('conflictReload'), onClick: () => latest.current.onReload() },
-        { label: tr('conflictKeepMine'), onClick: () => saver.current?.keepMine() },
+        { label: t('conflictReload'), onClick: () => latest.current.onReload() },
+        { label: t('conflictKeepMine'), onClick: () => saver.current?.keepMine() },
       ],
     });
   };
@@ -233,7 +233,8 @@ export function DocEditor({
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('beforeunload', onLeave);
-      dismissToast(`artifact-conflict-${current.artifact_id}`);
+      const conflictToastId = `artifact-conflict-${current.artifact_id}`;
+      dismissToast(conflictToastId);
       docSaver.close();
       if (saver.current === docSaver) saver.current = null;
     };

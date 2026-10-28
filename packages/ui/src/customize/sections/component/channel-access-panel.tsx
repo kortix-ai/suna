@@ -43,7 +43,7 @@ export const CHANNEL_ACCESS: Record<
     idPlaceholder: string;
     idInputMode: 'numeric' | 'text';
     copy: Record<
-      'description' | 'emptyDescription' | 'loadError' | 'addByIdHint' | 'addByIdInvalid' | 'removeDescription',
+      'descriptionKey' | 'emptyDescription' | 'loadError' | 'addByIdHint' | 'addByIdInvalid' | 'removeDescription',
       string
     >;
   }
@@ -57,7 +57,7 @@ export const CHANNEL_ACCESS: Record<
     idPlaceholder: '123456789',
     idInputMode: 'numeric',
     copy: {
-      description: 'telegramUsersDescription',
+      descriptionKey: 'telegramUsersDescription',
       emptyDescription: 'telegramUsersEmptyDescription',
       loadError: 'telegramUsersLoadError',
       addByIdHint: 'telegramAddByIdHint',
@@ -102,7 +102,7 @@ export function ChannelAccessPanel({
     <>
       <ModalHeader>
         <ModalTitle>{t.raw('text2c3059c25723')}</ModalTitle>
-        <ModalDescription>{tPages(copy.description)}</ModalDescription>
+        <ModalDescription>{tPages(copy.descriptionKey)}</ModalDescription>
       </ModalHeader>
       <ModalBody>
         {users.isError && !users.data ? (

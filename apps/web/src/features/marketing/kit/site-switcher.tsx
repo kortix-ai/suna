@@ -1,4 +1,7 @@
 'use client';
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 import Link from '@/components/site-link';
 import { isServicesPagesEnabled } from '@/lib/config';
@@ -6,7 +9,7 @@ import { cn } from '@kortix/ui';
 import { usePathname } from 'next/navigation';
 
 /** The site's two halves: the product and the done-for-you service. */
-const SITES = [
+const sourceSITES = [
   { id: 'os', label: 'AI OS', href: '/' },
   { id: 'services', label: 'Services', href: '/services' },
 ] as const;
@@ -16,11 +19,21 @@ const SITES = [
  * page. The current half is filled. Sits next to the logo in both headers.
  */
 export function SiteSwitcher({ className }: { className?: string }) {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { SITES } = localizeUiCatalog(
+    { SITES: sourceSITES },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+
   const current = /\/services\/?$/.test(usePathname() ?? '') ? 'services' : 'os';
   // Without /services there is only one half: no switcher.
   if (!isServicesPagesEnabled()) return null;
   return (
-    <nav aria-label="Site" className={cn('bg-muted flex items-center rounded-md p-0.5', className)}>
+    <nav
+      aria-label={tMarketing('textfa7955814e32')}
+      className={cn('bg-muted flex items-center rounded-md p-0.5', className)}
+    >
       {SITES.map((site) => (
         <Link
           key={site.id}

@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import { useRef, useState, type KeyboardEvent } from 'react';
 
 import { FRAMEWORK_PANELS } from './framework-panels';
-import { tabs } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 
 /**
  * One tab per part of the framework, in the home page's HowItWorksTabs
@@ -11,6 +13,9 @@ import { tabs } from './model';
  * right as two short sentences over one visual.
  */
 export function FrameworkTabs() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { tabs } = localizeModel(tMarketing);
+
   const [selected, setSelected] = useState(0);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const items = tabs.items;
@@ -26,6 +31,7 @@ export function FrameworkTabs() {
 
   const tab = items[selected];
 
+  const Panel = FRAMEWORK_PANELS[tab.id];
   return (
     <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
@@ -38,7 +44,7 @@ export function FrameworkTabs() {
 
             <div
               role="tablist"
-              aria-label="How the Kortix framework works"
+              aria-label={tMarketing('text75a6752caf95')}
               aria-orientation="vertical"
               onKeyDown={onKeyDown}
               className="mt-10 flex flex-col gap-6"
@@ -87,7 +93,7 @@ export function FrameworkTabs() {
                   </p>
                 ))}
               </div>
-              {FRAMEWORK_PANELS[tab.id]?.()}
+              {Panel ? <Panel /> : null}
             </div>
           </div>
         </div>

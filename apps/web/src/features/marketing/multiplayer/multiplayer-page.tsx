@@ -1,6 +1,9 @@
+import Link from '@/components/site-link';
 import { Band, Heading, PageFrame } from '@/features/marketing/kit/page-frame';
 import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
-import Link from '@/components/site-link';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import {
   ArrowRightIcon,
   BookOpenTextIcon,
@@ -17,7 +20,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import type { ComponentType } from 'react';
 
-import { faqItems, pillars, surfaces } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 import { MultiplayerHero } from './multiplayer-hero';
 import { TeamTabs } from './team-tabs';
 
@@ -49,6 +52,9 @@ const SURFACE_ICONS: Record<string, Glyph> = {
 };
 
 function Pillars() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { pillars } = localizeModel(tMarketing);
+
   return (
     <section id="pillars" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={pillars.title} titleMuted={pillars.titleMuted} />
@@ -61,7 +67,9 @@ function Pillars() {
                 <Icon className="text-foreground size-6" aria-hidden />
                 <h3 className="text-foreground text-2xl font-medium tracking-tight text-balance">
                   {name}
-                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">{line}</span>
+                  <span className="text-muted-foreground mt-1 block text-lg leading-snug">
+                    {line}
+                  </span>
                 </h3>
                 <ul className="mt-auto flex flex-col gap-2 text-sm">
                   {facts.map((fact) => (
@@ -81,6 +89,9 @@ function Pillars() {
 }
 
 function Surfaces() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { surfaces } = localizeModel(tMarketing);
+
   return (
     <section id="everywhere" className="scroll-mt-16 py-14 lg:py-20">
       <Heading title={surfaces.title} titleMuted={surfaces.titleMuted} />
@@ -114,13 +125,20 @@ function Surfaces() {
 }
 
 export function MultiplayerPage() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { faqItems } = localizeModel(tMarketing);
+
   return (
     <PageFrame>
       <MultiplayerHero />
       <Pillars />
       <TeamTabs />
       <Surfaces />
-      <FaqSection title="Team questions." titleMuted="Answered from the docs." items={faqItems} />
+      <FaqSection
+        title={tMarketing('text9ef9267ca343')}
+        titleMuted="Answered from the docs."
+        items={faqItems}
+      />
     </PageFrame>
   );
 }
