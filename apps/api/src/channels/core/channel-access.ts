@@ -1,0 +1,219 @@
+/**
+ * Channel access: who may talk to a chat platform's bot. The lists live in
+ * `projects.metadata.<platform>`:
+ * - `allowedUserIds`: the project's allowed senders, in list order. They stay
+ *   across a reconnect.
+ * - `accessRequests`: people who messaged the bot privately and are not
+ *   allowed, newest first: at most 20, under 30 days old. Only the id and the
+ *   names are kept, never a message. They belong to one install (the scope,
+ *   `chat_installs.workspace_id`): a disconnect or another install's connect
+ *   clears them.
+ *
+ * Add a platform: name it in CHANNEL_ACCESS_PLATFORMS
+ * (shared/channel-access-platforms.ts), which also hides its key from project
+ * reads, and record requests with its `chat_installs.workspace_id` as the scope.
+ */
+import { chatInstalls, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { metadataClearSubtreeKey, metadataMergeSubtree } from '../../projects/surface';
+import type { ChannelAccessPlatform } from '../../shared/channel-access-platforms';
+import { db } from '../../shared/db';
+
+export const CHANNEL_MAX_ALLOWED_USERS = 200;
+const MAX_ACCESS_REQUESTS = 20;
+const ACCESS_REQUEST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** A repeat message within this long, under the same names, writes nothing. */
+const ACCESS_REQUEST_THROTTLE_MS = 60 * 60 * 1000;
+
+/** Who asked for access: only these fields of the sender, never the message. */
+export interface ChannelAccessEntry {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  last_seen: string;
+}
+
+export type ChannelAccessRequester = Omit<ChannelAccessEntry, 'last_seen'>;
+
+export interface ChannelAccessLists {
+  allowedUserIds: string[];
+  /** Requests still waiting: not allowed, under 30 days old. */
+  accessRequests: ChannelAccessEntry[];
+}
+
+const stored = (metadata: unknown, platform: ChannelAccessPlatform) =>
+  (metadata as Partial<Record<string, { allowedUserIds?: unknown; accessRequests?: unknown }>> | null)?.[platform];
+
+/** A legacy entry may be a number: read as a string. */
+function allowedIds(metadata: unknown, platform: ChannelAccessPlatform): string[] {
+  const ids = stored(metadata, platform)?.allowedUserIds;
+  return Array.isArray(ids) ? ids.map(String) : [];
+}
+
+/** Every stored request, as written; a malformed entry is skipped. */
+function storedRequests(metadata: unknown, platform: ChannelAccessPlatform): ChannelAccessEntry[] {
+  const list = stored(metadata, platform)?.accessRequests;
+  if (!Array.isArray(list)) return [];
+  return list.filter(
+    (r): r is ChannelAccessEntry =>
+      typeof r?.id === 'string' && typeof r.last_seen === 'string' && !Number.isNaN(Date.parse(r.last_seen)),
+  );
+}
+
+/** The requests still waiting: not allowed, and under 30 days old. */
+function waitingRequests(requests: ChannelAccessEntry[], allowedUserIds: string[]): ChannelAccessEntry[] {
+  const now = Date.now();
+  return requests.filter((r) => !allowedUserIds.includes(r.id) && now - Date.parse(r.last_seen) < ACCESS_REQUEST_TTL_MS);
+}
+
+/** The platform's lists in a project's metadata, waiting requests newest first. */
+export function readChannelAccess(metadata: unknown, platform: ChannelAccessPlatform): ChannelAccessLists {
+  const allowedUserIds = allowedIds(metadata, platform);
+  return {
+    allowedUserIds,
+    accessRequests: waitingRequests(storedRequests(metadata, platform), allowedUserIds).sort(
+      (a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen),
+    ),
+  };
+}
+
+/**
+ * Edit the allowed list and the requests under the project row's lock, so
+ * concurrent edits (an admin's Allow, a new request) all land. `edit` gets the
+ * waiting requests and returns the lists to write, or null for no change.
+ * Every write drops expired requests and the requests of allowed ids, so a
+ * removed user's old request never comes back. With `scopeId`, nothing is
+ * edited unless the project still has that install of `platform`.
+ */
+async function editChannelAccess(
+  platform: ChannelAccessPlatform,
+  projectId: string,
+  edit: (lists: ChannelAccessLists) => Partial<ChannelAccessLists> | null,
+  scopeId?: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .for('update');
+    if (!row) return;
+    if (scopeId) {
+      // A disconnect or another install's connect clears the requests after this check, or waits for this lock.
+      const [install] = await tx
+        .select({ scopeId: chatInstalls.workspaceId })
+        .from(chatInstalls)
+        .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.projectId, projectId), eq(chatInstalls.workspaceId, scopeId)))
+        .limit(1);
+      if (!install) return;
+    }
+    const requests = storedRequests(row.metadata, platform);
+    const allowedUserIds = allowedIds(row.metadata, platform);
+    const waiting = waitingRequests(requests, allowedUserIds);
+    const patch = edit({ allowedUserIds, accessRequests: waiting });
+    const accessRequests = waitingRequests(patch?.accessRequests ?? waiting, patch?.allowedUserIds ?? allowedUserIds);
+    if (patch || accessRequests.length !== requests.length) {
+      await tx
+        .update(projects)
+        .set({ metadata: metadataMergeSubtree(platform, { ...patch, accessRequests }) })
+        .where(eq(projects.projectId, projectId));
+    }
+  });
+}
+
+/** Replace the allowed list; the write drops the requests of the ids it allows. */
+export async function setChannelAllowedUsers(platform: ChannelAccessPlatform, projectId: string, ids: string[]): Promise<void> {
+  await editChannelAccess(platform, projectId, () => ({ allowedUserIds: ids }));
+}
+
+/** Allow one user; the write drops their request. False: the list is full. */
+export async function allowChannelUser(platform: ChannelAccessPlatform, projectId: string, id: string): Promise<boolean> {
+  let full = false;
+  await editChannelAccess(platform, projectId, ({ allowedUserIds }) => {
+    if (allowedUserIds.includes(id)) return null;
+    if (allowedUserIds.length >= CHANNEL_MAX_ALLOWED_USERS) {
+      full = true;
+      return null;
+    }
+    return { allowedUserIds: [...allowedUserIds, id] };
+  });
+  return !full;
+}
+
+export async function removeChannelUser(platform: ChannelAccessPlatform, projectId: string, id: string): Promise<void> {
+  await editChannelAccess(platform, projectId, ({ allowedUserIds }) =>
+    allowedUserIds.includes(id) ? { allowedUserIds: allowedUserIds.filter((u) => u !== id) } : null,
+  );
+}
+
+export async function dismissChannelAccessRequest(platform: ChannelAccessPlatform, projectId: string, id: string): Promise<void> {
+  await editChannelAccess(platform, projectId, ({ accessRequests }) =>
+    accessRequests.some((r) => r.id === id) ? { accessRequests: accessRequests.filter((r) => r.id !== id) } : null,
+  );
+}
+
+/** Drop every request; the allowed list stays. */
+export async function clearChannelAccessRequests(platform: ChannelAccessPlatform, projectId: string): Promise<void> {
+  await db
+    .update(projects)
+    .set({ metadata: metadataClearSubtreeKey(platform, 'accessRequests') })
+    .where(eq(projects.projectId, projectId));
+}
+
+/**
+ * A sender's name: a string without control or format characters (bidi
+ * overrides and isolates, zero-width), at most `max` code points (never half an emoji).
+ */
+export function cleanName(value: unknown, max: number): string | null {
+  return typeof value === 'string' ? Array.from(value.replace(/[\p{Cc}\p{Cf}]/gu, '')).slice(0, max).join('') || null : null;
+}
+
+/**
+ * Record that a not-allowed user messaged the bot privately. The newest 20
+ * requests under 30 days old stay. A repeat within an hour under the same
+ * names writes nothing, and takes no lock when the loaded `scope` already
+ * shows it. Nothing is written once the `scopeId` install is gone. True: the
+ * request is stored. False: it is not (the user is allowed, or the install is gone).
+ */
+export async function recordChannelAccessRequest(
+  platform: ChannelAccessPlatform,
+  projectId: string,
+  scope: { scopeId: string; accessRequests: ChannelAccessEntry[] },
+  requester: ChannelAccessRequester,
+): Promise<boolean> {
+  const { id } = requester;
+  const now = Date.now();
+  const entry: ChannelAccessEntry = {
+    id,
+    username: requester.username,
+    first_name: requester.first_name,
+    last_name: requester.last_name,
+    last_seen: new Date(now).toISOString(),
+  };
+  const current = (requests: ChannelAccessEntry[]) => {
+    const previous = requests.find((r) => r.id === id);
+    return (
+      !!previous &&
+      now - Date.parse(previous.last_seen) < ACCESS_REQUEST_THROTTLE_MS &&
+      previous.username === entry.username &&
+      previous.first_name === entry.first_name &&
+      previous.last_name === entry.last_name
+    );
+  };
+  // Most repeats end here, without the row lock.
+  if (current(scope.accessRequests)) return true;
+  let recorded = false;
+  await editChannelAccess(
+    platform,
+    projectId,
+    ({ allowedUserIds, accessRequests }) => {
+      if (allowedUserIds.includes(id)) return null;
+      recorded = true;
+      if (current(accessRequests)) return null;
+      return { accessRequests: [entry, ...accessRequests.filter((r) => r.id !== id)].slice(0, MAX_ACCESS_REQUESTS) };
+    },
+    scope.scopeId,
+  );
+  return recorded;
+}

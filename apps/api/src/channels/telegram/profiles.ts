@@ -4,8 +4,9 @@
  * the file URL stay on the server; the web reads the photo through the API.
  */
 import { mapWithConcurrency } from '../../shared/map-with-concurrency';
+import { type ChannelAccessEntry, cleanName } from '../core/channel-access';
 import { telegramCall, telegramDownload, telegramUnreachable } from './api';
-import { cleanName, loadTelegramBotToken, loadTelegramInstall, type TelegramAccessRequestEntry } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall } from './installs';
 
 export interface TelegramUser {
   user_id: string;
@@ -80,7 +81,7 @@ function telegramProfile(token: string, botId: string, userId: string, cacheOnly
   return entry.value;
 }
 
-function telegramUser(userId: string, profile: TelegramProfile | null, stored?: TelegramAccessRequestEntry): TelegramUser {
+function telegramUser(userId: string, profile: TelegramProfile | null, stored?: ChannelAccessEntry): TelegramUser {
   const names = profile ?? stored;
   return {
     user_id: userId,

@@ -4,15 +4,17 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { TELEGRAM_TOKEN_PATTERN, TELEGRAM_UPDATES, type TelegramBot, TelegramApiError, telegramCall } from '../../channels/telegram/api';
 import {
-  addTelegramAllowedUser,
+  allowChannelUser,
+  CHANNEL_MAX_ALLOWED_USERS,
+  dismissChannelAccessRequest,
+  removeChannelUser,
+} from '../../channels/core/channel-access';
+import {
   deleteTelegramInstall,
-  dismissTelegramAccessRequest,
   loadTelegramBotToken,
   loadTelegramInstall,
-  removeTelegramAllowedUser,
   saveTelegramInstall,
   setTelegramAllowedUserIds,
-  TELEGRAM_MAX_ALLOWED_USERS,
   TELEGRAM_USER_ID,
   type TelegramInstall,
 } from '../../channels/telegram/installs';
@@ -26,7 +28,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import type { AppEnv } from '../../types';
 
-const UserIds = z.array(z.string().regex(TELEGRAM_USER_ID)).max(TELEGRAM_MAX_ALLOWED_USERS);
+const UserIds = z.array(z.string().regex(TELEGRAM_USER_ID)).max(CHANNEL_MAX_ALLOWED_USERS);
 
 const TelegramUserSchema = z.object({
   user_id: z.string(),
@@ -69,13 +71,13 @@ const invalidUserId = (c: Context<AppEnv>) =>
  * One list edit by user id (remove, dismiss): idempotent, answers the
  * installation as PUT does.
  */
-async function editByUserId(c: Context<AppEnv>, edit: (projectId: string, userId: string) => Promise<void>) {
+async function editByUserId(c: Context<AppEnv>, edit: typeof removeChannelUser) {
   const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
   if (ctx.response) return ctx.response;
   const userId = c.req.param('user_id') ?? '';
   if (!TELEGRAM_USER_ID.test(userId)) return invalidUserId(c);
   if (!(await loadTelegramInstall(ctx.projectId))) return notConnected(c);
-  await edit(ctx.projectId, userId);
+  await edit('telegram', ctx.projectId, userId);
   return c.json(installBody(await loadTelegramInstall(ctx.projectId)), 200);
 }
 
@@ -274,9 +276,9 @@ export function registerChannelTelegramRoutes(): void {
       const userId = ((await c.req.json().catch(() => null)) as { user_id?: unknown } | null)?.user_id;
       if (typeof userId !== 'string' || !TELEGRAM_USER_ID.test(userId)) return invalidUserId(c);
       if (!(await loadTelegramInstall(ctx.projectId))) return notConnected(c);
-      if (!(await addTelegramAllowedUser(ctx.projectId, userId))) {
+      if (!(await allowChannelUser('telegram', ctx.projectId, userId))) {
         return c.json(
-          { error: `At most ${TELEGRAM_MAX_ALLOWED_USERS} Telegram users can be allowed`, code: 'telegram_allowed_users_full' },
+          { error: `At most ${CHANNEL_MAX_ALLOWED_USERS} Telegram users can be allowed`, code: 'telegram_allowed_users_full' },
           409,
         );
       }
@@ -295,7 +297,7 @@ export function registerChannelTelegramRoutes(): void {
       request: { params: UserParams },
       responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
     }),
-    (c: Context<AppEnv>) => editByUserId(c, removeTelegramAllowedUser),
+    (c: Context<AppEnv>) => editByUserId(c, removeChannelUser),
   );
 
   projectsApp.openapi(
@@ -309,7 +311,7 @@ export function registerChannelTelegramRoutes(): void {
       request: { params: UserParams },
       responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
     }),
-    (c: Context<AppEnv>) => editByUserId(c, dismissTelegramAccessRequest),
+    (c: Context<AppEnv>) => editByUserId(c, dismissChannelAccessRequest),
   );
 
   projectsApp.openapi(
