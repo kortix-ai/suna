@@ -89,6 +89,10 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
   const jsonResponse = (data: unknown, status = 200): Response =>
     new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
+  // `null`, a number, a string or an array parses but is no request body.
+  const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+
   const bearer = (header: string | undefined): string | null => {
     const match = header?.match(/^Bearer\s+(\S.*)$/i);
     return match ? match[1].trim() : null;
@@ -157,6 +161,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return anthropicErrorResponse(400, 'Invalid JSON body');
     }
+    if (!isJsonObject(anthropicBody)) return anthropicErrorResponse(400, 'Invalid JSON body');
     const anthropicFieldError = requestFieldError(anthropicBody);
     if (anthropicFieldError) return anthropicErrorResponse(400, anthropicFieldError);
 
@@ -218,6 +223,7 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return responsesErrorResponse(400, 'Invalid JSON body');
     }
+    if (!isJsonObject(responsesBody)) return responsesErrorResponse(400, 'Invalid JSON body');
     const responsesFieldError = requestFieldError(responsesBody);
     if (responsesFieldError) return responsesErrorResponse(400, responsesFieldError);
 

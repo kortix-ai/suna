@@ -117,4 +117,17 @@ describe('the Anthropic and Responses ingresses refuse a mistyped field in their
       expect(JSON.stringify(await res.json())).toContain(message);
     }
   });
+
+  // Valid JSON that is not an object (`null`, `1`, `"x"`, `[]`) used to throw
+  // a TypeError on `body.stream`: a 500 for the caller's own malformed body.
+  test('a JSON body that is not an object → 400 Invalid JSON body on both ingresses', async () => {
+    const gateway = createGateway(hooks);
+    for (const rawBody of ['null', '1', '"x"', '[]']) {
+      for (const send of [gateway.messages, gateway.responses]) {
+        const res = await send({ authorization: 'Bearer good', rawBody });
+        expect({ rawBody, status: res.status }).toEqual({ rawBody, status: 400 });
+        expect(JSON.stringify(await res.json())).toContain('Invalid JSON body');
+      }
+    }
+  });
 });
