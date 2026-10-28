@@ -121,7 +121,7 @@ export interface ProjectGoalDocument {
  * - `missed_wake`: the next wake is more than 15 minutes overdue.
  * - `ask_overdue`: an open ask is past its due time.
  * - `verification_stalled`: verification started more than 24 hours ago.
- * - `unreadable`: `goal.json` is missing or is not valid JSON.
+ * - `unreadable`: GOAL.md (or a legacy goal.json) is missing or has no goal.
  */
 export type ProjectGoalIssue =
   | 'no_heartbeat'
