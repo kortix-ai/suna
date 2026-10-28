@@ -69,6 +69,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/framework',
   '/multiplayer',
   '/sovereign',
+  '/compliance',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -132,7 +133,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'careers',
     title: 'Careers',
     description:
-      'Open positions at Kortix — FDE / Services and GTM. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+      'Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
     htmlPath: '/careers',
   },
   {
@@ -160,8 +161,9 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'enterprise',
-    title: 'Enterprise AI agents: SSO, SCIM, audit, your VPC',
-    description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
+    title: 'Kortix for Enterprise',
+    description:
+      'One AI Operating System for the whole company: every team’s agents, skills and memory in one place you own, on Kortix Cloud, your VPC or on-prem, with any model.',
     htmlPath: '/enterprise',
     markdownPath: '/markdown/enterprise.md',
   },
@@ -236,6 +238,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
+    slug: 'compliance',
+    title: 'Compliance',
+    description:
+      'SAML 2.0 single sign-on, SCIM 2.0 directory sync, roles and groups, approval rules you set, and an audit log you can export or stream. SOC 2 Type I verified.',
+    htmlPath: '/compliance',
+  },
+  {
+    kind: 'marketing',
     slug: 'self-hosted',
     title: 'Self-hosted AI agents on your infrastructure',
     description:
@@ -281,7 +291,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'slack',
     title: 'Kortix in Slack: one thread, one session',
     description:
-      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts, as the person who asked.',
+      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts. Kortix checks the sender is a member; the agent acts with its own permissions.',
     htmlPath: '/slack',
   },
   {

@@ -37,7 +37,6 @@ export function AboutPage(): ReactNode {
       <section id="hero">
         <PageHero
           title={hero.title}
-          titleMuted={hero.titleMuted}
           sub={hero.lead}
           actions={
             <>

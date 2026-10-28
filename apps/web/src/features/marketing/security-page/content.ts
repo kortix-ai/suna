@@ -45,9 +45,9 @@ import type { UiTranslator } from '@/i18n/translator';
  *  5. "Only a human can merge" is too strong. Merge is default-deny for agents
  *     and needs an explicit `project.cr.merge` grant. The copy says exactly
  *     that, which is the stronger claim anyway.
- *  6. Secrets are NOT scoped per person or per group — that model was retired
- *     (migration 20260706_secrets_v2_identifier_model.sql). Scoping is per
- *     project, per agent grant, and connector-scoped.
+ *  6. Each secret has an audience: the project, only you, or chosen people,
+ *     groups or agents (docs guide.mdx "Secrets"), on top of the per-agent
+ *     grant in kortix.yaml.
  *  7. SSO is SAML 2.0 only. There is no enterprise OIDC login. Never write
  *     "SAML/OIDC".
  */

@@ -28,6 +28,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Security', href: '/security' },
       { label: 'Self-hosted', href: '/self-hosted' },
       { label: 'Enterprise', href: '/enterprise' },
+      { label: 'Compliance', href: '/compliance' },
       { label: 'Pricing', href: '/pricing' },
       { label: 'Download', href: '/download' },
       { label: 'Mobile', href: '/mobile' },

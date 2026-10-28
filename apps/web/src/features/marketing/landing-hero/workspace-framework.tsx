@@ -6,10 +6,9 @@ import { PauseIcon, PlayIcon } from '@phosphor-icons/react';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { CustomizeBoard, type CustomizeTab } from './customize-board';
 import { FrameworkWindow, type FrameworkFocus } from './framework-window';
-import { H, SessionWindow, W } from './session-window';
-import { ShareScene } from './share-scene';
+import { SessionChat } from './session-chat';
+import { H, W } from './session-window';
 
 /** The 1-based line range of a top-level kortix.yaml block, up to the next top-level key. */
 function block(key: string): FrameworkFocus {
@@ -23,8 +22,8 @@ function block(key: string): FrameworkFocus {
 
 const LAST_TRIGGER = MANIFEST.indexOf('  - slug: weekly-post') + 1;
 
-type Layer = 'session' | 'customize' | 'share' | 'framework';
-type Step = { label: string; layer: Layer; tab?: CustomizeTab; focus?: FrameworkFocus };
+type Layer = 'session' | 'framework';
+type Step = { label: string; layer: Layer; focus?: FrameworkFocus };
 
 /** Two modes, four steps each, played in one loop of eight. */
 const MODES: { label: string; steps: Step[] }[] = [
@@ -32,9 +31,9 @@ const MODES: { label: string; steps: Step[] }[] = [
     label: 'Workspace',
     steps: [
       { label: 'Describe your goal', layer: 'session' },
-      { label: 'Connect your tools', layer: 'customize', tab: 'Connectors' },
-      { label: 'Automate work 24/7', layer: 'customize', tab: 'Triggers' },
-      { label: 'Share with your team', layer: 'share' },
+      { label: 'Connect your tools', layer: 'session' },
+      { label: 'Automate work 24/7', layer: 'session' },
+      { label: 'Share with your team', layer: 'session' },
     ],
   },
   {
@@ -54,8 +53,8 @@ const MODES: { label: string; steps: Step[] }[] = [
 
 const PER_MODE = 4;
 const TOTAL = MODES.length * PER_MODE;
-const LAYERS: Layer[] = ['session', 'customize', 'share', 'framework'];
-/** How long each step shows, in ms. The longest scene (the session) needs ~5 s of it. */
+const LAYERS: Layer[] = ['session', 'framework'];
+/** How long each step shows, in ms. The longest chat step needs ~6.5 s of it. */
 const STEP_MS = 7500;
 
 const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[index % PER_MODE];
@@ -66,23 +65,19 @@ const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[inde
  * strip under it in a single frame: the four steps of the mode and pause. The
  * active chapter's top edge is the timeline, on the seam with the stage.
  *
- * Each step is a short scene that plays from its start every time it shows:
- * the prompt typed and sent, a connector connected and a rule set to Ask, a
- * trigger added and fired, the session shared with a group and a person, a
- * kortix.yaml block in focus, `kortix ship` printing. One Arcadia project
- * throughout. Nothing plays or advances until 60% of the player is in view.
+ * Workspace is one session chat across its four steps (session-chat.tsx):
+ * each step opens on the conversation as the step before left it, then plays
+ * its stretch: the goal sent and worked, HubSpot connected and a write
+ * approved, a schedule created and its first run, the session shared and a
+ * teammate writing in it. Framework puts a kortix.yaml block in focus per
+ * step, then `kortix ship` prints. One Arcadia project throughout. Nothing plays or advances until 60% of the player is in view.
  * Pause, or opening a file in the framework view, holds the step. Reduced
  * motion: no auto-advance, no timeline, every scene in its final state.
  */
 export function WorkspaceFramework() {
   const [index, setIndex] = useState(0);
   // A layer remounts each time it becomes the shown one, so its scene starts over.
-  const [entries, setEntries] = useState<Record<Layer, number>>({
-    session: 0,
-    customize: 0,
-    share: 0,
-    framework: 0,
-  });
+  const [entries, setEntries] = useState<Record<Layer, number>>({ session: 0, framework: 0 });
   const [paused, setPaused] = useState(false);
   const [inView, setInView] = useState(false);
   const reduced = Boolean(useReducedMotion());
@@ -174,12 +169,8 @@ export function WorkspaceFramework() {
                   )}
                 >
                   {layer === 'session' ? (
-                    <SessionWindow framed={false} play={shown && playing} />
+                    <SessionChat step={mode === 0 ? step : 0} play={shown && playing} />
                   ) : null}
-                  {layer === 'customize' ? (
-                    <CustomizeBoard tab={current.tab ?? 'Connectors'} play={shown && playing} />
-                  ) : null}
-                  {layer === 'share' ? <ShareScene play={shown && playing} /> : null}
                   {layer === 'framework' ? (
                     <FrameworkWindow
                       focus={shown ? current.focus : undefined}

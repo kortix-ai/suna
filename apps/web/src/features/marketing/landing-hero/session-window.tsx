@@ -63,6 +63,7 @@ type RowStatus =
   | { status: 'running' | 'done' | 'stopped' }
   | { status: 'needs-you'; waitingOn: 'answer' | 'review' };
 const STATUS: Record<string, RowStatus> = {
+  'Quiet deals follow-up': { status: 'running' },
   'Monday revenue report': { status: 'running' },
   'Triage support tickets': { status: 'running' },
   'Review change request': { status: 'needs-you', waitingOn: 'review' },
@@ -117,9 +118,9 @@ const BEAT = {
 /** Reply blocks after the "Worked for" row, in reading order. */
 const BLOCKS = 7;
 
-export type Stage = { typed: number; sent: boolean; worked: number; done: boolean; shown: number };
+type Stage = { typed: number; sent: boolean; worked: number; done: boolean; shown: number };
 
-export const FINAL: Stage = {
+const FINAL: Stage = {
   typed: 0,
   sent: true,
   worked: WORKED_SECONDS,
@@ -278,8 +279,9 @@ function SessionRow({
   );
 }
 
-function Sidebar({ nav }: { nav?: 'customize' }) {
-  const [active, setActive] = useState<string | null>(nav ? null : TODAY[0]);
+function Sidebar({ session }: { session?: string }) {
+  const today = session ? [session, ...TODAY.slice(0, -1)] : TODAY;
+  const [active, setActive] = useState<string>(today[0]);
   return (
     <aside className="bg-sidebar border-sidebar-border flex w-68 shrink-0 flex-col border-r">
       <div className="flex h-15 shrink-0 items-center justify-between pr-4 pl-4">
@@ -301,12 +303,7 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
           <NavigationArrowIcon className="size-4 shrink-0 rotate-90" />
           <span className="text-sm">New session</span>
         </div>
-        <div
-          className={cn(
-            'flex h-9 items-center justify-between rounded-md px-2',
-            nav === 'customize' && 'bg-active',
-          )}
-        >
+        <div className="flex h-9 items-center justify-between rounded-md px-2">
           <span className="flex items-center gap-2.5">
             <CustomizeGlyph className="size-4 shrink-0" />
             <span className="text-sm">Customize</span>
@@ -329,7 +326,7 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
       </div>
       <nav aria-label="Sessions" className="flex flex-col px-2">
         <p className="text-muted-foreground h-8 px-2 pt-1.5 text-sm">Today</p>
-        {TODAY.map((label) => (
+        {today.map((label) => (
           <SessionRow
             key={label}
             label={label}
@@ -357,8 +354,7 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
  * ComposerCard: the card (editor + toolbar with the model and effort pickers
  * and the round send button), then the underbar (attach, agent, context ring).
  */
-function Composer({ typed }: { typed: number }) {
-  const text = PROMPT.slice(0, typed);
+export function Composer({ text }: { text: string }) {
   return (
     <div className="bg-background absolute bottom-0 left-1/2 flex w-152 -translate-x-1/2 flex-col pt-4">
       <div className="bg-background border-border relative w-full rounded-xl border pt-3">
@@ -543,7 +539,7 @@ const DEV_TOOLS = [
  * buttons with a tooltip, then Share. Here a click marks the tool open (the
  * window has no panel to show), so the controls answer like the real ones.
  */
-function HeaderTools({ sharing }: { sharing: boolean }) {
+export function HeaderTools({ sharing }: { sharing: boolean }) {
   const [picked, setOpen] = useState<string | null>(null);
   const open = sharing ? 'share' : picked;
   const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
@@ -577,7 +573,7 @@ function HeaderTools({ sharing }: { sharing: boolean }) {
   );
 }
 
-export function Session({ stage, sharing = false }: { stage: Stage; sharing?: boolean }) {
+function Session({ stage }: { stage: Stage }) {
   return (
     <section
       aria-label="Session"
@@ -590,33 +586,30 @@ export function Session({ stage, sharing = false }: { stage: Stage; sharing?: bo
             <Icon size={12} d="M4 6l4 4 4-4" />
           </span>
         </div>
-        <HeaderTools sharing={sharing} />
+        <HeaderTools sharing={false} />
       </header>
       <span aria-hidden className="text-muted-foreground absolute top-16 right-6 text-sm">
         «
       </span>
       <Thread stage={stage} />
-      <Composer typed={stage.typed} />
+      <Composer text={PROMPT.slice(0, stage.typed)} />
     </section>
   );
 }
 
 /**
  * The app's chrome at board size, scaled to the column: the glass ring, the
- * sidebar, then the page. The session window and the hero's Customize pages
- * share it, so a step change swaps only the page.
+ * sidebar, then the page.
  */
 export function AppBoard({
-  nav,
+  session,
   framed = true,
-  overlay,
   children,
 }: {
-  nav?: 'customize';
+  /** A session to list first under Today, selected. */
+  session?: string;
   /** false: no glass ring or border, for a host that draws the frame itself. */
   framed?: boolean;
-  /** Drawn over the whole app, sidebar included, like a modal. */
-  overlay?: ReactNode;
   children: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null);
@@ -628,9 +621,8 @@ export function AppBoard({
         framed && 'rounded-xl border',
       )}
     >
-      <Sidebar nav={nav} />
+      <Sidebar session={session} />
       {children}
-      {overlay}
     </div>
   );
   return (

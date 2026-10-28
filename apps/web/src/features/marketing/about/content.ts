@@ -38,8 +38,7 @@ export const hero = {
   // Founder vision (kortix-brand D19, D22): /about is the one page that talks
   // about SuperIntelligence, AGI and companies run by AI, always as direction
   // ("we are building", "will"), never as a shipped capability.
-  title: 'We are building the Operating System for SuperIntelligence.',
-  titleMuted: 'For companies run by AI, owned end to end.',
+  title: 'We are building the Operating System for SI (SuperIntelligence).',
   lead: 'The infrastructure, the agent harness, the architecture and the operating system, from A to Z, so a company can run on AI at scale, get better as it operates, and stay entirely its own.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',

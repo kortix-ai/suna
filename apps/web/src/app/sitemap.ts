@@ -35,6 +35,7 @@ export const LOCALIZED_ROUTES = [
   '/framework',
   '/multiplayer',
   '/sovereign',
+  '/compliance',
   '/white-label',
   '/cli',
   '/desktop',

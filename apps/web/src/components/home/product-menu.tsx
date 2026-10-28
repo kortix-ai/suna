@@ -77,6 +77,7 @@ export const MEGA_MENUS: MegaMenu[] = [
           // ACCURACY: never "air-gapped" (see site-config.ts).
           { label: 'Self-hosted', href: '/self-hosted' },
           { label: 'Enterprise', href: '/enterprise' },
+          { label: 'Compliance', href: '/compliance' },
         ],
       },
     ],

@@ -13,8 +13,8 @@
  *    no headcount, no remote policy. The only two locations are **Belgrade,
  *    Serbia** and **San Francisco**; every opening is open in both, and no
  *    third location may be added.
- *  - The two openings (FDE and GTM, 2026-10-28) are the founder's own list. Every bullet under them
- *    comes from him. Keep them short — a spec belongs in a conversation.
+ *  - The three openings (FDE, GTM and MTS, 2026-10-28) are the founder's own list. Keep each to
+ *    one broad line: the founder wants them open, not specified. A spec belongs in a conversation.
  *  - Applications go through `ApplyModal`, which posts to the same
  *    `/api/demo-request` pipeline as "Book your demo". There is no ATS and no
  *    jobs@ alias — do not invent one. The three direct links (email, X,
@@ -42,37 +42,26 @@ export const hero = {
   ctaSecondaryHref: '/about',
 } as const;
 
-/** The board. Collapsed shows name, locations and the summary line. */
+/** The board: the role, its full name, one open line and the cities. Deliberately broad — the
+ *  rest is a conversation. */
 export const openings = [
   {
     id: 'fde',
-    name: 'FDE / Services',
-    summary: 'Build customers their first agents, and own the services side end to end.',
-    bullets: [
-      'Onboard customers, teach them, build their first agents, and create their connections.',
-      'Own services end to end, and build the engineering team behind it.',
-      'Ran a software, automation or delivery agency at owner level.',
-      'Sold and delivered custom software. Can state deal sizes, close rate and delivery margin.',
-      'Technical enough to build the automations yourself on day one.',
-      'Writes the SOPs that make the motion repeatable.',
-      'Runs the full cycle: discovery, scope, build, handoff, expansion.',
-      'Can recruit.',
-    ],
+    name: 'FDE',
+    full: 'Forward Deployed Engineer',
+    summary: 'Work with customers to put Kortix to work across their company.',
   },
   {
     id: 'gtm',
     name: 'GTM',
-    summary:
-      'Make Kortix the instant answer to "what is the open-source Claude Cowork or ChatGPT Work?", then convert every lead it brings in.',
-    bullets: [
-      'Convert every inbound lead, and build outbound from nothing.',
-      'Sell to companies: the platform, and the FDE and services engagement alongside it.',
-      'Build the content baseline, and the system that keeps producing it.',
-      'Daily platform and feature explainers, high-quality video and motion.',
-      'Use-case and marketplace-driven content.',
-      'Influencer and UGC motion on X and LinkedIn.',
-      'Crank out content the way we crank out commits.',
-    ],
+    full: 'Go-to-market',
+    summary: 'Tell the story, find the companies that need it, and win them.',
+  },
+  {
+    id: 'mts',
+    name: 'MTS',
+    full: 'Member of Technical Staff',
+    summary: 'Build Kortix itself, anywhere in the stack.',
   },
 ] as const;
 
@@ -144,8 +133,9 @@ export const applyForm = {
   areaLabel: 'Which opening',
   areaPlaceholder: 'Pick the closest one',
   areaOptions: [
-    'FDE / Services',
-    'GTM',
+    'FDE — Forward Deployed Engineer',
+    'GTM — Go-to-market',
+    'MTS — Member of Technical Staff',
     'Not sure — read it and tell me',
   ],
   nameLabel: 'Name',
