@@ -24,7 +24,7 @@ import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { createCommandStatus, createSession, deliverThroughQueue, resolveProjectAutomationActor } from '../../projects/surface';
 import { db } from '../../shared/db';
-import type { TurnErrorCode } from '@kortix/api-contract/transcript';
+import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
 import {
   type ChatThreadKey,
   claimThreadCreate,
@@ -107,10 +107,20 @@ export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;
  */
 export type FollowUpVerdict = 'deliver' | 'refuse' | 'restart';
 
+/** An agent question addressed by session (session-notice.ts `postSessionQuestion`). */
+export interface SessionQuestion {
+  sessionId: string;
+  /** The stored question (`session_pending_questions.id`) a button answers. */
+  pendingId: string;
+  questions: RuntimeQuestion[];
+}
+
 /** What one chat platform does for the core. */
 export interface ChannelPort {
   /** Tell the conversation an outcome. Send errors are logged, not thrown. */
   notify(target: ChannelTarget, notice: ChannelNotice): Promise<void>;
+  /** Post the agent's question in the conversation. True when posted. Never throws. */
+  postQuestion?(target: ChannelTarget, ask: SessionQuestion): Promise<boolean>;
   /** Runs before every follow-up into an existing session; absent = deliver. */
   prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
 }

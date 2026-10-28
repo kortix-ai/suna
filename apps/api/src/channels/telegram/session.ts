@@ -21,8 +21,10 @@ import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
+import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import {
   getPendingQuestion,
+  reconcileStoredSessionAgentGrant,
   releaseRuntimeQuestion,
   renderAnswerPrompt,
   resolvePendingQuestion,
@@ -32,8 +34,8 @@ import { registerSessionPort } from '../core/session-notice';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
-import { telegramCall } from './api';
-import { loadTelegramBotToken, loadTelegramInstall } from './installs';
+import { TELEGRAM_UPDATES, telegramCall } from './api';
+import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -124,6 +126,8 @@ export function telegramPressEvent(projectId: string, botId: string, update: Tel
   };
 }
 
+/** One tap per option up to this many (Teams parity, teams/cards.ts); more is a numbered list. */
+const MAX_BUTTONS = 6;
 /** A message holds 4096 characters (connectors/channels.ts); the footer gets 190 of them. */
 const QUESTION_BODY_MAX = 3900;
 /**
@@ -167,7 +171,85 @@ export const telegramPort: ChannelPort = {
     const token = await loadTelegramBotToken(target.projectId);
     if (token) await sendTelegramReply(token, target, text);
   },
+  /**
+   * The agent's question, posted as the agent would post it with `send_message`
+   * and only where that call runs without approval (an admin's `risk` mode, a
+   * block rule or a policy set still decide). One single-select question with
+   * up to MAX_BUTTONS options gets one button per option; anything else, or a
+   * bot that cannot take presses, gets a numbered list to reply to.
+   */
+  async postQuestion(target, { sessionId, pendingId, questions }) {
+    try {
+      const token = await loadTelegramBotToken(target.projectId);
+      if (!token) return false;
+      const [chatId, topicId] = target.threadId.split(':');
+      const q = questions[0];
+      const oneTap = questions.length === 1 && !!q && !q.multiple && q.options.length >= 1 && q.options.length <= MAX_BUTTONS;
+      const message = (buttons: boolean): Record<string, unknown> => ({
+        // A string, as the agent sends it, so a policy condition on it decides as it would for the agent.
+        chat_id: chatId,
+        text: telegramQuestionText(
+          questions,
+          buttons
+            ? 'Tap an option, or reply to this message with your own answer.'
+            : `Reply to this message with your answer${questions.length > 1 ? ', each question by its number' : ''}.`,
+        ),
+        ...(topicId ? { message_thread_id: Number(topicId) } : {}),
+        ...(buttons
+          ? {
+              reply_markup: {
+                inline_keyboard: q!.options.map((o, i) => [
+                  { text: (o.label.trim() || String(i + 1)).slice(0, 60), callback_data: `kq:${pendingId}:${i}` },
+                ]),
+              },
+            }
+          : {}),
+      });
+      const grant = await reconcileStoredSessionAgentGrant({ projectId: target.projectId, sessionId });
+      const runsUnattended = (args: Record<string, unknown>) =>
+        connectorActionAlwaysRuns({ projectId: target.projectId, slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args, grant });
+      let body = message(oneTap);
+      if (!(await runsUnattended(body))) {
+        logger.info('[telegram] question left to the agent: send_message needs approval', { sessionId });
+        return false;
+      }
+      if (oneTap && !(await subscribeToButtons(token, target.projectId))) {
+        body = message(false);
+        if (!(await runsUnattended(body))) return false;
+      }
+      await telegramCall(token, 'sendMessage', body);
+      logger.info('[telegram] question posted', { sessionId, buttons: 'reply_markup' in body });
+      return true;
+    } catch (error) {
+      logger.warn('[telegram] question not posted', { sessionId, error: String(error) });
+      return false;
+    }
+  },
 };
+
+/**
+ * Buttons answer through `callback_query` updates. A bot connected before
+ * buttons gets messages only: subscribe it once, on its own URL with its own
+ * secret, keeping the updates Telegram still holds. Only this project's webhook:
+ * one bot can be installed in several projects, and re-pointing another
+ * project's webhook with this project's secret would deafen it. False: post text.
+ */
+async function subscribeToButtons(token: string, projectId: string): Promise<boolean> {
+  try {
+    const info = await telegramCall<{ url?: string; allowed_updates?: string[] }>(token, 'getWebhookInfo');
+    if (!info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) return false;
+    // Absent: Telegram's default set, which carries callback_query.
+    if (!info.allowed_updates || info.allowed_updates.includes('callback_query')) return true;
+    const secret = await loadTelegramWebhookSecret(projectId);
+    if (!secret) return false;
+    await telegramCall(token, 'setWebhook', { url: info.url, secret_token: secret, allowed_updates: TELEGRAM_UPDATES });
+    logger.info('[telegram] bot subscribed to button presses', { projectId });
+    return true;
+  } catch (error) {
+    logger.warn('[telegram] button subscription failed; the question is posted as text', { projectId, error: String(error) });
+    return false;
+  }
+}
 
 /** The chat's words for a notice; null says nothing. */
 export function telegramNotice(target: ChannelTarget, notice: ChannelNotice): string | null {
@@ -436,6 +518,7 @@ export function renderTelegramPrompt(message: TelegramMessage, kind: 'new' | 'fo
     'How to answer:',
     `- Reply with the ${TELEGRAM_CHANNEL_CONNECTOR_SLUG} connector through the shell: \`kortix connectors call ${TELEGRAM_CHANNEL_CONNECTOR_SLUG}.send_message '${replyArgs}'\`.`,
     '- One message holds at most 4096 characters; send a longer answer as several messages.',
+    '- To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
     `- While you work on a long task, show typing: \`kortix connectors call ${TELEGRAM_CHANNEL_CONNECTOR_SLUG}.send_chat_action '{"chat_id":"${message.chat.id}"}'\`.`,
     '- For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
     '- The bot token is resolved server-side. Do not look for it in the sandbox.',
