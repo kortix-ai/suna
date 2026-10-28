@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
+import imageGen, { IMAGE_GEN_SESSION_LIMIT, IMAGE_GEN_TURN_LIMIT } from '@/services/tools/kortix/image_gen'
 import imageSearch from '@/services/tools/kortix/image_search'
 import memoryTool from '@/services/tools/kortix/memory'
 import scrapeWebpage from '@/services/tools/kortix/scrape_webpage'
@@ -17,7 +19,7 @@ import { asTool, type ToolContext } from '@/services/tools/tool'
  * (path, credential, body) is the contract with the API's billed proxy, and
  * the output JSON is the contract with the skills and the client's tool views.
  */
-const ENV_KEYS = ['KORTIX_API_URL', 'KORTIX_TOKEN', 'TAVILY_API_KEY', 'SERPER_API_KEY', 'FIRECRAWL_API_KEY'] as const
+const ENV_KEYS = ['KORTIX_API_URL', 'KORTIX_LLM_BASE_URL', 'KORTIX_TOKEN', 'TAVILY_API_KEY', 'SERPER_API_KEY', 'FIRECRAWL_API_KEY'] as const
 type Call = { path: string; headers: Record<string, string>; body: any }
 
 let saved: Record<string, string | undefined>
@@ -32,6 +34,8 @@ const out = (result: unknown) => result as string
 
 function router(handle: (call: Call) => unknown | Response): void {
   server = Bun.serve({
+    // The exact address the tool dials: another process on 127.0.0.1:<port> beside a wildcard bind would answer instead.
+    hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
       const call = { path: new URL(req.url).pathname, headers: Object.fromEntries(req.headers), body: await req.json() }
@@ -39,6 +43,8 @@ function router(handle: (call: Call) => unknown | Response): void {
       const reply = await handle(call)
       return reply instanceof Response ? reply : Response.json(reply)
     },
+    // A throwing handler answers JSON naming the throw, never Bun's HTML error page.
+    error: (err) => Response.json({ success: false, error: `fake threw: ${err}` }, { status: 500 }),
   })
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
   process.env.KORTIX_TOKEN = 'kortix_sb_test'
@@ -146,6 +152,451 @@ describe('image_search', () => {
     router((call) => (call.body.q === 'none' ? { images: [] } : new Response('down', { status: 503 })))
     expect(out(await imageSearch.execute({ query: 'none' }, ctx()))).toBe("No images found for: 'none'")
     await expect(imageSearch.execute({ query: 'boom' }, ctx())).rejects.toThrow('Serper API returned 503: down')
+  })
+})
+
+describe('image_gen', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46])
+  const generated = { created: 1, model: 'codex/gpt-image-2', provider: 'openai-codex', data: [{ b64_json: PNG.toString('base64'), mime_type: 'image/png' }], size: '1254x1254' }
+  const answer = (bytes: Buffer, mime_type: string, extra: Record<string, unknown> = {}) => ({ ...generated, data: [{ b64_json: bytes.toString('base64'), mime_type }], ...extra })
+  const u16be = (n: number) => Buffer.from([n >> 8, n & 0xff])
+  const u32be = (n: number) => Buffer.from([n >>> 24, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff])
+  const u32le = (n: number) => Buffer.from([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, n >>> 24])
+  /** Image headers as each encoder writes them: just enough bytes for the size. */
+  const pngOf = (w: number, h: number) => Buffer.concat([PNG.subarray(0, 8), u32be(13), Buffer.from('IHDR'), u32be(w), u32be(h), Buffer.from([8, 6, 0, 0, 0])])
+  const jpegOf = (sof: number, w: number, h: number) =>
+    Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), u16be(16), Buffer.alloc(14), Buffer.from([0xff, 0xdb]), u16be(4), Buffer.alloc(2), Buffer.from([0xff, sof]), u16be(17), Buffer.from([8]), u16be(h), u16be(w), Buffer.alloc(10)])
+  const webpOf = (chunk: string, body: Buffer) => Buffer.concat([Buffer.from('RIFF'), u32le(4 + 8 + body.length), Buffer.from('WEBP'), Buffer.from(chunk), u32le(body.length), body])
+  const vp8 = (w: number, h: number) => webpOf('VP8 ', Buffer.concat([Buffer.from([0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a]), Buffer.from([w & 0xff, w >> 8, h & 0xff, h >> 8])]))
+  const vp8l = (w: number, h: number) => webpOf('VP8L', Buffer.concat([Buffer.from([0x2f]), u32le((w - 1) | ((h - 1) << 14)), Buffer.alloc(3)]))
+  const vp8x = (w: number, h: number) =>
+    webpOf('VP8X', Buffer.from([0x10, 0, 0, 0, (w - 1) & 0xff, ((w - 1) >> 8) & 0xff, (w - 1) >> 16, (h - 1) & 0xff, ((h - 1) >> 8) & 0xff, (h - 1) >> 16]))
+  const imagesDir = () => join(dir, 'output', 'images')
+  const MiB = 1024 * 1024
+  // Each test is its own session: the session cap counts per sessionId in the module.
+  let session = 0
+  beforeEach(() => void session++)
+  const ictx = (): ToolContext => ({ ...ctx(), sessionId: `ses_image_gen_${session}` })
+  /** One call: `generate` with one prompt unless `args` says otherwise. */
+  const gen = (args: Record<string, unknown> = {}, context: ToolContext = ictx()) => Promise.resolve(imageGen.execute({ action: 'generate', prompts: ['x'], ...args }, context))
+  const genJson = async (args: Record<string, unknown> = {}, context?: ToolContext) => JSON.parse(out(await gen(args, context)))
+  const refusal = (code: string, message: string, status = 400) => Response.json({ code, message }, { status })
+
+  /** The LLM gateway fake: the tool posts to `${KORTIX_LLM_BASE_URL}/images/*` with the session token. */
+  function gateway(handle: (call: Call) => unknown | Response = () => generated): void {
+    router(handle)
+    process.env.KORTIX_LLM_BASE_URL = `${process.env.KORTIX_API_URL}/v1/llm`
+    process.env.KORTIX_TOKEN = 'tok'
+    delete process.env.KORTIX_API_URL
+  }
+
+  test('generate posts to the gateway images route with the session token and saves the PNG', async () => {
+    gateway()
+    const result = await genJson({ prompts: ['A red cube on a white table'] })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.path).toBe('/v1/llm/images/generations')
+    expect(calls[0]!.headers.authorization).toBe('Bearer tok')
+    expect(calls[0]!.body).toEqual({ model: 'auto', prompt: 'A red cube on a white table', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 })
+    // The header holds no size here, so the answer's size is the output size (Ruling R2). No failure: no `failed`.
+    expect(result).toEqual({
+      action: 'generate',
+      model: 'codex/gpt-image-2',
+      provider: 'openai-codex',
+      images: [{ path: expect.any(String), size: '1254x1254', prompt: 'A red cube on a white table', sha256: expect.any(String) }],
+    })
+    const [image] = result.images
+    expect(image.path).toStartWith(`${imagesDir()}/a-red-cube-on-a-white-table-`)
+    expect(image.path).toMatch(/-\d{8}-\d{6}\.png$/)
+    expect(readFileSync(image.path).subarray(0, 8)).toEqual(PNG.subarray(0, 8))
+  })
+
+  test('three prompts run concurrently', async () => {
+    // The fake holds every request open until it has seen three in flight, then answers them all.
+    // A tool that sends them one by one never reaches three: the 2 s fallback answers it, and `peak` says 1.
+    let inFlight = 0
+    let peak = 0
+    let releaseAll!: () => void
+    const all = new Promise<void>((resolve) => (releaseAll = resolve))
+    gateway(async (call) => {
+      peak = Math.max(peak, ++inFlight)
+      if (inFlight === 3) releaseAll()
+      await Promise.race([all, Bun.sleep(2_000)])
+      inFlight--
+      const side = { 'a red cube': 64, 'a green cone': 96, 'a blue sphere': 128 }[call.body.prompt as string]!
+      return answer(pngOf(side, side), 'image/png')
+    })
+    const result = await genJson({ prompts: ['a red cube', 'a green cone', 'a blue sphere'] })
+    expect(peak).toBe(3)
+    expect(calls.map((call) => call.body.prompt).sort()).toEqual(['a blue sphere', 'a green cone', 'a red cube'])
+    expect(calls.every((call) => call.body.n === 1)).toBe(true)
+    // In prompt order, each with its own file and size.
+    expect(result.images.map((image: { prompt: string; size: string }) => [image.prompt, image.size])).toEqual([
+      ['a red cube', '64x64'],
+      ['a green cone', '96x96'],
+      ['a blue sphere', '128x128'],
+    ])
+    expect(new Set(result.images.map((image: { path: string }) => image.path)).size).toBe(3)
+    expect(readdirSync(imagesDir())).toHaveLength(3)
+    expect(result.failed).toBeUndefined()
+  })
+
+  test('one failed prompt is reported in failed[] and the others are saved', async () => {
+    gateway((call) => (call.body.prompt === 'blocked' ? refusal('content_policy', 'The prompt was refused.') : generated))
+    const result = await genJson({ prompts: ['a cat', 'blocked', 'a dog'] })
+    expect(result.images.map((image: { prompt: string }) => image.prompt)).toEqual(['a cat', 'a dog'])
+    expect(result.failed).toEqual([{ prompt: 'blocked', error: 'Image generation failed (400): The prompt was refused. [content_policy]' }])
+    expect(readdirSync(imagesDir())).toHaveLength(2)
+  })
+
+  test('all prompts failing throws the first failure in the R11 format', async () => {
+    gateway((call) =>
+      call.body.prompt === 'first'
+        ? Response.json({ code: 'provider_not_connected', message: 'Connect Codex to use this model.', suggestion: 'Connect your ChatGPT account in Settings.' }, { status: 400 })
+        : refusal('rate_limited', 'Image limit reached.', 429),
+    )
+    await expect(gen({ prompts: ['first', 'second'] })).rejects.toThrow(
+      'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]',
+    )
+    expect(calls).toHaveLength(2)
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('prompts must be 1–4 non-empty strings', async () => {
+    gateway()
+    const message = "'prompts' must be a list of 1 to 4 non-empty strings."
+    for (const prompts of [undefined, [], ['a', 'b', 'c', 'd', 'e'], [''], ['a', '   '], [42], 'a cube', null]) {
+      await expect(gen({ prompts })).rejects.toThrow(message)
+    }
+    // The old single-prompt shape is not read.
+    await expect(Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'a cube' }, ictx()))).rejects.toThrow(message)
+    expect(calls).toHaveLength(0)
+    // Four is the most; each prompt is trimmed.
+    const result = await genJson({ prompts: [' a ', 'b', 'c', 'd'] })
+    expect(result.images.map((image: { prompt: string }) => image.prompt)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  test('model and aspect_ratio are forwarded; absent model sends auto', async () => {
+    gateway()
+    await gen({ prompts: ['x'], model: ' google/gemini-2.5-flash-image ', aspect_ratio: '16:9', quality: 'low', transparent_background: true })
+    await gen({ prompts: ['y'], model: '' })
+    expect(calls.map((call) => call.body)).toEqual([
+      { model: 'google/gemini-2.5-flash-image', prompt: 'x', aspect_ratio: '16:9', quality: 'low', background: 'transparent', n: 1 },
+      { model: 'auto', prompt: 'y', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 },
+    ])
+  })
+
+  test('a bad aspect_ratio or model is refused before any request; prompts replaces prompt and output_name', async () => {
+    gateway()
+    await expect(gen({ aspect_ratio: '1024x1024' })).rejects.toThrow("'aspect_ratio' must be one of auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4.")
+    await expect(gen({ model: 42 })).rejects.toThrow("'model' must be a model id.")
+    expect(calls).toHaveLength(0)
+    expect(Object.keys(imageGen.parameters.properties).sort()).toEqual(['action', 'aspect_ratio', 'model', 'prompts', 'quality', 'reference_images', 'transparent_background'])
+    expect(imageGen.parameters.required).toEqual(['action', 'prompts'])
+    expect(imageGen.parameters.properties.prompts).toMatchObject({ type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4 })
+  })
+
+  test('a jpeg answer is saved as .jpg and size is read from the image header', async () => {
+    gateway(() => answer(jpegOf(0xc0, 1536, 1024), 'image/jpeg', { size: '1024x1024' }))
+    const [image] = (await genJson({ prompts: ['a cat'] })).images
+    expect(image.path).toMatch(/\/a-cat-\d{8}-\d{6}\.jpg$/)
+    // The saved bytes win over the answer's size.
+    expect(image.size).toBe('1536x1024')
+    expect(readFileSync(image.path).subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
+  })
+
+  test('each image type is saved with its extension and its header size', async () => {
+    const cases: Array<[Buffer, string, string]> = [
+      [pngOf(1254, 1254), 'image/png', '1254x1254.png'],
+      [jpegOf(0xc0, 1024, 1536), 'image/jpeg', '1024x1536.jpg'],
+      [jpegOf(0xc2, 1376, 768), 'image/jpeg', '1376x768.jpg'],
+      [vp8(1024, 1024), 'image/webp', '1024x1024.webp'],
+      [vp8l(1536, 1024), 'image/webp', '1536x1024.webp'],
+      [vp8x(1184, 864), 'image/webp', '1184x864.webp'],
+    ]
+    let next = 0
+    gateway(() => answer(cases[next]![0], cases[next++]![1], { size: '1x1' }))
+    for (const [, , expected] of cases) {
+      const [image] = (await genJson()).images
+      expect(`${image.size}.${image.path.split('.').pop()}`).toBe(expected)
+    }
+  })
+
+  test('an answer that is not a png, jpeg or webp image is refused and writes no file', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    const gif = Buffer.from('GIF89a\x01\x00\x01\x00')
+    let next = 0
+    gateway(() => [answer(svg, 'image/svg+xml'), answer(gif, 'image/gif'), answer(svg, 'image/png')][next++])
+    for (let i = 0; i < 3; i++) {
+      await expect(gen()).rejects.toThrow('Image generation returned an image that is not png, jpeg or webp.')
+    }
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('the output names the model and provider that answered', async () => {
+    gateway(() => answer(pngOf(1024, 1024), 'image/png', { model: 'openrouter/google/gemini-2.5-flash-image', provider: 'openrouter', size: undefined }))
+    const result = await genJson({ model: 'auto' })
+    expect(result).toEqual({
+      action: 'generate',
+      model: 'openrouter/google/gemini-2.5-flash-image',
+      provider: 'openrouter',
+      images: [{ path: expect.any(String), size: '1024x1024', prompt: 'x', sha256: expect.any(String) }],
+    })
+  })
+
+  test('the size falls back to the answer when the header has none', async () => {
+    gateway(() => answer(PNG, 'image/png', { size: '1536x1024' }))
+    expect((await genJson({ aspect_ratio: '3:2' })).images[0].size).toBe('1536x1024')
+  })
+
+  test('edit sends each reference image as a data URL, with every prompt', async () => {
+    gateway()
+    writeFileSync(join(dir, 'a.png'), PNG)
+    mkdirSync(join(dir, 'refs'))
+    writeFileSync(join(dir, 'refs', 'b.jpg'), JPEG)
+    const result = await genJson({ action: 'edit', prompts: ['merge them', 'merge them at night'], reference_images: ['a.png', join(dir, 'refs/b.jpg')] })
+    const images = [{ image_url: `data:image/png;base64,${PNG.toString('base64')}` }, { image_url: `data:image/jpeg;base64,${JPEG.toString('base64')}` }]
+    expect(calls.map((call) => call.path)).toEqual(['/v1/llm/images/edits', '/v1/llm/images/edits'])
+    expect(calls.map((call) => call.body.images)).toEqual([images, images])
+    expect(result.action).toBe('edit')
+    expect(result.images).toHaveLength(2)
+  })
+
+  test('a missing reference image is refused before any request', async () => {
+    gateway()
+    await expect(gen({ action: 'edit', reference_images: ['nope.png'] })).rejects.toThrow('nope.png')
+    await expect(gen({ action: 'edit' })).rejects.toThrow('reference_images')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('six reference images are refused', async () => {
+    gateway()
+    const names = ['1', '2', '3', '4', '5', '6'].map((n) => {
+      writeFileSync(join(dir, `${n}.png`), PNG)
+      return `${n}.png`
+    })
+    await expect(gen({ action: 'edit', reference_images: names })).rejects.toThrow('At most 5 reference images')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a gateway refusal surfaces its message, suggestion and code', async () => {
+    gateway(() =>
+      Response.json(
+        { code: 'provider_not_connected', message: 'Connect Codex to use this model.', suggestion: 'Connect your ChatGPT account in Settings.', requestId: 'req_1' },
+        { status: 400 },
+      ),
+    )
+    await expect(gen()).rejects.toThrow('Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]')
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('a refusal that names its provider keeps it in a [provider:<id>] token before the trailing code (R37)', async () => {
+    gateway(() => Response.json({ code: 'provider_reauth_required', provider: 'openai', message: 'openai refused the credential.', suggestion: 'Check the openai key in project settings, then retry.' }, { status: 401 }))
+    await expect(gen()).rejects.toThrow(
+      new Error('Image generation failed (401): openai refused the credential. Check the openai key in project settings, then retry. [provider:openai] [provider_reauth_required]'),
+    )
+    // The chat-shaped envelope nests it; an empty provider (no model resolved) adds no token.
+    gateway(() => Response.json({ error: { message: 'ChatGPT is limited.', code: 'image_rate_limited', provider: 'openai-codex' } }, { status: 429, headers: { 'retry-after': '60' } }))
+    await expect(gen()).rejects.toThrow(new Error('Image generation failed (429): ChatGPT is limited. Retry after 60 s. [provider:openai-codex] [image_rate_limited]'))
+    gateway(() => Response.json({ code: 'image_model_unavailable', provider: '', message: 'No image model is available.' }, { status: 400 }))
+    await expect(gen()).rejects.toThrow(new Error('Image generation failed (400): No image model is available. [image_model_unavailable]'))
+  })
+
+  test('an OpenAI-shaped error and a rate limit name their message, retry time and code', async () => {
+    gateway(() => Response.json({ error: { message: 'Image limit reached.', code: 'rate_limited' } }, { status: 429, headers: { 'retry-after': '120' } }))
+    await expect(gen()).rejects.toThrow('(429): Image limit reached. Retry after 120 s. [rate_limited]')
+  })
+
+  test('a long refusal message is cut at 500 characters; no code means no bracket', async () => {
+    gateway(() => Response.json({ message: 'm'.repeat(2000) }, { status: 500 }))
+    const error = (await gen().catch((err: Error) => err)) as Error
+    expect(error.message).toBe(`Image generation failed (500): ${'m'.repeat(500)}`)
+  })
+
+  test('no gateway env names what is missing', async () => {
+    await expect(gen()).rejects.toThrow('KORTIX_LLM_BASE_URL')
+    process.env.KORTIX_LLM_BASE_URL = 'http://127.0.0.1:1/v1/llm'
+    await expect(gen()).rejects.toThrow('KORTIX_TOKEN')
+  })
+
+  test('an aborted turn aborts every request and writes no file', async () => {
+    const turn = new AbortController()
+    let arrived = 0
+    let bothArrived!: () => void
+    const received = new Promise<void>((resolve) => (bothArrived = resolve))
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    gateway(async () => {
+      if (++arrived === 2) bothArrived()
+      await held
+      return generated
+    })
+    const call = gen({ prompts: ['x', 'y'] }, { ...ictx(), signal: turn.signal })
+    await received
+    turn.abort()
+    await expect(call).rejects.toThrow()
+    release()
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('the eleventh image in one turn is refused', async () => {
+    gateway()
+    const turn = { ...ctx(), sessionId: 'ses_turn_cap', signal: new AbortController().signal }
+    for (let i = 0; i < IMAGE_GEN_TURN_LIMIT; i++) await gen({ prompts: [`x${i}`] }, turn)
+    await expect(gen({}, turn)).rejects.toThrow('Image limit for this turn reached')
+    expect(IMAGE_GEN_TURN_LIMIT).toBe(10)
+    expect(calls).toHaveLength(10)
+    // The next turn starts again.
+    await gen({ prompts: ['next turn'] }, { ...turn, signal: new AbortController().signal })
+    expect(calls).toHaveLength(11)
+  })
+
+  test('a batch that would pass the turn cap is refused before any request', async () => {
+    gateway()
+    const turn = { ...ctx(), sessionId: 'ses_turn_batch_cap', signal: new AbortController().signal }
+    await gen({ prompts: ['a', 'b', 'c', 'd'] }, turn)
+    await gen({ prompts: ['e', 'f', 'g', 'h'] }, turn)
+    // 8 used: 3 more would be 11.
+    await expect(gen({ prompts: ['i', 'j', 'k'] }, turn)).rejects.toThrow('Image limit for this turn reached (10 images; 8 used, 3 asked).')
+    expect(calls).toHaveLength(8)
+    // Exactly 10 is allowed; then nothing.
+    await gen({ prompts: ['i', 'j'] }, turn)
+    expect(calls).toHaveLength(10)
+    await expect(gen({}, turn)).rejects.toThrow('Image limit for this turn reached')
+    // Two calls of one step, as pi runs them in parallel: the caps count before either awaits.
+    const step = { ...turn, signal: new AbortController().signal }
+    const both = await Promise.allSettled([gen({ prompts: ['1', '2', '3', '4'] }, step), gen({ prompts: ['5', '6', '7', '8'] }, step), gen({ prompts: ['9', '10', '11'] }, step)])
+    expect(both.map((settled) => settled.status)).toEqual(['fulfilled', 'fulfilled', 'rejected'])
+    expect(calls).toHaveLength(18)
+  })
+
+  test('the turn cap keys on context.turnId when the harness names it: calls with fresh signals in one turn share it', async () => {
+    gateway()
+    // pi gives each call a codemode script makes its own abort signal; the turn id stays the same.
+    const call = (turnId: string) => ({ ...ctx(), sessionId: 'ses_turn_id_cap', turnId, signal: new AbortController().signal })
+    await gen({ prompts: ['a', 'b', 'c', 'd'] }, call('msg_turn_1'))
+    await gen({ prompts: ['e', 'f', 'g', 'h'] }, call('msg_turn_1'))
+    await expect(gen({ prompts: ['i', 'j', 'k'] }, call('msg_turn_1'))).rejects.toThrow('Image limit for this turn reached (10 images; 8 used, 3 asked).')
+    expect(calls).toHaveLength(8)
+    // The next turn starts again.
+    await gen({ prompts: ['i', 'j', 'k'] }, call('msg_turn_2'))
+    expect(calls).toHaveLength(11)
+  })
+
+  test('the fifty-first image in one session is refused, and a batch that would pass it', async () => {
+    gateway()
+    const session = () => ({ ...ctx(), sessionId: 'ses_session_cap' })
+    for (let i = 0; i < 12; i++) await gen({ prompts: ['a', 'b', 'c', 'd'] }, session())
+    await expect(gen({ prompts: ['a', 'b', 'c'] }, session())).rejects.toThrow('Image limit for this session reached (50 images; 48 used, 3 asked).')
+    await gen({ prompts: ['a', 'b'] }, session())
+    await expect(gen({}, session())).rejects.toThrow('Image limit for this session reached')
+    expect(IMAGE_GEN_SESSION_LIMIT).toBe(50)
+    expect(calls).toHaveLength(50)
+  })
+
+  test('a non-image or out-of-workspace reference is refused', async () => {
+    gateway()
+    const outside = mkdtempSync(join(tmpdir(), 'pi-kortix-outside-'))
+    try {
+      writeFileSync(join(dir, '.env'), 'SECRET=1')
+      symlinkSync('/etc/passwd', join(dir, 'passwd.png'))
+      writeFileSync(join(outside, 'x.png'), PNG)
+      symlinkSync(join(outside, 'x.png'), join(dir, 'link.png'))
+      writeFileSync(join(dir, 'text.png'), 'not an image at all')
+      const relative = join('..', outside.split('/').pop()!, 'x.png')
+      for (const path of ['.env', 'passwd.png', 'link.png', relative, join(outside, 'x.png'), 'text.png']) {
+        await expect(gen({ action: 'edit', reference_images: [path] })).rejects.toThrow(path)
+      }
+      expect(calls).toHaveLength(0)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('a reference over 20 MiB is refused', async () => {
+    gateway()
+    writeFileSync(join(dir, 'big.png'), PNG)
+    truncateSync(join(dir, 'big.png'), 20 * MiB + 1)
+    await expect(gen({ action: 'edit', reference_images: ['big.png'] })).rejects.toThrow('Reference image big.png is larger than 20 MiB.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('reference images over 50 MiB in total are refused', async () => {
+    gateway()
+    const names = ['a.png', 'b.png', 'c.png']
+    for (const name of names) {
+      writeFileSync(join(dir, name), PNG)
+      truncateSync(join(dir, name), 18 * MiB)
+    }
+    await expect(gen({ action: 'edit', reference_images: names })).rejects.toThrow('Reference images are larger than 50 MiB in total.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a reference whose bytes do not match its extension is refused', async () => {
+    gateway()
+    writeFileSync(join(dir, 'photo.jpg'), PNG)
+    writeFileSync(join(dir, 'pic.webp'), JPEG)
+    await expect(gen({ action: 'edit', reference_images: ['photo.jpg'] })).rejects.toThrow('Reference image photo.jpg is not a jpeg image.')
+    await expect(gen({ action: 'edit', reference_images: ['pic.webp'] })).rejects.toThrow('Reference image pic.webp is not a webp image.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a symlinked output or output/images that leaves the workspace is refused before any request', async () => {
+    gateway()
+    const outside = mkdtempSync(join(tmpdir(), 'pi-kortix-outside-'))
+    try {
+      symlinkSync(outside, join(dir, 'output'))
+      await expect(gen()).rejects.toThrow('output/images is outside the workspace.')
+      rmSync(join(dir, 'output'))
+      mkdirSync(join(dir, 'output'))
+      symlinkSync(outside, join(dir, 'output', 'images'))
+      await expect(gen()).rejects.toThrow('output/images is outside the workspace.')
+      expect(calls).toHaveLength(0)
+      expect(readdirSync(outside).filter((name) => name.endsWith('.png'))).toEqual([])
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('each file is named after its prompt inside output/images and never replaces a file', async () => {
+    gateway()
+    setSystemTime(new Date('2026-10-28T10:30:00Z'))
+    try {
+      mkdirSync(imagesDir(), { recursive: true })
+      writeFileSync(join(imagesDir(), 'cube-20261028-103000.png'), 'mine')
+      // A path in a prompt is only text: its slug never leaves output/images. `output_name` is not read.
+      const result = await genJson({ prompts: ['cube', 'cube', '../../kortix.yaml', '.git/hooks/pre-commit'], output_name: '../kortix.yaml' })
+      expect(result.images.map((image: { path: string }) => image.path)).toEqual([
+        join(imagesDir(), 'cube-20261028-103000-2.png'),
+        join(imagesDir(), 'cube-20261028-103000-3.png'),
+        join(imagesDir(), 'kortix-yaml-20261028-103000.png'),
+        join(imagesDir(), 'git-hooks-pre-commit-20261028-103000.png'),
+      ])
+      expect(readFileSync(join(imagesDir(), 'cube-20261028-103000.png'), 'utf8')).toBe('mine')
+      expect(readdirSync(dir).sort()).toEqual(['output'])
+    } finally {
+      setSystemTime()
+    }
+  })
+
+  test('the output is a small JSON object with paths and never the image bytes', async () => {
+    gateway()
+    const text = out(await gen({ prompts: ['x', 'y'] }))
+    expect(text).not.toContain(PNG.toString('base64'))
+    const result = JSON.parse(text)
+    expect(Object.keys(result).sort()).toEqual(['action', 'images', 'model', 'provider'])
+    expect(result.images.map((image: Record<string, unknown>) => Object.keys(image).sort())).toEqual([
+      ['path', 'prompt', 'sha256', 'size'],
+      ['path', 'prompt', 'sha256', 'size'],
+    ])
+  })
+
+  test('each image carries the sha256 of its saved bytes (R38)', async () => {
+    gateway((call) => (call.body.prompt === 'b' ? answer(jpegOf(0xc0, 640, 480), 'image/jpeg') : generated))
+    const result = await genJson({ prompts: ['a', 'b'] })
+    for (const image of result.images) expect(image.sha256).toBe(createHash('sha256').update(readFileSync(image.path)).digest('hex'))
+    expect(result.images[0].sha256).not.toBe(result.images[1].sha256)
+    expect(result.images[1].sha256).toMatch(/^[0-9a-f]{64}$/)
   })
 })
 
@@ -281,6 +732,16 @@ describe('memory', () => {
     expect(await memory({ command: 'str_replace', path: 'memory/a.md', old_str: 'a' })).toBe('Error: `new_str` is required for str_replace.')
     expect(await memory({ command: 'rename', old_path: 'memory/a.md' })).toBe('Error: `new_path` is required for rename.')
   })
+
+  test('view_range is exactly two integers; any other shape is refused before the file is read', async () => {
+    // A model once streamed a 36,678-number view_range for 714 s: the schema caps the length.
+    expect(memoryTool.parameters.properties.view_range).toMatchObject({ type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 })
+    await memory({ command: 'create', path: 'memory/a.md', file_text: 'one\ntwo\nthree' })
+    expect(await memory({ command: 'view', path: 'memory/a.md', view_range: [2, -1] })).toBe("Here's the content of memory/a.md with line numbers:\n     2\ttwo\n     3\tthree")
+    const refused = 'Error: `view_range` must be two integers [start, end].'
+    for (const view_range of [[], [1], [1, 2, 3], Array.from({ length: 36_678 }, (_, i) => i), [1.5, 2], ['1', '2'], 'all'])
+      expect(await memory({ command: 'view', path: 'memory/a.md', view_range })).toBe(refused)
+  })
 })
 
 describe('show', () => {
@@ -311,6 +772,63 @@ describe('show', () => {
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
   })
 
+  describe('sha256 of a shown image (R38)', () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+    const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+
+    test('a single image entry carries the sha256 of the file bytes', async () => {
+      writeFileSync(join(dir, 'cat.png'), PNG)
+      const result = JSON.parse(out(await show({ type: 'image', path: 'cat.png' })))
+      expect(result.entry).toMatchObject({ type: 'image', path: join(dir, 'cat.png'), sha256: sha(PNG) })
+    })
+
+    test('each image item carries its own sha256; a non-image item, a url and a missing file carry none', async () => {
+      const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9])
+      mkdirSync(join(dir, 'images'))
+      writeFileSync(join(dir, 'images/a.png'), PNG)
+      writeFileSync(join(dir, 'images/b.JPG'), JPG)
+      writeFileSync(join(dir, 'notes.md'), '# notes')
+      const items = [
+        { type: 'image', path: 'images/a.png' },
+        { type: 'file', path: 'notes.md' },
+        { type: 'image', path: 'images/b.JPG' },
+        { type: 'url', url: 'http://localhost:3000' },
+        { type: 'image', path: 'gone.png' },
+      ]
+      const result = JSON.parse(out(await show({ items: JSON.stringify(items) })))
+      expect(result.items.map((item: { sha256?: string }) => item.sha256)).toEqual([sha(PNG), undefined, sha(JPG), undefined])
+      expect(result.warnings).toEqual([`Item 4: File not found: ${join(dir, 'gone.png')}`])
+    })
+
+    test('an image over 32 MiB carries none', async () => {
+      writeFileSync(join(dir, 'big.png'), PNG)
+      truncateSync(join(dir, 'big.png'), 32 * 1024 * 1024 + 1)
+      const result = JSON.parse(out(await show({ type: 'image', path: 'big.png' })))
+      expect(result.entry.path).toBe(join(dir, 'big.png'))
+      expect(result.entry).not.toHaveProperty('sha256')
+    })
+
+    test('a digest that misses the 2 s deadline is left out and show still answers', async () => {
+      writeFileSync(join(dir, 'cat.png'), PNG)
+      const native = AbortSignal.timeout
+      const patched = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
+      patched.timeout = () => AbortSignal.abort(new DOMException('deadline', 'TimeoutError'))
+      try {
+        const result = JSON.parse(out(await show({ type: 'image', path: 'cat.png' })))
+        expect(result).toMatchObject({ success: true, entry: { type: 'image', path: join(dir, 'cat.png') } })
+        expect(result.entry).not.toHaveProperty('sha256')
+      } finally {
+        patched.timeout = native
+      }
+    })
+
+    test('an image path that is a directory carries none and still shows', async () => {
+      mkdirSync(join(dir, 'folder.png'))
+      const result = JSON.parse(out(await show({ type: 'image', path: 'folder.png' })))
+      expect(result.entry).not.toHaveProperty('sha256')
+    })
+  })
+
   test('an empty items value ("null", "[]") beside a single item shows that item', async () => {
     writeFileSync(join(dir, 'SKILL.md'), '# skill')
     for (const items of ['null', '[]']) {
@@ -323,7 +841,7 @@ describe('show', () => {
 
 describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {
   const kortixDir = join(import.meta.dir, '../services/tools/kortix')
-  const modules = { web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
+  const modules = { web_search: webSearch, image_search: imageSearch, image_gen: imageGen, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
 
   test('one file per Kortix tool, named after the tool', () => {
     expect(readdirSync(kortixDir).sort()).toEqual(Object.keys(KORTIX_TOOLS).map((name) => `${name}.ts`).sort())

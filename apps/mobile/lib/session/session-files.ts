@@ -19,6 +19,7 @@
 import {
   createArtifactKind,
   familyForTool,
+  imageGenView,
   normalizeActivityToolName,
   toWorkspaceRelative,
   type SessionLogMessage,
@@ -146,8 +147,12 @@ function createdCandidates(call: ToolCallBlock): Candidate[] {
   if (!kind) return [];
   const output = partRawOutput(call);
   let path = '';
-  if (kind === 'image') path = parseImageOutput(output).imagePath ?? '';
-  else if (kind === 'video') path = parseVideoOutput(output).videoPath ?? '';
+  if (kind === 'image') {
+    // One image_gen call makes up to four images (`images[]`); an older one, one `path`.
+    const paths = imageGenView(call).images.flatMap((image) => (image.imagePath ? [image.imagePath] : []));
+    if (paths.length) return paths.flatMap((p) => candidate(call.call_id, p, { kind }) ?? []);
+    path = parseImageOutput(output).imagePath ?? '';
+  } else if (kind === 'video') path = parseVideoOutput(output).videoPath ?? '';
   else {
     try {
       path = text((JSON.parse(output) as { presentation_path?: unknown }).presentation_path);

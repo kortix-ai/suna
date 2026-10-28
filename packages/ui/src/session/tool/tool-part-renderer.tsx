@@ -173,8 +173,9 @@ function ToolPartRendererImpl({
   const childBearingTaskError =
     errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
   // A failed codemode script keeps its partial output and the calls it made before
-  // the failure: its own row draws them, with the error.
-  const drawsOwnError = childBearingTaskError || call.name === 'codemode';
+  // the failure: its own row draws them, with the error. The image card draws its
+  // failure (with the Connect ChatGPT action) and a stop in place of the image.
+  const drawsOwnError = childBearingTaskError || call.name === 'codemode' || call.name === 'image_gen';
 
   if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {
@@ -308,5 +309,10 @@ function ToolPartRendererImpl({
  * `memo` does not block context propagation, so `ToolSurfaceContext`,
  * `ToolActivateContext` and `ToolOutcomeContext` still reach the tool.
  */
-export const ToolPartRenderer = memo(ToolPartRendererImpl);
+/** A block that is not a tool call (a harness block a host mistyped) renders nothing: the row must never throw. */
+function ToolPartRendererGuard(props: ToolPartRendererProps & { sessionId?: string }) {
+  return props.call?.type === 'tool_call' ? <ToolPartRendererImpl {...props} /> : null;
+}
+
+export const ToolPartRenderer = memo(ToolPartRendererGuard);
 ToolPartRenderer.displayName = 'ToolPartRenderer';
