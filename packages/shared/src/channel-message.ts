@@ -1,6 +1,6 @@
 /**
  * Recognise a channel-originated user message (Slack, Microsoft Teams,
- * Telegram) inside the raw prompt text the API scaffolds for the agent, and
+ * Telegram, email) inside the raw prompt text the API scaffolds for the agent, and
  * pull out what a person wants to see: who wrote it, where, and the words they
  * typed — not the tenant ids and the `How to work:` instructions.
  *
@@ -34,7 +34,9 @@ import { readLegacyChannelHeader } from './channel-header';
 import { readSlackFollowUpHeader, slackPlainText } from './slack-text';
 import { replaceSpans, tagBlocks } from './tag-blocks';
 
-export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
+/** The platform words a header names. Any other word reads as Slack, as every deployed build reads it. */
+export const CHANNEL_PLATFORMS = ['Slack', 'Teams', 'Telegram', 'Email'] as const;
+export type ChannelPlatform = (typeof CHANNEL_PLATFORMS)[number];
 
 export interface ChannelMessageInfo {
   platform: ChannelPlatform;
@@ -194,12 +196,12 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   const text = (rawText ?? '').trim();
   if (!text) return undefined;
 
-  // `[Telegram · <where> · message from <sender>]`, read by `@kortix/shared/channel-header`.
+  // `[<Platform> · <where> · message from <sender>]`, read by `@kortix/shared/channel-header`.
   // `channelPromptText` ends the text at the last delimiter, so a person's own
   // delimiter stays in the bubble. A pre-2026 prompt has none and keeps `cutAtTail`.
   const legacy = readLegacyChannelHeader(text);
   if (legacy) {
-    const platform = legacy.platform === 'Teams' ? 'Teams' : legacy.platform === 'Telegram' ? 'Telegram' : 'Slack';
+    const platform = CHANNEL_PLATFORMS.find((p) => p === legacy.platform) ?? 'Slack';
     const rest = text.slice(legacy.length);
     const end = rest.lastIndexOf(`\n\n── ${legacy.platform} instructions\n`);
     const messageText = end >= 0 ? rest.slice(0, end).trim() : cutAtTail(rest);
