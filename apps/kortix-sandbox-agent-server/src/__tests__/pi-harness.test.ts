@@ -4450,7 +4450,8 @@ describe('pi codemode', () => {
       let logPath = ''
       const r = await boot({
         script: [TASK, script("return (await tools.bash({ command: 'echo nested' })).trim()"), { text: 'child done' }, { text: 'parent done' }],
-        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }) },
+        // v3 discovers no `.pi/extensions`: register the extension as a project package.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: agents({ codemode: 'on' }), KORTIX_PI_PACKAGES: JSON.stringify(['./.pi/extensions/watch.ts']) },
         prepare: (workspace) => {
           logPath = join(workspace, 'calls.log')
           repoExtension(
