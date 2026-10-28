@@ -20,6 +20,9 @@ const DIST = path.join(WEB_ROOT, 'dist');
 const PUBLIC_DOCS = path.join(WEB_ROOT, 'public', 'docs');
 const CONTENT_DOCS = path.join(WEB_ROOT, 'content', 'docs');
 const BLUME_CONFIG = path.join(WEB_ROOT, 'blume.config.ts');
+// The custom components Blume renders (components.ts registers them), so a
+// sidebar change rebuilds the docs too.
+const BLUME_COMPONENTS = [path.join(WEB_ROOT, 'components.ts'), path.join(WEB_ROOT, 'blume-components')];
 
 /** Absolute paths of the `public/docs/` files that prove the Blume build landed. */
 export function getBlumeDocsOutputPaths() {
@@ -45,7 +48,7 @@ function newestMtimeMs(root) {
 
 /**
  * True when `public/docs/index.html` already reflects the current
- * `content/docs/` + `blume.config.ts` sources, so the (tens-of-seconds)
+ * `content/docs/`, `blume.config.ts` and custom component sources, so the (tens-of-seconds)
  * `blume build` can be skipped.
  *
  * next.config.ts loads once in the main `next build` process and again,
@@ -58,7 +61,7 @@ function isPublicDocsUpToDate() {
   const outputIndex = getBlumeDocsOutputPaths()[0];
   if (!fs.existsSync(outputIndex)) return false;
   const outputMtime = fs.statSync(outputIndex).mtimeMs;
-  return outputMtime >= newestMtimeMs(CONTENT_DOCS) && outputMtime >= newestMtimeMs(BLUME_CONFIG);
+  return [CONTENT_DOCS, BLUME_CONFIG, ...BLUME_COMPONENTS].every((source) => outputMtime >= newestMtimeMs(source));
 }
 
 /**
