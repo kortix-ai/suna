@@ -20438,7 +20438,11 @@
       "text064694999e1f": "Novi događaj aplikacije",
       "text1934aa0740bb": "Pretraži događaje aplikacija",
       "text25db7e5609e5": "Još nema događaja aplikacija",
-      "text9f8f92588517": "Aplikacija pokreće agente emitovanjem događaja. Dodaj okidač sa on: { event, app } u kortix.yaml.",
+      "textd85b56df2c94": "Направите један да би агент радио када једна од ваших апликација пошаље догађај.",
+      "texte9b6dc29c812": "Догађај {app}",
+      "text860e6ea2b98b": "Када {app} пошаље {event}, {agent} извршава ваше упутство.",
+      "text2def58884d12": "Када {app} пошаље догађај, {agent} извршава ваше упутство.",
+      "text69de76117f00": "Изаберите апликацију која шаље догађај.",
       "text0c366a9ad5dd": "Користи прилагођени Resend кључ",
       "textfd1317630c49": "Користи се као први избор за Resend адресу, на пример support@kortixmail.",
       "textb270bf37ec1c": "Resend пријемно сандуче додељено овој вези.",
@@ -20838,7 +20842,12 @@
     "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #{channel}.",
     "postToNone": "Без канала",
     "postToUnavailable": "Недоступан канал",
-    "postToPrivate": "Приватно: окидачи не могу да објављују овде"
+    "postToPrivate": "Приватно: окидачи не могу да објављују овде",
+    "appLabel": "Апликација",
+    "appPlaceholder": "Изаберите апликацију",
+    "appEventLabel": "Догађај",
+    "appEventPlaceholder": "Било који догађај",
+    "appEventHelp": "Ваша апликација шаље догађаје POST захтевом на <code>KORTIX_APP_EVENTS_URL</code> са bearer токеном <code>KORTIX_APP_TOKEN</code>. Наведите један догађај, нпр. <code>reply.received</code>, или оставите празно да би се покретало при сваком догађају."
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",

@@ -20438,7 +20438,11 @@
       "text064694999e1f": "新建应用事件",
       "text1934aa0740bb": "搜索应用事件",
       "text25db7e5609e5": "暂无应用事件",
-      "text9f8f92588517": "应用通过发出事件来启动智能体。在 kortix.yaml 中添加 on: { event, app } 触发器。",
+      "textd85b56df2c94": "创建一个，当你的某个应用发送事件时让智能体运行。",
+      "texte9b6dc29c812": "{app} 事件",
+      "text860e6ea2b98b": "当 {app} 发送 {event} 时，{agent} 会执行你的指令。",
+      "text2def58884d12": "当 {app} 发送事件时，{agent} 会执行你的指令。",
+      "text69de76117f00": "选择发送事件的应用。",
       "text0c366a9ad5dd": "使用自定义 Resend 密钥",
       "textfd1317630c49": "作为 Resend 地址的首选前缀，例如 support@agentmail。",
       "textb270bf37ec1c": "分配给此连接的 Resend 收件箱。",
@@ -20838,7 +20842,12 @@
     "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
     "postToNone": "无频道",
     "postToUnavailable": "不可用的频道",
-    "postToPrivate": "私有：触发器无法发布到这里"
+    "postToPrivate": "私有：触发器无法发布到这里",
+    "appLabel": "应用",
+    "appPlaceholder": "选择应用",
+    "appEventLabel": "事件",
+    "appEventPlaceholder": "任意事件",
+    "appEventHelp": "你的应用通过 POST 到 <code>KORTIX_APP_EVENTS_URL</code> 并携带 bearer 令牌 <code>KORTIX_APP_TOKEN</code> 来发送事件。填写一个事件，例如 <code>reply.received</code>，或留空以在每个事件上运行。"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",

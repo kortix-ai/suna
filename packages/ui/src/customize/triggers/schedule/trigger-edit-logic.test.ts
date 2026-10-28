@@ -246,3 +246,34 @@ describe('triggerPatch: an app event', () => {
     expect(triggerPatch(stub, { ...stub, instruction: 'x' })).toEqual({ prompt_template: 'x' });
   });
 });
+
+describe('an App event trigger', () => {
+  const appTrigger = (filter: ProjectTrigger['filter'] = { 'event.name': 'reply.received' }) =>
+    trigger({ type: 'app', cron: null, app: 'outreach', filter });
+
+  test('loads into the App event block: the App, the event name, and only the other conditions', () => {
+    const base = saved(appTrigger({ 'event.name': 'reply.received', 'event.data.lead': { exists: true } }));
+    expect(base).toMatchObject({ kind: 'app', kortixApp: 'outreach', appEvent: 'reply.received' });
+    expect(base.conditions).toEqual([{ path: 'event.data.lead', operator: 'exists', value: '' }]);
+    expect(triggerPatch(base, { ...base })).toEqual({});
+  });
+
+  test('no event.name loads as any event', () => {
+    expect(saved(appTrigger(null))).toMatchObject({ kortixApp: 'outreach', appEvent: '', conditions: [] });
+  });
+
+  test('a new event name sends the whole filter; clearing it drops event.name', () => {
+    const base = saved(appTrigger({ 'event.name': 'reply.received', 'event.data.lead': 'x' }));
+    expect(triggerPatch(base, { ...base, appEvent: ' reply.bounced ' })).toEqual({
+      filter: { 'event.data.lead': 'x', 'event.name': 'reply.bounced' },
+    });
+    expect(triggerPatch(base, { ...base, appEvent: '' })).toEqual({ filter: { 'event.data.lead': 'x' } });
+    const only = saved(appTrigger());
+    expect(triggerPatch(only, { ...only, appEvent: '*' })).toEqual({ filter: null });
+  });
+
+  test('another App sends its slug', () => {
+    const base = saved(appTrigger());
+    expect(triggerPatch(base, { ...base, kortixApp: 'billing' })).toEqual({ app: 'billing' });
+  });
+});

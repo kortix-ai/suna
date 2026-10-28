@@ -5879,7 +5879,11 @@ const catalog = {
       "text064694999e1f": "New App event",
       "text1934aa0740bb": "Search App events",
       "text25db7e5609e5": "No App events yet",
-      "text9f8f92588517": "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.",
+      "textd85b56df2c94": "Create one to have an agent run when one of your Apps sends an event.",
+      "texte9b6dc29c812": "{app} event",
+      "text860e6ea2b98b": "When {app} sends {event}, {agent} runs your instruction.",
+      "text2def58884d12": "When {app} sends an event, {agent} runs your instruction.",
+      "text69de76117f00": "Pick the App that sends the event.",
       "text7c0a91e5b3d2": "Unclassified tools",
       "text9d2b6f0c41ae": "Tools & rules",
       "openThreadAction": "Open thread",
@@ -6227,7 +6231,12 @@ const catalog = {
     "postToHint": "Each run starts a new thread there. With no channel, runs go to #{channel}.",
     "postToNone": "No channel",
     "postToUnavailable": "Unavailable channel",
-    "postToPrivate": "Private: triggers can't post here"
+    "postToPrivate": "Private: triggers can't post here",
+    "appLabel": "App",
+    "appPlaceholder": "Choose an App",
+    "appEventLabel": "Event",
+    "appEventPlaceholder": "Any event",
+    "appEventHelp": "Your App sends events with a POST to <code>KORTIX_APP_EVENTS_URL</code> and the bearer token <code>KORTIX_APP_TOKEN</code>. Name one event, such as <code>reply.received</code>, or leave it empty to run on every event."
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",

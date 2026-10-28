@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { testUiTranslator as t } from '../../../test-utils/intl';
-import type { ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
+import type { App, ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
 
 import { defaultConfigDraft, oneLineDescription, schemaFields } from './event-trigger-copy';
 import type { ConditionRow } from './schedule-fields';
@@ -11,6 +11,7 @@ import {
   type ComposerDraft,
   autoName,
   connectionView,
+  eventSendingApps,
   findDraftApp,
   initialDraft,
   postToChange,
@@ -18,6 +19,7 @@ import {
   runCreate,
   summarize,
   triggerConnection,
+  triggerFilter,
   triggerName,
   validate,
   withAppPicked,
@@ -571,5 +573,55 @@ describe('postToChange: Post to and the sharing it implies', () => {
     expect(postToChange({ sessionAccess: chosen }, null, { base, current: { kind: 'channel' }, viewerId: 'me' })).toEqual({
       spaceId: null,
     });
+  });
+});
+
+describe('App event draft', () => {
+  const appDraft = (over: Partial<ComposerDraft> = {}): ComposerDraft => ({
+    ...initialDraft({ kind: 'app' }),
+    instruction: 'Answer the reply',
+    ...over,
+  });
+  const name = 'Reply received';
+
+  test('blocks Create until an App is picked', () => {
+    expect(validate(appDraft(), { name, configFields: [], app: null }, t).map((p) => p.block)).toEqual(['when']);
+    expect(validate(appDraft({ kortixApp: 'outreach' }), { name, configFields: [], app: null }, t)).toEqual([]);
+  });
+
+  test('the filter Create sends: event.name for one event, none for any event', () => {
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: ' reply.received ' }))).toEqual({
+      'event.name': 'reply.received',
+    });
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: '' }))).toBeNull();
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: '*' }))).toBeNull();
+    const conditions: ConditionRow[] = [{ path: 'event.data.lead', operator: 'exists', value: '' }];
+    expect(triggerFilter(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received', conditions }))).toEqual({
+      'event.data.lead': { exists: true },
+      'event.name': 'reply.received',
+    });
+    // Another kind never sends an event name typed before the switch.
+    expect(triggerFilter(withKind(appDraft({ appEvent: 'reply.received' }), 'webhook'))).toBeNull();
+  });
+
+  test('the name and the sentence follow the App and the event', () => {
+    expect(autoName(appDraft(), t)).toBe('');
+    expect(autoName(appDraft({ kortixApp: 'outreach' }), t)).toBe('outreach event');
+    expect(autoName(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received' }), t)).toBe(
+      'outreach: reply.received',
+    );
+    expect(summarize(appDraft({ kortixApp: 'outreach' }), null, 'Kortix', t)).toBe(
+      'When outreach sends an event, Kortix runs your instruction.',
+    );
+    expect(summarize(appDraft({ kortixApp: 'outreach', appEvent: 'reply.received' }), null, 'Kortix', t)).toBe(
+      'When outreach sends reply.received, Kortix runs your instruction.',
+    );
+  });
+
+  test('only Apps Kortix runs can send events', () => {
+    const hosted = { slug: 'outreach', external_url: null } as App;
+    const external = { slug: 'site', external_url: 'https://example.com' } as App;
+    expect(eventSendingApps([hosted, external])).toEqual([hosted]);
+    expect(eventSendingApps(undefined)).toEqual([]);
   });
 });

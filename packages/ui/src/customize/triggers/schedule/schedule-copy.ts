@@ -28,15 +28,18 @@ export type TriggerKind = 'cron' | 'webhook' | 'event' | 'app';
  * The trigger kinds this screen lists. `ScheduleView` filters every list
  * through this before it reaches the table, the row actions, or the detail
  * sheet, so `trigger.type` is safe to treat as {@link TriggerKind} anywhere
- * downstream of that filter. `app` (an App's own events) is listed and
- * managed here; it is written in `kortix.yaml`, not in the composer.
+ * downstream of that filter. `app` (an event that one of the project's Apps
+ * sends) is listed, created and edited here, like the other kinds.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
   return type === 'cron' || type === 'webhook' || type === 'event' || type === 'app';
 }
 
-/** The kinds the composer can create. */
-export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'webhook', 'event'];
+/**
+ * The kinds the composer can create. `event` shows only with the project flag
+ * `event_triggers`; `app` shows once the project has an App that sends events.
+ */
+export const COMPOSER_KINDS: readonly TriggerKind[] = ['cron', 'webhook', 'event', 'app'];
 
 /** `every_seconds` as a sentence: "Every 5 minutes", "Every 2 hours". */
 export function describeEvery(seconds: number): string {
@@ -430,7 +433,7 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     createLabel: 'New App event',
     searchPlaceholder: 'Search App events',
     emptyTitle: 'No App events yet',
-    emptyBody: 'An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.',
+    emptyBody: 'Create one to have an agent run when one of your Apps sends an event.',
     column: 'Status',
   },
 };

@@ -20438,7 +20438,11 @@
       "text064694999e1f": "Novo evento de App",
       "text1934aa0740bb": "Pesquisar eventos de App",
       "text25db7e5609e5": "Nenhum evento de App ainda",
-      "text9f8f92588517": "Uma App inicia agentes emitindo eventos. Adicione um gatilho com on: { event, app } no kortix.yaml.",
+      "textd85b56df2c94": "Crie um para que um agente seja executado quando uma das suas Apps enviar um evento.",
+      "texte9b6dc29c812": "Evento de {app}",
+      "text860e6ea2b98b": "Quando {app} envia {event}, {agent} executa sua instrução.",
+      "text2def58884d12": "Quando {app} envia um evento, {agent} executa sua instrução.",
+      "text69de76117f00": "Escolha a App que envia o evento.",
       "text0c366a9ad5dd": "Usar chave personalizada do Resend",
       "textfd1317630c49": "Usado como primeira opção para o endereço do Resend, por exemplo, support@kortixmail.",
       "textb270bf37ec1c": "Caixa de entrada do Resend atribuída a esta conexão.",
@@ -20838,7 +20842,12 @@
     "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #{channel}.",
     "postToNone": "Nenhum canal",
     "postToUnavailable": "Canal indisponível",
-    "postToPrivate": "Privado: gatilhos não podem publicar aqui"
+    "postToPrivate": "Privado: gatilhos não podem publicar aqui",
+    "appLabel": "App",
+    "appPlaceholder": "Escolha uma App",
+    "appEventLabel": "Evento",
+    "appEventPlaceholder": "Qualquer evento",
+    "appEventHelp": "Sua App envia eventos com um POST para <code>KORTIX_APP_EVENTS_URL</code> e o token bearer <code>KORTIX_APP_TOKEN</code>. Indique um evento, como <code>reply.received</code>, ou deixe vazio para executar em todo evento."
   },
   "gatewayAccess": {
     "heroTitle": "Use os modelos deste projeto em qualquer lugar",

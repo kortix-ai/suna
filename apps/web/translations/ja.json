@@ -20438,7 +20438,11 @@
       "text064694999e1f": "新しいアプリイベント",
       "text1934aa0740bb": "アプリイベントを検索",
       "text25db7e5609e5": "アプリイベントはまだありません",
-      "text9f8f92588517": "アプリはイベントを送信してエージェントを起動します。kortix.yaml に on: { event, app } のトリガーを追加します。",
+      "textd85b56df2c94": "作成すると、いずれかのアプリがイベントを送信したときにエージェントが実行されます。",
+      "texte9b6dc29c812": "{app} のイベント",
+      "text860e6ea2b98b": "{app} が {event} を送信すると、{agent} があなたの指示を実行します。",
+      "text2def58884d12": "{app} がイベントを送信すると、{agent} があなたの指示を実行します。",
+      "text69de76117f00": "イベントを送信するアプリを選んでください。",
       "text0c366a9ad5dd": "カスタム Resend キーを使用",
       "textfd1317630c49": "Resend アドレスの第一候補として使用します。例：support@agentmail。",
       "textb270bf37ec1c": "この接続に割り当てられた Resend の受信トレイ。",
@@ -20838,7 +20842,12 @@
     "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
     "postToNone": "チャンネルなし",
     "postToUnavailable": "利用できないチャンネル",
-    "postToPrivate": "非公開: トリガーはここに投稿できません"
+    "postToPrivate": "非公開: トリガーはここに投稿できません",
+    "appLabel": "アプリ",
+    "appPlaceholder": "アプリを選択",
+    "appEventLabel": "イベント",
+    "appEventPlaceholder": "すべてのイベント",
+    "appEventHelp": "アプリは <code>KORTIX_APP_EVENTS_URL</code> への POST と Bearer トークン <code>KORTIX_APP_TOKEN</code> でイベントを送信します。<code>reply.received</code> のようにイベントを 1 つ指定するか、空欄にしてすべてのイベントで実行します。"
   },
   "gatewayAccess": {
     "heroTitle": "このプロジェクトのモデルをどこでも使う",

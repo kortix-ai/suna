@@ -72,7 +72,13 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps, useTriggerRuns } from '@kortix/sdk/react';
+import {
+  contract,
+  qk,
+  useProjectApps,
+  useProjectTriggerEventApps,
+  useTriggerRuns,
+} from '@kortix/sdk/react';
 import {
   CheckSquareIcon,
   DotsThreeIcon,
@@ -101,6 +107,7 @@ import {
 } from './schedule/schedule-copy';
 import { ScheduleDetailSplitContent } from './schedule/schedule-detail-sheet';
 import { TriggerComposer } from './schedule/trigger-composer';
+import { eventSendingApps } from './schedule/trigger-composer-logic';
 import { useTriggerControls } from './schedule/trigger-controls';
 import {
   TRIGGER_FILTERS,
@@ -379,11 +386,13 @@ export function ScheduleView({
   // closed: until the flag resolves on, nothing that lists, browses or requests events renders.
   const featureFlags = useProjectFeatureFlags(projectId);
   const eventsOn = featureFlags.flags.event_triggers === true;
-  // The App events tab shows once a project has one: most never will.
+  // The App events tab shows once the project has an App that sends events, or an App event trigger.
+  const hasKortixApps = eventSendingApps(useProjectApps(projectId).data).length > 0;
   const hasAppTriggers = (triggersQuery.data?.triggers ?? []).some((t) => t.type === 'app');
+  const showAppFilter = hasKortixApps || hasAppTriggers;
   const filters = useMemo(
-    () => TRIGGER_FILTERS.filter((f) => (f !== 'event' || eventsOn) && (f !== 'app' || hasAppTriggers)),
-    [eventsOn, hasAppTriggers],
+    () => TRIGGER_FILTERS.filter((f) => (f !== 'event' || eventsOn) && (f !== 'app' || showAppFilter)),
+    [eventsOn, showAppFilter],
   );
   // `?type=cron|event|webhook` is the kind filter; anything else, and `event` while events are off, is all.
   const filter = parseTriggerFilter(searchParams?.get('type'), filters);
@@ -767,6 +776,26 @@ export function ScheduleView({
                   <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
                     {tI18nComplete.raw('textd8b8392e2c54')}
                   </Button>
+                }
+              />
+            ) : filter === 'app' && ofKind.length === 0 ? (
+              // The App events tab can show before the first one exists: say what it is and offer one.
+              <EmptyState
+                size="sm"
+                title={kindCopy.app.emptyTitle}
+                description={kindCopy.app.emptyBody}
+                action={
+                  canWrite ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => openCreate('app')}
+                    >
+                      <PlusIcon className="size-4 shrink-0" />
+                      {kindCopy.app.createLabel}
+                    </Button>
+                  ) : undefined
                 }
               />
             ) : filter !== 'all' && ofKind.length === 0 ? (

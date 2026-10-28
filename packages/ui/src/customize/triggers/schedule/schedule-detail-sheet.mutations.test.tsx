@@ -781,3 +781,37 @@ describe('header controls follow one leaf each', () => {
     expect(JSON.stringify(sheet.renderer.toJSON())).toContain('Triage the inbox');
   });
 });
+
+describe('an App event trigger', () => {
+  const appTrigger: TriggerOverrides = {
+    type: 'app',
+    cron: null,
+    app: 'outreach',
+    filter: { 'event.name': 'reply.received', 'event.data.lead': 'x' },
+  };
+
+  test('opens on its App and its event name; the event name is not a condition row', async () => {
+    const sheet = mountSheet(appTrigger);
+    expect(sheet.inputById('trigger-app-event').props.value).toBe('reply.received');
+    expect(JSON.stringify(sheet.renderer.toJSON())).toContain('outreach');
+    await sheet.openOptions();
+    const editor = at(sheet.renderer.root.findAll((n) => typeof n.type !== 'string' && Array.isArray(n.props?.rows)));
+    expect(editor.props.rows).toEqual([{ path: 'event.data.lead', operator: 'equals', value: 'x' }]);
+  });
+
+  test('a new event name saves as the event.name condition, beside the other conditions', async () => {
+    const sheet = mountSheet(appTrigger);
+    await type(sheet.inputById('trigger-app-event'), 'reply.bounced');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ filter: { 'event.data.lead': 'x', 'event.name': 'reply.bounced' } });
+  });
+
+  test('an emptied event name saves as any event: no event.name', async () => {
+    const sheet = mountSheet(appTrigger);
+    await type(sheet.inputById('trigger-app-event'), '');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ filter: { 'event.data.lead': 'x' } });
+  });
+});

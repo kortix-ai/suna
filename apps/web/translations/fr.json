@@ -20438,7 +20438,11 @@
       "text064694999e1f": "Nouvel événement d’App",
       "text1934aa0740bb": "Rechercher des événements d’App",
       "text25db7e5609e5": "Aucun événement d’App pour l’instant",
-      "text9f8f92588517": "Une App lance des agents en émettant des événements. Ajoutez un déclencheur avec on: { event, app } dans kortix.yaml.",
+      "textd85b56df2c94": "Créez-en un pour qu'un agent s'exécute quand l'une de vos Apps envoie un événement.",
+      "texte9b6dc29c812": "Événement {app}",
+      "text860e6ea2b98b": "Quand {app} envoie {event}, {agent} exécute votre instruction.",
+      "text2def58884d12": "Quand {app} envoie un événement, {agent} exécute votre instruction.",
+      "text69de76117f00": "Choisissez l'App qui envoie l'événement.",
       "text0c366a9ad5dd": "Utiliser une clé Resend personnalisée",
       "textfd1317630c49": "Utilisé comme premier choix pour l’adresse Resend, par exemple support@kortixmail.",
       "textb270bf37ec1c": "Boîte de réception Resend associée à cette connexion.",
@@ -20838,7 +20842,12 @@
     "postToHint": "Chaque exécution démarre un nouveau fil ici. Sans canal, les exécutions vont dans #{channel}.",
     "postToNone": "Aucun canal",
     "postToUnavailable": "Canal indisponible",
-    "postToPrivate": "Privé : les déclencheurs ne peuvent pas publier ici"
+    "postToPrivate": "Privé : les déclencheurs ne peuvent pas publier ici",
+    "appLabel": "App",
+    "appPlaceholder": "Choisir une App",
+    "appEventLabel": "Événement",
+    "appEventPlaceholder": "N'importe quel événement",
+    "appEventHelp": "Votre App envoie des événements par POST à <code>KORTIX_APP_EVENTS_URL</code> avec le jeton bearer <code>KORTIX_APP_TOKEN</code>. Indiquez un événement, comme <code>reply.received</code>, ou laissez vide pour s'exécuter à chaque événement."
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",

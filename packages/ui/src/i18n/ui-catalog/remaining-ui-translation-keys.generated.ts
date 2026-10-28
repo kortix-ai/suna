@@ -11,7 +11,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   "New App event": 'text064694999e1f',
   "Search App events": 'text1934aa0740bb',
   "No App events yet": 'text25db7e5609e5',
-  "An App starts agents by emitting events. Add a trigger with on: { event, app } in kortix.yaml.": 'text9f8f92588517',
+  "Create one to have an agent run when one of your Apps sends an event.": 'textd85b56df2c94',
   Drive: 'text6312b4b9baf1',
   Drives: 'text729fe0e7b138',
   '{label} has finished.': 'text27d628c8b427',

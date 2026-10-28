@@ -20438,7 +20438,11 @@
       "text064694999e1f": "Neues App-Ereignis",
       "text1934aa0740bb": "App-Ereignisse suchen",
       "text25db7e5609e5": "Noch keine App-Ereignisse",
-      "text9f8f92588517": "Eine App startet Agenten, indem sie Ereignisse sendet. Füge in kortix.yaml einen Trigger mit on: { event, app } hinzu.",
+      "textd85b56df2c94": "Erstelle eins, damit ein Agent läuft, wenn eine deiner Apps ein Ereignis sendet.",
+      "texte9b6dc29c812": "{app}-Ereignis",
+      "text860e6ea2b98b": "Wenn {app} {event} sendet, führt {agent} deine Anweisung aus.",
+      "text2def58884d12": "Wenn {app} ein Ereignis sendet, führt {agent} deine Anweisung aus.",
+      "text69de76117f00": "Wähle die App, die das Ereignis sendet.",
       "text0c366a9ad5dd": "Eigenen Resend-Schlüssel verwenden",
       "textfd1317630c49": "Wird als erste Wahl für die Resend-Adresse verwendet, zum Beispiel support@kortixmail.",
       "textb270bf37ec1c": "Der dieser Verbindung zugewiesene Resend-Posteingang.",
@@ -20838,7 +20842,12 @@
     "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #{channel}.",
     "postToNone": "Kein Kanal",
     "postToUnavailable": "Nicht verfügbarer Kanal",
-    "postToPrivate": "Privat: Trigger können hier nicht posten"
+    "postToPrivate": "Privat: Trigger können hier nicht posten",
+    "appLabel": "App",
+    "appPlaceholder": "App wählen",
+    "appEventLabel": "Ereignis",
+    "appEventPlaceholder": "Jedes Ereignis",
+    "appEventHelp": "Deine App sendet Ereignisse per POST an <code>KORTIX_APP_EVENTS_URL</code> mit dem Bearer-Token <code>KORTIX_APP_TOKEN</code>. Nenne ein Ereignis, etwa <code>reply.received</code>, oder lass das Feld leer, um bei jedem Ereignis zu laufen."
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",

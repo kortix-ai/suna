@@ -4,7 +4,8 @@
  * New trigger: one "When → Then" composer.
  *
  * A trigger is one sentence. The modal shows all of it at once: when it
- * starts (a schedule, an app event or a webhook), what the agent does, a name,
+ * starts (a schedule, a connector event, an event from one of the project's
+ * Apps, or a webhook), what the agent does, a name,
  * and the options with sane defaults folded away. There is no Next or Back, so
  * the whole trigger is visible at every moment and the header sums it up in a
  * sentence. Browsing an app's events creates nothing; Create adds the app's
@@ -32,7 +33,12 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
 import { useUiViewerId } from '../../../providers/ui-provider';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
-import { modelKeyToWire, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
+import {
+  modelKeyToWire,
+  useProjectApps,
+  useProjectTriggerEventApps,
+  useVisibleAgents,
+} from '@kortix/sdk/react';
 import { AppWindowIcon, LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
@@ -49,12 +55,12 @@ import {
 } from './event-trigger-copy';
 import { type TriggerKind, describeCadence, describeOneOff } from './schedule-copy';
 import { triggerToastEntity } from './trigger-toast';
-import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
   runCapFromInput,
   type ComposerBlock,
   type ComposerDraft,
+  eventSendingApps,
   findDraftApp,
   initialDraft,
   normalizeSecretName,
@@ -63,6 +69,7 @@ import {
   spaceTriggerAccess,
   summarize,
   triggerConnection,
+  triggerFilter,
   triggerName,
   validate,
   withKind,
@@ -70,6 +77,7 @@ import {
 import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { useEventAppConnect } from './use-event-app-connect';
+import { WhenApp } from './when-app';
 import { WhenEvent } from './when-event';
 import { WhenSchedule } from './when-schedule';
 import { WhenWebhook } from './when-webhook';
@@ -184,6 +192,8 @@ function ComposerForm({
   const agents = useVisibleAgents({ projectId });
   // A null project id keeps the hook idle: with events off nothing asks for the catalog.
   const apps = useProjectTriggerEventApps(eventsOn ? projectId : null);
+  // App events need no flag: the tab shows once the project has an App that can send one.
+  const kortixApps = eventSendingApps(useProjectApps(projectId).data);
   const { add, canConnect } = useEventAppConnect(projectId);
   // Create adds the app's connector, which refreshes the app list. Hold the
   // app as it was at the click so the form does not rearrange under the spinner.
@@ -239,6 +249,7 @@ function ComposerForm({
       const slug = slugify(draft.customId.trim() || trimmedName);
       const isCron = draft.kind === 'cron';
       const isEvent = draft.kind === 'event';
+      const isApp = draft.kind === 'app';
 
       let secretEnv: string | undefined;
       if (draft.kind === 'webhook') {
@@ -256,7 +267,7 @@ function ComposerForm({
       }
 
       const needsConnector = isEvent && app !== null && appConnectors(app).length === 0;
-      const filter = rowsToConditions(draft.conditions);
+      const filter = triggerFilter(draft);
       return runCreate({
         addConnector:
           needsConnector && app
@@ -297,13 +308,16 @@ function ComposerForm({
                     event: draft.eventType?.type,
                     event_config: draftToConfig(configFields, draft.configDraft),
                   }
-                : { secret_env: secretEnv }),
+                : isApp
+                  ? { app: draft.kortixApp ?? undefined }
+                  : { secret_env: secretEnv }),
           }),
       });
     },
     onSuccess: (listing) => {
       const isEvent = draft.kind === 'event';
       const isCron = draft.kind === 'cron';
+      const isApp = draft.kind === 'app';
       const created = listing.triggers
         .filter((t) => t.type === draft.kind && t.name === name.trim())
         .slice(-1)[0];
@@ -313,7 +327,7 @@ function ComposerForm({
           : describeCadence(draft.cron.trim())
         : undefined;
       successToast(
-        isEvent
+        isEvent || isApp
           ? tI18nComplete.raw('text840993da3129')
           : isCron
             ? tI18nComplete.raw('text84e98b45ad8b')
@@ -327,7 +341,7 @@ function ComposerForm({
                 : (describeEventStatus(created.event, tI18nComplete).detail ??
                   tI18nComplete.raw('text80273a6c8918'))
               : undefined
-            : isCron
+            : isCron || isApp
               ? undefined
               : tI18nComplete.raw('text4aded5c6750d'),
         },
@@ -403,6 +417,12 @@ function ComposerForm({
                     {tI18nComplete.raw('textca395c4d19b2')}
                   </TabsTrigger>
                 ) : null}
+                {kortixApps.length > 0 || draft.kind === 'app' ? (
+                  <TabsTrigger value="app" className="flex-1 gap-1.5">
+                    {tabIcon('app')}
+                    {tI18nComplete.raw('text5441e7146193')}
+                  </TabsTrigger>
+                ) : null}
                 <TabsTrigger value="webhook" className="flex-1 gap-1.5">
                   {tabIcon('webhook')}
                   {tI18nComplete.raw('text4814f62c108d')}
@@ -426,6 +446,9 @@ function ComposerForm({
                   />
                 </TabsContent>
               ) : null}
+              <TabsContent value="app" className="pt-3">
+                <WhenApp apps={kortixApps} draft={draft} patch={patch} error={blockError('when')} />
+              </TabsContent>
               <TabsContent value="webhook" className="pt-3">
                 <WhenWebhook draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>
