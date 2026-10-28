@@ -16,8 +16,11 @@ set statement_timeout = '30s';
 -- both passes finished (drainedWithDeleted AND mergedMissing). An empty mirror
 -- (a fresh, test or self-host database) passes. The guard reads the one-row
 -- state table and probes one mirror row: no scan. It reads the state before
--- this file drops it. A self-host that fails it runs 0.14.9 until its API logs
--- "the session logs hold every v1 mirror message", then upgrades.
+-- this file drops it. Release B2's guard migration
+-- (20261028154553825_session_log_mirror_drained_guard.sql) already refused a
+-- database that fails it; this repeats the check right before the drop. A
+-- self-host that fails it runs 0.14.9 until its API logs "the session logs
+-- hold every v1 mirror message", then upgrades.
 --
 -- Locks. DROP TABLE of the mirror also takes ACCESS EXCLUSIVE on
 -- kortix.project_sessions (it drops the foreign key's triggers there) until
