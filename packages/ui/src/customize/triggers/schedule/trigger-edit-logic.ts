@@ -41,8 +41,10 @@ export function draftFromTrigger(
 ): ComposerDraft {
   const event = trigger.event;
   // An App event's event name is its `event.name` condition: the When block shows it, not the conditions.
-  const { [APP_EVENT_NAME_PATH]: appEvent, ...otherConditions } = trigger.filter ?? {};
+  const { [APP_EVENT_NAME_PATH]: appEvent, base: crBase } = trigger.filter ?? {};
   const named = trigger.type === 'app' && typeof appEvent === 'string';
+  // A change request's branch is its `base` condition: the When block shows it, not the conditions.
+  const branch = trigger.type === 'change_request' && typeof crBase === 'string' ? crBase : null;
   const eventType = event ? (saved.eventType ?? stubEventType(event)) : null;
   return {
     ...initialDraft({ kind: trigger.type as ComposerDraft['kind'], agent: trigger.agent }),
@@ -59,13 +61,22 @@ export function draftFromTrigger(
       : {},
     kortixApp: trigger.type === 'app' ? (trigger.app ?? null) : null,
     appEvent: named ? (appEvent as string) : '',
+    crBase: branch ?? '',
     instruction: trigger.prompt_template,
     model: saved.model,
     nameOverride: trigger.name,
     mode: trigger.session_mode,
     pinnedSessionId: trigger.session_id,
     sessionKey: trigger.session_key ?? '',
-    conditions: conditionsToRows(named ? otherConditions : trigger.filter),
+    conditions: conditionsToRows(
+      named || branch !== null
+        ? Object.fromEntries(
+            Object.entries(trigger.filter ?? {}).filter(
+              ([path]) => !(named && path === APP_EVENT_NAME_PATH) && !(branch !== null && path === 'base'),
+            ),
+          )
+        : trigger.filter,
+    ),
     secretName: trigger.secret_env ?? '',
     startActive: trigger.enabled,
     sessionAccess: trigger.session_access,

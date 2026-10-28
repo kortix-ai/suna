@@ -143,6 +143,7 @@ const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
   event: 'text0ba357fa63f8',
   app: 'text4b4847a6fb87',
   webhook: 'text45808d75bf89',
+  change_request: 'text5ffd973e20ed',
 };
 
 /**

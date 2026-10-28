@@ -59,6 +59,9 @@ export interface ComposerDraft {
   kortixApp: string | null;
   /** The one event name the trigger fires on (`reply.received`). Empty = every event. */
   appEvent: string;
+  // When: change request merged
+  /** The branch a merge must land on (kortix.yaml `filter.base`). Empty = any branch. */
+  crBase: string;
   // Then
   instruction: string;
   agent: string | null;
@@ -142,6 +145,7 @@ export function initialDraft(init: {
     configDraft: {},
     kortixApp: null,
     appEvent: '',
+    crBase: '',
     instruction: '',
     agent: init.agent ?? null,
     model: null,
@@ -210,6 +214,10 @@ export function slugify(input: string): string {
 export function autoName(draft: ComposerDraft, tI18nComplete: UiTranslator): string {
   if (draft.kind === 'event') return draft.eventType ? defaultEventName(draft.eventType) : '';
   if (draft.kind === 'webhook') return tI18nComplete.raw('text4814f62c108d');
+  if (draft.kind === 'change_request') {
+    const branch = draft.crBase.trim();
+    return branch ? tI18nComplete('texte608495c45ce', { branch }) : tI18nComplete.raw('text5ffd973e20ed');
+  }
   if (draft.kind === 'app') {
     if (!draft.kortixApp) return '';
     const event = appEventName(draft);
@@ -254,6 +262,10 @@ export function summarize(
   tI18nComplete: UiTranslator,
 ): string {
   if (draft.kind === 'webhook') return tI18nComplete('text18ae226f8a22', { agent });
+  if (draft.kind === 'change_request') {
+    const branch = draft.crBase.trim();
+    return branch ? tI18nComplete('text507c24b6792d', { branch, agent }) : tI18nComplete('text05ee1d6181f3', { agent });
+  }
   if (draft.kind === 'app') {
     if (!draft.kortixApp) return tI18nComplete.raw('textf60eb7723e40');
     const event = appEventName(draft);
@@ -319,7 +331,7 @@ export function validate(
       else if (Date.parse(draft.runAt) <= (ctx.now ?? Date.now()))
         add('when', tI18nComplete.raw('textebfef07e2d2b'));
     } else if (!draft.cron.trim()) add('when', tI18nComplete.raw('texta1b7270dbe34'));
-  } else if (!ctx.edit && !draft.signingKey.trim()) {
+  } else if (draft.kind === 'webhook' && !ctx.edit && !draft.signingKey.trim()) {
     add('when', tI18nComplete.raw('textc10cd37e5462'));
   }
 
@@ -365,13 +377,19 @@ export function appEventName(draft: Pick<ComposerDraft, 'appEvent'>): string {
   return name === '*' ? '' : name;
 }
 
-/** The filter Create and Save send: the conditions, plus `event.name` for an App event that names one event. */
+/**
+ * The filter Create and Save send: the conditions, plus `event.name` for an
+ * App event that names one event, plus `base` for a change request merged into
+ * one branch.
+ */
 export function triggerFilter(
-  draft: Pick<ComposerDraft, 'kind' | 'appEvent' | 'conditions'>,
+  draft: Pick<ComposerDraft, 'kind' | 'appEvent' | 'conditions' | 'crBase'>,
 ): Record<string, TriggerFilterValue> | null {
   const conditions = rowsToConditions(draft.conditions);
   const event = draft.kind === 'app' ? appEventName(draft) : '';
-  return event ? { ...conditions, [APP_EVENT_NAME_PATH]: event } : conditions;
+  const base = draft.kind === 'change_request' ? draft.crBase.trim() : '';
+  if (!event && !base) return conditions;
+  return { ...conditions, ...(event ? { [APP_EVENT_NAME_PATH]: event } : {}), ...(base ? { base } : {}) };
 }
 
 /* ─── Event pick ────────────────────────────────────────────────────────── */

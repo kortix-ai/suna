@@ -20488,7 +20488,18 @@
       "text89919c510d89": "Despierta {value0}",
       "textba6393ea2b12": "Inicia {value0}",
       "textd7846b4e605e": "Llama a {value0}",
-      "textf4f30f5b483c": "Deja de dispararse. No se puede deshacer."
+      "textf4f30f5b483c": "Deja de dispararse. No se puede deshacer.",
+      "text0e8f0fa67e67": "Haz que un agente se ejecute cuando se fusione una solicitud de cambio.",
+      "text20c14db54300": "activador de solicitud de cambio",
+      "textb0d2b95916ce": "Nuevo activador de solicitud de cambio",
+      "textd025f8dc1334": "Buscar activadores de solicitud de cambio",
+      "text1bc4d0bc8d03": "Aún no hay activadores de solicitud de cambio",
+      "text3c11a07619e0": "Crea uno para que un agente se ejecute cuando se fusione una solicitud de cambio.",
+      "text52656e8104ee": "Rama",
+      "text507c24b6792d": "Cuando una solicitud de cambio se fusiona en {branch}, {agent} ejecuta tu instrucción.",
+      "text05ee1d6181f3": "Cuando se fusiona una solicitud de cambio, {agent} ejecuta tu instrucción.",
+      "texte608495c45ce": "Fusionada en {branch}",
+      "text80ca527b0d55": "Activador de solicitud de cambio creado"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20867,7 +20878,14 @@
     "appPlaceholder": "Elige una App",
     "appEventLabel": "Evento",
     "appEventPlaceholder": "Cualquier evento",
-    "appEventHelp": "Tu App envía eventos con un POST a <code>KORTIX_APP_EVENTS_URL</code> y el token bearer <code>KORTIX_APP_TOKEN</code>. Indica un evento, como <code>reply.received</code>, o déjalo vacío para ejecutarse con cada evento."
+    "appEventHelp": "Tu App envía eventos con un POST a <code>KORTIX_APP_EVENTS_URL</code> y el token bearer <code>KORTIX_APP_TOKEN</code>. Indica un evento, como <code>reply.received</code>, o déjalo vacío para ejecutarse con cada evento.",
+    "crTab": "Solicitud de cambio",
+    "crBranchLabel": "Rama",
+    "crBranchPlaceholder": "Cualquier rama",
+    "crBranchHelp": "Se ejecuta cuando una solicitud de cambio se fusiona en esta rama, o en cualquier rama si está vacío. La instrucción puede leer <code>change_request.number</code>, <code>change_request.title</code> y <code>change_request.base_ref</code>.",
+    "eventsOff": "Los eventos de conectores están en beta y desactivados en este proyecto. Actívalos en Indicadores de funcionalidad, en la administración del proyecto.",
+    "noApps": "Ninguna app de este proyecto envía eventos todavía. Despliega una app que haga POST a <code>KORTIX_APP_EVENTS_URL</code> y elígela aquí.",
+    "openApps": "Abrir apps"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",

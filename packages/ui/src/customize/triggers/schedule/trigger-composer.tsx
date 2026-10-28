@@ -4,12 +4,16 @@
  * New trigger: one "When → Then" composer.
  *
  * A trigger is one sentence. The modal shows all of it at once: when it
- * starts (a schedule, a connector event, an event from one of the project's
- * Apps, or a webhook), what the agent does, a name,
+ * starts (a schedule, an event from one of the project's Apps, a connector
+ * event, a webhook, or a merged change request), what the agent does, a name,
  * and the options with sane defaults folded away. There is no Next or Back, so
  * the whole trigger is visible at every moment and the header sums it up in a
  * sentence. Browsing an app's events creates nothing; Create adds the app's
  * connector first when the project has none, then the trigger.
+ *
+ * Every source always shows. One the project cannot use yet says why in its
+ * panel and links to the fix: no App sends events (Apps), or connector events
+ * are off (the beta flag `event_triggers`, Project admin › Feature flags).
  */
 
 import { Button } from '../../../primitives/button';
@@ -26,12 +30,15 @@ import {
   ModalHeader,
   ModalTitle,
 } from '../../../primitives/modal';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../primitives/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../primitives/tabs';
 import { successToast } from '../../../primitives/toast';
 import { agentDisplayLabel } from '../../../session/composer/session-chat-input';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
-import { useUiViewerId } from '../../../providers/ui-provider';
+import { UiLink as Link, useUiViewerId } from '../../../providers/ui-provider';
+import { uiRoutes } from '../../../lib/routes';
+import { projectSettingsSectionHref } from '../../project-settings/project-settings-sections';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 import {
   modelKeyToWire,
@@ -39,7 +46,7 @@ import {
   useProjectTriggerEventApps,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { AppWindowIcon, LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, GitMergeIcon, LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -53,7 +60,7 @@ import {
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
-import { type TriggerKind, describeCadence, describeOneOff } from './schedule-copy';
+import { COMPOSER_KINDS, type TriggerKind, describeCadence, describeOneOff } from './schedule-copy';
 import { triggerToastEntity } from './trigger-toast';
 import { ThenFields } from './then-fields';
 import {
@@ -78,6 +85,7 @@ import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenApp } from './when-app';
+import { WhenChangeRequest } from './when-change-request';
 import { WhenEvent } from './when-event';
 import { WhenSchedule } from './when-schedule';
 import { WhenWebhook } from './when-webhook';
@@ -137,7 +145,25 @@ const BLOCK_LABELS = {
   event: LightningIcon,
   webhook: WebhooksLogoIcon,
   app: AppWindowIcon,
+  change_request: GitMergeIcon,
 } as const;
+
+/** The source picker's labels (the words each kind shows elsewhere). */
+const KIND_LABEL_KEY = {
+  cron: 'textf4830a1dae29',
+  app: 'text5441e7146193',
+  event: 'textca395c4d19b2',
+  webhook: 'text4814f62c108d',
+} as const;
+
+/** A source this project cannot use yet: one sentence on why, and the link that fixes it. */
+function Unavailable({ children, action }: { children: ReactNode; action: ReactNode }) {
+  return (
+    <InfoBanner tone="info" className="text-xs" action={action}>
+      {children}
+    </InfoBanner>
+  );
+}
 
 function ComposerForm({
   projectId,
@@ -153,16 +179,12 @@ function ComposerForm({
   const viewerId = useUiViewerId();
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tComposer = useI18nTranslations('triggerComposer');
-  // App events are a beta feature behind the project flag `event_triggers`. Off: no App event tab,
-  // no catalog request, and an entry point that asks for an app event opens on Schedule.
+  // Connector events are a beta feature behind the project flag `event_triggers`. Off: the tab
+  // stays and its panel says how to turn it on; no catalog request is sent.
   const eventsOn = useProjectFeatureFlags(projectId).flags.event_triggers === true;
   const [draft, setDraft] = useState<ComposerDraft>(() => ({
     ...initialDraft({
-      kind: eventsOn
-        ? (initialKind ?? (initialApp || initialConnector ? 'event' : null))
-        : initialKind === 'event'
-          ? null
-          : initialKind,
+      kind: initialKind ?? (initialApp || initialConnector ? 'event' : null),
       agent: initialAgent,
       appSlug: initialApp?.app ?? null,
       appSource: initialApp?.source ?? initialApp?.provider ?? null,
@@ -192,8 +214,14 @@ function ComposerForm({
   const agents = useVisibleAgents({ projectId });
   // A null project id keeps the hook idle: with events off nothing asks for the catalog.
   const apps = useProjectTriggerEventApps(eventsOn ? projectId : null);
-  // App events need no flag: the tab shows once the project has an App that can send one.
-  const kortixApps = eventSendingApps(useProjectApps(projectId).data);
+  // App events need no flag; with no App that can send one, the panel says so and links to Apps.
+  const projectApps = useProjectApps(projectId);
+  const kortixApps = eventSendingApps(projectApps.data);
+  const appsHref = uiRoutes().apps(projectId);
+  // A source the project cannot use yet: its panel says why, and Create waits.
+  const unavailable =
+    (draft.kind === 'event' && !eventsOn) ||
+    (draft.kind === 'app' && kortixApps.length === 0 && !draft.kortixApp && !projectApps.isLoading);
   const { add, canConnect } = useEventAppConnect(projectId);
   // Create adds the app's connector, which refreshes the app list. Hold the
   // app as it was at the click so the form does not rearrange under the spinner.
@@ -310,7 +338,9 @@ function ComposerForm({
                   }
                 : isApp
                   ? { app: draft.kortixApp ?? undefined }
-                  : { secret_env: secretEnv }),
+                  : draft.kind === 'change_request'
+                    ? {}
+                    : { secret_env: secretEnv }),
           }),
       });
     },
@@ -326,12 +356,15 @@ function ComposerForm({
           ? describeOneOff(draft.runAt)
           : describeCadence(draft.cron.trim())
         : undefined;
+      const isChangeRequest = draft.kind === 'change_request';
       successToast(
         isEvent || isApp
           ? tI18nComplete.raw('text840993da3129')
           : isCron
             ? tI18nComplete.raw('text84e98b45ad8b')
-            : tI18nComplete.raw('text20bf63f7b46f'),
+            : isChangeRequest
+              ? tI18nComplete.raw('text80ca527b0d55')
+              : tI18nComplete.raw('text20bf63f7b46f'),
         {
           entity: triggerToastEntity({ name: name.trim(), type: draft.kind }, cadence),
           description: isEvent
@@ -341,7 +374,7 @@ function ComposerForm({
                 : (describeEventStatus(created.event, tI18nComplete).detail ??
                   tI18nComplete.raw('text80273a6c8918'))
               : undefined
-            : isCron || isApp
+            : isCron || isApp || isChangeRequest
               ? undefined
               : tI18nComplete.raw('text4aded5c6750d'),
         },
@@ -384,6 +417,9 @@ function ComposerForm({
     const Icon = BLOCK_LABELS[kind];
     return <Icon className="size-3.5 shrink-0" weight="fill" />;
   };
+  const kindLabel = (kind: TriggerKind) =>
+    kind === 'change_request' ? tComposer('crTab') : tI18nComplete.raw(KIND_LABEL_KEY[kind]);
+  const pickKind = (kind: string) => setDraft((d) => withKind(d, kind as TriggerKind));
 
   return (
     <>
@@ -402,37 +438,61 @@ function ComposerForm({
         <div ref={bodyRef} className="space-y-8">
           <section data-block="when" className="space-y-3">
             <SectionTitle>{tI18nComplete.raw('textcf9c7aa24a26')}</SectionTitle>
-            <Tabs
-              value={draft.kind}
-              onValueChange={(kind) => setDraft((d) => withKind(d, kind as TriggerKind))}
-            >
-              <TabsList className="w-full">
-                <TabsTrigger value="cron" className="flex-1 gap-1.5">
-                  {tabIcon('cron')}
-                  {tI18nComplete.raw('textf4830a1dae29')}
-                </TabsTrigger>
-                {eventsOn ? (
-                  <TabsTrigger value="event" className="flex-1 gap-1.5">
-                    {tabIcon('event')}
-                    {tI18nComplete.raw('textca395c4d19b2')}
+            <Tabs value={draft.kind} onValueChange={pickKind}>
+              {/* Five sources do not fit one row below `lg` (the 720 px window,
+                  a phone): there the picker is a select with the same choices. */}
+              <Select value={draft.kind} onValueChange={pickKind}>
+                <SelectTrigger
+                  className="w-full cursor-pointer text-sm lg:hidden"
+                  aria-label={tI18nComplete.raw('textcf9c7aa24a26')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMPOSER_KINDS.map((kind) => (
+                    <SelectItem key={kind} value={kind} className="cursor-pointer">
+                      <span className="flex items-center gap-1.5">
+                        {tabIcon(kind)}
+                        {kindLabel(kind)}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <TabsList className="hidden w-full lg:flex">
+                {COMPOSER_KINDS.map((kind) => (
+                  <TabsTrigger key={kind} value={kind} className="flex-1 gap-1.5">
+                    {tabIcon(kind)}
+                    {kindLabel(kind)}
                   </TabsTrigger>
-                ) : null}
-                {kortixApps.length > 0 || draft.kind === 'app' ? (
-                  <TabsTrigger value="app" className="flex-1 gap-1.5">
-                    {tabIcon('app')}
-                    {tI18nComplete.raw('text5441e7146193')}
-                  </TabsTrigger>
-                ) : null}
-                <TabsTrigger value="webhook" className="flex-1 gap-1.5">
-                  {tabIcon('webhook')}
-                  {tI18nComplete.raw('text4814f62c108d')}
-                </TabsTrigger>
+                ))}
               </TabsList>
               <TabsContent value="cron" className="pt-3">
                 <WhenSchedule draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>
-              {eventsOn ? (
-                <TabsContent value="event" className="pt-3">
+              <TabsContent value="app" className="pt-3">
+                {kortixApps.length > 0 || draft.kortixApp || projectApps.isLoading ? (
+                  <WhenApp apps={kortixApps} draft={draft} patch={patch} error={blockError('when')} />
+                ) : (
+                  <Unavailable
+                    action={
+                      appsHref ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={appsHref}>{tComposer('openApps')}</Link>
+                        </Button>
+                      ) : null
+                    }
+                  >
+                    {tComposer.rich('noApps', {
+                      code: (chunks) => (
+                        <code className="bg-muted text-foreground rounded-sm px-1 py-0.5 font-mono text-xs">{chunks}</code>
+                      ),
+                    })}
+                  </Unavailable>
+                )}
+              </TabsContent>
+              <TabsContent value="event" className="pt-3">
+                {eventsOn ? (
                   <WhenEvent
                     projectId={projectId}
                     apps={apps}
@@ -444,13 +504,25 @@ function ComposerForm({
                     canConnect={canConnect}
                     error={blockError('when')}
                   />
-                </TabsContent>
-              ) : null}
-              <TabsContent value="app" className="pt-3">
-                <WhenApp apps={kortixApps} draft={draft} patch={patch} error={blockError('when')} />
+                ) : (
+                  <Unavailable
+                    action={
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
+                          {tI18nComplete.raw('text20a2e59ba129')}
+                        </Link>
+                      </Button>
+                    }
+                  >
+                    {tComposer('eventsOff')}
+                  </Unavailable>
+                )}
               </TabsContent>
               <TabsContent value="webhook" className="pt-3">
                 <WhenWebhook draft={draft} patch={patch} error={blockError('when')} />
+              </TabsContent>
+              <TabsContent value="change_request" className="pt-3">
+                <WhenChangeRequest draft={draft} patch={patch} />
               </TabsContent>
             </Tabs>
           </section>
@@ -520,7 +592,7 @@ function ComposerForm({
         >
           {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
-        <Button size="sm" className="gap-1.5" onClick={submit} disabled={create.isPending}>
+        <Button size="sm" className="gap-1.5" onClick={submit} disabled={create.isPending || unavailable}>
           {create.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
           {tI18nComplete.raw('texte18bbdd15a81')}
         </Button>

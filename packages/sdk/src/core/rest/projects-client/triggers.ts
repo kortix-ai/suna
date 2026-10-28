@@ -15,8 +15,11 @@ import { unwrap } from './shared';
  * `'monitor'` is deprecated: the monitor box was removed, and the API answers
  * 400 to a new monitor trigger. An App with a schedule or a `type: app`
  * trigger replaces it. The member stays until the next major.
+ *
+ * `'change_request'` fires when a change request of the project merges; its
+ * `filter.base` names the branch (any branch when absent).
  */
-export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app';
+export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app' | 'change_request';
 
 /**
  * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
@@ -496,7 +499,7 @@ export interface ProjectTriggerDryRunResult {
 }
 
 /** What fired a run. */
-export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app';
+export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app' | 'change_request';
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;

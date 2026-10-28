@@ -6,6 +6,8 @@ import { testUiTranslator as t } from '../../../test-utils/intl';
 import type { App, ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
 
 import { defaultConfigDraft, oneLineDescription, schemaFields } from './event-trigger-copy';
+import { COMPOSER_KINDS } from './schedule-copy';
+import { draftFromTrigger } from './trigger-edit-logic';
 import type { ConditionRow } from './schedule-fields';
 import {
   type ComposerDraft,
@@ -623,5 +625,57 @@ describe('App event draft', () => {
     const external = { slug: 'site', external_url: 'https://example.com' } as App;
     expect(eventSendingApps([hosted, external])).toEqual([hosted]);
     expect(eventSendingApps(undefined)).toEqual([]);
+  });
+});
+
+describe('every source shows, always', () => {
+  test('the picker offers all five sources in one order', () => {
+    expect(COMPOSER_KINDS).toEqual(['cron', 'app', 'event', 'webhook', 'change_request']);
+    // No source is hidden behind a flag or an App: an unusable one explains itself in its panel.
+    expect(composer).not.toContain("kortixApps.length > 0 || draft.kind === 'app' ? (");
+    expect(composer).toContain("tComposer('eventsOff')");
+    expect(composer).toContain("tComposer.rich('noApps'");
+    expect(composer).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
+  });
+});
+
+describe('Change request merged draft', () => {
+  const crDraft = (over: Partial<ComposerDraft> = {}): ComposerDraft => ({
+    ...initialDraft({ kind: 'change_request' }),
+    instruction: 'Verify prod',
+    ...over,
+  });
+
+  test('filter.base is the branch; empty means any branch', () => {
+    expect(triggerFilter(crDraft({ crBase: ' main ' }))).toEqual({ base: 'main' });
+    expect(triggerFilter(crDraft())).toBeNull();
+    // Another kind never sends a branch typed before the switch.
+    expect(triggerFilter(withKind(crDraft({ crBase: 'main' }), 'webhook'))).toBeNull();
+    expect(validate(crDraft(), { name: 'x', configFields: [], app: null }, t)).toEqual([]);
+  });
+
+  test('the name and the sentence follow the branch', () => {
+    expect(autoName(crDraft(), t)).toBe('Change request merged');
+    expect(autoName(crDraft({ crBase: 'main' }), t)).toBe('Merged into main');
+    expect(summarize(crDraft({ crBase: 'main' }), null, 'Kortix', t)).toBe(
+      'When a change request merges into main, Kortix runs your instruction.',
+    );
+    expect(summarize(crDraft(), null, 'Kortix', t)).toBe('When a change request merges, Kortix runs your instruction.');
+  });
+
+  test('a saved trigger edits its branch in the When block, not as a condition', () => {
+    const draft = draftFromTrigger(
+      {
+        slug: 'verify', path: 'kortix.yaml#triggers.verify', name: 'Verify', type: 'change_request', agent: 'default',
+        model: null, enabled: true, cron: null, run_at: null, timezone: 'UTC', secret_env: null,
+        prompt_template: 'Verify prod', session_mode: 'fresh', session_id: null, session_key: null,
+        filter: { base: 'main', 'change_request.title': { prefix: ['fix'] } },
+        session_access: { mode: 'private', memberIds: [], groupIds: [] }, last_fired_at: null, webhook_url: null, event: null,
+      } as unknown as Parameters<typeof draftFromTrigger>[0],
+      { eventType: null, model: null },
+    );
+    expect(draft.crBase).toBe('main');
+    expect(draft.conditions.map((row) => row.path)).toEqual(['change_request.title']);
+    expect(triggerFilter(draft)).toEqual({ 'change_request.title': { prefix: ['fix'] }, base: 'main' });
   });
 });
