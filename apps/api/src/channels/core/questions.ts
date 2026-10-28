@@ -85,7 +85,7 @@ export function questionButtonData(pendingId: string, index: number): string {
 
 /** The question and option a button names, or null for a button Kortix did not post. */
 export function parseQuestionButton(data: string): { pendingId: string; index: number } | null {
-  const match = /^kq:([^:]+):(\d{1,2})$/.exec(data);
+  const match = /^kq:([^:]+):(0|[1-9]\d?)$/.exec(data);
   return match && isUuid(match[1]) ? { pendingId: match[1], index: Number(match[2]) } : null;
 }
 
@@ -103,7 +103,7 @@ export async function postQuestion(
   try {
     if (principal.projectId !== target.projectId || principal.sessionId !== sessionId) return false;
     const q = questions[0];
-    const oneTap = questions.length === 1 && !!q && !q.multiple && q.options.length >= 1 && q.options.length <= port.maxButtons;
+    const oneTap = questions.length === 1 && !!q && !q.multiple && q.options.length >= 1 && q.options.length <= Math.min(port.maxButtons, 100);
     const message = (buttons: boolean): QuestionMessage => ({
       questions,
       footer: { kind: 'ask', buttons, numbered: questions.length > 1 },
@@ -157,9 +157,15 @@ async function rememberQuestionButtons(target: ChannelTarget, ref: string, pendi
 
 /** An edit that logs its failure: the message keeps its buttons, and a later tap is answered as before. */
 const editQuestion = (port: QuestionPort, target: ChannelTarget, ref: string, m?: QuestionMessage) =>
-  port
-    .edit(target, ref, m)
+  Promise.resolve()
+    .then(() => port.edit(target, ref, m))
     .catch((error) => logger.warn('[channel] question message not edited', { platform: target.platform, error: String(error) }));
+
+/** Settle a tap; a failure is logged, never thrown. */
+const settleTap = (port: QuestionPort, tap: QuestionTap, reply?: QuestionTapReply) =>
+  Promise.resolve()
+    .then(() => port.answerTap(tap, reply))
+    .catch((error) => logger.warn('[channel] question tap not settled', { platform: tap.target.platform, error: String(error) }));
 
 /**
  * Take the buttons off every question still showing them in this conversation,
@@ -201,19 +207,19 @@ export async function handleQuestionTap(
   const questions = port.questions;
   const button = parseQuestionButton(tap.data);
   // A button Kortix did not post (the agent may post its own).
-  if (!button) return questions.answerTap(tap);
+  if (!button) return settleTap(questions, tap);
 
   const asked = await getPendingQuestion(tap.target.projectId, button.pendingId);
   const option = asked?.questions[0]?.options[button.index];
   const threadId = asked && option ? await threadOfTap(questions, tap, asked.sessionId) : null;
   if (!asked || !option || !threadId) {
-    await questions.answerTap(tap, { kind: 'earlier' });
+    await settleTap(questions, tap, { kind: 'earlier' });
     await editQuestion(questions, tap.target, tap.ref);
     return;
   }
 
   const answers = [[option.label]];
-  await questions.answerTap(tap, { kind: 'answered', label: option.label });
+  await settleTap(questions, tap, { kind: 'answered', label: option.label });
   await editQuestion(questions, tap.target, tap.ref, { questions: asked.questions, footer: { kind: 'answered', label: option.label } });
   // A later message in the conversation must not rewrite this answer.
   await db
@@ -247,11 +253,17 @@ export async function handleQuestionTap(
   };
   await routeChannelMessage(
     {
-      ...port,
+      notify: (target, notice) => port.notify(target, notice),
       // Only into the question's own session: a conversation that moved on (a
-      // reset, then a new message) since the check refuses it.
-      prepareFollowUp: async (target, thread) =>
-        thread.sessionId !== asked.sessionId ? (await undelivered(), 'refuse') : (port.prepareFollowUp?.(target, thread) ?? 'deliver'),
+      // reset, then a new message) since the check refuses it. A tap never
+      // restarts a conversation: any verdict but deliver is a refusal.
+      prepareFollowUp: async (target, thread) => {
+        const verdict =
+          thread.sessionId === asked.sessionId ? await (port.prepareFollowUp?.(target, thread) ?? 'deliver') : 'refuse';
+        if (verdict === 'deliver') return verdict;
+        await undelivered();
+        return 'refuse';
+      },
     },
     {
       target: { ...tap.target, threadId },
