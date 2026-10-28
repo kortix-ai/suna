@@ -23,10 +23,12 @@
  * code: an image cap per turn and per session (a batch that would pass one
  * is refused whole, before any request), reference images only from inside
  * the checkout and only real images, file names that never leave
- * output/images and never overwrite. The turn cap keys on the run's abort
- * signal: a subagent run or a transient-error retry counts afresh; the
- * session cap bounds them all. The caps count before the first await, so
- * calls that run in parallel never pass a cap together.
+ * output/images and never overwrite. The turn cap keys on the turn's
+ * id (`context.turnId`) when the harness names it, so direct, parallel,
+ * script, retried and subagent calls of one turn share it; without one it
+ * keys on the call's abort signal. The session cap bounds them all. The caps
+ * count before the first await, so calls that run in parallel never pass a
+ * cap together.
  *
  * The web UI renders a call from the output JSON. A changed copy must keep
  * that shape, or the UI shows the raw output.
@@ -34,12 +36,13 @@
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
-/** What a call receives (the project tool contract). `signal` is the turn's: one per turn. */
+/** What a call receives (the project tool contract). `turnId`, when the harness names it, is one per turn; `signal` may be one per call. */
 interface ToolContext {
   sessionId: string
   directory: string
   env: Record<string, string | undefined>
   signal: AbortSignal
+  turnId?: string
 }
 
 export const IMAGE_GEN_TURN_LIMIT = 10
@@ -54,8 +57,10 @@ const MAX_REFERENCE_TOTAL_BYTES = 50 * 1024 * 1024
 const TIMEOUT_MS = 300_000
 const IMAGE_EXTENSIONS: Record<string, 'png' | 'jpeg' | 'webp'> = { '.png': 'png', '.jpg': 'jpeg', '.jpeg': 'jpeg', '.webp': 'webp' }
 
-// Images per turn (keyed by the turn's abort signal) and per session, in this process.
-const turnCalls = new WeakMap<AbortSignal, number>()
+// Images per turn and per session, in this process. A turn is `turnId` when the harness names it
+// (one entry per session: the turn it is in), else the call's abort signal.
+const sessionTurns = new Map<string, { turnId: string; count: number }>()
+const signalTurns = new WeakMap<AbortSignal, number>()
 const sessionCalls = new Map<string, number>()
 
 /** The image type its first bytes prove, or null. */
@@ -156,12 +161,14 @@ async function refusal(response: Response): Promise<Error> {
 }
 
 /** Count `count` images against the turn and session caps, or refuse the whole batch. Synchronous: no await between check and count. */
-function admit({ sessionId, signal }: ToolContext, count: number): void {
-  const turn = turnCalls.get(signal) ?? 0
+function admit({ sessionId, signal, turnId }: ToolContext, count: number): void {
+  const current = turnId ? sessionTurns.get(sessionId) : undefined
+  const turn = turnId ? (current?.turnId === turnId ? current.count : 0) : (signalTurns.get(signal) ?? 0)
   const session = sessionCalls.get(sessionId) ?? 0
   if (turn + count > IMAGE_GEN_TURN_LIMIT) throw new Error(`Image limit for this turn reached (${IMAGE_GEN_TURN_LIMIT} images; ${turn} used, ${count} asked).`)
   if (session + count > IMAGE_GEN_SESSION_LIMIT) throw new Error(`Image limit for this session reached (${IMAGE_GEN_SESSION_LIMIT} images; ${session} used, ${count} asked).`)
-  turnCalls.set(signal, turn + count)
+  if (turnId) sessionTurns.set(sessionId, { turnId, count: turn + count })
+  else signalTurns.set(signal, turn + count)
   sessionCalls.set(sessionId, session + count)
 }
 

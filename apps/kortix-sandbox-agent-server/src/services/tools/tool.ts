@@ -40,6 +40,13 @@ export interface ToolContext {
   env: Record<string, string | undefined>
   /** Aborts when the turn stops. */
   signal: AbortSignal
+  /**
+   * The turn the call belongs to, when the harness names it (pi: the turn's message id). It is the
+   * same for every call of one turn: direct, parallel, from a codemode script, after a transient
+   * retry, and from a subagent the turn started. `signal` is not: pi gives each call a script
+   * makes its own. A per-turn limit keys on it. Optional: project tools may ignore it.
+   */
+  turnId?: string
 }
 
 export interface KortixTool {

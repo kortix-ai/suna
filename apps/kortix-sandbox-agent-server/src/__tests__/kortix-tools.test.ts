@@ -453,6 +453,19 @@ describe('image_gen', () => {
     expect(calls).toHaveLength(18)
   })
 
+  test('the turn cap keys on context.turnId when the harness names it: calls with fresh signals in one turn share it', async () => {
+    gateway()
+    // pi gives each call a codemode script makes its own abort signal; the turn id stays the same.
+    const call = (turnId: string) => ({ ...ctx(), sessionId: 'ses_turn_id_cap', turnId, signal: new AbortController().signal })
+    await gen({ prompts: ['a', 'b', 'c', 'd'] }, call('msg_turn_1'))
+    await gen({ prompts: ['e', 'f', 'g', 'h'] }, call('msg_turn_1'))
+    await expect(gen({ prompts: ['i', 'j', 'k'] }, call('msg_turn_1'))).rejects.toThrow('Image limit for this turn reached (10 images; 8 used, 3 asked).')
+    expect(calls).toHaveLength(8)
+    // The next turn starts again.
+    await gen({ prompts: ['i', 'j', 'k'] }, call('msg_turn_2'))
+    expect(calls).toHaveLength(11)
+  })
+
   test('the fifty-first image in one session is refused, and a batch that would pass it', async () => {
     gateway()
     const session = () => ({ ...ctx(), sessionId: 'ses_session_cap' })

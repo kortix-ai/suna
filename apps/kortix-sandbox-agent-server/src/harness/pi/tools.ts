@@ -207,7 +207,7 @@ function agentTool(definition: ToolDefinition<any, any, any>): AgentTool<any, an
 }
 
 /** A hosted tool as the pi `Agent` runs it: the call's context names this session and agent. */
-function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionId: string; agent: string }): AgentTool<any, undefined> {
+function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionId: string; agent: string; turnId?: string }): AgentTool<any, undefined> {
   return {
     name: tool.name,
     label: tool.name,
@@ -224,7 +224,7 @@ function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionI
 export function createWorkspaceTools(
   cwd: string,
   hosted: readonly HostedTool[] = [],
-  caller: () => { sessionId: string; agent: string } = () => ({ sessionId: '', agent: '' }),
+  caller: () => { sessionId: string; agent: string; turnId?: string } = () => ({ sessionId: '', agent: '' }),
 ): AgentTool<any, any>[] {
   return [
     // PI_* session variables need an extension context; the agent env file carries the session's own.

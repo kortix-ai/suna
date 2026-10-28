@@ -578,7 +578,8 @@ export class PiRuntime {
         recovers: (message) => this.recovers(message),
       })
       const hosted = await loadTools(this.projectRoot(), this.compiled)
-      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName }))
+      // `turnId` is the running turn's message id: the same for its direct, script, retried and subagent calls.
+      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName, turnId: this.active?.messageId }))
       // The root agent runs parallel-capable; every built-in tool except PARALLEL_TOOLS pins its batch
       // to sequential, so only a batch made entirely of parallel tools (task, image_gen calls) runs
       // concurrently. pi applies the same mode to a script's nested calls.

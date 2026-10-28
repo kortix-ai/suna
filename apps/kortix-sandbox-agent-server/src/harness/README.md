@@ -1083,12 +1083,20 @@ resumes it after a restart. Types: `general` (all workspace and Kortix tools), `
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`; v3 has only the declared agents. The calling agent's
 `permission.task` rule (subject: `subagent_type`) removes a denied type from
-the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. Several task
-or `image_gen` calls in one message run concurrently (`executionMode:
-'parallel'`; every other built-in tool is `sequential`, `PARALLEL_TOOLS` in
-`runtime.ts`); a batch that includes any other tool stays sequential. A child session is read-only (prompts to it answer 501).
+the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. On the root,
+several task calls in one message run concurrently; a batch that includes
+any other tool stays sequential (see "Tool concurrency" below). A child runs
+its own calls one at a time (`toolExecution: 'sequential'`). A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
+
+**Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
+built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
+(`image_gen`, `runtime.ts`); `task` is parallel too. pi-agent-core runs a
+model step's calls concurrently only when none of them is `sequential`, so
+several `image_gen` (or `task`) calls in one step run at once and a mixed step
+runs in order. A codemode script's nested calls follow the same per-tool mode
+(pi's `NestedToolCallRunner`).
 
 ### Images
 
@@ -1221,7 +1229,7 @@ runs (`../services/tools/`):
 | Module | What |
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
-| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`, `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt }], failed?: [{ prompt, error }] }`; when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole); a reference image must be a real png/jpeg/webp inside the checkout. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`, `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt }], failed?: [{ prompt, error }] }`; when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a harness that names no turn (OpenCode) keys the turn cap on the call's abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
 | `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all six when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 

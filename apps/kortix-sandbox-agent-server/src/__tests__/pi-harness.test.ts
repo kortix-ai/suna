@@ -4023,12 +4023,13 @@ describe('pi codemode', () => {
     // Kortix tools read the process env (`sessionEnv`), not the rig's.
     process.env.KORTIX_LLM_BASE_URL = gateway.baseUrl
     process.env.KORTIX_TOKEN = TOKEN
-    const seen = { peak: 0 }
+    const seen = { peak: 0, requests: 0 }
     let inFlight = 0
     let release!: () => void
     const all = new Promise<void>((resolve) => (release = resolve))
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
     gateway.images(async () => {
+      seen.requests++
       seen.peak = Math.max(seen.peak, ++inFlight)
       if (inFlight === count) release()
       await Promise.race([all, Bun.sleep(2_000)])
@@ -4038,10 +4039,26 @@ describe('pi codemode', () => {
     return seen
   }
 
+  /** Each tool part's status changes, in the order the runtime published them: `<tool>#<n>:<status>` (n: the call's order of first appearance). */
+  const toolTimeline = () => {
+    const events: string[] = []
+    const order = new Map<string, number>()
+    const onFrame = (frame: { type: string; properties: unknown }) => {
+      const part = (frame.properties as { part?: { type?: string; tool?: string; callID?: string; state?: { status?: string } } }).part
+      if (frame.type !== 'message.part.updated' || part?.type !== 'tool' || !part.callID) return
+      if (!order.has(part.callID)) order.set(part.callID, order.size + 1)
+      const event = `${part.tool}#${order.get(part.callID)}:${part.state?.status}`
+      if (!events.includes(event)) events.push(event)
+    }
+    return { events, hooks: { onFrame } as PiRuntimeHooks }
+  }
+
   test('two image_gen calls in one step run at the same time; two bash calls in one step run in turn', async () => {
     const seen = heldImages(2)
-    const bash = (n: number) => ({ tool: 'bash', args: { command: `echo start-${n} >> order.txt; sleep 0.2; echo end-${n} >> order.txt` } })
+    const timeline = toolTimeline()
+    const bash = (n: number) => ({ tool: 'bash', args: { command: `echo ${n}` } })
     const r = await boot({
+      hooks: timeline.hooks,
       script: [
         { tools: [{ tool: 'image_gen', args: { action: 'generate', prompts: ['a red cube'] } }, { tool: 'image_gen', args: { action: 'generate', prompts: ['a blue sphere'] } }] },
         { tools: [bash(1), bash(2)] },
@@ -4053,9 +4070,17 @@ describe('pi codemode', () => {
     const images = parts.filter((p) => p.tool === 'image_gen')
     expect(images.map((p) => p.state.status)).toEqual(['completed', 'completed'])
     expect(images.map((p) => JSON.parse(p.state.output).images[0].prompt)).toEqual(['a red cube', 'a blue sphere'])
-    // The two image intervals overlap; the two bash intervals do not.
-    expect(images[1]!.state.time.start).toBeLessThan(images[0]!.state.time.end)
-    expect(readFileSync(join(r.workspace, 'order.txt'), 'utf8')).toBe('start-1\nend-1\nstart-2\nend-2\n')
+    // Both image calls start before either ends; the second bash call starts after the first ends.
+    expect(timeline.events.filter((e) => /:(running|completed)$/.test(e))).toEqual([
+      'image_gen#1:running',
+      'image_gen#2:running',
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      'bash#3:running',
+      'bash#3:completed',
+      'bash#4:running',
+      'bash#4:completed',
+    ])
   })
 
   test('on by default: one script runs two tools, and the model sees only its output', async () => {
@@ -4199,6 +4224,13 @@ describe('pi codemode', () => {
     expect(parts.map((p) => p.tool)).toEqual(['codemode', 'image_gen', 'image_gen', 'show'])
     const [code, cube, sphere, show] = parts
     expect(code!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('a red cube+a blue sphere') })
+    // The script card lists every call it made as a text row (packages/ui codemode-tool.tsx `scriptCalls`, from
+    // `metadata.calls`); the image itself is drawn once, by the call's own part below.
+    expect(code!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([
+      ['image_gen', 'ok'],
+      ['image_gen', 'ok'],
+      ['show', 'ok'],
+    ])
     for (const [part, prompt] of [[cube!, 'a red cube'], [sphere!, 'a blue sphere']] as const) {
       // A nested call's part sits on the script's message, under pi's nested id `<script call>/<n>`.
       expect(part.messageID).toBe(code!.messageID)
@@ -4236,6 +4268,81 @@ describe('pi codemode', () => {
     const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
     const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'image_gen') as { id: string; call_id: string }
     expect(block).toMatchObject({ id: direct.id, call_id: direct.callID })
+  })
+
+  test('a script cannot pass the turn image cap: its third 4-prompt image_gen call is refused before any request', async () => {
+    const seen = heldImages(1)
+    const r = await boot({
+      script: [
+        script(
+          "const out = []; for (const p of ['a', 'b', 'c']) { try { await tools.image_gen({ action: 'generate', prompts: [p + '1', p + '2', p + '3', p + '4'] }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')",
+        ),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(seen.requests).toBe(8)
+    expect(parts[0]!.state.output).toContain('ok|ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    expect(parts.slice(1).map((p) => [p.tool, p.state.status])).toEqual([
+      ['image_gen', 'completed'],
+      ['image_gen', 'completed'],
+      ['image_gen', 'error'],
+    ])
+  })
+
+  test("direct and script image_gen calls of one turn share the turn image cap", async () => {
+    const seen = heldImages(1)
+    const four = (p: string) => ({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => `${p}${n}`) })
+    const r = await boot({
+      script: [
+        { tool: 'image_gen', args: four('direct') },
+        script("const out = []; for (const p of ['s', 't']) { try { await tools.image_gen({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => p + n) }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')"),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    // 4 direct + 4 from the script; the script's second call (12 images) is refused.
+    expect(seen.requests).toBe(8)
+    expect(parts.find((p) => p.tool === 'codemode')!.state.output).toContain('ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    // The next turn starts again.
+    gateway.script([{ tool: 'image_gen', args: four('next') }, { text: 'done' }])
+    await run(r, 'again')
+    expect(seen.requests).toBe(12)
+  })
+
+  test("edit: deny and ask decide a script's image_gen call like a direct one; an ask attaches to the call's own part", async () => {
+    const call = "const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompts: ['a red cube'] })]); return o.status + ':' + (o.reason?.message ?? JSON.parse(o.value).images[0].prompt)"
+    const denied = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const deniedParts = await run(denied)
+    expect(deniedParts[0]!.state.output).toContain('rejected:The project policy denies this image_gen call.')
+    expect(deniedParts[1]!.state).toMatchObject({ status: 'error', error: 'The project policy denies this image_gen call.' })
+    expect(existsSync(join(denied.workspace, 'output', 'images'))).toBe(false)
+
+    const seen = heldImages(1)
+    const asked = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { image_gen: 'ask' } } } }) },
+    })
+    const rt = asked.service.runtime()!
+    expect((await prompt(asked, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const [pending] = (await asked.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+    // image_gen asks under its capability, `edit` (interactions.ts).
+    expect(pending).toMatchObject({ permission: 'edit', metadata: { prompts: ['a red cube'] } })
+    const page = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const nested = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'image_gen')!
+    expect(pending!.tool).toEqual({ messageID: nested.messageID, callID: nested.callID })
+    expect(seen.requests).toBe(0)
+    expect((await asked.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const after = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const tools = after.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
+    expect(tools.find((p) => p.tool === 'codemode')!.state.output).toContain('fulfilled:a red cube')
+    expect(tools.find((p) => p.tool === 'image_gen')!.state.status).toBe('completed')
+    expect(seen.requests).toBe(1)
   })
 
   test("the project policy still decides a script's image_gen call, on the call's own part", async () => {
