@@ -10,10 +10,21 @@ cd "$(dirname "$0")/.."
 paths=()
 options=()
 for arg in "$@"; do
-  if [[ -e "$arg" ]]; then paths+=("$arg"); else options+=("$arg"); fi
+  if [[ -e "$arg" ]]; then
+    paths+=("$arg")
+  elif [[ "$arg" == */* || "$arg" == *.test.ts || "$arg" == *.test.tsx ]]; then
+    # A mistyped path must not fall back to the whole suite.
+    echo "no such test path: $arg (paths are relative to packages/sdk)" >&2
+    exit 2
+  else
+    options+=("$arg")
+  fi
 done
 [[ ${#paths[@]} -gt 0 ]] || paths=(src)
 
-find "${paths[@]}" \( -name '*.test.ts' -o -name '*.test.tsx' \) -print0 \
-  | sort -z \
-  | xargs -0 -r -n1 -P4 bun test --isolate ${options[@]+"${options[@]}"}
+files=$(find "${paths[@]}" \( -name '*.test.ts' -o -name '*.test.tsx' \) | sort)
+if [[ -z "$files" ]]; then
+  echo "no test files under: ${paths[*]}" >&2
+  exit 2
+fi
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 -n1 -P4 bun test --isolate ${options[@]+"${options[@]}"}
