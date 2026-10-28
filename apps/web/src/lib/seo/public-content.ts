@@ -129,7 +129,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'careers',
     title: 'Careers',
     description:
-      'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+      'Open positions at Kortix — FDE / Services and GTM. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
     htmlPath: '/careers',
   },
   {

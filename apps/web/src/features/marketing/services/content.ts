@@ -86,13 +86,6 @@ export const intro = {
   body: 'Meet the team. We look at how your company works and pick the first function together.',
 } as const;
 
-export const proof = [
-  { k: '20,000+', v: 'GitHub stars' },
-  { k: 'Open source', v: 'Read it, fork it, audit it' },
-  { k: 'SOC 2 Type I', v: 'Verified' },
-  { k: 'Your cloud or ours', v: 'Kortix Cloud, your VPC, on-prem' },
-] as const;
-
 /** How an engagement starts. No durations: none is set (ACCURACY). */
 export const onboarding = {
   title: 'How it works.',

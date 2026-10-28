@@ -5,7 +5,7 @@ import { languageAlternates, localePath, metaDescription, requestLocale } from '
 import { getTranslations } from '@/i18n/get-translations';
 
 const DESCRIPTION =
-  'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.';
+  'Open positions at Kortix — FDE / Services and GTM. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi.i18nComplete');

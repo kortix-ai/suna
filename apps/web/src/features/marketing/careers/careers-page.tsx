@@ -61,9 +61,6 @@ function Board({
                       <li key={bullet}>{bullet}</li>
                     ))}
                   </ul>
-                  {'note' in opening ? (
-                    <p className="text-muted-foreground mt-6 text-sm text-pretty">{opening.note}</p>
-                  ) : null}
                   <MarketingButton size="md" className="hit-area-y-1 mt-8" onClick={onApply}>
                     {apply.cta}
                   </MarketingButton>

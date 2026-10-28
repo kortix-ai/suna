@@ -12,7 +12,6 @@ import {
   CellGrid,
   Heading,
   PageFrame,
-  SpecGrid,
 } from '@/features/marketing/kit/page-frame';
 import {
   benefits,
@@ -28,7 +27,6 @@ import {
   platform,
   PRICE,
   pricing,
-  proof,
   stages,
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
@@ -115,6 +113,24 @@ function JoinButton({
   );
 }
 
+/** The team you meet on the call: faces cut from the /about team photo. */
+function TeamFaces() {
+  return (
+    <span aria-hidden className="flex -space-x-1.5">
+      {[1, 2, 3, 4, 5, 6].map((n) => (
+        <Image
+          key={n}
+          src={`/images/team/face-${n}.webp`}
+          alt=""
+          width={40}
+          height={40}
+          className="ring-background size-6 rounded-full ring-2"
+        />
+      ))}
+    </span>
+  );
+}
+
 function IntroButton({
   variant = 'secondary',
   className,
@@ -130,6 +146,7 @@ function IntroButton({
       className={className}
       onClick={() => openDemo({ source: 'services' })}
     >
+      <TeamFaces />
       Book an intro call
     </MarketingButton>
   );
@@ -147,7 +164,7 @@ function Price({ className }: { className?: string }): ReactNode {
 export default function ServicesPage() {
   return (
     <PageFrame>
-      {/* ── hero: one promise, one ask, the offer as tiles, then proof ───── */}
+      {/* ── hero: one promise, one ask, the offer as tiles, the logos ─────── */}
       <section
         id="hero"
         className="relative overflow-hidden px-6 pt-32 pb-16 lg:px-28 lg:pt-40 lg:pb-20"
@@ -219,10 +236,6 @@ export default function ServicesPage() {
           </a>
         </div>
       </section>
-
-      <Band>
-        <SpecGrid items={proof} cols="lg:grid-cols-4" />
-      </Band>
 
       {/* ── how it works: join, map, ship (designjoy's three steps) ─────── */}
       <Block id="how-it-works">

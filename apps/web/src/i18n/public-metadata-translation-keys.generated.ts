@@ -50,7 +50,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   'Kortix terms of service and privacy policy.': 'text460a8b327e17',
   'One platform, eight teams with completely different work. What sales, marketing, product, engineering, finance, people, IT and data science can each hand off — and what comes back.':
     'text1327d65dc73c',
-  'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.':
+  'Open positions at Kortix — FDE / Services and GTM. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.':
     'text0f4827ef74ea',
   'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.':
     'text5b4afe177d99',
