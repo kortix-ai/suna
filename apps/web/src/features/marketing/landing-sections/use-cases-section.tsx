@@ -92,7 +92,7 @@ export function UseCasesSection({ items, linkable }: { items: UseCaseItem[]; lin
   const [selected, setSelected] = useState(() =>
     Math.max(
       0,
-      teams.findIndex((t) => t.id === 'engineering'),
+      teams.findIndex((t) => t.id === 'marketing'),
     ),
   );
   /** Pointer position along the rule, 0–1; null when the pointer is away. */

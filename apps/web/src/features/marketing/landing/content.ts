@@ -310,8 +310,8 @@ export const useCases = {
       id: 'marketing',
       role: 'Marketing',
       tag: 'Marketing',
-      headline: 'An SEO program that ships every week.',
-      body: 'It tracks the queries you care about, finds the pages losing ground, rewrites them against the brief, and opens each rewrite as a change request.',
+      headline: 'An SEO and GEO program that runs itself.',
+      body: 'It tracks the queries you care about in search and in AI answers, finds the pages losing ground and rewrites them against the brief. Then it measures what moved, learns from it, and runs the loop again every week.',
       artifact: {
         kind: 'sheet',
         file: 'marketing/seo-weekly.xlsx',
@@ -326,7 +326,7 @@ export const useCases = {
           { cells: ['month end close', '/guides/close', '2', '+1'], tone: 'up' },
           { cells: ['receipt capture', '/features/receipts', '21', 'new'], tone: 'info' },
         ],
-        footer: '5 briefs written · 2 rewrites in a change request',
+        footer: '5 pages rewritten · 2 now cited in AI answers',
       },
     },
     {

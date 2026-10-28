@@ -67,7 +67,7 @@ type Team = {
   model: string;
 };
 
-/** Ruler order. Engineering opens selected. */
+/** Ruler order. Marketing (the SEO and GEO loop) opens selected. */
 export const TEAMS: Team[] = [
   {
     id: 'sales',
@@ -81,8 +81,8 @@ export const TEAMS: Team[] = [
     id: 'marketing',
     label: 'Marketing',
     ...card('marketing'),
-    prompt: 'Find the pages losing rank this week and rewrite them against the brief.',
-    result: 'Rewrites opened for review',
+    prompt: 'Run our SEO and GEO loop: track our queries in search and AI answers, and rewrite the pages losing ground.',
+    result: 'Loop ran, next run Monday',
     model: 'GPT',
   },
   {
