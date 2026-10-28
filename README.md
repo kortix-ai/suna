@@ -275,7 +275,7 @@ Daytona remains only as a legacy fallback, and its removal is scheduled.
 ## License
 
 Kortix is open source under the [Apache License 2.0](LICENSE). Fork it, change it, rebrand it,
-and sell it, also as a hosted service for your customers. No agreement to sign.
+and sell it, also as a hosted service for your customers.
 
 - **Core:** everything outside an `ee/` directory is Apache 2.0.
 - **Enterprise:** code in an `ee/` directory (SAML SSO, SCIM, custom roles and groups, audit log

@@ -17,7 +17,6 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
  * core is open source; anyone may fork, rebrand and sell it, also as a hosted
  * service), `ee/LICENSE` (Enterprise features need a subscription in
  * production) and `TRADEMARKS.md` (the Kortix name and logo stay with Kortix).
- * There is no agreement to sign.
  *
  *  1. Platinum.dev sandboxes are hardware-isolated microVMs (`claims.md`,
  *     isolation rule). No boot-time number: the kit bans latency claims.
@@ -40,7 +39,7 @@ export const ENV_LINES = [
 export const hero = {
   eyebrow: 'White-label',
   title: 'Build your own AI product on Kortix.',
-  sub: 'Fork Kortix, put your brand on it, and sell it as your own: a vertical AI product, a wrapper, or a whole cloud business. Kortix is open source, and there is no agreement to sign.',
+  sub: 'Fork Kortix, put your brand on it, and sell it as your own: a vertical AI product, a wrapper, or a whole cloud business. Kortix is open source.',
   ctaPrimary: 'Fork on GitHub',
   ctaPrimaryHref: GITHUB_URL,
   ctaSecondary: 'How it works',
@@ -94,7 +93,7 @@ export const scenarios = {
 export const deal = {
   eyebrow: 'The license',
   title: 'Everything is yours to change.',
-  sub: 'Kortix is open source. You need no agreement and no license key to build on it.',
+  sub: 'Kortix is open source. Change any part of it.',
   get: {
     title: 'What you get',
     items: [
@@ -135,7 +134,7 @@ export const platinum = {
 export const steps = {
   eyebrow: 'How it works',
   title: 'Fork, connect, rebrand.',
-  sub: 'Three steps. No call with us and no agreement.',
+  sub: 'Three steps.',
   items: [
     {
       n: '01',

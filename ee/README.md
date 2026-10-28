@@ -66,5 +66,6 @@ requests that rebuild an `ee/` feature in the Apache core.
   `apps/api/src/ee/` for a whole module.
 - Core code calls `ee/` only through its `register…Routes()` functions and the
   SSO sign-in hooks. Shared logic that core needs stays in core.
-- A pull request that changes `ee/` code licenses that change to Kortix under
-  `ee/LICENSE`.
+- Kortix does not merge outside pull requests into `ee/`: the Enterprise
+  License gives Kortix no rights to a contributor's code. Contributions to the
+  Apache core are licensed under Apache 2.0, section 5.

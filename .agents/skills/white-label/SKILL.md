@@ -1,14 +1,13 @@
 ---
 name: white-label
-description: "White-label Kortix: fork it, run it on Platinum, and rebrand it as the user's own product. No license to sign. Load WHENEVER a user asks to white-label, rebrand, resell, fork, or host Kortix under their own name, logo, or domain, or asks what the license allows."
+description: "White-label Kortix: fork it, run it on Platinum, and rebrand it as the user's own product. Load WHENEVER a user asks to white-label, rebrand, resell, fork, or host Kortix under their own name, logo, or domain, or asks what the license allows."
 ---
 
 # White-label Kortix
 
 Kortix is open source under the Apache License 2.0 (`LICENSE`). Anyone may
-fork it, change it, rebrand it and sell it, also as a hosted service. There is
-no agreement to sign and no license key to get. Do not give legal advice:
-point the user to the files.
+fork it, change it, rebrand it and sell it, also as a hosted service. Do not
+give legal advice: point the user to the files.
 
 | File | What it says |
 |---|---|
