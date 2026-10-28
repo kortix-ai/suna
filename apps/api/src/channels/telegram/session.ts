@@ -14,7 +14,7 @@
  * the bot token never enters the sandbox.
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
-import { chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
@@ -227,7 +227,8 @@ export const telegramPort: ChannelPort = {
         body = message(false);
         if (!(await runsUnattended(body))) return false;
       }
-      await telegramCall(token, 'sendMessage', body);
+      const sent = await telegramCall<{ message_id: number }>(token, 'sendMessage', body);
+      if ('reply_markup' in body) await rememberQuestionButtons(target, sent.message_id, pendingId);
       logger.info('[telegram] question posted', { sessionId, buttons: 'reply_markup' in body });
       return true;
     } catch (error) {
@@ -258,6 +259,48 @@ async function subscribeToButtons(token: string, projectId: string): Promise<boo
   } catch (error) {
     logger.warn('[telegram] button subscription failed; the question is posted as text', { projectId, error: String(error) });
     return false;
+  }
+}
+
+/**
+ * A question with buttons stays answerable until someone answers it another
+ * way. Its chat message is kept for 7 days on the TTL key table, so the next
+ * message in the chat can take the buttons away (`clearQuestionButtons`).
+ * Key: `telegram:question-buttons:<project>:<bot>:<thread>|<message id>|<question id>`.
+ */
+const questionButtonsPrefix = (target: Pick<ChannelTarget, 'projectId' | 'workspaceId' | 'threadId'>) =>
+  `telegram:question-buttons:${target.projectId}:${target.workspaceId}:${target.threadId}|`;
+
+async function rememberQuestionButtons(target: ChannelTarget, messageId: number, pendingId: string): Promise<void> {
+  await db
+    .insert(chatEventDedup)
+    .values({ eventId: `${questionButtonsPrefix(target)}${messageId}|${pendingId}`, expiresAt: new Date(Date.now() + 7 * 24 * 3600_000) })
+    .onConflictDoNothing()
+    .catch((error) => logger.warn('[telegram] question buttons not remembered', { error: String(error) }));
+}
+
+/**
+ * Take the buttons off every question still showing them in this chat, and say
+ * why in the message's last line: the person answered in the chat, or started
+ * over with /new. Best-effort: a failed edit leaves the buttons, and a later
+ * tap is answered as before.
+ */
+async function clearQuestionButtons(token: string, target: ChannelTarget, footer: string): Promise<void> {
+  const prefix = questionButtonsPrefix(target);
+  const rows = await db
+    .delete(chatEventDedup)
+    .where(like(chatEventDedup.eventId, `${prefix}%`))
+    .returning({ key: chatEventDedup.eventId })
+    .catch(() => []);
+  for (const { key } of rows) {
+    const [messageId, pendingId] = key.slice(prefix.length).split('|');
+    const asked = pendingId ? await getPendingQuestion(target.projectId, pendingId).catch(() => null) : null;
+    await telegramCall(token, 'editMessageText', {
+      chat_id: target.threadId.split(':')[0],
+      message_id: Number(messageId),
+      text: asked ? telegramQuestionText(asked.questions, footer) : footer,
+      reply_markup: { inline_keyboard: [] },
+    }).catch((error) => logger.warn('[telegram] question buttons not cleared', { error: String(error) }));
   }
 }
 
@@ -329,11 +372,15 @@ export async function handleTelegramEvent(
     return;
   }
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
+  const startingOver = /^\/new(@\w+)?\b/.test(text);
+  if (!/^\/start(@\w+)?\b/.test(text)) {
+    await clearQuestionButtons(token, target, startingOver ? 'A new conversation started.' : 'Answered in the chat.');
+  }
   if (/^\/start(@\w+)?\b/.test(text)) {
     await reply('Connected to Kortix. Send a message to start working with the agent. /new starts a new conversation.');
     return;
   }
-  if (/^\/new(@\w+)?\b/.test(text)) {
+  if (startingOver) {
     await forgetChatThread(target, createClaim);
     await reply('Started a new conversation. Your next message goes to a new session.');
     return;
@@ -431,6 +478,11 @@ export async function handleTelegramPress(
   const answers = [[option.label]];
   await answer(`Answered: ${option.label}`);
   await edit(telegramQuestionText(asked.questions, `Answered: ${option.label}`));
+  // A later message in the chat must not rewrite this answer.
+  await db
+    .delete(chatEventDedup)
+    .where(like(chatEventDedup.eventId, `${questionButtonsPrefix({ projectId: event.projectId, workspaceId: install.botId, threadId })}${message.message_id}|%`))
+    .catch(() => undefined);
   // The server could not release the question when it was posted, so it still
   // blocks the turn: answer it there, as the web does (routes/turn-questions.ts).
   // A retry finds its own answer stored and tries the release again.

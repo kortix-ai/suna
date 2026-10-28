@@ -240,6 +240,7 @@ afterAll(async () => {
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, PROJECT));
   await db.delete(accountTokens).where(eq(accountTokens.projectId, PROJECT));
@@ -1066,6 +1067,54 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
     const sessionId = await askedSession('991');
     failing = 'sendMessage';
     expect(await ask(sessionId)).toEqual({ ok: false, error: 'not_relayed' });
+  });
+});
+
+describe('question buttons go when the chat answers another way — migrated PostgreSQL', () => {
+  const remembered = (chat: string) =>
+    db.select().from(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:${BOT_ID}:${chat}|%`));
+  const edits = () => calls.filter((c) => c.method === 'editMessageText');
+  async function posted(chat: string) {
+    const sessionId = await askedSession(chat);
+    const id = await pending(sessionId);
+    expect((await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: id, principal: await principalOf(sessionId) })).ok).toBe(true);
+    calls.length = 0;
+    return { sessionId, id };
+  }
+
+  test('a typed answer takes the buttons off and says it was answered in the chat; the words still reach the agent', async () => {
+    const { sessionId } = await posted('2101');
+    expect(await remembered('2101')).toHaveLength(1);
+    await handleTelegramEvent(update('Postgres', ALLOWED, 2101));
+    expect(edits().map((c) => ({ chat_id: c.body.chat_id, message_id: c.body.message_id, reply_markup: c.body.reply_markup }))).toEqual([
+      { chat_id: '2101', message_id: 1, reply_markup: { inline_keyboard: [] } },
+    ]);
+    expect(String(edits()[0]!.body.text)).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nAnswered in the chat.');
+    expect(await remembered('2101')).toHaveLength(0);
+    expect(delivered.at(-1)).toMatchObject({ sessionId });
+  });
+
+  test('/new takes the buttons off with "A new conversation started."', async () => {
+    await posted('2102');
+    await handleTelegramEvent(update('/new', ALLOWED, 2102));
+    expect(String(edits()[0]!.body.text)).toEndWith('\n\nA new conversation started.');
+    expect(await remembered('2102')).toHaveLength(0);
+  });
+
+  test("a tap's answer stays: a later message does not rewrite it", async () => {
+    const { id } = await posted('2103');
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2103, messageId: 1 }));
+    expect(String(edits().at(-1)!.body.text)).toEndWith('Answered: SQLite');
+    calls.length = 0;
+    await handleTelegramEvent(update('thanks', ALLOWED, 2103));
+    expect(edits()).toEqual([]);
+  });
+
+  test('a stranger in the chat changes nothing', async () => {
+    await posted('2104');
+    await handleTelegramEvent(update('hello', '999', 2104));
+    expect(edits()).toEqual([]);
+    expect(await remembered('2104')).toHaveLength(1);
   });
 });
 
