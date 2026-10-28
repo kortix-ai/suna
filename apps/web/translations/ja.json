@@ -22738,7 +22738,9 @@
     "forPerson": "{person} 向け",
     "makeGoalConfirm": "エージェントがこの会話を完了条件付きのゴールにし、確認で完了が確かめられるまで取り組みます。",
     "makeGoalSend": "エージェントに依頼",
-    "answerInChat": "チャットで回答"
+    "answerInChat": "チャットで回答",
+    "forYou": "あなた向け",
+    "forMember": "チームメンバー向け"
   },
   "agentEditor": {
     "manage": "管理",

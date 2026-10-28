@@ -22742,7 +22742,9 @@
     "forPerson": "for {person}",
     "makeGoalConfirm": "The agent turns this conversation into a goal with done criteria, then works it until a check confirms it is done.",
     "makeGoalSend": "Ask the agent",
-    "answerInChat": "Answer in chat"
+    "answerInChat": "Answer in chat",
+    "forYou": "for you",
+    "forMember": "for a teammate"
   },
   "agentEditor": {
     "manage": "Manage",

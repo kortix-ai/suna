@@ -22738,7 +22738,9 @@
     "forPerson": "za {person}",
     "makeGoalConfirm": "Agent pretvara ovaj razgovor u cilj sa kriterijumima završetka i radi na njemu dok provera ne potvrdi da je završen.",
     "makeGoalSend": "Pitaj agenta",
-    "answerInChat": "Odgovori u četu"
+    "answerInChat": "Odgovori u četu",
+    "forYou": "za tebe",
+    "forMember": "za člana tima"
   },
   "agentEditor": {
     "manage": "Upravljaj",

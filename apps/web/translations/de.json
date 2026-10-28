@@ -22738,7 +22738,9 @@
     "forPerson": "für {person}",
     "makeGoalConfirm": "Der Agent macht aus diesem Gespräch ein Ziel mit Abschlusskriterien und arbeitet daran, bis eine Prüfung bestätigt, dass es erreicht ist.",
     "makeGoalSend": "Agent fragen",
-    "answerInChat": "Im Chat antworten"
+    "answerInChat": "Im Chat antworten",
+    "forYou": "für dich",
+    "forMember": "für ein Teammitglied"
   },
   "agentEditor": {
     "manage": "Verwalten",

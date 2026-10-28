@@ -7538,6 +7538,8 @@ const catalog = {
     "newGoalStart": "Start goal",
     "cancel": "Cancel",
     "forPerson": "for {person}",
+    "forYou": "for you",
+    "forMember": "for a teammate",
     "makeGoalConfirm": "The agent turns this conversation into a goal with done criteria, then works it until a check confirms it is done.",
     "makeGoalSend": "Ask the agent",
     "answerInChat": "Answer in chat"

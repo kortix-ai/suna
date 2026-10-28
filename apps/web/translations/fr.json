@@ -22738,7 +22738,9 @@
     "forPerson": "pour {person}",
     "makeGoalConfirm": "L’agent transforme cette conversation en objectif avec des critères de fin, puis y travaille jusqu’à ce qu’une vérification confirme qu’il est atteint.",
     "makeGoalSend": "Demander à l’agent",
-    "answerInChat": "Répondre dans le chat"
+    "answerInChat": "Répondre dans le chat",
+    "forYou": "pour vous",
+    "forMember": "pour un collègue"
   },
   "agentEditor": {
     "manage": "Gérer",

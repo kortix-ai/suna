@@ -177,13 +177,21 @@ function GoalRow({ projectId, goal, space }: { projectId: string; goal: ProjectG
   const now = useGoalClock();
   const issueText = useGoalIssueText();
   const personOf = useGoalPerson(projectId);
+  const viewerId = useUiViewerId();
   const href = goalHref(projectId, goal);
   const doc = goal.goal;
   const person = personOf(doc?.assigned_user);
   const lastWake = goalLastWake(goal);
+  const forWhom = !doc?.assigned_user
+    ? null
+    : goalAssignedTo(goal, viewerId)
+      ? t('forYou')
+      : person && person !== t('anotherMember')
+        ? t('forPerson', { person })
+        : t('forMember');
   const who = [
     doc?.agent,
-    person ? t('forPerson', { person }) : null,
+    forWhom,
     lastWake && goal.health.state !== 'closed' ? t('lastWake', { time: formatGoalTime(lastWake, locale, now) }) : null,
   ].filter(Boolean);
   const progress = goalProgress(doc);

@@ -315,7 +315,7 @@ function GoalBody({
 
       {files?.verification ? (
         <Section title={t('verification')}>
-          <UnifiedMarkdown content={files.verification} trust="untrusted" variant="document" />
+          <UnifiedMarkdown content={withoutTitle(files.verification)} trust="untrusted" variant="document" />
         </Section>
       ) : null}
       {doc?.body?.trim() ? (
@@ -325,16 +325,21 @@ function GoalBody({
       ) : null}
       {files?.notes ? (
         <Section title={t('notes')}>
-          <UnifiedMarkdown content={files.notes} trust="untrusted" variant="document" />
+          <UnifiedMarkdown content={withoutTitle(files.notes)} trust="untrusted" variant="document" />
         </Section>
       ) : null}
       {files?.log ? (
         <Section title={t('log')}>
-          <UnifiedMarkdown content={files.log} trust="untrusted" variant="document" />
+          <UnifiedMarkdown content={withoutTitle(files.log)} trust="untrusted" variant="document" />
         </Section>
       ) : null}
     </>
   );
+}
+
+/** A goal file under its own section heading: drop the file's leading `# Title`, the section already names it. */
+function withoutTitle(markdown: string): string {
+  return markdown.replace(/^\s*# [^\n]*\n+/, '');
 }
 
 /** A session's display name, or its id until the row loads (or when it is gone). */

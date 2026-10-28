@@ -22738,7 +22738,9 @@
     "forPerson": "负责人：{person}",
     "makeGoalConfirm": "智能体会把这段对话变成带完成标准的目标，并持续推进，直到检查确认已完成。",
     "makeGoalSend": "请智能体处理",
-    "answerInChat": "在对话中回答"
+    "answerInChat": "在对话中回答",
+    "forYou": "给你",
+    "forMember": "给团队成员"
   },
   "agentEditor": {
     "manage": "管理",
