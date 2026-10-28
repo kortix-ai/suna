@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "Activado",
     "calendarFailed": "Falló",
     "calendarEstimatedSr": "Activación pasada, estimada a partir de la programación",
-    "calendarUpcomingSr": "Próxima"
+    "calendarUpcomingSr": "Próxima",
+    "onEvent": "Ante un evento"
   },
   "computers": {
     "connectYourComputer": "Conectar tu ordenador",

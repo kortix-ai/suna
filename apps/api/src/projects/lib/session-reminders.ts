@@ -213,6 +213,8 @@ export function serializeSessionReminder(row: RuntimeRow) {
   return {
     id: row.slug,
     session_id: row.sessionId,
+    // What fires it (`lib/automations.ts`): a loop is `schedule`.
+    source_type: spec.type === 'cron' ? 'schedule' : spec.type,
     name: spec.name === row.slug ? null : spec.name,
     prompt: spec.promptTemplate,
     every: everySeconds ? formatDurationSeconds(everySeconds) : null,

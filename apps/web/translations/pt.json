@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "Disparado",
     "calendarFailed": "Falhou",
     "calendarEstimatedSr": "Disparo passado, estimado a partir do agendamento",
-    "calendarUpcomingSr": "Próximo"
+    "calendarUpcomingSr": "Próximo",
+    "onEvent": "Em um evento"
   },
   "computers": {
     "connectYourComputer": "Conectar seu computador",

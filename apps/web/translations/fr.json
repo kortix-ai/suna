@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "Déclenché",
     "calendarFailed": "Échec",
     "calendarEstimatedSr": "Déclenchement passé, estimé à partir de la planification",
-    "calendarUpcomingSr": "À venir"
+    "calendarUpcomingSr": "À venir",
+    "onEvent": "Sur un événement"
   },
   "computers": {
     "connectYourComputer": "Connecter votre ordinateur",

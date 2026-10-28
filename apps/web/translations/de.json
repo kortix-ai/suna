@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "Ausgelöst",
     "calendarFailed": "Fehlgeschlagen",
     "calendarEstimatedSr": "Vergangene Ausführung, aus dem Zeitplan geschätzt",
-    "calendarUpcomingSr": "Bevorstehend"
+    "calendarUpcomingSr": "Bevorstehend",
+    "onEvent": "Bei einem Ereignis"
   },
   "computers": {
     "connectYourComputer": "Deinen Computer verbinden",

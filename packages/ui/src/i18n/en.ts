@@ -6821,7 +6821,8 @@ const catalog = {
     "calendarFiredSr": "Fired",
     "calendarFailed": "Failed",
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
-    "calendarUpcomingSr": "Upcoming"
+    "calendarUpcomingSr": "Upcoming",
+    "onEvent": "On an event"
   },
   "computers": {
     "connectYourComputer": "Connect your computer",

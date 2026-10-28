@@ -45,11 +45,10 @@ import {
   type AgentGrantSetV2,
   getProjectDetail,
   listProjectResourceGrants,
-  listProjectTriggers,
   type ProjectConfigSummary,
   readProjectFile,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId, useProjectAutomations } from '@kortix/sdk/react';
 import { DotsThreeIcon, LockSimpleIcon, PlayIcon, SparkleIcon, StarIcon, TrashIcon } from '@phosphor-icons/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
@@ -349,20 +348,13 @@ function useAgentLocation(tabs: readonly AgentTab[], views: readonly AgentConfig
   );
 }
 
-/** How many triggers start this agent, and how many grants name it. The same
- *  lists and gates as the Agents index, so both read one cache. */
+/** How many automations start this agent (kortix.yaml and runtime), and how
+ *  many grants name it. `GET /automations` leaves out what the caller may not read. */
 function useAgentUseCounts(projectId: string, agentName: string, config: ProjectConfigSummary) {
   const accountId = useProjectAccountId(projectId);
-  const canReadTriggers =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ, { accountId }).allowed === true;
   const canManageMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed === true;
-  const triggers = useQuery({
-    queryKey: qk.project.triggers(projectId),
-    queryFn: () => listProjectTriggers(projectId),
-    enabled: canReadTriggers,
-    ...contract('config'),
-  });
+  const automations = useProjectAutomations(projectId);
   const grants = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
@@ -373,9 +365,10 @@ function useAgentUseCounts(projectId: string, agentName: string, config: Project
   // A trigger stored as `default` starts the project's default agent.
   const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
   return {
-    triggerCount: triggers.data
-      ? triggers.data.triggers.filter((tr) => (tr.agent === 'default' && fallback ? fallback : tr.agent) === agentName)
-          .length
+    triggerCount: automations.data
+      ? automations.data.automations.filter(
+          (a) => a.target.kind === 'agent' && (a.target.agent === 'default' && fallback ? fallback : a.target.agent) === agentName,
+        ).length
       : undefined,
     peopleCount: grants.data
       ? grants.data.grants.filter((g) => g.resource_type === 'agent' && g.resource_id === agentName).length

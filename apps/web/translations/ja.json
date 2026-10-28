@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "実行済み",
     "calendarFailed": "失敗",
     "calendarEstimatedSr": "過去の実行（スケジュールからの推定）",
-    "calendarUpcomingSr": "予定"
+    "calendarUpcomingSr": "予定",
+    "onEvent": "イベント発生時"
   },
   "computers": {
     "connectYourComputer": "コンピューターを接続",

@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "已触发",
     "calendarFailed": "失败",
     "calendarEstimatedSr": "过去的触发，根据计划推算",
-    "calendarUpcomingSr": "即将触发"
+    "calendarUpcomingSr": "即将触发",
+    "onEvent": "事件触发"
   },
   "computers": {
     "connectYourComputer": "连接你的电脑",

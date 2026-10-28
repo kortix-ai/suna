@@ -21508,7 +21508,8 @@
     "calendarFiredSr": "Активиран",
     "calendarFailed": "Неуспешно",
     "calendarEstimatedSr": "Прошло активирање, процењено на основу распореда",
-    "calendarUpcomingSr": "Предстојеће"
+    "calendarUpcomingSr": "Предстојеће",
+    "onEvent": "На догађај"
   },
   "computers": {
     "connectYourComputer": "Повежите свој рачунар",
