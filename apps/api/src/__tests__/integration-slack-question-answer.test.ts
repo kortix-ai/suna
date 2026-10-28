@@ -312,6 +312,13 @@ test('a question still blocking the turn is answered there, with no follow-up', 
   expect(releases).toEqual([[q.sessionId, expect.any(String), [['No']]]]);
   expect(await followUps(q.sessionId)).toEqual([]);
   expect(JSON.stringify(calls('chat.update')[0]!.blocks)).toContain(`✓ *No* — <@${SLACK.owner}>`);
+  // The turn the release resumes has the click's turn to stream its steps and reply into.
+  const turns = await db
+    .select({ triggerTs: chatTurnStreams.triggerTs, finalized: chatTurnStreams.finalized })
+    .from(chatTurnStreams)
+    .where(eq(chatTurnStreams.sessionId, q.sessionId));
+  expect(turns).toEqual([{ triggerTs: q.messageTs, finalized: false }]);
+  expect(calls('reactions.add')).toEqual([expect.objectContaining({ channel: CHANNEL, timestamp: q.messageTs })]);
 });
 
 test("a click on a deleted session's question starts nothing: its turn is dropped and the message says why", async () => {

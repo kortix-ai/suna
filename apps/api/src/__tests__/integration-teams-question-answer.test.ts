@@ -435,3 +435,24 @@ test('an unlinked or refused presser gets only the prompt or the refusal: the ca
   expect(await followUps(ownerOnly.sessionId)).toEqual([]);
   expect(cardUpdates('card-1')).toEqual([]);
 });
+
+test('an unlinked presser of a card posted before gets only the prompt: the card keeps its inputs, and nothing is kept to replay', async () => {
+  const q = await asked();
+  for (const opts of [
+    { data: { answer: 'Yes', question: 'Deploy now?' } },
+    { form: true, data: { fieldIds: 'Which region?', 'Which region?': 'us-east' } },
+  ]) {
+    botCalls.length = 0;
+    const { reply } = await press({ convo: q.convo, aad: AAD.stranger, card: 'card-1', ...opts });
+    expect(reply).toEqual({
+      statusCode: 200,
+      type: 'application/vnd.microsoft.activity.message',
+      value: 'Your answer was not taken. Follow the message I sent you, then tap again.',
+    });
+    expect(botCalls.map((c) => c.method)).toEqual(['POST']);
+    expect(botCalls[0]!.url).toContain('isTargetedActivity=true');
+  }
+  expect(await db.select().from(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformUserId, AAD.stranger))).toEqual([]);
+  expect(await followUps(q.sessionId)).toEqual([]);
+  expect(created).toEqual([]);
+});

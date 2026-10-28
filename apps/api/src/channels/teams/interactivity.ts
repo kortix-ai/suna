@@ -293,8 +293,9 @@ async function handlePickProject(
  * press could not be told from another, so it is refused. A press whose data
  * names its stored question (`kq`) is answered from it (question-press.ts).
  * Any other is from a card posted before that: it reaches only the
- * conversation's own session, and a conversation with none (after `/new`)
- * answers nothing.
+ * conversation's own session, a conversation with none (after `/new`)
+ * answers nothing, and a presser Kortix cannot act as is told before the
+ * card changes.
  */
 const TAP_AGAIN = "Couldn't record that. Tap the button again.";
 
@@ -313,6 +314,8 @@ async function handleAnswer(
   const target = await decisionTarget(inbound, convo);
   if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
   if (!target.sessionId) return cardResponse(buildNoticeCard(QUESTION_EARLIER));
+  const unlinked = await (await import('./question-press')).unlinkedPresser(activity, target.projectId, convo.tenantId);
+  if (unlinked) return unlinked;
 
   // The question travels on the action (cards.ts), because the tap REPLACES the
   // card that asked it. Sending the agent a bare "Yes" leaves it to infer what
@@ -381,6 +384,8 @@ async function handleForm(
   const target = await decisionTarget(inbound, convo);
   if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
   if (!target.sessionId) return cardResponse(buildNoticeCard(QUESTION_EARLIER));
+  const unlinked = await (await import('./question-press')).unlinkedPresser(activity, target.projectId, convo.tenantId);
+  if (unlinked) return unlinked;
 
   // Every form here is one the agent posted — the `question` tool's, or its own
   // `teams ask` — so the answers are framed as replies to it, not as a new

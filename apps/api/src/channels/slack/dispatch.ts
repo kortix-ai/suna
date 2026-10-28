@@ -779,8 +779,8 @@ async function routeSlackThread(
     if (existing) {
       if (!(await mayJoinSlackThread(projectId, event, opts, actorUserId, teamId, threadId, existing))) return;
       const { press } = opts;
-      const deliver = (e: SlackEvent) =>
-        deliverToExistingThread(projectId, envelope, e, project, actorUserId, teamId, threadId, thread, existing, press?.key);
+      const deliver = (e: SlackEvent, opened?: LiveTurn | null) =>
+        deliverToExistingThread(projectId, envelope, e, project, actorUserId, teamId, threadId, thread, existing, press?.key, opened);
       if (press?.button) {
         await answerSlackQuestion(projectId, teamId, threadId, existing.sessionId, event, press, press.button, deliver);
         return;
@@ -838,7 +838,7 @@ async function answerSlackQuestion(
   event: SlackEvent,
   press: SlackQuestionPress,
   { pendingId, question, index }: NonNullable<SlackQuestionPress['button']>,
-  deliver: (event: SlackEvent) => ReturnType<typeof deliverToExistingThread>,
+  deliver: (event: SlackEvent, opened: LiveTurn | null) => ReturnType<typeof deliverToExistingThread>,
 ): Promise<void> {
   const { decideQuestionPress, settleQuestionAnswer } = await import('../core/questions');
   const p: QuestionPress = {
@@ -853,18 +853,24 @@ async function answerSlackQuestion(
   const { answer } = decision;
   const line = `✓ *${escapeMrkdwn(answer.label)}* — <@${event.user}>`;
   await editQuestionMessage(projectId, event, press, answer.questions, line, (blocks) => answeredQuestionBlocks(blocks, question, line));
+  // Opened before the answer goes anywhere: a question still blocking the turn
+  // resumes that turn, and its steps and reply need this turn to land in.
+  const opened = await openThreadTurn(projectId, teamId, event, sessionId);
   const settled = await settleQuestionAnswer(
     p,
     answer,
     async (a) => {
-      const delivery = await deliver({ ...event, text: a.prompt });
+      const delivery = await deliver({ ...event, text: a.prompt }, opened);
       if (delivery.handled) return 'handled';
       await dropPressTurn(sessionId, delivery.handle);
       return 'gone';
     },
     // Slack does not send a click again.
     { finalAttempt: true },
-  );
+  ).catch(async (err: unknown) => {
+    await dropPressTurn(sessionId, opened);
+    throw err;
+  });
   if (settled === 'gone') await showQuestionEarlier(projectId, event, press, answer.questions);
 }
 
@@ -893,6 +899,18 @@ async function editQuestionMessage(
 
 const showQuestionEarlier = (projectId: string, event: SlackEvent, press: SlackQuestionPress, questions: QuestionInfo[]) =>
   editQuestionMessage(projectId, event, press, questions, QUESTION_EARLIER, earlierQuestionBlocks);
+
+/** A turn on `event` for the session: ⏳ on it, steps and reply into it. Null when one is in flight: its answer covers `event` too. */
+async function openThreadTurn(projectId: string, teamId: string, event: SlackEvent, sessionId: string): Promise<LiveTurn | null> {
+  const inflight = await loadTurn(sessionId);
+  if (inflight && !inflight.finalized) return null;
+  const handle = await startTurn(projectId, teamId, event, 'On it');
+  if (handle) {
+    handle.sessionId = sessionId;
+    await saveTurn(handle);
+  }
+  return handle;
+}
 
 /** The turn a click opened when nothing reached the session: clear its ⏳ and drop it. */
 async function dropPressTurn(sessionId: string, handle: LiveTurn | null): Promise<void> {
@@ -939,17 +957,10 @@ async function deliverToExistingThread(
   thread: Parameters<typeof touchChatThread>[0],
   existing: NonNullable<Awaited<ReturnType<typeof findChatThreadSession>>>,
   idempotencyKey = slackFollowUpKey(teamId, event),
+  // The turn the caller already opened for `event` (openThreadTurn).
+  opened?: LiveTurn | null,
 ) {
-  const inflight = await loadTurn(existing.sessionId);
-  const turnInFlight = !!inflight && !inflight.finalized;
-
-  const handle = turnInFlight
-    ? null
-    : await startTurn(projectId, teamId, event, 'On it');
-  if (handle) {
-    handle.sessionId = existing.sessionId;
-    await saveTurn(handle);
-  }
+  const handle = opened === undefined ? await openThreadTurn(projectId, teamId, event, existing.sessionId) : opened;
   const plan = await slackFollowUpModel({
     project: { projectId, accountId: project.accountId, metadata: project.metadata },
     userId: actorUserId,

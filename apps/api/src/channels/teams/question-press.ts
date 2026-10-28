@@ -58,6 +58,20 @@ function pressOf(data: Record<string, unknown>, form: boolean): { pendingId: str
   return { pendingId: kq, picks: [...picks.values()] };
 }
 
+const NOT_TAKEN = 'Your answer was not taken. Follow the message I sent you, then tap again.';
+
+/**
+ * The reply for the presser of a card from before `kq` (interactivity.ts)
+ * whom Kortix cannot act as in `projectId`, else null. Decided before the
+ * invoke replies, as for a `kq` press: they get the sign-in prompt, nothing is
+ * kept to replay, and their card keeps its inputs for the press after login.
+ */
+export async function unlinkedPresser(activity: TeamsActivity, projectId: string, tenantId: string): Promise<TeamsInvokeResponse | null> {
+  const [project] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const userId = project && (await resolveTeamsTurnActor(project.accountId, projectId, tenantId, activity, undefined, false));
+  return userId ? null : messageResponse(NOT_TAKEN);
+}
+
 export async function answerTeamsQuestion(
   activity: TeamsActivity,
   convo: { tenantId: string; conversationId: string },
@@ -79,7 +93,7 @@ export async function answerTeamsQuestion(
   const { projectId, sessionId } = thread;
 
   const userId = await resolveTeamsTurnActor(project.accountId, projectId, tenantId, activity, undefined, false);
-  if (!userId) return messageResponse('Your answer was not taken. Follow the message I sent you, then tap again.');
+  if (!userId) return messageResponse(NOT_TAKEN);
   const followUp: TeamsFollowUp = {
     projectId,
     accountId: project.accountId,
