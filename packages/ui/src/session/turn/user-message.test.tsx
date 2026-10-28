@@ -1458,13 +1458,13 @@ describe('UserMessage platform prompts', () => {
       </QueryClientProvider>,
     );
 
-  test('a reminder fire is a source pill over a plain bubble, not the raw header', () => {
+  test('a loop fire is a source pill over a plain bubble, not the raw header', () => {
     const markup = renderText(
       '[REMINDER reminder.0123456789ab — one-time scheduled check-in on this session, not a new user message.]\n\nCheck whether the vendor replied.',
     );
     expect(markup).toContain('data-testid="reminder-turn"');
     expect(markup).toContain('data-testid="message-source"');
-    expect(markup).toContain('>Reminder</span>');
+    expect(markup).toContain('>Loop</span>');
     expect(markup).toContain('>One-time</span>');
     expect(markup).toContain('Check whether the vendor replied.');
     expect(markup).not.toContain('[REMINDER');

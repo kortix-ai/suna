@@ -5010,7 +5010,7 @@ const catalog = {
       "text2319ec274750": "Session key",
       "text398d270b036a": "Could not load runs.",
       "text4c2e1df4570b": "Monitor",
-      "text31757bbfa17e": "Reminder",
+      "text31757bbfa17e": "Loop",
       "text12698ce1ea5c": "Skipped",
       "text9daf8e05c684": "Unsigned",
       "text7f2b8f3a675c": "The webhook signature was not verified.",
@@ -6684,7 +6684,7 @@ const catalog = {
     "tabPaused": "Paused",
     "tabDone": "Done",
     "emptyTitle": "No loops yet",
-    "emptyDescription": "Ask an agent in any session to remind you about something. Its loops show up here.",
+    "emptyDescription": "Ask an agent in any session to check back later, or on repeat. Its loops show up here.",
     "loadFailed": "Could not load loops",
     "retry": "Retry",
     "sessionFilter": "Session: {name}",
@@ -7420,8 +7420,8 @@ const catalog = {
       "closed": "Closed"
     },
     "issue": {
-      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
-      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat loop is missing.",
+      "heartbeat_paused": "The heartbeat loop is paused.",
       "heartbeat_failed": "The last wake failed: {error}",
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
@@ -8386,7 +8386,7 @@ const catalog = {
       "appsLoadError": "Could not load the apps.",
       "triggers": {
         "loadError": "Could not load the triggers.",
-        "privateNote": "Triggers can't post into a private channel. Set a reminder in a thread instead."
+        "privateNote": "Triggers can't post into a private channel. Ask an agent in a thread to set a loop instead."
       },
       "reply": "Reply",
       "rosterTitlePeople": "People",

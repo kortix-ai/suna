@@ -512,9 +512,9 @@ function UserMessageImpl({
       <SourcePill
         mark={<Icon as={AlarmIcon} size={12} className="text-muted-foreground" />}
         sheetMark={<Icon as={AlarmIcon} size={22} className="text-foreground" />}
-        source="Reminder"
+        source="Loop"
         sender={kind}
-        title="Reminder"
+        title="Loop"
         subtitle={kind}
         rows={[{ label: 'ID', value: reminderInfo.id }]}
       />,

@@ -328,7 +328,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'notification_center',
     name: 'Notification Center',
     description:
-      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
+      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
     stability: 'beta',
     available: () => true,
     // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
@@ -388,7 +388,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'goals',
     name: 'Goals',
     description:
-      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on (flag key `reminders`).',
     stability: 'experimental',
     wip: true,
     // A goal keeps its state in Files, and every drive is a Platinum volume.

@@ -679,17 +679,18 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
-    // The Customize Reminders tab (`remindersHref`, #10261). Gated in
-    // `command-palette.tsx` on the tab's own verdict (flag + trigger rule).
+    // The Project admin Loops page (formerly Reminders; `remindersHref`,
+    // #10261). Gated in `command-palette.tsx` on the tab's own verdict
+    // (flag + trigger rule).
     id: 'proj-reminders',
-    label: 'Reminders',
+    label: 'Loops',
     icon: Calendar,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/admin/loops',
     requiresProject: true,
-    keywords: 'reminders reminder remind follow up later nudge calendar',
+    keywords: 'loops loop reminders reminder remind check back later follow up repeat recurring nudge calendar',
   },
   {
     id: 'proj-secrets',

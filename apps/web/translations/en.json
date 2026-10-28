@@ -17590,7 +17590,7 @@
       "text2319ec274750": "Session key",
       "text398d270b036a": "Could not load runs.",
       "text4c2e1df4570b": "Monitor",
-      "text31757bbfa17e": "Reminder",
+      "text31757bbfa17e": "Loop",
       "text12698ce1ea5c": "Skipped",
       "text9daf8e05c684": "Unsigned",
       "text7f2b8f3a675c": "The webhook signature was not verified.",
@@ -19712,14 +19712,14 @@
       "textd88c84258c7a": "Listed connected apps",
       "text37698a37f9d2": "Revoked a connected app",
       "text8c8fb214b592": "Authorized GitHub as a user",
-      "text4192bb1e9ee5": "Listed session reminders",
-      "texteee2410ea3db": "Created session reminder",
-      "text33954223cc7e": "Turned session reminder on or off",
-      "textb7ece0360b75": "Deleted session reminder",
+      "texteab7d17350fa": "Listed session loops",
+      "textc53d93c9c90d": "Created session loop",
+      "texte9d677555dc8": "Turned session loop on or off",
+      "text84dbf9dd09a9": "Deleted session loop",
       "text9dcde51d9ff2": "Agent's description",
       "textfa0db737cb09": "Written by the agent and not verified. The parameters below are what the connector receives.",
       "text2edf70730233": "Message to the agent (optional)",
-      "texte88286ad9739": "Listed project reminders",
+      "text5b5bb99354e5": "Listed project loops",
       "text711edad21902": "Added computer to project",
       "texta3ecfa724d04": "Computer unpaired itself",
       "text734315a9e07d": "Read MCP resource metadata",
@@ -20518,7 +20518,8 @@
       "text37737d817d12": "Back to project",
       "text9eebeabf6094": "Could not check your access",
       "text078931e34187": "Project admin needs the settings grant",
-      "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it."
+      "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it.",
+      "textce53edc1b757": "Ran session loop now"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -21370,7 +21371,7 @@
     "tabPaused": "Paused",
     "tabDone": "Done",
     "emptyTitle": "No loops yet",
-    "emptyDescription": "Ask an agent in any session to remind you about something. Its loops show up here.",
+    "emptyDescription": "Ask an agent in any session to check back later, or on repeat. Its loops show up here.",
     "loadFailed": "Could not load loops",
     "retry": "Retry",
     "sessionFilter": "Session: {name}",
@@ -22617,8 +22618,8 @@
       "closed": "Closed"
     },
     "issue": {
-      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
-      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat loop is missing.",
+      "heartbeat_paused": "The heartbeat loop is paused.",
       "heartbeat_failed": "The last wake failed: {error}",
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
@@ -23583,7 +23584,7 @@
       "appsLoadError": "Could not load the apps.",
       "triggers": {
         "loadError": "Could not load the triggers.",
-        "privateNote": "Triggers can't post into a private channel. Set a reminder in a thread instead."
+        "privateNote": "Triggers can't post into a private channel. Ask an agent in a thread to set a loop instead."
       },
       "reply": "Reply",
       "rosterTitlePeople": "People",

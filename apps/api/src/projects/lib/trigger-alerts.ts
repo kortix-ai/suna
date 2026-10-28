@@ -56,10 +56,10 @@ export async function settleTriggerAlerts(): Promise<void> {
 const triggerName = sql<string | null>`${projectTriggerRuntime.scheduleSpec} ->> 'name'`;
 const isReminder = sql<boolean>`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is not null`;
 
-/** The alert's subject: the trigger's name. An unnamed reminder is named after its id, which says nothing. */
+/** The alert's subject: the trigger's name. An unnamed reminder (a loop) is titled "Loop": its id says nothing. */
 function alertTitle(slug: string, row: { name: string | null; reminder: boolean }): string {
   const name = row.name?.trim();
-  if (row.reminder && (!name || name === slug)) return 'Reminder';
+  if (row.reminder && (!name || name === slug)) return 'Loop';
   return name || slug;
 }
 

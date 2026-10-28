@@ -42,7 +42,7 @@ const TOOL_META: Record<QuickView, { label: string; Icon: Icon }> = {
   browser: { label: 'Browser', Icon: GlobeIcon },
   files: { label: 'Files', Icon: FolderOpenIcon },
   audit: { label: 'Audit', Icon: ScrollIcon },
-  reminders: { label: 'Reminders', Icon: AlarmIcon },
+  reminders: { label: 'Loops', Icon: AlarmIcon },
 };
 
 export function MobileToolDrawer({

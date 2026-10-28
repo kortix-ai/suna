@@ -731,7 +731,7 @@ One table per domain. The route column shows the method and route template. `any
 | `project.provision` | Provisioned project | `POST /v1/projects/provision` (also `POST /v1/projects/provision-stream`) |
 | `project.quota.read` | Viewed project quota | `GET /v1/projects/quota` |
 | `project.read` | Viewed project | `GET /v1/projects/:projectId` |
-| `project.reminder.list` | Listed project reminders | `GET /v1/projects/:projectId/reminders` |
+| `project.reminder.list` | Listed project loops | `GET /v1/projects/:projectId/reminders` |
 | `project.repository.create` | Created project with new GitHub repository | `POST /v1/projects/create-repo` |
 | `project.repository.link` | Linked repository as project | `POST /v1/projects/link-repository` |
 | `project.resource_grant.create` | Granted resource access | `POST /v1/projects/:projectId/resource-grants` |
@@ -974,11 +974,11 @@ One table per domain. The route column shows the method and route template. `any
 | `session.question.read` | Viewed open session question | `GET /v1/projects/:projectId/sessions/:sessionId/question` |
 | `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` (also `GET /v1/sessions/:sessionId`) |
 | `session.recover` | Continued lost session on a new computer | `POST /v1/projects/:projectId/sessions/:sessionId/recover` |
-| `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
-| `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
-| `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |
-| `session.reminder.run` | Ran session reminder now | `POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run` |
-| `session.reminder.update` | Turned session reminder on or off | `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
+| `session.reminder.create` | Created session loop | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.delete` | Deleted session loop | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
+| `session.reminder.list` | Listed session loops | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.run` | Ran session loop now | `POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run` |
+| `session.reminder.update` | Turned session loop on or off | `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.response_share.create` | Shared a response publicly | `PUT /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share` |
 | `session.response_share.read` | Viewed response share link | `GET /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share` |
 | `session.response_share.revoke` | Revoked response share link | `DELETE /v1/projects/:projectId/sessions/:sessionId/turns/:turnId/share` |
