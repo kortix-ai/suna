@@ -11,7 +11,7 @@ import { MANIFEST } from './content';
 // Facts: framework/content.ts (the manifest gate), the docs sections
 // "kortix.yaml reference", "Computers", "Automations", "SDK" and "Kortix UI".
 // The SDK samples use only calls from the verified "Your first session" and
-// "The thread alone" samples in content/docs/index.mdx.
+// "The thread alone" samples in content/docs/developers.mdx.
 
 const TABS: readonly CodeTab[] = [
   {
@@ -116,7 +116,7 @@ export function FrameworkPage() {
         actions={
           <>
             <MarketingButton size="md" className="hit-area-y-1" asChild>
-              <Link href="/docs#kortixyaml-reference">Read the kortix.yaml reference</Link>
+              <Link href="/docs/developers#kortixyaml-reference">Read the kortix.yaml reference</Link>
             </MarketingButton>
             <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
               <a href="https://github.com/kortix-ai/suna" target="_blank" rel="noreferrer">
@@ -158,7 +158,7 @@ export function FrameworkPage() {
           sub="@kortix/sdk is one typed client for projects, sessions and the live event stream, for servers and browsers. @kortix/ui is the same React components the Kortix web app is built from."
           actions={
             <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-              <Link href="/docs#sdk">Read the SDK docs</Link>
+              <Link href="/docs/developers#sdk">Read the SDK docs</Link>
             </MarketingButton>
           }
         />

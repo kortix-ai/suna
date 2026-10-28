@@ -466,7 +466,7 @@ these as standing rules whenever you touch the data/runtime layer:
   Keep them as shims; put the real logic in the SDK. When a merge conflict lands
   on one of these, **keep the shim (`--ours`) and port any new host-side logic
   into the SDK** — do not revert to a host-local implementation.
-- **Docs are the spec.** The SDK sections of `apps/web/content/docs/index.mdx` and
+- **Docs are the spec.** The SDK sections of `apps/web/content/docs/developers.mdx` and
   `packages/sdk/README.md` describe the intended surface. Keep them current with
   the SDK, and flag legacy/deprecated surfaces in-doc rather than documenting them
   as current.

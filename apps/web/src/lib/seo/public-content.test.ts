@@ -141,8 +141,8 @@ describe('public SEO/AEO content coverage', () => {
     expect(resolved?.markdown).toContain(
       'A plain-language guide to Kortix',
     );
-    // The docs are one page: the developer reference is a section of it.
-    expect(resolved?.markdown).toContain('## Quickstart');
+    // The developer reference is its own page, apart from the Guide.
+    expect(resolvePublicMarkdown(['docs', 'developers.md'])?.markdown).toContain('## Quickstart');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
 
     const mdx = `---

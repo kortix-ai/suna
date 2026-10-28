@@ -12,8 +12,8 @@ import { join, resolve } from 'node:path';
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..');
 const API_SRC = join(REPO_ROOT, 'apps/api/src');
 
-const ERROR_TABLES = ['apps/web/content/docs/index.mdx'];
-// The docs are one page; the KaaB error table is in its "Sessions from code" section.
+const ERROR_TABLES = ['apps/web/content/docs/developers.mdx'];
+// The KaaB error table is in the "Sessions from code" section of the Developers page.
 const ERROR_SECTION = '## Sessions from code';
 
 function errorSection(relativePath: string): string {

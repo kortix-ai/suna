@@ -6,7 +6,7 @@
 // command this file does not describe, or this file describes one the CLI
 // does not list: a new command needs its row here.
 //
-//   bun apps/web/scripts/generate-cli-commands-doc.mjs [file]           # default apps/web/content/docs/index.mdx
+//   bun apps/web/scripts/generate-cli-commands-doc.mjs [file]           # default apps/web/content/docs/developers.mdx
 //   bun apps/web/scripts/generate-cli-commands-doc.mjs [file] --check
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';

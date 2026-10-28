@@ -5,7 +5,7 @@
 // (published as apps/web/public/schema/kortix.v3.schema.json). A key without a
 // description fails the run: write the description there, not here.
 //
-//   bun apps/web/scripts/generate-kortix-yaml-doc.mjs [file]           # default apps/web/content/docs/index.mdx
+//   bun apps/web/scripts/generate-kortix-yaml-doc.mjs [file]           # default apps/web/content/docs/developers.mdx
 //   bun apps/web/scripts/generate-kortix-yaml-doc.mjs [file] --check
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

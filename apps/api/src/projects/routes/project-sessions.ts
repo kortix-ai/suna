@@ -412,7 +412,7 @@ export function registerProjectSessionsRoutes(): void {
       201,
     );
   },
-  // The KaaB contract (apps/web/content/docs/index.mdx, "Sessions from code") promises coded
+  // The KaaB contract (apps/web/content/docs/developers.mdx, "Sessions from code") promises coded
   // 400s for the three structured create fields. Schema validation runs before
   // the handler, so without this hook zod failures collapse into the generic
   // defaultHook envelope and the documented codes never reach HTTP callers.

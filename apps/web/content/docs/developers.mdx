@@ -22,7 +22,7 @@ Go from an empty terminal to a merged change request. Every step is a git operat
 curl -fsSL https://kortix.com/install | bash
 ```
 
-The script supports macOS and Linux on x86_64 and arm64. On Windows, run it inside WSL. To pin a version or use the dev channel, see [CLI → Install](/docs/#install).
+The script supports macOS and Linux on x86_64 and arm64. On Windows, run it inside WSL. To pin a version or use the dev channel, see [CLI → Install](/docs/developers#install).
 
 ### Sign in
 
@@ -34,7 +34,7 @@ Your browser opens. Approve the CLI there. The CLI then picks your account and a
 
 With one project, the CLI picks that project. With several, it asks. With none, it skips this step.
 
-On a machine without a browser, sign in with a token: `kortix login --token kortix_pat_…`. The token kinds are in [Use any git client](/docs/#use-any-git-client).
+On a machine without a browser, sign in with a token: `kortix login --token kortix_pat_…`. The token kinds are in [Use any git client](/docs/developers#use-any-git-client).
 
 ### Create or get a project
 
@@ -53,7 +53,7 @@ kortix ship
 
 `kortix ship` validates `kortix.yaml`, commits, offers to set missing secrets, pushes the current branch and connects declared connectors. In a folder with no link and no default project, it creates the project.
 
-With no `origin`, Kortix creates and manages the repository. With a GitHub `origin`, Kortix links that repository. Then plain `git push` and `git pull` work. Details: [Commit and push](/docs/#commit-and-push).
+With no `origin`, Kortix creates and manages the repository. With a GitHub `origin`, Kortix links that repository. Then plain `git push` and `git pull` work. Details: [Commit and push](/docs/developers#commit-and-push).
 
 <Callout type="warning">
 If `kortix login` saved a default project, `kortix ship` in an unlinked folder ships to that project, secrets included. Run `kortix projects unset` before the first `kortix ship` to create a new project.
@@ -110,7 +110,7 @@ my-agent/
 - All three set `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
 - The Kortix skills (`kortix-*`) are always registered. The `skills` key in `kortix.yaml` lists the other 10.
 
-`kortix init` also writes files for the coding tools you picked. Codex, pi and Cursor get `AGENTS.md`. Codex, Claude Code and pi get a link to `skills/` in `.agents/`, `.claude/` or `.pi/`. Every key is in the [kortix.yaml reference](/docs/#kortixyaml-reference).
+`kortix init` also writes files for the coding tools you picked. Codex, pi and Cursor get `AGENTS.md`. Codex, Claude Code and pi get a link to `skills/` in `.agents/`, `.claude/` or `.pi/`. Every key is in the [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 ### Run a session
 
@@ -152,7 +152,7 @@ git pull              # bring the merged work into your clone
 
 `1` is the change request number from `kortix cr ls`. To send the work back, run `kortix cr request-changes 1 --message "…"`. The note goes to the change request's session and wakes it if it sleeps. In the web app, use the project's **Review** page.
 
-The starter `kortix` agent holds `kortix_permissions: all`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/#agents-that-merge).
+The starter `kortix` agent holds `kortix_permissions: all`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
 
 ### Check your setup
 
@@ -195,7 +195,7 @@ A project has one of two kinds of repository. Both work the same way after the p
 | Managed | Kortix creates and manages a private repository. You need no GitHub account. | Pick **Kortix managed** under **Git account** when you create a project. Or run `kortix ship` in a folder with no `origin` remote, or `kortix ship --origin managed`. |
 | GitHub | A repository in your GitHub account or organization. Kortix reaches it through the Kortix GitHub App, which you install under **Account settings → Git**, or through a GitHub token. | Pick a GitHub account under **Git account**, then **Create a new repository** or **Import an existing repository**. Or run `kortix ship` in a folder whose `origin` is on GitHub. |
 
-On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-project form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/#self-hosting).
+On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-project form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/developers#self-hosting).
 
 #### The git origin
 
@@ -220,7 +220,7 @@ Clone `git_origin_url`, not `repo_url`. `repo_url` is the upstream repository th
 
 <Steps>
 <Step title="Install the CLI and sign in">
-Follow [CLI → Install](/docs/#install), then run `kortix login`.
+Follow [CLI → Install](/docs/developers#install), then run `kortix login`.
 </Step>
 <Step title="Clone">
 Run `kortix projects clone [<project_id>] [<dir>]`. `kortix projects ls` lists project ids. Without an id, the command clones the linked or default project. The directory defaults to the project id, not the project name.
@@ -406,7 +406,7 @@ Each session works on its own branch. The branch name is the `session_id`, with 
 
 A session gets the branch and a checkout in `/workspace` only when its agent sets `workspace: { project_repository: true }`. The starter agents set it. Without it, repository calls answer `403` `session_repository_access_denied`.
 
-Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Inside a session sandbox](/docs/#inside-a-session-sandbox) lists the other variables.
+Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Inside a session sandbox](/docs/developers#inside-a-session-sandbox) lists the other variables.
 
 A pushed branch stays in the repository after the session stops and after the session is deleted. `/workspace` holds this session's files, kept for the life of the session. Work the agent did not push is gone when the session is deleted. See [Computers](/docs/#computers).
 
@@ -419,7 +419,7 @@ git checkout <session_id>
 
 - `kortix files branches` lists the branches with commits ahead of and behind the default branch.
 - `kortix sessions info <session_id>` shows `branch` and `base_ref`.
-- To start a session on another branch, pass `base_ref` when you create it, in `POST /v1/projects/<project_id>/sessions` or in `sessions.create()` of the [SDK](/docs/#sessions-from-code). `kortix sessions new` has no flag for it.
+- To start a session on another branch, pass `base_ref` when you create it, in `POST /v1/projects/<project_id>/sessions` or in `sessions.create()` of the [SDK](/docs/developers#sessions-from-code). `kortix sessions new` has no flag for it.
 
 When the base branch moves, open the command palette in the session and run **Ask Agent: Sync Branch & Reload**. The agent merges `origin/<base_ref>` into the session branch, resolves conflicts, runs the relevant tests, and commits. Its last command is `kortix sessions reload … --no-repo --force --yes`, which restarts the agent runtime and ends the turn. Send `continue` when the runtime is back.
 
@@ -1127,7 +1127,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `apps.<slug>` | map | — | One App's deploy settings. Any other key is an error. Its keys: `path`, `type`, `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`, `display`. Full reference: [Configure in kortix.yaml](/docs/#configure-in-kortixyaml). |
+| `apps.<slug>` | map | — | One App's deploy settings. Any other key is an error. Its keys: `path`, `type`, `image`, `dockerfile`, `command`, `port`, `root`, `output_dir`, `install_command`, `build_command`, `spa`, `readiness_path`, `idle_timeout_seconds`, `always_on`, `uses`, `resources`, `env`, `secrets`, `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`, `display`. Full reference: [Configure in kortix.yaml](/docs/developers#configure-in-kortixyaml). |
 
 {/* generated:kortix-yaml:end */}
 
@@ -1412,7 +1412,7 @@ A session ID works across projects. When the session is not in the resolved proj
 
 ### The everyday loop
 
-The loop runs on the project's git repository. You push your branch, each session works on its own branch, and you merge its change request. [Quickstart](/docs/#quickstart) walks through it the first time. [Git](/docs/#git) covers cloning, pushing from any git client, session branches and change requests.
+The loop runs on the project's git repository. You push your branch, each session works on its own branch, and you merge its change request. [Quickstart](/docs/developers#quickstart) walks through it the first time. [Git](/docs/developers#git) covers cloning, pushing from any git client, session branches and change requests.
 
 ```sh
 kortix init my-agent && cd my-agent           # new project from the starter
@@ -1424,7 +1424,7 @@ kortix cr ls && kortix cr diff 1              # read its change request
 kortix cr merge 1 && git pull                 # merge it and pull the result
 ```
 
-- `kortix init` writes a `kortix_version: 3` project. Its fields are on [kortix.yaml reference](/docs/#kortixyaml-reference).
+- `kortix init` writes a `kortix_version: 3` project. Its fields are on [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 - `kortix projects clone <project_id> my-agent` gets an existing project instead. It clones with your Kortix login and installs a git credential helper, so plain `git pull` and `git push` work in the clone.
 - `kortix ship` commits every change (`git add -A`) and asks for missing secrets. Then it pushes the current branch to the branch with the same name and asks you to connect declared connectors. `kortix deploy` is the same command.
 - `1` is the change request number from `kortix cr ls`. `kortix cr request-changes 1 --message "…"` sends the note to the session that opened it.
@@ -1576,7 +1576,7 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `logout` | Sign out of the active host. Same as `kortix hosts logout`. | [Hosts](#hosts) |
 | `whoami` | The host, the signed-in user and the active account. | [Check who you are](#check-who-you-are) |
 | `token` | The token context: project, session, agent and grants. | [Check who you are](#check-who-you-are) |
-| `self-host <subcommand>` | Set up, start, update and stop your own Kortix instance from Docker images. | [Self-hosting](/docs/#self-hosting) |
+| `self-host <subcommand>` | Set up, start, update and stop your own Kortix instance from Docker images. | [Self-hosting](/docs/developers#self-hosting) |
 
 **Account, within the host**
 
@@ -1607,9 +1607,9 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `ship` | Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command. | [Commit and push](/docs/#commit-and-push) |
+| `ship` | Validate, commit and push the current branch. A folder with no link and no default project gets a new project. `kortix deploy` is the same command. | [Commit and push](/docs/developers#commit-and-push) |
 | `validate` | Check `kortix.yaml` and the sandbox template Dockerfiles. | [Check and validate](#check-and-validate) |
-| `migrate [--write]` | Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it. | [Migrate to v3](/docs/#migrate-to-v3) |
+| `migrate [--write]` | Convert the project manifest to `kortix_version: 3`. It prints the plan; `--write` applies it. | [Migrate to v3](/docs/developers#migrate-to-v3) |
 | `doctor [--no-session]` | Check the login and the project, then start a throwaway session and wait for an agent reply. | [Check and validate](#check-and-validate) |
 | `schema --version 3` | Print the `kortix.yaml` JSON Schema. | [Check and validate](#check-and-validate) |
 
@@ -1627,17 +1627,17 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `env <subcommand>` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Security](/docs/#security) |
 | `channels <subcommand>` | Slack and Microsoft Teams connections, and the agent each channel runs. | [Channels](/docs/#channels) |
 | `sandboxes <subcommand>` | Sandbox templates, their builds and their health. | [Computers](/docs/#computers) |
-| `apps <subcommand>` | Deploy and manage Apps: sites and servers with stable Kortix URLs. | [Apps reference](/docs/#apps-reference) |
+| `apps <subcommand>` | Deploy and manage Apps: sites and servers with stable Kortix URLs. | [Apps reference](/docs/developers#apps-reference) |
 | `marketplace <subcommand>` | Search, show, install and uninstall marketplace skills. | [Skills](/docs/#skills) |
 
 **Files, changes and triggers**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/#git) |
+| `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/developers#git) |
 | `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Memory and Drive](/docs/#memory-and-drive) |
-| `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/#git) |
-| `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/#git) |
+| `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
+| `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
 | `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/#automations) |
 | `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/#automations) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
@@ -1757,7 +1757,7 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | `kortix system-skills file <name> <path>` | Print one reference file. |
 | `kortix system-skills path [<name>]` | Print the skill's directory on disk. |
 
-The schema fields are on [kortix.yaml reference](/docs/#kortixyaml-reference).
+The schema fields are on [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 ### Conventions
 
@@ -1858,8 +1858,8 @@ All four surfaces reach the same API with the same permissions.
 | Surface | Use it for | Credential |
 |---|---|---|
 | REST API | Any language. Integrations, scripts, and servers that are not TypeScript. | A bearer token from [Authenticate](#authenticate) |
-| [SDK](/docs/#sdk) (`@kortix/sdk`) | TypeScript and React. Sessions with live streaming, typed errors, automatic retries, and the session runtime. | `getToken` returns a bearer token |
-| [CLI](/docs/#cli) (`kortix`) | Terminals, CI jobs, and agents inside a session sandbox. | `kortix login`, or a token in CI |
+| [SDK](/docs/developers#sdk) (`@kortix/sdk`) | TypeScript and React. Sessions with live streaming, typed errors, automatic retries, and the session runtime. | `getToken` returns a bearer token |
+| [CLI](/docs/developers#cli) (`kortix`) | Terminals, CI jobs, and agents inside a session sandbox. | `kortix login`, or a token in CI |
 | [Kortix MCP server](/docs/#everywhere) | Claude, Cursor, ChatGPT, and other MCP clients that act as you. Its `search_api`, `describe_api`, and `call_api` tools read and call this API. | OAuth sign-in from the client |
 
 Prefer the SDK for anything that drives a session. It owns the start, the
@@ -1871,7 +1871,7 @@ does not list those routes.
 | Deployment | Base URL |
 |---|---|
 | Kortix Cloud | `https://api.kortix.com/v1` |
-| Self-hosted with a domain | `https://api.<domain>/v1` by default. See [Self-hosting](/docs/#self-hosting). |
+| Self-hosted with a domain | `https://api.<domain>/v1` by default. See [Self-hosting](/docs/developers#self-hosting). |
 | Self-hosted on one machine | `http://localhost:13738/v1` by default |
 
 Every deployment serves its own route reference:
@@ -1904,7 +1904,7 @@ a prefix that names its kind. Create and manage them on
 |---|---|---|
 | `kortix_pat_` | Personal access key (**Settings → Personal access keys**, `kortix tokens new`, `kortix login`) | You, with your roles. A key bound to one project gets `403` everywhere else. |
 | `kortix_sa_` | Service account key (**Account settings → API keys**) | The service account. It has no access until someone assigns it a role. |
-| `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The person who approved the app. |
+| `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/developers#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The person who approved the app. |
 | `kortix_gw_` | Project gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one project, and nothing else. See [Models](/docs/#models). |
 | `kortix_scim_` | SCIM token (**Account settings → Identity**) | Directory sync under `/scim/v2` for one account. |
 | `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The agent of that one session, limited to its project. It ends with the session. |
@@ -1915,7 +1915,7 @@ An OAuth token without the `kortix` scope reaches only `/v1/accounts/me`,
 OAuth token cannot change sign-in, password or MFA state. It also cannot
 create a credential that outlives the grant, or request account deletion.
 
-A person's access token from [headless sign-in](/docs/#sign-users-in-headlessly)
+A person's access token from [headless sign-in](/docs/developers#sign-users-in-headlessly)
 also works as a bearer token. It acts as that person.
 
 A missing or invalid token returns `401`. A `401` with
@@ -1923,7 +1923,7 @@ A missing or invalid token returns `401`. A `401` with
 belongs to a closed session. It never works again: stop retrying and get a new
 token.
 
-The same tokens open the project's git origin. See [Git](/docs/#git).
+The same tokens open the project's git origin. See [Git](/docs/developers#git).
 
 ### Errors
 
@@ -1980,21 +1980,21 @@ These are the codes clients branch on most. The linked section explains each fix
 | `INVALID_IDEMPOTENCY_KEY` | `400` | The `Idempotency-Key` header is not 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
-| `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/#session-create-errors) |
+| `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/developers#session-create-errors) |
 | `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Computers](/docs/#computers) |
 | `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Computers](/docs/#computers) |
 | `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Computers](/docs/#computers) |
 | `project_archived` | `404` | The project was deleted. | Use another project. |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
-| `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/#git) |
-| `repository_push_rejected` | `409` | The git host refused a push because of branch protection or repository rules. | [Git](/docs/#who-can-clone-and-push) |
-| `CR_HEAD_NOT_AHEAD` | `422` | The change request branch has no commits ahead of its base. | [Git](/docs/#change-requests) |
-| `CR_SELF_MERGE_REFUSED` | `403` | A session tried to merge its own change request without a `project.gitops.merge` grant. | [Git](/docs/#change-requests) |
-| `MANIFEST_INVALID` | `422` | The change request makes `kortix.yaml` invalid. The merge is blocked. `issues` lists the errors. | [kortix.yaml reference](/docs/#kortixyaml-reference) |
+| `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/developers#git) |
+| `repository_push_rejected` | `409` | The git host refused a push because of branch protection or repository rules. | [Git](/docs/developers#who-can-clone-and-push) |
+| `CR_HEAD_NOT_AHEAD` | `422` | The change request branch has no commits ahead of its base. | [Git](/docs/developers#change-requests) |
+| `CR_SELF_MERGE_REFUSED` | `403` | A session tried to merge its own change request without a `project.gitops.merge` grant. | [Git](/docs/developers#change-requests) |
+| `MANIFEST_INVALID` | `422` | The change request makes `kortix.yaml` invalid. The merge is blocked. `issues` lists the errors. | [kortix.yaml reference](/docs/developers#kortixyaml-reference) |
 | `PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | `409` | You tried to share a session that holds a secret shared only with you. | [Security](/docs/#security) |
 | `project_secret_write_limit` | `429` | The project wrote secrets more than 100 times in one hour. | [Security](/docs/#security) |
-| `app_config_invalid` | `400` | An App release config is not valid. `issues` lists the errors. | [Apps reference](/docs/#apps-reference) |
-| `app_auth_required` | `401` | An App URL needs a viewer that may open it. | [App access](/docs/#app-access) |
+| `app_config_invalid` | `400` | An App release config is not valid. `issues` lists the errors. | [Apps reference](/docs/developers#apps-reference) |
+| `app_auth_required` | `401` | An App URL needs a viewer that may open it. | [App access](/docs/developers#app-access) |
 
 A connector call reports its outcome in `reason`, not `code`, inside
 `{ ok: false, status: "denied" | "error", reason }`. The reasons, such as
@@ -2074,12 +2074,12 @@ take a different credential or protocol than a plain bearer call:
 
 | Surface | Use instead |
 |---|---|
-| The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/#sessions-from-code). |
+| The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/developers#sessions-from-code). |
 | SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [Single sign-on and directory sync](/docs/#single-sign-on-and-directory-sync) |
 | Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/#automations) |
 | App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/#automations) |
 | The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/#models) |
-| The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/#git) |
+| The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/developers#git) |
 
 ### Machine-readable docs
 
@@ -2162,7 +2162,7 @@ kortix apps create grafana --name "Grafana" --url https://grafana.example.com
 
 Every project can create and deploy Apps. On a self-hosted instance, App
 hostnames resolve only after the operator sets an Apps base domain and its
-wildcard DNS record: see [Self-hosting](/docs/#app-hosting).
+wildcard DNS record: see [Self-hosting](/docs/developers#app-hosting).
 
 ### Deploy your first App
 
@@ -2361,10 +2361,10 @@ key, a `preview` other than `live` or `none`, or a malformed `parent` answers
 
 <Callout type="warning">
 Never put access settings, passwords or member ids in `kortix.yaml`. Set them
-with `kortix apps access`. See [App access](/docs/#app-access).
+with `kortix apps access`. See [App access](/docs/developers#app-access).
 </Callout>
 
-The full `kortix.yaml` reference is [kortix.yaml reference](/docs/#kortixyaml-reference).
+The full `kortix.yaml` reference is [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 ### Processes, services and checks
 
@@ -2638,7 +2638,7 @@ const kortix = await createAppViewerKortix(request, { backendUrl: 'https://api.k
   `403 no_agent_access`.
 
 An App on its own domain has no gate. Use
-[Sign in with Kortix](/docs/#sdk-authentication) there.
+[Sign in with Kortix](/docs/developers#sdk-authentication) there.
 
 ### Apps that use Apps
 
@@ -2834,7 +2834,7 @@ plus `--<service>`.
 
 A service URL is `null` when the label would pass 63
 characters: reach that service through a binding. A self-hosted instance serves
-Apps on its Apps base domain. See [Self-hosting](/docs/#app-hosting).
+Apps on its Apps base domain. See [Self-hosting](/docs/developers#app-hosting).
 
 A static App serves files at once:
 
@@ -2874,7 +2874,7 @@ kortix apps rollback my-site v3         # a new release from v3; waits unless --
   `ready` answers `409 release_not_ready`.
 - An App keeps its live release and the 5 newest other ready releases as
   rollback targets. Kortix retires older ones after each deploy. A self-hosted
-  operator can change the number: see [Self-hosting](/docs/#app-hosting).
+  operator can change the number: see [Self-hosting](/docs/developers#app-hosting).
 - Runtime log lines carry a `source`: `app` (your process), `appd` (the App
   supervisor) or `caddy` (the access log, which never holds request headers).
 - In the web app, open the App, then a release, to read its events and build
@@ -3056,7 +3056,7 @@ kortix apps access crm --mode project
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.
 
-[Kortix UI](/docs/#kortix-ui) (`@kortix/ui`) is the component library for App UIs.
+[Kortix UI](/docs/developers#kortix-ui) (`@kortix/ui`) is the component library for App UIs.
 Install it from npm with `npm i @kortix/ui @kortix/sdk`, the same version of
 each. Never copy component source into the App.
 
@@ -3132,8 +3132,8 @@ for (;;) {
 React hooks in `@kortix/sdk/react`:
 `useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
-types: [SDK reference](/docs/#the-project-handle) and
-[React hooks](/docs/#react-hooks).
+types: [SDK reference](/docs/developers#the-project-handle) and
+[React hooks](/docs/developers#react-hooks).
 
 ### Permissions and CLI reference
 
@@ -3178,7 +3178,7 @@ Account owners and admins act as Managers on every project. See
 | `kortix apps auth-env <app>` | The `KORTIX_AUTH_*` values as dotenv lines |
 | `kortix apps delete <app> --yes` (`rm`, `remove`) | Delete the App. `--deployment <vN>` deletes one release. |
 
-The whole CLI: [CLI](/docs/#cli). Every route: the REST reference at
+The whole CLI: [CLI](/docs/developers#cli). Every route: the REST reference at
 `https://api.kortix.com/v1/docs`.
 
 ## Self-hosting
@@ -3231,7 +3231,7 @@ Run `kortix self-host doctor` and fix every failing check. See [Secure the insta
 Off the box:
 
 - **Sandboxes.** Every session runs in its own Platinum sandbox. `kortix-api` creates it with `PLATINUM_API_KEY`. The sandbox calls back to the instance's public API URL, `KORTIX_URL`.
-- **What a session keeps.** `/workspace` holds this session's files, kept for the life of the session. `/drives` (Drive) holds your files and the company's files, shared across sessions and kept until deleted. Anything else (home directory, `/tmp`, installed packages) can be gone when the session reopens. Put tools in a [sandbox template](/docs/#sandbox-templates).
+- **What a session keeps.** `/workspace` holds this session's files, kept for the life of the session. `/drives` (Drive) holds your files and the company's files, shared across sessions and kept until deleted. Anything else (home directory, `/tmp`, installed packages) can be gone when the session reopens. Put tools in a [sandbox template](/docs/developers#sandbox-templates).
 - **Drive and App volumes.** Each Drive and each App volume is a Platinum volume. Its data is at Platinum, not on the server.
 - **Images.** `kortix/kortix-frontend`, `kortix/kortix-api` and `kortix/kortix-gateway` on Docker Hub. Pulls need no credentials.
 - **Model providers.** The gateway calls the providers your projects connect.
@@ -3253,7 +3253,7 @@ Domain mode is the production setup. Tunnel mode is for evaluation on your own m
 - **Ports 80 and 443** open inbound.
 - **Wildcard records** for the optional origins:
   - `*.p.<domain>` for sandbox previews. Use it on every public instance: without it, browser previews fall back to a path proxy that breaks root-absolute links, and `doctor` fails.
-  - `*.<apps base domain>`, for example `*.apps.<domain>`, to host [Apps](/docs/#apps-reference).
+  - `*.<apps base domain>`, for example `*.apps.<domain>`, to host [Apps](/docs/developers#apps-reference).
 - **A Platinum API key** (`PLATINUM_API_KEY`). Without it, sessions do not start and projects have no Drive.
 - **A model provider key.** You add it in the web app after the first sign-in.
 
@@ -3324,7 +3324,7 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 ### First sign-in and setup
 
 1. **Sign up as the admin.** Open `https://<domain>` and sign up with an address in `KORTIX_PLATFORM_ADMIN_EMAILS`. A password, email-code or social sign-in matches that list. A SAML sign-in never does. To change the admins later, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com`. The value replaces the list.
-2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/#git).
+2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/developers#git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
 5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. A project can connect **Platinum** as its provider with a Platinum API key. See [Connect your own provider](/docs/#models).
@@ -3532,7 +3532,7 @@ People see the effect of these values in [Computers](/docs/#computers).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KORTIX_APPS_BASE_DOMAIN` | none | The domain [Apps](/docs/#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
+| `KORTIX_APPS_BASE_DOMAIN` | none | The domain [Apps](/docs/developers#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
 | `KORTIX_APPS_RETAINED_DEPLOYMENTS` | `5` | The ready releases each App keeps as rollback targets, beside the live one. At least `1`. |
 
 #### Logs, containers and the database console
@@ -3591,7 +3591,7 @@ done
 kortix self-host start
 ```
 
-Replace `default` with your instance name. App volumes keep their own daily snapshots: see [Volumes and snapshots](/docs/#volumes-and-snapshots).
+Replace `default` with your instance name. App volumes keep their own daily snapshots: see [Volumes and snapshots](/docs/developers#volumes-and-snapshots).
 
 To restore on a server with Docker and the CLI, put the files from the backup in your home directory and run:
 
@@ -3663,15 +3663,15 @@ Every subcommand takes `--instance <name>` (default `default`).
 
 | Entry point | Runs in | Depends on | Use it when |
 | --- | --- | --- | --- |
-| [`@kortix/sdk`](/docs/#sessions-from-code) | Both | A global `fetch` | You call the API from any runtime: Node 18 or later, Bun, a browser, an edge worker. It holds the client and every framework-free module. |
-| [`@kortix/sdk/server`](/docs/#sdk-authentication) | Server | `node:async_hooks` | One server acts for many users, signs people in with Kortix, or reads the viewer of a Kortix App. Never bundle it for a browser. |
-| [`@kortix/sdk/react`](/docs/#react) | Browser | `react` 18 or later, `@tanstack/react-query` 5.75.2 or a later 5.x | You run a session in a React or React Native app. `useSession` owns the whole session. |
-| [`@kortix/sdk/genui/fence`](/docs/#generative-ui) | Both | Nothing | You only detect and split `openui` blocks in agent text. It loads no parser. |
-| [`@kortix/sdk/genui`](/docs/#generative-ui) | Both | `zod`, `@openuidev/lang-core` 0.3.1 | You parse blocks, or turn them into Markdown for a CLI, email or bot. |
-| [`@kortix/sdk/genui/react`](/docs/#generative-ui) | Browser | `react`, `zod`, `@openuidev/lang-core` 0.3.1 | You render blocks with your own React components. |
-| [`@kortix/ui`](/docs/#kortix-ui) | Browser | `@kortix/sdk`, `react` 19 or later, `react-dom` 19 or later, `@tanstack/react-query` | You want the Kortix session chat and components without building them. |
+| [`@kortix/sdk`](/docs/developers#sessions-from-code) | Both | A global `fetch` | You call the API from any runtime: Node 18 or later, Bun, a browser, an edge worker. It holds the client and every framework-free module. |
+| [`@kortix/sdk/server`](/docs/developers#sdk-authentication) | Server | `node:async_hooks` | One server acts for many users, signs people in with Kortix, or reads the viewer of a Kortix App. Never bundle it for a browser. |
+| [`@kortix/sdk/react`](/docs/developers#react) | Browser | `react` 18 or later, `@tanstack/react-query` 5.75.2 or a later 5.x | You run a session in a React or React Native app. `useSession` owns the whole session. |
+| [`@kortix/sdk/genui/fence`](/docs/developers#generative-ui) | Both | Nothing | You only detect and split `openui` blocks in agent text. It loads no parser. |
+| [`@kortix/sdk/genui`](/docs/developers#generative-ui) | Both | `zod`, `@openuidev/lang-core` 0.3.1 | You parse blocks, or turn them into Markdown for a CLI, email or bot. |
+| [`@kortix/sdk/genui/react`](/docs/developers#generative-ui) | Browser | `react`, `zod`, `@openuidev/lang-core` 0.3.1 | You render blocks with your own React components. |
+| [`@kortix/ui`](/docs/developers#kortix-ui) | Browser | `@kortix/sdk`, `react` 19 or later, `react-dom` 19 or later, `@tanstack/react-query` | You want the Kortix session chat and components without building them. |
 
-Every task guide is in a later H2: [SDK authentication](/docs/#sdk-authentication), [Sessions from code](/docs/#sessions-from-code), [Projects from code](/docs/#projects-from-code), [React](/docs/#react), [Generative UI](/docs/#generative-ui), [Kortix UI](/docs/#kortix-ui). Exact signatures are in the [SDK reference](/docs/#sdk-reference).
+Every task guide is in a later H2: [SDK authentication](/docs/developers#sdk-authentication), [Sessions from code](/docs/developers#sessions-from-code), [Projects from code](/docs/developers#projects-from-code), [React](/docs/developers#react), [Generative UI](/docs/developers#generative-ui), [Kortix UI](/docs/developers#kortix-ui). Exact signatures are in the [SDK reference](/docs/developers#sdk-reference).
 
 ### Install
 
@@ -3685,7 +3685,7 @@ The package is ESM only. Add the optional peers of the layers you use:
 | --- | --- |
 | `@kortix/sdk/react` | `npm install react @tanstack/react-query` |
 | `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | `npm install zod @openuidev/lang-core@0.3.1` |
-| `@kortix/ui` | `npm install @kortix/ui`, at the same version as `@kortix/sdk`. See [Kortix UI](/docs/#kortix-ui). |
+| `@kortix/ui` | `npm install @kortix/ui`, at the same version as `@kortix/sdk`. See [Kortix UI](/docs/developers#kortix-ui). |
 
 A page with no build step loads the browser bundle. It defines the global `Kortix` with the same names as the root entry point, for example `Kortix.createKortix` and `Kortix.narrowChatEvent`:
 
@@ -3695,7 +3695,7 @@ A page with no build step loads the browser bundle. It defines the global `Korti
 
 Replace `<version>` with a published version. The package also ships an ES module bundle at `dist/kortix.esm.min.js`. Load the global bundle or the ESM build on one page, never both. With both, the page has two `ApiError` classes and `instanceof ApiError` fails.
 
-A browser calls the Kortix API directly only from an origin the API allows. Kortix Cloud allows its own origins. From your own site, send browser calls through your server, for example the same-origin proxy of [Sign in with Kortix](/docs/#sign-in-with-kortix). A self-hosted instance adds origins with the API's `CORS_ALLOWED_ORIGINS` setting.
+A browser calls the Kortix API directly only from an origin the API allows. Kortix Cloud allows its own origins. From your own site, send browser calls through your server, for example the same-origin proxy of [Sign in with Kortix](/docs/developers#sign-in-with-kortix). A self-hosted instance adds origins with the API's `CORS_ALLOWED_ORIGINS` setting.
 
 ### Create the client
 
@@ -3713,7 +3713,7 @@ export const kortix = createKortix({
 | Option | Type | What it does |
 | --- | --- | --- |
 | `backendUrl` | `string`, required | The API base URL, including `/v1`. Kortix Cloud is `https://api.kortix.com/v1`. A self-hosted instance is its API origin plus `/v1`. |
-| `getToken` | `() => Promise<string \| null>`, required | Returns the credential, or `null` when no one is signed in. The SDK calls it on every request and stores nothing. Your host owns storage and refresh. A getter that caches can carry `invalidate(rejectedToken)`: the SDK calls it on a `401` before its one replay. See [SDK authentication](/docs/#sdk-authentication). |
+| `getToken` | `() => Promise<string \| null>`, required | Returns the credential, or `null` when no one is signed in. The SDK calls it on every request and stores nothing. Your host owns storage and refresh. A getter that caches can carry `invalidate(rejectedToken)`: the SDK calls it on a `401` before its one replay. See [SDK authentication](/docs/developers#sdk-authentication). |
 | `credentialHeader` | `string` | Sends the token raw in this header instead of `Authorization: Bearer`. For a proxy that reads a custom header. |
 | `clientVersion` | `string` | Your surface and version as `<surface>/<version>`, for example `my-app/1.2.0`. The SDK sends it as `X-Kortix-Client-Version`. The API writes it to the request log only. It grants nothing. |
 | `fetch` | fetch-shaped function | A fetch implementation for tests, edge runtimes and adapters. Default: the global `fetch`. |
@@ -3728,10 +3728,10 @@ export const kortix = createKortix({
 | `onNotify` | `(event: { kind, sessionId, ... }) => void` | An OS or web notification sink. Your host renders it. The React layer sends turn-end notices here. |
 
 <Callout type="warning">
-The client holds one configuration for the whole process. A second `createKortix()` call with a different `backendUrl` or `getToken` re-points every earlier client and logs one console warning. A server that acts for many users at the same time creates one client per request with `createScopedKortix()` from `@kortix/sdk/server`. See [Serve many users from one backend](/docs/#serve-many-users-from-one-backend).
+The client holds one configuration for the whole process. A second `createKortix()` call with a different `backendUrl` or `getToken` re-points every earlier client and logs one console warning. A server that acts for many users at the same time creates one client per request with `createScopedKortix()` from `@kortix/sdk/server`. See [Serve many users from one backend](/docs/developers#serve-many-users-from-one-backend).
 </Callout>
 
-The client's handles (`kortix.projects`, `kortix.project(projectId)`, `kortix.session(projectId, sessionId)`, `kortix.auth`, `kortix.accounts` and more) are listed in the [SDK reference](/docs/#sdk-reference). `kortix.validateToken()` checks the token `getToken` returns now and resolves `{ valid, identity?, error? }`. It never throws.
+The client's handles (`kortix.projects`, `kortix.project(projectId)`, `kortix.session(projectId, sessionId)`, `kortix.auth`, `kortix.accounts` and more) are listed in the [SDK reference](/docs/developers#sdk-reference). `kortix.validateToken()` checks the token `getToken` returns now and resolves `{ valid, identity?, error? }`. It never throws.
 
 ### Get an API key
 
@@ -3744,7 +3744,7 @@ kortix tokens new my-script --expires 90d
 Kortix shows the key once. Store it as a secret and return it from `getToken`. Unattended automation that acts for no single person uses a service account key (`kortix_sa_`, **Account settings → API keys**).
 
 <Callout type="warning">
-A personal access key acts as you. Keep it on a server. Never put it in a browser bundle, a mobile app or a public repository. A browser app signs people in with [Sign in with Kortix](/docs/#sign-in-with-kortix) instead. Every credential and where it runs: [Choose a credential](/docs/#choose-a-credential).
+A personal access key acts as you. Keep it on a server. Never put it in a browser bundle, a mobile app or a public repository. A browser app signs people in with [Sign in with Kortix](/docs/developers#sign-in-with-kortix) instead. Every credential and where it runs: [Choose a credential](/docs/developers#choose-a-credential).
 </Callout>
 
 ### Your first session
@@ -3804,7 +3804,7 @@ What each step does:
 5. `narrowChatEvent()` reduces raw runtime events to the chat events. Each `message.part.updated` event carries the whole part, so the map keeps the latest text of each part.
 6. The turn ends on `session.idle` for `runtimeSessionId`, after an assistant message exists. `session.error` ends it with an error.
 
-Each run creates a new session, and the session appears in the web app with the same transcript. Answers to questions and permission requests, files, errors and retries are in [Sessions from code](/docs/#sessions-from-code).
+Each run creates a new session, and the session appears in the web app with the same transcript. Answers to questions and permission requests, files, errors and retries are in [Sessions from code](/docs/developers#sessions-from-code).
 
 ### Versions and stability
 
@@ -3812,8 +3812,8 @@ Each run creates a new session, and the session appears in the web app with the 
 - These entry points follow semver: `@kortix/sdk`, `/react`, `/server`, `/genui`, `/genui/fence`, `/genui/react`, `/wire-message-id`, `/workspace-search` and `/capture-rules`.
 - Exported names, types included, are the public contract. A renamed export keeps a `@deprecated` alias until the next major version.
 - `@kortix/sdk/internal/*` serves the Kortix web app and has no semver. It can change in any release.
-- Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/#sdk-reference).
-- A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/#gate-on-runtime-capabilities).
+- Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/developers#sdk-reference).
+- A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
 - Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/suna/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/suna/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
 
 ## SDK authentication
@@ -3822,7 +3822,7 @@ Every SDK request carries one bearer credential. `createKortix` gets it from you
 `getToken` function. `backendUrl` names the API that receives it. This section
 lists every source of those two values. Pick a row in the matrix, then read its
 subsection. The client options themselves are in
-[Create the client](/docs/#sdk).
+[Create the client](/docs/developers#sdk).
 
 On Kortix Cloud, `backendUrl` is `https://api.kortix.com/v1`. On a self-hosted
 instance, it is `<your API origin>/v1`.
@@ -4137,7 +4137,7 @@ Register the app first. The fields are in
     The browser sends the placeholder bearer `kortix-session`
     (`KORTIX_SESSION_SENTINEL`). The `/proxy` route replaces it with the
     person's token on your server. Every SDK call works through it, including
-    [`useSession`](/docs/#react).
+    [`useSession`](/docs/developers#react).
   </Step>
 </Steps>
 
@@ -4394,7 +4394,7 @@ The token route answers `403 app_not_linked` for an App not in `uses` and
 `403 agent_viewer` for an agent session. A binding to a static App answers
 `409 app_binding_unsupported`. `kortixToken` yields `null` for every refusal
 and logs one console warning for `app_not_linked`. The issuer, key
-set and audience values are in [Apps reference](/docs/#apps-reference).
+set and audience values are in [Apps reference](/docs/developers#apps-reference).
 
 ### Serve many users from one backend
 
@@ -4424,7 +4424,7 @@ export async function GET(request: Request) {
 A scoped client's top-level `kortix.runtime()` throws, because it would resolve
 another request's sandbox. Work with a session through its handle,
 `kortix.session(projectId, sessionId)`, and its verbs in
-[Sessions from code](/docs/#sessions-from-code).
+[Sessions from code](/docs/developers#sessions-from-code).
 
 **One scope per request.** `runWithKortix(config, fn)` sets the config for
 everything `fn` awaits, including calls on a client made with `createKortix`.
@@ -4473,13 +4473,13 @@ Point the browser client at the route with any non-null placeholder token:
 The key stays on the server.
 
 To start sessions for your users with secrets, connector bindings and an
-`Idempotency-Key`, see [Sessions from code](/docs/#sessions-from-code).
+`Idempotency-Key`, see [Sessions from code](/docs/developers#sessions-from-code).
 
 ## Sessions from code
 
 A session is one agent run in its own sandbox, on its own git branch. This section drives a session from TypeScript with the framework-free `@kortix/sdk` root entry point. The steps are in lifecycle order: create, wait until ready, send, stream, get the reply, answer, gate on capabilities, control, files, and start sessions for your users. The one error catalog of the SDK is at the end.
 
-Every sample uses the client from [SDK](/docs/#sdk). A React app uses `useSession` instead of these calls. See [React](/docs/#react).
+Every sample uses the client from [SDK](/docs/developers#sdk). A React app uses `useSession` instead of these calls. See [React](/docs/developers#react).
 
 ### The session handle
 
@@ -4542,7 +4542,7 @@ const { items, next_cursor } = await project.sessions.listPage({ labels: ['triag
 - `name: null` or `name: ''` returns the session to the automatic title.
 - `listPage({ labels })` returns only sessions that carry every label. Pass `next_cursor` back as `cursor` for the next page. `list()` returns one page as a bare array.
 
-The full `listPage` options are in [SDK reference](/docs/#sdk-reference).
+The full `listPage` options are in [SDK reference](/docs/developers#sdk-reference).
 
 ### Wait until ready
 
@@ -4715,7 +4715,7 @@ The SDK keeps the connection alive:
 
 #### Raw streams and React Native
 
-`openEventStream({ url: runtimeUrl, onEvent })` is the primitive under `stream()`. Two calls for one runtime URL share one connection. Its options (`onParked`, `onConnectionChange`, the timeouts and the failure limit) are in [SDK reference > Event stream](/docs/#event-stream).
+`openEventStream({ url: runtimeUrl, onEvent })` is the primitive under `stream()`. Two calls for one runtime URL share one connection. Its options (`onParked`, `onConnectionChange`, the timeouts and the failure limit) are in [SDK reference > Event stream](/docs/developers#event-stream).
 
 A host whose `fetch` cannot stream a response body, such as React Native, passes its own transport in `createKortix`. The SDK keeps reconnect, resume, backoff and the keepalive check:
 
@@ -4775,7 +4775,7 @@ const text = (turn?.parts ?? [])
 
 - `classifyTurn(message)` returns `{ parts, error, isEmpty }`. Each part has a `kind`: `text`, `reasoning`, `tool`, `file` and more. `error` is the turn's normalized error.
 - `s.turn()` answers without the stream: `turns` (empty when idle), `last_ended`, `recent_failures` and `can_stop`. Poll it when you cannot hold a stream open.
-- An agent reply can hold generative UI blocks (`openui` fences). For plain text, pass the text through `genuiToMarkdown(text)` from `@kortix/sdk/genui`. See [Generative UI](/docs/#generative-ui).
+- An agent reply can hold generative UI blocks (`openui` fences). For plain text, pass the text through `genuiToMarkdown(text)` from `@kortix/sdk/genui`. See [Generative UI](/docs/developers#generative-ui).
 
 Read the conversation:
 
@@ -4865,7 +4865,7 @@ const { applied_live, push_failed } = await s.changeModel('glm-5.3-flash');
 
 A refused `restore()` throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. A refused `recover()` throws `session_not_lost`, `session_transcript_missing`, `session_sandbox_removal_pending` or `session_log_restore_off`.
 
-Sharing, public links and reminders are in [SDK reference](/docs/#sdk-reference).
+Sharing, public links and reminders are in [SDK reference](/docs/developers#sdk-reference).
 
 ### Files and previews
 
@@ -4902,7 +4902,7 @@ See [Computers](/docs/#computers) for ports and previews.
 Your server holds one Kortix credential and starts sessions for its own customers. Your customers never sign in to Kortix.
 
 1. Use a personal access key (`kortix_pat_…`, acts as you) or a service account key (`kortix_sa_…`, acts as itself and needs a project role first). See [Security](/docs/#security).
-2. Create the client with `createScopedKortix` from `@kortix/sdk/server`. It never writes the process-global config, so one request never reads the config of another. See [SDK authentication](/docs/#sdk-authentication).
+2. Create the client with `createScopedKortix` from `@kortix/sdk/server`. It never writes the process-global config, so one request never reads the config of another. See [SDK authentication](/docs/developers#sdk-authentication).
 
 ```ts
 import { createScopedKortix } from '@kortix/sdk/server';
@@ -5103,8 +5103,8 @@ Helpers that classify an error:
 - `code` is the API's error code, or the status as a string.
 - An aborted request has `name: 'AbortError'` and `code: 'ABORTED'`. It is not a failure.
 - The default timeout is `30000` ms per request. A request past its timeout has `code: 'TIMEOUT'`.
-- A `401` is sent once more after `getToken()` runs again. See [SDK authentication](/docs/#sdk-authentication).
-- Sign-in calls reject with `HeadlessAuthError`. See [SDK authentication](/docs/#sdk-authentication).
+- A `401` is sent once more after `getToken()` runs again. See [SDK authentication](/docs/developers#sdk-authentication).
+- Sign-in calls reject with `HeadlessAuthError`. See [SDK authentication](/docs/developers#sdk-authentication).
 
 The SDK retries some requests before your code sees an error:
 
@@ -5118,9 +5118,9 @@ A session create is a `POST`. To make it retry-safe, see [Retry a create safely]
 
 ## Projects from code
 
-A project owns its repository, connectors, secrets, triggers and Apps. Sessions run inside it. This section shows one call for each project-level job. Every method is on the project handle, `kortix.project(projectId)`. Creating the handle sends no request. The full method tables are in [SDK reference > The project handle](/docs/#sdk-reference).
+A project owns its repository, connectors, secrets, triggers and Apps. Sessions run inside it. This section shows one call for each project-level job. Every method is on the project handle, `kortix.project(projectId)`. Creating the handle sends no request. The full method tables are in [SDK reference > The project handle](/docs/developers#sdk-reference).
 
-Each sample assumes one client, made as in [Create the client](/docs/#sdk):
+Each sample assumes one client, made as in [Create the client](/docs/developers#sdk):
 
 ```ts
 import { createKortix } from '@kortix/sdk';
@@ -5264,7 +5264,7 @@ function Inbox({ projectId }: { projectId: string }) {
 | `enabled` | `false` keeps the query idle. A `null` `projectId` also keeps it idle. |
 | `staleTime` | Default 30,000 ms. |
 
-The hook retries only an upstream `429` or `503`, 2 times, after `Retry-After`. A window focus never refetches. Pair a `connector_not_connected` error with `useConnectorSetup` to render a connect button. In a Kortix App, the client reads as the viewer: see [Know the viewer in a Kortix App](/docs/#sdk-authentication).
+The hook retries only an upstream `429` or `503`, 2 times, after `Retry-After`. A window focus never refetches. Pair a `connector_not_connected` error with `useConnectorSetup` to render a connect button. In a Kortix App, the client reads as the viewer: see [Know the viewer in a Kortix App](/docs/developers#sdk-authentication).
 
 #### Manage connectors and policies
 
@@ -5383,7 +5383,7 @@ for (const approval of approvals) {
 await p.approvals.resolve('<execution_id>', 'deny', { note: 'Send it to the ops list only.' });
 ```
 
-The `executionId` of a held call from code is `ConnectorApprovalPendingError.executionId`. After approval, repeat the identical `run`. `p.approvals.sessionsNeedingInput()` returns `{ total, sessions }`: the count of held calls per session. The Review inbox (`p.review.*`) is in [SDK reference > The project handle](/docs/#sdk-reference).
+The `executionId` of a held call from code is `ConnectorApprovalPendingError.executionId`. After approval, repeat the identical `run`. `p.approvals.sessionsNeedingInput()` returns `{ total, sessions }`: the count of held calls per session. The Review inbox (`p.review.*`) is in [SDK reference > The project handle](/docs/developers#sdk-reference).
 
 ### Deploy and operate Apps
 
@@ -5460,11 +5460,11 @@ const result = await p.apps.exec(app.app_id, { command: ['sh', '-c', 'uptime'] }
 console.log(result.exit_code, result.stdout);
 ```
 
-Machines, volumes, access, App tokens and `authEnv` are in [SDK reference > The project handle](/docs/#sdk-reference). App configuration in `kortix.yaml` is in [Apps reference](/docs/#apps-reference).
+Machines, volumes, access, App tokens and `authEnv` are in [SDK reference > The project handle](/docs/developers#sdk-reference). App configuration in `kortix.yaml` is in [Apps reference](/docs/developers#apps-reference).
 
 ### Files, git and change requests
 
-These calls read and write the project repository. To work with the files of a running session, use `s.files` from [Sessions from code](/docs/#sessions-from-code).
+These calls read and write the project repository. To work with the files of a running session, use `s.files` from [Sessions from code](/docs/developers#sessions-from-code).
 
 | Call | What it does |
 | --- | --- |
@@ -5496,13 +5496,13 @@ const { change_requests } = await p.changeRequests.list('open', { limit: 20 });
 for (const cr of change_requests) console.log(cr.number, cr.title, cr.head_ref);
 ```
 
-How sessions create branches and change requests is in [Git](/docs/#git).
+How sessions create branches and change requests is in [Git](/docs/developers#git).
 
 ## React
 
-`@kortix/sdk/react` is the React layer of the SDK. One hook, `useSession`, owns one session view: start, stream, transcript, prompts and replies. The layer reads the client you create in [SDK > Create the client](/docs/#create-the-client) and adds no second client. It runs in React and React Native.
+`@kortix/sdk/react` is the React layer of the SDK. One hook, `useSession`, owns one session view: start, stream, transcript, prompts and replies. The layer reads the client you create in [SDK > Create the client](/docs/developers#create-the-client) and adds no second client. It runs in React and React Native.
 
-This section covers one session view, from setup to drawing every message yourself. The full hooks catalog for accounts, projects, triggers, Apps and access checks is in [SDK reference](/docs/#sdk-reference). The prebuilt components are in [Kortix UI](/docs/#kortix-ui).
+This section covers one session view, from setup to drawing every message yourself. The full hooks catalog for accounts, projects, triggers, Apps and access checks is in [SDK reference](/docs/developers#sdk-reference). The prebuilt components are in [Kortix UI](/docs/developers#kortix-ui).
 
 ### Set up
 
@@ -5529,7 +5529,7 @@ export const kortix = createKortix({
 declare function readSessionToken(): Promise<string | null>;
 ```
 
-The options and the "one client per host" rule are in [Create the client](/docs/#create-the-client). The sources of `getToken` are in [SDK authentication](/docs/#sdk-authentication).
+The options and the "one client per host" rule are in [Create the client](/docs/developers#create-the-client). The sources of `getToken` are in [SDK authentication](/docs/developers#sdk-authentication).
 </Step>
 <Step title="Mount QueryClientProvider">
 `useSession`, the prompt hooks and most data hooks are React Query hooks. They throw without a `QueryClientProvider`. Keep one `QueryClient` per host.
@@ -5661,7 +5661,7 @@ A sub-agent's saved history: `useSessionSync(childRuntimeSessionId, { kortixSess
 | `rejectQuestion(id)` | Rejects an open question. |
 | `answerPermission(id, reply, message?)` | Answers a tool approval. `reply` is `'once'`, `'always'` or `'reject'`. |
 
-The three reply actions remove the item only after the server accepts the reply. On failure they throw a `KortixSendError`, and the item stays open. `answerQuestion`, `rejectQuestion` and `answerPermission` are also exported from `@kortix/sdk/react` as plain functions. Hide gated actions with [`useRuntimeSupports`](/docs/#gate-controls-by-capability). `removeQuestion` and `removePermission` are deprecated: they never reach the agent, so the run stays blocked.
+The three reply actions remove the item only after the server accepts the reply. On failure they throw a `KortixSendError`, and the item stays open. `answerQuestion`, `rejectQuestion` and `answerPermission` are also exported from `@kortix/sdk/react` as plain functions. Hide gated actions with [`useRuntimeSupports`](/docs/developers#gate-controls-by-capability). `removeQuestion` and `removePermission` are deprecated: they never reach the agent, so the run stays blocked.
 
 #### Options
 
@@ -5672,7 +5672,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |
 | `replayStartStash` | `true` | Sends the first prompt that a "new session" screen saved, once the session is ready and empty. Set `false` when your host hands off the first message itself. |
 | `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, `questions` and `permissions` stay live, and `replayStartStash` is off. |
-| `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. See [Render messages yourself](/docs/#render-messages-yourself). |
+| `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. See [Render messages yourself](/docs/developers#render-messages-yourself). |
 | `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and fills `presenceAwake`. The sandbox stops the idle window (15 minutes by default) after its latest turn, with the page open or not. |
 | `presenceAlerts` | `false` | `true` tells the server that this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the tab's browser notifications are on and permitted. Needs `browserPresence`. |
 | `presencePageExit` | `false` | Ends the presence lease when the page closes. With `false`, the lease ends at its 90-second expiry. Needs `browserPresence`. |
@@ -5739,7 +5739,7 @@ async function approve(session: UseSessionResult, permissionId: string, report: 
 
 `edit`, `remove` and `interrupt` throw a `409` for a row that is already on its way to the runtime.
 
-`enqueue` takes `delivery` (`steer`, `queue` or `interrupt`), and an optional `placement`. The delivery modes are in [Sessions from code > Send prompts](/docs/#send-prompts). `placement` sets only where the pending row shows: `transcript` in the message list, implied by `interrupt`, or `composer` in the list above the input, implied by `steer` and `queue`.
+`enqueue` takes `delivery` (`steer`, `queue` or `interrupt`), and an optional `placement`. The delivery modes are in [Sessions from code > Send prompts](/docs/developers#send-prompts). `placement` sets only where the pending row shows: `transcript` in the message list, implied by `interrupt`, or `composer` in the list above the input, implied by `steer` and `queue`.
 
 #### useSessionWorking
 
@@ -5807,11 +5807,11 @@ function RewindButton({ session, messageId }: { session: UseSessionResult; messa
 }
 ```
 
-The hook returns `true` until the runtime first answers, and for a runtime that lists no `session.*` capability. The capability list, what pi serves, and the framework-free `runtimeSupports(caps, name)` are in [Sessions from code > Gate on runtime capabilities](/docs/#gate-on-runtime-capabilities).
+The hook returns `true` until the runtime first answers, and for a runtime that lists no `session.*` capability. The capability list, what pi serves, and the framework-free `runtimeSupports(caps, name)` are in [Sessions from code > Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
 
 ### Render messages yourself
 
-Start with `SessionThread` from `@kortix/ui/session`. It renders the whole chat from one `useSession` result: the transcript, tool calls, [Generative UI](/docs/#generative-ui) blocks, pending prompts, the send error and the composer. Setup, styles, props and tool-row overrides are in [Kortix UI > Add a session](/docs/#add-a-session). Use the headless kit below only when you draw every part with your own components.
+Start with `SessionThread` from `@kortix/ui/session`. It renders the whole chat from one `useSession` result: the transcript, tool calls, [Generative UI](/docs/developers#generative-ui) blocks, pending prompts, the send error and the composer. Setup, styles, props and tool-row overrides are in [Kortix UI > Add a session](/docs/developers#add-a-session). Use the headless kit below only when you draw every part with your own components.
 
 #### Keep the view still while a turn streams
 
@@ -5971,11 +5971,11 @@ Read a `ToolCallBlock` with these functions:
 | `subAgentCalls(thread)` | The tool calls a sub-agent row lists, in order. |
 | `toolCallBlock(part)` | The `ToolCallBlock` of a tool part from `useSessionMessages`. |
 
-A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`. The segment, burst, cost, restore and full-text helpers over blocks (`sessionLogTurnSegments`, `sessionLogBurstSteps`, `sessionLogThreadMetrics` and others) are in [SDK reference > Session log helpers](/docs/#session-log-helpers).
+A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`. The segment, burst, cost, restore and full-text helpers over blocks (`sessionLogTurnSegments`, `sessionLogBurstSteps`, `sessionLogThreadMetrics` and others) are in [SDK reference > Session log helpers](/docs/developers#session-log-helpers).
 
 #### Next: rich blocks
 
-An agent reply can hold `openui` blocks: charts, tables, forms and other components inside a text part. `SessionThread` renders them. A custom renderer finds and renders them with `@kortix/sdk/genui/react`, or turns them into plain Markdown with `genuiToMarkdown` from `@kortix/sdk/genui`. See [Generative UI](/docs/#generative-ui).
+An agent reply can hold `openui` blocks: charts, tables, forms and other components inside a text part. `SessionThread` renders them. A custom renderer finds and renders them with `@kortix/sdk/genui/react`, or turns them into plain Markdown with `genuiToMarkdown` from `@kortix/sdk/genui`. See [Generative UI](/docs/developers#generative-ui).
 
 ### Fast opens and offline
 
@@ -6068,7 +6068,7 @@ export async function onIdentityChange(queryClient: QueryClient, device: DeviceC
 
 ## Generative UI
 
-`SessionThread` renders generative UI blocks with no code, and `UnifiedMarkdown` renders them when you pass `genui`. Both come from [Kortix UI](/docs/#kortix-ui). This section is for hosts that render blocks themselves: a custom web renderer, a native app, or a text channel such as a CLI, email or a bot.
+`SessionThread` renders generative UI blocks with no code, and `UnifiedMarkdown` renders them when you pass `genui`. Both come from [Kortix UI](/docs/developers#kortix-ui). This section is for hosts that render blocks themselves: a custom web renderer, a native app, or a text channel such as a CLI, email or a bot.
 
 ### What a block is
 
@@ -6101,7 +6101,7 @@ Generative UI is the `genui` project flag. It is on by default. The API setting 
 
 - Flag on: a new session lists `kortix-genui` by name and a one-line description. The agent loads the full catalog only when an answer needs a block. A turn without blocks does not load the catalog.
 - Flag off: the skill is hidden and the agent writes markdown only. Blocks already in a transcript still render.
-- An agent sees the skill only when its `skills` grant in `kortix.yaml` is `all` or names `kortix-genui`. The default grant is `none`. The starter agents grant `all`. See [kortix.yaml reference](/docs/#kortixyaml-reference).
+- An agent sees the skill only when its `skills` grant in `kortix.yaml` is `all` or names `kortix-genui`. The default grant is `none`. The starter agents grant `all`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 Set the flag from code with `updateFeatureFlag`:
 
@@ -6110,7 +6110,7 @@ await kortix.project(projectId).updateFeatureFlag('genui', false); // off
 await kortix.project(projectId).updateFeatureFlag('genui', null);  // back to the default
 ```
 
-The caller needs `project.settings.write`. A running session keeps its skill list until a new session starts. The full method is in [SDK reference](/docs/#sdk-reference).
+The caller needs `project.settings.write`. A running session keeps its skill list until a new session starts. The full method is in [SDK reference](/docs/developers#sdk-reference).
 
 The viewer has a separate switch. Pass `enabled={false}` to `GenuiBlock` and the block renders as markdown.
 
@@ -6290,7 +6290,7 @@ import { genuiToMarkdown } from '@kortix/sdk/genui';
 const markdown = genuiToMarkdown(replyText);
 ```
 
-The Kortix CLI prints session replies this way. Treat the output as untrusted markdown and render it through the same sanitizer as prose. To get the reply text of a session, see [Sessions from code](/docs/#sessions-from-code).
+The Kortix CLI prints session replies this way. Treat the output as untrusted markdown and render it through the same sanitizer as prose. To get the reply text of a session, see [Sessions from code](/docs/developers#sessions-from-code).
 
 ### Teach another model the format
 
@@ -6347,9 +6347,9 @@ An older SDK does not know a block added later. It drops that node with `unknown
 
 ## Kortix UI
 
-`@kortix/ui` is the React component library of the Kortix web app. It builds on [`@kortix/sdk/react`](/docs/#react) and `@kortix/sdk/genui/react`. It ships the primitives (buttons, forms, overlays) and the whole session experience as modules: the session workspace, the thread, the composer, files, the terminal, the project home and the session list. Kortix Apps, white-label hosts and your own app render the same components.
+`@kortix/ui` is the React component library of the Kortix web app. It builds on [`@kortix/sdk/react`](/docs/developers#react) and `@kortix/sdk/genui/react`. It ships the primitives (buttons, forms, overlays) and the whole session experience as modules: the session workspace, the thread, the composer, files, the terminal, the project home and the session list. Kortix Apps, white-label hosts and your own app render the same components.
 
-The components read the one client you created in [Create the client](/docs/#create-the-client). `@kortix/ui` adds no second client and no second setup. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with tokens, never by copying a component.
+The components read the one client you created in [Create the client](/docs/developers#create-the-client). `@kortix/ui` adds no second client and no second setup. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with tokens, never by copying a component.
 
 ### Install and peers
 
@@ -6357,13 +6357,13 @@ The components read the one client you created in [Create the client](/docs/#cre
 npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10 react@19 react-dom@19
 ```
 
-Install the same release version of `@kortix/ui` and `@kortix/sdk`. Version rules are in [Versions and stability](/docs/#versions-and-stability). The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](/docs/#modules)) ship from 0.14.4; 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
+Install the same release version of `@kortix/ui` and `@kortix/sdk`. Version rules are in [Versions and stability](/docs/developers#versions-and-stability). The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](/docs/developers#modules)) ship from 0.14.4; 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
 
 | Peer | Required for |
 | --- | --- |
 | `react` >= 19, `react-dom` >= 19 | Every entry. |
-| `@kortix/sdk`, `@tanstack/react-query` 5 | `@kortix/ui/session`, `@kortix/ui/workspace` and every other entry that renders project or session data. Mount one `QueryClientProvider` ([Set up](/docs/#set-up)). |
-| `@openuidev/lang-core@0.3.1`, `zod` | The session thread, because it renders [Generative UI](/docs/#generative-ui) blocks. Both are optional peers of `@kortix/sdk`. Without `@openuidev/lang-core`, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
+| `@kortix/sdk`, `@tanstack/react-query` 5 | `@kortix/ui/session`, `@kortix/ui/workspace` and every other entry that renders project or session data. Mount one `QueryClientProvider` ([Set up](/docs/developers#set-up)). |
+| `@openuidev/lang-core@0.3.1`, `zod` | The session thread, because it renders [Generative UI](/docs/developers#generative-ui) blocks. Both are optional peers of `@kortix/sdk`. Without `@openuidev/lang-core`, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` | `@kortix/ui/tailwind.css` in a Tailwind v4 host. A host without Tailwind does not install them. |
 | `@phosphor-icons/react@2.1.10` | Your own icons. Pin the version `@kortix/ui` uses, so `IconProvider` reaches your icons too. |
 
@@ -6375,11 +6375,11 @@ Name `react@19 react-dom@19` in the install. An unversioned `react` lets npm pic
 
 | Import | Holds |
 | --- | --- |
-| `@kortix/ui` | The core: `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `SessionIdsProvider`, `setUiRoutes`, `setUiTelemetry`, `setUiHostEnv`, `lazyClient`, `cn`, `useIsDark`, `useIsMobile`, `useDebounce`, and the primitives listed in [Components and modules](/docs/#components-and-modules). |
+| `@kortix/ui` | The core: `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `SessionIdsProvider`, `setUiRoutes`, `setUiTelemetry`, `setUiHostEnv`, `lazyClient`, `cn`, `useIsDark`, `useIsMobile`, `useDebounce`, and the primitives listed in [Components and modules](/docs/developers#components-and-modules). |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/toast`. Heavy components (charts, maps, data grids, the emoji picker) load only from their own subpath. |
-| `@kortix/ui/<module>` | One curated entry per module, for example `@kortix/ui/workspace` or `@kortix/ui/session`. See [Modules](/docs/#modules). |
-| `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](/docs/#theming). |
-| `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. See [Add the styles](/docs/#add-the-styles). |
+| `@kortix/ui/<module>` | One curated entry per module, for example `@kortix/ui/workspace` or `@kortix/ui/session`. See [Modules](/docs/developers#modules). |
+| `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](/docs/developers#theming). |
+| `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. See [Add the styles](/docs/developers#add-the-styles). |
 
 #### Server rendering
 
@@ -6434,7 +6434,7 @@ It holds no class that only your code uses. Style your own markup with plain CSS
 
 - Dark mode is the `dark` class on `<html>`. `useIsDark()` returns the current state.
 - Both paths style the page: `body` paints `--background` and `--foreground`, borders default to `--border`, native controls follow `color-scheme`, text selection reads `--selection`, and interactive elements show the pointer cursor. You add no base rules.
-- `@kortix/ui/fonts.css` loads the Roobert font. It is for Kortix-owned surfaces only. Every other host uses the system font stack (`--font-sans-system`) or sets `fonts.sans` in its [theme](/docs/#theming).
+- `@kortix/ui/fonts.css` loads the Roobert font. It is for Kortix-owned surfaces only. Every other host uses the system font stack (`--font-sans-system`) or sets `fonts.sans` in its [theme](/docs/developers#theming).
 
 ### Mount the providers
 
@@ -6517,11 +6517,11 @@ Every option is optional. Pass objects with a stable identity.
 | `providerIconBaseUrl` | models.dev | Where your host serves provider logos, as `<base>/<icon>.svg`. The Kortix provider draws the `useBrand` icon. |
 | `deploymentVersion` | latest | The release version for version-pinned CLI install commands. |
 
-Billing gates are not a `UiProvider` option. They read `billingEnabled` from [`createKortix`](/docs/#create-the-client). A custom host leaves it off, and no upgrade control renders.
+Billing gates are not a `UiProvider` option. They read `billingEnabled` from [`createKortix`](/docs/developers#create-the-client). A custom host leaves it off, and no upgrade control renders.
 
 ### Add a session
 
-A session needs one [`useSession`](/docs/#usesession) result. Pass it to a component; there is no second chat hook and no transport to write.
+A session needs one [`useSession`](/docs/developers#usesession) result. Pass it to a component; there is no second chat hook and no transport to write.
 
 `SessionWorkspace` (`@kortix/ui/workspace`) renders the full session screen of the Kortix web app: the thread and the resizable side panel its actions open (files, the file viewer, the browser, the terminal, changes). On a phone the panel is a sheet. The parent sets the size.
 
@@ -6567,7 +6567,7 @@ export function Chat({ projectId, sessionId }: { projectId: string; sessionId: s
 - The parent sets the height. The thread fills it.
 - `SessionThread`, `SessionWorkspace` and `ProjectHome` mount the project scope and `SessionIdsProvider` themselves.
 - With no side panel on the page, a file or preview the thread opens shows in a dialog.
-- `SessionThread` renders [Generative UI](/docs/#generative-ui) blocks by default. You write no code for them.
+- `SessionThread` renders [Generative UI](/docs/developers#generative-ui) blocks by default. You write no code for them.
 - `ModelSelector` and `AgentSelector` (`@kortix/ui/session`) are the composer's pickers. They are controlled, so a form outside a session uses them too.
 
 #### Replace one tool row
@@ -6609,7 +6609,7 @@ The modules compose at any depth. Pick the level you need.
 | The thread, no panel | `SessionThread`. It mounts its own preview host. A page with no `SessionThread` and no side panel mounts `<FilePreviewHost />` from `@kortix/ui/files` once. |
 | Your own panel | `SessionPanelProvider` and `ActionPanel` from `@kortix/ui/session-panel`, or `SessionTerminal` from `@kortix/ui/terminal` |
 | Single blocks | `UserMessage`, `ThrottledMarkdown`, `ToolPartRenderer`, `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt` from `@kortix/ui/session`; `ComposerChatInput` from `@kortix/ui/composer` |
-| Every part drawn by your own components | No `@kortix/ui/session`. Use `useChatTurns` and `renderParts` from `@kortix/sdk/react`: [Render messages yourself](/docs/#render-messages-yourself). |
+| Every part drawn by your own components | No `@kortix/ui/session`. Use `useChatTurns` and `renderParts` from `@kortix/sdk/react`: [Render messages yourself](/docs/developers#render-messages-yourself). |
 
 A block outside `SessionThread`, `SessionWorkspace` and `ProjectHome` needs the two scopes those screens mount for you: `KortixProjectProvider` from `@kortix/sdk/react` and `SessionIdsProvider` from `@kortix/ui`. Without `SessionIdsProvider`, `useSessionIds()` returns no ids.
 
@@ -6821,7 +6821,7 @@ Each module has one entry. The names an entry exports are its public API, under 
 | `@kortix/ui/file-viewer` | `FileViewer`, `FileContentRenderer` (pdf, docx, xlsx, csv, pptx, zip, images, code), `FilePreviewModal`, `FileSourceProvider` | `<FileViewer content={text} fileName="notes.md" />` |
 | `@kortix/ui/terminal`, `@kortix/ui/browser` | `SessionTerminal`; `SessionBrowser`, `BrowserLanding` | the runtime ids of a mounted `useSession` |
 | `@kortix/ui/markdown` | `UnifiedMarkdown`, `MarkdownWithFrontmatter`, `HighlightedCode` | `<UnifiedMarkdown content={text} trust="agent" />` |
-| `@kortix/ui/genui` | `GenuiBlock` and `genuiComponents`, the web component set over `@kortix/sdk/genui/react`. See [Render blocks in React](/docs/#render-blocks-in-react). | none |
+| `@kortix/ui/genui` | `GenuiBlock` and `genuiComponents`, the web component set over `@kortix/sdk/genui/react`. See [Render blocks in React](/docs/developers#render-blocks-in-react). | none |
 | `@kortix/ui/diff`, `@kortix/ui/changes` | `DiffView`; `ChangeList` | `<DiffView before={{ name, contents }} after={{ name, contents }} />` |
 | `@kortix/ui/apps` | `AppPreview` and the App view model | none |
 | `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles (`AccessDialog`, `RoleSelect`, `PrincipalPicker`); the project configuration pages (`ConnectorsPage`, `AgentsPage`, `TriggersPage`, `SecretsPage`, `ModelsPage`, `SkillsPage`, `ProjectSettingsPage`) | `<ConnectorsPage projectId={projectId} />` |
@@ -6835,11 +6835,11 @@ Deep paths have no semver. `@kortix/ui/internal/*` and `@kortix/ui/<module>/<pat
 
 ### Build a dashboard
 
-A dashboard is your chrome around the composed screens: the Kortix session list in your sidebar, `ProjectHome` to start a session, `SessionWorkspace` to work in one, `ProjectFilesView` for the project's files. The steps below are the files of one Vite + React 19 + react-router app. Add `react-router-dom` to the install in [Install and peers](/docs/#install-and-peers). The browser holds a signed-in user's refreshing token, never an API key.
+A dashboard is your chrome around the composed screens: the Kortix session list in your sidebar, `ProjectHome` to start a session, `SessionWorkspace` to work in one, `ProjectFilesView` for the project's files. The steps below are the files of one Vite + React 19 + react-router app. Add `react-router-dom` to the install in [Install and peers](/docs/developers#install-and-peers). The browser holds a signed-in user's refreshing token, never an API key.
 
 <Steps>
 <Step title="Create the client">
-Start from the client in [Create the client](/docs/#create-the-client). In a browser, feed `getToken` from the headless session store ([Sign users in headlessly](/docs/#sign-users-in-headlessly)). The store keeps the user's tokens and refreshes them 60 s before they expire.
+Start from the client in [Create the client](/docs/developers#create-the-client). In a browser, feed `getToken` from the headless session store ([Sign users in headlessly](/docs/developers#sign-users-in-headlessly)). The store keeps the user's tokens and refreshes them 60 s before they expire.
 
 ```ts title="src/kortix.ts"
 import { createKortix, createKortixSession } from '@kortix/sdk';
@@ -6855,7 +6855,7 @@ export const kortix = createKortix({
 });
 ```
 
-The browser origin must be in the API's CORS list. In local development, proxy `/v1` through your dev server and point `backendUrl` at it. Inside a Kortix App, the client acts as the viewer instead: see [Know the viewer in a Kortix App](/docs/#know-the-viewer-in-a-kortix-app).
+The browser origin must be in the API's CORS list. In local development, proxy `/v1` through your dev server and point `backendUrl` at it. Inside a Kortix App, the client acts as the viewer instead: see [Know the viewer in a Kortix App](/docs/developers#know-the-viewer-in-a-kortix-app).
 </Step>
 <Step title="Connect your router and theme">
 ```ts title="src/theme.ts"
@@ -7139,11 +7139,11 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-`./app.css` holds the imports from [Add the styles](/docs/#add-the-styles). `./shell-row` is the row from [Replace one tool row](/docs/#replace-one-tool-row).
+`./app.css` holds the imports from [Add the styles](/docs/developers#add-the-styles). `./shell-row` is the row from [Replace one tool row](/docs/developers#replace-one-tool-row).
 </Step>
 </Steps>
 
-- More data comes from the hooks in [React hooks](/docs/#react-hooks), for example `useProjectSessions`, `useProjectApps` and `useProjectTriggers`.
+- More data comes from the hooks in [React hooks](/docs/developers#react-hooks), for example `useProjectSessions`, `useProjectApps` and `useProjectTriggers`.
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, report it as an SDK gap.
 - Three white-label examples follow this structure ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
   - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin): the Kortix workspace under its own theme, with direct mode (the browser holds the credential) or wrapper mode (its own server holds it).
@@ -7164,13 +7164,13 @@ In a Kortix session, an agent reads a reference with `kortix system-skills file 
 
 ## SDK reference
 
-This section is for lookup. Each table gives the name, the arguments, what the call returns and the errors it adds. The guides in [SDK](/docs/#sdk), [Sessions from code](/docs/#sessions-from-code), [Projects from code](/docs/#projects-from-code) and [React](/docs/#react) show each call in use.
+This section is for lookup. Each table gives the name, the arguments, what the call returns and the errors it adds. The guides in [SDK](/docs/developers#sdk), [Sessions from code](/docs/developers#sessions-from-code), [Projects from code](/docs/developers#projects-from-code) and [React](/docs/developers#react) show each call in use.
 
 Conventions in this section:
 
 - `kortix` is the client from `createKortix`. `p` is `kortix.project(projectId)`. `s` is `kortix.session(projectId, sessionId)`.
-- Route paths are relative to `backendUrl`, which ends in `/v1`. The [REST reference](/docs/#rest-api) lists each route.
-- A failed call throws `ApiError`. `status` is the HTTP status, `code` is the API's error code, `details` is the parsed response body and `detail` is the FastAPI error field. The error catalog is in [Sessions from code > Errors and retries](/docs/#errors-and-retries).
+- Route paths are relative to `backendUrl`, which ends in `/v1`. The [REST reference](/docs/developers#rest-api) lists each route.
+- A failed call throws `ApiError`. `status` is the HTTP status, `code` is the API's error code, `details` is the parsed response body and `detail` is the FastAPI error field. The error catalog is in [Sessions from code > Errors and retries](/docs/developers#errors-and-retries).
 - Creating a handle (`kortix.project(id)`, `kortix.session(pid, sid)`, `p.connector(slug)`) sends no request.
 
 ### Entry points and stability
@@ -7180,7 +7180,7 @@ Conventions in this section:
 | `@kortix/sdk` | Stable | The client and every framework-free module. It imports no React and no `node:*` module. It runs in browsers, Node 18 or later, Bun and edge runtimes. |
 | `@kortix/sdk/react` | Stable | The React hooks. It is the only entry that imports React. Peers: `react`, `@tanstack/react-query`. |
 | `@kortix/sdk/server` | Stable | Server helpers for Node and Bun (table below). It imports `node:async_hooks`. Never bundle it for a browser. |
-| `@kortix/sdk/genui` | Stable | The Generative UI parser and text renderers. Peers: `zod`, `@openuidev/lang-core@0.3.1`. See [Generative UI](/docs/#generative-ui). |
+| `@kortix/sdk/genui` | Stable | The Generative UI parser and text renderers. Peers: `zod`, `@openuidev/lang-core@0.3.1`. See [Generative UI](/docs/developers#generative-ui). |
 | `@kortix/sdk/genui/fence` | Stable | `splitGenui`, `separateGenuiClosers`, `genuiVersionOf`, `genuiVersionFromClassName`. It loads no `zod`. |
 | `@kortix/sdk/genui/react` | Stable | `GenuiBlock`, `useGenuiParse`, `defaultGenuiComponents`. |
 | `@kortix/sdk/wire-message-id` | Stable | `mintWireMessageId` and `WIRE_MESSAGE_ID` in one module with no imports. The root exports the same names. |
@@ -7195,21 +7195,21 @@ Stable entry points follow semver. A deep path into `dist/` has no semver.
 
 | Export | What it does |
 | --- | --- |
-| `createScopedKortix(config)` | A client like `createKortix`, but every call, including calls on its `project()` and `session()` handles, uses this config only. Create one per request. See [Serve many users from one backend](/docs/#serve-many-users-from-one-backend). |
+| `createScopedKortix(config)` | A client like `createKortix`, but every call, including calls on its `project()` and `session()` handles, uses this config only. Create one per request. See [Serve many users from one backend](/docs/developers#serve-many-users-from-one-backend). |
 | `runWithKortix(config, fn)` | Runs `fn` with a request-scoped config (Node `AsyncLocalStorage`). |
 | `getScopedConfig()` | The config in scope, or `undefined` outside `runWithKortix`. |
 | `forwardKortixRequest(options)` | Forwards one same-origin request to the Kortix API with an upstream token. It strips host credentials and keeps a streaming response body. An upstream failure returns `502` with `{ error: 'Upstream request failed' }`. |
-| `createKortixAuth(options)` | Sign in with Kortix for your own app: OAuth 2.1 with PKCE, an encrypted session cookie, refresh, sign-out, `/me` and a same-origin `/proxy`. See [Sign in with Kortix](/docs/#sign-in-with-kortix). |
+| `createKortixAuth(options)` | Sign in with Kortix for your own app: OAuth 2.1 with PKCE, an encrypted session cookie, refresh, sign-out, `/me` and a same-origin `/proxy`. See [Sign in with Kortix](/docs/developers#sign-in-with-kortix). |
 | `readAppViewer(request, options?)` | Inside a Kortix App: verifies the signed viewer header and returns the viewer, or `null`. |
 | `createAppViewerKortix(request, options)` | Inside a Kortix App: a client that calls the Kortix API as the viewer. |
-| `createKortixAppGuard(options)` | One viewer resolver for an App. `requireViewer` and `requireGroup` return a viewer or a `Response`. See [Know the viewer in a Kortix App](/docs/#know-the-viewer-in-a-kortix-app). |
+| `createKortixAppGuard(options)` | One viewer resolver for an App. `requireViewer` and `requireGroup` return a viewer or a `Response`. See [Know the viewer in a Kortix App](/docs/developers#know-the-viewer-in-a-kortix-app). |
 | `KortixAuthError`, `AppViewerUnavailableError` | Errors of `createKortixAuth` and of the App viewer helpers. |
 | `safeReturnTo` | Accepts a same-origin return path and rejects every other value. |
 | `APP_VIEWER_HEADER`, `APP_VIEWER_TOKEN_HEADER`, `APP_VIEWER_SECRET_ENV`, `KORTIX_SESSION_SENTINEL` | Header and environment variable names. |
 
 ### The client
 
-`createKortix(config)` returns the client. Its options are in [Create the client](/docs/#create-the-client).
+`createKortix(config)` returns the client. Its options are in [Create the client](/docs/developers#create-the-client).
 
 | Member | What it reaches | Routes |
 | --- | --- | --- |
@@ -7286,7 +7286,7 @@ Stable entry points follow semver. A deep path into `dist/` has no semver.
 | `mfa.enroll` · `mfa.challenge` · `mfa.verify` · `mfa.unenroll` | Multi-factor authentication. |
 | `session(options)` | A token store. It saves tokens through your storage adapter and refreshes them 60 seconds before they expire. Pass its `getToken` to `createKortix`. |
 
-Arguments, `HeadlessAuthError` codes and limits are in [Sign users in headlessly](/docs/#sign-users-in-headlessly).
+Arguments, `HeadlessAuthError` codes and limits are in [Sign users in headlessly](/docs/developers#sign-users-in-headlessly).
 
 #### `kortix.accounts`
 
@@ -7389,7 +7389,7 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 
 ### The project handle
 
-`kortix.project(projectId)` returns `p`. Every method has the project id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Projects from code](/docs/#projects-from-code).
+`kortix.project(projectId)` returns `p`. Every method has the project id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Projects from code](/docs/developers#projects-from-code).
 
 #### Project
 
@@ -7413,7 +7413,7 @@ A route behind a flag that is off returns `403` with `code: 'feature_disabled'` 
 | --- | --- |
 | `sessions.list(options?)` | One page of sessions as an array. |
 | `sessions.listPage(options?)` | One page plus `next_cursor`. `null` means the last page. A cursor is valid only for the filters that issued it. |
-| `sessions.create(input?)` | Creates a session. The sandbox starts in the background. Fields: [Create a session](/docs/#create-a-session). |
+| `sessions.create(input?)` | Creates a session. The sandbox starts in the background. Fields: [Create a session](/docs/developers#create-a-session). |
 
 Options of `list` and `listPage`:
 
@@ -7452,7 +7452,7 @@ These methods read and write the project repository. To work with files in a run
 | `changeRequests.open(input)` · `.update(crId, input)` · `.merge(crId, input?)` · `.close(crId, input?)` · `.reopen(crId, input?)` | The change request lifecycle. |
 | `changeRequests.requestChanges(crId, input)` | Records feedback and can send it to the session that made the change. |
 
-Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`, `/change-requests`. See [Git](/docs/#git).
+Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`, `/change-requests`. See [Git](/docs/developers#git).
 
 #### Review and approvals
 
@@ -7510,7 +7510,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `triggers.setActivation(paused)` | Pauses or resumes every trigger of the project. |
 | `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session the caller can open. One session's reminders are `s.reminders`. |
 
-All trigger fields are in [Run triggers](/docs/#run-triggers) and [Automations](/docs/#automations).
+All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Automations](/docs/#automations).
 
 #### Apps
 
@@ -7528,7 +7528,7 @@ All trigger fields are in [Run triggers](/docs/#run-triggers) and [Automations](
 | `apps.token(appId)` | A 15-minute sign-in token for the App that names the caller. Needs the `member_tokens` capability. |
 | `apps.authEnv(appId)` | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS`, to verify App tokens with no network call. |
 
-Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/#deploy-and-operate-apps) and the [Apps reference](/docs/#apps-reference).
+Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/developers#deploy-and-operate-apps) and the [Apps reference](/docs/developers#apps-reference).
 
 #### Gateway and models
 
@@ -7580,7 +7580,7 @@ See [Computers](/docs/#computers).
 
 ### The session handle
 
-`kortix.session(projectId, sessionId)` or `p.session(sessionId)` returns `s`. The `session_id` is also the sandbox id. Methods that reach the runtime call `ensureReady()` first. The guide is [Sessions from code](/docs/#sessions-from-code).
+`kortix.session(projectId, sessionId)` or `p.session(sessionId)` returns `s`. The `session_id` is also the sandbox id. Methods that reach the runtime call `ensureReady()` first. The guide is [Sessions from code](/docs/developers#sessions-from-code).
 
 | Area | Method | What it does |
 | --- | --- | --- |
@@ -7624,14 +7624,14 @@ See [Computers](/docs/#computers).
 
 ### React hooks
 
-Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row says otherwise, a hook returns the query result (`data`, `isLoading`, `error`, …) plus the mutations the row names. A write refreshes the matching reads. Set up the providers as in [React > Set up](/docs/#set-up).
+Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row says otherwise, a hook returns the query result (`data`, `isLoading`, `error`, …) plus the mutations the row names. A write refreshes the matching reads. Set up the providers as in [React > Set up](/docs/developers#set-up).
 
 #### Session hooks
 
 | Hook | What it returns |
 | --- | --- |
-| `useSession(projectId, sessionId, options?)` | The whole session lifecycle: start, readiness, live stream, messages and actions. Tables: [React > useSession](/docs/#usesession). |
-| `useSessionSend(sessionId, options?)` | A send function with `KortixSendError` classification. See [Send and handle errors](/docs/#send-and-handle-errors). |
+| `useSession(projectId, sessionId, options?)` | The whole session lifecycle: start, readiness, live stream, messages and actions. Tables: [React > useSession](/docs/developers#usesession). |
+| `useSessionSend(sessionId, options?)` | A send function with `KortixSendError` classification. See [Send and handle errors](/docs/developers#send-and-handle-errors). |
 | `useSessionPrompts(projectId, sessionId, { pollMs?, enabled? }?)` | The prompt inbox of one session. |
 | `useSessionWorking(projectId, sessionId, { enabled?, runtimeSessionId? }?)` | Whether a turn is in progress, and why it ended. |
 | `useRuntimeSupports(capability)` | `boolean`: whether the open session's runtime serves a capability. `true` until the runtime first answers. |
@@ -7688,7 +7688,7 @@ Rules for several hooks:
 | `invalidateProject(queryClient, projectId)` | Invalidates every query under `qk.project.scope(projectId)`. |
 | `invalidatePermissionProbes(queryClient, { accountId?, userId? })` | Invalidates cached `useCan` verdicts. |
 | `resetRuntimeQueries(queryClient)` | Removes every runtime query, so the next read comes from the new runtime. |
-| `resetIdentityState(…)` | Clears per-person state on sign-out. See [Sign-out and identity changes](/docs/#sign-out-and-identity-changes). |
+| `resetIdentityState(…)` | Clears per-person state on sign-out. See [Sign-out and identity changes](/docs/developers#sign-out-and-identity-changes). |
 
 ```tsx
 import { useQueryClient } from '@tanstack/react-query';
@@ -7712,8 +7712,8 @@ The root `@kortix/sdk` exports these modules next to the client.
 | Event stream | `openEventStream`, `narrowChatEvent`, `heartbeatGapEvent` | The live stream behind `s.stream`, and a narrower for chat events. |
 | Auth | `authenticatedFetch`, `getAuthToken` | A `fetch` that adds the token from your `getToken`. |
 | API client | `backendApi` | The typed HTTP client under every method. Use it only for a route with no method. |
-| Errors | `ApiError`, `AuthError`, `BillingError`, `RequestTooLargeError`, `isAuthFailure`, `isFeatureDisabledError`, `featureDisabledKey`, `FEATURE_DISABLED_CODE`, `REPOSITORY_DISCONNECTED_CODE` | Error types and checks. Catalog: [Errors and retries](/docs/#errors-and-retries). |
-| Classify | `classifyPart`, `classifyTurn`, `toolViewModel`, `toolInfo`, `humanizeToolName`, `toToolView`, `sessionLogTurns` and the other turn helpers | Turn session messages and session-log blocks into renderable parts. Guide: [Render messages yourself](/docs/#render-messages-yourself). |
+| Errors | `ApiError`, `AuthError`, `BillingError`, `RequestTooLargeError`, `isAuthFailure`, `isFeatureDisabledError`, `featureDisabledKey`, `FEATURE_DISABLED_CODE`, `REPOSITORY_DISCONNECTED_CODE` | Error types and checks. Catalog: [Errors and retries](/docs/developers#errors-and-retries). |
+| Classify | `classifyPart`, `classifyTurn`, `toolViewModel`, `toolInfo`, `humanizeToolName`, `toToolView`, `sessionLogTurns` and the other turn helpers | Turn session messages and session-log blocks into renderable parts. Guide: [Render messages yourself](/docs/developers#render-messages-yourself). |
 | Composer lists | `projectConfigAgentsToRuntimeAgents`, `composerSelectableAgents`, `resolveComposerAgent`, `pickerProviderList`, `flattenModels`, `createModelVisibility`, `modelInDefaultView`, `resolveComposerModel`, `resolveModelDefault`, `sessionModelCandidates`, `latestPromptModel`, `modelRefToKey` | Build an agent picker and a model picker with the rules of the Kortix web app. Every function is pure. |
 | Transcript export | `formatTranscript(session, messages, options?)` | One session as a Markdown string. |
 | Message ids | `mintWireMessageId()`, `WIRE_MESSAGE_ID` | Mint a message id for a prompt · validate one. Never mint an id by hand. |
@@ -7769,7 +7769,7 @@ export async function saveNotes(file: File): Promise<void> {
 | `onParked({ consecutiveFailures, lastError })` | — | Called once when the stream parks. A parked handle never reconnects: open a new stream. |
 | `onConnectionChange(state)` | — | `connecting`, `open` or `lost`. |
 
-`narrowChatEvent(event)` narrows a `RuntimeEvent` to the `KortixChatEvent` union. The event list is in [Stream events](/docs/#stream-events).
+`narrowChatEvent(event)` narrows a `RuntimeEvent` to the `KortixChatEvent` union. The event list is in [Stream events](/docs/developers#stream-events).
 
 #### Workspace search
 
@@ -7807,7 +7807,7 @@ A text over 256 kB is offered whole with the full-text helpers below. `fetchSess
 
 #### Session log helpers
 
-Pure functions over session-log blocks, from the root `@kortix/sdk`. They have no React and no DOM. The guide is [React > Render blocks from the session log](/docs/#render-blocks-from-the-session-log).
+Pure functions over session-log blocks, from the root `@kortix/sdk`. They have no React and no DOM. The guide is [React > Render blocks from the session log](/docs/developers#render-blocks-from-the-session-log).
 
 | Name | What it does |
 | --- | --- |
