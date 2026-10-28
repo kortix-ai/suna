@@ -189,7 +189,7 @@ export function identity(principal: AuthedPrincipal) {
   };
 }
 
-function refundHold(
+export function refundHold(
   hooks: GatewayHooks,
   principal: AuthedPrincipal,
   logger: GatewayLogger,
