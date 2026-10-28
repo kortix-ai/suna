@@ -22632,6 +22632,7 @@
       "waiting_external": "Čeka",
       "verifying": "Provera",
       "done": "Završen",
+      "stopped": "Zaustavljen",
       "abandoned": "Napušten"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "Poslednje buđenje kasni.",
       "ask_overdue": "Zahtevu je istekao rok.",
       "verification_stalled": "Provera je počela pre više od 24 sata.",
-      "unreadable": "goal.json nedostaje ili nije ispravan JSON."
+      "unreadable": "GOAL.md ne postoji ili nema zaglavlje cilja."
     },
     "sessionChip": "Cilj",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Rok {time}",
     "sessions": "Sesije",
     "role": {
+      "owner": "Vlasnik",
       "coordinator": "Glavna sesija",
       "worker": "Izvršilac",
       "verifier": "Proveravač"
@@ -22687,7 +22689,35 @@
     "verification": "Provera",
     "notes": "Beleške",
     "log": "Dnevnik",
-    "notFound": "Ovaj cilj više ne postoji."
+    "notFound": "Ovaj cilj više ne postoji.",
+    "allGoals": "Svi",
+    "assignedToMe": "Dodeljeni meni",
+    "noneAssigned": "Nijedan cilj ti nije dodeljen",
+    "forYou": "za tebe",
+    "forMember": "za člana tima",
+    "lastWake": "Poslednje buđenje {time}",
+    "assignedUser": "Za",
+    "assignedAgent": "Agent",
+    "you": "Ti",
+    "anotherMember": "Član tima",
+    "wakesToday": "Buđenja danas",
+    "ofMax": "{count} od {max}",
+    "links": "Linkovi",
+    "context": "Kontekst",
+    "share": "Podeli",
+    "stop": "Zaustavi cilj",
+    "stopTitle": "Zaustaviti ovaj cilj?",
+    "stopDescription": "Ništa ga više ne budi. Njegov folder ostaje u Fajlovima.",
+    "stopReason": "Zaustavljeno sa stranice cilja",
+    "stoppedToast": "Cilj zaustavljen",
+    "stopError": "Cilj nije mogao da se zaustavi. Pokušaj ponovo.",
+    "reply": "Pošalji odgovor",
+    "replyPlaceholder": "Tvoj odgovor. Budi cilj.",
+    "replySent": "Odgovor poslat. Cilj se budi s njim.",
+    "replyError": "Odgovor nije mogao da se pošalje. Pokušaj ponovo.",
+    "makeGoal": "Napravi cilj od ovoga",
+    "makeGoalSent": "Ovaj čet je zamoljen da od toga napravi cilj",
+    "makeGoalError": "Zahtev nije uspeo. Pokušaj ponovo."
   },
   "agentEditor": {
     "manage": "Upravljaj",

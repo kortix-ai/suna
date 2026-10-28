@@ -22632,6 +22632,7 @@
       "waiting_external": "Aguardando",
       "verifying": "Verificando",
       "done": "Concluído",
+      "stopped": "Parada",
       "abandoned": "Abandonado"
     },
     "health": {
@@ -22646,7 +22647,7 @@
       "missed_wake": "O último despertar está atrasado.",
       "ask_overdue": "Um pedido passou do prazo.",
       "verification_stalled": "A verificação começou há mais de 24 horas.",
-      "unreadable": "goal.json está ausente ou não é um JSON válido."
+      "unreadable": "GOAL.md não existe ou não tem o cabeçalho da meta."
     },
     "sessionChip": "Objetivo",
     "sessionRole": {
@@ -22679,6 +22680,7 @@
     "due": "Prazo {time}",
     "sessions": "Sessões",
     "role": {
+      "owner": "Responsável",
       "coordinator": "Sessão principal",
       "worker": "Executor",
       "verifier": "Verificador"
@@ -22687,7 +22689,35 @@
     "verification": "Verificação",
     "notes": "Notas",
     "log": "Registro",
-    "notFound": "Este objetivo não existe mais."
+    "notFound": "Este objetivo não existe mais.",
+    "allGoals": "Todos",
+    "assignedToMe": "Atribuídos a mim",
+    "noneAssigned": "Nenhuma meta atribuída a você",
+    "forYou": "para você",
+    "forMember": "para um colega",
+    "lastWake": "Último despertar {time}",
+    "assignedUser": "Para",
+    "assignedAgent": "Agente",
+    "you": "Você",
+    "anotherMember": "Um colega",
+    "wakesToday": "Despertares hoje",
+    "ofMax": "{count} de {max}",
+    "links": "Links",
+    "context": "Contexto",
+    "share": "Compartilhar",
+    "stop": "Parar meta",
+    "stopTitle": "Parar esta meta?",
+    "stopDescription": "Nada a desperta de novo. A pasta continua em Arquivos.",
+    "stopReason": "Parada na página da meta",
+    "stoppedToast": "Meta parada",
+    "stopError": "Não foi possível parar a meta. Tente novamente.",
+    "reply": "Enviar resposta",
+    "replyPlaceholder": "Sua resposta. Ela desperta a meta.",
+    "replySent": "Resposta enviada. A meta desperta com ela.",
+    "replyError": "Não foi possível enviar a resposta. Tente novamente.",
+    "makeGoal": "Transformar em meta",
+    "makeGoalSent": "Pedido enviado a este chat para virar uma meta",
+    "makeGoalError": "Não foi possível pedir. Tente novamente."
   },
   "agentEditor": {
     "manage": "Gerenciar",

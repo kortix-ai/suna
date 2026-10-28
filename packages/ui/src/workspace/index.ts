@@ -72,6 +72,7 @@ export { ProjectSidebar } from './sidebar/project-sidebar';
 export { ShareSessionModal } from './sidebar/modal/share-session-modal';
 export {
   formatGoalTime,
+  goalAssignedTo,
   GoalHealthDot,
   goalHref,
   goalNeedsYou,

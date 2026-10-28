@@ -20,6 +20,7 @@ const STATUS_TONE: Record<ProjectGoalStatus, StatusTone> = {
   waiting_external: 'neutral',
   verifying: 'info',
   done: 'success',
+  stopped: 'neutral',
   abandoned: 'neutral',
 };
 
@@ -54,9 +55,16 @@ export function goalOpenAsks(goal: ProjectGoalDocument | null): ProjectGoalItem[
   return (goal?.items ?? []).filter((i) => i.kind === 'ask' && i.status === 'open' && i.owner !== 'agent');
 }
 
-/** The goal needs a person: an open ask, or a health issue. */
+/** The goal needs a person: it waits on its assigned user, has an open ask, or a health issue. */
 export function goalNeedsYou(goal: ProjectGoal): boolean {
-  return goal.health.state === 'attention' || (goal.health.state !== 'closed' && goalOpenAsks(goal.goal).length > 0);
+  if (goal.health.state === 'attention') return true;
+  if (goal.health.state === 'closed') return false;
+  return goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal).length > 0;
+}
+
+/** The goal is for this person (GOAL.md `assigned_user`). */
+export function goalAssignedTo(goal: Pick<ProjectGoal, 'goal'>, userId: string | null | undefined): boolean {
+  return !!userId && goal.goal?.assigned_user === userId;
 }
 
 /** "in 33 min", "2 hr ago", "Tue 09:00": the reminders time format. */

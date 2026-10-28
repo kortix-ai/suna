@@ -7431,6 +7431,7 @@ const catalog = {
       "waiting_external": "Waiting",
       "verifying": "Verifying",
       "done": "Done",
+      "stopped": "Stopped",
       "abandoned": "Abandoned"
     },
     "health": {
@@ -7445,7 +7446,7 @@ const catalog = {
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "goal.json is missing or is not valid JSON."
+      "unreadable": "GOAL.md is missing or has no goal front matter."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -7478,6 +7479,7 @@ const catalog = {
     "due": "Due {time}",
     "sessions": "Sessions",
     "role": {
+      "owner": "Owner",
       "coordinator": "Main session",
       "worker": "Worker",
       "verifier": "Verifier"
@@ -7488,7 +7490,35 @@ const catalog = {
     "log": "Log",
     "notFound": "This goal no longer exists.",
     "showAll": "Show all",
-    "spaceScope": "{space} · {scope}"
+    "spaceScope": "{space} · {scope}",
+    "allGoals": "All",
+    "assignedToMe": "Assigned to me",
+    "noneAssigned": "No goals are assigned to you",
+    "forYou": "for you",
+    "forMember": "for a teammate",
+    "lastWake": "Last wake {time}",
+    "assignedUser": "For",
+    "assignedAgent": "Agent",
+    "you": "You",
+    "anotherMember": "A teammate",
+    "wakesToday": "Wakes today",
+    "ofMax": "{count} of {max}",
+    "links": "Links",
+    "context": "Context",
+    "share": "Share",
+    "stop": "Stop goal",
+    "stopTitle": "Stop this goal?",
+    "stopDescription": "Nothing wakes it again. Its folder stays in Files.",
+    "stopReason": "Stopped from the Goal page",
+    "stoppedToast": "Goal stopped",
+    "stopError": "Could not stop the goal. Try again.",
+    "reply": "Send answer",
+    "replyPlaceholder": "Your answer. It wakes the goal.",
+    "replySent": "Answer sent. The goal wakes with it.",
+    "replyError": "Could not send the answer. Try again.",
+    "makeGoal": "Make this a goal",
+    "makeGoalSent": "Asked this chat to make it a goal",
+    "makeGoalError": "Could not ask. Try again."
   },
   "agentEditor": {
     "manage": "Manage",
