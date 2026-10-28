@@ -162,8 +162,17 @@ export function createInternalGatewayRoutes() {
 
   app.post('/resolve-route', async (c) => {
     const { principal, input } = await c.req.json();
-    const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
-    return c.json({ route });
+    try {
+      const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
+      return c.json({ route });
+    } catch (err) {
+      // An image route refuses with a typed reason (image_model_unavailable,
+      // not_an_image_model): a 200 body, as /resolve-upstream answers it.
+      if (err instanceof GatewayResolutionError) {
+        return c.json({ route: null, resolutionError: resolutionErrorBody(err) });
+      }
+      throw err;
+    }
   });
 
   app.post('/budget-check', async (c) => {
