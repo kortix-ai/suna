@@ -6,7 +6,7 @@ each section. "Marko" = the decision owner.
 ## Decided
 
 - 2026-10-28 · **Goals engine plan approved** (goals-plan, "execute"): three
-  concepts (Agent = who, Automation = when, Goal = what done means); goals
+  concepts (Agent = who, Trigger = when (called Automation until 2026-10-28), Goal = what done means); goals
   are company-based, default `Goals/<slug>/`, shared or private by Files
   sharing; `GOAL.md` + `log.md` + `evidence/`; no once/ongoing kind;
   lifecycle draft → active ⇄ waiting_on_user → verifying → done, any →

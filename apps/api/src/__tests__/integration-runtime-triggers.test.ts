@@ -33,7 +33,7 @@ async function seedSession(): Promise<string> {
     sessionId,
     accountId: ACCOUNT,
     projectId: PROJECT,
-    branchName: `automation-${sessionId.slice(0, 8)}`,
+    branchName: `trigger-${sessionId.slice(0, 8)}`,
     createdBy: OWNER,
     metadata: {},
   });
@@ -41,7 +41,7 @@ async function seedSession(): Promise<string> {
 }
 
 /** Store a session-target trigger the way `POST /triggers/runtime` does. */
-async function seedSessionAutomation(sessionId: string, body: Record<string, unknown>): Promise<GitTriggerSpec> {
+async function seedSessionTrigger(sessionId: string, body: Record<string, unknown>): Promise<GitTriggerSpec> {
   const now = new Date();
   const parsed = parseRuntimeTriggerBody({ ...body, target: { session_id: sessionId } }, now);
   if ('error' in parsed) throw new Error(parsed.error);
@@ -61,12 +61,12 @@ async function commandsOf(sessionId: string) {
 }
 
 beforeAll(async () => {
-  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'automations-test' });
+  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'runtime-triggers-test' });
   await db.insert(projects).values({
     projectId: PROJECT,
     accountId: ACCOUNT,
-    name: 'automations',
-    repoUrl: 'https://example.com/automations.git',
+    name: 'runtime-triggers',
+    repoUrl: 'https://example.com/runtime-triggers.git',
     metadata: { experimental: { reminders: true } },
   });
   await insertIntoView(db, accountMembers, { accountId: ACCOUNT, userId: OWNER, accountRole: 'owner' });
@@ -80,7 +80,7 @@ afterAll(async () => {
 describe('runtime triggers', () => {
   test('a webhook into a session queues its rendered prompt into that session and counts as active', async () => {
     const sessionId = await seedSession();
-    const spec = await seedSessionAutomation(sessionId, { prompt: 'Build {{ body.ref }}', source: { type: 'webhook', secret_env: 'CI_SECRET' } });
+    const spec = await seedSessionTrigger(sessionId, { prompt: 'Build {{ body.ref }}', source: { type: 'webhook', secret_env: 'CI_SECRET' } });
     expect(await countActiveSessionReminders(PROJECT, sessionId)).toBe(1);
 
     const result = await fireGitTrigger({
@@ -105,7 +105,7 @@ describe('runtime triggers', () => {
 
   test('the webhook receiver finds a runtime webhook trigger, and reads pause from the row', async () => {
     const sessionId = await seedSession();
-    const spec = await seedSessionAutomation(sessionId, { prompt: 'x', source: { type: 'webhook', secret_env: 'CI_SECRET' } });
+    const spec = await seedSessionTrigger(sessionId, { prompt: 'x', source: { type: 'webhook', secret_env: 'CI_SECRET' } });
 
     expect(await runtimeWebhookSpec(PROJECT, spec.slug)).toMatchObject({ slug: spec.slug, type: 'webhook', secretEnv: 'CI_SECRET', enabled: true });
     await db.update(projectTriggerRuntime).set({ enabled: false }).where(and(eq(projectTriggerRuntime.projectId, PROJECT), eq(projectTriggerRuntime.slug, spec.slug)));
@@ -135,12 +135,12 @@ describe('runtime triggers', () => {
 
   test('a merged change request wakes the session that waits on it, once', async () => {
     const sessionId = await seedSession();
-    const spec = await seedSessionAutomation(sessionId, {
+    const spec = await seedSessionTrigger(sessionId, {
       prompt: 'CR #{{ change_request.number }} merged into {{ change_request.base_ref }}',
       source: { type: 'change_request', cr_id: CR },
     });
     const other = await seedSession();
-    await seedSessionAutomation(other, { prompt: 'never', source: { type: 'change_request', cr_id: crypto.randomUUID() } });
+    await seedSessionTrigger(other, { prompt: 'never', source: { type: 'change_request', cr_id: crypto.randomUUID() } });
     const project = await projectRow();
     const cr = { cr_id: CR, number: 7, title: 'Fix', base_ref: 'main', head_ref: 'fix', merge_commit_sha: 'abc' };
 
@@ -165,7 +165,7 @@ describe('runtime triggers', () => {
       [
         'kortix_version: 3',
         'project:',
-        '  name: automations',
+        '  name: runtime-triggers',
         'triggers:',
         '  - slug: merged-main',
         '    type: change_request',
