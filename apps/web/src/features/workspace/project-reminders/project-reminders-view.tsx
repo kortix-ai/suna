@@ -13,6 +13,7 @@
 
 import { Button } from '@kortix/ui/button';
 import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyArt } from '@kortix/ui/empty-art';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
@@ -72,16 +73,16 @@ function useNarrowViewport(): boolean {
   );
 }
 
-/** No reminders anywhere in the project: the first-run state, no toolbar. */
+/** No loops anywhere in the project: the first-run state, no toolbar. */
 function RemindersEmpty() {
   const t = useTranslations('reminders');
   return (
+    // Connectors' first-run recipe: the art inside the empty state, so the
+    // mark and its text centre together.
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-      <span className="bg-kortix-purple/15 flex size-10 items-center justify-center rounded-md">
-        <AlarmIcon weight="fill" className="text-kortix-purple size-6" />
-      </span>
       <EmptyState
         size="sm"
+        media={<EmptyArt icon={AlarmIcon} />}
         title={t('emptyTitle')}
         description={t('emptyDescription')}
         action={
