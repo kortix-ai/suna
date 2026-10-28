@@ -60,8 +60,8 @@ describe('getToolPrimaryArg', () => {
 
   test('the generic fallback humanizes a search query', () => {
     expect(
-      getToolPrimaryArg(part('some_search', { query: 'site:daytona.io Daytona sandboxes' })),
-    ).toBe('Daytona sandboxes on daytona.io');
+      getToolPrimaryArg(part('some_search', { query: 'site:acme.dev Acme sandboxes' })),
+    ).toBe('Acme sandboxes on acme.dev');
     expect(getToolPrimaryArg(part('mystery', {}))).toBe('');
   });
 

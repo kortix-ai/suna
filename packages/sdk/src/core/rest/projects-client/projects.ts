@@ -1045,8 +1045,7 @@ export async function updateExperimentalFeature(
 
 /**
  * The durable provider-migration transition the API returns on the PATCH prepare
- * branch (a switch to a different, non-default enabled provider — e.g.
- * Daytona→Platinum) and that {@link getProjectSandboxProviderTransition} polls.
+ * branch (a switch to a different, non-default enabled provider) and that {@link getProjectSandboxProviderTransition} polls.
  * Distinguished from a plain project by `kind:'preparation'`. The switch does NOT
  * flip the active provider synchronously; the target image is built + verified
  * first, then activated, and the client polls until a terminal `status`.

@@ -205,8 +205,8 @@ export function startOpencodeEventLoop(
     // Before the first successful subscribe, every failure is just "opencode
     // hasn't bound its port yet" — a boot race, not a fault. And this is ON the
     // critical path: maybeCreateInitialOpencodeSession blocks on `connected`
-    // before delivering the first prompt, and `opencode-session-created` (4.7s
-    // Daytona / 12.0s Platinum p50) is stamped after it. Exponential backoff
+    // before delivering the first prompt, and `opencode-session-created` (12.0s
+    // Platinum p50) is stamped after it. Exponential backoff
     // here actively hurts: with attempts at 0/0.25/0.75/1.75/3.75/7.75s, an
     // opencode that becomes ready at t=5s isn't noticed until t=7.75s — ~2.7s of
     // pure dead time, sleeping through the readiness it was waiting for. The old

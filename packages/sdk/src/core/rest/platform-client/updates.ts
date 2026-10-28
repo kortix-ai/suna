@@ -13,6 +13,7 @@ export interface ChangelogChange {
 
 export interface ChangelogArtifact {
   name: string;
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   target: 'npm' | 'docker-hub' | 'github-release' | 'daytona';
 }
 

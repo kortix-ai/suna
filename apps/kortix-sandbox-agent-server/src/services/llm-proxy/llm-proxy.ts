@@ -18,7 +18,7 @@ import { logger } from '@/lib/log/logger'
 // rewrites the Authorization header on the way upstream. On restore the daemon just
 // calls setToken() — opencode is never restarted.
 //
-// SCOPE: stateful warm-fork only (the caller gates it). Cold templates + Daytona
+// SCOPE: stateful warm-fork only (the caller gates it). Cold templates
 // never start these proxies and keep their direct config unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 

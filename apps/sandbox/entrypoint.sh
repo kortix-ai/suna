@@ -2,10 +2,10 @@
 # Sandbox entrypoint. Runs as PID 1, ensures the workspace directory is
 # materialized + stable before handing off to the compiled daemon.
 #
-# Why this matters: Daytona's runtime can delete the original /workspace
+# Why this matters: a container runtime can replace the original /workspace
 # AFTER our container starts (overlayfs init race). If the daemon launches
-# directly via WORKDIR /workspace, its CWD becomes "/workspace (deleted)"
-# the moment Daytona's init clobbers the dir, and every fs operation the
+# directly via WORKDIR /workspace, its CWD becomes "/workspace (deleted)" the moment the runtime's init
+# clobbers the dir, and every fs operation the
 # daemon subsequently attempts (Node's mkdir/stat/chdir) silently misbehaves
 # — opencode never spawns, materializeRepo never runs, the sandbox sits
 # stuck at `opencode: starting` forever.
@@ -258,7 +258,7 @@ DEADLINE_S=120
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The
 # daemon also anchors its cwd at / and uses absolute ${WORKSPACE} paths, so a
 # brief post-exec flap is already tolerated — 2 probes is enough to clear the
-# Daytona overlayfs init race without paying a flat 2s on every boot.
+# overlayfs init race without paying a flat 2s on every boot.
 STABLE_REQUIRED=2
 # A /workspace volume is mounted before the guest runs (Platinum reports the box
 # running only after the guest mount), so the overlay race does not apply.
@@ -301,8 +301,8 @@ while :; do
   sleep "${INTERVAL_S}"
 done
 
-# CRITICAL: cd to / (always exists) before exec'ing the daemon. Daytona's
-# runtime can delete /workspace AFTER the entrypoint loop exits — if we
+# CRITICAL: cd to / (always exists) before exec'ing the daemon. A container
+# runtime can replace /workspace AFTER the entrypoint loop exits — if we
 # cd'd into /workspace and exec'd from there, the daemon would inherit a
 # "deleted" cwd and every subsequent spawn (git, opencode) would inherit
 # it too, failing in confusing ways. Anchoring at / keeps the daemon's

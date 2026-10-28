@@ -306,7 +306,7 @@ test('artifact registration, finalization, and deployment preserve the wire spec
       readiness_path: '/health',
       restart_limit: 3,
     },
-    provider: 'daytona',
+    provider: 'platinum',
     environment: { NODE_ENVIRONMENT: 'production' },
     secrets: { DATABASE_URL: 'database-primary' },
   });
@@ -320,7 +320,7 @@ test('artifact registration, finalization, and deployment preserve the wire spec
       readiness_path: '/health',
       restart_limit: 3,
     },
-    provider: 'daytona',
+    provider: 'platinum',
     environment: { NODE_ENVIRONMENT: 'production' },
     secrets: { DATABASE_URL: 'database-primary' },
   });

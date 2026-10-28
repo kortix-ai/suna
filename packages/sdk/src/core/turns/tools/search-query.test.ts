@@ -3,26 +3,26 @@ import { humanizeSearchQuery } from './search-query';
 
 describe('humanizeSearchQuery', () => {
   test('the reported bug: a site: scope reads as English, not as syntax', () => {
-    expect(humanizeSearchQuery('site:daytona.io Daytona sandboxes')).toBe(
-      'Daytona sandboxes on daytona.io',
+    expect(humanizeSearchQuery('site:acme.dev Acme sandboxes')).toBe(
+      'Acme sandboxes on acme.dev',
     );
   });
 
   test('the scope reads the same wherever the model puts it', () => {
-    expect(humanizeSearchQuery('Daytona sandboxes site:daytona.io')).toBe(
-      'Daytona sandboxes on daytona.io',
+    expect(humanizeSearchQuery('Acme sandboxes site:acme.dev')).toBe(
+      'Acme sandboxes on acme.dev',
     );
   });
 
   test('plain text is returned untouched', () => {
-    expect(humanizeSearchQuery('Daytona company developer infrastructure')).toBe(
-      'Daytona company developer infrastructure',
+    expect(humanizeSearchQuery('Acme company developer infrastructure')).toBe(
+      'Acme company developer infrastructure',
     );
   });
 
   test('a scheme, host and path all reduce to the same host', () => {
-    for (const scope of ['daytona.io', 'https://daytona.io', 'www.daytona.io', 'daytona.io/docs']) {
-      expect(humanizeSearchQuery(`pricing site:${scope}`)).toBe('pricing on daytona.io');
+    for (const scope of ['acme.dev', 'https://acme.dev', 'www.acme.dev', 'acme.dev/docs']) {
+      expect(humanizeSearchQuery(`pricing site:${scope}`)).toBe('pricing on acme.dev');
     }
   });
 
@@ -60,8 +60,8 @@ describe('humanizeSearchQuery', () => {
    * throws away the URL the query was about.
    */
   test('a URL in the query survives', () => {
-    expect(humanizeSearchQuery('https://daytona.io/docs pricing')).toBe(
-      'https://daytona.io/docs pricing',
+    expect(humanizeSearchQuery('https://acme.dev/docs pricing')).toBe(
+      'https://acme.dev/docs pricing',
     );
   });
 
@@ -74,7 +74,7 @@ describe('humanizeSearchQuery', () => {
 
   test('the result is never blank', () => {
     // Nothing but a scope — the site is what was looked at, so it becomes the label.
-    expect(humanizeSearchQuery('site:daytona.io')).toBe('daytona.io');
+    expect(humanizeSearchQuery('site:acme.dev')).toBe('acme.dev');
     // Nothing but strippable operators — the original beats an empty row.
     expect(humanizeSearchQuery('filetype:pdf')).toBe('filetype:pdf');
     expect(humanizeSearchQuery('   ')).toBe('');
@@ -98,12 +98,12 @@ describe('humanizeSearchQuery', () => {
    * Same input twice, same output twice.
    */
   test('repeated calls are stable', () => {
-    const q = 'site:daytona.io Daytona sandboxes';
+    const q = 'site:acme.dev Acme sandboxes';
     expect(humanizeSearchQuery(q)).toBe(humanizeSearchQuery(q));
-    expect(humanizeSearchQuery(q)).toBe('Daytona sandboxes on daytona.io');
+    expect(humanizeSearchQuery(q)).toBe('Acme sandboxes on acme.dev');
   });
 
   test('operator matching is case-insensitive', () => {
-    expect(humanizeSearchQuery('SITE:daytona.io sandboxes')).toBe('sandboxes on daytona.io');
+    expect(humanizeSearchQuery('SITE:acme.dev sandboxes')).toBe('sandboxes on acme.dev');
   });
 });

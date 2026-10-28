@@ -115,7 +115,7 @@ const VERBS: Record<string, VerbSpec> = {
  * operators, and anything else renders whole.
  *
  * Both are the same rule: the row shows what was worked ON, not the argument
- * the tool was handed. `Searched site:daytona.io Daytona sandboxes` reads as a
+ * the tool was handed. `Searched site:acme.dev Acme sandboxes` reads as a
  * bug for the same reason `Read /a/b/c/d/package.json` reads as noise.
  */
 function shorten(key: string, value: string): string {

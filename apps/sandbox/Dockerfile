@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Kortix sandbox image — the base Daytona snapshot for every project
+# Kortix sandbox image — the reference base image for every project
 # session. Bakes:
 #   - git + ca-certificates + curl  (project repo materialization)
 #   - uv + uv-managed Python       (Python tools resolve dependencies per command)
@@ -24,9 +24,6 @@
 #
 # Build from the repo root:
 #   docker build -f apps/sandbox/Dockerfile -t kortix/kortix-sandbox:dev .
-#
-# To register with Daytona, push to a registry then point the snapshot
-# at the resulting image:tag.
 
 # ─── Stage 1: build the agent binary ────────────────────────────────────
 

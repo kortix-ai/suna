@@ -83,6 +83,7 @@ export interface ProjectSession {
   project_id: string;
   branch_name: string;
   base_ref: string;
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   sandbox_provider: 'platinum' | 'daytona' | null;
   /** Null until the session has a sandbox. */
   sandbox_id: string | null;
@@ -287,6 +288,7 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
+  /** Platinum is the only provider. A request that names `daytona` gets `400 sandbox_provider_deprecated`. */
   provider?: 'platinum' | 'daytona';
   /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;

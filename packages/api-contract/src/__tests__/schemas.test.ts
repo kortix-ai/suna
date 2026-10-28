@@ -305,7 +305,7 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
-  test('accepts Platinum and Daytona and rejects retired sandbox providers in project pin fields', () => {
+  test('accepts Platinum and a legacy daytona value and rejects retired sandbox providers in project pin fields', () => {
     expect(() =>
       ProjectSchema.parse(
         projectFixture({
@@ -610,7 +610,7 @@ describe('pending session prompt contract', () => {
 });
 
 describe('ProjectSessionSandboxSchema', () => {
-  test('accepts every provider the platform can emit', () => {
+  test('accepts Platinum and a legacy daytona row', () => {
     for (const provider of ['platinum', 'daytona']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),

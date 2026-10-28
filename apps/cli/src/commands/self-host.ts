@@ -180,8 +180,8 @@ interface SelfHostEnv {
   FRONTEND_IMAGE: string;
   API_IMAGE: string;
   GATEWAY_IMAGE: string;
-  // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
-  // DAYTONA_TARGET, KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
+  // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS,
+  // KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
   // KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_PUBLIC_BILLING_ENABLED, and
   // KORTIX_PUBLIC_CONNECTORS_ENABLED are covered by the [key: string] index
   // signature below — their defaults come from the SHARED_SELF_HOST_DEFAULTS
@@ -204,7 +204,6 @@ interface SelfHostEnv {
   // an IdP is registered — see the compose asset comment for why.
   SAML_ENABLED: string;
   SAML_PRIVATE_KEY: string;
-  DAYTONA_API_KEY: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
   KORTIX_GITHUB_APP_SLUG: string;
@@ -1916,30 +1915,16 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
  */
 async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
-  // Platinum is the only provider offered. An instance whose env still names a
-  // legacy provider the API runs (a SANDBOX_PROVIDER_KEY entry) keeps it, and
-  // its old sandboxes, until the operator enters a Platinum key: a blank answer
-  // must never point a working instance at a provider with no key.
-  const current = sandboxProviders(env)[0];
-  const legacy = current && current !== 'platinum' && SANDBOX_PROVIDER_KEY[current] ? current : undefined;
-  if (!shouldPrompt(flags)) {
-    if (!legacy) env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
-  } else {
+  // Platinum is the only provider. An env that still names a removed provider
+  // (Daytona support was removed on 2026-10-28) moves to Platinum here.
+  env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
+  if (shouldPrompt(flags)) {
     process.stdout.write(
       `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev — Kortix's own microVM sandbox provider; needs PLATINUM_API_KEY${C.reset}\n`,
     );
-    if (legacy) {
-      process.stdout.write(
-        `  ${C.dim}This instance runs on "${legacy}". Enter a Platinum API key to move it to Platinum, or leave it blank to keep "${legacy}".${C.reset}\n`,
-      );
-    }
-    const key = await promptSecret('Platinum API key', legacy ? '' : env.PLATINUM_API_KEY);
-    if (key || !legacy) {
-      env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
-      env.PLATINUM_API_KEY = key;
-      env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
-      env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
-    }
+    env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
+    env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
+    env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
   // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
   // this instance serves. When configured, the bundled Caddy proxy adds a
@@ -2067,7 +2052,6 @@ export function sandboxProviders(env: Record<string, string>): string[] {
 /** The key each sandbox provider needs to be considered ready. */
 const SANDBOX_PROVIDER_KEY: Record<string, string> = {
   platinum: 'PLATINUM_API_KEY',
-  daytona: 'DAYTONA_API_KEY',
 };
 
 /** A configured sandbox provider is selected and has its required key. */
@@ -2097,7 +2081,6 @@ export function gitProviderConfigured(env: Record<string, string>): boolean {
 // the one accurate item instead.
 const GIT_AND_SANDBOX_SECRET_KEYS: ReadonlySet<string> = new Set([
   'PLATINUM_API_KEY',
-  'DAYTONA_API_KEY',
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'MANAGED_GIT_GITHUB_INSTALL_ID',
@@ -2150,14 +2133,9 @@ export function missingRequiredSecrets(env: Record<string, string>): MissingSecr
   const missing: MissingSecretItem[] = [];
 
   if (!sandboxProviderConfigured(env)) {
-    // Name whichever provider is actually configured (ALLOWED_SANDBOX_PROVIDERS),
-    // defaulting to Platinum's hint when nothing has been chosen yet (a bare
-    // `init --yes` with no prior .env) — matches the guided flow's own default.
-    const provider = sandboxProviders(env)[0] ?? 'platinum';
-    const key = SANDBOX_PROVIDER_KEY[provider] ?? 'PLATINUM_API_KEY';
     missing.push({
-      label: `Agent sandbox runtime (${provider} API key)`,
-      hint: `kortix self-host env set ${key}=<key>`,
+      label: 'Agent sandbox runtime (platinum API key)',
+      hint: 'kortix self-host env set PLATINUM_API_KEY=<key>',
     });
   }
 
@@ -2512,10 +2490,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
     // Sandboxes run on Platinum, just like Kortix Cloud; `kortix self-host
-    // configure` collects its key. DAYTONA_API_KEY stays for an instance whose
-    // env still names the legacy provider (SandboxProviderName in
-    // apps/api/src/config.ts).
-    DAYTONA_API_KEY: '',
+    // configure` collects its key.
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',

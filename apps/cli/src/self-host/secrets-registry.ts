@@ -125,17 +125,10 @@ export const SECRET_DEFS: SecretDef[] = [
   // IdP until re-registered.
   { key: 'SAML_PRIVATE_KEY', category: 'auth_email', kind: 'generated', required: false, rotatable: false },
 
-  // Agent sandbox — Platinum. `init`/`configure` collect only its key.
-  // DAYTONA_API_KEY stays listed for an instance whose env still names the
-  // legacy provider (SandboxProviderName in apps/api/src/config.ts), so
-  // `env ls`/`env set` still reach it. The actual required-secret gate
-  // is the composite sandboxProviderConfigured() check in
-  // commands/self-host.ts (whichever provider ALLOWED_SANDBOX_PROVIDERS
-  // names), not a blanket `required` flag per key here — Platinum stays
-  // `required: true` below only because it's the default provider, not
-  // because it's unconditionally needed.
+  // Agent sandbox — Platinum, the only provider. `init`/`configure` collect
+  // its key. The required-secret gate is the composite
+  // sandboxProviderConfigured() check in commands/self-host.ts.
   { key: 'PLATINUM_API_KEY', category: 'sandbox', kind: 'operator', required: true },
-  { key: 'DAYTONA_API_KEY', category: 'sandbox', kind: 'operator', required: false },
   { key: 'PLATINUM_WEBHOOK_SECRET', category: 'sandbox', kind: 'operator', required: false },
 
   // Managed git — NOT init-required: configured in-app (Settings → Git,
@@ -298,10 +291,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   ENABLE_PHONE_AUTOCONFIRM: ['supabase-auth'],
   ADDITIONAL_REDIRECT_URLS: ['supabase-auth'],
 
-  // Agent sandbox — all three interchangeable providers
-  DAYTONA_API_KEY: ['kortix-api'],
-  DAYTONA_SERVER_URL: ['kortix-api'],
-  DAYTONA_TARGET: ['kortix-api'],
+  // Agent sandbox — Platinum
   PLATINUM_API_KEY: ['kortix-api'],
   PLATINUM_API_URL: ['kortix-api'],
   PLATINUM_TEMPLATE: ['kortix-api'],

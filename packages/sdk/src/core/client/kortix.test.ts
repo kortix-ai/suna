@@ -758,7 +758,7 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, and 
   expect(last().url).toContain('/projects/PID123/default-agent');
   expect(last().method).toBe('PUT');
 
-  await kortix.project('PID123').sandbox.setProvider('daytona');
+  await kortix.project('PID123').sandbox.setProvider('platinum');
   expect(last().url).toContain('/projects/PID123/sandbox-provider');
   expect(last().method).toBe('PATCH');
 

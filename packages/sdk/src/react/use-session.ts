@@ -1885,7 +1885,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // Cleared when the send's echo lands — a real observation. The 30s timeout
   // that used to sit beside this is deleted: no in-repo consumer reads
   // `pending`, and where it could fire it fired wrongly — 30s is shorter than
-  // a legitimate inbox path (18.9s Daytona / 24.5s Platinum boot plus the
+  // a legitimate inbox path (24.5s Platinum boot plus the
   // drain). The sync store's optimistic message and the `SendReceipt` carry
   // the state it approximated, each with an honest bound.
   useEffect(() => {

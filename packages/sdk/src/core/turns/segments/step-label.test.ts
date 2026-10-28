@@ -131,7 +131,7 @@ describe('stepLabel', () => {
 });
 
 /**
- * The row said `Searched site:daytona.io Daytona sandboxes` — the model's
+ * The row said `Searched site:acme.dev Acme sandboxes` — the model's
  * engine syntax, shown verbatim to a reader who never typed it. `shorten`
  * treats a query the way it treats a path: the row names what was worked ON,
  * not the argument the tool was handed. Rules live in `search-query.ts`.
@@ -139,8 +139,8 @@ describe('stepLabel', () => {
 describe('stepLabel drops search operators', () => {
   test('a site: scope becomes English', () => {
     expect(
-      stepLabel(tool('web_search', { query: 'site:daytona.io Daytona sandboxes' })).object,
-    ).toBe('Daytona sandboxes on daytona.io');
+      stepLabel(tool('web_search', { query: 'site:acme.dev Acme sandboxes' })).object,
+    ).toBe('Acme sandboxes on acme.dev');
   });
 
   test('engine-only operators are dropped', () => {
@@ -151,8 +151,8 @@ describe('stepLabel drops search operators', () => {
 
   test('a plain query is untouched', () => {
     expect(
-      stepLabel(tool('web_search', { query: 'Daytona developer infrastructure' })).object,
-    ).toBe('Daytona developer infrastructure');
+      stepLabel(tool('web_search', { query: 'Acme developer infrastructure' })).object,
+    ).toBe('Acme developer infrastructure');
   });
 
   test('memory_search reads its query the same way', () => {

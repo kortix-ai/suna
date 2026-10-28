@@ -8,7 +8,7 @@
  * pre-refactor tree (`git show <sha>:…`) and prints each verdict, so "this rule
  * would have caught it" is a command, not a claim.
  *
- * The defect (2026-09-24, measured on 8 real Daytona boots): `boot.ts` raced
+ * The defect (2026-09-24, measured on 8 real cloud sandbox boots): `boot.ts` raced
  * release extraction against a 3,000 ms timer and wrote the feature-flag answer
  * inside that same promise's `.then()`. Losing the race by 282 ms flipped the
  * box onto the flag-off chain, booted `/workspace`, and reported

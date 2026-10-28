@@ -1,7 +1,7 @@
 # slack-cli
 
 In-sandbox command-line tools the OpenCode runtime invokes from inside a
-session. They ship as PATH shims baked into the Daytona sandbox image, auth via
+session. They ship as PATH shims baked into the sandbox image, auth via
 env vars injected at sandbox spawn, and emit **JSON only** so the agent can parse
 results.
 

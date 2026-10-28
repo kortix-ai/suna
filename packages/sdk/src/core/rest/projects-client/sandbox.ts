@@ -11,7 +11,7 @@ export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
 /** Classified reason a snapshot build failed. */
 /** Mirrors apps/api/src/snapshots/error-classify.ts — keep in sync. */
 export type SnapshotErrorCategory =
-  /** Daytona org snapshot quota exhausted — infra, not repo-fixable. */
+  /** Provider snapshot quota exhausted — infra, not repo-fixable. */
   | 'quota'
   | 'dockerfile'
   /** A step in the Kortix-injected runtime layer failed — platform's fault, not the repo's. */
@@ -43,6 +43,7 @@ export interface SandboxTemplate {
   snapshot_name: string;
   content_hash: string;
   built_from_commit: string | null;
+  /** @deprecated Same value as `provider_state`; read that. Daytona support was removed on 2026-10-28. */
   daytona_state: string;
   provider_state: string;
   ready: boolean;
@@ -52,6 +53,7 @@ export interface SandboxTemplate {
    * routing mode; this array preserves the independent provider truth.
    */
   provider_coverage?: Array<{
+    /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
     provider: 'platinum' | 'daytona';
     available: boolean;
     snapshot_name: string;
@@ -76,6 +78,7 @@ export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
   provider_mode?: 'automatic' | 'pinned';
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   selected_provider?: 'platinum' | 'daytona' | null;
   /** Whether the warm pool feature is enabled platform-wide. */
   warm_pool_available?: boolean;
@@ -99,7 +102,7 @@ export interface ProjectSnapshotBuild {
   /** Server-derived: can an in-sandbox agent plausibly fix this by editing the repo? */
   fixable_by_agent: boolean;
   source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
-  /** Exact provider recorded for new builds; null/absent on historical rows. */
+  /** Exact provider recorded for new builds; null/absent on historical rows. Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   provider?: 'platinum' | 'daytona' | null;
   started_at: string;
   finished_at: string | null;
@@ -157,6 +160,7 @@ export interface ProjectSnapshotsResponse {
   /** Absent on a degraded/older API response — treat as "no alert". */
   status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   selected_provider?: 'platinum' | 'daytona' | null;
   /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
   warm_pool_available?: boolean;
@@ -176,6 +180,7 @@ export interface ProjectSandboxHealth {
   /** Absent on a degraded/older API response — treat as "no alert". */
   status?: SandboxRuntimeStatus | null;
   provider_mode?: 'automatic' | 'pinned';
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   selected_provider?: 'platinum' | 'daytona' | null;
 }
 
@@ -184,7 +189,9 @@ export interface RebuildSnapshotResponse {
   slug: string;
   deleted_existing: boolean;
   snapshot_name: string;
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   providers?: Array<'platinum' | 'daytona'>;
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   failed_providers?: Array<'platinum' | 'daytona'>;
 }
 
@@ -304,6 +311,7 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
       status: 'started';
       template_id: string;
       slug: string;
+      /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
       providers?: Array<'platinum' | 'daytona'>;
     }>(
       `/projects/${projectId}/sandbox-templates/${templateId}/build`,

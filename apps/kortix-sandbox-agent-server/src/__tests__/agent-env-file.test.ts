@@ -43,7 +43,7 @@ describe('writeAgentEnvFile', () => {
 
     writeAgentEnvFile(store, { sh })
 
-    // Daytona starts sandboxes with an unlimited core size; raise the soft limit
+    // A sandbox can start with an unlimited core size; raise the soft limit
     // first so the sourced guard has to clamp it back down. A hardened container
     // refuses the raise (hard limit 0, soft already pinned at 0) — ignore that
     // refusal and always run the shell: the guard must end it at 0 either way.

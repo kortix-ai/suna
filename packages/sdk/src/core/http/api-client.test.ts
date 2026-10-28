@@ -1095,8 +1095,7 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
 // state — the in-flight transition is already doing what the caller asked).
 // Classify it SILENT to `onError` like the other typed 409s, still returning
 // the `ApiError` so a caller can branch on `.code`. A genuine 409 with no
-// typed code still reports. See
-// apps/api/src/shared/daytona-state-transition.ts.
+// typed code still reports.
 describe('makeRequest classifies a typed sandbox_state_change_in_progress 409 as silent to Sentry', () => {
   function stubFetchOnce(status: number, body: unknown) {
     const originalFetch = globalThis.fetch;

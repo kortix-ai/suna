@@ -111,7 +111,7 @@ export async function runWarmSeedMode(
     : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
-  // snapshots only — cold + Daytona never run it).
+  // snapshots only — cold templates never run it).
   // Start the localhost LLM credential proxy, and optionally the Connector proxy
   // used by the compatibility MCP face. The agent-facing Connector path is the
   // `kortix connectors` CLI, which reads live env on each shell command and does

@@ -4,7 +4,7 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-/** Platinum is the reference App host. Daytona is a legacy fallback. */
+/** Platinum is the only App host. Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
 export type AppHostingProvider = 'platinum' | 'daytona';
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';

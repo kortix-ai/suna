@@ -464,7 +464,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
     // inside the guest. Without these the IP never changes → the guest stays on
     // the baked IP while the edge routes to the allocated IP → every request
-    // 502s. (Harmless on Daytona, which doesn't memory-restore.)
+    // 502s.
     // apt is non-interactive by construction here (no TTY), but a package with a
     // debconf prompt (tzdata, libreoffice's font EULAs) can still stall or fail
     // the build. This ENV used to be supplied only by whatever the USER's base
@@ -601,14 +601,13 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // writes a sqlite db with live timestamps, the config-deps install churns
     // node_modules mtimes, and the warm-repo clone bakes a fresh short-lived git
     // credential into its RUN text on every single invocation. The providers'
-    // build caches are CONTENT-ADDRESSED (Daytona especially — it has no
-    // Docker-style instruction-text cache and no `swapAgent` fast path), so ANY
+    // build caches are CONTENT-ADDRESSED, so ANY
     // non-deterministic layer BUSTS the cache for everything chained BELOW it.
     //
     // The kortix-agent SOURCE feeds the snapshot fingerprint (see
     // AGENT_RUNTIME_ARTIFACTS in apps/api/src/snapshots/templates.ts), so any
-    // agent-server code change mints a BRAND-NEW snapshot name → a full rebuild on
-    // Daytona (no agent-swap). If Chromium sat below the migration-bake (as it did
+    // agent-server code change mints a BRAND-NEW snapshot name → a full rebuild
+    // when no agent-swap applies. If Chromium sat below the migration-bake (as it did
     // through v0.10.11), every such rebuild MISSED cache and re-downloaded ~150MB
     // from cdn.playwright.dev — overrunning the session-ready window and breaking
     // fresh-sandbox boots (the v0.10.11 "session never starts" incident). Keeping
@@ -624,7 +623,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // fetch can miss under any network hiccup / contended CDN — observed live as
     // "Downloading Chrome for Testing ... timed out after 30000ms" failing the
     // whole bake. 30 minutes gives real headroom for the one cold-cache fetch
-    // under contention (staging observed this stalling on slower Daytona egress);
+    // under contention (staging observed this stalling on slow egress);
     // the retry loop below is the second line of defense for a transient failure
     // within that window.
     '    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000',
@@ -931,7 +930,7 @@ export function buildDefaultSandboxTemplate(spec: SandboxSpec = {}): SandboxTemp
 
 /**
  * Hardware spec for the sandbox, read from `sandbox.templates` entries in
- * kortix.yaml. Fields map onto Daytona's snapshot `Resources` (vCPU cores,
+ * kortix.yaml. Fields map onto the provider's template resources (vCPU cores,
  * memory & disk in GiB). GPU is intentionally omitted. Every field is
  * optional; an unset field uses the platform default.
  */

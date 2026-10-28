@@ -91,7 +91,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
  *
  * The per-attempt budget is deliberately MUCH larger than the call's normal cost.
  * Measured 2026-07-25 against the real binary, `POST /session` is ~370ms once
- * opencode is warm — but Platinum guests run ~3x slower than Daytona on
+ * opencode is warm — but Platinum guests measured ~3x slower than the previous provider on
  * CPU-bound work (`static-web` 5→19ms, `git-identity` 13→44ms at an identical
  * 2-vCPU spec), which puts a genuine Platinum session-create right at ~1.1s: over
  * the 1s budget this used to impose. Aborting there was actively harmful in two

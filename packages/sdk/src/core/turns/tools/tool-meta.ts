@@ -123,7 +123,7 @@ export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
     const v = input[k];
     if (typeof v === 'string' && v.length > 0) {
       // A query reaches the screen as prose, so it drops its engine operators
-      // first — `site:daytona.io foo` is an instruction, not a subject. See
+      // first — `site:acme.dev foo` is an instruction, not a subject. See
       // `humanizeSearchQuery`.
       return truncate(k === 'query' ? humanizeSearchQuery(v) || v : v, 60);
     }

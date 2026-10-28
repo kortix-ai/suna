@@ -8,7 +8,7 @@ import type {
 } from './index';
 import { updateProjectSandboxProvider } from './index';
 
-test('Platinum and the legacy Daytona fallback are accepted anywhere consumers select or observe a sandbox provider', () => {
+test('Platinum is accepted anywhere consumers select or observe a sandbox provider; the deprecated legacy daytona member still type-checks', () => {
   const platformProvider: SandboxProviderName = 'platinum';
   const runtimeProvider: ProjectSessionSandbox['provider'] = 'platinum';
   const createProvider: NonNullable<CreateProjectSessionInput['provider']> = 'platinum';

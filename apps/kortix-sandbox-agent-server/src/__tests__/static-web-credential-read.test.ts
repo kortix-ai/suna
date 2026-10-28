@@ -5,8 +5,7 @@
  * was allowed to — and its allowed roots included `/home`, which is exactly
  * where the daemon writes:
  *
- *   ~/.config/kortix-opencode.json          the session's LLM gateway key and,
- *                                           on Daytona, its connector PAT
+ *   ~/.config/kortix-opencode.json          the session's LLM gateway key
  *   ~/.local/share/opencode/auth.json       the account's Codex/OpenCode
  *                                           subscription credential
  *

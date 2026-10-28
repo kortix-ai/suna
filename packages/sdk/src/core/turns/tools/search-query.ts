@@ -1,14 +1,14 @@
 /**
  * A search query → the words a reader sees.
  *
- * Models write queries in engine syntax: `site:daytona.io Daytona sandboxes`,
+ * Models write queries in engine syntax: `site:acme.dev Acme sandboxes`,
  * `filetype:pdf annual report`, `pricing -site:pinterest.com`. That syntax is
  * an instruction to a search engine, not a description of what was looked for —
  * and every row that renders a query renders it to someone who never typed it.
- * `site:daytona.io Daytona sandboxes` on an activity row reads as a bug.
+ * `site:acme.dev Acme sandboxes` on an activity row reads as a bug.
  *
  * So operators are read, then removed. `site:` survives as English — it is the
- * one operator naming part of the SUBJECT ("on daytona.io") rather than the
+ * one operator naming part of the SUBJECT ("on acme.dev") rather than the
  * machinery. The rest carry nothing a reader can act on: `filetype:pdf` does not
  * change what was searched for, it changes what the engine was allowed to
  * return.
@@ -89,8 +89,8 @@ function stripQuotes(value: string): string {
 /**
  * A `site:` value → the host a reader recognises.
  *
- * Models write the scope inconsistently — `site:daytona.io`,
- * `site:https://daytona.io`, `site:www.daytona.io/docs`. All three mean the
+ * Models write the scope inconsistently — `site:acme.dev`,
+ * `site:https://acme.dev`, `site:www.acme.dev/docs`. All three mean the
  * same site, and all three should read the same way on the row.
  */
 function hostOf(value: string): string {

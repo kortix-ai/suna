@@ -479,7 +479,7 @@ export async function reconcileRuntimeAssets(
   // would converge to A, then back to B, then back to A — re-downloading
   // hundreds of megabytes on every flip, for as long as the rollout takes. That
   // is not hypothetical: it is the shape of the 2026-07-22 warm-image infinite
-  // mutual-rebuild loop, and the Daytona 429s that came with it.
+  // mutual-rebuild loop, and the provider 429s that came with it.
   //
   // EQUAL is accepted, not just greater: re-converging to the same build is
   // idempotent and is what every ordinary restart does.

@@ -122,11 +122,10 @@ export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
 
 /**
  * Stable error code the platform API returns (HTTP 409) when the sandbox a
- * call targets is already mid state-transition — the Daytona API answered
- * 409 "Sandbox state change in progress" (e.g. a second app stop arrives
- * while the first is still settling). The API's global error ladder emits it
- * (`apps/api/src/shared/daytona-state-transition.ts` →
- * `apps/api/src/http-errors.ts`). This is an EXPECTED, self-resolving state —
+ * call targets is already mid state-transition (e.g. a second app stop
+ * arrives while the first is still settling). APIs before 2026-10-28 emitted
+ * it for the legacy Daytona provider (support removed on that date); the code
+ * stays so an older server's 409 stays silent. This is an EXPECTED, self-resolving state —
  * the in-flight transition is already doing what the caller asked — so it
  * must be SILENT to `onError` (Sentry); Better Stack frontend pattern
  * `6bc03d7d…` (`ApiError: Internal server error` on app hibernate) came from

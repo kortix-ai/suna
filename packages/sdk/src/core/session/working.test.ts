@@ -341,7 +341,7 @@ describe('projectWorking', () => {
 
   test('a durable inbox prompt reads as working, with no turn and no receipt', () => {
     // Between "the row is durable" and "the turn is open" the box may still be
-    // resuming — 18.9s on Daytona, 24.5s on Platinum, measured. `GET .../turn`
+    // resuming — 24.5s on Platinum, measured. `GET .../turn`
     // truthfully answers "no turns" for all of it. The prompt is still the
     // user's work in flight, so the composer must stay on Stop.
     const projection = projectWorking({

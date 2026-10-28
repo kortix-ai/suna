@@ -34,6 +34,8 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
+// A legacy transition-log row: projects moved off Daytona before its support
+// was removed on 2026-10-28, so the history still names it as the source.
 function transitionView(status: string, target: string, errorClass: string | null = null) {
   return {
     transition_id: 'tr_1',
@@ -60,7 +62,7 @@ interface ServerOpts {
 }
 
 function startServer(opts: ServerOpts = {}): string {
-  let pinned = opts.pinned === undefined ? 'daytona' : opts.pinned;
+  let pinned = opts.pinned === undefined ? 'platinum' : opts.pinned;
   const statuses = [...(opts.pollStatuses ?? ['activated'])];
   let target = opts.preparesFor ?? 'platinum';
   server = Bun.serve({
@@ -75,12 +77,12 @@ function startServer(opts: ServerOpts = {}): string {
           project_id: PROJECT,
           name: 'Provider',
           default_sandbox_provider: pinned,
-          available_sandbox_providers: ['platinum', 'daytona'],
+          available_sandbox_providers: ['platinum'],
         });
       }
       if (p === `/v1/projects/${PROJECT}/sandbox-provider` && req.method === 'PATCH') {
         const wanted = (body as { provider: string | null }).provider;
-        if (wanted !== null && !['platinum', 'daytona'].includes(wanted)) {
+        if (wanted !== null && wanted !== 'platinum') {
           return Response.json(
             { error: `Unknown or disabled sandbox provider: ${wanted}` },
             { status: 400 },
@@ -96,7 +98,7 @@ function startServer(opts: ServerOpts = {}): string {
           project_id: PROJECT,
           name: 'Provider',
           default_sandbox_provider: pinned,
-          available_sandbox_providers: ['platinum', 'daytona'],
+          available_sandbox_providers: ['platinum'],
         });
       }
       if (p === `/v1/projects/${PROJECT}/sandbox-provider/transition` && req.method === 'GET') {
@@ -179,14 +181,14 @@ describe('kortix sandboxes provider', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['sandboxes', 'provider', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('pinned     daytona');
-    expect(r.stdout).toContain('available  platinum, daytona');
+    expect(r.stdout).toContain('pinned     platinum');
+    expect(r.stdout).toContain('available  platinum');
     expect(calls).toEqual([{ method: 'GET', path: `/v1/projects/${PROJECT}`, body: null }]);
 
     const j = await runCli(['sandboxes', 'provider', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(j.stdout)).toEqual({
-      default_sandbox_provider: 'daytona',
-      available_sandbox_providers: ['platinum', 'daytona'],
+      default_sandbox_provider: 'platinum',
+      available_sandbox_providers: ['platinum'],
     });
   });
 

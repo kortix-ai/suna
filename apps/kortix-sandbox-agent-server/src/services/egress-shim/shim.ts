@@ -1,10 +1,7 @@
 /**
- * The in-guest egress shim — the ONE way an egress-enforced secret is spent,
- * identically on platinum and the legacy daytona fallback.
+ * The in-guest egress shim — the ONE way an egress-enforced secret is spent.
  *
- * No provider edge serves secrets any more, and one of them never could:
- * Daytona has no credential edge and cannot be pointed at one
- * (`outboundProxyUrl` is accepted and ignored — measured). The way out is to notice the proxy
+ * No provider edge serves secrets any more. The way out is to notice the proxy
  * does two separable jobs:
  *
  *   1. terminate the guest's TLS  — can only happen INSIDE the guest

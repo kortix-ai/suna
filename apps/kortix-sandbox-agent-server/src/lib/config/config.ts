@@ -6,7 +6,7 @@ import { z } from 'zod'
  * Names must stay aligned with apps/api/src/projects/index.ts: the API
  * passes KORTIX_PROJECT_AUTO_CLONE / KORTIX_REPO_URL / KORTIX_BRANCH_NAME /
  * KORTIX_DEFAULT_BRANCH / KORTIX_PROJECT_ID / KORTIX_API_URL /
- * KORTIX_SERVICE_PORT to Daytona at sandbox creation time. The provider layer
+ * KORTIX_SERVICE_PORT to the provider at sandbox creation time. The provider layer
  * injects one session-scoped KORTIX_TOKEN. It authenticates daemon, CLI,
  * connector, Git-proxy and LLM-gateway requests. Each API route applies its own
  * narrower authorization. Upstream credentials remain server-side.

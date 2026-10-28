@@ -76,7 +76,7 @@ function sessionRow(sessionId = SESSION) {
     project_id: PROJECT,
     branch_name: sessionId,
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${external}/8000`,
     opencode_session_id: 'ses_oc',

@@ -8,7 +8,7 @@ function sandbox(overrides: Partial<SandboxInfo> = {}): SandboxInfo {
     sandbox_id: 'db-1',
     external_id: 'ext-1',
     name: 'my-sandbox',
-    provider: 'daytona',
+    provider: 'platinum',
     base_url: 'https://fallback.example',
     status: 'running',
     created_at: '2026-01-01T00:00:00Z',
@@ -33,8 +33,8 @@ test('getSandboxUrl falls back to base_url when external_id is missing', () => {
 
 test('getSandboxUrl throws when both external_id and base_url are missing', () => {
   expect(() =>
-    getSandboxUrl(sandbox({ external_id: '' as unknown as string, base_url: '' as unknown as string, provider: 'daytona', sandbox_id: 'sbx-9' })),
-  ).toThrow(/missing external_id for daytona sandbox "sbx-9"/);
+    getSandboxUrl(sandbox({ external_id: '' as unknown as string, base_url: '' as unknown as string, provider: 'platinum', sandbox_id: 'sbx-9' })),
+  ).toThrow(/missing external_id for platinum sandbox "sbx-9"/);
 });
 
 test('getSandboxUrl prefers process.env.BACKEND_URL over the configured platform backendUrl', () => {

@@ -120,7 +120,7 @@ export function createEphemeralCa(label: string, ttlMs: number = DEFAULT_CA_TTL_
     // Subject Key Identifier that exists on the issuer. Without this pair
     // `requests` fails with `CERTIFICATE_VERIFY_FAILED ... Missing Authority
     // Key Identifier` while curl accepts the same certificate — measured in a
-    // real Daytona guest, which is the only place it showed up.
+    // real cloud guest, which is the only place it showed up.
     { name: 'subjectKeyIdentifier' },
   ])
   cert.sign(keys.privateKey, forge.md.sha256.create())

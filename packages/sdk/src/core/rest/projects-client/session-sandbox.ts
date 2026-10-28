@@ -20,6 +20,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
+  /** Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it. */
   provider: "platinum" | "daytona";
   external_id: string | null;
   base_url: string | null;

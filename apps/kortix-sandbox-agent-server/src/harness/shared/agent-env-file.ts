@@ -9,7 +9,7 @@ import { logger } from '@/lib/log/logger'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 // tmpfs (RAM-backed) so plaintext secrets never land on the persisted container
-// disk — Daytona hibernate/archive keeps the disk, /dev/shm is never captured.
+// disk — a stop/snapshot keeps the disk, /dev/shm is never captured.
 // Also shredded on shutdown (see shutdown.ts). 0600, sourced by every shell via
 // BASH_ENV + the image-baked /etc/profile.d + /etc/bash.bashrc hooks.
 export const AGENT_ENV_SH = AGENT_ENV_FILE

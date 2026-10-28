@@ -76,7 +76,7 @@ function deployment(overrides: Record<string, unknown> = {}) {
     status: 'ready',
     source_kind: 'bundle',
     hosting_type: 'sandbox',
-    hosting_provider: 'daytona',
+    hosting_provider: 'platinum',
     runtime_spec: {},
     build_spec: {},
     error_code: null,

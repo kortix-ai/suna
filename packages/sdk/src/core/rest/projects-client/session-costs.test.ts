@@ -116,7 +116,7 @@ const detail = {
       ended_at: '2026-07-01T00:02:00.000Z',
       billed_through_at: '2026-07-01T00:02:00.000Z',
       cost: 0.5,
-      provider: 'daytona',
+      provider: 'platinum',
       state: 'finalized',
       compute_seconds: 120,
       cpu_cores: 2,

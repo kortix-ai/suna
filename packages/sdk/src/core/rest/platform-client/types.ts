@@ -22,8 +22,9 @@ export const SANDBOX_PORTS = {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /**
- * Platinum is the reference provider. Daytona is a legacy fallback whose
- * removal is scheduled. E2B support is discontinued.
+ * Platinum is the only sandbox provider. E2B support is discontinued.
+ *
+ * Deprecated member `daytona`: Daytona support was removed on 2026-10-28; legacy rows may still carry it.
  */
 export type SandboxProviderName = 'platinum' | 'daytona';
 export type ServerTypeOption = string;

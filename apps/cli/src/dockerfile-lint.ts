@@ -194,21 +194,18 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
   }
 
   // ── 2. RUN heredocs ──────────────────────────────────────────────────────
-  // Rationale ported verbatim from the buildah-portability guard in
+  // Rationale from the buildah-portability guard in
   // apps/api/src/snapshots/build-context.ts:
   //
-  //   The SAME composed context ships to BOTH providers. Daytona builds with
-  //   BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs);
   //   Platinum builds with podman/buildah's classic imagebuilder, which
-  //   supports NEITHER — it parses a heredoc body's first line (e.g. `import
-  //   importlib`) as a Dockerfile instruction and aborts EVERY build ("Unknown
-  //   instruction: IMPORT"), failing all Platinum sessions. This exact
-  //   regression (a `<<'PY'` python verify added 2026-06-27) took dev down for
-  //   hours because Daytona silently tolerated it.
+  //   supports neither `# syntax=docker/dockerfile:1.7` nor RUN heredocs. It
+  //   parses a heredoc body's first line (e.g. `import importlib`) as a
+  //   Dockerfile instruction and aborts EVERY build ("Unknown instruction:
+  //   IMPORT"), failing all Platinum sessions. This exact regression (a
+  //   `<<'PY'` python verify added 2026-06-27) took dev down for hours.
   //
-  // That guard throws SERVER-side, mid-build, and only for Platinum — so on a
-  // Daytona-backed project a heredoc ships green and breaks later. Deciding it
-  // here, from the text, is the same check moved to where it costs nothing.
+  // That guard throws SERVER-side, mid-build. Deciding it here, from the
+  // text, is the same check moved to where it costs nothing.
   for (const ins of instructions) {
     if (/^\s*#/.test(ins.firstLine) || !HEREDOC_RE.test(ins.firstLine)) continue;
     issues.push({

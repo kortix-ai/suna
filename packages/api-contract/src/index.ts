@@ -135,9 +135,12 @@ export const PROJECT_ROLES = ['manager', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every sandbox provider the current platform can select or emit. */
-// Platinum is the reference provider; Daytona is a legacy fallback (removal
-// scheduled). E2B support is discontinued.
+/**
+ * Every sandbox provider name the platform can emit. Platinum is the only
+ * provider. `daytona` stays only so legacy rows parse and a request that names
+ * it gets `400 sandbox_provider_deprecated`: Daytona support was removed on
+ * 2026-10-28. E2B support is discontinued.
+ */
 export const SANDBOX_PROVIDERS = ['platinum', 'daytona'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
@@ -1669,7 +1672,7 @@ export const SessionStartFailureSchema = z
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
       'invalid-secret-boundary-policy',
       // The PROJECT's custom sandbox image is over the provider's snapshot
-      // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
+      // ceiling. Permanent until the image is slimmed,
       // so never retryable.
       'snapshot-too-large',
       // Kortix Drive: the session's drives did not mount (storage down, or a

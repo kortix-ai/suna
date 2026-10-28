@@ -94,7 +94,7 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
   },
   {
     name: "Daytona Platforms, Inc.",
-    purpose: "Secondary agent sandbox provider",
+    purpose: "Legacy agent sandboxes created before 2026-10-28 (no new sandboxes)",
     location: "United States",
   },
   {

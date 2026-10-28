@@ -87,7 +87,7 @@ export function sessionPromptsPollMs(
  *
  * The inbox is not only something to render. A prompt is DURABLE long before it
  * is a turn: the lifecycle row has to be drained, and the box may have to resume
- * first (18.9s Daytona / 24.5s Platinum, measured). `GET .../turn` truthfully
+ * first (24.5s on Platinum, measured). `GET .../turn` truthfully
  * answers "no turns" for that whole window, and the composer used to believe it
  * — swapping Stop back to Send while the user's prompt was still queued. The
  * stamp is the instant the read was ISSUED, for the same reason `/turn`'s is.

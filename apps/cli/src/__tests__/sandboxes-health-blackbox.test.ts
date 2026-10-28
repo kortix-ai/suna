@@ -125,7 +125,7 @@ describe('kortix sandboxes health black box', () => {
   });
 
   test('a current blocked failure includes the repair command', async () => {
-    const currentFailure = failure('current Daytona build failed');
+    const currentFailure = failure('current Platinum build failed');
     healthBody = {
       primary_slug: 'default',
       ready: false,
@@ -142,7 +142,7 @@ describe('kortix sandboxes health black box', () => {
 
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('primary default  blocked');
-    expect(result.stdout).toContain('current failure: current Daytona build failed');
+    expect(result.stdout).toContain('current failure: current Platinum build failed');
     expect(result.stdout).toContain('kortix sandboxes fix');
   });
 });

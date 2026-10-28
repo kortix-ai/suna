@@ -6,7 +6,7 @@ mkdir -p dist
 if [ -n "${BUN_COMPILE_TARGET:-}" ]; then
   target="$BUN_COMPILE_TARGET"
 else
-  # Default to bun-linux-x64. Daytona's standard runners are x86_64 and the
+  # Default to bun-linux-x64. The sandbox runners are x86_64 and the
   # snapshot builder COPYs this binary verbatim into the per-project image —
   # using the host architecture (e.g. arm64 on Apple Silicon dev machines)
   # ships an ELF the sandbox runner can't execute, the daemon never binds

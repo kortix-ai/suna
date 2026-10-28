@@ -27,9 +27,9 @@ test('rebuild responses type partial provider startup failures', () => {
     deleted_existing: true,
     snapshot_name: 'kortix-default-current',
     providers: ['platinum'],
-    failed_providers: ['daytona'],
+    failed_providers: ['platinum'],
   } satisfies RebuildSnapshotResponse;
 
   expect(response.providers).toEqual(['platinum']);
-  expect(response.failed_providers).toEqual(['daytona']);
+  expect(response.failed_providers).toEqual(['platinum']);
 });

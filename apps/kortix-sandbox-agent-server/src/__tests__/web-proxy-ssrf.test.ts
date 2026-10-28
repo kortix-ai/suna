@@ -46,7 +46,7 @@ test.each(['http', 'https'])('pins %s DNS, preserves Host and strips caller cred
     headers: {
       authorization: 'Bearer synthetic-key', cookie: 'synthetic=value',
       'proxy-authorization': 'synthetic', 'x-kortix-user-context': 'synthetic',
-      'x-kortix-service-call': '1', 'x-daytona-preview-token': 'synthetic',
+      'x-kortix-service-call': '1',
       'accept-language': 'en-GB',
     },
   })
@@ -59,7 +59,7 @@ test.each(['http', 'https'])('pins %s DNS, preserves Host and strips caller cred
   expect(headers.get('host')).toBe('upstream.example:8443')
   expect(headers.get('accept-language')).toBe('en-GB')
   expect([...headers.values()].join(' ')).not.toContain('synthetic-key')
-  for (const name of ['authorization', 'cookie', 'proxy-authorization', 'x-kortix-user-context', 'x-kortix-service-call', 'x-daytona-preview-token']) {
+  for (const name of ['authorization', 'cookie', 'proxy-authorization', 'x-kortix-user-context', 'x-kortix-service-call']) {
     expect(headers.has(name)).toBe(false)
   }
   expect(call?.[1]).toMatchObject({ redirect: 'manual', ...(scheme === 'https' ? { tls: { serverName: 'upstream.example' } } : {}) })

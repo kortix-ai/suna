@@ -45,7 +45,7 @@ function projectRow() {
     experimental: {},
     experimental_features: [],
     default_sandbox_provider: null,
-    available_sandbox_providers: ['daytona'],
+    available_sandbox_providers: ['platinum'],
   };
 }
 

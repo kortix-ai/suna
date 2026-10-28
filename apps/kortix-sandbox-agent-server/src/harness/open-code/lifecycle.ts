@@ -385,7 +385,7 @@ export async function buildOpencodeConfigContent(
   // the proxy with a placeholder key, making the gateway provider config
   // SESSION-INDEPENDENT (the real per-session token is injected by the proxy, not
   // baked here). This lets a tokenless warm seed bake a usable provider so restore
-  // can hot-swap the token with NO opencode restart. Cold/Daytona never set this
+  // can hot-swap the token with NO opencode restart. Cold templates never set this
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
@@ -526,7 +526,7 @@ export async function buildOpencodeConfigContent(
   const kortixProvider = buildKortixProvider({
     // In proxy mode opencode talks to the localhost proxy with a placeholder
     // key; the proxy injects the real per-session token upstream. In direct
-    // mode (cold/Daytona) it's the real gateway base + key, as before.
+    // mode (cold templates) it's the real gateway base + key, as before.
     baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
     apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
     managedOverlay,
@@ -1003,8 +1003,7 @@ export async function writeKortixOpencodeConfig(
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
 // Per-request hard cap. `opencode serve` cannot bind its port until
 // buildOpencodeConfigContent (which awaits this fetch) returns — so a slow/degraded
-// gateway `/models` directly blocks session start on BOTH providers (platinum +
-// daytona). Bound it and fall back to the minimal catalog rather than hang; a slow
+// gateway `/models` directly blocks session start. Bound it and fall back to the minimal catalog rather than hang; a slow
 // gateway won't get faster on retry. Restoring the full catalog is the gateway's
 // job once /models is fast (it is uncached + ~400KB today).
 const GATEWAY_MODELS_TIMEOUT_MS = 2_500

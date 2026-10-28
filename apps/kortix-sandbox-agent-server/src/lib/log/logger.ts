@@ -3,7 +3,7 @@
  * on the box.
  *
  * WHY THE FILE. Under E2B the daemon's stdout goes to envd and is not on disk;
- * under Daytona/Platinum it goes to the container runtime and is gone with
+ * under Platinum it goes to the container runtime and is gone with
  * the container. On 2026-08-25 an SampleCo box sat two hours with the daemon
  * reporting `starting` on port 4096 while its own OpenCode served on 4097.
  * The daemon log lines that name that transition (`[opencode] candidate

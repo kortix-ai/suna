@@ -58,8 +58,8 @@ test('mutations accept explicit variables and run host success before fire-and-f
     [() => hooks.useSetAdminProviderDistribution(options), { platinum: 2 }, 'put', '/admin/api/provider-distribution', { platinum: 2 }, 'provider-distribution'],
     [() => hooks.useMigrateAdminSandboxProvider(options), { sessionId: 's/a', targetProvider: 'platinum' }, 'post', '/admin/api/sandboxes/s%2Fa/migrate', { targetProvider: 'platinum' }, 'sandboxes'],
     [() => hooks.useSetAdminProviderFallback(options), false, 'put', '/admin/api/provider-fallback', { enabled: false }, 'provider-fallback'],
-    [() => hooks.useSetAdminProviderDistribution(options), { platinum: 0, daytona: 9 }, 'put', '/admin/api/provider-distribution', { platinum: 0, daytona: 9 }, 'provider-distribution'],
-    [() => hooks.useMigrateAdminSandboxProvider(options), { sessionId: 'second ?#', targetProvider: 'daytona' }, 'post', '/admin/api/sandboxes/second%20%3F%23/migrate', { targetProvider: 'daytona' }, 'sandboxes'],
+    [() => hooks.useSetAdminProviderDistribution(options), { platinum: 9 }, 'put', '/admin/api/provider-distribution', { platinum: 9 }, 'provider-distribution'],
+    [() => hooks.useMigrateAdminSandboxProvider(options), { sessionId: 'second ?#', targetProvider: 'platinum' }, 'post', '/admin/api/sandboxes/second%20%3F%23/migrate', { targetProvider: 'platinum' }, 'sandboxes'],
     [() => hooks.useSetAdminProviderFallback(options), true, 'put', '/admin/api/provider-fallback', { enabled: true }, 'provider-fallback'],
   ] satisfies [() => unknown, unknown, string, string, unknown, string][]) {
     events = []; responseData = { saved: body, path }; hook(); const data = await runMutation(variables);

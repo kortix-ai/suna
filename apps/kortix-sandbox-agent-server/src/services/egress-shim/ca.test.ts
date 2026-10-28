@@ -5,7 +5,7 @@
  * Found the hard way: without the key-identifier pair, `curl` accepted the
  * certificate and `python3 -m requests` refused it with
  * `CERTIFICATE_VERIFY_FAILED ... Missing Authority Key Identifier`. Measured in
- * a real Daytona sandbox — every local test passed while Python was broken for
+ * a real cloud sandbox — every local test passed while Python was broken for
  * every agent that would have used it.
  */
 import { describe, expect, test } from 'bun:test'

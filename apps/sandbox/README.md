@@ -37,10 +37,10 @@ Production sessions do **not** use a shared snapshot. The snapshot builder
 `.kortix/Dockerfile`, layers the Kortix runtime (OpenCode REST, the
 `kortix-agent` binary, and the entrypoint) on
 top, and creates a per-project
-Daytona snapshot named `kortix-snap-{project[:8]}-{contentHash[:12]}`.
+Platinum template, content-addressed by the project and its Dockerfile hash.
 Each session boots from that project's latest `ready` snapshot.
 
 The image in this directory is the reference layout for the layered
 runtime — useful when you want to reproduce the boot environment locally
-or iterate on the entrypoint. It is not pushed to Daytona as a global
-snapshot.
+or iterate on the entrypoint. It is not pushed to the provider as a global
+template.

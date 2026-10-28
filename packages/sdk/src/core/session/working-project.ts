@@ -20,7 +20,7 @@ import { instant } from './working-time';
  *     taken at an instant, and an SSE frame from after that instant knows more.
  *  2. The server holds durable inbox rows for this session → working. A prompt
  *     is accepted long before it is a turn: the row has to be drained, the box
- *     may have to resume (18.9s Daytona / 24.5s Platinum, measured), and only
+ *     may have to resume (24.5s on Platinum, measured), and only
  *     then does `beginSandboxTurn` run. "No turn is running" and "nothing of
  *     yours is in flight" stopped being the same statement when the inbox
  *     landed.

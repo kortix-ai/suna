@@ -35,8 +35,8 @@ describe('secrets-registry pure helpers', () => {
     expect(platinum.required).toBe(true);
     expect(platinum.kind).toBe('operator');
     expect(platinum.masked).toBe('plt…mnop');
-    // Daytona is a legacy fallback: listed, never required. E2B is gone.
-    expect(sandboxGroup.rows.find((r) => r.key === 'DAYTONA_API_KEY')?.required).toBe(false);
+    // Platinum is the only provider: Daytona and E2B keys are not listed.
+    expect(sandboxGroup.rows.some((r) => r.key.startsWith('DAYTONA_'))).toBe(false);
     expect(sandboxGroup.rows.some((r) => r.key.startsWith('E2B_'))).toBe(false);
 
     const llmGroup = groups.find((g) => g.category === 'llm')!;
@@ -100,7 +100,6 @@ describe('secrets-registry pure helpers', () => {
     // KORTIX_APP_REPLICAS, so hand-setting it is refused for the same reason.
     expect(isUpdaterManagedKey('KORTIX_INSTANCE_DIR')).toBe(true);
     expect(isUpdaterManagedKey('OPENROUTER_API_KEY')).toBe(false);
-    expect(isUpdaterManagedKey('DAYTONA_API_KEY')).toBe(false);
   });
 });
 
@@ -171,10 +170,13 @@ describe('missingRequiredSecrets', () => {
     expect(gitProviderConfigured(env)).toBe(false);
   });
 
-  test('an operator on the legacy Daytona fallback with its key reports nothing missing', () => {
+  test('a stale Daytona selection is not a configured sandbox provider and asks for the Platinum key (Daytona support was removed on 2026-10-28)', () => {
     const env = baseEnv({ ALLOWED_SANDBOX_PROVIDERS: 'daytona', DAYTONA_API_KEY: 'dtn_live_key' });
-    expect(missingRequiredSecrets(env)).toEqual([]);
-    expect(sandboxProviderConfigured(env)).toBe(true);
+    expect(sandboxProviderConfigured(env)).toBe(false);
+    expect(missingRequiredSecrets(env)).toContainEqual({
+      label: 'Agent sandbox runtime (platinum API key)',
+      hint: 'kortix self-host env set PLATINUM_API_KEY=<key>',
+    });
   });
 
   test('a stale E2B selection is not a configured sandbox provider (E2B support is discontinued)', () => {

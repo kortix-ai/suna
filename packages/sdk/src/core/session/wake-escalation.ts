@@ -65,7 +65,7 @@
  * How long a wake may show ZERO observable change before the ladder escalates.
  *
  * Sized against the measured wake profile rather than a guess: a cold resume is
- * 18.9s (Daytona) / 24.5s (Platinum) end to end, and each phase of it produces
+ * 24.5s on Platinum end to end, and each phase of it produces
  * an observable change, so a healthy wake never accumulates more than a few
  * seconds of silence. 75s is comfortably past the slowest legitimate single
  * phase (the server's own provider-confirmation grace is 90s but it emits

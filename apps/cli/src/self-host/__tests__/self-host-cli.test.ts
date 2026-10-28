@@ -354,14 +354,14 @@ esac
     expect(configured.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
   });
 
-  test('configure keeps an instance whose env still names the legacy sandbox provider', async () => {
+  test('configure moves an instance whose env still names the removed daytona provider to platinum', async () => {
     await run(['init', '--yes']);
-    await run(['env', 'set', 'ALLOWED_SANDBOX_PROVIDERS=daytona', 'DAYTONA_API_KEY=not-a-real-key']);
+    await run(['env', 'set', 'ALLOWED_SANDBOX_PROVIDERS=daytona']);
 
     const configured = await run(['configure', '--yes']);
     expect(configured.code).toBe(0);
-    expect(configured.stdout).toContain('Agent sandbox runtime (daytona): configured');
-    expect(readEnv().ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
+    expect(configured.stdout).toContain('Agent sandbox runtime (platinum)');
+    expect(readEnv().ALLOWED_SANDBOX_PROVIDERS).toBe('platinum');
   });
 
   test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {

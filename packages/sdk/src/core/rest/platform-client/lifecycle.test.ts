@@ -79,13 +79,13 @@ const existingSession: ProjectSession = {
   project_id: 'proj-1',
   branch_name: 'sess-1',
   base_ref: 'main',
-  sandbox_provider: 'daytona',
+  sandbox_provider: 'platinum',
   sandbox_id: 'sbx-1',
   sandbox_url: 'http://backend.local/v1/p/ext-1/8000',
   opencode_session_id: 'oc-1',
   name: 'Session One',
   custom_name: null,
-  agent_name: 'daytona',
+  agent_name: 'kortix',
   status: 'running',
   error: null,
   metadata: {},
@@ -115,7 +115,7 @@ const newSession: ProjectSession = {
   opencode_session_id: null,
   name: null,
   custom_name: null,
-  agent_name: 'daytona',
+  agent_name: 'kortix',
   status: 'queued',
   error: null,
   metadata: {},
@@ -129,7 +129,7 @@ const runtimeSandbox: ProjectSessionSandbox = {
   session_id: 'sess-2',
   project_id: 'proj-1',
   account_id: 'acc-1',
-  provider: 'daytona',
+  provider: 'platinum',
   external_id: 'ext-2',
   base_url: 'http://backend.local/v1/p/ext-2/8000',
   status: 'active',
@@ -142,7 +142,7 @@ const runtimeSandbox: ProjectSessionSandbox = {
 
 const startResult: SessionStartResult = {
   stage: 'ready',
-  agent_name: 'daytona',
+  agent_name: 'kortix',
   retriable: false,
   sandbox: runtimeSandbox,
   opencode_session_id: 'oc-2',
@@ -201,14 +201,14 @@ test('getProviders returns the live unified provider lineup', async () => {
     if (method === 'GET' && /\/setup\/sandbox-providers$/.test(url)) {
       return {
         status: 200,
-        body: { providers: ['platinum', 'daytona'], default: 'platinum' },
+        body: { providers: ['platinum'], default: 'platinum' },
       };
     }
     throw new Error(`unmocked ${method} ${url}`);
   };
 
   const result = await getProviders();
-  expect(result).toEqual({ providers: ['platinum', 'daytona'], default: 'platinum' });
+  expect(result).toEqual({ providers: ['platinum'], default: 'platinum' });
   expect(callsMatching(/\/setup\/sandbox-providers$/)).toHaveLength(1);
 });
 

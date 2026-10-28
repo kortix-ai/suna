@@ -57,7 +57,7 @@ const sandbox: SandboxInfo = {
   sandbox_id: 'sbx-1',
   external_id: 'ext-123',
   name: 'Test Sandbox',
-  provider: 'daytona',
+  provider: 'platinum',
   base_url: '',
   status: 'active',
   created_at: '2026-01-01T00:00:00Z',

@@ -11,7 +11,7 @@ function session(overrides: Partial<ProjectSession>): ProjectSession {
     project_id: 'proj',
     branch_name: 'branch',
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: 'sb',
     sandbox_url: null,
     opencode_session_id: null,

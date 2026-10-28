@@ -184,7 +184,7 @@ non-fast-forward conflict returns `409`.
   the sandbox from outside; the daemon does not host them.
 - **Channels / connectors** — cloud API.
 - **Secrets** — cloud API decides which secrets a sandbox needs and sets them
-  as plain environment variables at create-time (via Daytona env injection).
+  as plain environment variables at create-time (via provider env injection).
   The daemon does not read them and has no `/kortix/secrets` route.
 - **User preferences** — deferred. On OpenCode the frontend reads the runtime's
   own config document (`session.config`); pi has none.

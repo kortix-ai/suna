@@ -173,7 +173,7 @@ function sessionRow() {
     project_id: PROJECT_ID,
     branch_name: sessionId,
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: sessionId,
     sandbox_url: null,
     opencode_session_id: OPENCODE_SESSION_ID,

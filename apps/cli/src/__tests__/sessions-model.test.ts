@@ -22,7 +22,7 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
   project_id: PROJECT_ID,
   branch_name: "b",
   base_ref: "main",
-  sandbox_provider: "daytona",
+  sandbox_provider: "platinum",
   sandbox_id: id,
   sandbox_url: null,
   opencode_session_id: null,

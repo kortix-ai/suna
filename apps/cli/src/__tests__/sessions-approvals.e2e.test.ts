@@ -39,7 +39,7 @@ function sessionRow() {
     account_id: ACCOUNT_ID,
     project_id: PROJECT_ID,
     branch_name: SESSION_ID,
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${PROXY_ID}/8000`,
     opencode_session_id: 'ses_oc',

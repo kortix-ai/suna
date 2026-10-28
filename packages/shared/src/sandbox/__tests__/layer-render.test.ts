@@ -204,10 +204,9 @@ describe('the Python runtime is managed by uv', () => {
 
 describe('Chromium sits on deterministic parents (cache order is load-bearing)', () => {
   // Regression guard for the v0.10.11 "session never starts" incident. The
-  // provider build caches are CONTENT-ADDRESSED (Daytona has no instruction-text
-  // cache, no agent-swap), so a non-deterministic layer above the ~150MB Chromium
+  // provider build caches are CONTENT-ADDRESSED, so a non-deterministic layer above the ~150MB Chromium
   // download busts its cache and forces a re-download on every rebuild. An
-  // agent-server code change re-mints the base snapshot hash → a full Daytona
+  // agent-server code change re-mints the base snapshot hash → a full
   // rebuild → if Chromium sat below the `opencode serve` migration-bake (sqlite
   // with live timestamps) or the warm-repo clone (fresh credential in the RUN
   // text), it re-downloaded and overran the session-ready window. Chromium must

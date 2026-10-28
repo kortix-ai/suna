@@ -37,14 +37,9 @@ export const SHARED_AUTH_DEFAULTS: Record<string, string> = {
   ADDITIONAL_REDIRECT_URLS: 'kortix://**',
 };
 
-/**
- * Agent code-execution sandbox provider: Platinum. The two DAYTONA_* values
- * apply only to an instance whose env still names the legacy provider.
- */
+/** Agent code-execution sandbox provider: Platinum, the only provider. */
 export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
   ALLOWED_SANDBOX_PROVIDERS: 'platinum',
-  DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
-  DAYTONA_TARGET: 'us',
 };
 
 /**

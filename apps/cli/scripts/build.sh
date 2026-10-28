@@ -2,7 +2,7 @@
 #
 # Compile the `kortix` CLI to a self-contained binary at dist/kortix — the
 # artifact the layered snapshot builder bakes into every cloud sandbox
-# (apps/api/src/snapshots/providers/daytona.ts reads
+# (apps/api/src/snapshots/build-context.ts reads
 # KORTIX_SNAPSHOT_CLI_BIN_PATH, default apps/cli/dist/kortix). Mirrors
 # apps/kortix-sandbox-agent-server/scripts/build.sh so both runtime binaries
 # are produced the same way (CI, dev-local.sh, the snapshot test harness).
@@ -13,7 +13,7 @@ mkdir -p dist
 if [ -n "${BUN_COMPILE_TARGET:-}" ]; then
   target="$BUN_COMPILE_TARGET"
 else
-  # Default to bun-linux-x64: Daytona's standard runners are x86_64 and the
+  # Default to bun-linux-x64: the sandbox runners are x86_64 and the
   # snapshot builder COPYs this binary verbatim into the per-project image.
   # Override with BUN_COMPILE_TARGET for a different arch (e.g. local docker
   # on Apple Silicon, or a darwin host binary).

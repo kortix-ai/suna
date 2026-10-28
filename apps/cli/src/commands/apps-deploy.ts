@@ -192,8 +192,7 @@ interface DeployFlags {
 export function deployFlags(rest: string[]): DeployFlags {
   dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
-  // `daytona` stays accepted, unlisted, for Apps that still run there.
-  if (provider && !['platinum', 'daytona'].includes(provider)) {
+  if (provider && provider !== 'platinum') {
     throw new Error('--provider must be platinum');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;

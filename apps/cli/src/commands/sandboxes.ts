@@ -39,7 +39,6 @@ interface SandboxTemplate {
   disk_gb: number;
   snapshot_name: string;
   content_hash: string;
-  daytona_state: string;
   provider_state: string;
   ready: boolean;
 }
@@ -255,7 +254,7 @@ async function sandboxesLs(client: Client, base: string, json: boolean): Promise
         : 'platform default';
     const marker = t.slug === resp.default_slug ? `${C.green}●${C.reset} ` : '  ';
     process.stdout.write(
-      `${marker}${pad(t.slug, slugW)}   ${stateCell(t.daytona_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
+      `${marker}${pad(t.slug, slugW)}   ${stateCell(t.provider_state, t.ready)}  ${pad(t.source, 9)}  ${pad(trim(spec, 24), 24)}  ${C.faded}${t.cpu}cpu/${t.memory_gb}g/${t.disk_gb}g${C.reset}\n`,
     );
   }
   process.stdout.write(
