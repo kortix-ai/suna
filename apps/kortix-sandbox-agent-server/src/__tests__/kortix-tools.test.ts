@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
 import imageGen, { IMAGE_GEN_SESSION_LIMIT, IMAGE_GEN_TURN_LIMIT } from '@/services/tools/kortix/image_gen'
@@ -198,7 +199,7 @@ describe('image_gen', () => {
       action: 'generate',
       model: 'codex/gpt-image-2',
       provider: 'openai-codex',
-      images: [{ path: expect.any(String), size: '1254x1254', prompt: 'A red cube on a white table' }],
+      images: [{ path: expect.any(String), size: '1254x1254', prompt: 'A red cube on a white table', sha256: expect.any(String) }],
     })
     const [image] = result.images
     expect(image.path).toStartWith(`${imagesDir()}/a-red-cube-on-a-white-table-`)
@@ -335,7 +336,7 @@ describe('image_gen', () => {
       action: 'generate',
       model: 'openrouter/google/gemini-2.5-flash-image',
       provider: 'openrouter',
-      images: [{ path: expect.any(String), size: '1024x1024', prompt: 'x' }],
+      images: [{ path: expect.any(String), size: '1024x1024', prompt: 'x', sha256: expect.any(String) }],
     })
   })
 
@@ -581,9 +582,17 @@ describe('image_gen', () => {
     const result = JSON.parse(text)
     expect(Object.keys(result).sort()).toEqual(['action', 'images', 'model', 'provider'])
     expect(result.images.map((image: Record<string, unknown>) => Object.keys(image).sort())).toEqual([
-      ['path', 'prompt', 'size'],
-      ['path', 'prompt', 'size'],
+      ['path', 'prompt', 'sha256', 'size'],
+      ['path', 'prompt', 'sha256', 'size'],
     ])
+  })
+
+  test('each image carries the sha256 of its saved bytes (R38)', async () => {
+    gateway((call) => (call.body.prompt === 'b' ? answer(jpegOf(0xc0, 640, 480), 'image/jpeg') : generated))
+    const result = await genJson({ prompts: ['a', 'b'] })
+    for (const image of result.images) expect(image.sha256).toBe(createHash('sha256').update(readFileSync(image.path)).digest('hex'))
+    expect(result.images[0].sha256).not.toBe(result.images[1].sha256)
+    expect(result.images[1].sha256).toMatch(/^[0-9a-f]{64}$/)
   })
 })
 
@@ -757,6 +766,49 @@ describe('show', () => {
     expect(result.message).toBe('1 item(s) presented to user as carousel.')
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
+  })
+
+  describe('sha256 of a shown image (R38)', () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+    const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+
+    test('a single image entry carries the sha256 of the file bytes', async () => {
+      writeFileSync(join(dir, 'cat.png'), PNG)
+      const result = JSON.parse(out(await show({ type: 'image', path: 'cat.png' })))
+      expect(result.entry).toMatchObject({ type: 'image', path: join(dir, 'cat.png'), sha256: sha(PNG) })
+    })
+
+    test('each image item carries its own sha256; a non-image item, a url and a missing file carry none', async () => {
+      const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9])
+      mkdirSync(join(dir, 'images'))
+      writeFileSync(join(dir, 'images/a.png'), PNG)
+      writeFileSync(join(dir, 'images/b.JPG'), JPG)
+      writeFileSync(join(dir, 'notes.md'), '# notes')
+      const items = [
+        { type: 'image', path: 'images/a.png' },
+        { type: 'file', path: 'notes.md' },
+        { type: 'image', path: 'images/b.JPG' },
+        { type: 'url', url: 'http://localhost:3000' },
+        { type: 'image', path: 'gone.png' },
+      ]
+      const result = JSON.parse(out(await show({ items: JSON.stringify(items) })))
+      expect(result.items.map((item: { sha256?: string }) => item.sha256)).toEqual([sha(PNG), undefined, sha(JPG), undefined])
+      expect(result.warnings).toEqual([`Item 4: File not found: ${join(dir, 'gone.png')}`])
+    })
+
+    test('an image over 32 MiB carries none', async () => {
+      writeFileSync(join(dir, 'big.png'), PNG)
+      truncateSync(join(dir, 'big.png'), 32 * 1024 * 1024 + 1)
+      const result = JSON.parse(out(await show({ type: 'image', path: 'big.png' })))
+      expect(result.entry.path).toBe(join(dir, 'big.png'))
+      expect(result.entry).not.toHaveProperty('sha256')
+    })
+
+    test('an image path that is a directory carries none and still shows', async () => {
+      mkdirSync(join(dir, 'folder.png'))
+      const result = JSON.parse(out(await show({ type: 'image', path: 'folder.png' })))
+      expect(result.entry).not.toHaveProperty('sha256')
+    })
   })
 
   test('an empty items value ("null", "[]") beside a single item shows that item', async () => {

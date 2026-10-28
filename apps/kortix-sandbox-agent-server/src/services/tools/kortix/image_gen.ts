@@ -13,8 +13,10 @@
  * asked for) and resolves its credential, so the box never holds it. Each
  * image is saved under `<checkout>/output/images/<slug of its prompt>-<time>`
  * with the extension its bytes prove (png, jpg, webp), and the output is
- * `{ action, model, provider, images: [{ path, size, prompt }], failed?: [{ prompt, error }] }`:
- * never image bytes. `size` is read from the saved image's header; `model`
+ * `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }`:
+ * never image bytes. `size` is read from the saved image's header; `sha256`
+ * is the lowercase hex digest of the saved bytes, which a client matches to
+ * the same picture shown again from another path; `model`
  * and `provider` are what answered the first saved image. A prompt that
  * fails is in `failed`; when every prompt fails the call throws the first
  * failure.
@@ -33,6 +35,7 @@
  * The web UI renders a call from the output JSON. A changed copy must keep
  * that shape, or the UI shows the raw output.
  */
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 
@@ -195,7 +198,7 @@ async function generateOne(url: string, token: string, body: Record<string, unkn
   const type = imageType(bytes)
   if (!type) throw new Error('Image generation returned an image that is not png, jpeg or webp.')
   const path = writeNew(dir, defaultName(prompt), type === 'jpeg' ? 'jpg' : type, bytes)
-  return { path, size: headerSize(bytes, type) ?? data.size, prompt, model: data.model, provider: data.provider }
+  return { path, size: headerSize(bytes, type) ?? data.size, prompt, sha256: createHash('sha256').update(bytes).digest('hex'), model: data.model, provider: data.provider }
 }
 
 export default {
@@ -266,7 +269,7 @@ export default {
       action,
       model: saved[0]!.model,
       provider: saved[0]!.provider,
-      images: saved.map(({ path, size, prompt }) => ({ path, size, prompt })),
+      images: saved.map(({ path, size, prompt, sha256 }) => ({ path, size, prompt, sha256 })),
       ...(failed.length ? { failed } : {}),
     })
   },
