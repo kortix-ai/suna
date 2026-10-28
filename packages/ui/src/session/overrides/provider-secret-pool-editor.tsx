@@ -32,7 +32,7 @@ function usableKeys(resources: AccountSecretResource[] = []) {
 
 /** ChatGPT accounts are managed in place: a member cannot open Customize, and a
  *  link there would be a dead end. Hidden when ChatGPT is disabled for the project. */
-function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
+export function ChatGptAccountsButton({ projectId, variant, action, disabled }: {
   projectId: string; variant: 'secondary' | 'outline-ghost'; action: 'connect' | 'manage'; disabled?: boolean;
 }) {
   const t = useTranslations('pooledSecrets');

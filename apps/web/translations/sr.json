@@ -23364,5 +23364,12 @@
       "unarchivedToast": "#{name} је враћен из архиве",
       "failed": "Ажурирање канала #{name} није успело. Покушај поново."
     }
+  },
+  "imageGen": {
+    "generating": "Generisanje slike",
+    "editing": "Uređivanje slike",
+    "loading": "Učitavanje slike",
+    "stopped": "Zaustavljeno",
+    "failed": "Slika nije generisana."
   }
 }

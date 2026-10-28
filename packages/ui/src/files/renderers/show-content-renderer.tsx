@@ -63,6 +63,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
+import { ImageFrame } from '../../session/media/image-frame';
 import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
@@ -329,6 +330,7 @@ export function ShowContentRenderer({
   toolbarActions,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tImageGen = useTranslations('imageGen');
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
   // ── Height presets — fill the panel vs. the compact inline card ──
@@ -615,7 +617,20 @@ export function ShowContentRenderer({
   // it an image had no way to open in the side panel.
   // ═════════════════════════════════════════════════════════════════════════
   if (isImage && path) {
-    if (blobLoading || heicConverting) return <RendererFallback className={mediaH} />;
+    // The same frame the image_gen card draws while its image is on the way:
+    // the box the image will fill, with the sheen, never a bare path.
+    if (blobLoading || heicConverting) {
+      return (
+        <ImageFrame
+          aspectRatio={arCSS ?? 'auto'}
+          src={null}
+          alt={title || fileName}
+          pending
+          label={<span className="text-muted-foreground text-xs">{tImageGen('loading')}</span>}
+          className={cn(mediaH, 'rounded-none')}
+        />
+      );
+    }
     if (blobError) return <LoadError message={blobError} />;
     // HEIC: use the converted JPEG URL
     const imageUrl = isHeic ? heicImageUrl : blobUrl;

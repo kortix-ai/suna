@@ -23364,5 +23364,12 @@
       "unarchivedToast": "已取消归档 #{name}",
       "failed": "无法更新 #{name}。请重试。"
     }
+  },
+  "imageGen": {
+    "generating": "正在生成图像",
+    "editing": "正在编辑图像",
+    "loading": "正在加载图像",
+    "stopped": "已停止",
+    "failed": "图像未生成。"
   }
 }

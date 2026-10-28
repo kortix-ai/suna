@@ -1,0 +1,101 @@
+'use client';
+
+import { cn } from '../../lib/utils';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+
+export interface ImageFrameProps {
+  /** CSS `aspect-ratio` before the image loads (`"3 / 2"`); the image's natural size replaces it on load. */
+  aspectRatio: string;
+  src: string | null;
+  alt: string;
+  /** Draws the sheen: the image does not exist yet, or its bytes are on the way. */
+  pending: boolean;
+  /** Centered over the frame: the busy line, or a note. */
+  label?: ReactNode;
+  /** Makes the image a button (open it in the file viewer). */
+  onOpen?: () => void;
+  className?: string;
+}
+
+/**
+ * The box an image takes before, while and after it exists. It holds the
+ * requested aspect ratio before any pixel arrives, so the layout does not jump
+ * when the image lands, then fades the image in.
+ */
+export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className }: ImageFrameProps) {
+  const sheen = useRef<HTMLDivElement>(null);
+  const img = useRef<HTMLImageElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [natural, setNatural] = useState<string | null>(null);
+
+  // One slow diagonal sheen, transform only, on the compositor (WAAPI, no
+  // keyframes in a stylesheet). Reduced motion keeps the still frame.
+  useEffect(() => {
+    const el = sheen.current;
+    if (!pending || !el?.animate || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const animation = el.animate(
+      [{ transform: 'translateX(-100%) skewX(-20deg)' }, { transform: 'translateX(200%) skewX(-20deg)' }],
+      { duration: 1800, easing: 'ease-in-out', iterations: Infinity }, // audit:allow a busy loop like TextShimmer, not a transition: one slow pass reads as waiting
+
+    );
+    return () => animation.cancel();
+  }, [pending]);
+
+  // A new source starts hidden again; a cached one may be complete before React sees `load`.
+  useEffect(() => {
+    const el = img.current;
+    setLoaded(!!el?.complete && el.naturalWidth > 0);
+  }, [src]);
+
+  const onLoad = () => {
+    const el = img.current;
+    if (el?.naturalWidth && el.naturalHeight) setNatural(`${el.naturalWidth} / ${el.naturalHeight}`);
+    setLoaded(true);
+  };
+
+  const image = src ? (
+    // eslint-disable-next-line @next/next/no-img-element -- a blob: URL of a sandbox file; the Next loader cannot fetch it
+    <img
+      ref={img}
+      src={src}
+      alt={alt}
+      onLoad={onLoad}
+      className={cn(
+        'size-full object-contain transition-[opacity,filter] duration-moderate ease-out motion-reduce:blur-none',
+        loaded ? 'opacity-100 blur-none' : 'opacity-0 blur-xs',
+      )}
+    />
+  ) : null;
+
+  return (
+    <div
+      aria-busy={pending}
+      className={cn('bg-muted relative w-full overflow-hidden rounded-md', className)}
+      style={{ aspectRatio: natural ?? aspectRatio }}
+    >
+      {pending && (
+        <div
+          ref={sheen}
+          aria-hidden
+          className="via-background/60 pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-linear-to-r from-transparent to-transparent"
+          style={{ transform: 'translateX(-100%) skewX(-20deg)' }}
+        />
+      )}
+      {image && onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={alt}
+          className="focus-visible:ring-kortix-base block size-full cursor-zoom-in rounded-md focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+        >
+          {image}
+        </button>
+      ) : (
+        image
+      )}
+      {label ? (
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center">{label}</div>
+      ) : null}
+    </div>
+  );
+}

@@ -13,6 +13,7 @@ import {
 } from '@kortix/sdk';
 import {
   BoundActivateContext,
+  ImageGenPathsContext,
   InlineServicePreview,
   partInput,
   ServicePreviewActions,
@@ -38,6 +39,7 @@ import {
   useServicePreview,
 } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
+import { showDrawnByImageGen, withoutImageGenDuplicates } from './image-gen-view';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
@@ -78,15 +80,20 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   // `path`, so the card renders while the sandbox is off.
   const attachment = (input.attachment as string) || '';
 
+  // Images an `image_gen` card of this turn already drew are not drawn twice (D5).
+  const drawnByImageGen = useContext(ImageGenPathsContext);
   const items = useMemo<ShowCarouselItem[] | null>(() => {
     const raw = input.items;
     if (!raw) return null;
     try {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const rest = withoutImageGenDuplicates(parsed as ShowCarouselItem[], drawnByImageGen);
+        return rest.length > 0 ? rest : null;
+      }
     } catch {}
     return null;
-  }, [input.items]);
+  }, [input.items, drawnByImageGen]);
 
   const isCarousel = !!items && items.length > 0;
 
@@ -222,7 +229,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     () => isShowPayloadEmpty({ items, path, url, content }),
     [items, path, url, content],
   );
-  if (!running && hasNothingToShow) return null;
+  if (!running && (hasNothingToShow || showDrawnByImageGen(input, drawnByImageGen))) return null;
 
   const unavailable = isShowContentUnavailable({
     running,

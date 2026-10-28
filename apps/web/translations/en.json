@@ -23364,5 +23364,12 @@
       "unarchivedToast": "#{name} unarchived",
       "failed": "Could not update #{name}. Try again."
     }
+  },
+  "imageGen": {
+    "generating": "Generating image",
+    "editing": "Editing image",
+    "loading": "Loading image",
+    "stopped": "Stopped",
+    "failed": "The image was not generated."
   }
 }

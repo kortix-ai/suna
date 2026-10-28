@@ -1,110 +1,109 @@
 'use client';
+import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '../../../primitives/text-shimmer';
-import { useFileContent } from '../../../files/runtime/hooks/use-file-content';
-import { parseImageOutput } from '../../media/image-output-path';
-import {
-  BasicTool,
-  isLocalSandboxFilePath,
-  partInput,
-  partOutput,
-  ToolOutputFallback,
-} from '../shared/infrastructure';
+import { useBinaryBlob } from '../../../files/runtime/hooks/use-binary-blob';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { useSessionIds } from '../../../providers/session-ids';
+import { ImageFrame } from '../../media/image-frame';
+import { ChatGptAccountsButton } from '../../overrides/provider-secret-pool-editor';
+import { isLocalSandboxFilePath, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { ToolResultCard } from '../shared/result-card';
+import { ShowFileActions } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
-import { isSandboxNotReadyError } from '@kortix/sdk';
-import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { formatElapsed, imageGenView } from './image-gen-view';
 
-const TITLE_BY_ACTION: Record<string, string> = {
-  generate: 'Generate Image',
-  edit: 'Edit Image',
-  upscale: 'Upscale Image',
-  remove_bg: 'Remove Background',
-};
-
-export function ImageGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const input = partInput(call);
-  const output = partOutput(call);
-  const prompt = input.prompt as string | undefined;
-  const action = input.action as string | undefined;
-
-  const { imagePath, directUrl } = useMemo(() => parseImageOutput(output), [output]);
-
-  const isLocalPath = imagePath ? isLocalSandboxFilePath(imagePath) : false;
-  const fileContentPath = useMemo(() => {
-    if (!isLocalPath || !imagePath || directUrl) return null;
-    return imagePath.replace(/^\/workspace\//, '');
-  }, [isLocalPath, imagePath, directUrl]);
-  const {
-    data: fileContentData,
-    isLoading: isQueryLoading,
-    error: fileContentError,
-  } = useFileContent(fileContentPath, {
-    enabled: !!fileContentPath,
-  });
-  // A readiness 503 (parked/booting sandbox) counts as loading: useFileContent
-  // keeps polling while it lasts, so the image resolves once the box is up.
-  const isImageLoading = isQueryLoading || isSandboxNotReadyError(fileContentError);
-
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+/** The busy line over the generating frame. Elapsed time counts from the call's start, so a reload keeps it. */
+function GeneratingLabel({ seed, label, startedAt }: { seed: string; label: string; startedAt: number | null }) {
+  const [mountedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!(fileContentData?.encoding === 'base64' && fileContentData?.content)) {
-      setImageUrl(null);
-      return;
-    }
-    const binary = atob(fileContentData.content);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], {
-      type: fileContentData.mimeType || 'image/webp',
-    });
-    const url = URL.createObjectURL(blob);
-    setImageUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [fileContentData]);
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="text-muted-foreground flex items-center gap-2 text-xs">
+      <SessionDotMatrix sessionId={seed} size={14} className="shrink-0" />
+      <TextShimmer duration={1} spread={2} className="text-xs">
+        {label}
+      </TextShimmer>
+      <span className="tabular-nums">{formatElapsed(now - (startedAt ?? mountedAt))}</span>
+    </span>
+  );
+}
 
-  const displayImageSrc = directUrl || imageUrl || '';
+export function ImageGenTool({ call }: ToolProps) {
+  const t = useTranslations('imageGen');
+  const view = useMemo(() => imageGenView(call), [call]);
+  const { projectId } = useSessionIds();
+  const { enabled: navigationEnabled } = useToolNavigation();
+
+  const filePath = view.imagePath && isLocalSandboxFilePath(view.imagePath) ? view.imagePath : null;
+  const { blobUrl, error: blobError } = useBinaryBlob(filePath);
+  const src = view.directUrl ?? blobUrl;
+  const busyLabel = t(view.action === 'edit' ? 'editing' : 'generating');
+
+  let body: ReactNode;
+  if (view.phase === 'failed' || view.phase === 'stopped') {
+    const error = view.error;
+    body = (
+      <div className="bg-muted flex flex-col items-start gap-1 rounded-md px-3 py-2.5 text-xs">
+        {error ? (
+          <>
+            <span className="text-foreground">{error.message || t('failed')}</span>
+            {error.suggestion ? <span className="text-muted-foreground">{error.suggestion}</span> : null}
+            {error.connectChatGpt && projectId ? (
+              <div className="mt-1">
+                <ChatGptAccountsButton projectId={projectId} variant="secondary" action="connect" />
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <span className="text-muted-foreground">{t('stopped')}</span>
+        )}
+      </div>
+    );
+  } else {
+    const generating = view.phase === 'generating';
+    body = (
+      <div className="group relative">
+        <ImageFrame
+          aspectRatio={view.aspectRatio}
+          src={generating ? null : src}
+          alt={view.prompt || busyLabel}
+          pending={generating || (!src && !blobError)}
+          label={
+            generating ? (
+              <GeneratingLabel seed={call.call_id} label={busyLabel} startedAt={view.startedAt} />
+            ) : blobError ? (
+              <span className="text-muted-foreground text-xs">{blobError}</span>
+            ) : !src ? (
+              <span className="text-muted-foreground text-xs">{t('loading')}</span>
+            ) : null
+          }
+          onOpen={
+            filePath && navigationEnabled
+              ? () => useFilePreviewStore.getState().openPreview(filePath)
+              : undefined
+          }
+        />
+        {!generating && filePath ? (
+          <div className="bg-popover pointer-events-none absolute top-1.5 right-1.5 rounded-md border opacity-0 shadow-xs transition-opacity duration-fast group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+            <ShowFileActions path={filePath} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
-    <BasicTool
-      icon={<ImageIcon className="size-3.5 shrink-0" />}
-      trigger={{
-        title: TITLE_BY_ACTION[action ?? ''] || tHardcodedUi.raw('i18nComplete.text0753bd774f1b'),
-        subtitle: prompt?.slice(0, 60),
-      }}
-      defaultOpen={defaultOpen}
-      forceOpen={forceOpen}
-      locked={locked}
-    >
-      {imagePath || directUrl ? (
-        <ToolResultCard bodyClassName="p-1">
-          {displayImageSrc ? (
-            <img
-              src={displayImageSrc}
-              alt={String(prompt || tHardcodedUi.raw('i18nComplete.textdf37e04fda71'))}
-              className="max-h-64 rounded-sm object-contain"
-            />
-          ) : isImageLoading ? (
-            <div className="px-2 py-1.5 text-xs">
-              <TextShimmer duration={1} spread={2} className="text-xs">
-                {tHardcodedUi.raw(
-                  'componentsSessionToolRenderers.line4414JsxTextLoadingImagePreview',
-                )}
-              </TextShimmer>
-            </div>
-          ) : (
-            <div className="text-muted-foreground px-2 py-1.5 font-mono text-xs break-all">
-              {imagePath}
-            </div>
-          )}
-        </ToolResultCard>
-      ) : output ? (
-        <ToolOutputFallback output={output} toolName="image_gen" />
+    <figure className="flex w-full max-w-md flex-col gap-2">
+      {body}
+      {view.prompt ? (
+        <figcaption className="text-muted-foreground line-clamp-2 text-xs">{view.prompt}</figcaption>
       ) : null}
-    </BasicTool>
+    </figure>
   );
 }
 ToolRegistry.register('image-gen', ImageGenTool);

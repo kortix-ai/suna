@@ -173,8 +173,9 @@ function ToolPartRendererImpl({
   const childBearingTaskError =
     errorStr !== undefined && toolKind(call.name) === 'task' && Boolean(getChildSessionId(call));
   // A failed codemode script keeps its partial output and the calls it made before
-  // the failure: its own row draws them, with the error.
-  const drawsOwnError = childBearingTaskError || call.name === 'codemode';
+  // the failure: its own row draws them, with the error. The image card draws its
+  // failure (with the Connect ChatGPT action) and a stop in place of the image.
+  const drawsOwnError = childBearingTaskError || call.name === 'codemode' || call.name === 'image_gen';
 
   if (errorStr !== undefined && !drawsOwnError) {
     const { display, server } = (() => {

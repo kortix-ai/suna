@@ -23364,5 +23364,12 @@
       "unarchivedToast": "#{name} désarchivé",
       "failed": "Impossible de mettre à jour #{name}. Réessayez."
     }
+  },
+  "imageGen": {
+    "generating": "Génération de l’image",
+    "editing": "Modification de l’image",
+    "loading": "Chargement de l’image",
+    "stopped": "Arrêté",
+    "failed": "L’image n’a pas été générée."
   }
 }

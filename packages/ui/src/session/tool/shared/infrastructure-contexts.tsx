@@ -80,7 +80,13 @@ export const TurnLiveContext = createContext(false);
  */
 export const RecoveredCallsContext = createContext<ReadonlySet<string>>(new Set());
 
-export const ToolDurationContext = createContext<number | undefined>(undefined);
+/**
+ * The images the turn's `image_gen` calls already drew (`imagePathsShownByImageGen`).
+ * A `show` of the same file in that turn does not draw it a second time (D5).
+ */
+export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
+
+export const ToolDurationContext =createContext<number | undefined>(undefined);
 
 // Background memory plumbing (searches/gets and raw memory/ reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
