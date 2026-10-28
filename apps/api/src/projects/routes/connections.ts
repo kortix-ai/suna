@@ -5,6 +5,8 @@ import { connectorConnections, connectors, projectSessionConnectorBindings } fro
 import { and, eq, isNull } from 'drizzle-orm';
 import { ensureProjectComputer } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { AGENT_REVOKED_ACCOUNT_REFUSAL, agentMayTouchConnection } from '../lib/connection-mutation';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
@@ -89,7 +91,9 @@ async function reconcileConnectionRow(input: {
   label: string;
   metadata: Record<string, unknown>;
   createdBy: string;
-}) {
+  /** The caller is an agent session (`isProjectSessionPrincipal`): it may not revive a revoked row. */
+  agentSession: boolean;
+}): Promise<{ connection: typeof connectorConnections.$inferSelect | null; created: boolean; refused?: true }> {
   // Identity includes the LABEL: an owner may hold several connections on one
   // connector ("Work", "Personal"), so reconciling a NEW label adds a connection
   // while the same label stays idempotent (updates metadata in place). Matches
@@ -103,6 +107,10 @@ async function reconcileConnectionRow(input: {
     eq(connectorConnections.label, input.label),
   );
   const [existing] = await db.select().from(connectorConnections).where(identity).limit(1);
+  // A person revoked it: only a person adds it back (connection-mutation.ts `agentMayTouchConnection`).
+  if (existing && !agentMayTouchConnection(existing, { sessionBound: input.agentSession })) {
+    return { connection: null, created: false, refused: true };
+  }
   if (existing) {
     // Reconciling the label of a REVOKED row is a re-connect, not a metadata
     // touch: the caller is adding "this account" back, and the credential they
@@ -422,7 +430,7 @@ export function registerConnectionsRoutes(): void {
       // former `user`-strategy connector with no connect flow at all.
       const ownerType = 'member' as const;
       const ownerId = loaded.userId;
-      const { connection, created } = await reconcileConnectionRow({
+      const { connection, created, refused } = await reconcileConnectionRow({
         accountId: loaded.row.accountId,
         projectId,
         connectorId: connector.connectorId,
@@ -431,7 +439,9 @@ export function registerConnectionsRoutes(): void {
         label,
         metadata,
         createdBy: loaded.userId,
+        agentSession: isProjectSessionPrincipal(c),
       });
+      if (refused) return c.json(AGENT_REVOKED_ACCOUNT_REFUSAL, 403);
       if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
       return c.json(serializeConnection({ ...connection, connectorAlias }), created ? 201 : 200);
     },
@@ -554,7 +564,7 @@ export function registerConnectionsRoutes(): void {
           409,
         );
       }
-      const { connection, created } = await reconcileConnectionRow({
+      const { connection, created, refused } = await reconcileConnectionRow({
         accountId: loaded.row.accountId,
         projectId,
         connectorId: connector.connectorId,
@@ -563,7 +573,9 @@ export function registerConnectionsRoutes(): void {
         label,
         metadata,
         createdBy: loaded.userId,
+        agentSession: isProjectSessionPrincipal(c),
       });
+      if (refused) return c.json(AGENT_REVOKED_ACCOUNT_REFUSAL, 403);
       if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
       const view = serializeConnection({ ...connection, connectorAlias });
       return c.json(view, created ? 201 : 200);
