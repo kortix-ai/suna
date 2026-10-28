@@ -36,6 +36,7 @@ import {
 } from './dispatch';
 import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
+import { requestFieldError } from './request-fields';
 import {
   publicPayload,
   publicResponseHeaders,
@@ -408,6 +409,28 @@ export async function handleChatCompletions(
       resolvedModel: '',
       requestId: id,
       suggestion: 'Send one valid JSON request body.',
+    });
+  }
+
+  const fieldError = requestFieldError(body);
+  if (fieldError) {
+    refundHold(hooks, principal, logger);
+    emit({
+      ...identity(principal),
+      requestedModel,
+      status: 400,
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: fieldError,
+    });
+    return gatewayErrorResponse(400, {
+      message: fieldError,
+      code: 'invalid_request',
+      provider: '',
+      requestedModel,
+      resolvedModel: '',
+      requestId: id,
+      suggestion: 'Fix the field and retry.',
     });
   }
 

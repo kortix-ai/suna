@@ -19,6 +19,7 @@ import {
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
+import { requestFieldError } from './pipeline/request-fields';
 import { createRouteMemory } from './pipeline/route-memory';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
@@ -156,6 +157,8 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return anthropicErrorResponse(400, 'Invalid JSON body');
     }
+    const anthropicFieldError = requestFieldError(anthropicBody);
+    if (anthropicFieldError) return anthropicErrorResponse(400, anthropicFieldError);
 
     const streaming = anthropicBody.stream === true;
     const chatBody = anthropicMessagesToChat(anthropicBody as unknown as AnthropicMessagesRequest);
@@ -215,6 +218,8 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
       req.rawBody = '';
       return responsesErrorResponse(400, 'Invalid JSON body');
     }
+    const responsesFieldError = requestFieldError(responsesBody);
+    if (responsesFieldError) return responsesErrorResponse(400, responsesFieldError);
 
     const streaming = responsesBody.stream === true;
     const chatBody = responsesToChat(responsesBody as unknown as ResponsesRequest);
