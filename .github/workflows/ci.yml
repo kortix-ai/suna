@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
-      api: ${{ steps.filter.outputs.api }}
+      app_runtime: ${{ steps.filter.outputs.app_runtime }}
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
@@ -53,7 +53,7 @@ jobs:
         id: filter
         with:
           filters: |
-            # Shared foundation for the pnpm-installed jobs (api/frontend/cli):
+            # Shared foundation for the pnpm-installed jobs (frontend/cli/self-host):
             # a change here can break any of their installs/typechecks.
             pnpm: &pnpm
               - 'pnpm-lock.yaml'
@@ -62,16 +62,11 @@ jobs:
               - '.npmrc'
               - 'tsconfig.base.json'
               - '.github/workflows/ci.yml'
-            api:
-              - *pnpm
-              - 'apps/api/**'
+            app_runtime:
+              - '.github/workflows/ci.yml'
               - 'apps/kortix-app-runtime/**'
-              - 'packages/agent-tunnel/**'
-              - 'packages/api-contract/**'
-              - 'packages/db/**'
-              - 'packages/manifest-schema/**'
-              - 'packages/shared/**'
-              - 'packages/starter/**'
+              # build_test.go asserts the Caddy pin in this file.
+              - 'apps/api/Dockerfile'
             frontend:
               - *pnpm
               - 'apps/web/**'
@@ -192,6 +187,27 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
           NEXT_OUTPUT: standalone
+
+  app-runtime-tests:
+    name: App runtime Go tests
+    needs: changes
+    if: needs.changes.outputs.app_runtime == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/kortix-app-runtime/go.mod
+          # The module has no dependencies, so there is no go.sum to key a cache on.
+          cache: false
+
+      - name: Go tests
+        working-directory: apps/kortix-app-runtime
+        run: go test ./...
 
   sandbox-agent-build:
     name: Sandbox agent build
@@ -399,7 +415,23 @@ jobs:
         with:
           node-version: 22
       - name: Check root lockfile against GHSA advisories
-        run: npx --yes pnpm@8.11.0 audit --audit-level moderate
+        # Exception: 4 better-auth advisories (GHSA-q84f-53jg-9ppm, GHSA-r4xp-prcw-77qf,
+        # GHSA-965c-763c-88jm, GHSA-44jh-23m7-hpcf). Only apps/white-label/lumen pulls
+        # better-auth; no workflow builds or deploys it; it uses none of the affected
+        # features (device login, OAuth proxy, magic link); and @convex-dev/better-auth
+        # has no release for the fixed better-auth 1.7.7+. pnpm 8.11 cannot ignore an
+        # advisory by GHSA id, so the JSON report is filtered; anything else at moderate
+        # or above fails, and an unreadable report fails.
+        run: |
+          npx --yes pnpm@8.11.0 audit --audit-level moderate --json > "$RUNNER_TEMP/audit.json" || true
+          node -e '
+            const ignore = new Set(["GHSA-q84f-53jg-9ppm", "GHSA-r4xp-prcw-77qf", "GHSA-965c-763c-88jm", "GHSA-44jh-23m7-hpcf"]);
+            const rank = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
+            const report = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const bad = Object.values(report.advisories ?? {}).filter((a) => rank[a.severity] >= rank.moderate && !ignore.has(a.github_advisory_id));
+            for (const a of bad) console.log(`${a.severity} ${a.module_name} ${a.github_advisory_id} ${a.url}`);
+            process.exit(bad.length ? 1 : 0);
+          ' "$RUNNER_TEMP/audit.json"
       - name: Check scanner lockfile against GHSA advisories
         if: always()
         working-directory: .deepsec

@@ -83,11 +83,6 @@ describe('help is global only when nothing is typing', () => {
       });
     }
   });
-
-  test('attach mode stays opaque — Ctrl+C there belongs to opencode', () => {
-    expect(globalKeyAction(key('c', { ctrl: true }), state({ attaching: true }))).toBeNull();
-    expect(globalKeyAction(key('q', { ctrl: true }), state({ attaching: true }))).toBeNull();
-  });
 });
 
 describe('quitting', () => {
@@ -204,14 +199,6 @@ describe('Esc', () => {
 
   test('in the sidebar it is the sidebar’s: cancel the filter or the confirm', () => {
     expect(globalKeyAction(key('escape'), state({ focus: 'sidebar' }))).toBeNull();
-  });
-});
-
-describe('attach mode suspends the keyboard', () => {
-  test('nothing is dispatched while opencode owns the terminal', () => {
-    for (const event of [key('?'), key('escape'), key('c', { ctrl: true }), key('tab')]) {
-      expect(globalKeyAction(event, state({ attaching: true }))).toBeNull();
-    }
   });
 });
 

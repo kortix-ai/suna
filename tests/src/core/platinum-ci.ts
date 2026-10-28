@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { PREVIEW_HOST_RAM_MB } from './preview-session-reaper';
 
 // v15 / v13: templates are captured at PREVIEW_HOST_RAM_MB. Platinum refuses a
@@ -26,23 +26,9 @@ const SANDBOX_START_TIMEOUT_MS = 45 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
 const API_MAX_ATTEMPTS = 6;
-const CLEANUP_MAX_ATTEMPTS = 8;
 const TRANSIENT_STATUS_CODES = new Set([502, 503, 504, 524]);
 const WARM_READY_COMMAND =
   'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && test ! -S /var/run/docker.sock';
-
-export interface PlatinumCiInput {
-  apiUrl: string;
-  apiKey: string;
-  repository: string;
-  sha: string;
-  ref: string;
-  runId: string;
-  runAttempt: string;
-  testArgs: string[];
-  skipSdkPackageTests?: boolean;
-  root: string;
-}
 
 export interface PlatinumTemplateSpec {
   name: string;
@@ -161,12 +147,6 @@ export interface PlatinumSandbox {
   exposed?: Array<{ port: number; url: string; token?: string; public?: boolean }>;
 }
 
-interface PlatinumSandboxPage {
-  rows: PlatinumSandbox[];
-  total: number;
-  has_more?: boolean;
-}
-
 interface PlatinumExecResult {
   result?: {
     stdout?: string;
@@ -193,45 +173,6 @@ export interface PlatinumWorkerObserverInput {
   sleep?: (ms: number) => Promise<void>;
   write?: (chunk: string) => void;
   warn?: (message: string) => void;
-}
-
-interface WorkerMetadata {
-  provider: 'platinum';
-  sandboxId: string;
-  templateId: string;
-  templateName: string;
-  repository: string;
-  ref: string;
-  gitSha: string;
-  command: string[];
-  templateDurationMs: number;
-  sandboxCreateDurationMs: number;
-  sandboxVia: 'restore' | 'cold-boot' | 'unknown';
-  warmPrepareDurationMs: number;
-  workerDurationMs: number;
-  totalDurationMs: number;
-  exitCode: number;
-}
-
-export function providerMetadataIdentifier(value: string, label: string): string {
-  if (!/^[a-z0-9_.:-]{1,128}$/i.test(value)) {
-    throw new Error(`invalid ${label}: ${JSON.stringify(value)}`);
-  }
-  return value;
-}
-
-export function validatePlatinumCiInput(input: PlatinumCiInput): void {
-  if (!input.apiKey) throw new Error('PLATINUM_API_KEY is required');
-  if (!/^https:\/\//.test(input.apiUrl)) throw new Error('PLATINUM_API_URL must use https');
-  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
-    throw new Error(`invalid GitHub repository: ${input.repository}`);
-  }
-  if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
-  if (!/^[a-z0-9_./-]+$/i.test(input.ref)) throw new Error(`invalid Git ref: ${input.ref}`);
-  if (!/^[a-z0-9_.-]+$/i.test(input.runId)) throw new Error(`invalid run id: ${input.runId}`);
-  if (!/^[a-z0-9_.-]+$/i.test(input.runAttempt)) {
-    throw new Error(`invalid run attempt: ${input.runAttempt}`);
-  }
 }
 
 export async function lockfileHash(root: string): Promise<string> {
@@ -360,136 +301,6 @@ export function buildPlatinumWarmTemplateRequest(lockHash: string): {
   };
 }
 
-export function buildPlatinumWorkerRequest(input: {
-  templateId: string;
-  repository: string;
-  sha: string;
-  runId: string;
-  runAttempt: string;
-}): Record<string, unknown> {
-  return {
-    name: `kortix-ci-${input.runId}-${input.runAttempt}`.slice(0, 64),
-    template: input.templateId,
-    // Platinum's ephemeral stateful-restore path can terminalize the create
-    // command before the guest starts. The persistent path restores the same
-    // captured template successfully. Both paths are disposable here because
-    // the runner and the workflow cleanup always delete the worker.
-    type: 'persistent',
-    auto_stop_minutes: 15,
-    auto_archive_days: 1,
-    auto_delete_days: 1,
-    cpu: 8,
-    ram_mb: 16_384,
-    disk_gb: 50,
-    metadata: {
-      owner: 'kortix-ci',
-      repository: input.repository,
-      git_sha: input.sha,
-      run_id: input.runId,
-    },
-  };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-export function buildWorkerScript(input: {
-  repository: string;
-  ref: string;
-  sha: string;
-  testArgs: string[];
-  skipSdkPackageTests?: boolean;
-}): string {
-  const provider = 'platinum';
-  const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
-  const testCommand = command.map(shellQuote).join(' ');
-  const prestartSupabase = input.testArgs.includes('--browser-only')
-    ? `pnpm exec supabase start --ignore-health-check
-echo "[${provider}-ci] supabase_prestarted=1"`
-    : '';
-  const providerLogs =
-    '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
-  return `#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT=/workspace/suna
-LOG=/workspace/kortix-test.log
-STATUS=/workspace/kortix-test.exit
-ARTIFACT=/workspace/kortix-test-results.tar.gz
-export HOME=/root
-export CI=1
-${input.skipSdkPackageTests ? 'export KORTIX_PACKAGE_SKIP_SDK_TESTS=1' : ''}
-
-exec > >(tee -a "$LOG") 2>&1
-rm -f "$STATUS" "$ARTIFACT"
-
-finish() {
-  local code="$1"
-  set +e
-  mkdir -p "$ROOT/tests/test-results/${provider}"
-  for source in "$LOG" /workspace/dockerd.log ${providerLogs}; do
-    if [[ -f "$source" ]]; then
-      cp "$source" "$ROOT/tests/test-results/${provider}/$(basename "$source")"
-    fi
-  done
-  tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results
-  printf '%s\n' "$code" > "$STATUS"
-}
-trap 'code=$?; finish "$code"' EXIT
-
-echo "[${provider}-ci] repository=${input.repository}"
-echo "[${provider}-ci] ref=${input.ref}"
-echo "[${provider}-ci] expected_sha=${input.sha}"
-echo "[${provider}-ci] command=${command.join(' ')}"
-
-test -d "$ROOT/.git"
-git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
-git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}
-git -C "$ROOT" checkout --detach --force FETCH_HEAD
-git -C "$ROOT" clean -ffd
-actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
-if [[ "$actual_sha" != ${shellQuote(input.sha)} ]]; then
-  echo "[${provider}-ci] expected ${input.sha}, got $actual_sha" >&2
-  exit 2
-fi
-echo "[${provider}-ci] exact_sha=$actual_sha"
-
-cd "$ROOT"
-corepack enable
-pnpm install --offline --frozen-lockfile
-
-for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
-  if ! modprobe "$module"; then
-    echo "[${provider}-ci] module_unavailable=$module; docker readiness will decide" >&2
-  fi
-done
-echo "[${provider}-ci] container_modules_checked=1"
-
-if ! docker info >/dev/null 2>&1; then
-  nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
-  for _ in $(seq 1 180); do
-    docker info >/dev/null 2>&1 && break
-    sleep 1
-  done
-fi
-if ! docker info >/dev/null 2>&1; then
-  tail -n 240 /workspace/dockerd.log >&2 || true
-  exit 3
-fi
-echo "[${provider}-ci] docker_ready=1"
-docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
-echo "[${provider}-ci] docker_bridge_ready=1"
-
-${prestartSupabase}
-${testCommand}
-`;
-}
-
-export function platinumWorkerLaunchCommand(): string {
-  return 'setsid -f /workspace/run-kortix-tests.sh >/workspace/kortix-bootstrap.log 2>&1 </dev/null';
-}
-
 export class PlatinumApi {
   readonly base: string;
   readonly headers: Record<string, string>;
@@ -599,62 +410,6 @@ export class PlatinumApi {
  */
 export function platinumSandboxListPath(limit: number, offset: number): string {
   return `/v1/sandboxes?paginated=true&limit=${limit}&regions=local&offset=${offset}`;
-}
-
-export function selectOutstandingPlatinumSandboxIds(
-  sandboxes: PlatinumSandbox[],
-  runId: string,
-  runAttempt: string,
-): string[] {
-  const expectedName = `kortix-ci-${runId}-${runAttempt}`.slice(0, 64);
-  return sandboxes
-    .filter(
-      (sandbox) =>
-        sandbox.name === expectedName &&
-        sandbox.metadata?.owner === 'kortix-ci' &&
-        sandbox.metadata?.run_id === runId,
-    )
-    .map((sandbox) => sandbox.id);
-}
-
-export async function cleanupPlatinumCiSandboxes(input: {
-  apiUrl: string;
-  apiKey: string;
-  runId: string;
-  runAttempt: string;
-}): Promise<number> {
-  if (!input.apiKey) throw new Error('PLATINUM_API_KEY is required');
-  if (!/^https:\/\//.test(input.apiUrl)) throw new Error('PLATINUM_API_URL must use https');
-  if (!/^[a-z0-9_.-]+$/i.test(input.runId)) throw new Error(`invalid run id: ${input.runId}`);
-  if (!/^[a-z0-9_.-]+$/i.test(input.runAttempt)) {
-    throw new Error(`invalid run attempt: ${input.runAttempt}`);
-  }
-
-  const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const sandboxes: PlatinumSandbox[] = [];
-  const limit = 100;
-  for (let offset = 0; ; offset += limit) {
-    const page = await api.json<PlatinumSandboxPage>(
-      platinumSandboxListPath(limit, offset),
-    );
-    sandboxes.push(...page.rows);
-    if (!page.has_more || page.rows.length === 0) break;
-  }
-  const ids = selectOutstandingPlatinumSandboxIds(sandboxes, input.runId, input.runAttempt);
-  for (const id of ids) {
-    try {
-      await api.json(
-        `/v1/sandboxes/${id}`,
-        { method: 'DELETE', signal: AbortSignal.timeout(30_000) },
-        { attempts: CLEANUP_MAX_ATTEMPTS },
-      );
-    } catch (error) {
-      if (!(error instanceof PlatinumHttpError && error.status === 404)) throw error;
-    }
-    console.log(`[platinum-ci] post_deleted sandbox=${id}`);
-  }
-  if (ids.length === 0) console.log('[platinum-ci] post_cleanup sandbox=none');
-  return ids.length;
 }
 
 async function waitForTemplate(
@@ -980,63 +735,6 @@ export async function observePlatinumWorker(input: PlatinumWorkerObserverInput):
   throw new Error(`Platinum worker exceeded ${timeoutMs}ms`);
 }
 
-async function readWorkerExitCode(api: PlatinumApi, sandboxId: string): Promise<number | null> {
-  const result = await exec(
-    api,
-    sandboxId,
-    [
-      'bash',
-      '-lc',
-      'if [[ -f /workspace/kortix-test.exit ]]; then cat /workspace/kortix-test.exit; else exit 3; fi',
-    ],
-    true,
-  );
-  if (result?.exit_code === 3) return null;
-  if ((result?.exit_code ?? 0) !== 0) {
-    throw new Error(`Platinum worker status check failed: ${result?.stderr ?? ''}`);
-  }
-  const exitCode = Number(String(result?.stdout ?? '').trim());
-  if (!Number.isInteger(exitCode)) throw new Error('Platinum worker wrote an invalid exit code');
-  return exitCode;
-}
-
-async function readWorkerExitCodeFile(api: PlatinumApi, sandboxId: string): Promise<number | null> {
-  const status = await stat(api, sandboxId, '/workspace/kortix-test.exit', 1);
-  if (!status) return null;
-  const bytes = await api.read(sandboxId, '/workspace/kortix-test.exit', undefined, undefined, 1);
-  const exitCode = Number(new TextDecoder().decode(bytes).trim());
-  if (!Number.isInteger(exitCode)) throw new Error('Platinum worker wrote an invalid exit code');
-  return exitCode;
-}
-
-async function streamWorker(
-  api: PlatinumApi,
-  sandboxId: string,
-  startedAt: number,
-): Promise<number> {
-  let fileStatusFailures = 0;
-  return observePlatinumWorker({
-    startedAt,
-    checkExitCode: async () => {
-      try {
-        const exitCode = await readWorkerExitCodeFile(api, sandboxId);
-        fileStatusFailures = 0;
-        return exitCode;
-      } catch (error) {
-        if (!isRetryablePlatinumError(error)) throw error;
-        fileStatusFailures += 1;
-        if (fileStatusFailures % 20 !== 0) throw error;
-        console.warn(
-          `[platinum-ci] status file unavailable ${fileStatusFailures} times; using exec fallback`,
-        );
-        return readWorkerExitCode(api, sandboxId);
-      }
-    },
-    statLog: () => stat(api, sandboxId, '/workspace/kortix-test.log', 1),
-    readLog: (offset, limit) => api.read(sandboxId, '/workspace/kortix-test.log', offset, limit, 1),
-  });
-}
-
 export async function downloadArtifacts(
   api: PlatinumApi,
   sandboxId: string,
@@ -1057,128 +755,4 @@ export async function downloadArtifacts(
   });
   const code = await extracted.exited;
   if (code !== 0) throw new Error(`artifact extraction exited with code ${code}`);
-}
-
-export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
-  validatePlatinumCiInput(input);
-  const totalStartedAt = Date.now();
-  const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const hash = await lockfileHash(input.root);
-  const templateSpec = buildPlatinumTemplateSpec({
-    lockHash: hash,
-    repository: input.repository,
-    cacheSha: input.sha,
-  });
-  console.log(`[platinum-ci] template=${templateSpec.name}`);
-
-  const templateStartedAt = Date.now();
-  const baseTemplate = await ensureTemplate(api, templateSpec);
-  const template = await ensureWarmTemplate(api, baseTemplate, hash);
-  const templateDurationMs = Date.now() - templateStartedAt;
-
-  let sandboxId = '';
-  let sandboxCreateDurationMs = 0;
-  let warmPrepareDurationMs = 0;
-  let workerDurationMs = 0;
-  const cleanup = async () => {
-    if (!sandboxId) return;
-    try {
-      try {
-        await api.json(
-          `/v1/sandboxes/${sandboxId}`,
-          { method: 'DELETE', signal: AbortSignal.timeout(30_000) },
-          { attempts: CLEANUP_MAX_ATTEMPTS },
-        );
-      } catch (error) {
-        if (!(error instanceof PlatinumHttpError && error.status === 404)) throw error;
-      }
-      console.log(`[platinum-ci] deleted sandbox=${sandboxId}`);
-    } catch (error) {
-      console.error(`[platinum-ci] sandbox cleanup failed: ${String(error)}`);
-      throw error;
-    }
-    sandboxId = '';
-  };
-
-  const onSignal = (signal: string) => {
-    void cleanup().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
-  };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
-
-  try {
-    const createStartedAt = Date.now();
-    const created = await api.json<PlatinumSandbox>(
-      '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
-      {
-        method: 'POST',
-        headers: { 'idempotency-key': `kortix-ci-${input.runId}-${input.runAttempt}` },
-        body: JSON.stringify(
-          buildPlatinumWorkerRequest({
-            templateId: template.id,
-            repository: input.repository,
-            sha: input.sha,
-            runId: input.runId,
-            runAttempt: input.runAttempt,
-          }),
-        ),
-      },
-    );
-    sandboxId = created.id;
-    const sandbox = await observePlatinumSandboxStart({
-      sandbox: created,
-      startedAt: createStartedAt,
-      readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
-    });
-    const sandboxVia: WorkerMetadata['sandboxVia'] = sandbox.via ?? 'unknown';
-    sandboxCreateDurationMs = Date.now() - createStartedAt;
-
-    const warmStartedAt = Date.now();
-    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
-    warmPrepareDurationMs = Date.now() - warmStartedAt;
-
-    const workerScript = buildWorkerScript(input);
-    await api.write(`${sandboxId}:/workspace/run-kortix-tests.sh`, workerScript, '0755');
-    const launch = await exec(api, sandboxId, ['bash', '-lc', platinumWorkerLaunchCommand()]);
-    if ((launch?.exit_code ?? 0) !== 0) {
-      throw new Error(`Platinum worker launch failed: ${launch?.stderr ?? ''}`);
-    }
-
-    const workerStartedAt = Date.now();
-    const exitCode = await streamWorker(api, sandboxId, workerStartedAt);
-    workerDurationMs = Date.now() - workerStartedAt;
-    await downloadArtifacts(api, sandboxId, input.root);
-
-    const metadata: WorkerMetadata = {
-      provider: 'platinum',
-      sandboxId: providerMetadataIdentifier(sandboxId, 'Platinum sandbox ID'),
-      templateId: providerMetadataIdentifier(template.id, 'Platinum template ID'),
-      templateName: platinumTemplateName(hash),
-      repository: input.repository,
-      ref: input.ref,
-      gitSha: input.sha,
-      command: ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])],
-      templateDurationMs,
-      sandboxCreateDurationMs,
-      sandboxVia,
-      warmPrepareDurationMs,
-      workerDurationMs,
-      totalDurationMs: Date.now() - totalStartedAt,
-      exitCode,
-    };
-    const metadataDir = resolve(input.root, 'tests/test-results/platinum');
-    await mkdir(metadataDir, { recursive: true });
-    await writeFile(
-      resolve(metadataDir, `worker-${basename(input.runId)}-${basename(input.runAttempt)}.json`),
-      `${JSON.stringify(metadata, null, 2)}\n`,
-    );
-    console.log(
-      `[platinum-ci] exit=${exitCode} warm_ms=${warmPrepareDurationMs} worker_ms=${workerDurationMs} total_ms=${metadata.totalDurationMs}`,
-    );
-    return exitCode;
-  } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
-    await cleanup();
-  }
 }

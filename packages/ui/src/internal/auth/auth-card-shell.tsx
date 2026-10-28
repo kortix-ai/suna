@@ -34,7 +34,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
     <Link
       href="/legal/terms"
       onClick={(event) => onLegalClick(event, '/legal/terms')}
-      className="hover:text-muted-foreground transition-colors"
+      className="hover:text-foreground transition-colors"
     >
       {t('termsOfService')}
     </Link>
@@ -43,14 +43,14 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
     <Link
       href="/legal?tab=privacy"
       onClick={(event) => onLegalClick(event, '/legal?tab=privacy')}
-      className="hover:text-muted-foreground transition-colors"
+      className="hover:text-foreground transition-colors"
     >
       {t('privacyPolicy')}
     </Link>
   );
 
   return (
-    <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
+    <footer className="text-muted-foreground mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
       {variant === 'continue'
         ? t.rich('byContinuingYouAgree', {
             termsOfService: () => terms,
@@ -65,6 +65,8 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
               termsOfService: () => terms,
               privacyPolicy: () => privacy,
             })}
+      {/* Terms section 10 (Marks and publicity), said where people accept the Terms. */}
+      {variant !== 'default' && <p className="mt-2">{t('customerLogoNotice')}</p>}
     </footer>
   );
 }

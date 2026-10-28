@@ -2,7 +2,7 @@ import type { ToolPart } from '@/ui';
 import { toolCallBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { collectAllToolCalls, latestRunMessages, deriveRunOutcome } from '@kortix/ui/session-panel';
-import { groupSteps } from './group-steps';
+import { groupSteps } from '@kortix/sdk';
 
 function assistant(
   outcome?: { status: SessionLogMessage['status']; code?: string; message?: string },
