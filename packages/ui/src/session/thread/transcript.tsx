@@ -1646,8 +1646,13 @@ function TurnToolBlocks(
     [turn, working],
   );
   // D5: a `show` of an image this turn's `image_gen` already drew does not draw it again.
-  // Keyed by its content so the context keeps one identity across stream frames.
-  const imageGenPathsKey = useMemo(() => [...imagePathsShownByImageGen(turnBlocks(turn))].join('\n'), [turn]);
+  // Read from the segments, not the raw blocks: a script's nested call (a v2 `nested_part`
+  // block) is a real `image_gen` call there. Keyed by its content so the context keeps one
+  // identity across stream frames.
+  const imageGenPathsKey = useMemo(
+    () => [...imagePathsShownByImageGen(segments.flatMap((s) => (s.kind === 'burst' || s.kind === 'show-group' ? s.blocks : [s.block])))].join('\n'),
+    [segments],
+  );
   const imageGenPaths = useMemo(
     () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
     [imageGenPathsKey],

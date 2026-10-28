@@ -67,3 +67,45 @@ test('a turn with image_gen and a show of the same image draws the image once an
   expect(html).toContain('report.pdf');
   expect(html).not.toContain('>fox.png<');
 });
+
+// The same turn from a codemode script on v2 (a pi log at rest): the script's image_gen and show
+// calls are `nested_part` blocks. The image draws once, as on the live turn and on v1.
+test('v2: a script\'s nested image_gen and a nested show of the same image draw the image once', () => {
+  const nested = (n: number, tool: string, input: Record<string, unknown>, output: string): SessionLogMessage['blocks'][number] => ({
+    type: 'harness', id: `n${n}`, harness: 'pi', kind: 'nested_part', model_visible: false,
+    data: { parent_call_id: 'code-1', part: { type: 'tool', callID: `code-1/${n}`, tool, state: { status: 'completed', input, output, title: tool, metadata: {}, time: { start: 1, end: 2 } } } },
+  });
+  const turns = sessionLogTurns({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 'synthetic', parent_thread_id: null, spawned_by: null,
+    agent: null, title: null, created_at: '', messages: [
+      message('prompt', 'user', [{ type: 'text', id: 'q', text: 'Draw a synthetic fox' }]),
+      message('reply', 'assistant', [
+        call('code-1', 'codemode', { code: 'synthetic script' }, 'done'),
+        nested(1, 'image_gen', { action: 'generate', prompts: ['A synthetic fox'] },
+          JSON.stringify({ action: 'generate', model: 'gpt-image-2', provider: 'openai', images: [{ path: IMAGE, size: '1536x1024', prompt: 'A synthetic fox' }] })),
+        nested(2, 'show', { items: [{ type: 'image', path: IMAGE }, { type: 'file', path: '/workspace/report.pdf', title: 'report.pdf' }] }, ''),
+        { type: 'text', id: 'answer', text: 'Synthetic answer' },
+      ], { reply_to: 'prompt', producer: { harness: 'pi', harness_version: '1', adapter_version: '1.2.0' } }),
+    ],
+  });
+  const turn = turns[0];
+  if (!turn) throw new Error('Missing synthetic turn');
+  const html = renderToStaticMarkup(
+    <IntlTestProvider locale="en" onError={() => {}}>
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <SessionTurn
+            turn={turn} turnOutcome={{}} sessionId="synthetic" sessionStatus={undefined} isLast ownsPlan={false}
+            permissions={[]} questions={[]} sessionWorking={false} isWorkingTurn={false}
+            suppressBusyIndicator={false} awaitingUser={false} pending={false} isFirstTurn
+            onPermissionReply={async () => {}} onRewind={() => {}} rewindDisabled
+          />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </IntlTestProvider>,
+  );
+  expect(html.match(/<figure/g)).toHaveLength(1);
+  expect(html.match(/Loading image/g)).toHaveLength(1);
+  expect(html).toContain('report.pdf');
+  expect(html).not.toContain('>fox.png<');
+});

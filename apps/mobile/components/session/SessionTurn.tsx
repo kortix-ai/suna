@@ -43,7 +43,6 @@ import {
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
-  imagePathsShownByImageGen,
   shouldShowToolPart,
   showDrawnByImageGen,
   type SessionLogTurn,
@@ -55,6 +54,7 @@ import {
   answeredQuestionCalls,
   commandPromptText,
   compactionTurnView,
+  imagePathsDrawnByImageGen,
   inlineContentItems,
   isOpenTextBlock,
   liveTextBlockId,
@@ -238,7 +238,7 @@ function SessionTurnImpl({
   );
   // A `show` of an image this turn's `image_gen` already drew does not draw it again.
   // Keyed by its content so the context keeps one identity across stream frames.
-  const imageGenPathsKey = useMemo(() => [...imagePathsShownByImageGen(blocks)].join('\n'), [blocks]);
+  const imageGenPathsKey = useMemo(() => [...imagePathsDrawnByImageGen(segments)].join('\n'), [segments]);
   const imageGenPaths = useMemo(
     () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
     [imageGenPathsKey],
