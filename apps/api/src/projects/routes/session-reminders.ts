@@ -58,7 +58,7 @@ async function authorizeReminderSession(c: Context<AppEnv>) {
   const agentCaller = isProjectSessionPrincipal(c);
   if (isBorrowedSessionPrincipal(c) && callerKortixSessionId(c) !== sessionId) {
     return {
-      response: c.json({ error: 'An agent session can manage reminders on its own session only' }, 403),
+      response: c.json({ error: 'An agent session can manage loops on its own session only' }, 403),
     };
   }
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -94,11 +94,11 @@ export function registerSessionRemindersRoutes(): void {
       method: 'get',
       path: '/{projectId}/reminders',
       tags: ['sessions'],
-      summary: 'List reminders of a project',
+      summary: 'List the loops of a project',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
-        200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Reminders on sessions the caller can open'),
+        200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Loops on sessions the caller can open'),
         ...errors(403, 404),
       },
     }),
@@ -146,11 +146,11 @@ export function registerSessionRemindersRoutes(): void {
       method: 'get',
       path: '/{projectId}/sessions/{sessionId}/reminders',
       tags: ['sessions'],
-      summary: 'List reminders of a session',
+      summary: 'List the loops of a session',
       ...auth,
       request: { params: sessionParams },
       responses: {
-        200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Reminders on this session'),
+        200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Loops on this session'),
         ...errors(400, 403, 404, 409),
       },
     }),
@@ -169,22 +169,22 @@ export function registerSessionRemindersRoutes(): void {
       method: 'post',
       path: '/{projectId}/sessions/{sessionId}/reminders',
       tags: ['sessions'],
-      summary: 'Create a session reminder',
+      summary: 'Create a loop on a session',
       ...auth,
       request: {
         params: sessionParams,
         body: { content: { 'application/json': { schema: lenientBody({
-            prompt: z.string().openapi({ description: 'Text the session receives when the reminder fires.' }),
-            name: z.string().optional().openapi({ description: 'Reminder name.' }),
-            at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off reminder. Give exactly one of at, in, every, cron.' }),
+            prompt: z.string().openapi({ description: 'Text the session receives when the loop fires.' }),
+            name: z.string().optional().openapi({ description: 'Loop name.' }),
+            at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off loop. Give exactly one of at, in, every, cron.' }),
             in: z.string().optional().openapi({ description: 'Delay such as 30m, 24h, 2d.' }),
             every: z.string().optional().openapi({ description: 'Repeat interval such as 1h. Minimum applies.' }),
-            cron: z.string().optional().openapi({ description: 'Cron expression for a repeating reminder.' }),
+            cron: z.string().optional().openapi({ description: 'Cron expression for a repeating loop.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
           }) } } },
       },
       responses: {
-        201: json(ReminderSchema, 'The created reminder'),
+        201: json(ReminderSchema, 'The created loop'),
         ...errors(400, 403, 404, 409),
       },
     }),
@@ -205,7 +205,7 @@ export function registerSessionRemindersRoutes(): void {
       // Fast refusal; the locked insert below is the authoritative cap.
       if ((await countActiveSessionReminders(projectId, sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
         return c.json(
-          { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` },
+          { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active loops. Stop one first.` },
           409,
         );
       }
@@ -255,16 +255,16 @@ export function registerSessionRemindersRoutes(): void {
       method: 'patch',
       path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
       tags: ['sessions'],
-      summary: 'Update a session reminder',
+      summary: 'Pause or resume a loop',
       ...auth,
       request: {
         params: reminderParams,
         body: { content: { 'application/json': { schema: lenientBody({
-            enabled: z.boolean().openapi({ description: 'true resumes the reminder; false pauses it.' }),
+            enabled: z.boolean().openapi({ description: 'true resumes the loop; false pauses it.' }),
           }) } } },
       },
       responses: {
-        200: json(ReminderSchema, 'The updated reminder'),
+        200: json(ReminderSchema, 'The updated loop'),
         ...errors(400, 403, 404, 409),
       },
     }),
@@ -276,14 +276,14 @@ export function registerSessionRemindersRoutes(): void {
       const access = await authorizeReminderSession(c);
       if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
-      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      if (!row) return c.json({ error: 'Loop not found' }, 404);
       if (
         body.enabled &&
         !row.enabled &&
         (await countActiveSessionReminders(access.projectId, access.sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION
       ) {
         return c.json(
-          { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` },
+          { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active loops. Stop one first.` },
           409,
         );
       }
@@ -302,11 +302,11 @@ export function registerSessionRemindersRoutes(): void {
       method: 'post',
       path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}/run',
       tags: ['sessions'],
-      summary: 'Run a session reminder now',
+      summary: 'Run a loop now',
       ...auth,
       request: { params: reminderParams },
       responses: {
-        202: json(ReminderSchema, 'The reminder, with its prompt queued for the session'),
+        202: json(ReminderSchema, 'The loop, with its prompt queued for the session'),
         ...errors(400, 403, 404, 409),
       },
     }),
@@ -315,7 +315,7 @@ export function registerSessionRemindersRoutes(): void {
       if (access.response) return access.response;
       const { projectId, loaded, visible, agentCaller } = access;
       const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
-      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      if (!row) return c.json({ error: 'Loop not found' }, 404);
       await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
       const spec = row.scheduleSpec as unknown as GitTriggerSpec;
       const now = new Date();
@@ -331,7 +331,7 @@ export function registerSessionRemindersRoutes(): void {
       // the reminder (fireReminderSuccessor). `queued`: the prompt waits for
       // delivery, which sets the final status — `failed` again, or cleared.
       if (result.status !== 'queued' && result.status !== 'fired') {
-        return c.json({ error: result.error ?? result.reason ?? 'The reminder could not run' }, 409);
+        return c.json({ error: result.error ?? result.reason ?? 'The loop could not run' }, 409);
       }
       await markGitTriggerFired(projectId, row.slug, now, 'fired', { endsAlert: result.status === 'fired' });
       const updated = await getSessionReminder(projectId, result.sessionId ?? access.sessionId, row.slug);
@@ -346,11 +346,11 @@ export function registerSessionRemindersRoutes(): void {
       method: 'delete',
       path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
       tags: ['sessions'],
-      summary: 'Delete a session reminder',
+      summary: 'Delete a loop',
       ...auth,
       request: { params: reminderParams },
       responses: {
-        200: json(z.object({ ok: z.boolean() }), 'Reminder deleted'),
+        200: json(z.object({ ok: z.boolean() }), 'Loop deleted'),
         ...errors(400, 403, 404, 409),
       },
     }),
@@ -358,7 +358,7 @@ export function registerSessionRemindersRoutes(): void {
       const access = await authorizeReminderSession(c);
       if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
-      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      if (!row) return c.json({ error: 'Loop not found' }, 404);
       await deleteSessionReminder(access.projectId, row.slug);
       return c.json({ ok: true });
     },

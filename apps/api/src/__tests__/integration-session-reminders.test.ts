@@ -393,6 +393,6 @@ describe('session reminders on the trigger tables', () => {
       for (let i = 0; i < REMINDER_MAX_ACTIVE_PER_SESSION; i++) expect('row' in (await add(sessionId))).toBe(true);
     }
     const over = await add(sessions.at(-1)!);
-    expect(over).toEqual({ error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` });
+    expect(over).toEqual({ error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active loops. Stop one first.` });
   });
 });

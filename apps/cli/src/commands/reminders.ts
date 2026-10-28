@@ -207,7 +207,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     // The env session belongs to the sandbox's own host. Against a linked or
     // --host project elsewhere the API 404s with a bare "Not found" that reads
     // like a platform failure — name the mismatch and the flag instead. A bad
-    // reminder id 404s too ("Reminder not found"); keep the server's text.
+    // loop id 404s too ("Loop not found"); keep the server's text.
     const body = (err as { body?: { error?: unknown } })?.body;
     if (implicitSession && (err as { status?: unknown })?.status === 404 && body?.error === 'Not found') {
       process.stderr.write(

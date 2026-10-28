@@ -75,10 +75,10 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
   if (has('every') && has('cron')) return { error: 'Pass every or cron, not both' };
   if (has('at') && has('in')) return { error: 'Pass at or in, not both' };
   if (has('cron') && (has('at') || has('in'))) {
-    return { error: 'A cron reminder sets its own fire times; drop at/in' };
+    return { error: 'A cron loop sets its own fire times; drop at/in' };
   }
   if (!has('every') && !has('cron') && !has('at') && !has('in')) {
-    return { error: 'Say when the reminder fires: every, cron, at, or in' };
+    return { error: 'Say when the loop fires: every, cron, at, or in' };
   }
 
   let start: Date | null = null;
@@ -311,10 +311,10 @@ export async function insertSessionReminderWithinCaps(
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`reminders:${projectId}`}, 0))`);
     if ((await countActiveSessionReminders(projectId, sessionId, tx)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
-      return { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` };
+      return { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active loops. Stop one first.` };
     }
     if ((await countActiveProjectReminders(projectId, tx)) >= REMINDER_MAX_ACTIVE_PER_PROJECT) {
-      return { error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` };
+      return { error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active loops. Stop one first.` };
     }
     return { row: await insertSessionReminder(input, tx) };
   });

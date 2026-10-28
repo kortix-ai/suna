@@ -75,7 +75,7 @@ flow(
       await ctx.step('bad schedules → 400 with the reason, nothing stored', async () => {
         for (const [body, reason] of [
           [{ prompt: 'x', every: '1m' }, 'every must be at least 5m'],
-          [{ prompt: 'x' }, 'Say when the reminder fires'],
+          [{ prompt: 'x' }, 'Say when the loop fires'],
           [{ prompt: 'x', at: '2020-01-01T00:00:00Z' }, 'at must be in the future'],
           [{ every: '1h' }, 'prompt is required'],
           [{ prompt: 'x', in: '99999999999d' }, 'in must be at most 366d'],

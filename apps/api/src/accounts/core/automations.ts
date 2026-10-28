@@ -28,7 +28,7 @@ function status(pause: AccountAutomationPause | null, canChange: boolean) {
 
 /**
  * Pause all automations (KRTX-1721): one switch per account stops every
- * automatic fire in every project — schedules, reminders, webhooks, app events
+ * automatic fire in every project — schedules, loops, webhooks, app events
  * and monitors (`accounts/automation-pause.ts`). Any member may read it; changing
  * it takes `account.write` (owners and admins by default).
  */
@@ -62,7 +62,7 @@ export function registerAutomationRoutes(): void {
       tags: ['accounts'],
       summary: 'Pause or resume every automation of the account',
       description:
-        'paused: true stops every automatic fire in every project of the account: schedules, reminders, webhooks, ' +
+        'paused: true stops every automatic fire in every project of the account: schedules, loops, webhooks, ' +
         'connector events and App events. A manual fire still runs. Resuming fires a schedule slot missed while paused once.',
       ...auth,
       request: {

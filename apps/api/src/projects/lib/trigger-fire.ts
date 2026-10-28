@@ -51,13 +51,13 @@ export async function resolveTriggerActor(project: ProjectRow): Promise<string |
 export const PRIVATE_CHANNEL_TRIGGER = {
   error:
     'A trigger from the project config cannot post into a private channel: anyone who edits the config would decide what runs there. ' +
-    'Move the trigger to a public channel, or set a reminder in the private thread.',
+    'Move the trigger to a public channel, or ask an agent in the private thread to set a loop.',
   errorCode: 'private_channel_trigger',
 } as const;
 
 /** A reminder into a private channel whose author is no longer in it. */
 export const REMINDER_AUTHOR_NOT_IN_CHANNEL = {
-  error: 'This reminder posts into a private channel, and the person who set it is no longer a member of that channel.',
+  error: 'This loop posts into a private channel, and the person who set it is no longer a member of that channel.',
   errorCode: 'reminder_author_not_in_channel',
 } as const;
 
@@ -508,7 +508,7 @@ async function fireSessionReminder(
     await disableSessionReminder(project.projectId, spec.slug, new Date());
     return {
       status: 'failed',
-      error: "The reminder's author is no longer a member of this account, so the reminder is now paused",
+      error: "The loop's author is no longer a member of this account, so the loop is now paused",
       errorCode: 'reminder_author_left',
       retryable: false,
     };
@@ -532,7 +532,7 @@ async function fireSessionReminder(
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
-    error: 'The reminder session is deleted or failed, so the reminder is now paused',
+    error: 'The loop\'s session is deleted or failed, so the loop is now paused',
     errorCode: 'reminder_session_gone',
     retryable: false,
   };
@@ -562,7 +562,7 @@ async function fireReminderSuccessor(
       agent_name: spec.agent,
       initial_prompt:
         `${reminderPromptText(spec)}\n\n` +
-        `This reminder belonged to session ${failedSessionId}, which failed. You continue its work: ` +
+        `This loop belonged to session ${failedSessionId}, which failed. You continue its work: ` +
         'read what it kept in Files (/drives) before you act.',
       metadata: { reminder_successor_of: failedSessionId },
     },
@@ -573,7 +573,7 @@ async function fireReminderSuccessor(
   if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {
     return {
       status: 'failed',
-      error: String(result.error?.body.error ?? 'The reminder session failed and no successor session could start'),
+      error: String(result.error?.body.error ?? 'The loop\'s session failed and no successor session could start'),
       errorCode: 'reminder_successor_failed',
       retryable: result.retryable === true,
     };

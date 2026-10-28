@@ -421,7 +421,7 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
 
 /**
  * The account's Pause all automations: `paused` stops every automatic fire in
- * every project of the account — schedules, reminders, webhooks, app events and
+ * every project of the account — schedules, loops (reminders), webhooks, app events and
  * monitors. A manual fire still runs.
  */
 export interface AccountAutomationsStatus {

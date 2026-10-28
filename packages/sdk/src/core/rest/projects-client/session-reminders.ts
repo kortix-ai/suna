@@ -1,5 +1,8 @@
 // Session reminders — scheduled prompts into one session.
 //
+// The product calls a reminder a loop (the Loops page, `kortix loop`). The
+// SDK names, the HTTP routes and the ids keep the wire name, reminder.
+//
 // A reminder wakes its session on a schedule with the same prompt ("did the email
 // arrive?") until someone stops it. It lives in the database, not kortix.yaml,
 // so an agent can create one mid-task with one call. Each fire re-prompts the

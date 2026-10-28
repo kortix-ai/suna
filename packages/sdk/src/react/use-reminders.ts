@@ -15,7 +15,7 @@ import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
 /**
- * Every reminder in a project the caller can see, plus pause/resume
+ * Every reminder (a loop, in product copy) in a project the caller can see, plus pause/resume
  * (`update`), `remove` and `run` (fire once now). A reminder changes when it fires, when its agent
  * sets one, and from other members, so this is the `inventory` tier.
  *

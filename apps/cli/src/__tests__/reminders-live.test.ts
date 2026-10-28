@@ -44,7 +44,7 @@ function startServer(): string {
       if (url.pathname === BASE && req.method === 'POST') {
         if ((body as { prompt?: string }).prompt === 'FLAG_OFF') {
           return Response.json(
-            { error: 'Reminders is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'reminders' },
+            { error: 'Loops is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'reminders' },
             { status: 403 },
           );
         }
@@ -55,7 +55,7 @@ function startServer(): string {
       }
       if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE, NAMED] });
       if (url.pathname === `${BASE}/reminder.bad` && (req.method === 'PATCH' || req.method === 'DELETE')) {
-        return Response.json({ error: 'Reminder not found' }, { status: 404 });
+        return Response.json({ error: 'Loop not found' }, { status: 404 });
       }
       if (url.pathname === `${BASE}/${DONE.id}` && req.method === 'PATCH') return Response.json(DONE);
       if (url.pathname === `${BASE}/${REMINDER.id}` && req.method === 'PATCH') {
@@ -190,7 +190,7 @@ describe('kortix reminders — inside a session', () => {
   test('flag off: the server message plus the command that turns reminders on, exit 1', async () => {
     const r = await runCli(['remind', 'FLAG_OFF', '--in', '1h']);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Reminders is not enabled for this project');
+    expect(r.stderr).toContain('Loops is not enabled for this project');
     expect(r.stderr).toContain('kortix projects features enable reminders');
   }, 60_000);
 
@@ -215,7 +215,7 @@ describe('kortix reminders — inside a session', () => {
   test('a 404 from a bad reminder id keeps the server text, not the session hint', async () => {
     const r = await runCli(['reminders', 'pause', 'reminder.bad']);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('Reminder not found');
+    expect(r.stderr).toContain('Loop not found');
     expect(r.stderr).not.toContain('$KORTIX_SESSION_ID');
   }, 60_000);
 
