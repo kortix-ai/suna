@@ -7,7 +7,9 @@
  */
 import { chatInstalls, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { telegramCall } from './api';
 import {
   type ChannelAccessEntry,
   type ChannelAccessRequester,
@@ -71,11 +73,15 @@ export async function saveTelegramInstall(input: {
   if (input.username) await upsertSecret(input.projectId, TELEGRAM_BOT_USERNAME, input.username);
 }
 
+/**
+ * Null for a deleted project: its tombstone keeps the install (no FK cascade),
+ * and the webhook and both consumers return at no install, so its bot answers no one.
+ */
 export async function loadTelegramInstall(projectId: string): Promise<TelegramInstall | null> {
   const [row] = await db
     .select({ botId: chatInstalls.workspaceId, metadata: projects.metadata })
     .from(chatInstalls)
-    .innerJoin(projects, eq(projects.projectId, chatInstalls.projectId))
+    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!row) return null;
@@ -102,6 +108,25 @@ export async function deleteTelegramInstall(projectId: string): Promise<void> {
   await deleteProjectSecrets(projectId, [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_BOT_USERNAME]);
   // Requests were made to the old bot. The allowed list stays for a reconnect.
   await clearChannelAccessRequests('telegram', projectId);
+}
+
+/**
+ * The project delete releases its bot: the webhook, only while it points at
+ * this project (the bot may serve another project since), then the install and
+ * its secrets. Telegram is best effort and never blocks the delete; an update
+ * that still arrives finds no secret and gets the webhook's 404.
+ */
+export async function releaseTelegramBot(projectId: string): Promise<void> {
+  const token = await loadTelegramBotToken(projectId);
+  if (token) {
+    try {
+      const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
+      if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) await telegramCall(token, 'deleteWebhook', {}, 5_000);
+    } catch (error) {
+      logger.warn('[telegram] the deleted project kept its bot webhook', { projectId, error: String(error) });
+    }
+  }
+  await deleteTelegramInstall(projectId);
 }
 
 /** Replace the allowed sender list; drops the requests of the ids it allows. */
