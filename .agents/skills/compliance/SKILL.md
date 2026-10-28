@@ -1,6 +1,6 @@
 ---
 name: compliance
-description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts."
+description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, Terms of Service changes and their 30-day notice, customer logo use (publicity), and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, the Terms of Service text or packages/shared/src/terms.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts."
 ---
 
 # Compliance
@@ -65,6 +65,38 @@ The privacy@kortix.com reports give the per-sweep totals.
 
 `apps/api/src/__tests__/integration-subprocessor-notices.test.ts`:
 `pnpm test -- --db-only integration-subprocessor-notices`.
+
+## Change the Terms of Service
+
+The text is `apps/web/src/app/[locale]/(public)/(seo)/legal/terms-of-service.ts`.
+The version and the notice are `packages/shared/src/terms.ts`.
+
+Terms section 16: a material change needs 30 days' notice to self-serve
+customers. A signed Order keeps the Terms version it names.
+
+1. Edit the text. Update the version line at the top of `TERMS_OF_SERVICE`.
+2. In `terms.ts`: move `TERMS_PREVIOUS_VERSION` to the old version, set
+   `TERMS_VERSION` to the merge day, `TERMS_EFFECTIVE` 37 days later, and
+   `TERMS_CHANGES` to one sentence per change.
+3. If the change affects what a person accepts at signup, change the
+   consent line too (`packages/ui/src/internal/auth/auth-card-shell.tsx`,
+   key `auth.customerLogoNotice` for the publicity clause).
+4. Merge to `dev`. The notice ships with the next prod release.
+
+`runTermsNoticeSweep` (`apps/api/src/billing/services/terms-notices.ts`) works
+like the subprocessor sweep: hourly, prod only, once per paid account, Reply-To
+legal@kortix.com, audit event `legal.terms_notice.sent` (`resource_id` =
+`TERMS_VERSION`), and a report per sweep to legal@kortix.com. "Terms notice
+gave only N days" means the release was late: move `TERMS_EFFECTIVE`.
+Free accounts get the notice on the Terms page and in the signup line.
+
+### Customer logos (Terms section 10, from version 2026-10-28)
+
+Kortix may show an organization customer's name and logo in customer lists.
+It may not publish a quote, case study or endorsement without written
+approval. An opt-out arrives at legal@kortix.com: remove the name and logo
+from Kortix websites within 30 days. Never use a logo before
+`TERMS_EFFECTIVE`, or for a customer whose signed Order excludes it.
 
 ## Staff access to a customer account (act-as)
 

@@ -2803,6 +2803,7 @@
     "signInWithEmail": "Se connecter avec email",
     "createNewAccount": "Créer un nouveau compte",
     "byContinuingYouAgreeSimple": "En continuant, tu acceptes notre",
+    "customerLogoNotice": "Si tu t'inscris pour une organisation, Kortix peut afficher son nom et son logo comme client. Tu peux t'y opposer à tout moment via legal@kortix.com.",
     "phoneVerification": {
       "title": "Vérifiez votre numéro de téléphone",
       "titleOtp": "Entrez le code de vérification",

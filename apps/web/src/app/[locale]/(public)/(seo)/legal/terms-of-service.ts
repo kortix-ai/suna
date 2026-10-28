@@ -1,17 +1,22 @@
 /**
- * The Kortix Terms of Service, Version 2026-07-14, as published.
+ * The Kortix Terms of Service, as published.
  *
  * English only, like the privacy policy: a legal text has one authoritative
  * version. Edit the text here, keep its Markdown shape (`##` sections,
- * paragraphs, `-` bullets, `1.` numbered lists, `**bold**`), and bump the
- * version and dates below together. `legal/page.tsx` renders it.
+ * paragraphs, `-` bullets, `1.` numbered lists, `**bold**`), and move the
+ * version and dates in `@kortix/shared/terms` with any material change: that
+ * module also drives the 30-day notice email. `legal/page.tsx` renders it.
  */
+import { formatSubprocessorDate } from '@kortix/shared/subprocessors';
+import { TERMS_EFFECTIVE as EFFECTIVE_DAY, TERMS_PREVIOUS_VERSION, TERMS_VERSION } from '@kortix/shared/terms';
 
-export const TERMS_VERSION = '2026-07-14';
-export const TERMS_LAST_UPDATED = 'July 14, 2026';
-export const TERMS_EFFECTIVE = 'July 14, 2026';
+export { TERMS_VERSION };
+export const TERMS_LAST_UPDATED = formatSubprocessorDate(TERMS_VERSION);
+export const TERMS_EFFECTIVE = formatSubprocessorDate(EFFECTIVE_DAY);
 
-export const TERMS_OF_SERVICE = `These Terms of Service (the "Terms") are a legal agreement between Kortix AI Corp, a Delaware corporation ("Kortix," "we," "us," or "our"), and the person or organization accepting these Terms ("Customer," "you," or "your"). They govern access to and use of the Services.
+export const TERMS_OF_SERVICE = `**Version ${TERMS_VERSION}, effective ${TERMS_EFFECTIVE}.** It replaces version ${TERMS_PREVIOUS_VERSION}. The only change is the "Marks and publicity" paragraph in Section 10: Kortix may list an organization customer by name and logo, and the customer can opt out at any time. Until ${TERMS_EFFECTIVE}, version ${TERMS_PREVIOUS_VERSION} applies, and under it neither party uses the other's name or logo without prior written permission.
+
+These Terms of Service (the "Terms") are a legal agreement between Kortix AI Corp, a Delaware corporation ("Kortix," "we," "us," or "our"), and the person or organization accepting these Terms ("Customer," "you," or "your"). They govern access to and use of the Services.
 
 If you use the Services for an organization, you accept these Terms for that organization and represent that you have authority to bind it. If you do not have that authority, or do not agree to these Terms, do not use the Services.
 
@@ -179,7 +184,7 @@ Kortix may investigate suspected violations and may remove or restrict affected 
 
 **Open source.** The Services may include or interoperate with open-source or source-available software. Components distributed under a separate license are governed solely by that license to the extent it conflicts with the Agreement. Public availability of source code does not grant rights beyond the applicable license, and a cloud subscription does not expand rights under a repository license.
 
-**Marks and publicity.** Neither party may use the other's name, logo, or marks except with prior written permission or as needed to identify the parties in a non-public business record. Customer-specific Agent configurations, skills, prompts, and workflow code are Customer Deliverables only when expressly identified as such in an Order.
+**Marks and publicity.** Kortix may identify a Customer that is an organization as a Kortix customer by its name and logo in customer lists on Kortix websites, in sales, investor, and marketing materials, and in similar references, following any reasonable trademark guidelines Customer provides. Kortix will not imply that Customer endorses Kortix, and will not publish quotes, case studies, or statements about Customer's use of the Services without Customer's prior written approval. Customer may withdraw this permission at any time by writing to legal@kortix.com. Kortix will then remove Customer's name and logo from Kortix websites within 30 days and will not use them in materials created after that. An Order may exclude this permission. Except as stated in this paragraph, neither party may use the other's name, logo, or marks without prior written permission, other than as needed to identify the parties in a non-public business record. Customer-specific Agent configurations, skills, prompts, and workflow code are Customer Deliverables only when expressly identified as such in an Order.
 
 **Takedown notices.** Kortix respects intellectual property rights. Notices of claimed infringement should be sent to legal@kortix.com with sufficient information to identify the work, allegedly infringing material, contact information, and the basis for the claim. Kortix may remove or restrict material and may terminate repeat infringers.
 
