@@ -46,6 +46,12 @@ export interface KortixHost {
   builtInSubagents(): boolean
   /** The calling agent's `permission.task` rule for this subagent name is not `deny`. */
   subagentAllowed(name: string): boolean
+  /**
+   * True with codemode `only`: `agent` is then declared to the model beside
+   * codemode (`model-only` exposure). A script may not call it (the runtime's
+   * nested-call gate), so without this a codemode-only agent could not delegate.
+   */
+  codemodeOnly?(): boolean
   /** Run one prompt in a child (separate or same session, see `session`) and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
 }
@@ -205,6 +211,7 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       description: toolDescription,
       parameters,
       executionMode: 'parallel' as const,
+      ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
       async execute(_toolCallId: string, params: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
         const spawn = resolveSpawn(params, host)
         const result = await host.spawnSession({

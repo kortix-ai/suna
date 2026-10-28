@@ -201,6 +201,12 @@ export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
 /** Tools whose call renders as its own transcript part (a card), also when a codemode script makes it. */
 const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
+/**
+ * Built-in tools the model calls directly also with codemode `only`: presentation (NATIVE_PART_TOOLS)
+ * and `question`, which a script may not call (`nestedCallGate`). `agent` is the subagents
+ * extension's (`KortixHost.codemodeOnly`).
+ */
+const CODEMODE_ONLY_DIRECT_TOOLS: readonly string[] = [...NATIVE_PART_TOOLS, 'question']
 /** Built-in tools that run concurrently with each other: independent network I/O whose caps count before any await. */
 const PARALLEL_TOOLS: readonly string[] = ['image_gen']
 /**
@@ -1410,14 +1416,17 @@ export class PiRuntime {
     }
   }
 
-  /** Presentation needs a native transcript part, not codemode's bounded call metadata. */
+  /**
+   * Presentation needs a native transcript part, not codemode's bounded call metadata, and
+   * `question` needs the model-issued call it answers: with codemode `only` both stay direct.
+   */
   private presentationExtension(): InlineExtension {
     return {
       name: 'kortix-presentation',
       hidden: true,
       factory: (pi) => {
         if (this.codemodeMode !== 'only') return
-        for (const tool of this.baseTools) if (NATIVE_PART_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
+        for (const tool of this.baseTools) if (CODEMODE_ONLY_DIRECT_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
       },
     }
   }
@@ -1498,6 +1507,7 @@ export class PiRuntime {
       compiledAgents: () => this.compiled?.agent ?? {},
       builtInSubagents: () => !this.v3(),
       subagentAllowed: (name) => this.permissions.rule('task', { subagent_type: name }) !== 'deny',
+      codemodeOnly: () => this.codemodeMode === 'only',
       spawnSession: (input) => this.resolveSpawn(input),
     }
   }
@@ -1946,7 +1956,7 @@ export class PiRuntime {
         // pi's own codemode guideline; Kortix builds the prompt itself, so pi's prompt builder never adds it.
         ...(!child && this.agent?.state.tools.some((t) => t.name === CODEMODE_TOOL)
           ? [this.codemodeMode === 'only'
-              ? 'Call show directly to present outputs. Every other tool runs from a codemode script: `await tools.<name>(args)`.'
+              ? 'Call show directly to present outputs, and agent and question directly too. Every other tool runs from a codemode script: `await tools.<name>(args)`.'
               : 'Use codemode to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate calls.']
           : []),
         ...(child ? [] : ['Use question to collect answers through the interactive question UI.']),

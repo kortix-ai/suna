@@ -4263,8 +4263,9 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
-    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
+    // `agent` and `question` stay direct: a script may not call them (nested-call gate).
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['agent', 'codemode', 'image_gen', 'question', 'show'])
+    expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs, and agent and question directly too')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
   })
 
@@ -4275,7 +4276,7 @@ describe('pi codemode', () => {
     })
     const first = gateway.sampling.length
     const [part] = await run(r)
-    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['agent', 'codemode', 'image_gen', 'question', 'show'])
     expect(part?.tool).toBe('show')
     expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
     expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
