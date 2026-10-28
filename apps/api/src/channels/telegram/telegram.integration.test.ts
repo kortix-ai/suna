@@ -340,7 +340,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
       projectId: PROJECT,
       idempotencyKey: `telegram:${BOT_ID}:${event.id}`,
     });
-    expect(delivered[0]!.text).toContain('in the same chat');
+    expect(delivered[0]!.text).toStartWith('[Telegram · ');
 
     await holdClaim(888);
     await handleTelegramEvent(update('/new', ALLOWED, 888));
@@ -366,7 +366,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
     await handleTelegramEvent(update('still there?', ALLOWED, 914));
     expect(delivered).toHaveLength(1);
     expect(created).toHaveLength(1);
-    expect(created[0]!.postCreate[1].text).toStartWith('You received a message on Telegram.');
+    expect(created[0]!.postCreate[1].text).toStartWith('[Telegram · ');
     const thread = await threadRow(914);
     expect(thread?.sessionId).toBe(createdSessions[0]);
     expect(thread?.sessionId).not.toBe(old);

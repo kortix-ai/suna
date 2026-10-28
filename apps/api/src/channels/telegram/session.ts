@@ -17,6 +17,7 @@
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { chatThreads, projects } from '@kortix/db';
+import { type ChannelEnvelope, channelPromptText } from '@kortix/shared';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
@@ -25,6 +26,7 @@ import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { gateSender, refusedPressText } from '../core/channel-access';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { connectorReply } from '../core/prompt';
 import {
   clearQuestionButtons,
   handleQuestionTap,
@@ -387,9 +389,8 @@ export async function handleTelegramEvent(
         create: `telegram:create:${install.botId}:${event.id}`,
         createClaim,
       },
-      followUp: { text: renderTelegramPrompt(message, 'follow-up') },
-      // A revived chat starts with the `new` prompt: the agent reads the chat afresh.
-      plan: async () => ({
+      followUp: { text: channelPromptText(telegramEnvelope(message)) },
+      plan: async (revived) => ({
         project,
         visibility: 'project',
         body: { agent_name: 'default', title_source: text || null },
@@ -402,7 +403,7 @@ export async function handleTelegramEvent(
             message_id: message.message_id,
           },
         },
-        prompt: renderTelegramPrompt(message, 'new'),
+        prompt: channelPromptText(telegramEnvelope(message), { revived }),
       }),
     },
     run,
@@ -455,7 +456,7 @@ export async function handleTelegramPress(
           create: `telegram:create:${install.botId}:${event.id}`,
           createClaim: `telegram:threadcreate:${event.projectId}:${install.botId}:${threadId}`,
         },
-        followUp: { text: renderTelegramPrompt(reply, 'follow-up') },
+        followUp: { text: channelPromptText(telegramEnvelope(reply)) },
       };
     },
     run,
@@ -496,33 +497,36 @@ async function sendTelegramReply(token: string, target: ChannelTarget, text: str
   }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
 }
 
-/** The turn prompt: the message, then how to answer through the connector CLI (works on every harness). */
-export function renderTelegramPrompt(message: TelegramMessage, kind: 'new' | 'follow-up'): string {
-  const from = message.from?.username ? `@${message.from.username}` : String(message.from?.id ?? 'unknown');
-  const replyArgs = JSON.stringify({
-    chat_id: String(message.chat.id),
-    text: '<reply>',
-    reply_parameters: { message_id: message.message_id },
-    ...(message.is_topic_message ? { message_thread_id: message.message_thread_id } : {}),
-  });
-  return [
-    kind === 'new' ? 'You received a message on Telegram.' : `New Telegram message from ${from} in the same chat:`,
-    '',
-    `Chat:       ${message.chat.id} (${message.chat.type})`,
-    `From:       ${from}`,
-    `Message id: ${message.message_id}`,
-    '',
-    message.text ?? message.caption ?? '(no text: a photo, file or sticker)',
-    '',
-    'How to answer:',
-    `- Reply with the ${TELEGRAM_CHANNEL_CONNECTOR_SLUG} connector through the shell: \`kortix connectors call ${TELEGRAM_CHANNEL_CONNECTOR_SLUG}.send_message '${replyArgs}'\`.`,
-    '- One message holds at most 4096 characters; send a longer answer as several messages.',
-    '- To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
-    `- While you work on a long task, show typing: \`kortix connectors call ${TELEGRAM_CHANNEL_CONNECTOR_SLUG}.send_chat_action '{"chat_id":"${message.chat.id}"}'\`.`,
-    '- For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
-    '- The bot token is resolved server-side. Do not look for it in the sandbox.',
-    '- The next message in this chat continues this session; /new in Telegram starts a fresh one.',
-  ].join('\n');
+/**
+ * One message for the agent and the session view (`channelPromptText`). A
+ * button press keeps no names (`telegramPressEvent`), so its sender is the
+ * username or the id.
+ */
+export function telegramEnvelope(message: TelegramMessage): ChannelEnvelope {
+  const { chat, from } = message;
+  const name = [from?.first_name, from?.last_name].filter(Boolean).join(' ');
+  const topic = message.is_topic_message ? message.message_thread_id : undefined;
+  return {
+    platform: 'Telegram',
+    sender: from?.username ? `@${from.username}` : name || `user ${from?.id ?? 'unknown'}`,
+    where: chat.type === 'private' ? 'direct message' : chat.title || `chat ${chat.id}`,
+    text: message.text ?? message.caption ?? '(no text: a photo, file or sticker)',
+    reply: connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_message', {
+      chat_id: String(chat.id),
+      text: '<reply>',
+      reply_parameters: { message_id: message.message_id },
+      ...(topic ? { message_thread_id: topic } : {}),
+    }),
+    notes: [
+      `Chat ${chat.id} (${chat.type})${topic ? `, topic ${topic}` : ''}, sender id ${from?.id ?? 'unknown'}, message id ${message.message_id}.`,
+      'One message holds at most 4096 characters; send a longer answer as several messages.',
+      'To let the user choose between options, call your question tool: Kortix posts it in this chat when it can, with buttons for a single choice; otherwise its result says how to ask.',
+      `While you work on a long task, show typing: ${connectorReply(TELEGRAM_CHANNEL_CONNECTOR_SLUG, 'send_chat_action', { chat_id: String(chat.id) })}.`,
+      'For bold or code, add `"parse_mode":"HTML"` and use <b>, <i>, <code>, <pre>; otherwise send plain text.',
+      'The bot token is resolved server-side. Do not look for it in the sandbox.',
+      'The next message in this chat continues this session; /new in Telegram starts a fresh one.',
+    ],
+  };
 }
 
 // One queue for every Telegram update: a replica on older code fails a press
