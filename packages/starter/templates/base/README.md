@@ -1,7 +1,12 @@
 # {{projectName}}
 
-A Kortix project. Talk to **My Kortix** in the Kortix app: it runs the agents
-below for you, with your permissions.
+A Kortix project. Talk to **My Kortix** in the Kortix app. It routes each task
+to the right agent of this project and runs it with your permissions.
+
+This project starts with one agent, **Worker** (`agents.worker` in
+`kortix.yaml`, prompt in `agents/worker.md`). It does general-purpose work:
+coding, research, writing, ops and data work. Add specialist agents next to
+it; My Kortix routes each task to the agent that fits.
 
 | Path | What it holds |
 | --- | --- |

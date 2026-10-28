@@ -10,15 +10,15 @@ project:
   description: A Kortix project.
 
 # The agent a session or trigger runs when it names none. My Kortix, the agent
-# you talk to, is built in and runs the agents below for you.
-default_agent: kortix
+# you talk to, is built in: it routes each task to the right agent below.
+default_agent: worker
 
 agents:
-  kortix:
-    description: "General knowledge worker: coding, research, writing, ops and data work, done end to end in its own sandbox."
+  worker:
+    description: "General-purpose worker: coding, research, writing, ops and data work, done end to end in its own sandbox."
     mode: primary
     permission: allow
-    prompt_file: agents/kortix.md
+    prompt_file: agents/worker.md
     tools: all
     skills: all
     connectors: all

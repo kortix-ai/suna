@@ -797,9 +797,10 @@ renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is agent
 behavior and lives in that agent's own `.md` frontmatter — the file
 `agents.<name>.file` names, default `agents/<name>.md`. A new project
-is `kortix_version: 3`: its one agent, `kortix`, declares its behavior
+is `kortix_version: 3`: its one agent, `worker`, declares its behavior
 inline in `kortix.yaml` and names its prompt with `prompt_file:
-agents/kortix.md`. `default_agent` is required and must resolve to a declared,
+agents/worker.md`. My Kortix routes work to it. A project created earlier
+keeps its `kortix` agent; nothing renames it. `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
 dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
 grant set (an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`
@@ -891,7 +892,7 @@ things by name. Every grant is deny-by-default.
 
 ```yaml
 kortix_version: 3
-default_agent: kortix          # required: the fallback for triggers, channels and delegated sessions
+default_agent: researcher      # required: the fallback for triggers, channels and delegated sessions
 builtin_agents:
   my_kortix: true              # My Kortix, the built-in agent (slug `meta`). Absent = on; false removes it.
 skills:

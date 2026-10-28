@@ -72,8 +72,8 @@ describe('the starter is a kortix_version 3 manifest', () => {
     expect(manifest).not.toContain('runtime:');
   });
 
-  test('its default agent is the declared opencode agent', () => {
-    expect(manifestFor()).toContain('default_agent: kortix');
+  test('its default agent is the one worker agent', () => {
+    expect(manifestFor()).toContain('default_agent: worker');
   });
 
   test('the manifest advertises no other starter to switch to', () => {
@@ -110,13 +110,13 @@ describe('the starter is a kortix_version 3 manifest', () => {
     const paths = filesFor().map((file) => file.path);
 
     expect(paths).toContain('skills/pdf/SKILL.md');
-    expect(paths).toContain('agents/kortix.md');
+    expect(paths).toContain('agents/worker.md');
   });
 
   test('ships no harness folder and no maintenance agents: one worker agent, My Kortix runs it', () => {
     const paths = filesFor().map((file) => file.path);
     expect(paths.filter((path) => path.startsWith('harnesses/'))).toEqual([]);
-    expect(paths.filter((path) => path.startsWith('agents/'))).toEqual(['agents/kortix.md']);
+    expect(paths.filter((path) => path.startsWith('agents/'))).toEqual(['agents/worker.md']);
     const manifest = manifestFor();
     expect(manifest).not.toContain('harness-reflector');
     expect(manifest).not.toContain('session-reviewer');
