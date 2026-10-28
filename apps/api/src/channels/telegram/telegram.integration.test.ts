@@ -51,7 +51,9 @@ import { adoptChatThreads, bindChatThread, claimThreadCreate } from '../core/thr
 import { applyPostCreateActions, createCommandStatus, createSession } from '../../projects/session-lifecycle/create-session';
 import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
-import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
+import { deleteTelegramInstall, recordTelegramAccessRequest, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
+import { registerChannelTelegramRoutes } from '../../projects/routes/channel-telegram';
+import { serializeProject } from '../../projects/lib/serializers';
 import { handleTelegramEvent, handleTelegramPress, telegramMessageEvent, telegramPressEvent, type TelegramMessage } from './session';
 import { telegramWebhookApp } from '../telegram-webhook';
 import { runJobBatch } from '../../shared/job-queue';
@@ -87,16 +89,37 @@ const ownWebhook = () => ({ url: `https://example.test/v1/webhooks/telegram/${PR
 let webhookInfo: Record<string, unknown> = ownWebhook();
 /** A Bot API method the fake fails with a 500. */
 let failing: string | null = null;
+/** getChat per user id: a profile, or 'fail' for a 500. Any other id: Telegram's "chat not found". */
+const chats = new Map<string, Record<string, unknown> | 'fail'>();
+/** Synthetic JPEG bytes the fake serves for every file. */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+/** Paths of file downloads the fake served. */
+const downloads: string[] = [];
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
-    const [, botToken, method] = new URL(req.url).pathname.split('/');
+    const path = new URL(req.url).pathname;
+    if (path.startsWith('/file/')) {
+      downloads.push(path);
+      if (!path.startsWith(`/file/bot${TOKEN}/`)) return new Response('Not Found', { status: 404 });
+      return new Response(JPEG, { headers: { 'content-type': 'image/jpeg' } });
+    }
+    const [, botToken, method] = path.split('/');
     if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
     const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
     calls.push(call);
     await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
     if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+    if (call.method === 'getChat') {
+      const chat = chats.get(String(call.body.chat_id));
+      if (chat === 'fail') return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+      if (!chat) return Response.json({ ok: false, description: 'Bad Request: chat not found' }, { status: 400 });
+      return Response.json({ ok: true, result: { id: Number(call.body.chat_id), type: 'private', ...chat } });
+    }
+    if (call.method === 'getFile') {
+      return Response.json({ ok: true, result: { file_id: call.body.file_id, file_path: `photos/${call.body.file_id}.jpg` } });
+    }
     return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
   },
 });
@@ -1346,5 +1369,193 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
     expect(settled.map((j) => j.status)).toEqual(['done', 'done']);
     expect(delivered.map((d) => d.sessionId)).toEqual([sessionId, sessionId]);
     expect(methods()).toContain('answerCallbackQuery');
+  });
+});
+
+describe('Telegram allowed users and access requests — migrated PostgreSQL', () => {
+  registerChannelTelegramRoutes();
+  const ADMIN = crypto.randomUUID();
+  const api = async (method: string, path: string, body?: unknown, userId = ADMIN) => {
+    const app = new Hono<{ Variables: Record<string, unknown> }>();
+    app.use('*', async (c, next) => {
+      c.set('userId', userId);
+      c.set('authType', 'jwt');
+      await next();
+    });
+    app.route('/v1/projects', projectsApp);
+    return app.request(`/v1/projects/${PROJECT}/channels/telegram${path}`, {
+      method,
+      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+  };
+  const telegramMetadata = async () => {
+    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
+    return (row!.metadata as { telegram?: Record<string, any> } | null)?.telegram ?? {};
+  };
+  const setTelegram = (telegram: Record<string, unknown>) =>
+    db.update(projects).set({ metadata: { telegram } }).where(eq(projects.projectId, PROJECT));
+  const request = (id: string, last_seen = new Date().toISOString()) => ({
+    id,
+    username: `user_${id}`,
+    first_name: `Stored ${id}`,
+    last_name: null,
+    last_seen,
+  });
+  /** A message to the bot from `from`, in a private chat with them unless `chat` says otherwise. */
+  const message = (text: string, from: Record<string, unknown>, chat: { id: number; type: string } = { id: Number(from.id), type: 'private' }) =>
+    telegramMessageEvent(PROJECT, BOT_ID, {
+      update_id: updateId++,
+      message: { message_id: updateId, date: 1_760_000_000, chat, from: from as TelegramMessage['from'], text },
+    })!;
+
+  beforeAll(async () => {
+    await insertIntoView(db, accountMembers, { userId: ADMIN, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
+  });
+  afterEach(allowSender);
+
+  test('a not-allowed sender in a private chat is recorded once, with the id and names only; a repeat within the hour writes nothing', async () => {
+    const from = { id: 4001, is_bot: false, username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester', language_code: 'en' };
+    await handleTelegramEvent(message('please run the secret plan', from));
+    const [entry] = (await telegramMetadata()).accessRequests;
+    expect(Object.keys(entry).sort()).toEqual(['first_name', 'id', 'last_name', 'last_seen', 'username']);
+    expect(entry).toMatchObject({ id: '4001', username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester' });
+    expect(JSON.stringify(await telegramMetadata())).not.toContain('secret plan');
+    expect(replies()).toEqual([expect.stringContaining('Customize → Connectors → Channels → Telegram')]);
+    expect(replies()[0]).toContain('4001');
+    // The pairing reply is the only Telegram call: recording asks Telegram nothing.
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
+
+    await handleTelegramEvent(message('again', from));
+    expect((await telegramMetadata()).accessRequests).toEqual([entry]);
+    await handleTelegramEvent(message('renamed', { ...from, first_name: 'Renamed' }));
+    expect((await telegramMetadata()).accessRequests).toEqual([expect.objectContaining({ id: '4001', first_name: 'Renamed' })]);
+  });
+
+  test('an allowed sender and a sender in a group are not recorded', async () => {
+    await handleTelegramEvent(message('/start', { id: Number(ALLOWED), first_name: 'Allowed' }));
+    await handleTelegramEvent(message('hello', { id: 4002, first_name: 'Group Member' }, { id: -4100, type: 'group' }));
+    expect((await telegramMetadata()).accessRequests).toBeUndefined();
+    expect(replies()[1]).toContain('message this bot privately');
+  });
+
+  test('concurrent requests all land, newest first, and the list keeps the newest 20', async () => {
+    await Promise.all(Array.from({ length: 5 }, (_, i) => recordTelegramAccessRequest(PROJECT, { id: 4050 + i })));
+    expect((await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id).sort()).toEqual(['4050', '4051', '4052', '4053', '4054']);
+    for (let i = 0; i < 20; i++) await recordTelegramAccessRequest(PROJECT, { id: 4060 + i });
+    const ids = (await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id);
+    expect(ids).toHaveLength(20);
+    expect(ids[0]).toBe('4079');
+  });
+
+  test('a stored name loses its control characters and is cut at 64 characters, never inside an emoji', async () => {
+    await recordTelegramAccessRequest(PROJECT, { id: 4085, first_name: `a${'🙂'.repeat(70)}`, last_name: 'Syn\u0000thetic', username: 42 });
+    expect((await telegramMetadata()).accessRequests[0]).toMatchObject({
+      id: '4085',
+      first_name: `a${'🙂'.repeat(63)}`,
+      last_name: 'Synthetic',
+      username: null,
+    });
+  });
+
+  test('the list names allowed users and requests from Telegram and falls back when getChat fails', async () => {
+    chats.set('4010', { first_name: 'Ada', username: 'ada_synthetic', photo: { small_file_id: 'f4010', small_file_unique_id: 'u4010' } });
+    chats.set('4012', 'fail');
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    // 4011 is a legacy numeric id; 4013 asked over 30 days ago; 4010 asked and is allowed.
+    await setTelegram({ allowedUserIds: ['4010', 4011], accessRequests: [request('4012'), request('4013', old), request('4010')] });
+
+    const res = await api('GET', '/users');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toEqual([
+      { user_id: '4010', username: 'ada_synthetic', first_name: 'Ada', last_name: null, photo_version: 'u4010', known: true },
+      { user_id: '4011', username: null, first_name: null, last_name: null, photo_version: null, known: false },
+    ]);
+    expect(body.requests).toEqual([
+      { user_id: '4012', username: 'user_4012', first_name: 'Stored 4012', last_name: null, photo_version: null, known: true, last_seen: expect.any(String) },
+    ]);
+    const install = await (await api('GET', '/installation')).json();
+    expect(install).toMatchObject({ allowed_user_ids: ['4010', '4011'], access_request_count: 1 });
+  });
+
+  test('the photo route serves the bytes through the API, never the token; an id not listed is 404', async () => {
+    chats.set('4015', { first_name: 'Photo', photo: { small_file_id: 'f4015', small_file_unique_id: 'u4015' } });
+    await setTelegram({ allowedUserIds: ['4015', '4016'] });
+    downloads.length = 0;
+
+    const res = await api('GET', '/users/4015/photo?v=u4015');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    expect(res.headers.get('cache-control')).toBe('private, max-age=86400');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes).toEqual(JPEG);
+    expect(JSON.stringify([...res.headers]) + new TextDecoder().decode(bytes)).not.toContain(TOKEN);
+    expect(downloads).toEqual([`/file/bot${TOKEN}/photos/f4015.jpg`]);
+
+    const unknown = await api('GET', '/users/4999/photo');
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'telegram_user_unknown' });
+    // 4016 never started the bot: getChat answers "chat not found".
+    expect(await (await api('GET', '/users/4016/photo')).json()).toMatchObject({ code: 'telegram_photo_unavailable' });
+    failing = 'getFile';
+    const down = await api('GET', '/users/4015/photo');
+    expect(down.status).toBe(502);
+    const text = await down.text();
+    expect(text).toContain('telegram_unreachable');
+    expect(text).not.toContain(TOKEN);
+  });
+
+  test('allow moves a request to the allowed list in one write; a legacy numeric id is not added twice; a full list is 409', async () => {
+    await setTelegram({ allowedUserIds: [4021], accessRequests: [request('4020'), request('4022')] });
+    const allowed = await api('POST', '/allowed-users', { user_id: '4020' });
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toMatchObject({ allowed_user_ids: ['4021', '4020'], access_request_count: 1 });
+    expect((await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id)).toEqual(['4022']);
+
+    const again = await api('POST', '/allowed-users', { user_id: '4021' });
+    expect(await again.json()).toMatchObject({ allowed_user_ids: ['4021', '4020'] });
+    expect(await (await api('POST', '/allowed-users', { user_id: '@someone' })).json()).toMatchObject({ code: 'telegram_user_ids_invalid' });
+
+    await setTelegram({ allowedUserIds: Array.from({ length: 200 }, (_, i) => String(10_000 + i)) });
+    const full = await api('POST', '/allowed-users', { user_id: '4023' });
+    expect(full.status).toBe(409);
+    expect(await full.json()).toMatchObject({ code: 'telegram_allowed_users_full' });
+  });
+
+  test('remove and dismiss are idempotent and answer the installation', async () => {
+    await setTelegram({ allowedUserIds: ['4030', '4031'], accessRequests: [request('4032')] });
+    for (let i = 0; i < 2; i++) {
+      const removed = await api('DELETE', '/allowed-users/4030');
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toMatchObject({ allowed_user_ids: ['4031'] });
+      const dismissed = await api('DELETE', '/access-requests/4032');
+      expect(dismissed.status).toBe(200);
+      expect(await dismissed.json()).toMatchObject({ access_request_count: 0 });
+    }
+    expect((await api('DELETE', '/allowed-users/abc')).status).toBe(400);
+  });
+
+  test('a non-member reads no identities and changes nothing', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    const stranger = crypto.randomUUID();
+    expect([403, 404]).toContain((await api('GET', '/users', undefined, stranger)).status);
+    expect([403, 404]).toContain((await api('GET', '/users/4040/photo', undefined, stranger)).status);
+    expect([403, 404]).toContain((await api('POST', '/allowed-users', { user_id: '4041' }, stranger)).status);
+    expect((await telegramMetadata()).allowedUserIds).toEqual(['4040']);
+  });
+
+  test('the public project shape hides metadata.telegram', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    const [row] = await db.select().from(projects).where(eq(projects.projectId, PROJECT));
+    expect((row!.metadata as Record<string, unknown>).telegram).toBeDefined();
+    expect(serializeProject(row!).metadata).not.toHaveProperty('telegram');
+  });
+
+  test('disconnect clears the requests and keeps the allowed list for a reconnect', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    await deleteTelegramInstall(PROJECT);
+    expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4040'] });
+    await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   });
 });
