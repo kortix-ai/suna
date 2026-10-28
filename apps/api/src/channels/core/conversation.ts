@@ -17,6 +17,7 @@
  * A platform adapter supplies its port and keeps its own intake. Adapters that
  * predate the core still route themselves.
  * Session-addressed notices (a failed run, a failed start) go through session-notice.ts.
+ * The agent's questions (post, buttons, taps) go through questions.ts.
  */
 import { chatEventDedup } from '@kortix/db';
 import type { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
@@ -26,6 +27,7 @@ import { createCommandStatus, createSession, deliverThroughQueue, resolveProject
 import { db } from '../../shared/db';
 import type { RuntimeQuestion, TurnErrorCode } from '@kortix/api-contract/transcript';
 import type { ConnectorPrincipal } from '../../connectors/router-contract';
+import type { QuestionPort } from './questions';
 import {
   type ChatThreadKey,
   claimThreadCreate,
@@ -108,7 +110,7 @@ export type SessionNotice = Extract<ChannelNotice, { sessionId: string }>;
  */
 export type FollowUpVerdict = 'deliver' | 'refuse' | 'restart';
 
-/** An agent question addressed by session (session-notice.ts `postSessionQuestion`). */
+/** An agent question addressed by session (session-notice.ts `postSessionQuestion`, questions.ts `postQuestion`). */
 export interface SessionQuestion {
   sessionId: string;
   /** The stored question (`session_pending_questions.id`) a button answers. */
@@ -122,8 +124,8 @@ export interface SessionQuestion {
 export interface ChannelPort {
   /** Tell the conversation an outcome. Send errors are logged, not thrown. */
   notify(target: ChannelTarget, notice: ChannelNotice): Promise<void>;
-  /** Post the agent's question in the conversation. True when posted. Never throws. */
-  postQuestion?(target: ChannelTarget, ask: SessionQuestion): Promise<boolean>;
+  /** Present: the platform shows the agent's questions (questions.ts). */
+  questions?: QuestionPort;
   /** Runs before every follow-up into an existing session; absent = deliver. */
   prepareFollowUp?(target: ChannelTarget, thread: { sessionId: string; projectId: string }): Promise<FollowUpVerdict>;
 }
