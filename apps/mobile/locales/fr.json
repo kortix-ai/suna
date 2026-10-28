@@ -1203,8 +1203,12 @@
     "stopNotAllowed": "Seul le membre qui a lancé cette exécution, le propriétaire de la session ou un gestionnaire du projet peut l'arrêter."
   },
   "genui": {
+    "call": "Appeler",
     "chartTapHint": "Touchez pour lire une valeur",
     "checklistReady": "{{done}}/{{total}} prêts",
+    "directions": "Itinéraire",
+    "imageCount_one": "{{count}} image",
+    "imageCount_other": "{{count}} images",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible",
     "openImage": "Ouvrir l'image",
@@ -1212,7 +1216,9 @@
     "pick": "Recommandé",
     "pieFocus": "{{label}} représente {{percent}} % du total",
     "pieOfTotal": "{{value}} sur {{total}}",
-    "showData": "Afficher les données"
+    "showData": "Afficher les données",
+    "unavailable": "Ce contenu n'a pas pu être affiché.",
+    "website": "Site web"
   },
   "updateRequired": {
     "title": "Mise à jour requise",
@@ -1246,6 +1252,9 @@
     "expiredBody": "Demandez à la personne qui vous a invité d'en envoyer une nouvelle.",
     "wrongAccountTitle": "Changer de compte",
     "wrongAccountBody": "Cette invitation est adressée à un autre compte. Vous êtes connecté en tant que {{email}}.",
+    "directoryTitle": "Se connecter avec l'authentification unique",
+    "directoryBody": "L'annuaire de votre organisation vous a ajouté à ce compte. Ouvrez cette invitation dans un navigateur et connectez-vous avec l'authentification unique de votre organisation, ou demandez à un administrateur du compte de renvoyer l'invitation.",
+    "ssoDomainUnverifiedBody": "Votre fournisseur d'authentification unique n'a pas vérifié le domaine de cette adresse e-mail. Déconnectez-vous et reconnectez-vous avec votre adresse e-mail pour utiliser cette invitation.",
     "signOutAndContinue": "Se déconnecter et continuer",
     "backToProjects": "Retour aux projets"
   },

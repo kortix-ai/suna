@@ -131,6 +131,7 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |
 | `--yes` | off | Auto-install missing deps; non-interactive. |
 | `--no-tunnel` | off | Skip the Cloudflare tunnel (offline; cloud sandboxes won't be reachable). |
+| `--no-web` | off | Boot without `next dev` (also on `start`). Use it for API/CLI-only work; each `next dev` holds GBs of RAM. Open the UI later with `pnpm worktree web <n>`. |
 
 What it does, in order: toolchain preflight → allocate the lowest slot that no
 registered worktree holds and whose whole port block is free (one `lsof` scan, up
@@ -148,7 +149,8 @@ the one exception is `--db` on a `--full-supabase` worktree (see above).
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
 ```sh
-pnpm worktree start <n> [--stripe] [--no-tunnel]
+pnpm worktree start <n> [--stripe] [--no-tunnel] [--no-web]
+pnpm worktree web <n> [--billing]   # only `next dev`, for a stack started with --no-web
 ```
 
 In shared-DB mode, ensures the primary local Supabase is reachable, checks that
@@ -163,7 +165,7 @@ Docker running when Supabase needs to be reached or started.
 - **Agents:** do not call this inline — it will hang the turn. If you need the
   stack running to test, launch it as a background process and poll, or ask the
   user to run `pnpm worktree start <n>` in their own terminal.
-- A Cloudflare quick tunnel starts by default so cloud Daytona sandboxes can
+- A Cloudflare quick tunnel starts by default so cloud (Platinum) sandboxes can
   call back to the local API (`KORTIX_URL` → the `*.trycloudflare.com` URL).
   `--no-tunnel` skips it; if `cloudflared` is missing it warns and continues.
 - `--stripe` turns billing **on** for the worktree and runs `stripe listen`
@@ -313,6 +315,22 @@ is missing, isn't a registered git worktree, or has orphaned isolated-DB
 containers, and any slot two worktrees share (allocators before 2026-10-15 could
 reuse a registered slot; nuke and recreate all but one). `--yes` auto-installs
 missing deps.
+
+### `sweep` — reclaim disk from idle checkouts
+
+```sh
+pnpm worktree sweep              # dry run: what would go, and how many GB
+pnpm worktree sweep --yes        # delete it
+pnpm worktree sweep --idle 1d --yes
+```
+
+Deletes `.next`, `.turbo`, `dist`, `target`, `test-results` and
+`playwright-report` in every git worktree of the repo (registered or not,
+scratchpad checkouts included). It skips a checkout with a process inside it or
+naming it on its command line, or any file written within `--idle` (default
+`60m`). It keeps any dir that holds a tracked file (`packages/ui/dist`). Run it
+first when the disk is full: build output is where the space goes, and removing
+a worktree frees only ~0.2 GB because pnpm clones files.
 
 ## Kortix Capture in a worktree
 

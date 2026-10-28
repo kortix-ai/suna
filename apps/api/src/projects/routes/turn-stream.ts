@@ -3,11 +3,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
+import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { recordDaemonBootForEnvSync } from '../lib/env-sync-durable-state';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import {
@@ -50,7 +52,7 @@ export function registerTurnStreamRoutes(): void {
           description: 'Relay result',
           content: { 'application/json': { schema: z.any() } },
         },
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 503),
       },
     }),
     async (c: any) => {
@@ -181,6 +183,24 @@ export function registerTurnStreamRoutes(): void {
 
       switch (body.kind) {
         case 'initial_turn_claim':
+          // Every daemon process claims once, at boot, and a new process holds
+          // the BOOT env: every push applied to the previous process is gone.
+          // Record the boot before answering. An OpenCode daemon serves no
+          // prompt until this claim resolves, so no replica can still trust a
+          // push to the old process when the first prompt reaches the new one
+          // (env-sync-durable-state.ts). A failed record fails the claim: the
+          // daemon retries a 5xx, and a boot nobody recorded must not serve.
+          if (authenticatedSandboxId) {
+            try {
+              await recordDaemonBootForEnvSync(sessionId, Date.now());
+            } catch (err) {
+              logger.warn('[env-sync] could not record a daemon boot; the claim is refused', {
+                session_id: sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return c.json({ error: 'could not record the daemon boot; retry the claim' }, 503);
+            }
+          }
           return claimInitialTurn(
             c,
             authenticatedSandboxId,

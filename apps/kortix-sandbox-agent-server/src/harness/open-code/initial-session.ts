@@ -14,7 +14,10 @@ import { observeOpencodeDelivery } from './opencode-turn-state'
 import { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, buildInitialPromptBody } from './initial-prompt'
 
 // Reuse the pinned root and deliver the initial prompt only when delivery is unconfirmed.
-/** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
+/**
+ * Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function initialSessionRetryDelayMs(attempt: number): number {
   return Math.min(5_000 * Math.max(attempt, 1), 30_000)
 }
@@ -38,6 +41,7 @@ type InitialSessionBootState = Pick<
  * established the root on a later rung. Only a manual Restart healed it.
  * Exported so proxy-auth.test.ts can prove the HTTP consequence: the proxy
  * stops answering `initial_opencode_session_failed` once this runs.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
   bootState.initialRuntimeSessionId = sessionId
@@ -51,6 +55,7 @@ export function finalizeInitialSession(bootState: InitialSessionBootState, sessi
  * answered), so retrying is safe; without the root the runtime can never turn
  * ready, so the loop has no attempt cap — only a capped interval. Exported for
  * tests; see initial-session-retry.test.ts.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function retryUntilInitialSessionEstablished(input: {
   attempt: () => Promise<unknown>
@@ -81,6 +86,7 @@ export async function retryUntilInitialSessionEstablished(input: {
   return true
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
@@ -222,6 +228,7 @@ export async function maybeCreateInitialOpencodeSession(
  * acceptance gate. Publishing the id before `prompt_async` returns lets that
  * timer promote a `delivering` database record while the request is still in
  * flight, including before OpenCode has received one byte.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function publishInitialOpenCodeSessionAfterPrompt(
   bootState: SandboxBootState,
@@ -248,6 +255,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
  * Best-effort by construction: if opencode is not answering yet, or the abort
  * fails, we log and move on. A stuck spinner is bad; a daemon that cannot
  * finish booting because it could not tidy up a turn is worse.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function finalizeOrphanedTurn(
   baseUrl: string,
@@ -329,7 +337,9 @@ function markInitialPromptDelivered(): void {
 
 /** Record (at seed time) that the pinned root is the SEED's pre-baked one, so the
  *  first claiming fork rotates off it instead of sharing it. Captured into the
- *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
+ *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function markSeedBakedSession(sessionId: string): void {
   try {
     writeOpenCodeSeedBakedPin(sessionId)
@@ -350,7 +360,9 @@ function readSeedBakedSessionId(): string | null {
 }
 
 /** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
- *  restarts then reuse the fork's root via the normal idempotent reuse path. */
+ *  restarts then reuse the fork's root via the normal idempotent reuse path.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function clearSeedBakedMarker(): void {
   try {
     const path = openCodeSeedBakedPinPath()
@@ -392,7 +404,9 @@ interface ExistingRoot {
 }
 
 /** What `resolveExistingRoot` learned, and what the caller may safely do about
- *  it — see the function doc for the three outcomes. Exported for tests. */
+ *  it — see the function doc for the three outcomes. Exported for tests.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export type ExistingRootResult =
   | { status: 'found'; root: ExistingRoot }
   | { status: 'create' }
@@ -443,6 +457,7 @@ async function waitForSignalOrTimeout(signal: Promise<void>, timeoutMs: number):
  * (5 s) and its elapsed time is deducted from the existing 20-second
  * root-resolution budget, so it cannot extend boot. The unchanged resolver
  * still owns retries, root selection, and found/create/defer decisions.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function waitForOpencodeRootReadiness(
   input: OpencodeRootReadinessInput,
@@ -481,6 +496,7 @@ export async function waitForOpencodeRootReadiness(
  * in production and are overridable so tests can exercise the `defer` branch
  * without a 20s wait or a real pin file — same pattern as
  * `opencodeTurnInFlight` in opencode-turn-state.ts.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function resolveExistingRoot(
   baseUrl: string,
@@ -716,6 +732,7 @@ function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: 
  * (unchanged from T12) whenever neither the marker nor the matching-pin case
  * applies — covering both the pinless cold-reuse case and the crash-window
  * case (pin present, no marker, transcript confirmed empty: deliver).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function reusedRootAlreadyDelivered(
   existing: { id: string; known: boolean; hasMessages: boolean },
@@ -743,7 +760,10 @@ export function reusedRootAlreadyDelivered(
  * orphaned turn is already broken and two seconds later still is.
  */
 let orphanSettleMs = 2_000
-/** Tests shorten the settle window: their fake roots change on a read count, not on time. */
+/**
+ * Tests shorten the settle window: their fake roots change on a read count, not on time.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function setOrphanSettleMsForTests(ms: number): void {
   orphanSettleMs = ms
 }
@@ -837,6 +857,7 @@ async function confirmTurnOrphaned(
  * The cause relayed for a turn the runtime aborted before it reached the model
  * while nobody asked for a stop, when it could not be resumed. Without it the
  * turn reads "No reason was reported" (instance-guard.ts).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function unrequestedAbortCause(verdict: AbortedTurnVerdict): OpencodeTurnError | undefined {
   if (verdict.kind !== 'unrequested' || verdict.resumed || !verdict.view.empty) return undefined

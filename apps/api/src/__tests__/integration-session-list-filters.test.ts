@@ -1,6 +1,6 @@
 /**
- * Integration test (real local DB): the session list's `parent`, `started_by`
- * and `q` filters (KRTX-639).
+ * Integration test (real local DB): the session list's `parent`, `started_by`,
+ * `q`, `created_by`, `agent` and `updated_after` filters (KRTX-639).
  *
  * A project whose triggers spawn hundreds of workers buried every human chat.
  * The list could only be searched client-side over the pages already loaded,
@@ -34,6 +34,7 @@ async function seed(input: {
   visibility?: 'project' | 'private';
   deleted?: boolean;
   agentName?: string;
+  firstPrompt?: string;
 }) {
   const at = new Date(Date.now() - input.minutesAgo * 60_000);
   await db.insert(projectSessions).values({
@@ -49,6 +50,7 @@ async function seed(input: {
     ...(input.agentName ? { agentName: input.agentName } : {}),
     metadata: {
       ...(input.name ? { name: input.name } : {}),
+      ...(input.firstPrompt ? { first_prompt: input.firstPrompt } : {}),
       ...(input.parent ? { spawned_by_session: sid(input.parent) } : {}),
       ...(input.deleted ? { deletedAt: at.toISOString() } : {}),
     },
@@ -93,7 +95,7 @@ beforeAll(async () => {
   for (let i = 0; i < 120; i += 1) {
     await seed({ id: `cron-${i}`, minutesAgo: 40 + i, initiator: { type: 'trigger', id: 'nightly' }, name: `Nightly ${i}` });
   }
-  await seed({ id: 'my-chat', minutesAgo: 1440, initiator: me, name: 'Apartment rent research' });
+  await seed({ id: 'my-chat', minutesAgo: 1440, initiator: me, name: 'Apartment rent research', firstPrompt: `Compare the lease offers ${tag}` });
   await seed({ id: 'my-helper', minutesAgo: 1441, parent: 'my-chat', initiator: me, name: 'Helper' });
   await db.execute(
     sql`insert into auth.users (id, email, instance_id, aud, role, raw_user_meta_data)
@@ -172,6 +174,10 @@ describe('session list filters', () => {
     expect(ids((await list({ q: `dana-${tag}@` })).items)).toEqual(['teammate-chat']);
     expect(ids((await list({ q: `Dana ${tag}` })).items)).toEqual(['teammate-chat']);
     expect(ids((await list({ q: `pentester-${tag}` })).items)).toEqual(['teammate-chat']);
+    // KRTX-3017: the display name, with a space and capitals, finds the slug.
+    expect(ids((await list({ q: `Pentester ${tag}` })).items)).toEqual(['teammate-chat']);
+    // A query of separators only is no agent query; it must not match every row.
+    expect(ids((await list({ q: ' - ' })).items)).toEqual([]);
   });
 
   test('q treats % and _ literally', async () => {
@@ -184,6 +190,25 @@ describe('session list filters', () => {
   test('q never matches a title the viewer may not open, even in a manager inventory', async () => {
     const managed = await list({ q: 'secret rent' }, { manager: true });
     expect(ids(managed.items)).toEqual([]);
+  });
+
+  test('q matches the first prompt', async () => {
+    const page = await list({ parent: 'root', q: `lease offers ${tag}` });
+    expect(ids(page.items)).toEqual(['my-chat']);
+  });
+
+  test('created_by is started_by=me for any person: their member chats only, never a private one the viewer may not open', async () => {
+    expect(ids((await list({ parent: 'root', createdBy: VIEWER })).items)).toEqual(['my-chat', 'legacy-mine', 'odd%name']);
+    expect(ids((await list({ parent: 'root', createdBy: TEAMMATE })).items)).toEqual(['teammate-chat']);
+  });
+
+  test('agent keeps the sessions that run that agent', async () => {
+    expect(ids((await list({ parent: 'root', agent: `pentester-${tag}` })).items)).toEqual(['teammate-chat']);
+  });
+
+  test('updated_after keeps the sessions with activity at or after the time', async () => {
+    const page = await list({ parent: 'root', updatedAfter: new Date(Date.now() - 35 * 60_000) });
+    expect(ids(page.items)).toEqual(['factory']);
   });
 
   test('a filtered cursor pages that filter and is refused under another', async () => {

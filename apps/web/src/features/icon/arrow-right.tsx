@@ -3,17 +3,12 @@
 import type { Variants } from 'motion/react';
 import { motion, useAnimation } from 'motion/react';
 import type { HTMLAttributes } from 'react';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Put this on the hover target that wraps the icon (Button, Link, etc.). */
 export const ARROW_RIGHT_GROUP_CLASS = 'group/arrow-right';
-
-export interface ArrowRightIconHandle {
-  startAnimation: () => void;
-  stopAnimation: () => void;
-}
 
 interface ArrowRightIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
@@ -53,25 +48,14 @@ function closestArrowRightGroup(node: Element): Element | null {
   return null;
 }
 
-const ArrowRightIcon = forwardRef<ArrowRightIconHandle, ArrowRightIconProps>(
-  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+function ArrowRightIcon({ onMouseEnter, onMouseLeave, className, size = 28, ...props }: ArrowRightIconProps) {
     const controls = useAnimation();
     const rootRef = useRef<HTMLDivElement>(null);
-    const isControlledRef = useRef(false);
     const boundToGroupRef = useRef(false);
-
-    useImperativeHandle(ref, () => {
-      isControlledRef.current = true;
-
-      return {
-        startAnimation: () => controls.start('animate'),
-        stopAnimation: () => controls.start('normal'),
-      };
-    });
 
     useEffect(() => {
       const node = rootRef.current;
-      if (!node || isControlledRef.current) {
+      if (!node) {
         return;
       }
 
@@ -102,7 +86,7 @@ const ArrowRightIcon = forwardRef<ArrowRightIconHandle, ArrowRightIconProps>(
     const handleMouseEnter = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         onMouseEnter?.(e);
-        if (isControlledRef.current || boundToGroupRef.current) {
+        if (boundToGroupRef.current) {
           return;
         }
         void controls.start('animate');
@@ -113,7 +97,7 @@ const ArrowRightIcon = forwardRef<ArrowRightIconHandle, ArrowRightIconProps>(
     const handleMouseLeave = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         onMouseLeave?.(e);
-        if (isControlledRef.current || boundToGroupRef.current) {
+        if (boundToGroupRef.current) {
           return;
         }
         void controls.start('normal');
@@ -145,9 +129,6 @@ const ArrowRightIcon = forwardRef<ArrowRightIconHandle, ArrowRightIconProps>(
         </svg>
       </div>
     );
-  },
-);
-
-ArrowRightIcon.displayName = 'ArrowRightIcon';
+}
 
 export { ArrowRightIcon };

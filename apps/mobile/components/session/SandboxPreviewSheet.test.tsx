@@ -24,6 +24,7 @@ mock.module('@/components/kortix/sheet', () => ({ KortixBottomSheetModal: Pass }
 mock.module('@/components/ui/button', () => ({ Button }));
 mock.module('@/components/ui/text', () => ({ Text: Pass }));
 mock.module('@/lib/utils/theme', () => ({ THEME: { light: { background: 'white' }, dark: { background: 'black' } } }));
+mock.module('@/lib/utils/tone', () => ({ useTone: () => 'light' as const }));
 
 let SandboxPreviewSheet: typeof import('./SandboxPreviewSheet').SandboxPreviewSheet;
 let tree: ReactTestRenderer | undefined;

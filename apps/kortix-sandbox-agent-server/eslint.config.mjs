@@ -43,7 +43,6 @@ export const SERVICES = [
   'egress-shim',
   'event-bus',
   'llm-proxy',
-  'monitor',
   'resources',
   'runtime-assets',
   'sandbox-env',
@@ -56,6 +55,7 @@ export const SERVICES = [
 // tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
+const SSRF_GUARD = [resolve(import.meta.dirname, '../../packages/shared/src/ssrf-guard.ts').split(sep).join('/'), at('../../packages/shared/src/ssrf-guard.ts')]
 const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
 // The SDK's import-free message-id codec, reached the same way (pi and the session-log boot mint ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
@@ -113,6 +113,7 @@ const independentModules = createIndependentModules({
     baseUrl: '.',
     paths: {
       '@/*': [at('src/*')],
+      '@kortix/shared/ssrf-guard': [at('../../packages/shared/src/ssrf-guard.ts')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
     },
@@ -163,7 +164,7 @@ const independentModules = createIndependentModules({
       'routes',
       at('src/routes/**'),
       [at('src/routes/**'), ...harnessCore, ...services, SHARED],
-      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
+      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT, ...SSRF_GUARD],
       'Routes import routes/, the harness contract, services and the shared layer. Never app/ or an adapter.',
     ),
     layer(

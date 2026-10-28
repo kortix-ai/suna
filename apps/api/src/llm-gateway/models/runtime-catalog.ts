@@ -1,11 +1,11 @@
-import { CATALOG, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
-import { CODEX_MODELS_URL, CODEX_SEED_MODEL_IDS, parseCodexModelIds } from './codex-models';
+import { CATALOG, PLATINUM_PROVIDER, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { CODEX_MODELS_URL, CODEX_SEED_MODEL_IDS, parseCodexContextWindows, parseCodexModelIds } from './codex-models';
 
 const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
 // Was 24h — a full day for a new model launch (or a provider's own metadata
 // fix) to reach every deployment is a bad user experience once the web
 // connect modal reads this SAME live catalog instead of a baked snapshot
-// (see apps/web/src/lib/llm-providers.ts). 1h is a large freshness win (24x)
+// (see packages/ui/src/internal/lib/llm-providers.ts). 1h is a large freshness win (24x)
 // while staying trivially light on models.dev — one small JSON GET/hour per
 // deployment, no auth, no burst — and the existing atomic last-known-good
 // swap (see `refresh` below) makes ANY interval safe: a failed/slow fetch
@@ -68,6 +68,8 @@ export interface RuntimeModelCatalog {
   snapshot(): Catalog;
   /** The ChatGPT-plan (`codex/<id>`) lineup, refreshed with the catalog. */
   codexModelIds(): readonly string[];
+  /** The ChatGPT backend's context window per Codex slug (empty until the first refresh). */
+  codexContextWindows(): Readonly<Record<string, number>>;
   status(): RuntimeCatalogStatus;
   refresh(): Promise<boolean>;
   start(): Promise<void>;
@@ -124,6 +126,8 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   if (providers.length === 0 || modelCount === 0) {
     throw new Error('catalog API returned no providers or models');
   }
+  // Platinum is not on models.dev; keep it a provider across every refresh.
+  if (!providers.some((p) => p.id === PLATINUM_PROVIDER.id)) providers.push(PLATINUM_PROVIDER);
 
   return {
     source: sourceUrl,
@@ -147,6 +151,7 @@ export function createRuntimeModelCatalog(
 
   let current = options.seed;
   let codexIds = options.codexSeed ?? CODEX_SEED_MODEL_IDS;
+  let codexWindows: Record<string, number> = {};
   let source: RuntimeCatalogStatus['source'] = 'seed';
   let revision = 0;
   let lastError: string | undefined;
@@ -176,9 +181,12 @@ export function createRuntimeModelCatalog(
   // (catalog-models.ts, the providers ETag) rebuilds.
   const refreshCodex = async (): Promise<void> => {
     try {
-      const next = parseCodexModelIds(await getJson(codexSourceUrl));
-      if (next.join() !== codexIds.join()) {
+      const body = await getJson(codexSourceUrl);
+      const next = parseCodexModelIds(body);
+      const windows = parseCodexContextWindows(body);
+      if (next.join() !== codexIds.join() || JSON.stringify(windows) !== JSON.stringify(codexWindows)) {
         codexIds = next;
+        codexWindows = windows;
         revision += 1;
       }
       logger.info(`[llm-gateway] loaded codex lineup from ${codexSourceUrl}: ${next.join(', ')}`);
@@ -219,6 +227,7 @@ export function createRuntimeModelCatalog(
   return {
     snapshot: () => current,
     codexModelIds: () => codexIds,
+    codexContextWindows: () => codexWindows,
     status,
     refresh,
     async start(): Promise<void> {

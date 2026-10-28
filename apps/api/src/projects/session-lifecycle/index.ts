@@ -1,4 +1,4 @@
-export { createSession } from './create-session';
+export { createCommandStatus, createSession } from './create-session';
 export { startSession } from './start-session';
 export { continueSession } from './continue-session';
 export { deliverThroughQueue, type FollowUpOutcome } from './follow-up-delivery';

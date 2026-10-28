@@ -4,7 +4,8 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
+/** Platinum is the reference App host. Daytona is a legacy fallback. */
+export type AppHostingProvider = 'platinum' | 'daytona';
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
@@ -237,7 +238,7 @@ export interface App {
  * only: how the App runs and who may open it do not change.
  */
 export interface AppDisplay {
-  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  /** A card in the Apps grid. Default false: an unlisted App sits under Background Apps. An App with a `parent` is a tab instead. */
   listed?: boolean;
   /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
   preview?: 'live' | 'none';

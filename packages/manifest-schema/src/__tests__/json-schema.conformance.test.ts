@@ -385,6 +385,229 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: trigger `overlap` (KRTX-1721) ─────────────────────
+  {
+    name: 'overlap: skip is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: skip\n',
+  },
+  {
+    name: 'overlap: queue is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: queue\n',
+  },
+
+  // ─── shared sections: trigger `filter` operators (KRTX-1721) ───────────
+  {
+    name: 'filter: a value and every operator is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.type: push\n      body.count: 3\n      body.sender.login: { not: kortix-bot }\n      body.action: { in: [opened, reopened] }\n      body.pull_request: { exists: true }\n      body.base: { prefix: release/ }\n      body.ref: { not_prefix: [refs/heads/kortix/, refs/heads/bot/] }\n',
+  },
+  {
+    name: 'filter: an unknown operator is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { nott: x }\n',
+  },
+  {
+    name: 'filter: two operators on one path are invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.ref: { in: [a], not: b }\n',
+  },
+  {
+    name: 'filter: an empty in list is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.action: { in: [] }\n',
+  },
+  {
+    name: 'filter: a non-boolean exists is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    prompt: go\n    filter:\n      body.pr: { exists: yes please }\n',
+  },
+
+  // ─── shared sections: triggers type = "app" ───────────────────────────
+  {
+    name: 'app: an App slug is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    filter: { event.name: reply.received }\n    prompt: go\n',
+  },
+  {
+    name: 'app: missing app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    prompt: go\n',
+  },
+  {
+    name: 'app: an invalid App slug is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: Bank_Replies\n    prompt: go\n',
+  },
+  {
+    name: 'app: cron key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    cron: \"0 9 * * *\"\n    prompt: go\n',
+  },
+  {
+    name: 'app: event key on app is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: app\n    app: bank-replies\n    event: X\n    prompt: go\n',
+  },
+  {
+    name: 'app: app key on a cron trigger is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    app: bank-replies\n    prompt: go\n',
+  },
+
+  // ─── triggers: target (call an App) ───────────────────────────────────
+  {
+    name: 'target: a cron trigger may call an App with no prompt',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: bank-watcher, path: /tick }\n',
+  },
+  {
+    name: 'target: a webhook trigger may call an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    target: { app: bank-watcher, method: POST }\n',
+  },
+  {
+    name: 'target: needs app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { path: /tick }\n',
+  },
+  {
+    name: 'target: unknown key rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n    target: { app: w, url: x }\n',
+  },
+  {
+    name: 'target: not on a monitor',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    target: { app: w }\n    prompt: go\n',
+  },
+  {
+    name: 'target: a cron trigger without target still needs a prompt',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: \"0 0 9 * * *\"\n',
+  },
+
+  // ─── triggers: every ─────────────────────────────────────────────────
+  {
+    name: 'every: a cron trigger may run on a fixed period',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: with target payload',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'every: not on a webhook',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    every: 5m\n    prompt: go\n',
+  },
+  {
+    name: 'every: target payload must be an object',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 1h\n    target: { app: w, payload: nope }\n',
+  },
+
+  // ─── triggers: the on/run shape ───────────────────────────────────────
+  {
+    name: 'on/run: a cron schedule that runs an agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { cron: \"0 0 9 * * *\", timezone: Europe/Berlin }\n    run: { agent: default, prompt: go, session: reuse }\n',
+  },
+  {
+    name: 'on/run: every that calls an App',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { app: watcher, path: /tick, payload: { a: 1 } }\n',
+  },
+  {
+    name: 'on/run: a one-off at',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { at: \"2026-11-01T09:00:00Z\" }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: a webhook',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: { secret: HOOK_SECRET } }\n    run: { prompt: \"{{ body.x }}\" }\n',
+  },
+  {
+    name: 'on/run: a connector event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: PR, connector: github }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an App event',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { event: reply.received, app: watcher }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown on key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { crn: x }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: an unknown run key is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { promt: go }\n',
+  },
+  {
+    name: 'on/run: run is required',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n',
+  },
+  {
+    name: 'on/run: type with on is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    on: { every: 5m }\n    run: { prompt: go }\n',
+  },
+  {
+    name: 'on/run: run needs a prompt or an app',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { every: 5m }\n    run: { agent: default }\n',
+  },
+  {
+    name: 'on/run: a webhook needs its secret',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    on: { webhook: {} }\n    run: { prompt: go }\n',
+  },
+
   // ─── shared sections: triggers type = "event" ─────────────────────────
   {
     name: 'event: connector + event + config object is valid',
@@ -536,16 +759,16 @@ channels:
 
   // ─── shared sections: triggers type = "monitor" ───────────────────────
   {
-    name: 'monitor: a stream monitor with run + mode is valid',
+    name: 'monitor: type monitor is rejected (the monitor box was removed)',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: stream\n    prompt: go\n',
   },
   {
-    name: 'monitor: a poll monitor with an interval is valid',
+    name: 'monitor: a poll monitor is rejected too',
     format: 'yaml',
-    valid: true,
+    valid: false,
     input:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
   },
@@ -1219,6 +1442,92 @@ connectors:
   },
 ];
 
+// Blank companions are absent values for sandbox selection, not competing keys.
+for (const image of [undefined, '', '   ', 'python:3.12']) {
+  for (const dockerfile of [undefined, '', '   ', 'Dockerfile']) {
+    FIXTURES.push({
+      name: `sandbox nonblank XOR: image=${JSON.stringify(image)}, dockerfile=${JSON.stringify(dockerfile)}`,
+      format: 'yaml',
+      input: `kortix_version: 1\nsandbox:\n  templates:\n    - ${JSON.stringify({ slug: 'worker', image, dockerfile })}\n`,
+      valid: Number(Boolean(image?.trim())) + Number(Boolean(dockerfile?.trim())) === 1,
+    });
+  }
+}
+for (const field of ['prompt', 'connector', 'event', 'account', 'source']) {
+  for (const blank of ['', '   ', '\t\n', '\u00a0']) {
+    FIXTURES.push({
+      name: `event nonblank ${field}: ${JSON.stringify(blank)}`,
+      format: 'yaml',
+      input: `kortix_version: 1\ntriggers:\n  - ${JSON.stringify({ slug: 'events', type: 'event', prompt: 'Handle event', connector: 'github', event: 'push', [field]: blank })}\n`,
+      valid: false,
+    });
+  }
+}
+
+// Cover blank rejection across the trim-checked field families.
+for (const blank of ['   ', '\t\n', '\u00a0']) {
+  const cases: Array<[string, object]> = [
+    ['opencode path', { opencode: { config_dir: blank } }],
+    ['sandbox default', { sandbox: { templates: [{ slug: 'worker', image: 'python:3.12' }], default: blank } }],
+    ['grant item', { agents: [{ name: 'worker', connectors: [blank] }] }],
+    ['connector name', { connectors: [{ slug: 'github', provider: 'composio', name: blank }] }],
+    ['policy match', { connectors: [{ slug: 'github', provider: 'composio', policies: [{ match: blank, action: 'allow' }] }] }],
+    ['channel platform', { channels: [{ platform: blank }] }],
+    ['monitor run', { triggers: [{ slug: 'watch', type: 'monitor', prompt: 'Watch', run: blank, mode: 'daemon', expect_event_within: '5m' }] }],
+  ];
+  for (const [name, fields] of cases) {
+    FIXTURES.push({ name: `${name} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 1, ...fields }) });
+  }
+}
+for (const [prompt, prompt_template, valid] of [
+  ['Handle event', '', true], ['', 'Handle event', false], [undefined, '   ', false],
+] as const) {
+  FIXTURES.push({ name: `prompt alias precedence ${JSON.stringify([prompt, prompt_template])}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: 1, triggers: [{ slug: 'events', type: 'event', prompt, prompt_template, connector: 'github', event: 'push' }] }) });
+}
+for (const blank of ['   ', '\t\n', '\u00a0']) {
+  const cases: Array<[string, object]> = [
+    ['app env', { apps: { site: { type: 'static', path: '.', env: { KEY: blank } } } }],
+    ['app secrets', { apps: { site: { type: 'static', path: '.', secrets: { KEY: blank } } } }],
+    ['app path', { apps: { site: { type: 'static', path: blank } } }],
+    ['required connector', { agents: { worker: { connectors_required: [blank] } } }],
+    ['legacy required connector', { agents: { worker: { connectors_personal: [blank] } } }],
+    ['tool name', { agents: { worker: { tools: [blank] } } }],
+    ['default agent', { default_agent: blank }],
+  ];
+  for (const [name, fields] of cases) {
+    FIXTURES.push({ name: `${name} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, ...fields }) });
+  }
+  for (const field of ['prompt', 'commands']) {
+    FIXTURES.push({ name: `v3 ${field} rejects blank ${JSON.stringify(blank)}`, format: 'yaml', valid: false, input: JSON.stringify({ kortix_version: 3, default_agent: 'worker', agents: { worker: field === 'prompt' ? { prompt: blank } : {} }, ...(field === 'commands' ? { commands: { greet: { prompt: blank } } } : {}) }) });
+  }
+}
+for (const image of ['', '   ', '\t\n', '\u00a0', 'python:3.12']) {
+  FIXTURES.push({ name: `OCI image nonblank ${JSON.stringify(image)}`, format: 'yaml', valid: image === 'python:3.12', input: JSON.stringify({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, apps: { site: { type: 'oci_image', image, command: ['node'], port: 3000 } } }) });
+}
+// Trigger aliases use canonical-field precedence; pinned IDs alone must be nonblank.
+for (const version of [1, 2, 3]) {
+  const base = version === 1 ? {} : { default_agent: 'worker', agents: { worker: {} } };
+  const cases: Array<[string, object, boolean]> = [
+    ['blank agent', { agent: '   ' }, version === 1],
+    ['blank legacy agent', { agent_name: '   ' }, true],
+    ['blank unpinned ID', { session_id: '   ' }, true],
+    ['pinned missing ID', { session_mode: 'pinned' }, false],
+    ['pinned blank ID', { session_mode: 'pinned', session_id: '   ' }, false],
+    ['pinned blank alias ID', { sessionMode: 'pinned', sessionId: '\t\n' }, false],
+    ['canonical blank overrides ID alias', { session_mode: 'pinned', session_id: '   ', sessionId: 'synthetic-session' }, false],
+    ['canonical ID overrides blank alias', { session_mode: 'pinned', session_id: 'synthetic-session', sessionId: '   ' }, true],
+    ['canonical mode overrides pinned alias', { session_mode: 'fresh', sessionMode: 'pinned', session_id: '   ' }, true],
+    // Case variants normalize to "pinned" in the validator (trim+toLowerCase), so
+    // the schema guard must fire on them too — without the ID they must be
+    // rejected by BOTH sides.
+    ['case-variant pinned missing ID', { session_mode: 'PINNED' }, false],
+    ['case-variant pinned alias blank ID', { sessionMode: 'Pinned', sessionId: '   ' }, false],
+    ['case-variant pinned with ID', { session_mode: 'PINNED', session_id: 'synthetic-session' }, true],
+  ];
+  for (const [name, fields, valid] of cases) {
+    FIXTURES.push({ name: `v${version} trigger ${name}`, format: 'yaml', valid, input: JSON.stringify({ kortix_version: version, ...base, triggers: [{ slug: 'tick', type: 'cron', cron: '0 9 * * *', prompt: 'Go', ...fields }] }) });
+  }
+}
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
   for (const fixture of FIXTURES) {
     test(`[${fixture.format}] ${fixture.name}`, () => {
@@ -1230,6 +1539,139 @@ describe('JSON Schema vs. imperative validator — accept/reject conformance', (
       expect(schemaOk).toBe(fixture.valid);
     });
   }
+});
+
+describe('normalized enum conformance (KRTX-2538)', () => {
+  const cases = [
+    ['provider', 'connectors: [{slug: sample, provider: " MCP ", url: "https://example.test/mcp"}]'],
+    ['transport', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", transport: " SSE "}]'],
+    ['platform', 'connectors: [{slug: sample, provider: channel, platform: " Slack "}]'],
+    ['credential', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", credential: " Shared "}]'],
+    ['authorization_strategy', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", authorization_strategy: " User "}]'],
+    ['auth.type', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", auth: {type: " None "}}]'],
+    ['policy action', 'connectors: [{slug: sample, provider: mcp, url: "https://example.test/mcp", policies: [{match: "*", action: " Block "}]}]'],
+    ['session_mode', 'triggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, session_mode: " Reuse "}]'],
+    ['sessionMode', 'triggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, sessionMode: " Reuse "}]'],
+    ['grant', 'agents: {assistant: {connectors: ""}}'],
+  ];
+  for (const [name, section] of cases) {
+    test(`${name} accepts normalized values`, () => {
+      const input = `kortix_version: 2\ndefault_agent: assistant\n${section.startsWith('agents:') ? section : `agents: {assistant: {}}\n${section}`}\n`;
+      expect(validateManifest(input, 'yaml').valid).toBe(true);
+      expect(validateCombined(parseYaml(input))).toBe(true);
+    });
+  }
+});
+
+describe('normalized enums retain their boundaries', () => {
+  for (const provider of ['computer', 'mcp-extra', '', 'mcp\nextra']) {
+    test(`rejects provider ${JSON.stringify(provider)}`, () => {
+      const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+        connectors: [{ slug: 'sample', provider, url: 'https://example.test/mcp' }] };
+      expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+      expect(validateCombined(input)).toBe(false);
+    });
+  }
+  test('normalized provider still requires its endpoint', () => {
+    const input = 'kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: sample, provider: " MCP "}]';
+    expect(validateManifest(input, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(input))).toBe(false);
+  });
+  test('reserved channel provider and auth accept normalized values', () => {
+    const input = 'kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: kortix_slack, provider: " Channel ", platform: " Slack ", auth: {type: " None "}}]';
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+});
+
+describe('normalized enums fold Unicode case equivalents (KRTX-2538)', () => {
+  // The validator matches with `trim().toLowerCase()` (`./index.ts`), and JS
+  // `toLowerCase()` is Unicode-aware: U+212A KELVIN SIGN folds to "k", so the
+  // fixture value "\u212Aeyed" (KELVIN SIGN + "eyed" — it looks like Keyed but
+  // the K is the Kelvin sign) normalizes to "keyed", and the schema pattern
+  // must accept it too. A full scan of Unicode finds no other non-ASCII code
+  // point whose `toLowerCase()` is a single ASCII letter — U+017F is already
+  // lowercase, fullwidth Ｋ folds to fullwidth ｋ, and İ expands to two code
+  // points — so those stay rejected by BOTH sides, pinned below as the
+  // boundary.
+  const kelvinKeyed = '\u212Aeyed';
+  const kelvinSlack = 'SLAC\u212A';
+  test('session_mode accepts a KELVIN SIGN k', () => {
+    const input = `kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\ntriggers: [{slug: nightly, type: cron, cron: "0 9 * * *", prompt: Digest, session_mode: "${kelvinKeyed}"}]\n`;
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+  test('platform accepts a KELVIN SIGN k', () => {
+    const input = `kortix_version: 2\ndefault_agent: assistant\nagents: {assistant: {}}\nconnectors: [{slug: sample, provider: channel, platform: "${kelvinSlack}"}]\n`;
+    expect(validateManifest(input, 'yaml').valid).toBe(true);
+    expect(validateCombined(parseYaml(input))).toBe(true);
+  });
+  test('a fullwidth K stays rejected by both (folds to fullwidth k, not "k")', () => {
+    const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+      triggers: [{ slug: 'nightly', type: 'cron', cron: '0 9 * * *', prompt: 'Digest', session_mode: '\uFF2Beyed' }] };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+    expect(validateCombined(input)).toBe(false);
+  });
+  test('a dotted capital I stays rejected by both (folds to two code points)', () => {
+    const input = { kortix_version: 2, default_agent: 'assistant', agents: { assistant: {} },
+      connectors: [{ slug: 'sample', provider: 'p\u0130pedream', url: 'https://example.test/mcp' }] };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(false);
+    expect(validateCombined(input)).toBe(false);
+  });
+});
+
+describe('generated patterns are ReDoS-safe and keep the blank grant sentinel (G9 item [B])', () => {
+  // An empty string inside the case-insensitive alternation becomes `(?:…|)`
+  // sitting between the leading `^\s*` and trailing `\s*`: matching a long
+  // whitespace-only grant then walks every split of the run across the two
+  // quantifiers — quadratic (8.2 s for 100 KB, measured by the reviewer).
+  // The empty-string enum member gets its own `^\s*$` arm instead, which is
+  // linear. These tests pin the mechanism and the acceptance it must keep.
+  const collectPatterns = (node: unknown, into: string[] = []): string[] => {
+    if (Array.isArray(node)) {
+      for (const item of node) collectPatterns(item, into);
+    } else if (node && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === 'pattern' && typeof value === 'string') into.push(value);
+        else collectPatterns(value, into);
+      }
+    }
+    return into;
+  };
+  const allPatterns = [
+    ...collectPatterns(KORTIX_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V1_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V2_JSON_SCHEMA),
+    ...collectPatterns(KORTIX_V3_JSON_SCHEMA),
+  ];
+  test('no generated pattern contains an empty alternation', () => {
+    const offenders = allPatterns.filter((p) => p.includes('|)') || p.includes('(|') || p.includes('||'));
+    expect(offenders).toEqual([]);
+  });
+  test('every pattern evaluates a 100 KB whitespace-only string in linear time', () => {
+    // Both shapes: pure whitespace matches fast even with the empty
+    // alternative (it succeeds on the first greedy pass); the quadratic
+    // blow-up needs a trailing character that forces the engine to walk
+    // every `\\s*` split — 16 s on 100 KB with the old pattern (measured).
+    // `padStart` builds the killer input without a string concatenation
+    // (biome lint/style/useTemplate).
+    for (const input of [' '.repeat(100_000), 'x'.padStart(100_001)]) {
+      for (const pattern of allPatterns) {
+        const started = performance.now();
+        new RegExp(pattern).test(input);
+        const elapsed = performance.now() - started;
+        // Headroom: the fixed patterns run < 100 ms; the quadratic
+        // predecessor took seconds on this input. 2 s fails only the
+        // regression.
+        expect(elapsed).toBeLessThan(2000);
+      }
+    }
+  }, 30_000);
+  test('a whitespace-only grant sentinel stays accepted by both sides', () => {
+    const input = { kortix_version: 2, default_agent: 'worker', agents: { worker: { connectors: '   ' } } };
+    expect(validateManifest(JSON.stringify(input), 'yaml').valid).toBe(true);
+    expect(validateCombined(input)).toBe(true);
+  });
 });
 
 describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles them)', () => {
@@ -1275,10 +1717,13 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
         };
       }
     ).properties.connectors.items.properties;
-    expect(connectorProperties.name).toEqual({ type: 'string', minLength: 1 });
+    expect(connectorProperties.name).toEqual({ type: 'string', pattern: '\\S' });
     expect(connectorProperties.authorization_strategy).toEqual({
       type: 'string',
-      enum: ['project', 'user'],
+      anyOf: [
+        { enum: ['project', 'user'] },
+        { pattern: expect.any(String) },
+      ],
       default: 'project',
     });
   });
@@ -1335,19 +1780,11 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     expect(validateCombined(parseToml(toml))).toBe(true);
   });
 
-  // A monitor's duration FLOORS (interval ≥ 30s, expect_event_within ≥ 5m)
-  // are value ranges over a formatted string. JSON Schema can pin the shape
-  // (`DURATION_RE`) but not the magnitude, so the floors stay imperative-only.
-  test('monitor interval below the 30s floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    interval: 5s\n    prompt: go\n';
-    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
-    expect(validateCombined(parseYaml(yaml))).toBe(true);
-  });
-
-  test('monitor expect_event_within below the 5m floor: imperative rejects, schema accepts the shape', () => {
-    const yaml =
-      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n';
+  // A schedule's `every` FLOOR (≥ 1m) is a value range over a formatted
+  // string. JSON Schema can pin the shape (`DURATION_RE`) but not the
+  // magnitude, so the floor stays imperative-only.
+  test('every below the 1m floor: imperative rejects, schema accepts the shape', () => {
+    const yaml = 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    every: 30s\n    prompt: go\n';
     expect(validateManifest(yaml, 'yaml').valid).toBe(false);
     expect(validateCombined(parseYaml(yaml))).toBe(true);
   });

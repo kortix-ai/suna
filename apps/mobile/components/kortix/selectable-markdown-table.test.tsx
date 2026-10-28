@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { hasReferenceDefinitionOutsideFences } from '@kortix/shared/markdown-math';
 
 // Renders the real `MarkdownTable` from the library's real AST on the iOS path
 // (`UITextView`). Every native module is a host stub. Run with `bun test --isolate`.
@@ -24,7 +25,14 @@ mock.module('react-native', () => ({
   UIManager: { hasViewManagerConfig: () => true },
   useWindowDimensions: () => ({ width: 400, height: 800, fontScale: 1 }),
 }));
-mock.module('react-native-uitextview', () => ({ UITextView: host('uitextview') }));
+// Counts cell text renders: a fade flip must not re-render the grid (KRTX-2879).
+let textRenders = 0;
+mock.module('react-native-uitextview', () => ({
+  UITextView: (props: HostProps) => {
+    textRenders++;
+    return host('uitextview')(props);
+  },
+}));
 mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll') }));
 mock.module('expo-linear-gradient', () => ({ LinearGradient: host('linear-gradient') }));
 mock.module('react-native-reanimated', () => ({ default: { View: host('animated-view') }, Easing: { bezier: () => 0 }, Keyframe: class { duration() { return this; } } }));
@@ -51,6 +59,7 @@ mock.module('@/components/ui/button', () => ({ Button: none }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@kortix/shared', () => ({
+  hasReferenceDefinitionOutsideFences,
   isMathFenceLanguage: () => false,
   isMermaidCode: () => false,
   prepareMarkdownForMath: (s: string) => s,
@@ -66,7 +75,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImagesContext: React.createContext(null),
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 
 const appRequire = createRequire(import.meta.url);
 const libraryRoot = realpathSync(join(appRequire.resolve('react-native-markdown-display/package.json'), '..'));
@@ -237,8 +246,12 @@ test('a wider table fades its right edge at the start, both edges mid-scroll, an
   scrollTo(root, 200, 700, 300);
   expect(renders).toBe(before);
 
+  // An edge that flips re-renders only the fades: every cell keeps its native
+  // text view, so the pan does not stall on its first frame.
+  const textBefore = textRenders;
   scrollTo(root, 400, 700, 300);
   expect(fades(root)).toEqual(['left']);
+  expect(textRenders).toBe(textBefore);
 
   scrollTo(root, 0, 700, 300);
   expect(fades(root)).toEqual(['right']);

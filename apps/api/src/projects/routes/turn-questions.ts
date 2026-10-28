@@ -20,7 +20,7 @@ import {
   resolvePendingQuestion,
 } from '../lib/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
   normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
@@ -345,12 +345,8 @@ export function registerTurnQuestionsRoutes(): void {
   // GET returns the open question so a resumed session can render what it is
   // waiting on, instead of showing a conversation that mysteriously stopped.
   //
-  // POST answers it. The answer CANNOT go back to the call that blocked — that
-  // opencode process was parked and restarted cold, so its request id no longer
-  // exists and nothing is waiting on it. It is delivered as a FOLLOW-UP TURN,
-  // which is exactly how the channel path has always worked ("the user's
-  // in-thread reply arrives as a follow-up turn", above), and continueSession
-  // already owns waking a parked box and queueing until it is ready.
+  // POST answers the live blocking call first. A parked runtime has lost that
+  // request, so only that fallback needs a durable follow-up turn to wake it.
 
   projectsApp.openapi(
     createRoute({
@@ -384,7 +380,9 @@ export function registerTurnQuestionsRoutes(): void {
         c.get('sessionId') ?? null,
         callerKortixSessionId(c),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      // A deleted session reads nothing (KRTX-2744): its open question is content
+      // of a session the trash model advertises as gone. Restoring brings it back.
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json({ question: await getOpenQuestion(sessionId) });
     },
   );
@@ -445,6 +443,13 @@ export function registerTurnQuestionsRoutes(): void {
       const claimed = await resolvePendingQuestion({ sessionId, requestId, answers });
       if (!claimed) {
         return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
+      }
+
+      // A live tool must receive its answer, not a prompt queued behind itself.
+      // A successful reply resumes that turn; sending another would duplicate it.
+      const released = await releaseRuntimeQuestion(sessionId, requestId, answers);
+      if (released === 'released') {
+        return c.json({ ok: true, delivery: 'delivered' });
       }
 
       // The answer is a durable queue row from here: a parked box gets it when

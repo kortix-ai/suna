@@ -6,7 +6,6 @@ import { Client } from "../core/client";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
-import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
@@ -160,26 +159,29 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
       const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
       r.status(403);
     });
-    await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
+    // The header is retired (#10246): an admin opens a project by acting as
+    // its account (IMP-2), so the header must grant nothing here either.
+    await ctx.step("platform admin WITH the retired x-kortix-admin-bypass header → still 403", async () => {
       const r = await admin.get("/v1/projects/:projectId/detail", {
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project.project_id", p.id);
+      r.status(403);
     });
   }
 });
 
 flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
-  await ctx.step("OWNER patches name, default_branch and manifest_path; repo_url in the body is ignored", async () => {
+  // A rename commits project.name to kortix.yaml first (#10883), so it needs a
+  // reachable repository: APP-15 covers it. This fixture has none.
+  await ctx.step("OWNER patches default_branch and manifest_path; repo_url in the body is ignored", async () => {
     const before = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
     before.status(200);
-    const repoUrl = before.json<{ repo_url: string }>().repo_url;
-    const name = ctx.fixtures.name("patched");
+    const { name, repo_url: repoUrl } = before.json<{ name: string; repo_url: string }>();
     const r = await ctx.client.as(ctx.P.OWNER).patch(
       "/v1/projects/:projectId",
-      { name, default_branch: "release", manifest_path: "ops/kortix.yaml", repo_url: "https://github.com/example-org/should-not-change.git" },
+      { default_branch: "release", manifest_path: "ops/kortix.yaml", repo_url: "https://github.com/example-org/should-not-change.git" },
       { params: { projectId: p.id } },
     );
     r.status(200).body().has("$.name", name).has("$.default_branch", "release").has("$.manifest_path", "ops/kortix.yaml").has("$.repo_url", repoUrl);
@@ -486,8 +488,8 @@ flow(
 /**
  * PROJ-40 — deleting a workspace closes its side doors (KRTX-1714). The delete
  * archives the project, and the revoke routes answer 404 after it, so a door
- * that ignored `projects.status` stayed open for good: a public transcript
- * link kept rendering and a kgw_ key kept authorizing billed LLM calls.
+ * that ignored `projects.status` stayed open for good: a public share link
+ * kept resolving and a kgw_ key kept authorizing billed LLM calls.
  */
 flow(
   "PROJ-40",
@@ -495,10 +497,9 @@ flow(
     domain: "projects",
     requires: ["database"],
     routes: [
-      "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/gateway/keys",
       "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
-      "GET /v1/public/session-shares/:shareId/messages",
+      "GET /v1/p/public-share/:token",
       "POST /v1/llm/chat/completions",
       "DELETE /v1/projects/:projectId",
     ],
@@ -516,19 +517,16 @@ flow(
       visibility: "project",
     });
     ctx.track("session", sessionId, { projectId: project.id });
-    await seedSessionTranscript(ctx.env, { projectId: project.id, accountId: team.id, sessionId });
 
     let key = "";
     let token = "";
-    await ctx.step("the owner mints a kgw_ key and a public transcript link", async () => {
-      (await owner.patch("/v1/projects/:projectId/experimental", { feature: "llm_gateway", enabled: true }, { params }))
-        .status(200);
+    await ctx.step("the owner mints a kgw_ key and a public file link", async () => {
       const minted = await owner.post("/v1/projects/:projectId/gateway/keys", { name: "ci" }, { params });
       minted.status(200).body().exists("$.secret_key");
       key = minted.json<{ secret_key: string }>().secret_key;
       const share = await owner.post(
         "/v1/projects/:projectId/sessions/:sessionId/public-shares",
-        { transcript: true },
+        { file: { path: "/workspace/notes.md" } },
         { params: { ...params, sessionId } },
       );
       share.status(201);
@@ -538,10 +536,12 @@ flow(
     const gateway = () => new Client(ctx.env.gatewayUrl).withBearer(key, "PROJECT_GATEWAY_KEY");
     const ask = () => gateway().post("/v1/llm/chat/completions", { model: "kimi-k3", max_tokens: 1, messages: [] });
 
-    await ctx.step("while the workspace is live: the gateway accepts the key and the link reads the transcript", async () => {
+    await ctx.step("while the workspace is live: the gateway accepts the key and the link resolves", async () => {
       const r = await ask();
       if (r.statusCode === 401) throw new Error(`the live key was refused: ${r.text().slice(0, 200)}`);
-      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(200);
+      // A local database session has no sandbox, so the token edge answers its
+      // honest 503 ("not ready") — the point is that it is never an auth error.
+      (await anon.get("/v1/p/public-share/:token", { params: { token } })).status([200, 503]);
     });
 
     await ctx.step("the owner deletes the workspace", async () => {
@@ -550,7 +550,7 @@ flow(
 
     await ctx.step("after the delete: the kgw_ key → 401 and the link → 410", async () => {
       (await ask()).status(401);
-      (await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId: token } })).status(410);
+      (await anon.get("/v1/p/public-share/:token", { params: { token } })).status(410);
     });
   },
 );

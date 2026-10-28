@@ -9,8 +9,9 @@ export interface SessionListFlags {
   children?: string;
   /** Sessions carrying every one of these labels. */
   labels?: string[];
-  /** Only your pinned or only your archived sessions. */
-  view?: 'pinned' | 'archived';
+  /** Only your pinned or only your archived sessions; or Recently deleted:
+   *  the deleted sessions you may restore (`kortix sessions restore`). */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** Consume the `sessions ls` list flags from argv. Throws a usage message. */
@@ -29,8 +30,11 @@ export function takeSessionListFlags(rest: string[]): SessionListFlags {
   const labels = takeFlagValues(rest, ['--label']);
   const pinned = takeFlagBool(rest, ['--pinned']);
   const archived = takeFlagBool(rest, ['--archived']);
-  if (pinned && archived) throw new Error('pass only one of --pinned, --archived');
-  const view = pinned ? 'pinned' : archived ? 'archived' : undefined;
+  const deleted = takeFlagBool(rest, ['--deleted']);
+  if ([pinned, archived, deleted].filter(Boolean).length > 1) {
+    throw new Error(deleted ? 'pass only one of --pinned, --archived, --deleted' : 'pass only one of --pinned, --archived');
+  }
+  const view = pinned ? 'pinned' : archived ? 'archived' : deleted ? 'deleted' : undefined;
   return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}), ...(view ? { view } : {}) };
 }
 

@@ -18,7 +18,7 @@ function failure(error: string) {
     status: 'failed',
     error,
     error_category: 'provider',
-    source: 'e2b',
+    source: 'platinum',
     started_at: '2026-01-01T00:00:00.000Z',
     finished_at: '2026-01-01T00:01:00.000Z',
   };
@@ -101,7 +101,7 @@ afterEach(() => {
 
 describe('kortix sandboxes health black box', () => {
   test('a stale provider failure does not override current ready state', async () => {
-    const staleFailure = failure('old E2B snapshot is missing');
+    const staleFailure = failure('old Platinum snapshot is missing');
     healthBody = {
       primary_slug: 'default',
       ready: true,
@@ -118,7 +118,7 @@ describe('kortix sandboxes health black box', () => {
 
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('primary default  ready');
-    expect(result.stdout).not.toContain('old E2B snapshot is missing');
+    expect(result.stdout).not.toContain('old Platinum snapshot is missing');
     expect(result.stdout).not.toContain('sandboxes fix');
     expect(result.stderr).toContain('host test (http://127.0.0.1:');
     expect(result.stderr).toContain('health@example.test');

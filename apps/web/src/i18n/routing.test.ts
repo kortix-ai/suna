@@ -25,8 +25,8 @@ describe('locale routing', () => {
       '/v1/accounts',
       '/scim/v2/Users',
       '/ingest/e',
-      '/blog',
-      '/blog/some-post',
+      '/blog/rss.xml',
+      '/blog/some-post.md',
       '/docs',
       '/docs/quickstart',
       '/mcp',
@@ -52,6 +52,8 @@ describe('locale routing', () => {
       '/projects',
       '/docsearch',
       '/blogroll',
+      '/blog',
+      '/blog/some-post',
     ]) {
       expect(isNonPagePath(path)).toBe(false);
     }

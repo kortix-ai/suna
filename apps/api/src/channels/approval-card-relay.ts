@@ -7,11 +7,12 @@
  * (`connector_calls.result_summary.chat_card`), so the decision path needs no
  * lookup to find it.
  */
-import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { approvalPreviewReviewable } from '../connectors/args-preview';
+import { connectorCalls, projectSessions } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
+import { approvalPreviewReviewable, isPlainRecord } from '../connectors/args-preview';
 import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
 import { db } from '../shared/db';
+import { lookupChatUserForKortixUser } from './core/identity';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
 import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks, slackUserIdsIn } from './slack/approval-card';
@@ -69,16 +70,15 @@ async function slackThreadOf(
  */
 export async function postApprovalCard(input: PostApprovalCardInput): Promise<{ posted: boolean }> {
   const summary = input.resultSummary;
-  const argsPreview =
-    summary.args_preview && typeof summary.args_preview === 'object' && !Array.isArray(summary.args_preview)
-      ? (summary.args_preview as Record<string, unknown>)
-      : null;
+  const argsPreview = isPlainRecord(summary.args_preview) ? summary.args_preview : null;
   const cardInput = {
     executionId: input.executionId,
     actionPath: input.actionPath,
     risk: input.risk,
     argsPreview,
     approvalContext: typeof summary.approval_context === 'string' ? summary.approval_context : null,
+    resolvedPreview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
+    resolvedError: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     approvalUrl: input.approvalUrl,
     approvable: approvalPreviewReviewable(summary),
   };
@@ -138,27 +138,19 @@ function cardRefOf(resultSummary: Record<string, unknown>): ChatApprovalCardRef 
 
 /** `<@U…>` when the Kortix user linked a Slack identity in that workspace. */
 async function decidedByLabel(userId: string, teamId: string): Promise<string> {
-  const [link] = await db
-    .select({ platformUserId: chatUserIdentities.platformUserId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.userId, userId),
-        eq(chatUserIdentities.platform, 'slack'),
-        eq(chatUserIdentities.workspaceId, teamId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  return link ? `<@${link.platformUserId}>` : 'a teammate in Kortix';
+  const platformUserId = await lookupChatUserForKortixUser('slack', teamId, userId);
+  return platformUserId !== null ? `<@${platformUserId}>` : 'a teammate in Kortix';
 }
 
-/** Replace a posted card's buttons with the outcome. No card, no-op. */
+const OUTCOME_LABEL = { approve: 'Approved', deny: 'Denied', expired: 'Expired' } as const;
+
+/** Replace a posted card's buttons with the outcome. No card, no-op.
+ *  `expired`: the approval window closed with no decision (the expiry worker). */
 export async function markApprovalCardDecided(input: {
   projectId: string;
   /** The decided call: its PRE-decision row (the card ref rides on the summary). */
   row: PendingApprovalRow;
-  decision: ApprovalDecision;
+  decision: ApprovalDecision | 'expired';
   note: string;
   actorUserId: string;
 }): Promise<void> {
@@ -182,7 +174,7 @@ export async function markApprovalCardDecided(input: {
   const blocks = buildApprovalOutcomeBlocks({
     actionPath,
     decision: input.decision,
-    decidedBy: await decidedByLabel(input.actorUserId, card.team_id),
+    decidedBy: input.decision === 'expired' ? '' : await decidedByLabel(input.actorUserId, card.team_id),
     note: input.note,
     approvalContext: typeof summary?.approval_context === 'string' ? summary.approval_context : null,
   });
@@ -190,7 +182,7 @@ export async function markApprovalCardDecided(input: {
     token,
     card.channel,
     card.ts,
-    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${actionPath}`,
+    `${OUTCOME_LABEL[input.decision]}: ${actionPath}`,
     blocks,
   );
 }

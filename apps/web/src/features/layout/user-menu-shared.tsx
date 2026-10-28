@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The rows two different menus both need: Theme, Help, and the log-out flow.
@@ -23,7 +23,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@kortix/ui/alert-dialog';
 import {
   DropdownMenuItem,
   DropdownMenuPortal,
@@ -33,13 +33,13 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@kortix/ui/dropdown-menu';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { openExternalRoute } from '@/lib/desktop';
+import { openExternalRoute } from '@kortix/ui/internal/lib/desktop';
 import { isInterfaceThemeId } from '@/lib/interface-themes';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import {
   ArticleIcon,
   BookOpenIcon,
@@ -79,10 +79,9 @@ export type MenuLink = {
  * the sidebar and the header, so this render path is not rare.
  */
 export const HELP_LINKS: MenuLink[] = [
-  // One support row, not two. This menu used to open with "Help center" (/help)
-  // and close with "Support" (/support) — two destinations for one intent, and
-  // the /help one was the weaker page. The help centre is now part of /support.
-  { label: 'Support', href: '/support', Icon: LifebuoyIcon },
+  // One support row, not two. The /help and /support pages are gone; support
+  // requests go to the contact page.
+  { label: 'Support', href: '/contact', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
   { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
@@ -172,7 +171,7 @@ export function ThemeSubmenu() {
  * Every reference and legal page collapsed into one submenu, so the top level
  * only carries things you act on rather than eight links.
  *
- * External rows render a real `<a target="_blank">` rather than calling
+ * External rows render a real `<a target="_blank" rel="noopener noreferrer">` rather than calling
  * `window.open` from a handler. Three reasons: the browser opens the tab inside
  * the click's own user-gesture window, so no popup blocker can eat it — a
  * deferred close is exactly the kind of gap that trips one; cmd-click and

@@ -145,8 +145,16 @@ export {
   useProjectTriggerEventApps,
   projectTriggerEventAppsKey,
   projectTriggerEventTypesKey,
+  useTriggerRuns,
+  useProjectTriggerRuns,
+  triggerRunsKey,
+  projectTriggerRunsKey,
+  type TriggerRunsQueryOptions,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
+export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
+export { prefetchArtifact, useArtifact, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,
   useApproveCaptureEnrollment,
@@ -158,6 +166,7 @@ export {
   useCaptureEnrollmentTokens,
   useCapturePolicy,
   useCaptureSearch,
+  useCaptureStorage,
   useCaptureTimeline,
   useCaptureTimelineItems,
   useCaptureWorkspace,
@@ -169,6 +178,7 @@ export {
   useRevokeCaptureEnrollmentToken,
   useSetCaptureEnabled,
   useSetCapturePolicy,
+  useSetCaptureStorage,
 } from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
@@ -244,6 +254,36 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
+export {
+  useAddProjectSpaceLink,
+  useAddProjectSpaceMembers,
+  useChannelsOnboarding,
+  useJoinProjectSpace,
+  useLeaveProjectSpace,
+  useProjectSpaceMembers,
+  useRemoveProjectSpaceMember,
+  useCreateProjectSpace,
+  useMarkChannelsOnboarding,
+  useOpenProjectDm,
+  usePinProjectSpaceLink,
+  useProjectSpaceApps,
+  useProjectSpaceGeneralNotice,
+  usePrivateChannelsAvailable,
+  usePrivateChannelsNotIn,
+  useProjectSpaceLinks,
+  useProjectSpaces,
+  useRemoveProjectSpaceLink,
+  useUpdateProjectSpace,
+} from './use-project-spaces';
+// Session groups (`session_groups`): the project's shared folders of sessions.
+export {
+  useCreateProjectSessionGroup,
+  useDeleteProjectSessionGroup,
+  useProjectSessionGroups,
+  useRenameProjectSessionGroup,
+  useReorderProjectSessionGroups,
+  useSetProjectSessionGroup,
+} from './use-session-groups';
 export * from './use-sessions-needing-input';
 // The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
 export * from './use-review-summary';
@@ -253,6 +293,7 @@ export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-memory';
 export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`
@@ -277,6 +318,7 @@ export {
 } from './use-kortix-app-viewer';
 
 export { useModelAccess } from './use-model-access';
+export { useCustomLlmProviders } from './use-custom-llm-providers';
 
 // The sandbox-image load state: the SDK owns the raw-file URL, the HEAD probe,
 // the auth headers, the size gate, the probe cache and the one fresh-token

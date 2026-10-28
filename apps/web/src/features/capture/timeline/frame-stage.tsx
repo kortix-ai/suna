@@ -14,7 +14,11 @@ export function useFrameSource(
   frame: CaptureFrame | null,
   userId: string | undefined,
 ) {
-  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, { userId });
+  // The frame's own device: a computer linked to no one is read as itself, like the timeline.
+  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, {
+    userId,
+    deviceId: frame?.device_id,
+  });
   const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
   const next =
     video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;

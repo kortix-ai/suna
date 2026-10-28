@@ -52,7 +52,7 @@ const s = kortix.session(projectId, sessionId);
 ```ts
 const created = await kortix.project(projectId).sessions.create({
   agent_name: 'my-agent',
-  model: 'kimi-k3',
+  model: 'glm-5.3-flash',
   initial_prompt: 'Triage the open issues labeled bug.',
   labels: ['triage'],
   metadata: { app_ticket: 'T-142' },
@@ -66,19 +66,20 @@ Every field is optional. With no input, the session runs the project's default a
 | --- | --- |
 | `initial_prompt` | The first prompt. The server delivers it when the runtime is up, so you need no `send()`. |
 | `agent_name` | The agent to run. Default: the project's default agent. |
-| `model` | The model id (see [Models](/docs/project/models)). With the LLM gateway off, use the native `provider/model` form; a bare id returns `400` `INVALID_SESSION_MODEL`. A model the account cannot use returns `400`. |
+| `model` | The model id (see [Models](/docs/project/models)). A model the account cannot use returns `400`. |
 | `name` | The session title. Without it, the server makes a title from the first prompt. |
 | `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
 | `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. Server-managed keys, such as `source`, `trigger_kind` and `trigger_slug`, return `400`. Prefix your keys, for example `app_`. |
 | `session_id` | A v4 UUID you generate, so you know the id before the create returns. A second create with the same id returns `409`. |
 | `base_ref` | The branch or ref the session branch starts from. Default: the project's default branch. |
 | `sandbox_slug` | The sandbox to boot, by its slug in `kortix.yaml`. Default: the agent's sandbox, then the project default, then `default`. |
-| `provider` | The sandbox provider: `daytona`, `platinum` or `e2b`. Default: the project's pinned provider, else the platform's choice. |
+| `provider` | The sandbox provider: `platinum`, or the legacy fallback `daytona`. Default: the project's pinned provider, else the platform's choice. |
 | `runtime_context` | Non-secret values for the agent. See [Start sessions from your server](#start-sessions-from-your-server). |
 | `connector_bindings` | Pins one connector account per connector alias: `{ gmail: { connection_id } }`. |
 | `inherit_unbound` | With `connector_bindings` set, a connector you did not bind gets no account. `true` lets it use the project default. Default `false`. |
 | `secrets` | Narrows which project secrets the sandbox receives, by identifier. A personal access key or service account key only. |
 | `provider_secret_pools` | HTTP body only. Selects up to 10 account secret ids per model provider, for up to 20 providers. Needs the `pooled_provider_secrets` flag and the LLM gateway. |
+| `space_id` | Experimental. The channel or DM to file the session in, with the `project_channels` flag on. See [Channels and DMs](#channels-and-dms-experimental). Ignored while the flag is off, but a value that is not a UUID returns `400`. |
 
 `opencode_model` is the deprecated name of `model`; `model` wins when you send both. `require_connectors` is accepted and ignored.
 
@@ -90,6 +91,114 @@ const { items } = await kortix.project(projectId).sessions.listPage({ labels: ['
 ```
 
 `labels` replaces the list. `metadata` merges keys, and a `null` value removes a key. `listPage({ labels })` returns only sessions that carry every label. For a pre-booted session that is ready before the first prompt, see [Warm sessions](/docs/work/sessions#warm-sessions).
+
+## Channels and DMs (experimental)
+
+<Callout type="warning">
+Experimental. Every call in this section needs the project's `project_channels` flag, which is off by default. While it is off, every `spaces` route returns `403` `feature_disabled`, and session create and list ignore `space_id` (a create whose `space_id` is not a UUID still returns `400`).
+</Callout>
+
+A space is a channel of the project, or the caller's direct message (DM) with one agent. A thread in a space is an ordinary session whose `space_id` names the space. The thread's first prompt is its top message.
+
+```ts
+const p = kortix.project(projectId);
+
+const spaces = await p.spaces.list(); // #general first, then channels oldest first, then the caller's DMs
+const launch = await p.spaces.create({ name: 'Launch Week', description: 'Plans and status' }); // slug "launch-week"
+await p.spaces.update(launch.space_id, { description: null }); // name, description (null clears), archived
+const dm = await p.spaces.dm('kortix'); // the caller's DM with an agent, created on the first call
+
+const thread = await p.sessions.create({ space_id: launch.space_id, initial_prompt: 'Draft the launch checklist.' });
+const threads = await p.sessions.list({ spaceId: launch.space_id, parent: 'root' });
+threads[0].first_prompt; // the thread's top message
+threads[0].reply_count; // the messages after it; set on a space list only
+```
+
+| Call | Behavior |
+| --- | --- |
+| `spaces.list()` | The live channels, then the caller's DMs, as `ProjectSpace[]`. The first call creates `#general` (`is_default: true`). It also files every session that is in no space into `#general`. |
+| `spaces.create({ name, description? })` | A channel. `name` is 1 to 80 characters, `description` at most 500. The slug (`a-z0-9-`) is unique in the project, archived channels included: a taken slug rejects with `ApiError` `409` `slug_taken`, `data.space_id` and `data.archived` name the channel that holds it, and `data.can_edit` says whether the caller may unarchive it. A name with no letter or digit returns `400` `invalid_name`. |
+| `spaces.update(spaceId, { name?, description?, archived? })` | Rename, describe, archive (`true`) or unarchive (`false`) a channel. Only the channel's creator or a project manager (`project.members.manage`) may edit it: every listed space carries `can_edit`, and anyone else gets `403` `forbidden`. `#general` cannot be archived (`400` `default_channel`). A DM cannot be edited (`400` `dm_not_editable`). |
+| `ProjectSpace.visibility` | `public` (every project member sees the channel) or `private` (only its members see the channel, its threads, links, Apps, members and notifications; anyone else gets `404` `space_not_found` or `404` on the thread, never `403`). `#general` and DMs are always `public`. A project manager outside a private channel lists, adds (never themself: `403` `manager_self_add`) and removes its members, renames and archives it, and reads nothing else. A manager who makes a channel private becomes a member of it. `spaces.create({ visibility: 'private' })` and `spaces.update(spaceId, { visibility: 'private' })` (public to private only; authors of its threads and links become members) answer `409` `private_channels_unavailable` until private channels ship. Absent on older APIs: read it as `public`. |
+| `spaces.dm(agentName)` | The caller's DM with the agent. Only the caller sees it. An agent the project does not declare returns `404` `agent_not_found`; an agent the caller may not run returns `403`. |
+| `spaces.apps(spaceId)` | The channel's Apps as `App[]`: the live Apps with a deployment made from one of its threads, only those the caller may open (the same filter as `apps.list()`). An App never deployed from a thread is in no channel. A caller without the App read permission gets `403`. |
+| `spaces.links.list(spaceId)`, `links.add(spaceId, { url, title? })`, `links.pin(spaceId, linkId, pinned)`, `links.remove(spaceId, linkId)` | A channel's links, the most recently shared first, as `ProjectSpaceLink[]`. A link is added with `add` (`source: 'manual'`, `created_by` the caller) or collected from a person's message in a thread of the channel (`source: 'message'`; DMs, private threads and agent replies are not collected). Both start unpinned. Adding an address the channel holds keeps that row and its pin, takes the new title and moves it to the top. One row per address: a second share moves `last_shared_at` and `session_id` to that thread. `url` is http(s) only and at most 2,048 characters; `title` at most 200; anything else returns `400`. The stored `url` is its parsed form. A channel holds at most 200 added links and pins at most 200: one more returns `409` `link_limit`. It keeps the 500 most recently shared unpinned collected links; an added link is never pruned. Every project member may list, add, pin and unpin. `pin` returns the link. Unpinning only clears the pin: the link stays listed until someone removes it. `can_delete` is true for the link's creator and for a project manager; anyone else gets `403` `forbidden` on remove. Agents read the 20 most recently pinned links in a thread's `/drives/README.md`. Each link carries `display_title` (the title a member gave, else the page's fetched title, else the decoded path, else the host), `site_name` and `icon_url`. The server fetches the title and icon in the background, so both are `null` until then. `icon_url` is a remote URL: load it only through an image proxy. |
+| `spaces.members.list(spaceId)`, `members.add(spaceId, userIds)`, `members.remove(spaceId, userId)`, `members.join(spaceId)`, `members.leave(spaceId)` | Who is in a channel, as `ProjectSpaceMemberList` (`{ members, implicit, can_add }`). In a public channel membership gates no read and no post, and every viewer reads the same list. A private channel is reachable only by its members. Each `ProjectSpaceMember` has `name` (the display name, else the email's local part, never the email), `avatar_url`, `is_creator`, `is_viewer`, `added_at` and `can_remove`. `#general` lists every project member (`implicit: true`); adding, joining or leaving it returns `400` `default_channel`. A channel create makes the creator a member, plus its `member_ids`. `add` takes up to 100 ids in one request: a member of the channel, its creator or a project manager may add (else `403` `forbidden`), and every id must be a project member (else `400` `not_project_member`, `user_ids` names them, nobody is added). A project manager removes anyone, the creator anyone but themself, a member only themself (`leave`); the creator is removed only by a manager (`403` `creator_not_removable`). `join` is open to every project member and idempotent. `ProjectSpace.is_member` says whether the caller is in the channel. |
+| `spaces.privateChannelsNotIn()` | Project managers only (else `403` `forbidden`): the private channels the caller is not in, archived ones included, as `PrivateChannelSummary[]` (`space_id`, `name`, `slug`, `member_count`, `created_by`, `created_by_name`, `created_at`, `archived_at`). No threads, files, memory or links. A channel its last member left has `member_count: 0`; a manager adds people to it with `members.add`. React: `usePrivateChannelsNotIn(projectId, { enabled })`. |
+| `spaces.generalNotice()` | `#general`'s "turned on again" line as `ProjectSpaceGeneralNotice` (`{ kind: 'reenabled', at, count }`: `count` sessions started while Channels was off went into `#general` at `at`), or `null`. It is present for 7 days after the flag is turned on again with `#general` already there. It reads `GET /spaces`. |
+| `spaces.onboarding.get()` | The caller's onboarding state as `ChannelsOnboarding`: `intro_seen` and `get_started: { visible, create_channel, remember, open_dm }`. A "Get started" row is done when its mark is present or its fact is true: the caller created a channel, saved memory in `#general`, or owns a DM. `visible` is false once the block is dismissed or all three rows are done. |
+| `spaces.onboarding.mark(mark)` | Records one mark for the caller: `channels_intro`, `get_started.dismissed`, `get_started.channel`, `get_started.remember` or `get_started.dm`. It is idempotent. Another value returns `400`. Turning the flag on again marks `channels_intro` for every member. |
+| `sessions.create({ space_id })` | A create with a channel `space_id` is project-visible. With no `agent_name`, it runs the channel's first agent (its default), else the project default. Whoever may post in a channel (every project member in `#general` and a public channel, a member in a private one) runs the channel's agents there, and the project default when the channel lists none, without an agent grant; replies (`POST .../prompts`) follow the same rule. Any other agent, and every session outside a channel, still needs the grant (`403` `agent_not_accessible` or `no_agent_access`). A rewind of an OpenCode session through the proxy is refused with `403` `not_message_author` unless the caller sent that message and nobody else sent one after it. A create in a DM is private and runs the DM's agent: an `agent_name` in the same call is overridden. Another member's DM, an archived channel and an unknown id return `404` `space_not_found`. |
+| `sessions.create()` without `space_id` | Files the session into `#general`, private: only its creator sees it. A session that another session starts goes to its parent's space. |
+| `sessions.create({ fork_from_session_id })` | The fork goes to its source's space and keeps its source's sharing: project-visible only when the source is, else private. A fork is never wider than its source. |
+| `sessions.list({ spaceId })`, `listPage({ spaceId })` | One space's sessions that the caller may open, newest activity first. Each row carries `first_prompt` and `reply_count`. The cursor stays inside the space. A `spaceId` that is not a UUID returns `400`. Narrow it with `q` (matches the title, the first prompt, the agent and the person), `startedBy: 'me'`, `createdBy` (a user id: the threads that person started), `agent` (a slug) and `updatedAfter` (ISO 8601: activity at or after it). A `createdBy` that is not a UUID or an `updatedAfter` that is not a date returns `400`. |
+
+A `visibility` that a server-side caller sets (a trigger, a chat integration) wins, except in a DM. From the SDK, change a thread's sharing after the create with `session(projectId, sessionId).setSharing(...)`.
+
+Turning `project_channels` on files every session that is in no space into `#general`. Turning it off deletes nothing: the spaces and every `space_id` stay, and come back when the flag is on again. In React, use `useProjectSpaces`, `useProjectSpaceApps`, `useProjectSpaceLinks`, `useAddProjectSpaceLink`, `usePinProjectSpaceLink`, `useRemoveProjectSpaceLink`, `useProjectSpaceMembers`, `useAddProjectSpaceMembers`, `useRemoveProjectSpaceMember`, `useJoinProjectSpace`, `useLeaveProjectSpace`, `useProjectSpaceGeneralNotice`, `useChannelsOnboarding`, `useMarkChannelsOnboarding` and `useProjectSessions(projectId, { spaceId })` ([Hooks](/docs/sdk/react#hooks)).
+
+## Session groups (experimental)
+
+<Callout type="warning">
+Experimental. Every call in this section needs the project's `session_groups` flag, which is off by default. While it is off, every `sessionGroups` call returns `403` `feature_disabled`, and `listPage({ group })` ignores `group`.
+</Callout>
+
+A session group is a named folder of the project's sessions, for example one per store or client. Every project member sees the same groups in the same order. A session is in at most one group of its project (`ProjectSession.group_id`).
+
+```ts
+const p = kortix.project(projectId);
+
+const storeA = await p.sessionGroups.create({ name: 'Store A' }); // last in the order
+const storeB = await p.sessionGroups.create({ name: 'Store B' });
+await p.sessionGroups.file(sessionId, storeA.group_id); // null takes it out again
+await p.sessionGroups.reorder([storeB.group_id, storeA.group_id]); // every group id, once
+
+const { items } = await p.sessions.listPage({ group: storeA.group_id }); // that group's sessions
+const loose = await p.sessions.listPage({ group: 'none', parent: 'root' }); // the sessions in no group
+```
+
+| Call | Behavior |
+| --- | --- |
+| `sessionGroups.list()` | The groups in order, as `ProjectSessionGroup[]` (`group_id`, `name`, `position`, `created_by`, `created_at`, `updated_at`). Needs read access to the project's sessions. |
+| `sessionGroups.create({ name })` | A group, last in the order. `name` is 1 to 80 characters after trimming. A name another group of the project has, in any case, rejects with `ApiError` `409` `group_name_taken`. A project holds at most 50 groups (`409` `group_limit`). |
+| `sessionGroups.rename(groupId, name)` | The same name rules. An unknown group returns `404` `group_not_found`. |
+| `sessionGroups.reorder(groupIds)` | Every group id of the project, each once, in the new order. A list that is out of date (a group missing, added or foreign) changes nothing and returns `409` `group_order_stale`: read the list again. A repeated id returns `400`. |
+| `sessionGroups.delete(groupId)` | Its sessions stay, in no group. The groups after it move up one place. |
+| `sessionGroups.file(sessionId, groupId)` | Files the session into that group of its project; `null` takes it out. The session keeps its `updated_at`, so it keeps its place in every list. A session the caller cannot see returns `404`; a group of another project or an unknown id returns `404` `group_not_found`. |
+| `sessions.listPage({ group })` | `group` is a group id (that group's sessions, any starter and any depth) or `'none'` (the sessions in no group). A value that is neither returns `400`. |
+
+Creating, renaming, reordering, deleting and filing need the access that changes a session's labels: any member who works in the project. Turning `session_groups` off deletes nothing: the groups and every `group_id` stay, and the sidebar lists every session again until the flag is on again. In React, use `useProjectSessionGroups`, `useCreateProjectSessionGroup`, `useRenameProjectSessionGroup`, `useReorderProjectSessionGroups`, `useDeleteProjectSessionGroup`, `useSetProjectSessionGroup` and `useProjectSessions(projectId, { group })` ([Hooks](/docs/sdk/react#hooks)).
+
+## Memory (experimental)
+
+Experimental. Every call in this section needs the project's Files (the `drives` flag): while Files are off, every `memory` route returns `403` `feature_disabled`, and without Drive storage `503` `drive_storage_unavailable`. The Memory UI is a Channels surface (`project_channels`); these calls do not need that flag.
+
+Memory is the Markdown files of the project's Drive, read and edited in place: nothing is copied. A layer is one folder. The Company layer (key `'company'`) is `/Company/Memory`; a channel's layer (key = the space id) is `/Company/Channels/<slug>/Memory`; a DM's layer (key = the space id, its owner only) is the owner's `/Users/<person>/Memory`, with the agent folder `Memory/<agent>` listed first. A page is one `.md` file. Its type comes from front-matter `type:`, else its first folder (`people/`, `decisions/`, `workstreams/`, `playbooks/`), else `Notes.md` is `note`, else `other`. Agents read and write the same files through their `/drives` mounts. Sources and "updated by" come from the file's front-matter (`sources:`, `updated_by:`, `updated_at:`).
+
+```ts
+const m = kortix.project(projectId).memory;
+const layer = await m.layer(launch.space_id); // layer.folder: "/Company/Channels/launch/Memory"
+const page = await m.pages.create(launch.space_id, { type: 'decisions', title: 'Launch date', body: '- Ships on Monday' });
+await m.pages.update(page.page_id, { base_version: page.version_no, body: '- Ships on Tuesday' });
+const { versions } = await m.pages.history(page.page_id);
+// Restore a version: write its body back.
+await m.pages.update(page.page_id, { base_version: (await m.pages.get(page.page_id)).version_no, body: versions[1].snapshot.body });
+```
+
+| Call | What it does |
+| --- | --- |
+| `memory.layer(layerKey)` | The layer as `ProjectMemoryLayer`: `name`, `folder` (a Drive path), `agent_folder` (a DM's), `drive_id`, page `counts` per type, `other_files` (files that are not pages), `read_only` (an archived channel) and `can_write` (write access to the folder). Another member's DM and an unknown id return `404` `memory_not_found`. |
+| `memory.pages.list(layerKey, { type? })` | One `ProjectMemoryPageSummary` per Markdown file (no body, with its Drive `path`), newest first, at most 500. |
+| `memory.pages.create(layerKey, { type, title, summary?, body?, related?, agent_folder? })` | Writes `<folder>/<type>/<slug>.md` (`type: 'other'`: `<folder>/<slug>.md`) with front-matter `updated_by` and `updated_at`. In a DM it writes into the agent folder unless `agent_folder: false`. `body` at most 262,144 UTF-8 bytes (`413` `page_too_large`). An existing file returns `409` `title_taken` with `data.page_id`; an archived channel `409` `layer_read_only`; a secret `422` `secret_detected`. |
+| `memory.notes.add(layerKey, { text, source_session_id? })` | Appends `- <text> — <name>, <date>` to the layer's `Notes.md` (a DM's: in the agent folder) and returns that page. |
+| `memory.pages.get(pageId)` | The page as `ProjectMemoryPage`: `body` (the file without front-matter and without its `# ` title line), `sources`, `related`, `version_no` (the file mtime in ms), `can_edit`, `can_delete`. A file over 256 KiB returns `413` `page_too_large` with its `path`. |
+| `memory.pages.update(pageId, { base_version, body })` | Replaces the body; front-matter and the title line are kept. A file changed since `base_version` returns `409` `version_conflict`. |
+| `memory.pages.delete(pageId)` | Deletes the file for good and returns `{ ok, version_id }`. There is no trash. |
+| `memory.pages.history(pageId)` | The page's versions from the drive's newest 100 Drive commits, newest first, at most 20, each with its `snapshot`: `{ versions }`. Older versions are in Files → Versions. To restore one, pass its `snapshot.body` to `memory.pages.update`. |
+| `memory.search({ q, layer?, type?, limit? })` | Searches Company, every live channel and the caller's own Memory folder, or the one `layer`: case-insensitive text over title and body, title hits first. `q` is 2 to 200 characters (shorter returns `400` `invalid_input`); `limit` is 1 to 20 (default 20). |
+| `memory.usage(sessionId)` | The thread's "Used memory": the files listed to its agent at the first turn, as `{ loaded_at, layers: [{ layer_key, scope, name, pages: [{ page_id, type, title }] }] }`. `loaded_at` is null before the first turn. Files deleted since are left out. A thread the caller cannot open returns `404` `session_not_found`. |
+
+Every error is an `ApiError` whose `code` names it, and none reaches the host error handler. In React, use `useProjectMemoryLayer`, `useProjectMemoryPages`, `useProjectMemoryPage`, `useProjectMemoryHistory`, `useProjectMemorySearch`, `useSessionMemoryUsage` and the mutation hooks ([Hooks](/docs/sdk/react#hooks)).
 
 ## Wait until ready
 
@@ -140,7 +249,7 @@ await s.abort(); // end the running turn; the session stays
 - `setModel()` stays on the handle. To change the session's saved model, call `changeModel()`:
 
 ```ts
-const { applied_live } = await s.changeModel('kimi-k3');
+const { applied_live } = await s.changeModel('glm-5.3-flash');
 ```
 
 The same model-id rule applies as for `model` at create. `changeModel()` restarts the runtime when the model changes on a running session, so a running turn ends. `applied_live` is `true` when a running session took the model now, and `false` when it applies at the next start. `push_failed: true` means the model is stored, but the running runtime still uses the old one. On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it. Anyone else gets `403`.
@@ -273,9 +382,9 @@ A React app uses `useSession` instead of `stream()`. See [React](/docs/sdk/react
 | Method | Returns | Wakes the sandbox |
 | --- | --- | --- |
 | `s.messages({ limit?, before?, conversationId? })` | A page of messages, oldest first, as `{ info, parts }` (`kortix.transcript.v1`), and `hasMore`. `conversationId` reads a subagent's conversation. | Yes |
-| `s.transcriptSync({ limit?, before?, child? })` | The copy the server saves after every turn: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
+| `s.transcriptSync({ limit?, before?, child? })` | Deprecated: read `s.log()`. The v1 copy of the conversation: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
 | `s.log({ thread?, before_seq?, limit? })` | One page of the stored session log (`kortix.session/2`, `SessionLogPage`): the session record, every thread head, and the thread's newest `limit` messages (default 40, at most 500) by `seq`. `thread` defaults to the root thread; pass the first message's `seq` as `before_seq` for older ones. `null` when the session has no stored log yet (it is journaled at each turn end), or no such thread. | No |
-| `s.transcript({ limit?, chars? })` | A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
+| `s.transcript({ limit?, chars? })` | Deprecated: read `s.log()`. A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
 | `s.get()` | The session record: status, agent, model, labels, metadata. | No |
 | `s.messageAuthors()` | The member or session that sent each message, keyed by message id, and the member who stopped each stopped turn (`stops`). | No |
 | `s.modelUsage()` | The model that answered each turn, and `fallback_from` when a fallback model answered. | No |
@@ -299,7 +408,7 @@ await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per quest
 | `s.compact(model?)` | Summarizes the conversation into a shorter context. Needs `session.compact`. |
 | `s.stop()` | Stops the sandbox. The disk, the branch and the conversation stay. |
 | `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
-| `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days), and its branch is kept. |
+| `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days); after that its messages, files and branch are deleted. |
 | `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/work/sessions#restore-a-deleted-session). |
 | `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs/work/sessions#continue-a-lost-session). |
 | `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |

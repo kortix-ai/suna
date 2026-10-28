@@ -10,6 +10,7 @@ import {
   resolveManifestImports,
   serializeManifestObject,
 } from '@kortix/manifest-schema';
+import { HTTPException } from 'hono/http-exception';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
 import { type MirrorRefresh, isGitOperationError, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
@@ -356,7 +357,22 @@ export async function readRepoFileBytes(
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
-  const cat = (at: string) => runGitBuffer(['cat-file', 'blob', `${at}:${normalized}`], repoPath, false);
+  const cat = async (at: string) => {
+    const object = `${at}:${normalized}`;
+    try {
+      return await runGitBuffer(['cat-file', 'blob', object], repoPath, false);
+    } catch (err) {
+      // cat-file reports a tree as "bad file", not "path does not exist".
+      // Check the object type rather than hiding corruption with the same wording.
+      if (isGitOperationError(err) && err.kind === 'failed') {
+        const type = await runGitCapture(['cat-file', '-t', object], repoPath);
+        if (type.exitCode === 0 && ['tree', 'commit'].includes(type.stdout.trim())) {
+          throw new RepoFileNotFoundError(normalized, treeRef, err);
+        }
+      }
+      throw err;
+    }
+  };
   try {
     const sha = await resolveRefSha(repoPath, treeRef);
     return sha ? (await cat(sha)).stdout : (await cat(treeRef)).stdout;
@@ -489,6 +505,13 @@ export async function readManifestFromRepo(
     // A ref that does not resolve is NOT "the manifest is absent". Returning
     // null here made an unreadable mirror indistinguishable from a blank
     // project, which callers answer with a synthesized permissive manifest.
+    if (/fatal: (?:not a valid|invalid) object name /i.test(listed.stderr)) {
+      const message = `Repository ref '${treeRef}' does not exist. Push a commit to '${treeRef}' or update the project's default branch before starting a session.`;
+      throw new HTTPException(409, {
+        message,
+        res: Response.json({ error: true, code: 'git_ref_not_found', message, status: 409 }, { status: 409 }),
+      });
+    }
     throw new Error(
       `git ls-tree ${treeRef} failed (exit ${listed.exitCode}): ${listed.stderr.trim() || 'no output'}`,
     );

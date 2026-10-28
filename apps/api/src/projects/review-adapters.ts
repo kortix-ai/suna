@@ -9,6 +9,7 @@
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
+import { isPlainRecord } from '../connectors/args-preview';
 import type { serializeReviewItem } from './review-items';
 import type { ApprovalResolvers } from './lib/approval-authority';
 
@@ -49,9 +50,13 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
-  ex: ConnectorCallRow,
+  ex: ConnectorCallRow & { connectorName?: string | null },
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
-): ReviewItemDTO & { can_resolve: boolean; resolvers: ApprovalResolvers | null } {
+): ReviewItemDTO & {
+  can_resolve: boolean;
+  resolvers: ApprovalResolvers | null;
+  expires_at: string | null;
+} {
   const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
@@ -80,12 +85,22 @@ export function connectorCallToReviewItem(
       execution_id: ex.executionId,
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
+      // The display name ("GitHub"); the slug in `action_path` is not a name.
+      ...(ex.connectorName ? { connector_name: ex.connectorName } : {}),
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
       // Same gate as the args: the agent's description can quote the payload.
       ...(includeArgsPreview && typeof summary.approval_context === 'string'
         ? { approval_context: summary.approval_context }
+        : {}),
+      // Content Kortix read from the provider (approval-enrichers.ts): the
+      // same gate as the args, because it is the payload.
+      ...(includeArgsPreview && isPlainRecord(summary.resolved_preview)
+        ? { resolved_preview: summary.resolved_preview }
+        : {}),
+      ...(includeArgsPreview && typeof summary.resolved_error === 'string'
+        ? { resolved_error: summary.resolved_error }
         : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,
@@ -98,6 +113,8 @@ export function connectorCallToReviewItem(
     metadata: { source: 'connector_call' },
     created_at: ex.createdAt.toISOString(),
     updated_at: ex.createdAt.toISOString(),
+    /** When the approval stops being decidable; null = never. */
+    expires_at: ex.expiresAt?.toISOString() ?? null,
   };
 }
 

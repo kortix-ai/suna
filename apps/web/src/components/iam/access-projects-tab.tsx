@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 /**
  * `AccessProjectsTab` — the account-level "Projects" tab inside Account
  * Settings' Access section. The single place to see and manage every
@@ -21,8 +21,8 @@ import { useTranslations } from '@/i18n/use-translations';
  *                                         `approveProjectAccessRequest` / `rejectProjectAccessRequest`
  *
  * **Everything visual comes from the shared access primitives**
- * (`features/workspace/shared/access`): `AccessRow` for every list row (flattened
- * to a Linear list row by `FLAT_ROW_CLASS`), and `AccessDialog` for
+ * (`packages/ui/src/access/access`) and the account Members table
+ * (`features/accounts/hub/member-table.tsx`) for every row, and `AccessDialog` for
  * every "give / edit access" interaction. This file owns NO picker, role
  * select, list row, modal, or destructive-confirm copy of its own — the
  * table, the two `DropdownMenuSub` role changers, the popover cells and the
@@ -72,51 +72,14 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
-import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
 import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import {
-  InputGroupSearch,
-  InputGroupSearchClear,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import {
-  AccessDialog,
-  AccessRow,
-  ROLE_NONE,
-  builtinRole,
-  customRole,
-  formatDate,
-  formatExpiry,
-  pluralize,
-  principalLabel,
-  removeAccessCopy,
-  roleValueLabel,
-  type AccessDialogCurrent,
-  type AccessDialogPrincipal,
-  type KebabItem,
-  type RoleValue,
-} from '@/features/workspace/shared/access';
-import { useCopy } from '@/hooks/use-copy';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
-import {
-  agentIdentitiesQueryKey,
-  agentRolesQueryKey,
-  fetchProjectAgentAssignments,
-  projectAgentAssignmentsQueryKey,
-} from '@/features/workspace/shared/access/agent-principals';
+  MemberTableHead,
+  MemberTableRow,
+  ROLE_TONE,
+  memberHandle,
+  type RoleTone,
+} from '@/features/accounts/hub/member-table';
 import {
   approveProjectAccessRequest,
   detachGroupFromProject,
@@ -136,11 +99,60 @@ import {
   type PendingProjectInvite,
   type ProjectAccessMember,
   type ProjectAccessResponse,
-  type ProjectRole,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
+import { cn } from '@kortix/ui';
+import { AccessDialog } from '@kortix/ui/access';
+import {
+  agentIdentitiesQueryKey,
+  agentRolesQueryKey,
+  fetchProjectAgentAssignments,
+  projectAgentAssignmentsQueryKey,
+} from '@kortix/ui/access/access/agent-principals';
+import {
+  ROLE_NONE,
+  builtinRole,
+  customRole,
+  formatDate,
+  formatExpiry,
+  pluralize,
+  principalLabel,
+  removeAccessCopy,
+  roleValueLabel,
+  type AccessDialogCurrent,
+  type AccessDialogPrincipal,
+  type KebabItem,
+  type RoleValue,
+} from '@kortix/ui/access/access/index';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CountBadge } from '@kortix/ui/count-badge';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { ErrorState } from '@kortix/ui/error-state';
+import Hint from '@kortix/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@kortix/ui/hover-card';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@kortix/ui/input-group';
+import {
+  AccountHubSelectionBar,
+  useAccountHubSheet,
+} from '@kortix/ui/internal/account-hub/hub-sheet';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
 import {
   ArrowClockwiseIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
   CheckIcon,
   ClockIcon,
   EnvelopeIcon,
@@ -160,6 +172,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
  *  this bound directly, or inherited via a group?) and absent on a GROUP's
  *  own entries in `group_access` — a group's policies have no further
  *  attribution chain. */
+/** The shared reader shape for a custom-role policy row. The SDK models
+ *  member rows (which carry a `source` attribution) and group rows (whose
+ *  policies are the group's own binding, no `source`) separately; these
+ *  derivations read both through one relaxed shape. */
 interface CustomRolePolicyEntry {
   policy_id: string;
   role_id: string;
@@ -185,26 +201,10 @@ interface ResourceGrantEntry {
   group_name?: string | null;
 }
 
-interface ExtendedProjectAccessMember extends ProjectAccessMember {
-  custom_role_policies?: CustomRolePolicyEntry[];
-  resource_grants?: ResourceGrantEntry[];
-}
-
-/** A group's access to this project — the group counterpart of
- *  `ExtendedProjectAccessMember`. No `expires_at` here — see this file's
- *  header comment, "One gap in the live contract". */
-interface GroupAccessRow {
-  group_id: string;
-  group_name: string | null;
-  built_in_role: ProjectRole | null;
-  custom_role_policies?: CustomRolePolicyEntry[];
-  resource_grants?: ResourceGrantEntry[];
-}
-
-interface ExtendedProjectAccessResponse extends ProjectAccessResponse {
-  members: ExtendedProjectAccessMember[];
-  group_access?: GroupAccessRow[];
-}
+/** A group's access row, as `@kortix/sdk` models it in
+ *  `ProjectAccessResponse.group_access`. No `expires_at` here — see this
+ *  file's header comment, "One gap in the live contract". */
+type GroupAccessRow = NonNullable<ProjectAccessResponse['group_access']>[number];
 
 /** Bounded page for the project picker — see header comment. */
 const PROJECT_LIST_PAGE_SIZE = 20;
@@ -214,48 +214,33 @@ const IMPLICIT_HINT =
 const GROUP_INHERITED_HINT =
   "Inherited from a group. Change the group's project access to update this.";
 
-// ─── Linear list chrome ────────────────────────────────────────────────────
+// ─── Table chrome ──────────────────────────────────────────────────────────
 
-/** A Linear list row: flat on the page, a hover fill, no border or card.
- *  Overrides `AccessRow`'s card dialect through its `className`. */
-const FLAT_ROW_CLASS =
-  'hover:bg-hover min-h-11 gap-2.5 rounded-md border-0 bg-transparent px-3 py-1';
+/** The project list's grid: project · members · updated · caret. The members
+ *  column drops below `sm`, as the Members pane drops its email column. */
+const PROJECT_GRID =
+  'grid grid-cols-[minmax(0,1fr)_6rem_1rem] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_6rem_1rem]';
+const TABLE_HEAD = 'text-muted-foreground truncate text-xs font-medium';
 
-/** The role column: one fixed width, right-aligned, so every row's role and
- *  the kebab slot after it sit on the same two lanes. */
-function RoleLabel({ children, hint }: { children: ReactNode; hint?: string }) {
-  const label = <span className="inline-block w-28 truncate text-right">{children}</span>;
-  if (!hint) return label;
-  // A sentence of explanation, not a label: a hover card, not a tooltip.
+/** Why a role cannot be edited here. A sentence, not a label: a hover card. */
+function RoleHint({ children, hint }: { children: ReactNode; hint: string }) {
   return (
     <HoverCard openDelay={200} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <span>{label}</span>
+        <span className="flex min-w-0">{children}</span>
       </HoverCardTrigger>
-      <HoverCardContent side="top" align="end" className="w-72 p-3 text-sm text-pretty">
+      <HoverCardContent side="top" align="start" className="w-72 p-3 text-sm text-pretty">
         {hint}
       </HoverCardContent>
     </HoverCard>
   );
 }
 
-/** The rows' list. `-mx-2` lines each row's content up with the text above,
- *  while its hover fill bleeds into the gutter. */
-function FlatList({ children }: { children: ReactNode }) {
-  return <ul className="-mx-2 flex flex-col gap-px">{children}</ul>;
-}
-
-/** A labelled group of flat rows: a muted label, then the list. No count,
- *  no second description: the label says it. */
-function FlatSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-2">
-      {/* `px-1`: the list's `-mx-2` plus each row's `px-3` puts the avatar one
-          step in from this edge; the label sits on that same line. */}
-      <h3 className="text-muted-foreground px-1 text-xs font-medium">{title}</h3>
-      <FlatList>{children}</FlatList>
-    </section>
-  );
+/** Badge tone by rank (`ROLE_TONE`): manager above member, custom neutral. */
+function toneOf(role: RoleValue): RoleTone {
+  if (role.kind === 'custom') return ROLE_TONE.custom;
+  if (role.kind === 'none') return ROLE_TONE.none;
+  return role.role === 'member' ? ROLE_TONE.member : ROLE_TONE.manager;
 }
 
 /** Which role section a row sits under. A custom role is its own section:
@@ -264,7 +249,7 @@ type RoleSection = 'admins' | 'members' | 'custom' | 'none';
 
 /** Display grouping only: which heading a row reads under. No control gates
  *  on it; every write gates on `PROJECT_MEMBERS_MANAGE`. */
-function memberSection(member: ExtendedProjectAccessMember): RoleSection {
+function memberSection(member: ProjectAccessMember): RoleSection {
   if (directProjectPolicy(member.custom_role_policies)) return 'custom';
   return sectionOfRole(member.effective_project_role);
 }
@@ -274,9 +259,18 @@ function groupSection(group: GroupAccessRow): RoleSection {
   return sectionOfRole(group.built_in_role);
 }
 
-function sectionOfRole(role: ProjectRole | null | undefined): RoleSection {
+function sectionOfRole(role: string | null | undefined): RoleSection {
   if (!role) return 'none';
   return role === 'manager' ? 'admins' : 'members';
+}
+
+/** The server's `buildGroupAccess` writes the raw role key, not the SDK's
+ *  narrower `ProjectRole` union. Narrow honestly: a key this surface does not
+ *  know is no role value — it renders as none rather than being coerced. */
+function groupBuiltInRole(role: string | null | undefined): RoleValue {
+  return role === 'owner' || role === 'admin' || role === 'member' || role === 'manager'
+    ? builtinRole(role)
+    : ROLE_NONE;
 }
 
 // ─── Row derivations (one shape for members and groups) ────────────────────
@@ -324,7 +318,7 @@ export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolea
  *  a plain direct grant, which needs no attribution line. */
 export function accessVia(
   member: Pick<
-    ExtendedProjectAccessMember,
+    ProjectAccessMember,
     'effective_project_role' | 'effective_source' | 'group_sources'
   >,
 ): string | null {
@@ -419,6 +413,7 @@ export function AccessProjectsTab({
       projectId={selectedProjectId}
       rbacEnabled={rbacEnabled}
       canManageRoles={canManageRoles}
+      onBack={() => onSelectProject(null)}
     />
   );
 }
@@ -448,7 +443,8 @@ function ProjectPicker({
     const all = projectsQuery.data ?? [];
     const q = search.trim().toLowerCase();
     const list = q ? all.filter((p) => p.name.toLowerCase().includes(q)) : all;
-    return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    // Latest update first: the project someone just touched leads.
+    return [...list].sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
   }, [projectsQuery.data, search]);
 
   const visible = filtered.slice(0, visibleCount);
@@ -459,7 +455,9 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{tI18nComplete.raw('text04e2a9728af7')}</p>
+        <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+          {tI18nComplete.raw('text04e2a9728af7')}
+        </h1>
         <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
       </div>
 
@@ -507,15 +505,29 @@ function ProjectPicker({
         />
       ) : (
         <>
-          <FlatList>
-            {visible.map((project) => (
-              <ProjectListRow
-                key={project.project_id}
-                project={project}
-                onSelect={() => onSelectProject(project.project_id)}
-              />
-            ))}
-          </FlatList>
+          {/* `-mx-2`: each row pads `2`, so names sit on the search field's edge. */}
+          <div role="table" aria-label={tI18nComplete.raw('text04e2a9728af7')} className="-mx-2">
+            <div role="row" className={cn(PROJECT_GRID, 'h-9 px-2')}>
+              <span role="columnheader" className={TABLE_HEAD}>
+                {tI18nComplete.raw('text985959785319')}
+              </span>
+              <span role="columnheader" className={cn(TABLE_HEAD, 'max-sm:hidden')}>
+                {tI18nComplete.raw('text1044a4c056d0')}
+              </span>
+              <span role="columnheader" aria-sort="descending" className={TABLE_HEAD}>
+                {tI18nComplete.raw('text3a5ecca188c0')}
+              </span>
+            </div>
+            <div role="rowgroup">
+              {visible.map((project) => (
+                <ProjectListRow
+                  key={project.project_id}
+                  project={project}
+                  onSelect={() => onSelectProject(project.project_id)}
+                />
+              ))}
+            </div>
+          </div>
           {hasMore ? (
             <div className="flex justify-center pt-1">
               <Button
@@ -566,41 +578,51 @@ function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelec
   });
 
   const memberCount = accessQuery.data?.members.length;
-  const hasPendingRequests =
-    (requestsQuery.data?.requests.filter((r) => r.status === 'pending').length ?? 0) > 0;
+  const locale = useLocale();
+
+  const pendingCount =
+    requestsQuery.data?.requests.filter((r) => r.status === 'pending').length ?? 0;
 
   return (
-    <AccessRow
-      className={FLAT_ROW_CLASS}
-      // The project's own identity tile, as the project switcher draws it.
-      leading={
+    <div
+      role="row"
+      className={cn(PROJECT_GRID, 'group/project hover:bg-hover relative h-11 rounded-lg px-2')}
+    >
+      {/* The whole row opens the project's access. */}
+      <button
+        type="button"
+        aria-label={project.name}
+        onClick={onSelect}
+        className="focus-visible:ring-ring absolute inset-0 rounded-[inherit] outline-none focus-visible:ring-1"
+      />
+      <span role="cell" className="flex min-w-0 items-center gap-3">
+        {/* The project's own identity tile, as the project switcher draws it. */}
         <EntityAvatar
           label={project.name}
           glyph={project.icon_glyph}
           emoji={project.icon}
           size="sm"
         />
-      }
-      title={project.name}
-      badges={
-        hasPendingRequests ? (
-          <Hint label={tI18nComplete.raw('text5363a9cf88d5')} side="top">
-            <span
-              className="bg-kortix-red inline-block size-1.5 shrink-0 rounded-full"
-              aria-label={tI18nComplete.raw('text91de1d3518d8')}
-            />
-          </Hint>
-        ) : null
-      }
-      // The member count is a quiet trailing fact. Unknown (loading, or a
-      // project this viewer cannot read) shows nothing, not "—".
-      trailing={
-        memberCount != null ? (
-          <span className="tabular-nums">{pluralize(memberCount, 'member')}</span>
-        ) : undefined
-      }
-      onClick={onSelect}
-    />
+        <span className="text-foreground min-w-0 truncate text-sm">{project.name}</span>
+        {/* Someone waits on a manager here: the one action this pane asks for. */}
+        {pendingCount > 0 ? (
+          <Badge variant="warning" className="shrink-0 normal-case tabular-nums ring-0">
+            {tI18nComplete.raw('textdb0e960b68b5')} · {pendingCount}
+          </Badge>
+        ) : null}
+      </span>
+      {/* Unknown (loading, or a project this viewer cannot read) shows nothing. */}
+      <span
+        role="cell"
+        className="text-muted-foreground truncate text-sm tabular-nums max-sm:hidden"
+      >
+        {memberCount != null ? pluralize(memberCount, 'member') : null}
+      </span>
+      <span role="cell" className="text-muted-foreground truncate text-sm tabular-nums">
+        {relativeTime(project.updated_at, locale)}
+      </span>
+      <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 justify-self-end" />
+    </div>
   );
 }
 
@@ -621,13 +643,17 @@ function ProjectAccessPanel({
   projectId,
   rbacEnabled,
   canManageRoles,
+  onBack,
 }: {
   accountId: string;
   projectId: string;
   rbacEnabled: boolean;
   canManageRoles: boolean;
+  /** Back to the project list. */
+  onBack: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
   const queryClient = useQueryClient();
 
   // The single leaf every write control below gates on.
@@ -646,7 +672,7 @@ function ProjectAccessPanel({
 
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId) as Promise<ExtendedProjectAccessResponse>,
+    queryFn: () => listProjectAccess(projectId),
     ...contract('inventory'),
   });
 
@@ -724,9 +750,7 @@ function ProjectAccessPanel({
   }
 
   // ── Remove access / detach group ──────────────────────────────────────
-  const [removeMemberTarget, setRemoveMemberTarget] = useState<ExtendedProjectAccessMember | null>(
-    null,
-  );
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<ProjectAccessMember | null>(null);
   const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
   const removeMemberMutation = useMutation({
     mutationFn: (userId: string) => revokeProjectAccess(projectId, userId),
@@ -790,7 +814,10 @@ function ProjectAccessPanel({
         warningToast(tI18nComplete.raw('text370145ffb7ba'), {
           duration: 8_000,
           actions: [
-            { label: tI18nComplete.raw('text9adff6870471'), onClick: () => copy(result.invite_url) },
+            {
+              label: tI18nComplete.raw('text9adff6870471'),
+              onClick: () => copy(result.invite_url),
+            },
           ],
         });
       }
@@ -851,6 +878,46 @@ function ProjectAccessPanel({
     onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text48010f4355d7')),
   });
 
+  // Bulk decisions: tick rows, then Approve or Decline them all at once.
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeciding, setBulkDeciding] = useState(false);
+
+  async function decideSelected(approve: boolean) {
+    // Only rows still listed: a request decided elsewhere drops out.
+    const chosen = accessRequests.filter((request) => selectedRequestIds.has(request.request_id));
+    const ids = chosen.map((request) => request.request_id);
+    if (ids.length === 0) return;
+    setBulkDeciding(true);
+    ids.forEach(markRequestBusy);
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        approve
+          ? approveProjectAccessRequest(projectId, id, 'member')
+          : rejectProjectAccessRequest(projectId, id),
+      ),
+    );
+    ids.forEach(clearRequestBusy);
+    setBulkDeciding(false);
+    setSelectedRequestIds(new Set());
+    queryClient.invalidateQueries({ queryKey: qk.project.accessRequests(projectId) });
+    if (approve) invalidateAccess();
+
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (failed < ids.length) {
+      if (approve) {
+        const emails = chosen
+          .filter((_request, index) => results[index]?.status === 'fulfilled')
+          .map((request) => request.requester_email);
+        successToast(tI18nComplete('text975f39d61b4d', { value0: emails.join(', ') }));
+      } else {
+        successToast(tI18nComplete.raw('text64e855d33cce'));
+      }
+    }
+    if (failed > 0) {
+      errorToast(tI18nComplete.raw(approve ? 'textc97583fe9025' : 'text48010f4355d7'));
+    }
+  }
+
   // ── Grant / edit dialogs ──────────────────────────────────────────────
   // Grant access opens beside the list in the hub's split sheet: the pane
   // narrows instead of a modal covering it. The sheet draws the title; the
@@ -862,7 +929,6 @@ function ProjectAccessPanel({
       description: projectName,
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -887,7 +953,6 @@ function ProjectAccessPanel({
       body: (
         <AccessDialog
           key={`${target.principal.type}:${target.principal.id}`}
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -909,8 +974,11 @@ function ProjectAccessPanel({
 
   const pendingInvites = pendingInvitesQuery.data?.pending ?? [];
   const accessRequests = accessRequestsQuery.data?.requests ?? [];
-  const showPendingInvites =
-    canManageMembers && (pendingInvitesQuery.isLoading || pendingInvites.length > 0);
+  const selectedRequests = accessRequests.filter((request) =>
+    selectedRequestIds.has(request.request_id),
+  );
+  const allRequestsSelected =
+    accessRequests.length > 0 && selectedRequests.length === accessRequests.length;
   const showAccessRequests =
     canManageMembers && (accessRequestsQuery.isLoading || accessRequests.length > 0);
 
@@ -926,11 +994,7 @@ function ProjectAccessPanel({
     members: members.filter((member) => memberSection(member) === section),
     groups: groups.filter((group) => groupSection(group) === section),
   });
-  const roleSections: { key: RoleSection; title: string }[] = [
-    { key: 'admins', title: tI18nComplete.raw('text926597a39cb3') },
-    { key: 'members', title: tI18nComplete.raw('text1044a4c056d0') },
-    { key: 'custom', title: tI18nComplete.raw('textc703c7f9cbe6') },
-  ];
+  const roleSections: RoleSection[] = ['admins', 'members', 'custom'];
   const withoutAccess = sectionRows('none').members;
   const hasAnyAccess = members.length - withoutAccess.length + groups.length > 0;
 
@@ -943,9 +1007,17 @@ function ProjectAccessPanel({
 
   return (
     <div className="space-y-6 pb-10">
-      {/* No back button: the hub's breadcrumb (Settings / account / Projects /
-          this project) is the way back. */}
+      {/* "‹ Projects" above the project's tile: the same link the member and
+          group pages draw (`AccessDetailShell`). The breadcrumb stays too. */}
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+        >
+          <CaretLeftIcon className="size-4" />
+          {tI18nComplete.raw('text04e2a9728af7')}
+        </button>
         <div className="flex min-w-0 items-center gap-3">
           {projectQuery.isLoading ? (
             <Skeleton className="size-8 rounded-md" />
@@ -961,7 +1033,9 @@ function ProjectAccessPanel({
             {projectQuery.isLoading ? (
               <Skeleton className="h-6 w-44" />
             ) : (
-              <h2 className="text-foreground truncate text-xl font-medium">{project?.name ?? '…'}</h2>
+              <h2 className="text-foreground truncate text-xl font-medium">
+                {project?.name ?? '…'}
+              </h2>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -973,70 +1047,10 @@ function ProjectAccessPanel({
         </div>
       </div>
 
-      {/* ── Asked to join ─────────────────────────────────────────────── */}
-      {showAccessRequests ? (
-        accessRequestsQuery.isLoading ? (
-          <Skeleton className="h-11 w-full rounded-md" />
-        ) : (
-          <FlatSection title={tI18nComplete.raw('textf810ceed99d6')}>
-            {accessRequests.map((request) => {
-              const busy = accessRequestBusyIds.has(request.request_id);
-              return (
-                <AccessRow
-                  key={request.request_id}
-                  className={FLAT_ROW_CLASS}
-                  leading={<UserAvatar email={request.requester_email} size="sm" />}
-                  title={request.requester_email}
-                  metaParts={[
-                    <span key="requested" className="tabular-nums">
-                      {tI18nComplete.raw('text2d9e28289fac')} {formatDate(request.created_at)}
-                    </span>,
-                    ...(request.message
-                      ? [
-                          <span key="message">
-                            {tI18nComplete.raw('text497558230027')}
-                            {request.message}
-                            {tI18nComplete.raw('text497558230027')}
-                          </span>,
-                        ]
-                      : []),
-                  ]}
-                  pending={busy}
-                  actions={
-                    busy ? undefined : (
-                      <>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="secondary"
-                          onClick={() => approveRequestMutation.mutate(request.request_id)}
-                          className="gap-1"
-                        >
-                          <CheckIcon className="size-3.5" />
-                          {tI18nComplete.raw('text6007acbe30b2')}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="ghost"
-                          onClick={() => rejectRequestMutation.mutate(request.request_id)}
-                          className="gap-1"
-                        >
-                          <XIcon className="size-3.5" />
-                          {tI18nComplete.raw('texta2d285b35287')}
-                        </Button>
-                      </>
-                    )
-                  }
-                />
-              );
-            })}
-          </FlatSection>
-        )
-      ) : null}
-
-      {/* ── Access ────────────────────────────────────────────────────── */}
-      {accessQuery.isLoading ? (
+      {/* ── People: one table, the account Members table's rows ──────────
+          Order: who asked to join, then managers, members, custom roles,
+          invites, and last the account members with no access here. */}
+      {accessQuery.isLoading || (showAccessRequests && accessRequestsQuery.isLoading) ? (
         <div className="space-y-1">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-11 w-full rounded-md" />
@@ -1053,19 +1067,245 @@ function ProjectAccessPanel({
             </Button>
           }
         />
-      ) : !hasAnyAccess ? (
+      ) : !hasAnyAccess && accessRequests.length === 0 && pendingInvites.length === 0 ? (
         <EmptyState
           size="sm"
           title={tI18nComplete.raw('text6a50fe407b62')}
           description={tI18nComplete.raw('text14d959607774')}
         />
       ) : (
-        roleSections.map(({ key, title }) => {
-          const rows = sectionRows(key);
-          if (rows.members.length + rows.groups.length === 0) return null;
-          return (
-            <FlatSection key={key} title={title}>
-              {rows.members.map((member) => (
+        <>
+          {/* ── Asked to join: its own table, above everyone else ──────────
+              The Members table's rows, so name and email read the same. Each
+              row waits on a manager: a "waiting" count, green Approve and red
+              Decline per row, and both again for every ticked row. */}
+          {accessRequests.length > 0 ? (
+            <section className="space-y-1">
+              <div className="flex min-h-8 items-center gap-2">
+                <h3 className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('textf810ceed99d6')}
+                </h3>
+                <CountBadge count={accessRequests.length} tone="waiting" />
+              </div>
+              {/* `-ml-9`: the select gutter hangs outside the content edge. */}
+              <div
+                role="table"
+                aria-label={tI18nComplete.raw('textf810ceed99d6')}
+                className="-ml-2 sm:-ml-9"
+              >
+                <MemberTableHead
+                  roleHeader={<span aria-hidden />}
+                  select={{
+                    visible: selectedRequests.length > 0,
+                    checked: allRequestsSelected
+                      ? true
+                      : selectedRequests.length > 0
+                        ? 'indeterminate'
+                        : false,
+                    onCheckedChange: () =>
+                      setSelectedRequestIds(
+                        allRequestsSelected
+                          ? new Set()
+                          : new Set(accessRequests.map((request) => request.request_id)),
+                      ),
+                    label: allRequestsSelected
+                      ? tI18nComplete.raw('text967549497036')
+                      : tI18nComplete.raw('text1fc9a387654d'),
+                  }}
+                />
+                <div role="rowgroup">
+                  {accessRequests.map((request) => {
+                    const busy = accessRequestBusyIds.has(request.request_id);
+                    const checked = selectedRequestIds.has(request.request_id);
+                    const age = (
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {relativeTime(request.created_at, locale)}
+                      </span>
+                    );
+                    return (
+                      <MemberTableRow
+                        key={request.request_id}
+                        selected={checked}
+                        select={{
+                          visible: selectedRequests.length > 0,
+                          checked,
+                          onCheckedChange: () =>
+                            setSelectedRequestIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(request.request_id)) next.delete(request.request_id);
+                              else next.add(request.request_id);
+                              return next;
+                            }),
+                          label: request.requester_email,
+                        }}
+                        avatar={<UserAvatar email={request.requester_email} size="sm" />}
+                        name={memberHandle(request.requester_email, request.requester_email)}
+                        email={request.requester_email}
+                        // When they asked; their note, if any, on hover.
+                        tags={
+                          request.message ? <Hint label={`“${request.message}”`}>{age}</Hint> : age
+                        }
+                        role={null}
+                        roleCell={
+                          <span className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="success"
+                              disabled={busy}
+                              onClick={() => approveRequestMutation.mutate(request.request_id)}
+                              className="gap-1"
+                            >
+                              <CheckIcon className="size-3.5" />
+                              {tI18nComplete.raw('text6007acbe30b2')}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="error"
+                              disabled={busy}
+                              onClick={() => rejectRequestMutation.mutate(request.request_id)}
+                              className="gap-1"
+                            >
+                              <XIcon className="size-3.5" />
+                              {tI18nComplete.raw('texta2d285b35287')}
+                            </Button>
+                          </span>
+                        }
+                        pending={busy}
+                        kebabLabel={request.requester_email}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {/* Bulk decisions: the shared selection bar, pinned to the bottom. */}
+          {selectedRequests.length > 0 ? (
+            <AccountHubSelectionBar
+              selectedCount={selectedRequests.length}
+              allSelected={allRequestsSelected}
+              onSelectAll={() =>
+                setSelectedRequestIds(new Set(accessRequests.map((request) => request.request_id)))
+              }
+              onClear={() => setSelectedRequestIds(new Set())}
+              onExit={() => setSelectedRequestIds(new Set())}
+              actions={[
+                {
+                  id: 'approve',
+                  label: tI18nComplete.raw('text6007acbe30b2'),
+                  tone: 'success',
+                  disabled: bulkDeciding,
+                  onSelect: () => void decideSelected(true),
+                },
+                {
+                  id: 'decline',
+                  label: tI18nComplete.raw('texta2d285b35287'),
+                  tone: 'destructive',
+                  disabled: bulkDeciding,
+                  onSelect: () => void decideSelected(false),
+                },
+              ]}
+            />
+          ) : null}
+
+          {/* `-ml-9`: the empty select gutter hangs outside the content edge, as
+            on the Members pane, so avatars line up with the header above. */}
+          <div role="table" aria-label={projectName} className="-ml-2 sm:-ml-9">
+            <MemberTableHead />
+            <div role="rowgroup">
+              {roleSections.flatMap((key) => {
+                const rows = sectionRows(key);
+                return [
+                  ...rows.members.map((member) => (
+                    <MemberAccessRow
+                      key={`member:${member.user_id}`}
+                      member={member}
+                      canManageMembers={canManageMembers}
+                      busy={pendingUserIds.has(member.user_id)}
+                      projectAgentCount={projectAgentCount}
+                      onEdit={openEdit}
+                      onRequestRemove={() => setRemoveMemberTarget(member)}
+                    />
+                  )),
+                  ...rows.groups.map((group) => (
+                    <GroupAccessRowView
+                      key={`group:${group.group_id}`}
+                      group={group}
+                      canManageMembers={canManageMembers}
+                      busy={pendingGroupIds.has(group.group_id)}
+                      projectAgentCount={projectAgentCount}
+                      onEdit={openEdit}
+                      onRequestRemove={() => setRemoveGroupTarget(group)}
+                    />
+                  )),
+                ];
+              })}
+              {canManageMembers
+                ? pendingInvites.map((invite) => {
+                    const busy = pendingInviteBusyIds.has(invite.invite_id);
+                    return (
+                      <MemberTableRow
+                        key={`invite:${invite.invite_id}`}
+                        invited
+                        // Avatar v2's invited state: a dashed empty circle.
+                        avatar={
+                          <span
+                            aria-hidden
+                            className="text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed"
+                          >
+                            <EnvelopeIcon className="size-3" />
+                          </span>
+                        }
+                        name={memberHandle(invite.email, invite.email)}
+                        email={invite.email}
+                        tags={
+                          <Hint
+                            label={
+                              invite.invite_expired
+                                ? tI18nComplete.raw('texte61180e0dd8a')
+                                : `${tI18nComplete.raw('textf6725f3af08a')} ${formatDate(invite.invite_expires_at)}`
+                            }
+                          >
+                            <ClockIcon
+                              aria-hidden
+                              className={cn(
+                                'size-3.5',
+                                invite.invite_expired
+                                  ? 'text-kortix-orange'
+                                  : 'text-muted-foreground',
+                              )}
+                            />
+                          </Hint>
+                        }
+                        role={`${roleValueLabel('project', builtinRole(invite.project_role), undefined, tI18nComplete)} (${tI18nComplete.raw('text63b17becd812')})`}
+                        pending={busy}
+                        kebabLabel={tI18nComplete('text33da220b1a34', { value0: invite.email })}
+                        kebab={
+                          busy
+                            ? []
+                            : [
+                                {
+                                  label: tI18nComplete.raw('text1f94843777ae'),
+                                  icon: <ArrowClockwiseIcon className="size-3.5" />,
+                                  onSelect: () => resendInviteMutation.mutate(invite.invite_id),
+                                },
+                                {
+                                  label: tI18nComplete.raw('text87e6d00bbf53'),
+                                  icon: <XIcon className="size-3.5" />,
+                                  variant: 'destructive' as const,
+                                  separated: true,
+                                  onSelect: () => setRevokeInviteTarget(invite),
+                                },
+                              ]
+                        }
+                      />
+                    );
+                  })
+                : null}
+              {withoutAccess.map((member) => (
                 <MemberAccessRow
                   key={`member:${member.user_id}`}
                   member={member}
@@ -1076,105 +1316,10 @@ function ProjectAccessPanel({
                   onRequestRemove={() => setRemoveMemberTarget(member)}
                 />
               ))}
-              {rows.groups.map((group) => (
-                <GroupAccessRowView
-                  key={`group:${group.group_id}`}
-                  group={group}
-                  canManageMembers={canManageMembers}
-                  busy={pendingGroupIds.has(group.group_id)}
-                  projectAgentCount={projectAgentCount}
-                  onEdit={openEdit}
-                  onRequestRemove={() => setRemoveGroupTarget(group)}
-                />
-              ))}
-            </FlatSection>
-          );
-        })
+            </div>
+          </div>
+        </>
       )}
-
-      {/* ── Invited to this project ───────────────────────────────────── */}
-      {showPendingInvites ? (
-        pendingInvitesQuery.isLoading ? (
-          <Skeleton className="h-11 w-full rounded-md" />
-        ) : (
-          <FlatSection title={tI18nComplete.raw('texteaca91e7a784')}>
-            {pendingInvites.map((invite) => {
-              const busy = pendingInviteBusyIds.has(invite.invite_id);
-              return (
-                <AccessRow
-                  key={invite.invite_id}
-                  className={FLAT_ROW_CLASS}
-                  // Avatar v2's invited state: a dashed empty circle.
-                  leading={
-                    <span className="text-muted-foreground inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed">
-                      <EnvelopeIcon className="size-3" />
-                    </span>
-                  }
-                  title={invite.email}
-                  metaParts={[
-                    <span key="invited" className="tabular-nums">
-                      {tI18nComplete.raw('text63b17becd812')} {formatDate(invite.created_at)}
-                    </span>,
-                    invite.invite_expired ? (
-                      <span key="expiry" className="text-kortix-orange">
-                        {tI18nComplete.raw('texte61180e0dd8a')}
-                      </span>
-                    ) : (
-                      <span key="expiry" className="inline-flex items-center gap-1 tabular-nums">
-                        <ClockIcon className="size-3" />
-                        {tI18nComplete.raw('textf6725f3af08a')}{' '}
-                        {formatDate(invite.invite_expires_at)}
-                      </span>
-                    ),
-                  ]}
-                  trailing={
-                    <RoleLabel>
-                      <span className="capitalize">{invite.project_role}</span>
-                    </RoleLabel>
-                  }
-                  pending={busy}
-                  kebabLabel={tI18nComplete('text33da220b1a34', { value0: invite.email })}
-                  kebab={
-                    busy
-                      ? []
-                      : [
-                          {
-                            label: tI18nComplete.raw('text1f94843777ae'),
-                            icon: <ArrowClockwiseIcon className="size-3.5" />,
-                            onSelect: () => resendInviteMutation.mutate(invite.invite_id),
-                          },
-                          {
-                            label: tI18nComplete.raw('text87e6d00bbf53'),
-                            icon: <XIcon className="size-3.5" />,
-                            variant: 'destructive' as const,
-                            separated: true,
-                            onSelect: () => setRevokeInviteTarget(invite),
-                          },
-                        ]
-                  }
-                />
-              );
-            })}
-          </FlatSection>
-        )
-      ) : null}
-
-      {/* ── Account members with no access here ───────────────────────── */}
-      {settledRows && withoutAccess.length > 0 ? (
-        <FlatSection title={tI18nComplete.raw('text9b1f0823459d')}>
-          {withoutAccess.map((member) => (
-            <MemberAccessRow
-              key={`member:${member.user_id}`}
-              member={member}
-              canManageMembers={canManageMembers}
-              busy={pendingUserIds.has(member.user_id)}
-              projectAgentCount={projectAgentCount}
-              onEdit={openEdit}
-              onRequestRemove={() => setRemoveMemberTarget(member)}
-            />
-          ))}
-        </FlatSection>
-      ) : null}
 
       {/* ── Agents that hold a role here (their ceiling) ─────────────────── */}
       {canManageRoles && settledRows ? (
@@ -1273,7 +1418,7 @@ function MemberAccessRow({
   onEdit,
   onRequestRemove,
 }: {
-  member: ExtendedProjectAccessMember;
+  member: ProjectAccessMember;
   canManageMembers: boolean;
   busy: boolean;
   projectAgentCount: number | undefined;
@@ -1303,6 +1448,17 @@ function MemberAccessRow({
   const roleLabel = policy
     ? policy.role_name
     : roleValueLabel('project', displayRole, undefined, tI18nComplete);
+  // An account owner or admin manages every project: their account role is
+  // the badge, in its own colour, above every project role.
+  const accountRank =
+    member.has_implicit_access &&
+    (member.account_role === 'owner' || member.account_role === 'admin')
+      ? member.account_role
+      : null;
+  const badgeLabel = accountRank
+    ? tI18nComplete.raw(accountRank === 'owner' ? 'text4b1b8aa3608a' : 'textc1c224b03cd9')
+    : roleLabel;
+  const tone = accountRank ? ROLE_TONE[accountRank] : toneOf(displayRole);
 
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
   const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
@@ -1357,36 +1513,38 @@ function MemberAccessRow({
       ]
     : [];
 
+  const fact =
+    displayRole.kind === 'none'
+      ? []
+      : oneFact(via, agentGrants.length, projectAgentCount, expiresAt);
+  const hint =
+    !editable && canManageMembers && (member.has_implicit_access || inheritedOnly)
+      ? member.has_implicit_access
+        ? IMPLICIT_HINT
+        : GROUP_INHERITED_HINT
+      : undefined;
+
   return (
-    <AccessRow
-      className={FLAT_ROW_CLASS}
-      leading={<UserAvatar email={member.email ?? ''} size="sm" />}
-      title={label}
-      // At most one short fact. A row with no access has none: "Agents: all ·
-      // Expires never" would read as "every agent, forever", the opposite of
-      // the truth, and it already sits under the "No access" heading.
-      metaParts={
-        displayRole.kind === 'none'
-          ? []
-          : oneFact(via, agentGrants.length, projectAgentCount, expiresAt)
+    <MemberTableRow
+      avatar={<UserAvatar email={member.email ?? ''} size="sm" />}
+      name={memberHandle(member.email, label)}
+      email={member.email ?? label}
+      // At most one short fact beside the name. A row with no access has
+      // none: its "No access" badge already says it.
+      tags={
+        fact.length > 0 ? <span className="text-muted-foreground text-xs">{fact[0]}</span> : null
       }
-      // The role sits in a fixed column, and the kebab slot after it is always
-      // drawn (empty when not editable), so every row shares the same lanes.
-      // An implicit or group-inherited role says why on hover instead of a
-      // shield where the kebab would be.
-      trailing={
-        <RoleLabel
-          hint={
-            !editable && canManageMembers && (member.has_implicit_access || inheritedOnly)
-              ? member.has_implicit_access
-                ? IMPLICIT_HINT
-                : GROUP_INHERITED_HINT
-              : undefined
-          }
-        >
-          {displayRole.kind === 'none' ? null : roleLabel}
-        </RoleLabel>
+      role={displayRole.kind === 'none' ? tI18nComplete.raw('text9b1f0823459d') : badgeLabel}
+      roleCell={
+        hint ? (
+          <RoleHint hint={hint}>
+            <Badge variant={tone} className="max-w-full truncate normal-case ring-0">
+              {badgeLabel}
+            </Badge>
+          </RoleHint>
+        ) : undefined
       }
+      roleTone={tone}
       kebab={kebab}
       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}
@@ -1415,7 +1573,7 @@ function GroupAccessRowView({
   const role: RoleValue = policy
     ? customRole(policy.role_id)
     : group.built_in_role
-      ? builtinRole(group.built_in_role)
+      ? groupBuiltInRole(group.built_in_role)
       : ROLE_NONE;
   const roleLabel = policy
     ? policy.role_name
@@ -1457,14 +1615,19 @@ function GroupAccessRowView({
       ]
     : [];
 
+  const fact = oneFact(null, agentGrants.length, projectAgentCount, expiresAt);
+
   return (
-    // Kind reads from the avatar (the group glyph), so no "Group" badge.
-    <AccessRow
-      className={FLAT_ROW_CLASS}
-      leading={<EntityAvatar icon={UsersIcon} size="sm" />}
-      title={label}
-      metaParts={oneFact(null, agentGrants.length, projectAgentCount, expiresAt)}
-      trailing={<RoleLabel>{roleLabel}</RoleLabel>}
+    // Kind reads from the avatar (the group glyph) and the email column.
+    <MemberTableRow
+      avatar={<EntityAvatar icon={UsersIcon} size="sm" />}
+      name={label}
+      email={tI18nComplete.raw('text34ca0e766088')}
+      tags={
+        fact.length > 0 ? <span className="text-muted-foreground text-xs">{fact[0]}</span> : null
+      }
+      role={roleLabel}
+      roleTone={toneOf(role)}
       kebab={kebab}
       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
       pending={busy}

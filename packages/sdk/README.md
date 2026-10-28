@@ -351,7 +351,7 @@ await kortix.project(pid).secrets.upsert({
   strategy: "broker",
   consumer: "llm_gateway",
 });
-// When pooled_provider_secrets and llm_gateway are enabled for the project,
+// When pooled_provider_secrets is enabled for the project,
 // a new account secret is available to this project's members by default.
 const shared = await kortix.accounts.secretResources.create(accountId, {
   project_id: pid,
@@ -377,6 +377,9 @@ const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nigh
 const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
 // React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
+// Channels and DMs (experimental, `project_channels` flag): see "Channels and DMs" below.
+const general = (await kortix.project(pid).spaces.list())[0]; // #general
+const threads = await kortix.project(pid).sessions.list({ spaceId: general.space_id, parent: "root" });
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
@@ -406,6 +409,156 @@ The latter exposes `setPool.mutate({ providerId, secretIds })`. `null` restores
 inheritance; `[]` disables that provider for the session. Empty configured pools
 remain listed after their last resource is deleted. Successful writes refresh
 both the pool list and the session's provider-specific query cache.
+
+### Channels and DMs (experimental)
+
+Experimental: every call here needs the project's `project_channels` flag (off
+by default). While it is off, every `spaces` route returns `403`
+`feature_disabled`, and session create and list ignore `space_id` (a create
+whose `space_id` is not a UUID still returns `400`).
+
+A space (`ProjectSpace`) is a channel of the project or the caller's DM with
+one agent. A thread is an ordinary session whose `space_id` names the space;
+its first prompt is the thread's top message.
+
+```ts
+const p = kortix.project(pid);
+const spaces = await p.spaces.list(); // #general first (created on the first call), channels, then the caller's DMs
+const ch = await p.spaces.create({ name: "Launch Week", member_ids: [uid1] }); // slug "launch-week"; the creator is a member, plus member_ids; a taken slug → ApiError 409 slug_taken
+await p.spaces.update(ch.space_id, { archived: true }); // name, description (null clears), archived; its creator or a project manager (`can_edit`), else 403 forbidden
+const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first call
+
+// A channel's tabs (channels only; a DM, an archived or unknown id → 404 space_not_found)
+const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads, only those the caller may open
+const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // unpinned, you as its adder; http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 added links per channel, then 409 link_limit
+await p.spaces.links.list(ch.space_id); // pinned and shared in its threads, most recently shared first; `can_delete` per link
+// each link: display_title (member title, else fetched title, else decoded path), site_name, icon_url (null until fetched; load it only through an image proxy)
+await p.spaces.links.pin(ch.space_id, link.link_id, false); // any member; unpinning only clears the pin, the link stays listed
+await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
+// Who is in a channel (every channel is public: membership gates no read or post)
+await p.spaces.members.list(ch.space_id); // { members, implicit, can_add }: the same people for every viewer; names never emails; #general = every project member (implicit)
+await p.spaces.members.add(ch.space_id, [uid1, uid2]); // one request; project members only, else 400 not_project_member; a member, the creator or a manager adds
+await p.spaces.members.remove(ch.space_id, uid1); // a manager anyone, the creator anyone but themself, a member only themself
+await p.spaces.members.join(ch.space_id); // any project member; idempotent
+await p.spaces.members.leave(ch.space_id); // the creator gets 403 creator_not_removable; #general → 400 default_channel
+
+// A trigger that posts its runs to the channel as threads (a DM: the caller's own only, else 403)
+await p.triggers.create({ name: "Standup", type: "cron", cron: "0 0 9 * * 1-5", prompt_template: "Post the standup", space_id: ch.space_id });
+await p.triggers.update("standup", { space_id: null }); // back to #general
+
+await p.sessions.create({ space_id: ch.space_id, initial_prompt: "Plan the launch" });
+const rows = await p.sessions.list({ spaceId: ch.space_id, parent: "root" });
+rows[0].space_id; // the space
+rows[0].first_prompt; // the thread's top message
+rows[0].reply_count; // messages after it; a space list only, null elsewhere
+```
+
+- A create with a channel `space_id` is project-visible. A create in a DM is
+  private and runs the DM's agent (an `agent_name` in the same create is
+  overridden).
+- A create without `space_id` lands in `#general`, private (only its creator
+  sees it). A spawned session lands in its parent's space.
+- A fork lands in its source's space and keeps its source's sharing:
+  project-visible only when the source is, else private. Never wider.
+- A `visibility` a server-side caller sets (a trigger, a chat integration) wins,
+  except in a DM. From the SDK, change sharing after a create with
+  `session(pid, sid).setSharing(...)`.
+- `sessions.list({ spaceId })` pages inside the space; a non-UUID returns `400`.
+  Narrow it with `q` (title, first prompt, agent, person), `startedBy: "me"`,
+  `createdBy` (a user id), `agent` (a slug) and `updatedAfter` (ISO 8601: activity
+  at or after it). A malformed `createdBy` or `updatedAfter` returns `400`.
+- `ProjectSession.space_id`, `first_prompt` and `reply_count` are optional:
+  older APIs omit them.
+- React: `useProjectSpaces(pid, { enabled })`, `useCreateProjectSpace`,
+  `useUpdateProjectSpace`, `useOpenProjectDm`, `useProjectSpaceApps(pid, spaceId)`,
+  `useProjectSpaceLinks(pid, spaceId)`, `useAddProjectSpaceLink(pid, spaceId)`,
+  `usePinProjectSpaceLink(pid, spaceId)`, `useRemoveProjectSpaceLink(pid, spaceId)` (each refreshes the links), and
+  `useProjectSpaceMembers(pid, spaceId)`, `useAddProjectSpaceMembers`, `useRemoveProjectSpaceMember`,
+  `useJoinProjectSpace`, `useLeaveProjectSpace` (each `(pid, spaceId)`; each refreshes the spaces list, the members under it), and
+  `useProjectSessions(pid, { spaceId, parent: "root", q, createdBy, agent, updatedAfter, refetchInterval, pollFirstPageOnly: true })`
+  (`pollFirstPageOnly` polls page one only; experimental).
+- A trigger's `space_id` files each run of it into that channel or DM as a
+  thread. A channel trigger without `session_access` is project-visible. A DM
+  trigger's runs are shared with the DM's member and, like every trigger run,
+  with trigger managers and account owners and admins; it must run the DM's
+  agent (else 400 `agent_mismatch`). A space change applies to later runs only.
+  An archived or deleted
+  space sends its runs to `#general`. `ProjectTrigger.space_id` is present only
+  while the flag is on.
+- Turning the flag on files every session in no space into `#general`;
+  turning it off deletes nothing. Turning it on again (with `#general`
+  already there) sets `#general`'s notice for 7 days:
+  `await p.spaces.generalNotice()` → `{ kind: "reenabled", at, count }` (the
+  sessions started while it was off) or `null`. React:
+  `useProjectSpaceGeneralNotice(pid, { enabled })`, under the spaces key.
+- Onboarding: `await p.spaces.onboarding.get()` →
+  `{ intro_seen, get_started: { visible, create_channel, remember, open_dm } }`.
+  A "Get started" row is done when its mark is present or the caller created a
+  channel, saved memory in `#general`, or owns a DM; `visible` is false once
+  dismissed or all done. `await p.spaces.onboarding.mark("channels_intro")`
+  records a mark (`channels_intro`, `get_started.dismissed`,
+  `get_started.channel`, `get_started.remember`, `get_started.dm`;
+  idempotent; another value → `400`). React: `useChannelsOnboarding(pid, { enabled })`
+  and `useMarkChannelsOnboarding(pid)`; creating a channel, opening a DM and
+  every memory write refresh it.
+
+### Memory (experimental)
+
+Experimental: every call here needs the project's Files (the `drives` flag).
+While Files are off, every `memory` route returns `403` `feature_disabled`;
+without Drive storage, `503` `drive_storage_unavailable`. The Memory UI is a
+Channels surface (`project_channels`), but these calls do not need that flag.
+
+Memory is the Markdown files of the project's Drive. A layer is one folder:
+the Company layer (key `"company"`, `/Company/Memory`), one per channel
+(key = the space id, `/Company/Channels/<slug>/Memory`) and one per DM
+(key = the space id: the owner's `/Users/<person>/Memory`, with the agent
+folder `Memory/<agent>` listed first). A page is one file. Its type comes
+from front-matter `type:`, else its first folder (`people/`, `decisions/`,
+`workstreams/`, `playbooks/`), else `Notes.md` is `note`, else `other`.
+Agents read and write the same files through their mounts: nothing is
+copied. Sources and "updated by" come from the file's front-matter.
+
+```ts
+const m = kortix.project(pid).memory;
+const layer = await m.layer(ch.space_id); // folder, agent_folder, counts per type, other_files, read_only, can_write
+const pages = await m.pages.list("company"); // one summary per file, newest first (≤ 500), each with its Drive `path`
+const page = await m.pages.create(ch.space_id, { type: "people", title: "Priya", summary: "Runs the Northwind launch" }); // writes people/priya.md
+await m.notes.add(ch.space_id, { text: "Priya owns the launch checklist" }); // one line appended to Notes.md
+const full = await m.pages.get(page.page_id); // body (no front-matter, no title line), sources, related, version_no (mtime)
+await m.pages.update(page.page_id, { base_version: full.version_no, body: "## Role\n- Owns QA" }); // body only; stale → 409 version_conflict
+const { versions } = await m.pages.history(page.page_id); // from Drive commits, newest first, ≤ 20; restore one with pages.update
+await m.pages.delete(page.page_id); // deletes the file for good
+const { hits } = await m.search({ q: "launch date", type: "decisions" }); // title hits first; `layer` limits it to one layer
+const used = await m.usage(sessionId); // a thread's "Used memory": { loaded_at, layers: [{ layer_key, scope, name, pages }] }
+```
+
+- Errors are `ApiError` with `code`: `409` `title_taken` (`data.page_id`),
+  `layer_read_only` (archived channel), `version_conflict`; `404`
+  `memory_not_found` (another member's DM, an unknown id); `403`
+  `forbidden` (no write access to the folder); `413` `page_too_large` (body
+  over 262,144 UTF-8 bytes); `422` `secret_detected`. None reaches the host
+  error handler.
+- `search({ q, layer?, type?, limit? })` searches Company, every live channel
+  and the caller's own Memory folder (or the one `layer`): case-insensitive
+  text over title and body, title hits first. `q` is 2–200 characters
+  (shorter → `400` `invalid_input`), `limit` 1–20 (default 20).
+- `usage(sessionId)` lists the files the thread's agent was listed at its
+  first turn, by layer. `loaded_at` is `null` before the first turn; files
+  deleted since are left out; a thread the caller cannot open → `404`
+  `session_not_found`.
+- React: `useProjectMemoryLayer(pid, layerKey)`, `useProjectMemoryPages(pid, layerKey, { type? })`,
+  `useProjectMemoryHistory(pid, pageId)`, `useProjectMemoryPage(pid, pageId)`; every
+  read takes `{ enabled }`. Mutations: `useAddProjectMemoryNote(pid, layerKey)`,
+  `useUpdateProjectMemoryPage(pid)`, `useDeleteProjectMemoryPage(pid)`. Each
+  write refreshes every memory read of the project (`qk.project.memory(pid)`),
+  the channel tab counts and the onboarding state.
+  `useProjectMemorySearch(pid, { q, layer?, type?, limit? })` runs while `q`
+  has 2–200 characters after trimming and keeps the previous hits while the
+  next query loads (also when `q` drops below 2: render hits only for a valid
+  `q`); debounce the input in the host.
+  `useSessionMemoryUsage(pid, sessionId)` reads "Used memory"; once `loaded_at`
+  is set it never goes stale.
 
 ### Apps
 
@@ -486,6 +639,28 @@ most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 `stops` maps the user message that started a turn to the member who stopped that turn.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
 
+### Share one response
+
+The web session's **Share response** button publishes one finished response.
+The prompt stays private unless the person selects **Prompt and response**.
+The SDK exposes the same operations as named exports:
+
+```ts
+import { getTurnShare, shareTurn, unshareTurn, getPublicResponse } from '@kortix/sdk';
+
+const { share } = await shareTurn(projectId, sessionId, turnId, { include_prompt: false });
+const response = await getPublicResponse(share.token, { backendUrl });
+await getTurnShare(projectId, sessionId, turnId);
+await unshareTurn(projectId, sessionId, turnId);
+```
+
+`turnId` is the user message id that starts the turn. Publishing requires a human
+owner or project manager who can read the session. Service accounts and agent
+credentials cannot publish. Sessions with personal connections or person-only
+secrets cannot publish. Repeating `shareTurn` updates the snapshot under the same
+URL. `unshareTurn` revokes it; anonymous reads then return `410`. Snapshots exclude
+reasoning, tool calls, and attachments. The public page disables search indexing.
+
 ### Who may stop a turn
 
 In a shared session only the member who started the running turn, the session owner or a
@@ -497,8 +672,11 @@ send queue. Any other stop answers 403 with `code: 'not_turn_prompter'`.
 
 `kortix.session(projectId, sessionId).modelUsage()` (or `getSessionModelUsage`) returns
 `{ latest, billed_cost, turns }` from the gateway's request record. `latest` is
-`{ served_model, fallback_from, at }` for the newest answered request: `served_model` is the model
-that answered, and `fallback_from` is the routed model when a fallback model answered in its place.
+`{ served_model, fallback_from, at, outcome }` for the newest request, whatever its outcome:
+`outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a
+model failure. `served_model` is the route id recorded for the request — the model that answered
+it, or on an unanswered request the model it was being served by. `fallback_from` is the routed
+model when the gateway rerouted after a failed attempt, whether or not the fallback answered.
 `turns` maps the runtime message id of each prompt to `{ served_models, fallback_from, billed_cost }`.
 A transcript message carries only the model its turn asked for. In React,
 `useSessionModelUsage(projectId, sessionId)` reads the same record.
@@ -520,11 +698,17 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
-An open reads the saved window once: the session-open snapshot carries it (the read waits up
-to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
-the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
-plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
-the snapshot then asks for no window, and the saved-history read answers from the held copy.
+An open reads the session log first (`GET …/log`), on every host, with no project flag:
+`useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
+with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
+applies a page it reads itself to the session store and renders `useSessionLogThread`.
+A new session with no stored log yet answers 404 with `code: 'session_log_missing'`: the open
+stays on the log and reads nothing more. Only when the log answers 404 with no `code` (an API
+older than the session log) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
+The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
+`readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
+follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
+`loadSessionTranscriptMirror`, …) are deprecated.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -585,16 +769,16 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
-| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
+| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push) · `releaseDeviceToken(token, { backendUrl?, signal? })` (**no token needed**: a signed-out app removes its device token from a backend, `POST /v1/notifications/device-token/release`; resolves `{ ok: true }`, a non-2xx answer throws `ApiError` with `status`). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.spaces.{list,create,update,dm,apps,links,summary,generalNotice,onboarding}` (channels and DMs; experimental, `project_channels` flag) · `.memory.{layer,pages,notes,search,usage}` (memory files in Drive; experimental, `drives` flag) · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
@@ -718,15 +902,15 @@ session-log types, and a test fails when the two differ. See the
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
-owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
-reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for the session (OpenCode or pi).
-Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
+first when the API holds a log for the session (OpenCode or pi). No project flag is read.
+A session whose log answers 404 with no `code` (an API older than the log) reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
-either way. See the
+either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 session back
+(`GET …/log?thread=&before_seq=`). See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
 Three transitional functions bridge a host that renders blocks while its rows are
@@ -879,11 +1063,20 @@ app.use(async (req, res, next) => {
 ```
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
-full production-shaped reference (per-user project isolation, route policy,
-rate limiting, cost markup for re-billing) is `apps/whitelabel-demo` in wrapper
-mode — see its README.
+full production-shaped reference is `apps/white-label/lumen` (Lumen): its own
+users and orgs (Convex + Better Auth), one Kortix project shared by every
+customer firm (a Drive folder, an agent and a service account per firm), the
+firm's service-account secret held server-side, and a same-origin proxy built
+on `forwardKortixRequest` — see its README.
 
 ## Rendering chat (the headless chat kit)
+
+For the Kortix chat itself, use `SessionThread` from `@kortix/ui/session` (the
+Kortix component package, not on npm yet): one component renders the whole
+session from one `useSession(projectId, sessionId)` result, the same thread
+apps/web renders. `ToolRegistry.register(name, Row)` replaces one tool row. Docs:
+<https://kortix.com/docs/sdk/ui#the-thread-alone>. The kit below is for a host that
+draws every part with its own components.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
@@ -928,9 +1121,9 @@ function Turn({ message }: { message: MessageWithParts }) {
 }
 ```
 
-The living reference is
-`apps/whitelabel-demo/src/components/chat/message-view.tsx` — one deliberate
-rendering decision per part kind, with the rationale for each `null`. For a
+The living reference is `packages/ui/src/session/thread/transcript.tsx`
+(the transcript of `SessionThread` in `@kortix/ui/session`), on the
+session-log message. For a
 memoized message-list binding use `useChatTurns(messages)` (`@kortix/sdk/react`);
 for a no-React plain-text version of the same classification see
 `examples/04-render-transcript.ts`. On the live side, `narrowChatEvent`
@@ -951,14 +1144,14 @@ the root import — offers the same agents and models and sends the same pick.
 | `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
-| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
-| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
-| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
+| `pickerProviderList({ modelPicker })` | `/model-picker` catalog → provider list (the single `kortix` provider). `gatewayEnabled`, `runtimeProviders`, `llmCatalogProviders` and `secretNames` are deprecated and ignored |
+| `flattenModels(providers)` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores). Only the `kortix` provider flattens; the `providerMode` option is deprecated and ignored |
+| `modelRefToKey(ref)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model. The second argument is deprecated and ignored |
 | `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
 | `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
-| `sessionModelCandidates({ session, lastPromptModel, gatewayEnabled })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
+| `sessionModelCandidates({ session, lastPromptModel })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
 | `latestPromptModel(messages)` | transcript → the model of the newest user message that records one |
 
 The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
@@ -1144,7 +1337,7 @@ const backend = kortixBinding('backend', {
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
-in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
+in React DOM (`apps/web` and the `apps/white-label/lumen` reference app are the
 `configureKortix`/`@kortix/sdk/react` consumers).
 The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
@@ -1301,11 +1494,30 @@ await kortix.projects.setModelAccess(projectId, {
 
 `kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
 
-`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. The LLM gateway is the only model path, so `enforced` is always `true`.
+
+### Custom LLM providers
+
+A project can add OpenAI-compatible endpoints. The gateway serves their models as `<providerId>/<modelId>` in the model picker, bills them as BYOK (no Kortix credits), and calls `<base_url>/chat/completions` from the gateway, never from the sandbox. The key is the optional project secret `CUSTOM_<ID>_API_KEY` (`secret_name`).
+
+```ts
+const providers = await kortix.project(projectId).customLlmProviders();
+await kortix.project(projectId).setCustomLlmProvider('my-llm', {
+  name: 'My LLM',
+  base_url: 'https://llm.example.com/v1',
+  models: [{ id: 'my-model', name: 'My Model' }],
+});
+// Deletes the definition and its CUSTOM_MY_LLM_API_KEY secret.
+await kortix.project(projectId).deleteCustomLlmProvider('my-llm');
+```
+
+The root entry exports the same calls as `listCustomLlmProviders`, `putCustomLlmProvider` and `deleteCustomLlmProvider`. A row with `configured: false` is a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. A reserved id (a catalog provider, `kortix`, `codex`, `opencode`) returns `400 reserved_provider_id`.
+
+`useCustomLlmProviders(projectId)` from `@kortix/sdk/react` returns `{ providers, isLoading, error, save, remove, isSaving }`. `save` and `remove` refresh the list and both model-picker caches; `remove` also refreshes the secrets list.
 
 ### Pooled ChatGPT connections
 
-With the `pooled_provider_secrets` and `llm_gateway` project flags enabled, a
+With the `pooled_provider_secrets` project flag enabled, a
 member can create a named ChatGPT OAuth account resource:
 
 ```ts
@@ -1469,3 +1681,23 @@ It converts blocks inside blockquotes and list items too. For a reply that is st
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
 `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.
+
+### Commit a repository file
+
+`kortix.project(projectId).files.read(path, branch)` returns the text and its
+`revision` (Git blob SHA). Pass that revision to
+`kortix.project(projectId).files.write({ path, ref: branch, content, expected_revision: revision })`.
+The server requires `project.file.write` and returns `{ commit_sha }` after pushing.
+A changed file returns HTTP 409 instead of overwriting another edit. Reload before retrying.
+
+### Change request recovery
+
+`recoverChangeRequest(projectId, target, blocker)` queues a follow-up on the
+visible origin session and returns its ID. It uses queue delivery, so a running
+turn is not interrupted. The origin prompt updates the existing change request
+and leaves application to the person. A visible archived origin creates a child;
+an unavailable origin creates a root with `metadata.origin_session_id`.
+`createProjectSession` accepts an optional `parent_session_id` for a visible
+same-project parent. This groups the new session without inheriting the parent's
+sharing or automation identity. A session-bound credential retains its own
+server-derived parent regardless of that field.

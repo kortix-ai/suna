@@ -7,6 +7,7 @@ import type {
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
 import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
+import { normalizeDefaultReasoningEffort } from './effort-default';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -17,6 +18,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { sessionInitiatorLabel } from './session-initiator';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -39,8 +41,8 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { isWarmProjectSession } from './warm-sessions';
 import { probeProjectSecret } from '../secrets/envelope';
+import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -73,7 +75,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * server at create/branch/trigger time and no client — web, mobile, SDK or the
  * whitelabel demo — ever reads them back off a session (verified 2026-08-26 by
  * an exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo). They are also the heavy ones: on a real 60-session
+ * apps/white-label/lumen). They are also the heavy ones: on a real 60-session
  * project they are 57% of the whole list body (`initial_prompt` alone is 36%),
  * which the sidebar re-fetches several times per session open.
  *
@@ -93,6 +95,9 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'session_start_timeline',
   'audit_v2',
   'remote_branch',
+  // A channel thread's top message: the list already serves it as the
+  // top-level `first_prompt` field, so the metadata copy is a duplicate.
+  'first_prompt',
 ] as const;
 
 function trimSessionMetadataForList(
@@ -112,6 +117,10 @@ export function serializeSession(
   ctx?: {
     /** The grants on this session (for restricted visibility). */
     grants?: SecretGrant[];
+    /** Model selected by the durable conversation log, not the creation pin. */
+    conversationModel?: string | null;
+    /** `reply_count`: set by a channel or DM thread list only. */
+    replyCount?: number | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -134,6 +143,8 @@ export function serializeSession(
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
     canAccess?: boolean;
+    /** `mayPublishTurn` for the viewer (`turnPublishVerdict`). Single-session reads only; omitted elsewhere. */
+    canPublishResponse?: boolean;
     /** Exact state of the backing runtime resource, if one still exists. */
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
@@ -177,12 +188,18 @@ export function serializeSession(
   // live, but never a user rename.
   const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
+    model: canAccess
+      ? (ctx?.conversationModel ?? (typeof row.metadata?.opencode_model === 'string'
+        ? row.metadata.opencode_model.trim() || null
+        : null))
+      : null,
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
-    sandbox_provider: row.sandboxProvider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     runtime_session_id: row.runtimeSessionId,
@@ -191,17 +208,10 @@ export function serializeSession(
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    // A warm (pre-created, never-prompted) session whose box is up must not
-    // claim `running`: nothing has ever run in it, and every list painted those
-    // shells as phantom green "Running" rows (KRTX-1466). Report the status it
-    // held while its box booted; the first accepted turn drops the warm marker
-    // (session-activity.ts) and the row reads `running` again. The row still
-    // bills; the manager `project` scope keeps listing it for lifecycle
-    // inspection — see session-inventory.ts (the `visible` scope hides it).
-    status:
-      row.status === 'running' && isWarmProjectSession(row.metadata)
-        ? 'provisioning'
-        : row.status,
+    // Lifecycle reads report the stored state. The visible inventory hides
+    // unused warm sessions; masking a ready runtime as provisioning leaves
+    // manager and CLI reads permanently showing Starting.
+    status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds
@@ -222,6 +232,10 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
+    space_id: row.spaceId ?? null,
+    group_id: row.groupId ?? null,
+    first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
+    reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,
@@ -251,10 +265,12 @@ export function serializeSession(
       ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
     }),
     can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
+    ...(ctx?.canPublishResponse !== undefined ? { can_publish_response: ctx.canPublishResponse } : {}),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
     deleted_by: ctx?.deletedBy ?? null,
+    restore_until: ctx?.deletedAt ? (sessionRestoreUntil(ctx.deletedAt)?.toISOString() ?? null) : null,
     ...(ctx?.userState
       ? {
           pinned_at: ctx.userState.pinnedAt?.toISOString() ?? null,
@@ -321,7 +337,22 @@ export function serializeProject(
     // them. SoT = ../../feature-flags/registry.
     // `apps` graduated (registry.ts) but stays here as `true`: CLIs before
     // v0.14.0 refuse every `kortix apps` command unless it reads true.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true },
+    // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
+    // and SDKs from before then read false as the removed native model mode.
+    // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
+    // and mobile builds read false as "serve the v1 transcript". `pi_harness`
+    // graduated on 2026-10-23: every new session runs pi. `connectors_v2` and
+    // `connectors_api_discover` graduated on 2026-10-24: older SDKs and hosts
+    // read false as "show the legacy catalog".
+    experimental: {
+      ...resolveFeatureFlags(row.metadata),
+      apps: true,
+      llm_gateway: true,
+      session_log: true,
+      pi_harness: true,
+      connectors_v2: true,
+      connectors_api_discover: true,
+    },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -336,6 +367,7 @@ export function serializeProject(
         ?.default_sandbox_provider;
       if (
         typeof pin !== 'string' ||
+        isDeprecatedProvider(pin) ||
         !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
       ) {
         return null;
@@ -344,8 +376,15 @@ export function serializeProject(
       const provider = pin as SandboxProviderName;
       return config.isProviderEnabled(provider) ? provider : null;
     })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
-      config.isProviderEnabled(p),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter(
+      (p) => config.isProviderEnabled(p) && !isDeprecatedProvider(p),
+    ),
+    // Per-project default reasoning effort (Settings → General). Re-validated
+    // on read so a value written before the validator existed, or written
+    // directly to the DB, can never reach the UI unchecked (same mechanism as
+    // the icon fields above).
+    default_reasoning_effort: normalizeDefaultReasoningEffort(
+      (row.metadata as Record<string, unknown> | null | undefined)?.default_reasoning_effort,
     ),
   };
 }
@@ -588,6 +627,15 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    agents: strategy === 'denied' ? []
+      : !input.agentGrants ? null
+      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
+      : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
+      : input.agentGrants.agents.filter((agent) => {
+          if (agent.enabled === false) return false;
+          const env = agent.scope?.env;
+          return Array.isArray(env) ? grantAdmits(env, identifier) : strategy === 'runtime';
+        }).map((agent) => agent.name),
     // Always true since the exposure/usage model: one mechanism serves every
     // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent

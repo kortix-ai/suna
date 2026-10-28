@@ -1,3 +1,4 @@
+import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { handleDaytonaWebhook, handlePlatinumWebhook } from './sandbox-webhooks';
@@ -16,7 +17,8 @@ import { handleDaytonaWebhook, handlePlatinumWebhook } from './sandbox-webhooks'
  *      never a correctness dependency.
  *
  * Raw body is required for signature verification, so no JSON body schema is
- * declared. Inert (503) until the matching secret is configured.
+ * declared. Platinum ingress is registered only when its secret is configured.
+ * Daytona remains inert (503) until its matching secret is configured.
  */
 export const sandboxWebhooksApp = makeOpenApiApp();
 
@@ -38,20 +40,22 @@ sandboxWebhooksApp.openapi(
   },
 );
 
-sandboxWebhooksApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/platinum',
-    tags: ['webhooks'],
-    summary: 'Platinum sandbox lifecycle webhook (HMAC-SHA-256, public)',
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
-      ...errors(400, 401, 503),
+if (config.PLATINUM_WEBHOOK_SECRET) {
+  sandboxWebhooksApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/platinum',
+      tags: ['webhooks'],
+      summary: 'Platinum sandbox lifecycle webhook (HMAC-SHA-256, public)',
+      responses: {
+        200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
+        ...errors(400, 401, 503),
+      },
+    }),
+    async (c: any) => {
+      const rawBody = await c.req.text();
+      const { status, body } = await handlePlatinumWebhook(rawBody, (h: string) => c.req.header(h));
+      return c.json(body, status);
     },
-  }),
-  async (c: any) => {
-    const rawBody = await c.req.text();
-    const { status, body } = await handlePlatinumWebhook(rawBody, (h: string) => c.req.header(h));
-    return c.json(body, status);
-  },
-);
+  );
+}

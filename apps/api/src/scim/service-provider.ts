@@ -3,7 +3,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { scimError } from '../middleware/scim-auth';
-import { errors, json } from '../openapi';
+import { auth, errors, json } from '../openapi';
 import { ScimResource, listResponse, scimRouter } from './app';
 import { ENTERPRISE_USER_SCHEMA } from './user-profile';
 
@@ -139,7 +139,7 @@ export function registerScimServiceProviderRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/ServiceProviderConfig',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'SCIM ServiceProviderConfig (capabilities discovery)',
       request: { params: z.object({ accountId: z.string() }) },
       responses: {
@@ -173,7 +173,7 @@ export function registerScimServiceProviderRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/ResourceTypes',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'SCIM ResourceTypes (User + Group discovery)',
       request: { params: z.object({ accountId: z.string() }) },
       responses: { 200: json(ScimResource, 'ResourceTypes ListResponse'), ...errors(401, 403) },
@@ -188,7 +188,7 @@ export function registerScimServiceProviderRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/ResourceTypes/{id}',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'SCIM ResourceType by id',
       request: { params: z.object({ accountId: z.string(), id: z.string() }) },
       responses: { 200: json(ScimResource, 'ResourceType'), ...errors(401, 403, 404) },
@@ -206,7 +206,7 @@ export function registerScimServiceProviderRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/Schemas',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'SCIM Schemas (User + Group attribute definitions)',
       request: { params: z.object({ accountId: z.string() }) },
       responses: { 200: json(ScimResource, 'Schemas ListResponse'), ...errors(401, 403) },
@@ -221,7 +221,7 @@ export function registerScimServiceProviderRoutes(): void {
     createRoute({
       method: 'get',
       path: '/accounts/{accountId}/Schemas/{id}',
-      tags: ['scim'],
+      ...auth, tags: ['scim'],
       summary: 'SCIM Schema by urn',
       request: { params: z.object({ accountId: z.string(), id: z.string() }) },
       responses: { 200: json(ScimResource, 'Schema'), ...errors(401, 403, 404) },

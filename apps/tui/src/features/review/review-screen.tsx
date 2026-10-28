@@ -20,7 +20,7 @@
  * - `a` approve → NOTHING. A Kortix change request has three states
  *   (`open|merged|closed`); there is no approve write and no approved state.
  *   `apps/web` maps its "Ship it" button straight onto merge
- *   (`apps/web/src/features/review-center/review-center-connected.tsx`), so the
+ *   (`packages/ui/src/customize/sections/view/review-center-connected.tsx`), so the
  *   key renders greyed and says to use `m` instead of quietly doing something
  *   else under an approve label.
  */
@@ -228,27 +228,19 @@ export function ReviewView({
     [actions],
   );
 
-  const runMerge = useCallback(async () => {
+  const runAction = useCallback(async (action: 'merge' | 'close') => {
     if (!current) return;
-    setBusy(`merging #${current.number}…`);
+    setBusy(`${action === 'merge' ? 'merging' : 'closing'} #${current.number}…`);
     try {
-      const sha = await actions.merge(current.crId);
-      onToast?.(`Merged #${current.number} as ${sha.slice(0, 7)}`);
+      if (action === 'merge') {
+        const sha = await actions.merge(current.crId);
+        onToast?.(`Merged #${current.number} as ${sha.slice(0, 7)}`);
+      } else {
+        await actions.close(current.crId);
+        onToast?.(`Closed #${current.number}`);
+      }
     } catch (error) {
-      onToast?.(`Merge failed: ${errorText(error)}`, 'error');
-    } finally {
-      setBusy(null);
-    }
-  }, [current, actions, onToast]);
-
-  const runClose = useCallback(async () => {
-    if (!current) return;
-    setBusy(`closing #${current.number}…`);
-    try {
-      await actions.close(current.crId);
-      onToast?.(`Closed #${current.number}`);
-    } catch (error) {
-      onToast?.(`Close failed: ${errorText(error)}`, 'error');
+      onToast?.(`${action === 'merge' ? 'Merge' : 'Close'} failed: ${errorText(error)}`, 'error');
     } finally {
       setBusy(null);
     }
@@ -264,8 +256,7 @@ export function ReviewView({
       if (matchesReviewBinding(key, 'review.confirm')) {
         const action = confirm;
         setConfirm(null);
-        if (action === 'merge') void runMerge();
-        else void runClose();
+        void runAction(action);
       }
       return;
     }

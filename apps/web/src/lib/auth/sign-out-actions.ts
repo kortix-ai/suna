@@ -2,7 +2,7 @@
 
 import { getEnv } from '@/lib/env-config';
 import { MAINTENANCE_BYPASS_COOKIE } from '@/lib/maintenance-bypass';
-import { AUTH_BOUNCE_COOKIE } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { createClient } from '@/lib/supabase/server';
 import { recordPlatformLogout } from '@kortix/sdk';
 import { cookies } from 'next/headers';

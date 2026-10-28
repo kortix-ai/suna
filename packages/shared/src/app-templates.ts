@@ -38,9 +38,9 @@ export function slugEnvName(slug: string): string {
 }
 
 /** The self-hosted Convex backend, git 5c7cb5b (2026-09-28). `/version` answers `unknown`: the digest is the version. */
-const CONVEX_BACKEND = 'ghcr.io/get-convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4';
+const CONVEX_BACKEND = 'ghcr.io/convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4';
 /** Convex's dashboard image, the same release line. */
-const CONVEX_DASHBOARD = 'ghcr.io/get-convex/convex-dashboard@sha256:f85cf0d0448b9c835ae3df5c7c1c6f0145dd4c8f0f92eb0245daf304efdd9f1a';
+const CONVEX_DASHBOARD = 'ghcr.io/convex/convex-dashboard@sha256:f85cf0d0448b9c835ae3df5c7c1c6f0145dd4c8f0f92eb0245daf304efdd9f1a';
 /** The `convex` npm CLI that matches CONVEX_BACKEND. Bump both together. */
 export const CONVEX_CLI_VERSION = '1.46.0';
 

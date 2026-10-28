@@ -6,7 +6,6 @@
  * loads none of them.
  */
 import { qualifiedColumn } from '../shared/sql-qualified-column';
-import { escapeLike } from '../shared/sql-like';
 import { LEGACY_PAID_PLAN_KEYS } from '../billing/services/tier-facts';
 import type { AdminAccountsListQuery } from './accounts-query';
 import type { AdminProjectsListQuery } from './projects-query';
@@ -189,11 +188,12 @@ export async function listAdminAccountProjects(accountId: string) {
 
 /** One page of `GET /api/projects` across every account, plus the filtered total. */
 export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
+  const { adminProjectsSearchCondition } = await import('./projects-search');
   const { db } = await import('../shared/db');
   const { accounts, projects, projectSessions } = await import('@kortix/db');
-  const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
+  const { and, eq, inArray, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
-  const { accountHasMemberEmailLikeSql, accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
+  const { accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
 
   const { search, accountId, statusValues, sortBy, sortDir, limit, offset } = query;
 
@@ -220,16 +220,7 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
       SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
 
   const conds: any[] = [];
-  if (search) {
-    const term = `%${escapeLike(search)}%`;
-    conds.push(
-      or(
-        ilike(projects.name, term),
-        ilike(accounts.name, term),
-        accountHasMemberEmailLikeSql(qualifiedColumn(projects.accountId), term),
-      ),
-    );
-  }
+  if (search) conds.push(adminProjectsSearchCondition(search));
   if (accountId) conds.push(eq(projects.accountId, accountId));
   if (statusValues.length) conds.push(inArray(projects.status, statusValues));
   const where = conds.length ? and(...conds) : undefined;

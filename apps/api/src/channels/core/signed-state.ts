@@ -11,7 +11,7 @@ import { config } from '../../config';
  * throws without a key, and verifying answers null: an HMAC keyed with an
  * empty string is one anyone can compute.
  */
-export type ChannelStatePurpose = 'slack-login' | 'teams-login' | 'slack-install' | 'teams-install';
+export type ChannelStatePurpose = 'slack-login' | 'teams-login' | 'slack-install' | 'teams-install' | 'artifact-view';
 
 export interface ChannelStateEnvelope {
   exp: number;
@@ -44,6 +44,16 @@ export function signChannelState(
 ): string {
   const full = { ...payload, exp: Date.now() + ttlMs, nonce: randomBytes(8).toString('hex') };
   const body = Buffer.from(JSON.stringify(full)).toString('base64url');
+  return `${body}.${mac(purpose, body)}`;
+}
+
+/**
+ * The same payload and `exp` always sign to the same token (no nonce): a URL
+ * that carries it stays identical across requests, so a browser keeps a page
+ * loaded and may reuse its cache.
+ */
+export function signStableChannelState(purpose: ChannelStatePurpose, payload: Record<string, unknown>, exp: number): string {
+  const body = Buffer.from(JSON.stringify({ ...payload, exp, nonce: '' })).toString('base64url');
   return `${body}.${mac(purpose, body)}`;
 }
 

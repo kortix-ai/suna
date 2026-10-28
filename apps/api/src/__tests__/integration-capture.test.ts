@@ -25,13 +25,14 @@ mock.module('../capture/store', () => ({
       return keys.length;
     },
     presignDownload: async (key: string) => ({ url: `https://store.test/${key}`, expiresAt: new Date() }),
+    put: async (key: string, body: string | Uint8Array) =>
+      void objects.set(key, typeof body === 'string' ? new TextEncoder().encode(body) : body),
     list: async (prefix: string) =>
       [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, body]) => ({ key, bytes: body.byteLength, lastModified: new Date(0) })),
   },
   captureStoreConfigured: () => true,
   captureRegion: () => 'us-east-1',
   deviceEndpoint: () => 'https://store.test',
-  putCaptureObject: async (key: string, body: string) => void objects.set(key, new TextEncoder().encode(body)),
 }));
 
 const { accounts, captureDevices, captureWorkspaces, timelineChunks } = await import('@kortix/db');
@@ -199,6 +200,9 @@ describe('multiple displays', () => {
     const frames = (runs: Array<Record<string, unknown>>) => runs.reduce((n, r) => n + Number(r.frames), 0);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId, 2))).toBe(perDisplay);
+    // Frames without input for inactivity_seconds (reading, an unattended screen) keep their runs.
+    await db.execute(sql`UPDATE kortix.timeline_frames SET inactive = true WHERE device_id = ${dual!.deviceId}::uuid`);
+    expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
     expect((await timelineFocus(ACCOUNT, MEMBER, span, dual!.deviceId)).map((f) => f.display_id)).toEqual([1]);
 
     const items = async (opts: { displayId?: number; allDisplays?: boolean }) => (await timelineItems(ACCOUNT, MEMBER, span, dual!.deviceId, opts)).frames;

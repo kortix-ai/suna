@@ -62,6 +62,8 @@ function sessionRow(
     parentSessionId: null,
     initiatorType: null,
     initiatorId: null,
+    spaceId: null,
+    groupId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -147,22 +149,7 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     );
   });
 
-  test('surfaces a configured E2B project pin', () => {
-    const originalAllowed = config.ALLOWED_SANDBOX_PROVIDERS;
-    const originalKey = config.E2B_API_KEY;
-    config.ALLOWED_SANDBOX_PROVIDERS = ['e2b'];
-    config.E2B_API_KEY = 'test-only';
-    try {
-      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
-      expect(out.default_sandbox_provider).toBe('e2b');
-      expect(ProjectSchema.strict().parse(out)).toEqual(out);
-    } finally {
-      config.ALLOWED_SANDBOX_PROVIDERS = originalAllowed;
-      config.E2B_API_KEY = originalKey;
-    }
-  });
-
-  test.each(['managed', 'justavps', 'unknown'])(
+  test.each(['managed', 'justavps', 'e2b', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
       const out = serializeProject(

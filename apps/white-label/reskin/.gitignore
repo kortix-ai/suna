@@ -1,0 +1,5 @@
+# Wrapper-mode's local JSON user→project ownership store (src/server/users.ts).
+.lumen-data/
+
+# Extra dev servers (next.config.ts distDir).
+.next-*/

@@ -13,7 +13,7 @@
  * | `New message from <user> in the same Slack thread:` | the same renderer before 2026-09, kept for old transcripts |
  * | `You're answering a message on Microsoft Teams as a teammate.` | `channels/teams/session.ts` renderAgentPrompt |
  * | `New message from <user> in the same Teams conversation:` | `channels/teams/session.ts` renderFollowUpPrompt |
- * | `You received a message on Telegram.` | `channels/telegram-webhook.ts` renderAgentPrompt |
+ * | `You received a message on Telegram.` | the retired one-session-per-message Telegram webhook (removed 2026-10-24), kept so old transcripts still render |
  * | `[<Platform> · <context> · message from <user>]` | the pre-2026 header, kept so old transcripts still render |
  *
  * The parser is pure and framework-free so `channel-message.test.ts` can pin

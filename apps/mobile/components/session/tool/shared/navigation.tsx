@@ -3,8 +3,7 @@
  *
  * Mirrors apps/web `tool/shared/infrastructure.tsx` `ToolNavigationContext` /
  * `useToolNavigation` / `useProxyUrl` / `useServicePreview` /
- * `ServicePreviewActions` / `ServicePreviewViewport` /
- * `ServicePreviewUrlFallback` / `InlineServicePreview`, adapted to mobile's
+ * `ServicePreviewActions` / `InlineServicePreview`, adapted to mobile's
  * mechanisms:
  * - a FILE opens in `FilePreviewSheet` (the sheet every other file-open on mobile
  *   uses) through `useToolFilePreviewStore` — web's `useFilePreviewStore`
@@ -19,8 +18,8 @@
  * - an EXTERNAL link opens with `openLink` (http/https only) in the in-app
  *   browser (KRTX-2104).
  *
- * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card: its tap
- * opens the in-session sheet instead of an embedded page.
+ * Mobile has no iframe, so a preview renders as a tappable row: its tap opens
+ * the in-session sheet instead of an embedded page.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -38,13 +37,12 @@ import { useColorScheme } from 'nativewind';
 import { ResultRow } from './result-row';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { THEME } from '@/lib/utils/theme';
-import { ArrowSquareOutIcon, CaretRightIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
+import { ArrowSquareOutIcon, MonitorIcon } from '@/lib/icons';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { webSpace } from '@/lib/session/user-message';
 import { useTabStore } from '@/stores/tab-store';
 import { useToolPreviewStore } from '@/stores/tool-preview-store';
-import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
-import { ToolSurfaceContext } from './surface';
+import { TURN_SPACE, useTurnPalette } from './styles';
 import { openLink } from '@/lib/utils/open-link';
 
 /** `false` inside a surface where tool rows must not navigate (sub-agent lists). */
@@ -266,72 +264,7 @@ export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewSta
   );
 }
 
-/** The tappable body of a preview: label + Open. Never renders the token-bearing URL. */
-export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
-  const palette = useTurnPalette();
-  const { displayLabel, navigationEnabled, previewUrl, openInSession } = preview;
-  return (
-    <Button
-      variant="outline"
-      disabled={!navigationEnabled || !previewUrl}
-      onPress={openInSession}
-      accessibilityLabel={`Open ${displayLabel}`}
-    >
-      <Icon as={ArrowSquareOutIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
-      <Text numberOfLines={1}>{displayLabel}</Text>
-    </Button>
-  );
-}
-
-export function ServicePreviewViewport({ preview, url = '' }: { preview: ServicePreviewState; url?: string }) {
-  const palette = useTurnPalette();
-  const fill = useContext(ToolSurfaceContext) === 'panel';
-  // In the transcript the preview IS the row; only the panel draws a viewport.
-  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
-  return (
-    <View
-      style={{
-        backgroundColor: palette.muted,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: webSpace(6),
-        ...(fill ? { flex: 1 } : { aspectRatio: 16 / 9 }),
-      }}
-    >
-      <ServicePreviewUrlFallback preview={preview} />
-    </View>
-  );
-}
-
 export function InlineServicePreview({ url, label }: { url: string; label?: string }) {
-  const palette = useTurnPalette();
   const preview = useServicePreview(url, label);
-  const fill = useContext(ToolSurfaceContext) === 'panel';
-  if (!fill) return <ServicePreviewRow preview={preview} url={url} />;
-  return (
-    <View style={{ overflow: 'hidden' }}>
-      <View
-        style={{
-          height: webSpace(8),
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: TURN_SPACE.gap1_5,
-          paddingHorizontal: webSpace(2.5),
-          backgroundColor: palette.muted40Bg,
-          borderBottomWidth: 1,
-          borderBottomColor: palette.border30,
-        }}
-      >
-        <GlobeIcon size={TURN_SPACE.statusIcon} color={palette.muted50} />
-        <Text
-          variant="muted"
-          numberOfLines={1}
-          style={[TURN_TYPE.xs, { flex: 1, fontFamily: monoFont, color: palette.mutedForeground }]}
-        >
-          {preview.displayLabel}
-        </Text>
-      </View>
-      <ServicePreviewViewport preview={preview} />
-    </View>
-  );
+  return <ServicePreviewRow preview={preview} url={url} />;
 }

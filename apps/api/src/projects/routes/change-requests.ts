@@ -1,9 +1,11 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { config, type SandboxProviderName } from '../../config';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, errors, json, lenientBody, queryText } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
+  CHANGE_REQUEST_LIST_DEFAULT_LIMIT,
   CHANGE_REQUEST_LIST_MAX_LIMIT,
   decodeChangeRequestCursor,
   getCrById,
@@ -11,6 +13,7 @@ import {
   listChangeRequestsForProject,
   recordRequestedChange,
   serializeChangeRequest,
+  supersededByFor,
 } from '../change-requests';
 import {
   getBranchDiff,
@@ -38,6 +41,7 @@ import { projectReadView } from '../lib/project-read-view';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
+import { rethrowDatabaseError } from '../../shared/database-errors';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -116,11 +120,20 @@ export function registerChangeRequestsRoutes(): void {
       tags: ['change-requests'],
       summary: 'List change requests of a project',
       description:
-        'One page, newest number first. `limit` defaults to 50; above 500 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
+        'One page, newest number first. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({}).passthrough(),
+        query: z
+          .object({
+            status: queryText('`open`, `merged`, `closed` or `all`. Default: every status. Anything else is a 400.'),
+            origin_session_id: queryText('Only the change requests this session opened.'),
+            limit: queryText(
+              `Change requests per page, an integer from 1 to ${CHANGE_REQUEST_LIST_MAX_LIMIT}. Default ${CHANGE_REQUEST_LIST_DEFAULT_LIMIT}. Anything else is a 400.`,
+            ),
+            cursor: queryText('The `next_cursor` of the previous page. A malformed cursor is a 400.'),
+          })
+          .passthrough(),
       },
       responses: {
         200: json(ChangeRequestListSchema, 'Change requests'),
@@ -301,6 +314,8 @@ export function registerChangeRequestsRoutes(): void {
         headSha = aheadState.headSha;
         headAhead = aheadState.ahead;
       } catch (error) {
+        if (isRepositoryDisconnectedError(error)) throw error; // 409 with the fix
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to resolve branches',
@@ -443,6 +458,7 @@ export function registerChangeRequestsRoutes(): void {
       try {
         endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to reach sandbox',
@@ -460,6 +476,7 @@ export function registerChangeRequestsRoutes(): void {
             signal: AbortSignal.timeout(30_000),
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Sandbox unreachable',
@@ -540,8 +557,10 @@ export function registerChangeRequestsRoutes(): void {
         project: await withProjectGitAuth(loaded.row),
       });
       cr = (await getCrById(crId, projectId))!;
+      const view = await projectReadView(c, loaded);
+      const replaced = await supersededByFor(projectId, [cr], view.where(changeRequests.originSessionId, changeRequests.createdBy));
 
-      return c.json({ change_request: serializeChangeRequest(cr) });
+      return c.json({ change_request: serializeChangeRequest(cr, replaced.get(cr.crId) ?? null) });
     },
   );
 
@@ -594,7 +613,10 @@ export function registerChangeRequestsRoutes(): void {
       const [row] = await db
         .update(changeRequests)
         .set(updates)
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route
+        // in routes/change-request-actions.ts): the raw path param may be the
+        // display number, which matched the CR above but would 22P02 here.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },
@@ -744,6 +766,7 @@ export function registerChangeRequestsRoutes(): void {
           patch_truncated: diff.patch_truncated,
         });
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to compute diff',
@@ -787,6 +810,7 @@ export function registerChangeRequestsRoutes(): void {
         );
         return c.json(preview);
       } catch (error) {
+        rethrowDatabaseError(error);
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to preview merge',

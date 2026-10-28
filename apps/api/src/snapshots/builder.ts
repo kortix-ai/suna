@@ -36,6 +36,11 @@ import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSna
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import { db } from '../shared/db';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
@@ -99,7 +104,7 @@ export async function findServableLastReadyImage(
     template: Pick<
       ResolvedTemplate,
       'slug' | 'isShared' | 'providerSnapshotName' | 'contentHash'
-    >;
+    > & Partial<Pick<ResolvedTemplate, 'lastReady'>>;
     identity: Pick<TemplateIdentity, 'snapshotName'>;
     buildProvider: string;
     /** Injected in tests; the live reader hits `project_snapshot_builds`. */
@@ -114,10 +119,13 @@ export async function findServableLastReadyImage(
       provider: input.buildProvider,
       isShared: !!template.isShared,
     }).catch(() => [] as ReadyImage[]);
+    // This provider's own last ready image: the row's snapshot columns follow
+    // whichever provider built last.
+    const own = template.lastReady?.[input.buildProvider];
     const candidates = lastReadyImageCandidates({
       recordedSnapshotName: template.providerSnapshotName,
       recordedContentHash: template.contentHash,
-      history,
+      history: own ? [own, ...history] : history,
       identitySnapshotName: identity.snapshotName,
     });
     if (candidates.length === 0) return null;
@@ -205,6 +213,14 @@ export async function ensureSandboxImage(
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
   // count, and we rebuild on this provider.)
   let state = await provider.getSnapshotState(identity.snapshotName);
+  // Built at home but not yet copied to the region this project's sessions
+  // boot in: Platinum refuses that create (409 replicating) and the session
+  // waits it out in 10 s retries. Serve it like a build in flight instead.
+  // A boot checks for 3 s; a build waits for the copy.
+  const regionWaitMs = canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' }) ? 3_000 : undefined;
+  if (state === 'active' && !(await templateRegionResident(project.projectId, buildProvider, identity.snapshotName, regionWaitMs))) {
+    state = 'building';
+  }
   if (state === 'active') {
     if (publish) await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
@@ -272,6 +288,13 @@ export async function ensureSandboxImage(
   }
 
   if (state === 'building') {
+    // Stable message: alert on it. Every boot that lands here waits up to 12 min.
+    logger.warn('[snapshots] no ready image to serve; waiting for the build', {
+      slug: template.slug,
+      provider: buildProvider,
+      snapshotName: identity.snapshotName,
+      source: opts.source ?? 'session-start',
+    });
     state = await waitForProviderBuild(provider, identity.snapshotName);
     if (state === 'active') {
       if (publish) await recordTemplateBuilt(template.templateId, {
@@ -357,6 +380,46 @@ export async function ensureSandboxImage(
   return result === BUILT_BY_PEER ? ensureSandboxImage(project, { ...opts, peerBuildAwaited: true }) : result;
 }
 
+/**
+ * True when `snapshotName` can boot in the region this project's sessions use:
+ * always for a home-region project and for non-Platinum providers. Otherwise
+ * asks Platinum to copy it there and waits up to `timeoutMs`. Never throws: a
+ * failed check answers false and the create path handles the refusal.
+ */
+export async function templateRegionResident(
+  projectId: string,
+  provider: string,
+  snapshotName: string,
+  timeoutMs?: number,
+  deps: {
+    readMetadata?: (projectId: string) => Promise<unknown>;
+    prepare?: typeof preparePlatinumTemplateRegion;
+  } = {},
+): Promise<boolean> {
+  if (provider !== 'platinum') return true;
+  try {
+    const readMetadata = deps.readMetadata ?? readProjectMetadata;
+    const region = resolveSessionSandboxRegion(await readMetadata(projectId));
+    if (!region) return true;
+    await (deps.prepare ?? preparePlatinumTemplateRegion)(snapshotName, region, { timeoutMs });
+    return true;
+  } catch (err) {
+    logger.warn('[snapshots] template not resident in the session region', {
+      projectId, snapshotName, error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+async function readProjectMetadata(projectId: string): Promise<unknown> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return row?.metadata ?? null;
+}
+
 /** Another replica held the build claim and has finished; re-read provider truth. */
 const BUILT_BY_PEER = Symbol('built-by-peer');
 /**
@@ -412,6 +475,8 @@ async function runInlineBuild(
       slug: template.slug,
       isShared: !!template.isShared,
       containerRuntime: template.containerRuntime,
+      // Built where its sessions boot, so they never wait for a copy.
+      region: identity.region,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
       // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.
@@ -420,6 +485,10 @@ async function runInlineBuild(
       // restore → /global/event + /pty hang while /kortix/health still
       // answered). A cold boot avoids that entirely.
     });
+    // Copy it to the project's session region before the row points at it
+    // and the predecessor is reaped (a self-host 2026-10-17: the first session
+    // after a rebuild waited 79 s on 7 creates while Platinum copied it).
+    await templateRegionResident(project.projectId, provider.id, identity.snapshotName);
     if (buildId) await closeBuildLogReady(buildId);
     if (!opts.publish) {
       return {

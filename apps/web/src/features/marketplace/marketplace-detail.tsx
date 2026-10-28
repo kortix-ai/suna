@@ -13,22 +13,21 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { cn, floatingZ, useDialogDepth } from '@kortix/ui';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast } from '@kortix/ui/toast';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
-import { Portal } from '@/components/ui/portal';
-import { Copy } from '@/features/icon/icons/copy';
-import { Github } from '@/features/icon/icons/github';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { FileTree, FileTreeNav } from '@kortix/ui/file-tree';
+import { Portal } from '@kortix/ui/portal';
+import { Copy } from '@kortix/ui/icons';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
   MarketplaceItem,
@@ -53,6 +52,7 @@ import {
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
+import { useMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -563,6 +563,8 @@ export function MarketplaceDetail({
   nav?: DetailNav;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Back returns to the list as the person left it (`?source=`, `?q=`).
+  const listHref = useMarketplaceListHref();
   const onPrev = nav?.onPrev;
   const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
@@ -713,7 +715,7 @@ export function MarketplaceDetail({
         { label: itemTitle },
       ]
     : [
-        { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
+        { label: tI18nComplete.raw('textc608981d8d68'), href: listHref },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
@@ -904,7 +906,7 @@ export function MarketplaceDetail({
         <div className="space-y-10">
           <header className="space-y-6">
             <Link
-              href="/marketplace"
+              href={listHref}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors duration-(--duration-normal)"
             >
               <ArrowLeft className="size-4" aria-hidden />

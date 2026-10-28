@@ -1,7 +1,7 @@
 # {{projectName}}
 
-A session of this project runs one agent harness: OpenCode (the default) or pi
-(`runtime: pi` in `kortix.yaml`). Both read the same agents, skills and memory.
+A session of this project runs the pi agent harness. It reads the agents,
+skills and memory below.
 
 ## Layout
 

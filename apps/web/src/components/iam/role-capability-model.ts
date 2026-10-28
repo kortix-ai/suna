@@ -65,6 +65,7 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
     note: 'Push access also grants Files, Customize and Triggers edit — a push rewrites those.',
   },
   apps: { label: 'Apps', hint: 'Kortix Apps and what their public hostname serves.' },
+  artifacts: { label: 'Artifacts', hint: 'Shared docs and pages. Edit includes public links; withhold project.artifact.public to forbid them.' },
   spend: { label: 'Spend & gateway', hint: 'Model spend, request logs, budgets and BYOK keys.' },
   members: { label: 'Members', hint: 'Who has access.' },
   account: { label: 'Account', hint: 'Account name, settings, and deleting the account.' },
@@ -128,23 +129,21 @@ export function buildAreaTable(
   scope: CapabilityScope,
   permissions: readonly Permission[] | undefined,
 ): AreaDef[] {
-  const order: string[] = [];
   const byArea = new Map<string, { view: string[]; edit: string[] }>();
   for (const entry of inScope(scope, permissions)) {
     let cell = byArea.get(entry.area);
     if (!cell) {
       cell = { view: [], edit: [] };
       byArea.set(entry.area, cell);
-      order.push(entry.area);
     }
     if (entry.level === 'view') cell.view.push(entry.action);
     else if (entry.level === 'edit') cell.edit.push(entry.action);
   }
   // An area whose only leaves are `admin` gets no row — its leaves live in
   // Advanced, and an empty row would read as "nothing here".
-  return order
-    .filter((key) => byArea.get(key)!.view.length + byArea.get(key)!.edit.length > 0)
-    .map((key) => ({ key, ...areaCopy(key), ...byArea.get(key)! }));
+  return [...byArea]
+    .filter(([, cell]) => cell.view.length + cell.edit.length > 0)
+    .map(([key, cell]) => ({ key, ...areaCopy(key), ...cell }));
 }
 
 /** leaf → leaves it requires, straight off the catalog's `implies`. The client

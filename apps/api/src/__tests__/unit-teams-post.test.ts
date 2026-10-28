@@ -183,9 +183,13 @@ mock.module('@kortix/db', () => ({
     channelName: { _name: 'channelName' },
     channelType: { _name: 'channelType' },
   },
+  // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
+  requiresTls: () => false,
 }));
 
 mock.module('../channels/install-store', () => ({
+  loadSlackBotIdForProject: async () => null,
+  ensureSlackBotId: async () => null,
   loadTeamsServiceUrlForProject: async () => storedServiceUrl,
 }));
 

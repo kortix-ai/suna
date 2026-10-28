@@ -5,7 +5,7 @@
  * S3 route (acquire.ts) both finish here, so `/workspace` looks the same
  * whichever route delivered it.
  */
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
@@ -56,17 +56,23 @@ export async function markSessionCheckoutAdopted(target: string, branchName: str
   }
 }
 
-async function establishBaseRefsFromBakedHead(
+/**
+ * Point the local base, `origin/<base>` and `origin/HEAD` at `head`, and make
+ * the base track `origin/<base>`. The runtime diffs a session against
+ * `origin/<base>`, so a ref left on an older commit lists that gap as the
+ * session's own changes.
+ */
+export async function establishBaseRefs(
   target: string,
   base: string,
-  bakedHead: string,
+  head: string,
 ): Promise<void> {
   const localBaseRef = `refs/heads/${base}`
   const remoteBaseRef = `refs/remotes/origin/${base}`
   const remoteHeadRef = 'refs/remotes/origin/HEAD'
   const commands: Array<{ args: string[]; action: string }> = [
-    { args: ['update-ref', localBaseRef, bakedHead], action: `set ${localBaseRef}` },
-    { args: ['update-ref', remoteBaseRef, bakedHead], action: `set ${remoteBaseRef}` },
+    { args: ['update-ref', localBaseRef, head], action: `set ${localBaseRef}` },
+    { args: ['update-ref', remoteBaseRef, head], action: `set ${remoteBaseRef}` },
     { args: ['symbolic-ref', remoteHeadRef, remoteBaseRef], action: `set ${remoteHeadRef}` },
     {
       args: ['branch', `--set-upstream-to=origin/${base}`, '--', base],
@@ -79,11 +85,7 @@ async function establishBaseRefsFromBakedHead(
       throw new Error(`failed to ${command.action}: ${result.stderr || result.stdout}`)
     }
   }
-  logger.info('[git] established base refs from baked checkout', {
-    target,
-    base,
-    head: bakedHead,
-  })
+  logger.info('[git] established base refs', { target, base, head })
 }
 
 /**
@@ -338,7 +340,15 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
   const base = cfg.defaultBranch
   await mkdir(target, { recursive: true })
 
-  if (!(await pathExists(`${target}/.git`))) return false
+  if (!(await pathExists(`${target}/.git`))) {
+    // A volume holds only `lost+found` (ext4) and our own `.kortix-*` stages
+    // before its first acquisition. Anything else is the session's files.
+    if (cfg.workspaceVolume) {
+      const files = (await readdir(target)).filter((e) => e !== 'lost+found' && !e.startsWith('.kortix-'))
+      if (files.length) refuseVolumeClear(target, `it holds ${files.length} entries and no .git`)
+    }
+    return false
+  }
   {
     await configureSafeDirectory(target)
     // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
@@ -364,7 +374,7 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
       const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
       if (cfg.branchName && cfg.sessionFresh && !adoption.adopted && cfg.baseSha === bakedHead) {
-        await establishBaseRefsFromBakedHead(target, base, bakedHead)
+        await establishBaseRefs(target, base, bakedHead)
       }
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)
@@ -376,7 +386,34 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
       baseSha: cfg.baseSha,
       reason: restoreNeeded ? 'restore-session-branch' : 'base-mismatch',
     })
+    if (cfg.workspaceVolume) {
+      refuseVolumeClear(target, restoreNeeded ? 'the adoption marker does not match the session branch' : `HEAD ${bakedHead} is not KORTIX_BASE_SHA`)
+    }
     await clearDirContents(target)
     return false
+  }
+}
+
+/** On a workspace volume the checkout is the only copy of the session's files: fail the boot, never clear it. */
+function refuseVolumeClear(target: string, why: string): never {
+  logger.error('[git] refusing to clear the workspace volume', { event: 'workspace_volume_clear_refused', target, why })
+  throw new Error(`refusing to clear ${target}: it is a volume and ${why}. The session files stay; this box does not boot.`)
+}
+
+/**
+ * pnpm puts its store at the root of the project's filesystem when $HOME is on
+ * another one: on a volume that is `/workspace/.pnpm-store`, inside the
+ * checkout, where `git add -A` would commit it. Hide it the way the CLI hides
+ * its own files (`.git/info/exclude`: never committed). Never throws.
+ */
+export async function excludeVolumePnpmStore(target: string): Promise<void> {
+  const exclude = join(target, '.git', 'info', 'exclude')
+  try {
+    const existing = await readFile(exclude, 'utf8').catch(() => '')
+    if (existing.split(/\r?\n/).includes('/.pnpm-store/')) return
+    await mkdir(join(target, '.git', 'info'), { recursive: true })
+    await appendFile(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}/.pnpm-store/\n`)
+  } catch (err) {
+    logger.warn('[git] could not hide the pnpm store on the workspace volume', { error: (err as Error).message })
   }
 }

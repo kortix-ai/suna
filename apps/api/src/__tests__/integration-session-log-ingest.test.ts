@@ -190,7 +190,8 @@ describe('journal', () => {
     expect((await stored('msg_a1'))?.deletedAt).toBeInstanceOf(Date);
   });
 
-  test('a seq another message of the thread holds answers 422 with the pair, and the batch writes nothing', async () => {
+  test('a seq another message of the thread holds answers 422 with the pair and the thread\'s seq_max, and the batch writes nothing', async () => {
+    const [max] = await db.execute(sql`select max(seq)::int as n from kortix.session_log_messages where session_id = ${SESSION} and thread_id = 'main'`);
     const res = await journal(
       batch({
         puts: [
@@ -201,7 +202,8 @@ describe('journal', () => {
       }),
     );
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_dup', rev: REV + 31, thread_id: 'main', seq: 1 });
+    // seq_max: the thread's highest seq, tombstones included. The daemon numbers the thread above it.
+    expect(await res.json()).toEqual({ error: 'seq_conflict', message_id: 'msg_dup', rev: REV + 31, thread_id: 'main', seq: 1, seq_max: (max as { n: number }).n });
     expect(await stored('msg_new')).toBeUndefined();
     const [side] = await db.execute(sql`select count(*)::int as n from kortix.session_log_threads where session_id = ${SESSION} and thread_id = 'side'`);
     expect((side as { n: number }).n).toBe(0);

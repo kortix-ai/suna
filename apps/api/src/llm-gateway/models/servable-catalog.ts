@@ -1,22 +1,27 @@
-import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { getProjectGatewayResolution } from '../../repositories/project-model-access';
 import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
+import { getProjectSecretValueForConsumer, listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { resolveEnablement } from '../model-enablement';
 import { toWireModel } from '../resolution/effective';
 import { gatewayModelCatalog } from './catalog-models';
-import { projectPickerCatalog } from './picker-catalog';
+import { projectPickerCatalog, type UnavailableModelMark } from './picker-catalog';
 import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
+import { customProviderCatalog } from '../custom-providers';
+import { PLATINUM_PROVIDER } from '@kortix/llm-catalog';
+import { platinumByokCatalog } from './platinum-byok-models';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 
 export interface ServableProjectCatalog {
-  /** Wire model id → catalog record, stamped with the project's enablement. */
-  models: Record<string, GatewayModel & { enabled: boolean }>;
+  /** Wire model id → catalog record, stamped with the project's enablement,
+   *  and `available: false` when only a default names it and its provider is
+   *  not connected for the caller. */
+  models: Record<string, GatewayModel & { enabled: boolean } & Partial<UnavailableModelMark>>;
   modelOverrides: Record<string, boolean>;
   defaultModel: string | undefined;
   usingDefaults: boolean;
@@ -25,7 +30,8 @@ export interface ServableProjectCatalog {
 /**
  * The ONE composition of "which models can this project actually run right
  * now": the runtime catalog reduced to managed models the account may use,
- * the providers its secrets connect, and the ids its defaults/routing name —
+ * the providers its secrets connect, the project's custom providers, and the
+ * ids its defaults/routing name —
  * stamped with per-project enablement. Served to the web picker
  * (`GET /projects/:id/model-picker`, routes/models.ts) AND to the sandbox at boot
  * (`GET /v1/llm/models?scope=picker` → internal `/models` with
@@ -58,7 +64,7 @@ export async function servableProjectCatalog(input: {
   const { projectId, accountId, principalUserId } = input;
   const personalUserId = input.personalUserId === undefined ? (principalUserId ?? null) : input.personalUserId;
   const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-  const [secrets, defaults, routing, access, pooledEnabled] = await Promise.all([
+  const [secrets, defaults, routing, resolution, pooledEnabled] = await Promise.all([
     listProjectSecretNamesForConsumer({
       projectId,
       principalUserId: personalUserId,
@@ -66,29 +72,49 @@ export async function servableProjectCatalog(input: {
     }).catch(() => [] as string[]),
     getAccountModelDefaults(accountId, projectId),
     getProjectRoutingPolicy(projectId),
-    getProjectModelAccess(projectId),
+    getProjectGatewayResolution(projectId),
     projectFeatureFlagEnabled(projectId, 'pooled_provider_secrets'),
   ]);
   const pooledNames = pooledEnabled && principalUserId
     ? await listGrantedGatewaySecretNames(accountId, projectId, principalUserId, personalUserId).catch(() => [] as string[])
     : [];
+  // An account without managed models has no platform default.
+  const platformDefault = freeManagedOnly ? undefined : platformDefaultModelId();
   const effectiveDefault = toWireModel(
-    defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
+    defaults.projects[projectId] ?? defaults.account ?? platformDefault ?? '',
   );
   const requiredModels = [
     defaults.projects[projectId],
     defaults.account,
-    platformDefaultModelId(),
+    platformDefault,
     routing?.visionModel,
     ...(routing?.defaultFallback?.models ?? []),
     ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
   ].filter((model): model is string => !!model);
-  const models = projectPickerCatalog(
-    gatewayModelCatalog(projectId, { freeManagedOnly }),
-    new Set([...secrets, ...pooledNames]),
-    requiredModels,
-  );
-  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
+  const { access } = resolution;
+  // A custom endpoint is servable once defined (its key is optional) and on by
+  // default: it has no release date or family for the recency rule to rank.
+  const custom = customProviderCatalog(resolution.customProviders ?? []);
+  // Platinum (BYOK): its models are whatever Platinum lists for the project's
+  // own key, on by default like a custom endpoint (no release date to rank).
+  const platinumKeyName = PLATINUM_PROVIDER.env![0]!;
+  const platinum = secrets.includes(platinumKeyName)
+    ? await platinumByokCatalog(await getProjectSecretValueForConsumer({
+      projectId, accountId, principalUserId: personalUserId, actorUserId: principalUserId,
+      name: platinumKeyName, consumer: 'llm_gateway', probe: true,
+    }).catch(() => null))
+    : {};
+  const models = {
+    ...projectPickerCatalog(
+      gatewayModelCatalog(projectId, { freeManagedOnly }),
+      new Set([...secrets, ...pooledNames]),
+      requiredModels,
+    ),
+    ...platinum,
+    ...custom,
+  };
+  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {},
+    [...requiredModels, ...Object.keys(platinum), ...Object.keys(custom)]);
   return {
     models: Object.fromEntries(
       Object.entries(models).map(([id, model]) => [

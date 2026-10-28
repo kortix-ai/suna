@@ -8,7 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { auth, errors, json, lenientBody } from '../../openapi';
+import { auth, errors, json, lenientBody, queryText } from '../../openapi';
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -18,13 +18,17 @@ import { projectReadView } from '../lib/project-read-view';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
+import { inferAuditSource } from '../../shared/audit';
+import { markApprovalCardDecided } from '../../channels/approval-card-relay';
 import { isAdaptedId } from '../review-adapters';
 import {
   REVIEW_PAGE_DEFAULT_LIMIT,
   REVIEW_PAGE_MAX_LIMIT,
   type ReviewSegment,
+  BULK_MAX_IDS,
   applyVerdict,
-  bulkApplyVerdict,
+  BULK_RESULT_CODES,
+  bulkActReview,
   decodeInboxCursor,
   getInboxItem,
   getReviewItemById,
@@ -95,11 +99,21 @@ export function registerReviewItemsRoutes(): void {
       tags: ['review'],
       summary: 'List review items (approvals and change requests)',
       description:
-        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. `limit` defaults to 50; above 200 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
+        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({}).passthrough(),
+        query: z
+          .object({
+            segment: queryText('`needs_you`, `waiting` or `done`. Default: all three. Anything else is a 400.'),
+            kind: queryText('`change`, `approval`, `output`, `decision` or `batch`. Default: every kind. Anything else is a 400.'),
+            session_id: queryText('Only the items raised from this session (a UUID).'),
+            limit: queryText(
+              `Items per page, an integer from 1 to ${REVIEW_PAGE_MAX_LIMIT}. Default ${REVIEW_PAGE_DEFAULT_LIMIT}. Anything else is a 400.`,
+            ),
+            cursor: queryText('The `next_cursor` of the previous page. A malformed cursor is a 400.'),
+          })
+          .passthrough(),
       },
       responses: {
         200: json(
@@ -366,12 +380,21 @@ export function registerReviewItemsRoutes(): void {
       request: {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
-            ids: z.array(z.string()).openapi({ description: 'Review item ids. review_item_ids is accepted as an alias.' }),
+            ids: z.array(z.string()).openapi({ description: 'Review item ids (native, call:<execution_id>), at most 50. review_item_ids is accepted as an alias.' }),
             verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision applied to every item.' }),
           }) } } },
       },
       responses: {
-        200: json(z.object({ updated: z.number(), review_items: z.array(AnyObject) }), 'Bulk result'),
+        200: json(
+          z.object({
+            updated: z.number(),
+            review_items: z.array(AnyObject),
+            results: z
+              .array(z.object({ id: z.string(), ok: z.boolean(), code: z.enum(BULK_RESULT_CODES).optional() }))
+              .openapi({ description: 'One entry per requested id, in request order.' }),
+          }),
+          'Bulk result',
+        ),
         ...errors(400, 403, 404),
       },
     }),
@@ -380,13 +403,6 @@ export function registerReviewItemsRoutes(): void {
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
-      );
 
       const verdict = normalizeString(body.verdict);
       if (!isReviewVerdict(verdict)) {
@@ -402,9 +418,31 @@ export function registerReviewItemsRoutes(): void {
           : null;
       const ids = (idsRaw ?? []).filter((x: unknown): x is string => typeof x === 'string');
       if (ids.length === 0) return c.json({ error: 'ids must be a non-empty array' }, 400);
+      if (ids.length > BULK_MAX_IDS) {
+        return c.json({ error: `ids may hold at most ${BULK_MAX_IDS} items` }, 400);
+      }
+      // Each source keeps its single-item authorization: native items need
+      // project.review.act (as the act route); a connector call needs the
+      // resolve rule (manager or launcher), checked per id.
+      if (ids.some((id: string) => !isAdaptedId(id))) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
+        );
+      }
 
-      const rows = await bulkApplyVerdict(ids, projectId, { verdict, actingUserId: loaded.userId });
-      return c.json({ updated: rows.length, review_items: rows.map(serializeReviewItem) });
+      const { rows, results } = await bulkActReview(ids, projectId, {
+        verdict,
+        accountId: loaded.row.accountId,
+        caller: await approvalCallerOf(c, loaded, projectId),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
+        updateStaleCard: (row, decision) =>
+          markApprovalCardDecided({ projectId, row, decision, note: '', actorUserId: loaded.userId }),
+      });
+      return c.json({ updated: rows.length, review_items: rows.map(serializeReviewItem), results });
     },
   );
 }

@@ -3,6 +3,8 @@ import type { HarnessForwardInput } from '@/harness/contract/proxy'
 import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
 import { configureRuntimeState, resetRuntimeStateForTests } from '@/harness/open-code/runtime-state-projection'
 import { createOpenCodeTurnService, observeSteerRead, opencodeSupportsSteer, resetSteerWitnessForTests } from '@/harness/open-code/turns'
+import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
+import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { createRuntimeRouter, parseRuntimePromptBody } from '@/routes/kortix/runtime'
 
 /** A proxy forward that records the native request and answers from a script. */
@@ -220,8 +222,64 @@ describe('parseRuntimePromptBody', () => {
     [{ parts: [{}], model: 'bare' }, 'model must be "provider/model"'],
     [{ parts: [{}], model: 'kortix/' }, 'model must be "provider/model"'],
     [{ parts: [{}], no_reply: 'yes' }, 'no_reply must be a boolean'],
+    [{ parts: [{}], system: 5 }, 'system must be a string'],
+    [{ parts: [{}], system: 'x'.repeat(16_001) }, 'system must be at most 16000 characters'],
   ])('%j is refused', (body, error) => {
     expect(parseRuntimePromptBody(body)).toBe(error)
+  })
+
+  test('system is the turn system text, up to 16,000 characters; a blank one or none leaves the input as before', () => {
+    const parts = [{ type: 'text', text: 'hi' }]
+    expect(parseRuntimePromptBody({ parts, system: '  ## Memory\n- Q4 launch  ' })).toEqual({ parts, system: '## Memory\n- Q4 launch' })
+    expect(parseRuntimePromptBody({ parts, system: 'x'.repeat(16_000) })).toEqual({ parts, system: 'x'.repeat(16_000) })
+    expect(parseRuntimePromptBody({ parts, system: '  ' })).toEqual({ parts })
+    expect(parseRuntimePromptBody({ parts })).toEqual({ parts })
+  })
+})
+
+describe('the turn system text on OpenCode', () => {
+  test('prompt_async carries system for that prompt; a prompt without it sends none', async () => {
+    const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace')
+    const parts = [{ type: 'text', text: 'hi' }]
+    await turns.prompt('ses_1', { parts, system: '## Memory\n- Q4 launch' })
+    await turns.prompt('ses_1', { parts })
+    expect(seen.map((call) => call.body)).toEqual([{ parts, system: '## Memory\n- Q4 launch' }, { parts }])
+  })
+
+  test("a steer carries the turn's system again, so the rest of the turn keeps it; a turn without one sends none", async () => {
+    const { proxy, seen } = fakeProxy((input) => (input.path === '/session/status' ? { status: 200, body: { ses_1: { type: 'busy' } } } : { status: 204, body: null }))
+    const turns = createOpenCodeTurnService(proxy, () => '/workspace', async () => '1.18.23')
+    const parts = [{ type: 'text', text: 'hi' }]
+    const posts = () => seen.filter((call) => call.method === 'POST').map((call) => call.body)
+    await turns.prompt('ses_1', { parts, system: 'LIST' })
+    await turns.steer('ses_1', { messageId: 'msg_s1', parts })
+    await turns.prompt('ses_1', { parts })
+    await turns.steer('ses_1', { messageId: 'msg_s2', parts })
+    expect(posts()).toEqual([
+      { parts, system: 'LIST' },
+      { messageID: 'msg_s1', parts, system: 'LIST' },
+      { parts },
+      { messageID: 'msg_s2', parts },
+    ])
+  })
+
+  test('the steer route drops a system field; the prompt route passes it on', async () => {
+    const seen: Array<[string, RuntimePromptInput]> = []
+    const record = (verb: string) => async (_id: string, input: RuntimePromptInput) => {
+      seen.push([verb, input])
+      return { status: 202, body: {} }
+    }
+    const turns = { prompt: record('prompt'), steer: record('steer') } as unknown as HarnessTurnService
+    const app = createRuntimeRouter({ sandboxToken: 'sandbox-token' } as Parameters<typeof createRuntimeRouter>[0], {} as Parameters<typeof createRuntimeRouter>[1], { turns })
+    const body = JSON.stringify({ message_id: 'msg_1', parts: [{ type: 'text', text: 'hi' }], system: 'LIST' })
+    const headers = { Authorization: 'Bearer sandbox-token', 'content-type': 'application/json', [KORTIX_SERVICE_CALL_HEADER]: '1' }
+    expect((await app.request('/sessions/ses_1/steer', { method: 'POST', headers, body })).status).toBe(202)
+    expect((await app.request('/sessions/ses_1/prompt', { method: 'POST', headers, body })).status).toBe(202)
+    expect(seen.map(([verb, input]) => [verb, input.system])).toEqual([
+      ['steer', undefined],
+      ['prompt', 'LIST'],
+    ])
   })
 })
 

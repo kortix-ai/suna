@@ -29,6 +29,7 @@
  * throw into a caller.
  */
 
+import { requiresTls } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { PG_BROADCAST_POOL_MAX } from './database-capacity';
@@ -90,9 +91,31 @@ export const SESSION_CHANGED_CHANNEL = 'kortix_session_changed';
  */
 export const IAM_CACHE_BUST_CHANNEL = 'kortix_iam_cache_bust';
 
+/**
+ * An eighth channel: "drop this project's cached private-channel access".
+ * Payload: one project id. `bustSpaceAccess` (`shared/space-access.ts`) sends
+ * it after a membership change, a private create or a conversion, so every
+ * replica drops its access memo and re-checks its open streams at once
+ * instead of after the 10 s TTL. See `publishSpaceAccessBust`.
+ */
+export const SPACE_ACCESS_BUST_CHANNEL = 'kortix_space_access_bust';
+
+/**
+ * A ninth channel: "drop this project's memoized session-list ETags".
+ * Payload: one project id. `forgetSessionListPollEtags`
+ * (`projects/lib/session-list-poll-memo.ts`) sends it after every session
+ * write, so a revalidation that lands on another replica than the write gets
+ * the new list, not a 304 from before it.
+ */
+export const SESSION_LIST_BUST_CHANNEL = 'kortix_session_list_bust';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
+// `bun --hot` re-evaluates this module but keeps globalThis. The last evaluation's
+// stop lives there, so a re-evaluated start ends that LISTEN client first instead
+// of orphaning it (postgres.js re-LISTENs on reconnect, so an orphan never dies).
+const hot = globalThis as typeof globalThis & { __kortixPgBroadcastStop?: () => Promise<void> };
 let handlers: Handler[] = [];
 let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
@@ -101,6 +124,8 @@ let promptsChangedHandler: ((sessionId: string) => void) | null = null;
 // replica-local: subscribers in this process; the NOTIFY reaches every replica.
 const sessionChangedHandlers = new Set<(sessionId: string) => void>();
 let iamCacheBustHandler: ((payload: string) => void) | null = null;
+let spaceAccessBustHandler: ((projectId: string) => void) | null = null;
+let sessionListBustHandler: ((projectId: string) => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const LISTEN_RETRY_MS = 60_000;
 
@@ -219,6 +244,46 @@ export function publishIamCacheBust(payload: string): void {
   if (listener) void listener.notify(IAM_CACHE_BUST_CHANNEL, payload).catch(() => {});
 }
 
+/** `shared/space-access.ts` registers once, at import. Kept across stop/start. */
+export function onSpaceAccessBustNotify(handler: ((projectId: string) => void) | null): void {
+  spaceAccessBustHandler = handler;
+}
+
+/** Tell every replica (this one included) to drop a project's private-channel access memo. Without the LISTEN it is a no-op: the TTL is the backstop. */
+export function publishSpaceAccessBust(projectId: string): void {
+  if (listener) void listener.notify(SPACE_ACCESS_BUST_CHANNEL, projectId).catch(() => {});
+}
+
+function deliverSpaceAccessBust(payload: string): void {
+  // The payload is a project id and nothing else.
+  if (!isUuid(payload)) return;
+  try {
+    spaceAccessBustHandler?.(payload);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
+/** `projects/lib/session-list-poll-memo.ts` registers once, at import. Kept across stop/start. */
+export function onSessionListBustNotify(handler: ((projectId: string) => void) | null): void {
+  sessionListBustHandler = handler;
+}
+
+/** Tell every replica (this one included) to drop a project's session-list memo. Without the LISTEN it is a no-op: the 2 s TTL is the backstop. */
+export function publishSessionListBust(projectId: string): void {
+  if (listener) void listener.notify(SESSION_LIST_BUST_CHANNEL, projectId).catch(() => {});
+}
+
+function deliverSessionListBust(payload: string): void {
+  // The payload is a project id and nothing else.
+  if (!isUuid(payload)) return;
+  try {
+    sessionListBustHandler?.(payload);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
 /** The forwarder registers once, at import. Kept across stop/start. */
 export function onTunnelForwardNotify(handler: (payload: string) => void): void {
   tunnelForwardHandler = handler;
@@ -269,8 +334,12 @@ function deliver(payload: string): void {
 export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
   if (listener) return true;
   if (!config.DATABASE_URL) return false;
+  const previous = hot.__kortixPgBroadcastStop;
+  hot.__kortixPgBroadcastStop = stopConfigBaseMoveBroadcast;
+  if (previous && previous !== stopConfigBaseMoveBroadcast) await previous();
   try {
     const sql = postgres(config.DATABASE_URL, {
+      ...(requiresTls(config.DATABASE_URL) ? { ssl: 'require' as const } : {}),
       max: PG_BROADCAST_POOL_MAX,
       // A subscription connection runs no statements of its own, so the
       // request pool's statement timeout would only be a way to lose it.
@@ -301,6 +370,8 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
         // A subscriber must not take the listener down.
       }
     });
+    await sql.listen(SPACE_ACCESS_BUST_CHANNEL, deliverSpaceAccessBust);
+    await sql.listen(SESSION_LIST_BUST_CHANNEL, deliverSessionListBust);
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -309,7 +380,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}`,
     );
     return true;
   } catch (error) {

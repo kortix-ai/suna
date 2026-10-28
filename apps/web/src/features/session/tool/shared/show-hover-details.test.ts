@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { showHoverDetails } from './show-helpers';
+import { showHoverDetails } from '@kortix/ui/session/tool/shared/show-helpers';
 
 describe('showHoverDetails', () => {
   test('a running port names the site, then the address it serves on', () => {

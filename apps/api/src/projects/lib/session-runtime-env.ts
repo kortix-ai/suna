@@ -52,13 +52,6 @@ export interface SessionRuntimeEnvInput {
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
   compiledAgentConfig?: string | null;
-  /**
-   * The agent harness the sandbox daemon boots, from the manifest's `runtime:`
-   * field. `pi` emits `KORTIX_HARNESS=pi` (pi-agent-core in-process in the
-   * daemon); `opencode`/omitted emits nothing, so an OpenCode session's env is
-   * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
-   */
-  harness?: 'opencode' | 'pi';
   /** kortix.yaml `harnesses.pi.codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
   piCodemode?: 'off' | 'on' | 'only' | null;
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
@@ -160,11 +153,13 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_API_URL: input.apiUrl,
     KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     KORTIX_REPOSITORY_ACCESS: allowsFullRepository ? '1' : '0',
-    // Which harness kortixd boots. Absent = OpenCode (the daemon default).
-    ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
-    ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
-    ...(input.harness === 'pi' && input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
-    ...(input.harness === 'pi' && input.piPackagesBundle
+    // Which harness kortixd boots: always pi (OpenCode is sunset). Never leave it
+    // out: an unset KORTIX_HARNESS boots OpenCode, the daemon default kept for
+    // boxes that already run it.
+    KORTIX_HARNESS: 'pi',
+    ...(input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
+    ...(input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
+    ...(input.piPackagesBundle
       ? {
           KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,
           KORTIX_PI_PACKAGES_FALLBACK_URL: input.piPackagesBundle.fallbackUrl,

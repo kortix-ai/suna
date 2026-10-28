@@ -6,56 +6,34 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
+import { jsonbSafeValue } from '../../shared/jsonb-safe';
 import { logger } from '../../lib/logger';
-import {
-  ensureEmailSessionBinding,
-  loadEmailInstallConnectionId,
-} from '../../projects/lib/session-connector-bindings';
-import {
-  deliverThroughQueue,
-  createSession as createLifecycleSession,
-  resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
+import { ensureEmailSessionBinding } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
-import { replyToAgentMailMessage, resolveAgentMailApiKey } from '../agentmail-api';
-import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import {
-  type AgentMailSenderPolicy,
-  loadAgentMailApiKeyForInbox,
-  loadAgentMailSenderPolicyForInbox,
+  RESEND_INBOX_EMAIL_RECEIVED,
+  getResendThreadEmail,
+  replyToResendThreadEmail,
+  resolveEmailApiKey,
+} from '../resend-email-api';
+import { type ChannelPort, type ChannelSessionPlan, type ChannelTarget, routeChannelMessage } from '../core/conversation';
+import {
+  type EmailSenderPolicy,
+  emailOwnKeyForAccount,
+  emailOwnKeyForInbox,
+  listProjectsForWorkspace,
+  loadEmailInboxAccountForInbox,
 } from '../install-store';
-import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
-import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
-import type { AgentMailMessageReceivedEvent } from './types';
+import type { InboundEmail, ResendInboxEmailReceivedEvent } from './types';
 
-const defaultEmailSessionLifecycle = {
-  deliverFollowUp: deliverThroughQueue,
-  createSession: createLifecycleSession,
-  resolveProjectAutomationActor: resolveLifecycleAutomationActor,
-};
-
-let emailSessionLifecycle = defaultEmailSessionLifecycle;
-let emailSenderPolicyLoader = loadAgentMailSenderPolicyForInbox;
-
-export function setEmailSessionLifecycleForTest(
-  overrides: Partial<typeof defaultEmailSessionLifecycle>,
-) {
-  emailSessionLifecycle = { ...defaultEmailSessionLifecycle, ...overrides };
+export function resetEmailChannelForTest() {
+  threadEmailLoader = getResendThreadEmail;
 }
 
-export function resetEmailSessionLifecycleForTest() {
-  emailSessionLifecycle = defaultEmailSessionLifecycle;
-  emailSenderPolicyLoader = loadAgentMailSenderPolicyForInbox;
-}
-
-export function setEmailSenderPolicyLoaderForTest(
-  loader: typeof loadAgentMailSenderPolicyForInbox,
-) {
-  emailSenderPolicyLoader = loader;
-}
-
-export async function resolveProjectForAgentMailInbox(inboxId: string): Promise<string | null> {
+export async function resolveProjectForEmailInbox(inboxId: string): Promise<string | null> {
   const [row] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
@@ -64,94 +42,269 @@ export async function resolveProjectForAgentMailInbox(inboxId: string): Promise<
   return row?.projectId ?? null;
 }
 
-export async function dispatchAgentMailEvent(event: AgentMailMessageReceivedEvent): Promise<void> {
-  if (!isInboundMessageEvent(event.event_type)) return;
-  if (await alreadyHandled(`email:event:${event.event_id}`)) return;
-  const projectId = await resolveProjectForAgentMailInbox(event.message.inbox_id);
-  if (!projectId) {
-    console.warn('[email-webhook] no project install for AgentMail inbox', {
-      inboxId: event.message.inbox_id,
-      eventId: event.event_id,
-    });
-    return;
-  }
-  const policy = await emailSenderPolicyLoader(projectId, event.message.inbox_id);
-  if (!senderAllowed(event, policy)) {
-    console.warn('[email-webhook] sender rejected by AgentMail inbox policy', {
-      inboxId: event.message.inbox_id,
-      eventId: event.event_id,
-      sender: messageSender(event),
-    });
-    return;
-  }
-  if (!(await claimInboundMessage(event))) return;
-  await spawnEmailAgentTurn(projectId, event);
+/** Whether the project has the email channel (`email_channel`); off, its inboxes' mail is ignored. */
+export async function emailChannelOnForProject(projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return Boolean(row) && resolveFeatureFlag(row!.metadata, 'email_channel');
 }
 
-async function spawnEmailAgentTurn(
-  projectId: string,
-  event: AgentMailMessageReceivedEvent,
-): Promise<void> {
-  const inboxId = event.message.inbox_id;
-  const threadId = event.message.thread_id;
-  if (!inboxId || !threadId) return;
+let threadEmailLoader = getResendThreadEmail;
 
-  const thread = { platform: 'email', workspaceId: inboxId, threadId };
-  const existing = await findChatThread(thread);
+export function setThreadEmailLoaderForTest(loader: typeof getResendThreadEmail) {
+  threadEmailLoader = loader;
+}
 
-  if (existing) {
-    if (
-      !(await ensureEmailSessionBinding({
-        projectId,
-        sessionId: existing.sessionId,
-        inboxId,
-      }))
-    ) {
-      console.error('[email-webhook] could not bind existing session to inbox connection', {
-        projectId,
-        sessionId: existing.sessionId,
-        inboxId,
-      });
+export const EMAIL_MESSAGE_EVENT = 'email.message.received';
+
+/** `IntegrationEvent.data` of a received email: the webhook's ids and headers, never a body. */
+interface EmailEventData {
+  inbox_id: string;
+  thread_id: string;
+  email_id: string;
+  from: string;
+  to: string[];
+  subject: string | null;
+}
+
+/**
+ * The event-inbox envelope of a received email, or null when the Resend event
+ * is not one. The event names the email but carries no body; the consumer
+ * reads the body from Resend.
+ */
+export function emailMessageEvent(projectId: string, event: ResendInboxEmailReceivedEvent): IntegrationEvent | null {
+  if (event.type !== RESEND_INBOX_EMAIL_RECEIVED) return null;
+  const { inbox_id, thread_id, email_id, email } = event.data;
+  if (!inbox_id || !thread_id || !email_id) return null;
+  const data: EmailEventData = {
+    inbox_id,
+    thread_id,
+    email_id,
+    from: email?.from ?? '',
+    to: email?.to ?? [],
+    subject: email?.subject ?? null,
+  };
+  return {
+    id: email_id,
+    source: `email:${inbox_id}`,
+    type: EMAIL_MESSAGE_EVENT,
+    time: event.created_at ?? new Date().toISOString(),
+    subject: thread_id,
+    projectId,
+    data: data as unknown as Record<string, unknown>,
+  };
+}
+
+/**
+ * One stored received email, in the project that held its inbox at the ack.
+ * The route checked the sender policy before the store; the email runs only
+ * while that project still has the channel, the inbox and the sender allowed.
+ * A throw retries the email (8 attempts over about 20 min).
+ */
+export async function handleEmailEvent(event: IntegrationEvent, run: { finalAttempt: boolean }): Promise<void> {
+  const { inbox_id: inboxId, thread_id: threadId, email_id: emailId, from, to, subject } =
+    event.data as unknown as EmailEventData;
+  let { projectId } = event;
+  let account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    // The inbox left the project since the ack. The project that holds it now
+    // gets the email, as a fresh delivery would; with none, it is dropped.
+    const current = await resolveProjectForEmailInbox(inboxId);
+    account = current && current !== projectId ? await loadEmailInboxAccountForInbox(current, inboxId) : null;
+    if (!account) {
+      logger.info('[email-webhook] inbox removed from the project since the email arrived; dropped', { projectId, inboxId, emailId });
       return;
     }
-    const outcome = await emailSessionLifecycle.deliverFollowUp({
-      source: 'email',
-      idempotencyKey: emailFollowUpKey(event),
-      sessionId: existing.sessionId,
-      text: renderFollowUpPrompt(event),
-    });
-    if (outcome === 'delivered' || outcome === 'queued') {
-      await touchChatThread(thread);
-    } else if (outcome === 'no-session') {
-      await dropChatThread(thread);
-      await createThreadSession(projectId, event, true);
-    }
+    projectId = current!;
+  }
+  if (!(await emailChannelOnForProject(projectId))) {
+    logger.info('[email-webhook] email channel turned off since the email arrived; dropped', { projectId, inboxId, emailId });
     return;
   }
-
-  await createThreadSession(projectId, event, false);
+  if (!isEmailSenderAllowed(from, account.senderPolicy)) {
+    logger.warn('[email-webhook] sender rejected by inbox policy', { inboxId, emailId, sender: from });
+    return;
+  }
+  const apiKey = resolveEmailApiKey(await emailOwnKeyForAccount(account));
+  if (!apiKey) {
+    logger.error('[email-webhook] no Resend key for inbox', { projectId, inboxId });
+    return;
+  }
+  const full = await threadEmailLoader({ apiKey, inboxId, threadId, emailId });
+  // The sender controls every field. One U+0000 in the subject or the body
+  // fails the session's jsonb writes on every attempt, so the email dead-letters.
+  const email: InboundEmail = jsonbSafeValue({
+    inboxId,
+    threadId,
+    emailId,
+    from: full.from || from,
+    to: full.to ?? to,
+    subject: full.subject ?? subject,
+    text: full.text || stripHtml(full.html) || '',
+    attachments: (full.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename ?? null,
+      size: a.size ?? null,
+    })),
+  });
+  await routeChannelMessage(
+    emailPort,
+    {
+      target: { platform: 'email', workspaceId: inboxId, threadId, projectId, messageId: emailId },
+      // One lifecycle key per message, never per thread: the lifecycle keeps a
+      // key forever, so under the thread's key a failed first start (dead-lettered)
+      // answered every later reply in the thread with the same failure.
+      keys: {
+        followUp: `email:${inboxId}:${emailId}`,
+        create: `email:create:${inboxId}:${threadId}:${emailId}`,
+        createClaim: `email:threadcreate:${inboxId}:${threadId}`,
+      },
+      followUp: { text: renderFollowUpPrompt(email) },
+      plan: (revived) => planEmailSession(projectId, email, revived),
+    },
+    run,
+  );
 }
 
-/** One received email: a redelivered webhook dedupes on it. */
-function emailFollowUpKey(event: AgentMailMessageReceivedEvent): string {
-  return `email:${event.message.inbox_id}:${event.message.message_id}`;
+// A cold start can take ~405 s (a 15 s body read, a 90 s clone, a 300 s
+// first-prompt wait): the visibility outlasts it. Two per replica, so mail
+// never takes every job slot.
+registerEventConsumer('email.', handleEmailEvent, { visibilityMs: 7 * 60_000, batch: 2 });
+
+const HTML_ENTITIES = { nbsp: ' ', amp: '&', lt: '<', gt: '>' } as const;
+
+/**
+ * A readable body for an HTML-only email. Linear in the input: a sender
+ * controls it, and a quadratic pattern stalled the API on crafted HTML (a run
+ * of `<script` or `<` took seconds).
+ */
+export function stripHtml(html: string | null | undefined): string {
+  if (!html) return '';
+  return dropTags(
+    dropScriptsAndStyles(html)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n'),
+  )
+    // One pass: `&amp;lt;` is the text `&lt;`, never a `<`.
+    .replace(/&(nbsp|amp|lt|gt);/g, (_, name: keyof typeof HTML_ENTITIES) => HTML_ENTITIES[name])
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-async function createThreadSession(
-  projectId: string,
-  event: AgentMailMessageReceivedEvent,
-  revived: boolean,
-): Promise<void> {
-  const inboxId = event.message.inbox_id;
-  const threadId = event.message.thread_id;
+/** Drop every `<script>` and `<style>` block; an unclosed one stays as text. */
+function dropScriptsAndStyles(html: string): string {
+  const opener = /<(script|style)\b/gi;
+  const closers = { script: /<\/script/gi, style: /<\/style/gi };
+  // A tag with no closer after one opener has none after any later opener: skip it unscanned.
+  const closable = { script: true, style: true };
+  let out = '';
+  let pos = 0;
+  for (let open = opener.exec(html); open; open = opener.exec(html)) {
+    const tag = open[1]!.toLowerCase() as keyof typeof closers;
+    if (!closable[tag]) continue;
+    const closer = closers[tag];
+    closer.lastIndex = open.index;
+    const close = closer.exec(html);
+    const end = close ? html.indexOf('>', close.index) : -1;
+    if (end < 0) {
+      closable[tag] = false;
+      continue;
+    }
+    out += html.slice(pos, open.index);
+    pos = end + 1;
+    opener.lastIndex = pos;
+  }
+  return out + html.slice(pos);
+}
+
+/**
+ * Drop every tag: a `<` that starts one (a letter, `/` or `!`) through the
+ * next `>`. A `<` in text ("a < b") stays. One scan for `>` per tag, never
+ * re-read, so the cost is linear.
+ */
+function dropTags(html: string): string {
+  let out = '';
+  let pos = 0;
+  let gt = -1;
+  for (let lt = html.indexOf('<'); lt >= 0; lt = html.indexOf('<', pos)) {
+    if (gt < lt) gt = html.indexOf('>', lt);
+    if (gt < 0) break;
+    if (/[a-z/!]/i.test(html[lt + 1] ?? '')) {
+      out += html.slice(pos, lt);
+      pos = gt + 1;
+    } else {
+      out += html.slice(pos, lt + 1);
+      pos = lt + 1;
+    }
+  }
+  return out + html.slice(pos);
+}
+
+/**
+ * Email on the conversation core: a Resend thread is the conversation. A sender
+ * outside the workspace gets no status mail, because a reply invites backscatter
+ * and auto-responder loops; the one exception is the archived project's notice.
+ */
+const emailPort: ChannelPort = {
+  async notify(target, notice) {
+    if (notice.kind === 'create_failed' && notice.error.body.code === 'project_archived') await replyNotAccepting(target);
+  },
+  async prepareFollowUp(target, thread) {
+    const inboxId = target.workspaceId;
+    if (thread.projectId !== target.projectId) {
+      // The inbox moved: the thread's project released it and this one holds
+      // it now. Its old session cannot reach this inbox, so the thread starts
+      // over here. While both projects hold it (an attach in flight), refuse.
+      if ((await listProjectsForWorkspace('email', inboxId)).includes(thread.projectId)) {
+        logger.warn('[email-webhook] two projects hold the inbox; email dropped', { inboxId, projectIds: [thread.projectId, target.projectId] });
+        return 'refuse';
+      }
+      logger.warn('[email-webhook] inbox moved to another project; the thread starts over there', {
+        inboxId,
+        threadId: target.threadId,
+        fromProjectId: thread.projectId,
+        toProjectId: target.projectId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
+    }
+    const binding = await ensureEmailSessionBinding({ projectId: target.projectId, sessionId: thread.sessionId, inboxId });
+    if (binding === 'bound') return 'deliver';
+    if (binding === 'stale') {
+      logger.info('[email-webhook] inbox was removed and added again; the thread starts over', {
+        projectId: target.projectId,
+        inboxId,
+        oldSessionId: thread.sessionId,
+      });
+      return 'restart';
+    }
+    logger.warn('[email-webhook] could not bind the thread session to the inbox connection; email dropped', {
+      projectId: target.projectId,
+      sessionId: thread.sessionId,
+      inboxId,
+    });
+    return 'refuse';
+  },
+};
+
+/**
+ * The session an email thread starts. The inbox's binding picks the agent and
+ * model, a private inbox ("only me") runs as its owner, and the session is
+ * pinned to the inbox's connector account.
+ */
+async function planEmailSession(projectId: string, email: InboundEmail, revived: boolean): Promise<ChannelSessionPlan | null> {
+  const { inboxId, threadId } = email;
   const [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
-  if (!project) return;
+  if (!project) return null;
 
-  // An AgentMail inbox is a first-class channel. Its binding selects the
+  // An email inbox is a first-class channel. Its binding selects the
   // concrete project agent exactly like Slack and Teams bindings do. Older
   // installs have no binding row and fall through to the project default.
   const [selection] = await db
@@ -169,111 +322,49 @@ async function createThreadSession(
     )
     .limit(1);
 
-  const userId = await emailSessionLifecycle.resolveProjectAutomationActor(project.accountId);
-  if (!userId) {
-    console.warn('[email-webhook] no actor for project', projectId);
-    return;
+  // A private inbox ("only me") is its owner's account: its mail starts a
+  // private session as that person, the only session that may use it. A
+  // shared inbox runs as the project's automation actor, visible to the project.
+  const account = await loadEmailInboxAccountForInbox(projectId, inboxId);
+  if (!account) {
+    logger.error('[email-webhook] no active inbox account', { projectId, inboxId });
+    return null;
   }
-
-  const claimKey = `email:threadcreate:${inboxId}:${threadId}`;
-  if (!(await claimThreadCreate(claimKey))) {
-    const sessionId = await waitForThreadSession(inboxId, threadId);
-    if (sessionId) {
-      if (!(await ensureEmailSessionBinding({ projectId, sessionId, inboxId }))) {
-        console.error('[email-webhook] could not bind claimed session to inbox connection', {
-          projectId,
-          sessionId,
-          inboxId,
-        });
-        return;
-      }
-      await emailSessionLifecycle.deliverFollowUp({
-        source: 'email',
-        idempotencyKey: emailFollowUpKey(event),
-        sessionId,
-        text: renderFollowUpPrompt(event),
-      });
-    }
-    return;
-  }
-
-  const initialPrompt = renderAgentPrompt(event, revived);
-  const emailConnectionId = await loadEmailInstallConnectionId(projectId, inboxId);
-  if (!emailConnectionId) {
-    console.error('[email-webhook] no active connection for inbox', {
-      projectId,
-      inboxId,
-    });
-    return;
-  }
-  const result = await emailSessionLifecycle.createSession({
-    source: 'email',
+  const privateInbox = account.ownerType === 'member' && Boolean(account.ownerId);
+  return {
     project,
-    userId,
-    requestingPrincipalType: 'human',
+    ...(privateInbox ? { userId: account.ownerId! } : {}),
+    visibility: privateInbox ? 'private' : 'project',
     body: {
-      base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       connector_bindings: {
-        email: { connection_id: emailConnectionId },
+        email: { connection_id: account.connectionId },
       },
       // Email delivers its prompt via postCreate, so create is the only moment
       // this session has any user text — title from the subject.
-      title_source: messageSubject(event) ?? messageSummary(event),
+      title_source: messageSubject(email) ?? messageSummary(email),
     },
     mayManageSystemConnections: true,
-    queuePolicy: 'on_backpressure',
-    // One key per message, never per thread: the lifecycle keeps a key
-    // forever, so under the thread's key a failed first start (dead-lettered)
-    // answered every later reply in the thread with the same failure, and a
-    // deleted session answered 409 IDEMPOTENCY_KEY_SESSION_DELETED. Racing
-    // messages are serialized by the thread-create claim above.
-    idempotencyKey: event.message.message_id
-      ? `email:create:${inboxId}:${threadId}:${event.message.message_id}`
-      : claimKey,
-    postCreate: [
-      {
-        type: 'bind_chat_thread',
-        platform: 'email',
-        workspaceId: inboxId,
-        threadId,
-      },
-      {
-        type: 'deliver_prompt',
-        source: 'email',
-        text: initialPrompt,
-        userId,
-      },
-    ],
-    visibility: 'project',
     metadata: {
-      source: 'email',
       email: {
         inbox_id: inboxId,
         thread_id: threadId,
-        message_id: event.message.message_id,
-        address: event.message.to?.[0] ?? '',
-        from: messageSender(event),
-        subject: messageSubject(event),
+        message_id: email.emailId,
+        address: email.to[0] ?? '',
+        from: messageSender(email),
+        subject: messageSubject(email),
       },
     },
     extraEnvVars: {
       KORTIX_EMAIL_INBOX_ID: inboxId,
       KORTIX_EMAIL_THREAD_ID: threadId,
-      KORTIX_EMAIL_MESSAGE_ID: event.message.message_id,
-      KORTIX_EMAIL_ADDRESS: event.message.to?.[0] ?? '',
+      KORTIX_EMAIL_MESSAGE_ID: email.emailId,
+      KORTIX_EMAIL_ADDRESS: email.to[0] ?? '',
       KORTIX_FRONTEND_URL: config.FRONTEND_URL,
     },
-  });
-
-  if (result.error) {
-    console.error('[email-webhook] createProjectSession failed', {
-      status: result.error.status,
-      body: result.error.body,
-    });
-    if (result.error.body.code === 'project_archived') await replyNotAccepting(projectId, event);
-  }
+    prompt: renderAgentPrompt(email, revived),
+  };
 }
 
 // A deleted workspace keeps its inbox until the purge, so mail still arrives
@@ -285,12 +376,10 @@ const NOT_ACCEPTING_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const NOT_ACCEPTING_REPLY =
   'This address is not accepting email right now. No one will answer this message.';
 
-async function replyNotAccepting(
-  projectId: string,
-  event: AgentMailMessageReceivedEvent,
-): Promise<void> {
-  const { inbox_id: inboxId, thread_id: threadId, message_id: messageId } = event.message;
-  if (event.event_type !== 'message.received' || !messageId) return;
+async function replyNotAccepting(target: ChannelTarget): Promise<void> {
+  const { projectId, workspaceId: inboxId, threadId, messageId: emailId } = target;
+  // A session-addressed target carries no email to answer (Email is not in session-notice.ts).
+  if (!emailId) return;
   try {
     const claimed = await db
       .insert(chatEventDedup)
@@ -301,77 +390,13 @@ async function replyNotAccepting(
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
     if (claimed.length === 0) return;
-    const apiKey = resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId));
+    const apiKey = resolveEmailApiKey(await emailOwnKeyForInbox(projectId, inboxId));
     if (!apiKey) return;
-    await replyToAgentMailMessage({ apiKey, inboxId, messageId, text: NOT_ACCEPTING_REPLY });
+    await replyToResendThreadEmail({ apiKey, inboxId, threadId, emailId, text: NOT_ACCEPTING_REPLY });
   } catch (err) {
     logger.warn('[email-webhook] not-accepting reply failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-async function alreadyHandled(key: string): Promise<boolean> {
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length === 0;
-  } catch (err) {
-    console.warn('[email-webhook] event dedup check failed', err);
-    return false;
-  }
-}
-
-async function claimInboundMessage(event: AgentMailMessageReceivedEvent): Promise<boolean> {
-  const key = `email:msg:${event.message.inbox_id}:${event.message.message_id}`;
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    if (inserted.length > 0) recordClaim(key);
-    return inserted.length > 0;
-  } catch (err) {
-    console.error('[email-webhook] inbound message claim failed (fail-open)', err);
-    return true;
-  }
-}
-
-async function claimThreadCreate(key: string): Promise<boolean> {
-  try {
-    const inserted = await db
-      .insert(chatEventDedup)
-      .values({
-        eventId: key,
-        expiresAt: new Date(Date.now() + EMAIL_EVENT_DEDUPE_TTL_MS),
-      })
-      .onConflictDoNothing({ target: chatEventDedup.eventId })
-      .returning({ eventId: chatEventDedup.eventId });
-    return inserted.length > 0;
-  } catch (err) {
-    console.warn('[email-webhook] thread-create claim failed (fail-open)', err);
-    return true;
-  }
-}
-
-async function waitForThreadSession(inboxId: string, threadId: string): Promise<string | null> {
-  const deadline = Date.now() + 8_000;
-  for (;;) {
-    const row = await findChatThread({ platform: 'email', workspaceId: inboxId, threadId });
-    if (row) return row.sessionId;
-    if (Date.now() >= deadline) return null;
-    await new Promise((r) => setTimeout(r, 250));
   }
 }
 
@@ -380,44 +405,41 @@ async function waitForThreadSession(inboxId: string, threadId: string): Promise<
  * harness's shell has. The MCP face exists only in OpenCode's config, so a
  * prompt that named MCP tools left a pi session unable to read or answer.
  */
-function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
-  const readThreadArgs = JSON.stringify({
-    inbox_id: event.message.inbox_id,
-    thread_id: event.message.thread_id,
-  });
+function emailTurnInstructions(email: InboundEmail): string {
+  const readThreadArgs = JSON.stringify({ thread_id: email.threadId });
   const replyArgs = JSON.stringify({
-    inbox_id: event.message.inbox_id,
-    message_id: event.message.message_id,
+    thread_id: email.threadId,
+    message_id: email.emailId,
     text: '<reply>',
   });
   return [
     'How to work:',
-    '- You are operating an AgentMail inbox assigned to this Kortix project.',
+    '- You are operating an email inbox assigned to this Kortix project.',
     '- Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
-    `- Read the current thread: \`kortix connectors call email.get_thread '${readThreadArgs}'\`.`,
+    `- Read the current thread, every email with its body: \`kortix connectors call email.get_thread '${readThreadArgs}'\`.`,
     `- Reply in the same conversation: \`kortix connectors call email.reply_message '${replyArgs}'\`. Use \`html\` instead of \`text\` only when needed.`,
-    '- Start a new outbound email with `kortix connectors call email.send_message` and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- Start a new outbound email with `kortix connectors call email.send_message` and args containing `to`, `subject`, and `text` or `html`.',
     '- Run `kortix connectors show email.<action>` to confirm an input schema before the first call. Pass long or quoted args as a file: `@args.json`.',
-    '- The AgentMail API key is resolved server-side. Do not look for it in the sandbox.',
+    '- Kortix fills in the inbox and resolves the email key server-side. Do not look for either in the sandbox.',
     '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
   ].join('\n');
 }
 
-function renderFollowUpPrompt(event: AgentMailMessageReceivedEvent): string {
+function renderFollowUpPrompt(email: InboundEmail): string {
   return [
-    `New email reply from ${messageSender(event)} in the same thread:`,
+    `New email reply from ${messageSender(email)} in the same thread:`,
     '',
-    messageSummary(event),
+    messageSummary(email),
     '',
-    emailTurnInstructions(event),
+    emailTurnInstructions(email),
   ].join('\n');
 }
 
-function renderAgentPrompt(event: AgentMailMessageReceivedEvent, revived: boolean): string {
+function renderAgentPrompt(email: InboundEmail, revived: boolean): string {
   const lines: string[] = [];
   if (revived) {
     lines.push(
-      'NOTE: This email thread had an earlier conversation, but that session was deleted.',
+      'NOTE: This email thread had an earlier conversation in another Kortix session, which cannot continue it: that session was deleted, or this inbox was removed and connected again.',
       'Pick the thread back up from the current email context.',
       '',
     );
@@ -425,63 +447,45 @@ function renderAgentPrompt(event: AgentMailMessageReceivedEvent, revived: boolea
   lines.push(
     "You're answering an email thread as the Kortix agent.",
     '',
-    `Inbox ID:   ${event.message.inbox_id}`,
-    `Thread ID:  ${event.message.thread_id}`,
-    `Message ID: ${event.message.message_id}`,
-    `From:       ${messageSender(event)}`,
-    `To:         ${(event.message.to ?? []).join(', ')}`,
-    `Subject:    ${messageSubject(event) ?? '(no subject)'}`,
+    `Inbox ID:   ${email.inboxId}`,
+    `Thread ID:  ${email.threadId}`,
+    `Message ID: ${email.emailId}`,
+    `From:       ${messageSender(email)}`,
+    `To:         ${email.to.join(', ')}`,
+    `Subject:    ${messageSubject(email) ?? '(no subject)'}`,
     '',
-    messageSummary(event),
+    messageSummary(email),
     '',
-    emailTurnInstructions(event),
+    emailTurnInstructions(email),
   );
   return lines.join('\n');
 }
 
-function isInboundMessageEvent(eventType: AgentMailMessageReceivedEvent['event_type']): boolean {
-  return eventType === 'message.received' || eventType === 'message.received.unauthenticated';
+function messageSubject(email: InboundEmail): string | null {
+  return email.subject;
 }
 
-function messageSubject(event: AgentMailMessageReceivedEvent): string | null {
-  return event.message.subject ?? event.thread?.subject ?? null;
-}
-
-function messageSummary(event: AgentMailMessageReceivedEvent): string {
-  const body = event.message.extracted_text || event.message.text || event.message.preview || '';
-  const attachments = event.message.attachments?.length
+function messageSummary(email: InboundEmail): string {
+  const attachments = email.attachments.length
     ? [
         '',
         'Attachments:',
-        ...event.message.attachments.map(
-          (a) =>
-            `- ${a.filename ?? a.attachment_id} (${a.content_type ?? 'unknown'}, ${a.size} bytes)`,
+        ...email.attachments.map(
+          (a) => `- ${a.filename ?? a.id} (${a.size ?? 'unknown'} bytes, attachment_id ${a.id})`,
         ),
       ].join('\n')
     : '';
-  return ['Email body:', body || '(empty)', attachments].filter(Boolean).join('\n');
+  return ['Email body:', email.text || '(empty)', attachments].filter(Boolean).join('\n');
 }
 
-function messageSender(event: AgentMailMessageReceivedEvent): string {
-  if (typeof event.message.from === 'string' && event.message.from.trim()) {
-    return event.message.from.trim();
-  }
-  const from = event.message.from_;
-  if (typeof from === 'string') return from.trim();
-  if (Array.isArray(from)) {
-    const first = from[0];
-    if (typeof first === 'string') return first.trim();
-    if (first && typeof first === 'object') {
-      return (first.email ?? first.address ?? first.name ?? '').trim();
-    }
-  }
-  return '';
+function messageSender(email: InboundEmail): string {
+  return email.from.trim();
 }
 
 const MAILBOX_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
 
 /**
- * Resolve the one canonical From mailbox AgentMail delivered.
+ * The one canonical mailbox in a From value.
  *
  * A substring match is not an authorization boundary: a crafted value such
  * as `allowed@example.com <attacker@evil.test>` contains an allowlisted
@@ -489,42 +493,7 @@ const MAILBOX_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+
  * Accept either a bare address or one ordinary `Display Name <address>`
  * mailbox, and reject ambiguous/multi-address values entirely.
  */
-function senderEmail(event: AgentMailMessageReceivedEvent): string | null {
-  const primary = event.message.from;
-  const alternate = event.message.from_;
-  const primaryMailbox =
-    typeof primary === 'string' && primary.trim() ? canonicalMailbox(primary) : null;
-  const alternateMailbox = canonicalStructuredMailbox(alternate);
-  if (primaryMailbox && alternate !== undefined) {
-    return alternateMailbox === primaryMailbox ? primaryMailbox : null;
-  }
-  if (typeof primary === 'string' && primary.trim()) return primaryMailbox;
-  return alternateMailbox;
-}
-
-function canonicalStructuredMailbox(
-  from: AgentMailMessageReceivedEvent['message']['from_'],
-): string | null {
-  if (Array.isArray(from)) {
-    if (from.length !== 1) return null;
-    const [first] = from;
-    if (typeof first === 'string') return canonicalMailbox(first);
-    if (!first || typeof first !== 'object') return null;
-    const rawEmail = typeof first.email === 'string' ? first.email.trim() : '';
-    const rawAddress = typeof first.address === 'string' ? first.address.trim() : '';
-    const email = rawEmail ? canonicalMailbox(rawEmail) : null;
-    const address = rawAddress ? canonicalMailbox(rawAddress) : null;
-    // AgentMail payload variants have used both keys. Treat them as aliases,
-    // but never choose one silently when a malformed or conflicting second
-    // value is present: either condition makes the sender ambiguous.
-    if ((rawEmail && !email) || (rawAddress && !address)) return null;
-    if (email && address && email !== address) return null;
-    return email ?? address;
-  }
-  return typeof from === 'string' ? canonicalMailbox(from) : null;
-}
-
-function canonicalMailbox(value: string): string | null {
+export function canonicalMailbox(value: string): string | null {
   const sender = value.trim().toLowerCase();
   const matches = [...sender.matchAll(MAILBOX_PATTERN)];
   if (matches.length !== 1) return null;
@@ -546,12 +515,10 @@ function canonicalMailbox(value: string): string | null {
   return mailbox;
 }
 
-export function isAgentMailSenderAllowedForTest(
-  event: AgentMailMessageReceivedEvent,
-  policy: AgentMailSenderPolicy,
-): boolean {
+/** Whether the inbox's sender policy lets `from` start or continue a session. */
+export function isEmailSenderAllowed(from: string, policy: EmailSenderPolicy): boolean {
   if (policy.mode !== 'restricted') return true;
-  const email = senderEmail(event);
+  const email = canonicalMailbox(from);
   if (!email) return false;
   if (policy.allowedEmails.includes(email)) return true;
   const domain = email.split('@')[1] ?? '';
@@ -564,11 +531,4 @@ export function isAgentMailSenderAllowedForTest(
     return matchesEmailSenderRegex(policy.allowedRegex, email);
   }
   return false;
-}
-
-function senderAllowed(
-  event: AgentMailMessageReceivedEvent,
-  policy: AgentMailSenderPolicy,
-): boolean {
-  return isAgentMailSenderAllowedForTest(event, policy);
 }

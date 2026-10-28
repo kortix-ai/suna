@@ -36,9 +36,11 @@
 export const LOCATIONS = 'Belgrade · San Francisco' as const;
 
 export const hero = {
-  eyebrow: 'Careers',
   title: 'Open positions.',
   lead: 'Belgrade, Serbia and San Francisco.',
+  description: 'An extremely small, talent-dense team. Every opening is open in both cities.',
+  roleLabel: 'Role',
+  summaryLabel: 'Summary',
   ctaPrimary: 'Apply',
   ctaSecondary: 'Why Kortix exists',
   ctaSecondaryHref: '/about',
@@ -118,8 +120,8 @@ export const openings = [
 ] as const;
 
 export const bar = {
-  eyebrow: 'The filter',
   title: 'What we look for.',
+  titleMuted: 'Ownership, agency and skill.',
   lead: 'An extremely small, talent-dense team. Everyone can AGI-max now, so the one chokepoint left is judgement. Either you are performing or you are not.',
   items: [
     {
@@ -161,8 +163,8 @@ export const bar = {
 } as const;
 
 export const apply = {
-  eyebrow: 'Apply',
   title: 'Tell me what you have worked on.',
+  titleMuted: 'I read every application.',
   body: 'One open question, no form to game. Products, campaigns, companies, things you built for yourself — whatever you want me to know. It comes straight to me. I am Marko.',
   cta: 'Apply',
   directLead: 'Or write to me directly:',
@@ -221,6 +223,6 @@ export function getLocalizedCareersContent(tI18nComplete: UiTranslator) {
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );
 }
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';

@@ -106,6 +106,9 @@ const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
 ];
 
 const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
+  // Create commits the session and initial prompt together. Racing that write
+  // returns a retryable 503 while the session continues provisioning unseen.
+  { method: 'POST', path: /^\/v1\/projects\/[^/]+\/sessions$/ },
   // The streaming secret relay. An SSE or long-body relay legitimately outlives
   // any fixed deadline, and `/v1/projects` is not an exempt PREFIX, so without
   // this every relay over 25s dies with a 503 `request_deadline`.
@@ -178,11 +181,44 @@ export function requestDeadlineMs(c: Context): number | null {
   return DEADLINE_MS;
 }
 
+// ─── Deadline orphan classification (KRTX-2583) ────────────────────────────
+//
+// Hono's `timeout` races the handler against a timer; when the timer wins the
+// exception reaches onError, the 503 is served, and the handler CONTINUES
+// running with no owner. When that orphan later resumes — prod 2026-10-16
+// 22:43:05, request mvbjzd4t-a8d: GET /v1/runtime-assets/manifest spent
+// 31.9s waiting out a stalled DB pool — its first context touch
+// (`c.header('Cache-Control', 'no-cache')` in the manifest handler) makes
+// Hono recreate the already sent Response from its consumed body stream,
+// which Bun rejects with `TypeError: Body object should not be disturbed or
+// locked`. compose catches at every dispatch level and calls onError a second
+// time, which captured that TypeError to Sentry (Better Stack pattern
+// 235fd74b…) although the client already had the designed, retryable 503.
+//
+// The deadline therefore marks the context the moment it fires — the
+// exception factory runs inside the timer callback, before anything unwinds —
+// and `isDeadlineOrphan` classifies any LATER error from the same context as
+// an orphan: its response was already served, so the error can no longer
+// reach a client. http-errors.ts logs orphans at warn and skips
+// captureException. The deadline exception itself is not an orphan — it IS
+// the response.
+export const DEADLINE_SERVED_VAR = 'requestDeadlineServed' as const;
+
+export const markDeadlineServed = (c: Context): RequestDeadlineHTTPException => {
+  c.set(DEADLINE_SERVED_VAR, true);
+  return new RequestDeadlineHTTPException();
+};
+
+export const markAttachmentDeadlineServed = (c: Context): RequestDeadlineHTTPException => {
+  c.set(DEADLINE_SERVED_VAR, true);
+  return new RequestDeadlineHTTPException(Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS));
+};
+
 // Built once — each duration is constant for the process lifetime.
-const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPException());
+const bounded = timeout(Math.max(DEADLINE_MS, 1), markDeadlineServed);
 const completionBounded = timeout(
   Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS),
-  () => new RequestDeadlineHTTPException(Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS)),
+  markAttachmentDeadlineServed,
 );
 
 /**
@@ -212,6 +248,17 @@ export class RequestDeadlineHTTPException extends HTTPException {
 
 export function isRequestDeadlineHTTPException(err: unknown): err is RequestDeadlineHTTPException {
   return err instanceof RequestDeadlineHTTPException;
+}
+
+/**
+ * True when this request's response was already served by the deadline guard
+ * (the timer fired, the 503 went out) and `err` therefore belongs to an
+ * ORPHANED handler continuation — see the block comment above
+ * `DEADLINE_SERVED_VAR`. The deadline exception itself is not an orphan: it
+ * is the response.
+ */
+export function isDeadlineOrphan(c: Context, err: unknown): boolean {
+  return c.get(DEADLINE_SERVED_VAR) === true && !isRequestDeadlineHTTPException(err);
 }
 
 export async function requestDeadline(c: Context, next: Next): Promise<void | Response> {

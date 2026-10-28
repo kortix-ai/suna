@@ -11,7 +11,7 @@
  * RO_ADMIN, DENY_USER) are per-team-account, so they're provisioned by the
  * `team()` fixture inside the flows that exercise them — not globally.
  */
-import { Client } from '../core/client';
+import { Client, mintAccountToken } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type { Principal, Principals } from '../core/types';
@@ -116,14 +116,9 @@ async function provisionOwner(
   const ownerClient = new Client(env.apiUrl).as(owner.principal);
   // Fresh name per attempt: if a laundered 5xx hid a committed create, the
   // orphan token is inert (revoked by gc) and the retry cannot 409 on it.
-  const tok = await retryBootstrapCreate('owner PAT mint', async (attempt) => {
-    const res = await ownerClient.post('/v1/accounts/tokens', {
-      name: `e2e-${runId}-owner-bootstrap${attempt > 1 ? `-r${attempt}` : ''}`,
-    });
-    res.status([200, 201]);
-    return res;
-  });
-  const patAcctSecret = tok.json<any>()?.secret_key as string | undefined;
+  const { secret_key: patAcctSecret } = await retryBootstrapCreate('owner PAT mint', (attempt) =>
+    mintAccountToken(ownerClient, `e2e-${runId}-owner-bootstrap${attempt > 1 ? `-r${attempt}` : ''}`),
+  );
 
   // Fund the OWNER's personal account so flows aren't blocked by the free-tier
   // 1-project / 402 limits — real Stripe test-mode subscribe → paid tier + credits.

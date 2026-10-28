@@ -4,7 +4,7 @@
  * Each Phosphor icon ships its SVG body for all six weights in one
  * `new Map([["bold", …], ["duotone", …], …])`, and the package has no
  * single-weight entry point. The app renders four weights (see
- * `SHIPPED_ICON_WEIGHTS` in src/lib/icons/icon-config.ts), so this loader
+ * `SHIPPED_ICON_WEIGHTS` in packages/ui/src/lib/icon-config.ts), so this loader
  * drops the other entries from every defs module in the browser build.
  *
  * Options: { weights: string[] } — the weights to keep.

@@ -24,7 +24,7 @@ import {
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
-import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
+import { productionPlatinumClient, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
 export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
@@ -216,6 +216,14 @@ export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotN
 }
 
 
+/**
+ * The `region` of a Platinum build request: `{ region }` for a regional image,
+ * `{}` for the home region, so a home build sends exactly what it always did.
+ */
+export function platinumRegionBody(region: string | undefined): { region?: string } {
+  return region ? { region } : {};
+}
+
 /** Parallel exact-name lookups per batch when ranking last-ready candidates. */
 const NAMED_LOOKUP_CONCURRENCY = 6;
 
@@ -235,16 +243,13 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
-      observeTemplates.invalidate();
       try {
         // Return the EXACT external template id the build proved
         // (requireExternalTemplateId inside buildOnce) — threaded to the caller
         // so the transition runner pins THAT id, never a name-list re-derivation.
         const result = await this.buildOnce(input, userDockerfile, tap);
-        observeTemplates.invalidate();
         return result;
       } catch (err) {
-        observeTemplates.invalidate();
         lastErr = err;
         if (!isRetryablePlatinumBuildError(err) || attempt === BUILD_ATTEMPTS) throw err;
         const msg = err instanceof Error ? err.message : String(err);
@@ -287,9 +292,17 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // streams the context — so this brings the Platinum path to parity.
       // uploadWithRetry re-presigns + retries on a transient S3 408/timeout/5xx
       // (see its doc comment) — context_s3_key below is whichever attempt won.
+      //
+      // A regional image is built in its region: both phases name it, so the
+      // context lands in that region's bucket and a build host there reads it.
+      // Without a region Platinum builds where the request lands, which is the
+      // home control plane behind PLATINUM_API_URL. A us_region project's every
+      // rebuild was then copied to us-east, and its first session waited for
+      // that copy (58-66 s per rebuild on prod, 2026-10-17).
+      const region = platinumRegionBody(input.region);
       const context_s3_key = await uploadWithRetry(
         () => this.client.json<{ upload_url: string; context_s3_key: string }>(
-          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify(region) },
         ),
         tarPath,
       );
@@ -324,6 +337,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
           ...kernelModules.body,
+          ...region,
         }),
       });
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
@@ -360,14 +374,20 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
    * uses this ONLY when the user image is unchanged AND the predecessor is active
    * on Platinum — otherwise it falls back to a normal buildSnapshot.
    */
-  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult> {
-    observeTemplates.invalidate();
+  async swapAgent(
+    newSnapshotName: string,
+    sourceSnapshotName: string,
+    opts: { region?: string } = {},
+  ): Promise<BuildSnapshotResult> {
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
       // uploadWithRetry — streamed + retried on transient S3 failure; see buildOnce.
+      // Platinum patches in the SOURCE template's region, on a host that reads
+      // the patch file from that region's bucket, so the presign names it too.
       const context_s3_key = await uploadWithRetry(
         () => this.client.json<{ upload_url: string; context_s3_key: string }>(
-          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+          '/v1/templates/from-build/presign',
+          { method: 'POST', body: JSON.stringify(platinumRegionBody(opts.region)) },
         ),
         gzPath,
       );
@@ -391,7 +411,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // FIX-B: return the exact patched-template id (same contract as buildSnapshot).
       return { externalTemplateId: externalId };
     } finally {
-      observeTemplates.invalidate();
       await cleanup();
     }
   }
@@ -501,40 +520,35 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
     if (!this.client.isConfigured()) return;
-    observeTemplates.invalidate();
-    try {
-      // One exact-name request, not a walk of every template in the org: this
-      // runs on the first session after a deploy (reaping the predecessor).
-      const lookup = await lookupTemplatesNamed(snapshotName, this.client);
-      const matches =
-        'named' in lookup
-          ? lookup.named
-          : (await paginateTemplates(() => undefined, this.client, lookup.firstPage)).all.filter(
-              (template) => template.name === snapshotName,
-            );
-      let inUse = 0;
-      for (const template of matches) {
-        try {
-          await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // A lookup/delete race is equivalent to already gone.
-          if (/ -> 404(?:\s|$)/.test(message)) continue;
-          // Platinum refuses while sandboxes still pin the rootfs. Keep deleting
-          // free duplicates, then report the refusal as a typed error.
-          const pinned = templateInUseCount(message);
-          if (pinned !== null) {
-            inUse += pinned;
-            continue;
-          }
-          // Provider outages must propagate so fan-out reports this provider as failed.
-          throw err;
+    // One exact-name request, not a walk of every template in the org: this
+    // runs on the first session after a deploy (reaping the predecessor).
+    const lookup = await lookupTemplatesNamed(snapshotName, this.client);
+    const matches =
+      'named' in lookup
+        ? lookup.named
+        : (await paginateTemplates(() => undefined, this.client, lookup.firstPage)).all.filter(
+            (template) => template.name === snapshotName,
+          );
+    let inUse = 0;
+    for (const template of matches) {
+      try {
+        await this.client.json(`/v1/templates/${template.id}`, { method: 'DELETE' });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // A lookup/delete race is equivalent to already gone.
+        if (/ -> 404(?:\s|$)/.test(message)) continue;
+        // Platinum refuses while sandboxes still pin the rootfs. Keep deleting
+        // free duplicates, then report the refusal as a typed error.
+        const pinned = templateInUseCount(message);
+        if (pinned !== null) {
+          inUse += pinned;
+          continue;
         }
+        // Provider outages must propagate so fan-out reports this provider as failed.
+        throw err;
       }
-      if (inUse > 0) throw new SnapshotInUseError(snapshotName, inUse);
-    } finally {
-      observeTemplates.invalidate();
     }
+    if (inUse > 0) throw new SnapshotInUseError(snapshotName, inUse);
   }
 
   async listSnapshots(): Promise<Array<{ name: string }>> {

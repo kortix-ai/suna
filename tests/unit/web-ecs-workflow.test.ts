@@ -208,8 +208,10 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
-    // Previews run on Platinum only: Daytona is not a dispatch option.
+    // Previews run on Platinum only: Daytona is not a dispatch option, and no
+    // preview job reads a Daytona credential.
     expect(workflow).not.toContain('- daytona');
+    expect(workflow).not.toContain('DAYTONA_');
     expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);

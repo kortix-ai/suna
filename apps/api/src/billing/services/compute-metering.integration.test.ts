@@ -31,9 +31,8 @@ Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_compute_metering',
   STRIPE_WEBHOOK_SECRET: 'whsec_compute_metering',
   KORTIX_URL: 'http://127.0.0.1:1',
-  DAYTONA_API_KEY: 'compute-metering-test',
-  DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-  DAYTONA_TARGET: 'us',
+  PLATINUM_API_KEY: 'compute-metering-test',
+  PLATINUM_API_URL: 'http://127.0.0.1:1',
 });
 
 /** Provider status per external id; an Error makes the probe throw. */
@@ -277,10 +276,10 @@ withDb('compute metering on PostgreSQL', () => {
       const accountId = await account({});
       const sandboxId = await sandbox(accountId);
 
-      const id = await startComputeSession({ sandboxId, accountId, provider: 'e2b', spec: SPEC });
+      const id = await startComputeSession({ sandboxId, accountId, provider: 'daytona', spec: SPEC });
 
       const [open] = await windowsOf(sandboxId);
-      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'e2b', costUsd: 0 });
+      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'daytona', costUsd: 0 });
       expect(open!.lastBilledAt).toBe(open!.startedAt);
       expect(await ledgerOf(accountId)).toEqual([]);
     });
@@ -405,12 +404,12 @@ withDb('compute metering on PostgreSQL', () => {
       const first = await startComputeSession({
         sandboxId,
         accountId,
-        provider: 'e2b',
+        provider: 'daytona',
         spec: { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 },
       });
       await pauseComputeSession(sandboxId);
 
-      const second = await reopenComputeForSandbox(sandboxId, accountId, null, null, 'daytona');
+      const second = await reopenComputeForSandbox(sandboxId, accountId, null, null, 'platinum');
 
       expect(second).not.toBe(first);
       expect(await windowsOf(sandboxId)).toEqual([
@@ -419,7 +418,7 @@ withDb('compute metering on PostgreSQL', () => {
           id: second,
           state: 'active',
           endedAt: null,
-          provider: 'e2b',
+          provider: 'daytona',
           cpuCores: 4,
           memoryGb: 8,
           diskGb: 40,

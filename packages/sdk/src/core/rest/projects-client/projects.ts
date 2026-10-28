@@ -25,13 +25,18 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases` and `apps` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps`, `llm_gateway`, `pi_harness`, `agentmail_email`, `connectors_v2` and `connectors_api_discover` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
  * runs its base branch's config release. And `apps`: Apps is generally
- * available — every project can create and deploy Apps.
+ * available — every project can create and deploy Apps. And `llm_gateway`:
+ * the LLM gateway is the only model path for every project. And `pi_harness`:
+ * every new session runs pi. And `agentmail_email`: every project can
+ * connect an email inbox. And `connectors_v2` with `connectors_api_discover`:
+ * the Kortix connectors catalog is the only connectors path; the API sends a
+ * constant `true` for both.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -44,25 +49,30 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
+  /** @deprecated Graduated — integrations.sh is part of the one Kortix catalog. Removed in the next major. */
   | 'connectors_api_discover'
+  /** @deprecated Graduated — every project can connect an email inbox. Removed in the next major. */
   | 'agentmail_email'
   /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
+  /** @deprecated Graduated — the LLM gateway is the only model path for every project. Removed in the next major. */
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
   /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
+  /** @deprecated Withdrawn — the monitor box was removed; an App with a schedule or a `type: app` trigger replaces it. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'monitors'
   | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
-  /** @deprecated Withdrawn — the pi worker split left the product; `pi_harness` runs pi in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  /** @deprecated Withdrawn — the pi worker split left the product; pi runs in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'pi_worker'
   /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
+  /** @deprecated Graduated — every new session runs pi; OpenCode is sunset. The API sends `true` for every project. Removed in the next major. */
   | 'pi_harness'
   | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
@@ -78,12 +88,24 @@ export type FeatureFlagKey =
   | 'drives'
   /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
+  /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
   | 'session_log_restore'
+  /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
+  | 'connectors_v2'
+  | 'project_channels'
+  | 'agent_rooms'
+  | 'goals'
+  | 'workspace_volume'
+  | 'artifacts'
+  /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
+  | 'email_channel'
+  /** Session groups: named folders of the project's sessions that every member shares. Experimental, off by default. */
+  | 'session_groups'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The deprecated keys of {@link FeatureFlagKey}: the API never sends them. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`) sends a constant `true`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -94,8 +116,15 @@ type GraduatedFeatureFlagKey =
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
+  | 'llm_gateway'
   | 'stateless_sessions'
-  | 'ephemeral_sandboxes';
+  | 'ephemeral_sandboxes'
+  | 'session_log'
+  | 'pi_harness'
+  | 'agentmail_email'
+  | 'monitors'
+  | 'connectors_v2'
+  | 'connectors_api_discover';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -106,24 +135,25 @@ type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
-  'connectors_api_discover',
-  'agentmail_email',
-  'llm_gateway',
   'meta_agent',
-  'monitors',
   'reminders',
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
-  'pi_harness',
   'genui',
   'us_region',
   'event_triggers',
   'notification_center',
   'volumes',
   'drives',
-  'session_log',
   'session_log_restore',
+  'project_channels',
+  'agent_rooms',
+  'goals',
+  'workspace_volume',
+  'artifacts',
+  'email_channel',
+  'session_groups',
 ] as const;
 
 /**
@@ -146,7 +176,8 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * True for an internal-only flag (`session_log`, `session_log_restore`,
+   * `workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.
@@ -206,6 +237,10 @@ export interface KortixProject {
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
   default_sandbox_provider?: SandboxProviderName | null;
+  /** Per-project default reasoning effort (a models.dev effort label such as
+   *  `low`/`high`/`xhigh`), or null for automatic. Delivery injects it as the
+   *  prompt's `variant` whenever the prompt carries none. */
+  default_reasoning_effort?: string | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
   available_sandbox_providers?: SandboxProviderName[];
   /** Per-project emoji shown on the project card. Server-validated: exactly one
@@ -225,6 +260,7 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
   default_agent?: string | null;
@@ -236,6 +272,8 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** Internal automation remains registered but is not offered by agent pickers. */
+    hidden?: boolean;
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
@@ -326,9 +364,12 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
-  /** Base provider USD per million tokens, before `platformFeePercent`. */
+  /**
+   * @deprecated The API no longer sends this. Kortix Platinum inference serves every
+   * managed model at one price, which is the model's `cost`. Removed in the next major.
+   */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';
@@ -628,9 +669,8 @@ export interface ProjectLlmCatalogProvidersResponse {
 /**
  * The PROVIDER-level rows of the live runtime catalog — id/name/env/doc per
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
- * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
- * native (non-gateway) projects too — see the route's doc comment
- * (apps/api/src/projects/routes/models.ts, `/llm-catalog/providers`).
+ * needs. See the route's doc comment (apps/api/src/projects/routes/models.ts,
+ * `/llm-catalog/providers`).
  */
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
@@ -692,6 +732,24 @@ export async function provisionProject(
  * against the literal phase list.
  */
 export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
+
+/**
+ * Stable error code `provisionProjectStream` (below) puts on the error it
+ * throws when the stream closes WITHOUT a terminal `done`/`error` frame
+ * (`/provision-stream`'s contract is "always a terminal frame", so this
+ * shape means the connection died mid-provision — a proxy idle timeout, a
+ * dropped socket).
+ *
+ * The close is an UNKNOWN result, deliberately NOT classed as a transport
+ * failure: the request demonstrably reached the server (the 200 headers
+ * arrived) and may still commit or roll back — only the response was lost.
+ * The host recovers it by replaying the SAME `idempotency_key` over the
+ * plain `POST /projects/provision` (the key exists for exactly that), which
+ * answers `409 provision_in_flight` until the first attempt commits, then
+ * `201` with the same project. Client-side only: the server never emits
+ * this string.
+ */
+export const PROVISION_STREAM_UNTERMINATED_CODE = 'provision_stream_unterminated';
 
 /**
  * One frame of `POST /projects/provision-stream`'s SSE body.
@@ -866,8 +924,46 @@ export async function provisionProjectStream(
   // A stream that closes without a terminal event is a failure, not a
   // success. Resolving here would hand the caller an undefined project id
   // and route a user to `/projects/undefined`.
-  if (!settled) throw new Error('Provision stream ended without a result');
+  //
+  // `ApiError` with a stable code, not a bare `Error`: the close means the
+  // create's result is UNKNOWN — the route's handler outlives a lost reader
+  // and may still commit or roll back — so a host cannot tell this apart
+  // from a real failure without sniffing the message. The code is what lets
+  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
+  // idempotency key over the plain route and recover the true outcome
+  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
+  // every existing reader.
+  if (!settled) {
+    throw new ApiError('Provision stream ended without a result', {
+      code: PROVISION_STREAM_UNTERMINATED_CODE,
+    });
+  }
   return settled;
+}
+
+export interface ProjectQuota {
+  /** True when the account cannot create another project right now. */
+  capped: boolean;
+  /** The active-project cap. `Number.MAX_SAFE_INTEGER` when the plan does not cap. */
+  limit: number;
+  /** Active projects in the account; null when the plan does not cap (no count ran). */
+  count: number | null;
+  /** The denial message a create would answer with; null when not capped. */
+  message: string | null;
+}
+
+/**
+ * The account's project-cap state — `GET /projects/quota`. Lets a create UI
+ * pre-check whether `provisionProject` would be denied by the plan cap
+ * BEFORE the user fills the form and hits the 403, so the page can show the
+ * cap reason up front and keep the submit disabled. Omit `accountId` to
+ * resolve the same default account the create itself targets (the server's
+ * `resolveProjectAccount` default); pass the account when the UI has already
+ * resolved one.
+ */
+export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
+  const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
+  return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
 }
 
 export interface ManagedGitStatus {
@@ -1010,6 +1106,21 @@ export async function updateProjectSandboxProvider(
   );
 }
 
+/** Set or clear the per-project default reasoning effort (Settings → General).
+ *  Pass `null` to clear (automatic). The value must be an effort label the
+ *  model catalog publishes; the server validates it. Returns the updated
+ *  project with `default_reasoning_effort` re-validated on read. */
+export async function setDefaultReasoningEffort(
+  projectId: string,
+  effort: string | null,
+): Promise<KortixProject> {
+  return unwrap(
+    await backendApi.put<KortixProject>(`/projects/${projectId}/default-reasoning-effort`, {
+      effort,
+    }),
+  );
+}
+
 /** PUBLIC provider-migration transition view served by the poll endpoint. Carries
  *  only status / providers / generation / timestamps / a user-safe error class +
  *  label — never internal build/lease detail. */
@@ -1110,6 +1221,26 @@ export async function setProjectOnboardingProfile(projectId: string, profile: On
 
 export async function archiveProject(projectId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+}
+
+/**
+ * Move the project — and everything it owns (sessions, drives, git
+ * connection, project-bound tokens, member grants) — to another account.
+ *
+ * The caller needs the destructive tier on the project (`project.delete`)
+ * AND the right to create projects in the TARGET account; the API refuses a
+ * caller who is not a member of the target (or whose target role cannot
+ * create projects) with 403 before anything moves, and 403 with the target
+ * account's project-cap body when the move would exceed its plan. The usage
+ * ledger stays with the source account: spend stays where it was consumed.
+ */
+export async function transferProject(projectId: string, accountId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
+      `/projects/${projectId}/transfer`,
+      { account_id: accountId },
+    ),
+  );
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────

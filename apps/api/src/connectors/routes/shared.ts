@@ -17,6 +17,7 @@ export const CatalogActionSchema = z
     name: z.string(),
     description: z.string(),
     risk: z.string(),
+    likely_risk: z.enum(['read', 'write', 'unknown']).optional(),
     inputSchema: z.any().nullable(),
     outputSchema: z.any().nullable().optional(),
   })
@@ -47,6 +48,8 @@ export const CatalogConnectorSchema = z
     accounts: z.array(CatalogAccountSchema).optional(),
     /** Label of the account an unnamed call resolves to, or null if none. */
     default_account: z.string().nullable().optional(),
+    /** The policy set the caller's agent runs under here; absent = base rules. */
+    policy_set: z.string().optional(),
   })
   .openapi('ConnectorCatalogConnector');
 export const ConnectorsResponseSchema = z
@@ -73,6 +76,9 @@ export const AdminConnectorSchema = CatalogConnectorSchema.extend({
   credentialSource: z.enum(['none', 'stored', 'project_secret', 'platform']),
   secretSet: z.boolean(),
   lastError: z.string().nullable(),
+  state: z.enum(['disabled', 'error', 'needs_account', 'connected']),
+  state_reason: z.string().nullable(),
+  auth_needed: z.boolean(),
 }).openapi('ConnectorAdminConnector');
 export const AdminConnectorsResponseSchema = z
   .object({ connectors: z.array(AdminConnectorSchema) })
@@ -101,6 +107,8 @@ export const CallResponseSchema = z
     output: z.any().optional(),
     upstream_status: z.number().int().nullable().optional(),
     upstream_error: z.string().optional(),
+    // `status: 'tool_error'` (HTTP 200, `ok: false`): the tool's own error text.
+    error: z.string().optional(),
     retry_after_seconds: z.number().int().optional(),
   })
   .passthrough()
@@ -134,6 +142,9 @@ export const AttachmentUploadResponseSchema = z
 // Path-param schema shared by all admin routes.
 export const ProjectParam = z.object({ projectId: z.string() });
 export const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
+export const ProjectSlugPolicySetParam = z.object({ projectId: z.string(), slug: z.string(), name: z.string() });
+/** `?policy_set=<name>` on the connector policy routes: one set's rules. */
+export const PolicySetQuery = z.object({ policy_set: z.string().optional() });
 export const ConnectorSecretBindingInputSchema = z.object({
   secret_identifier: z
     .string()

@@ -331,8 +331,10 @@ async function buildCommit(
   if (parentSha) await runGit(['read-tree', parentSha], repoPath, false, null, indexEnv);
   else await runGit(['read-tree', '--empty'], repoPath, false, null, indexEnv);
   for (const b of blobs) {
+    const entry = await runGit(['--literal-pathspecs', 'ls-files', '--stage', '-z', '--', b.path], repoPath, false, null, indexEnv);
+    const mode = entry.stdout.split(' ', 1)[0] || '100644';
     await runGit(
-      ['update-index', '--add', '--cacheinfo', `100644,${b.sha},${b.path}`],
+      ['update-index', '--add', '--cacheinfo', `${mode},${b.sha},${b.path}`],
       repoPath,
       false,
       null,
@@ -363,6 +365,8 @@ async function buildCommit(
 /** Options for {@link commitMultipleFilesToBranch}: what to write, where, and
  *  the revisions the caller read it from. */
 interface CommitFilesOptions {
+  /** Pin a destructive operation to the exact tree it inspected. */
+  expectedCommit?: string;
   files?: Array<{ path: string; content: string }>;
   /** Repo-relative paths to remove from the tree in the same commit. */
   deletes?: string[];
@@ -407,6 +411,9 @@ export async function commitMultipleFilesToBranch(
 
   const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
   const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
+  if (opts.expectedCommit !== undefined && parentSha !== opts.expectedCommit) {
+    throw new GitFileRevisionConflictError(branch);
+  }
   const expectedFileRevision = normalizeExpectedFileRevision(opts);
   await assertExpectedRevisions(repoPath, parentSha, expectedFileRevision, opts);
 

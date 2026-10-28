@@ -124,6 +124,16 @@ describe('standalone gateway inference routes', () => {
     let providerBytes = 0;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      // An API that serves the one-call admission.
+      if (url.endsWith('/internal/gateway/admit')) {
+        return Response.json({
+          admission: { ok: true, principal: { userId: 'u', accountId: 'a' } },
+          route: { policyId: 'direct', primaryModel: 'large-model' },
+          candidates: [
+            { provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1', apiKey: 'key', billingMode: 'none', markup: 0 },
+          ],
+        });
+      }
       if (url.endsWith('/internal/gateway/authorize')) {
         return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
       }
@@ -284,6 +294,8 @@ describe('standalone chat and messages admission', () => {
     const { app, inflightRequests } = buildServer({ inflight });
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
+      // An older API without the one-call admission: the gateway uses the separate calls.
+      if (url.endsWith('/internal/gateway/admit')) return Response.json({ error: 'not found' }, { status: 404 });
       if (url.endsWith('/internal/gateway/authorize')) return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
       if (url.endsWith('/internal/gateway/resolve-route')) return Response.json({ route: { policyId: 'direct', primaryModel: 'x' } });
       if (url.endsWith('/internal/gateway/resolve-upstream')) return Response.json({ candidates: [{ provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1', apiKey: 'key', billingMode: 'none', markup: 0 }] });
@@ -304,4 +316,18 @@ describe('standalone chat and messages admission', () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+describe('public discovery without credentials', () => {
+  const { app } = buildServer();
+  for (const path of ['/.well-known/security.txt', '/robots.txt', '/sitemap.xml']) {
+    test(path, async () => {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).not.toContain('/admin');
+      if (path.endsWith('security.txt')) expect(text).toContain('Contact: mailto:security@kortix.com');
+      if (path === '/sitemap.xml') expect(text).not.toContain('<loc>');
+    });
+  }
 });

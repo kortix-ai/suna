@@ -39,7 +39,12 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // cached across requests: this endpoint gates real spending, so it must
   // always read the live balance.
   let account = await getCreditAccount(accountId);
-  if (!account) {
+  // The $2 welcome grant is a WALLET write — a charging action. It must stay
+  // behind the same charging gate as every debit, or a billing-disabled
+  // deployment (self-hosted, dev) mints free_tier_grant ledger rows on every
+  // billing-state read of a row-less account (KRTX-1832). With charging off
+  // the row stays absent and the response falls through to the free defaults.
+  if (!account && config.KORTIX_BILLING_INTERNAL_ENABLED) {
     await initializeFreeTierAccount(accountId);
     account = await getCreditAccount(accountId);
   }
@@ -106,6 +111,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       total: credits.total,
       daily: credits.daily,
       monthly: credits.monthly,
+      expires_at: isoValue(account?.nextCreditGrant),
       extra: credits.extra,
       can_run: isAdmin ? true : billingStateAllowsRun(billingState),
       // Lifetime rollups, maintained from credit_ledger by the
@@ -119,6 +125,10 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       lifetime_purchased: Number(sub?.lifetimePurchased ?? 0) || 0,
       lifetime_used: Number(sub?.lifetimeUsed ?? 0) || 0,
       daily_refresh: null,
+    },
+    model_access: {
+      managed: isAdmin || resolved.entitlements.managedModels,
+      requires_provider_key: !isAdmin && !resolved.entitlements.managedModels,
     },
     billing_state: isAdmin ? ('active' as const) : billingState,
     has_active_subscription: hasLiveSubscription(billingSnapshot),
@@ -241,6 +251,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       lifetime_used: 0,
       daily_refresh: null,
     },
+    model_access: { managed: true, requires_provider_key: false },
     billing_state: 'active',
     has_active_subscription: false,
     plan: {

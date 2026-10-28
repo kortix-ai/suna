@@ -4,12 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
-FRONTEND_PID=""
-API_PID=""
-GATEWAY_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
-STRIPE_PID=""
 
 # Standalone LLM gateway: a single fixed port (laptop dev is single-instance,
 # unlike worktrees which stride per-slot) and a fixed shared internal token the
@@ -67,8 +63,9 @@ load_local_env() {
   export ENV_MODE=local
   # Default only — the shared .env (decrypted above) or a personal .env.local
   # (below) decides the real provider order (e.g. "platinum,daytona").
-  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
-  # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
+  # Platinum is the reference provider; Daytona is a legacy opt-in fallback.
+  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-platinum}"
+  # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Platinum)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
   # keeps talking to the API on localhost via NEXT_PUBLIC_BACKEND_URL, so only
@@ -86,7 +83,6 @@ load_local_env() {
   # standalone gateway owns /v1/chat/completions. Exported AFTER the .env
   # decrypt so they override whatever the committed apps/api/.env carries.
   if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
-    export LLM_GATEWAY_ENABLED=true
     export LLM_GATEWAY_BASE_URL=""
     export LLM_GATEWAY_PROXY_PORT="$GATEWAY_PORT"
     export GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN"
@@ -108,7 +104,7 @@ load_local_env() {
   export INTERNAL_SERVICE_KEY="local-flow-runner-internal-service-key"
 }
 
-# Front the local API with a public Cloudflare quick tunnel so cloud Daytona
+# Front the local API with a public Cloudflare quick tunnel so cloud
 # sandboxes can reach it as $KORTIX_URL. No-op when KORTIX_DEV_TUNNEL=0 or the
 # default provider isn't cloud-based.
 ensure_dev_tunnel() {
@@ -145,8 +141,8 @@ ensure_dev_tunnel() {
     export KORTIX_URL="$api_origin"
     printf '%s' "$api_origin" > "$TUNNEL_URL_FILE"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
-    if [[ "$default_provider" == "daytona" ]]; then
-      echo "[dev] ⚠️  Default sandbox provider is Daytona (cloud) but the tunnel is off —"
+    if [[ "$default_provider" == "platinum" || "$default_provider" == "daytona" ]]; then
+      echo "[dev] ⚠️  Default sandbox provider ($default_provider) is a cloud provider but the tunnel is off —"
       echo "[dev]     sessions will fail with 'OpenCode runtime is not ready' because the"
       echo "[dev]     sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."
     fi
@@ -154,7 +150,7 @@ ensure_dev_tunnel() {
   fi
 
   if ! command -v cloudflared >/dev/null 2>&1; then
-    echo "[dev] ERROR: cloudflared is required for cloud (Daytona) sandboxes but was not found."
+    echo "[dev] ERROR: cloudflared is required for cloud sandboxes but was not found."
     echo "[dev]        Cloud sandboxes can't reach localhost; they need a public KORTIX_URL."
     echo "[dev]        Install:  brew install cloudflared"
     echo "[dev]        Or:       KORTIX_DEV_TUNNEL=0 pnpm dev   (skips the tunnel — cloud sandboxes won't reach localhost)"
@@ -253,7 +249,6 @@ start_tunnel_watchdog() {
       pkill -f -- '--hot src/index.ts' 2>/dev/null || true
     done
   ) &
-  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -287,7 +282,6 @@ ensure_stripe_listen() {
   stripe listen --api-key "$STRIPE_SECRET_KEY" \
     --forward-to "http://localhost:${api_port}/v1/billing/webhooks/stripe" 2>&1 \
     | sed 's/^/[stripe] /' &
-  STRIPE_PID=$!
 }
 
 # Start the standalone LLM gateway (apps/llm-gateway) so the API routes sandbox
@@ -306,7 +300,6 @@ ensure_dev_gateway() {
       GATEWAY_API_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
       pnpm --filter @kortix/llm-gateway-server dev 2>&1 | sed 's/^/[gateway] /'
   ) &
-  GATEWAY_PID=$!
 }
 
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
@@ -343,7 +336,7 @@ ensure_agent_binary() {
 
 # Same idea for the `kortix` CLI binary the layered snapshot builder bakes into
 # every sandbox (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH). Without
-# it, Daytona snapshot builds fail the required-artifact check.
+# it, provider snapshot builds fail the required-artifact check.
 ensure_cli_binary() {
   local dir="$ROOT_DIR/apps/cli"
   local bin="$dir/dist/kortix"
@@ -501,35 +494,13 @@ kill_dev_ports() {
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
-
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-    wait "$FRONTEND_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${GATEWAY_PID:-}" ]] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    wait "$GATEWAY_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    kill "$TUNNEL_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
-    kill "$STRIPE_PID" 2>/dev/null || true
-  fi
-  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
-
+  # The worker and all its pipelines share this private group, including
+  # tunnels rotated by its watchdog. Never match another checkout by name.
+  kill -TERM -- "-$STACK_PID" 2>/dev/null || true
+  /bin/sleep 0.2
+  kill -KILL -- "-$STACK_PID" 2>/dev/null || true
+  wait "$STACK_PID" 2>/dev/null || true
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG" || true
   exit "$exit_code"
 }
 
@@ -607,26 +578,24 @@ INTERNAL_KORTIX_ENV=dev
 PORT=8008
 KORTIX_URL=http://localhost:8008
 KORTIX_SKIP_ENSURE_SCHEMA=1
-ALLOWED_SANDBOX_PROVIDERS=daytona
+ALLOWED_SANDBOX_PROVIDERS=platinum
 DATABASE_URL=${SB_DB_URL}
 SUPABASE_URL=${SB_API_URL}
 SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
 SUPABASE_JWT_SECRET=${SB_JWT_SECRET}
 INTERNAL_SERVICE_KEY=local-flow-runner-internal-service-key
 KORTIX_BILLING_INTERNAL_ENABLED=true
-DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
-DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
-DAYTONA_TARGET=${DAYTONA_TARGET:-us}
-DAYTONA_WARM_TARGET=${DAYTONA_WARM_TARGET:-}
+PLATINUM_API_KEY=${PLATINUM_API_KEY:-}
+PLATINUM_API_URL=${PLATINUM_API_URL:-}
 TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET:-dev-local-tunnel-signing-secret-32chars}
 API_KEY_SECRET=${API_KEY_SECRET:-dev-local-api-key-secret-please-32chars}
-OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+PLATINUM_INFERENCE_API_KEY=${PLATINUM_INFERENCE_API_KEY:-}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SCHEDULER_ENABLED=false
 EOF
   # NEXT_PUBLIC_BACKEND_URL is RELATIVE (/v1) so the browser hits the SAME
-  # origin it's served from (whichever preview proxy — Daytona or Kortix
+  # origin it's served from (whichever preview proxy — the provider's or a Kortix
   # subdomain) and Next's built-in rewrite (next.config.ts: /v1/* ->
   # http://localhost:8008/v1/*) proxies it to the in-sandbox API. That makes a
   # single preview URL function as a full proxy (frontend + API), no CORS, no
@@ -694,7 +663,6 @@ EOF
     if pnpm --filter Kortix-Computer-Frontend build; then
       echo "[dev] Frontend built — serving (pnpm start) on :3000"
       pnpm --filter Kortix-Computer-Frontend start &
-      FRONTEND_PID=$!
     else
       echo "[dev] ⚠️  Frontend build failed — continuing with API only"
     fi
@@ -705,8 +673,7 @@ EOF
     # values); the sandbox `.env.local` is already exported above (relative
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
-    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
-    FRONTEND_PID=$!
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --port "${WEB_PORT:-3000}") &
   fi
 
   echo "[dev] Starting API (dev) on :8008"
@@ -717,7 +684,8 @@ EOF
   KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev:envfile
 }
 
-trap cleanup EXIT INT TERM
+run_dev_local() {
+set +m
 
 if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
   run_sandbox_dev
@@ -810,11 +778,10 @@ ensure_dev_gateway
 if [[ "$BUILD_MODE" == "1" ]]; then
   # The API needs no build step, so boot it in the BACKGROUND now and let it
   # come up on :8008 while the (multi-minute) frontend build runs — overlapping
-  # the two instead of paying them back-to-back. cleanup() kills API_PID on exit.
+  # the two instead of paying them back-to-back. cleanup() stops the worker's
+  # process group on exit, so the background API needs no tracked pid.
   echo "[dev] Starting API (production runtime, no --hot) on :8008…"
   ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
-  API_PID=$!
-
 
   # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
   # BUILD time, so the build must run with the env load_local_env() exported (it
@@ -844,7 +811,6 @@ if [[ "$BUILD_MODE" == "1" ]]; then
 else
   echo "[dev] Starting frontend..."
   pnpm --filter Kortix-Computer-Frontend dev &
-  FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
   # Turbopack's on-demand compile. Unauthenticated requests still compile the
@@ -867,3 +833,20 @@ else
     echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
   done
 fi
+
+}
+
+# Job control assigns the single worker its own process group — the group
+# cleanup() kills. Turn it off inside the worker so nested pipelines inherit
+# that group (also on Bash 3.2). Wait for the worker with `wait`, never `fg`:
+# bash defers a trapped signal until `fg`'s foreground job ends, so a TERM
+# sent to this script while the stack runs would hang the script until the
+# worker exits on its own. `wait` is the one wait bash interrupts the moment
+# a trapped signal arrives, so the traps below run at signal time.
+set -m
+run_dev_local "$@" <&0 &
+STACK_PID=$!
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+wait "$STACK_PID"

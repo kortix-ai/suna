@@ -5,6 +5,7 @@
  */
 export type * from './types';
 export * from './classify';
+export * from './display-order';
 export * from './errors';
 export * from './grouping';
 export * from './open-turn';

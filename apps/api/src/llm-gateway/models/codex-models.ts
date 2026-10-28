@@ -29,6 +29,17 @@ export function isRefusedCodexModelId(slug: string): boolean {
   return REFUSED_MODEL_IDS.includes(slug);
 }
 
+/** The ChatGPT backend's `context_window` per slug from a Codex `models.json` body. */
+export function parseCodexContextWindows(body: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of ((body as { models?: unknown } | null)?.models as { slug?: unknown; context_window?: unknown }[] | undefined) ?? []) {
+    if (typeof m?.slug === 'string' && Number.isInteger(m.context_window) && (m.context_window as number) > 0) {
+      out[m.slug] = m.context_window as number;
+    }
+  }
+  return out;
+}
+
 /** Picker-visible Codex slugs from a Codex `models.json` body, in Codex's own
  *  priority order. Throws on a shape it does not recognise so the caller keeps
  *  its last good list. */

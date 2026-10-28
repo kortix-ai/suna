@@ -1,10 +1,10 @@
 'use client';
 
+import { useActiveSection } from '@/hooks/use-active-section';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export type TocItem = { title: ReactNode; url: string; depth: number };
 
@@ -12,30 +12,12 @@ export type TocItem = { title: ReactNode; url: string; depth: number };
  * as you scroll. Ids come from the MDX headings (fumadocs slugs). */
 export function UseCaseToc({ items }: { items: TocItem[] }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [active, setActive] = useState('');
-
-  useEffect(() => {
-    const ids: string[] = [];
-    for (const item of items) {
-      const id = item.url.replace(/^#/, '');
-      if (id) ids.push(id);
-    }
-    if (ids.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) setActive(entry.target.id);
-        }
-      },
-      { rootMargin: '-88px 0px -70% 0px', threshold: 0 },
-    );
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
-  }, [items]);
+  const active = useActiveSection(
+    items.map((item) => item.url.replace(/^#/, '')).filter((id) => id !== ''),
+    // Band runs from just under the fixed navbar to the top 30% of the
+    // viewport, so a section lights up while its heading is in view.
+    { rootMargin: '-88px 0px -70% 0px' },
+  );
 
   if (!items || items.length === 0) return null;
 

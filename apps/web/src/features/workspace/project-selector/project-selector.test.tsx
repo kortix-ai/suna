@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
 
 import { ProjectSelectorView, type ProjectSelectorViewProps } from './project-selector';
-import { buildAccountSections } from './project-selector-model';
+import { buildAccountSections } from '@kortix/ui/workspace/project-selector/project-selector-model';
 
 function account(id: string, role: KortixAccount['account_role'], name: string): KortixAccount {
   return { account_id: id, name, account_role: role } as KortixAccount;
@@ -142,4 +142,30 @@ describe('ProjectSelectorView', () => {
     expect(render({ name: 'Dogfood Tester' })).toContain('Logged in as Dogfood Tester');
     expect(render({ name: '  ' })).toContain('>user@example.com</span>');
   });
+});
+
+test('computer pairing selection preserves the destination for every project', () => {
+    const html = render({
+      connectComputer: true,
+      sections: buildAccountSections({
+        accounts: [account('a', 'owner', 'Personal')],
+        lists: [{ accountId: 'a', data: [project('p1', 'a', 'Website'), project('p2', 'a', 'Notes')], isError: false }],
+      }),
+    });
+    expect(html).toContain('href="/projects/p1/settings/computer"');
+    expect(html).toContain('href="/projects/p2/settings/computer"');
+    expect(html).not.toContain('href="/projects/p1"');
+  });
+
+test('zero-project pairing entry carries intent on the create card and other empty accounts', () => {
+  const html = render({
+    connectComputer: true,
+    sections: buildAccountSections({
+      creatableAccountIds: new Set(['a', 'b']),
+      accounts: [account('a', 'owner', 'Personal'), account('b', 'owner', 'Team')],
+      lists: [{ accountId: 'a', data: [], isError: false }, { accountId: 'b', data: [], isError: false }],
+    }),
+  });
+  expect(html).toContain('href="/new?account=a&amp;connect=computer"');
+  expect(html).toContain('href="/new?account=b&amp;connect=computer"');
 });
