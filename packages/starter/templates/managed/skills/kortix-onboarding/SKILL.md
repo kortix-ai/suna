@@ -319,8 +319,13 @@ the features you have. Name what comes next for each part in one line.
 
 Propose three concrete first tasks built from their own words in stages 1–4 as
 a GenUI `RankedList`, then one `question` with those three as options plus
-`custom`. Do the chosen task end to end, in this session, until it ends in a
-real object: a file, an artifact, a hosted App, a sent message, a filled sheet.
+`custom`. Do the chosen task end to end until it ends in a real object: a
+file, an artifact, a hosted App, a sent message, a filled sheet. A task a
+project agent is made for goes to that agent with the `agent` tool (default
+`session: "separate"`): one call starts its session, waits and returns its
+final message. Ask it to end with the result and the paths of its files, and
+show that. Never delegate or wait with `kortix sessions new`, `kortix sessions
+wait-for` or `kortix sessions cp`.
 
 Then take the next step toward the self-driving company: offer to run the task
 on a schedule (a trigger) or to check back later (a loop: `kortix loop`), and set it

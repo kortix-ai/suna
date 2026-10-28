@@ -112,7 +112,7 @@ state. Use `git` and the file tools for files and commits.
 | Task | Command |
 | --- | --- |
 | What every session does, talk to one | `kortix sessions status`, `sessions log <id>` (read-only), `sessions chat <id> --prompt "…"` |
-| Parallel work in its own sandbox | `kortix sessions new --prompt "…" --json`, then `sessions wait-for <id>` (the turn ends) |
+| Hand a task to another agent | The `agent` tool (default `session: "separate"`: its own session; one call waits up to 30 min and returns its final message). Not `sessions new` + `wait-for` in bash: bash stops after 30 s |
 | Change requests, the review inbox | `kortix cr ls\|show\|diff\|merge-preview`, `kortix review ls` |
 | Triggers | `kortix triggers ls\|info\|fire\|add\|set\|enable\|disable` |
 | Loops on this session | `kortix loop "…" --in 24h`, `kortix loops ls\|pause\|resume\|rm` |
