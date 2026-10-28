@@ -332,6 +332,8 @@ export interface DriveViewMenuProps {
   sortDisabled?: boolean;
   /** `secondary` when the trigger sits in a button group with New. */
   variant?: 'ghost' | 'secondary';
+  /** Show the trigger, inert (a session explorer whose computer is booting). */
+  disabled?: boolean;
 }
 
 /**
@@ -349,6 +351,7 @@ export function DriveViewMenu({
   showHiddenToggle = false,
   sortDisabled = false,
   variant = 'ghost',
+  disabled,
 }: DriveViewMenuProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const viewMode = useFilesStore((s) => s.viewMode);
@@ -364,7 +367,7 @@ export function DriveViewMenu({
   return (
     <DropdownMenu>
       <Hint label={tI18nComplete.raw('text1d55ff7c387c')} side="bottom">
-        <DropdownMenuTrigger asChild>
+        <DropdownMenuTrigger asChild disabled={disabled}>
           <Button
             variant={variant}
             // In the button group it matches New and Share: 32px, not 28px.
@@ -485,6 +488,9 @@ interface DriveNewMenuProps {
   onNewFolder?: () => void;
   /** Drop the label and render a `+` square. For narrow panels. */
   compact?: boolean;
+  /** Show the trigger, inert, with no write handler yet (a session explorer
+   *  whose computer is booting). */
+  disabled?: boolean;
 }
 
 /** The "New" menu renders when the explorer supplied any write handler. */
@@ -558,13 +564,14 @@ export function DriveNewMenu({
   onNewFile,
   onNewFolder,
   compact,
+  disabled,
 }: DriveNewMenuProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  if (!hasWriteActions({ onUpload, onNewFile, onNewFolder })) return null;
+  if (!disabled && !hasWriteActions({ onUpload, onNewFile, onNewFolder })) return null;
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild disabled={disabled}>
         {compact ? (
           <Button
             variant="secondary"

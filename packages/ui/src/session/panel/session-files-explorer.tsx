@@ -7,7 +7,12 @@ import Loading from '../../primitives/loading';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { FilesStoreProvider, useFilesStore } from '../../files/runtime';
 import { SandboxFileExplorer } from '../../files/runtime/sandbox-file-explorer';
-import { DRIVE_ACTION_ROW_CLASS } from '../../files/project/components/drive-toolbar';
+import { ButtonGroup } from '../../primitives/button-group';
+import {
+  DRIVE_ACTION_ROW_CLASS,
+  DriveNewMenu,
+  DriveViewMenu,
+} from '../../files/project/components/drive-toolbar';
 import {
   useOpenChangeRequest,
   useSessionBaseRef,
@@ -235,8 +240,36 @@ function SessionFilesExplorerInner({
   );
 }
 
+/**
+ * The explorer's chrome while the session's computer boots: the same tab row,
+ * New and View buttons, all disabled, over `children` (the boot status). Mounts
+ * nothing that reads the sandbox.
+ */
+export function SessionFilesBooting({
+  mode,
+  children,
+}: {
+  mode: SessionPanelMode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tabs value={mode} className="bg-background flex h-full min-h-0 flex-col gap-0">
+      <div className={DRIVE_ACTION_ROW_CLASS}>
+        <PanelTabs changedCount={0} disabled />
+        <ButtonGroup className="ml-auto shrink-0">
+          <DriveNewMenu compact disabled />
+          <DriveViewMenu variant="secondary" disabled onRefresh={noop} onDownloadDir={noop} />
+        </ButtonGroup>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </Tabs>
+  );
+}
+
+const noop = () => {};
+
 /** The tab strip, shared by both branches so it renders identically on each. */
-function PanelTabs({ changedCount }: { changedCount: number }) {
+function PanelTabs({ changedCount, disabled }: { changedCount: number; disabled?: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     // The row draws the rule, so the list keeps only the sliding underline,
@@ -244,10 +277,10 @@ function PanelTabs({ changedCount }: { changedCount: number }) {
     // Triggers carry no padding, so the first tab's text starts on the row's
     // own left edge.
     <TabsList type="underline" className="h-full gap-5 border-b-0">
-      <TabsTrigger value="files" className="w-fit flex-none px-0">
+      <TabsTrigger value="files" disabled={disabled} className="w-fit flex-none px-0">
         {tI18nComplete.raw('text866956901fd1')}
       </TabsTrigger>
-      <TabsTrigger value="changes" className="w-fit flex-none gap-1.5 px-0">
+      <TabsTrigger value="changes" disabled={disabled} className="w-fit flex-none gap-1.5 px-0">
         {tI18nComplete.raw('textbbd4b6a86bc6')}
         {changedCount > 0 && (
           <CountBadge count={changedCount} />
