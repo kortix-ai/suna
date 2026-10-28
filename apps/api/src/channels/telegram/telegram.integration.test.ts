@@ -1565,7 +1565,8 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
   });
 
   test('the list names allowed users and requests from Telegram and falls back when getChat fails', async () => {
-    chats.set('4010', { first_name: 'Ada', username: 'ada_synthetic', photo: { small_file_id: 'f4010', small_file_unique_id: 'u4010' } });
+    // Telegram's names get the stored-request cleaning: no bidi override, no zero-width space.
+    chats.set('4010', { first_name: 'A\u202Eda\u200B', username: 'ada_synthetic', photo: { small_file_id: 'f4010', small_file_unique_id: 'u4010' } });
     chats.set('4012', 'fail');
     const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
     // 4011 is a legacy numeric id; 4013 asked over 30 days ago; 4010 asked and is allowed.

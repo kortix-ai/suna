@@ -211,7 +211,7 @@ export async function dismissTelegramAccessRequest(projectId: string, id: string
  * A Telegram name: a string without control or format characters (bidi
  * overrides and isolates, zero-width), at most `max` code points (never half an emoji).
  */
-function cleanName(value: unknown, max: number): string | null {
+export function cleanName(value: unknown, max: number): string | null {
   return typeof value === 'string' ? Array.from(value.replace(/[\p{Cc}\p{Cf}]/gu, '')).slice(0, max).join('') || null : null;
 }
 

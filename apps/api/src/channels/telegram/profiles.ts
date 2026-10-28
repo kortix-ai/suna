@@ -5,7 +5,7 @@
  */
 import { mapWithConcurrency } from '../../shared/map-with-concurrency';
 import { telegramCall, telegramDownload, telegramUnreachable } from './api';
-import { loadTelegramBotToken, loadTelegramInstall, type TelegramAccessRequestEntry } from './installs';
+import { cleanName, loadTelegramBotToken, loadTelegramInstall, type TelegramAccessRequestEntry } from './installs';
 
 export interface TelegramUser {
   user_id: string;
@@ -48,9 +48,10 @@ async function fetchProfile(token: string, userId: string): Promise<TelegramProf
     const fileId = str(photo?.small_file_id);
     const uniqueId = str(photo?.small_file_unique_id);
     return {
-      username: str(chat.username),
-      first_name: str(chat.first_name),
-      last_name: str(chat.last_name),
+      // Names from Telegram get the same cleaning as a stored request's.
+      username: cleanName(chat.username, 32),
+      first_name: cleanName(chat.first_name, 64),
+      last_name: cleanName(chat.last_name, 64),
       photo: fileId && uniqueId ? { file_id: fileId, unique_id: uniqueId } : null,
     };
   } catch (error) {
