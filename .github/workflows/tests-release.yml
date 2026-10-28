@@ -297,8 +297,12 @@ jobs:
 
   # The deployed browser journeys, split by measured spec duration
   # (tests/src/core/browser-shard.ts, table in tests/e2e/shard-durations.json).
+  # Off until the repository variable RELEASE_BROWSER_LANES is `on` (Marko,
+  # 2026-10-28: "turn off any of the web browser lanes for now"). Turn them
+  # back on with `gh variable set RELEASE_BROWSER_LANES --body on`.
   browser:
     name: deployed browser shard
+    if: vars.RELEASE_BROWSER_LANES == 'on'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -527,13 +531,16 @@ jobs:
           echo "contract lanes: $contract"
           failed=0
           [ "$api" = "success" ] || failed=1
-          [ "$browser" = "success" ] || failed=1
+          # A skipped browser job passes only while the lanes are switched off.
+          if [ "${{ vars.RELEASE_BROWSER_LANES }}" = "on" ] || [ "$browser" != "skipped" ]; then
+            [ "$browser" = "success" ] || failed=1
+          fi
           [ "$contract" = "success" ] || failed=1
           if [ "$failed" -ne 0 ]; then
             echo "::error::A release suite job did not pass (api=$api browser=$browser contract=$contract)."
             exit 1
           fi
-          echo "The contract lanes, the deployed API smoke and every browser shard passed."
+          echo "The contract lanes, the deployed API smoke and the browser shards (result: $browser) passed."
       # The release suite is ONE gate: this check is the only one the `prod`
       # ruleset requires, so it also requires every other check on the release
       # commit (CI, CodeQL, DB Migrations, scanners) to finish green. A check
