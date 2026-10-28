@@ -661,6 +661,14 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/developers#sdk-reference',
         permanent: true,
       },
+      // /docs opens the Guide (founder, 2026-10-28). The landing page stays
+      // in the build: the docs build check and the /docs Markdown mirror
+      // read it.
+      {
+        source: '/docs',
+        destination: '/docs/guide',
+        permanent: false,
+      },
       {
         source: '/docs/guide/get-started',
         destination: '/docs/guide#get-started',
