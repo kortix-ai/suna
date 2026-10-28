@@ -13,6 +13,10 @@ project:
 # you talk to, is built in: it routes each task to the right agent below.
 default_agent: worker
 
+# Project skills: folders under skills/, registered by name. Each agent then
+# enables them with its own `skills:` grant.
+skills: {}
+
 agents:
   worker:
     description: "General-purpose worker: coding, research, writing, ops and data work, done end to end in its own sandbox."
@@ -28,5 +32,5 @@ agents:
 
 # More you can add here, each with an example in the reference:
 #   sandbox.templates   a custom image or Dockerfile for sessions
-#   skills, tools       your own, registered by name, then enabled per agent
+#   tools               your own, registered by name, then enabled per agent
 #   triggers            run an agent on a schedule or an event

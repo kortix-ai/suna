@@ -181,6 +181,10 @@ describe('getStarterFiles', () => {
       true,
     );
     expect(dflt.some((f) => f.path === 'skills/pdf/SKILL.md')).toBe(true);
+    // Shipped folders are registered too: an unregistered skill is invisible to every agent.
+    const manifest = dflt.find((f) => f.path === 'kortix.yaml')?.content ?? '';
+    expect(manifest).toContain('  pdf: skills/pdf');
+    expect(manifest).toContain('  presentations: skills/presentations');
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
