@@ -1,4 +1,4 @@
-// Project channels — Slack + email inbound/outbound connection installs.
+// Project channels — Slack, Teams, email and Telegram connection installs.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -185,12 +185,41 @@ export interface TelegramInstallation {
   username: string | null;
   /** Telegram user ids allowed to talk to the bot; anyone else gets a pairing reply. */
   allowed_user_ids: string[];
+  /** How many people messaged the bot privately and are not allowed yet. Absent on older servers. */
+  access_request_count?: number;
 }
+
+/** A Telegram user, as the bot knows them. */
+export interface TelegramUser {
+  user_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  /** Changes when the profile photo changes; null when the user has no visible photo. Pass it to `getTelegramUserPhoto`. */
+  photo_version: string | null;
+  /** False when Telegram returned no profile and the bot has never seen the user: only `user_id` is real. */
+  known: boolean;
+}
+
+/** A person who messaged the bot privately but is not allowed yet. */
+export interface TelegramAccessRequest extends TelegramUser {
+  /** ISO time of their latest message. */
+  last_seen: string;
+}
+
+export interface TelegramUsers {
+  /** In allowed-list order. */
+  allowed: TelegramUser[];
+  /** Newest first. Excludes allowed users and requests older than 30 days. */
+  requests: TelegramAccessRequest[];
+}
+
+const telegramPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/telegram`;
 
 /** The project's Telegram bot, or null when none is connected (or the flag is off). */
 export async function getTelegramInstallation(projectId: string): Promise<TelegramInstallation | null> {
   const res = await backendApi.get<TelegramInstallation | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+    `${telegramPath(projectId)}/installation`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -210,7 +239,7 @@ export async function connectTelegram(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.post<TelegramInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
+      `${telegramPath(projectId)}/connect`,
       input,
       { showErrors: false },
     ),
@@ -225,7 +254,7 @@ export async function setTelegramAllowedUsers(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.put<TelegramInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/telegram/allowed-users`,
+      `${telegramPath(projectId)}/allowed-users`,
       { user_ids: userIds },
       { showErrors: false },
     ),
@@ -234,10 +263,73 @@ export async function setTelegramAllowedUsers(
 }
 
 export async function disconnectTelegram(projectId: string): Promise<void> {
-  const res = await backendApi.delete(`/projects/${encodeURIComponent(projectId)}/channels/telegram`, {
-    showErrors: false,
-  });
+  const res = await backendApi.delete(telegramPath(projectId), { showErrors: false });
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect Telegram');
+}
+
+/** The allowed users and the people who asked for access, with their Telegram names. */
+export async function listTelegramUsers(projectId: string): Promise<TelegramUsers> {
+  return unwrap(
+    await backendApi.get<TelegramUsers>(`${telegramPath(projectId)}/users`, { showErrors: false }),
+    'Failed to load Telegram users',
+  );
+}
+
+/** Allow one Telegram user. Adds the id once and clears their access request. */
+export async function allowTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.post<TelegramInstallation>(
+      `${telegramPath(projectId)}/allowed-users`,
+      { user_id: userId },
+      { showErrors: false },
+    ),
+    'Failed to allow the Telegram user',
+  );
+}
+
+/** Remove one Telegram user from the allowed list. Idempotent. */
+export async function removeTelegramUser(projectId: string, userId: string): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.delete<TelegramInstallation>(
+      `${telegramPath(projectId)}/allowed-users/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove the Telegram user',
+  );
+}
+
+/** Dismiss one access request without allowing the user. Idempotent. */
+export async function dismissTelegramAccessRequest(
+  projectId: string,
+  userId: string,
+): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.delete<TelegramInstallation>(
+      `${telegramPath(projectId)}/access-requests/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    'Failed to dismiss the access request',
+  );
+}
+
+/**
+ * A Telegram user's profile photo (JPEG), fetched through the Kortix API so the
+ * bot token stays server-side. Null when the user has no visible photo.
+ * `version` is `TelegramUser.photo_version`; it keys the HTTP cache.
+ */
+export async function getTelegramUserPhoto(
+  projectId: string,
+  userId: string,
+  version?: string | null,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  const query = version ? `?v=${encodeURIComponent(version)}` : '';
+  const res = await backendApi.get<Blob>(
+    `${telegramPath(projectId)}/users/${encodeURIComponent(userId)}/photo${query}`,
+    { showErrors: false, signal },
+  );
+  if (res.error?.status === 404) return null;
+  return unwrap(res, 'Failed to load the Telegram photo');
 }
 
 /**

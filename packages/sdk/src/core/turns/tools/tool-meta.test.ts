@@ -64,6 +64,15 @@ describe('getToolPrimaryArg', () => {
     ).toBe('Daytona sandboxes on daytona.io');
     expect(getToolPrimaryArg(part('mystery', {}))).toBe('');
   });
+
+  test('an image_gen call reads as its first prompt and how many more, never its arguments as JSON', () => {
+    expect(getToolPrimaryArg(part('image_gen', { action: 'generate', prompts: ['A fox in a shuttle', 'An owl', 'A hare'] }))).toBe(
+      'A fox in a shuttle (+2)',
+    );
+    expect(getToolPrimaryArg(part('image_gen', { prompts: ['A fox in a shuttle'] }))).toBe('A fox in a shuttle');
+    expect(getToolPrimaryArg(part('image_gen', { prompt: 'A paper-cutout fox' }))).toBe('A paper-cutout fox');
+    expect(getToolPrimaryArg(part('image_gen', { prompts: ['x'.repeat(100)] }))).toBe(`${'x'.repeat(60)}…`);
+  });
 });
 
 describe('contextToolTrigger', () => {

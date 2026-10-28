@@ -144,8 +144,8 @@ export async function remintWireMessageId(
   transcript: InboxTranscriptState,
 ): Promise<string> {
   // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
-  // mid-turn user message ~4s after the POST (measured against a real sandbox
-  // in `inbox-midturn-forward.live.test.ts`), and two prompts sent
+  // mid-turn user message ~4s after the POST (measured against a real
+  // sandbox), and two prompts sent
   // inside that window read the SAME `newest` and mint the SAME clock. The
   // user's own two messages then sort by 14 random base62 characters: either
   // they run in the wrong order, or the loser sorts under an assistant reply

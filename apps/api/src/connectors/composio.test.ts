@@ -536,6 +536,49 @@ test('executeComposio treats invalid Linear GraphQL as caller error, not provide
   expect(result.data).toMatchObject({ error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' });
 });
 
+test('executeComposio uploads a URL in a file field and refuses an internal URL by field name', async () => {
+  const executed: Array<Record<string, unknown>> = [];
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: true },
+    execute: async (_slug, args) => {
+      executed.push(args ?? {});
+      return { data: { id: 'video-1' }, error: null, logId: 'log-file' };
+    },
+  });
+  const uploads: string[] = [];
+  const runtime: ComposioRuntime = {
+    ...fakeRuntime({ resumed }),
+    files: {
+      async upload({ file }) {
+        uploads.push(file.name);
+        return { name: file.name, mimetype: file.type, s3key: 'composio/key-1' };
+      },
+    },
+  };
+  const inputSchema = {
+    type: 'object',
+    properties: { title: { type: 'string' }, videoFile: { type: 'object', file_uploadable: true } },
+  };
+  const call = (videoFile: unknown) =>
+    executeComposio({
+      projectId: 'project-1', connectorSlug: 'youtube', connectionId: 'connection-1',
+      sessionId: 'persisted-session', toolkit: 'youtube', toolSlug: 'YOUTUBE_MULTIPART_UPLOAD_VIDEO',
+      args: { title: 'demo', videoFile }, connectedAccountId: null, runtime, inputSchema,
+    });
+
+  const kept = { name: 'a.mp4', mimetype: 'video/mp4', s3key: 'composio/existing' };
+  expect((await call(kept)).ok).toBe(true);
+  expect(executed[0]).toEqual({ title: 'demo', videoFile: kept });
+
+  const refused = await call('http://127.0.0.1/clip.mp4');
+  expect(refused.ok).toBe(false);
+  expect(refused.status).toBe(400);
+  expect(String(refused.data)).toStartWith('file upload failed for videoFile: the URL could not be read');
+  expect(uploads).toEqual([]);
+  expect(executed).toHaveLength(1);
+});
+
 test('executeComposio reports a provider rate limit inside Composio\'s error text as upstream 429', async () => {
   const resumed = session({
     id: 'persisted-session',
@@ -907,6 +950,9 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       toolSlug: 'GMAIL_SEND_EMAIL',
       args: { to: 'a@example.com' },
       connectedAccountId: 'connected-account-1',
+      inputSchema: null,
+      // The call's deadline, so it can stop a file download.
+      signal: expect.any(AbortSignal),
     },
   });
   expect(JSON.stringify(executions)).not.toContain('COMPOSIO_API_KEY');

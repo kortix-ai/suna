@@ -74,6 +74,7 @@ const BUILTIN_TOOLS: ReadonlyArray<{ id: string; group: AgentCapabilityToolGroup
 const KORTIX_TOOL_DESCRIPTIONS: Record<(typeof KORTIX_TOOL_NAMES)[number], string> = {
   web_search: 'Search the web for current information.',
   image_search: 'Search the web for images.',
+  image_gen: 'Generate images with an image model the project can use.',
   scrape_webpage: 'Read web pages as clean text.',
   memory: 'Read and write the project memory in memory/.',
   show: 'Show you a file, image or result in the conversation.',

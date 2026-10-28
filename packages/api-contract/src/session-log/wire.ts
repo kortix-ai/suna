@@ -50,9 +50,13 @@
  *   the id being the last segment of `ref`, and check `sha256`).
  * - 413 `SessionLogRestoreTooLarge`: the restore is over `SESSION_LOG_RESTORE_MAX_BYTES` (`bytes`, the
  *   live messages' stored JSON lengths plus 2/5 of the session's live blob bytes, against `limit`). The claim still happens, so the box
- *   journals above it: the answer is `SessionLogRestore` with every thread and no message, every
- *   rev, `seq_max` and no blob, plus `messages` (the live messages left out). The box writes the D3
- *   note alone into its root and boots: the model does not see the earlier conversation.
+ *   journals above it. The answer is `SessionLogRestore` with a part of the log that fits under `limit` (`kept`), every
+ *   rev, `seq_max`, the `blobs` of the messages it holds, and `messages` (the live messages left out).
+ *   `kept: 'model_view'`: what the model sees (`modelViewSliceIds`); the box writes it and adds no note.
+ *   `kept: 'newest'`: the root's newest whole turns; the box writes them with a D3 note. No `kept`: no message;
+ *   the box writes the D3 note alone into its root. The status stays 413 so a daemon before `kept` drops the
+ *   messages and writes the note alone, as before: with a 200 it would mark only the part as written and read
+ *   its store as behind at every boot.
  * - 404 `SessionLogRestoreMissing`: the session has no stored log; nothing was claimed. Boot
  *   without a restore. A 404 with another body is an API that predates the route.
  * - 503: the operator switch `SESSION_LOG_RESTORE_ENABLED` is off; nothing was claimed.
@@ -156,6 +160,13 @@ export const SessionLogRestoreTooLargeSchema = SessionLogRestoreSchema.extend({
   limit: z.number().int().nonnegative(),
   /** The live messages left out of `log`. */
   messages: z.number().int().nonnegative(),
+  /**
+   * What `log` holds. `model_view`: the root and the sub-agent threads that fit (newest first, each whole or not
+   * at all), each cut to `modelViewSliceIds`, so the model sees what it saw. `newest`: the root's newest in-context
+   * turns that fit, from a user turn, without the compaction summary. Absent: no message (an API before this field,
+   * or not even the newest turn fits).
+   */
+  kept: z.enum(['model_view', 'newest']).optional(),
 });
 
 /** A harness a session can run on: the adapters with a capability manifest (`capabilities.ts`). */
@@ -184,7 +195,7 @@ export const SessionLogSwitchPreflightSchema = z.object({
   available: z.boolean(),
   /** `same_harness`: the log already runs on `to`. */
   reason: z.enum(['same_harness']).nullable(),
-  /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
+  /** The new box restores the model's context (`session_log_restore` on, the log or its model view under the restore cap). False: it starts without the earlier conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */
   losses: z.array(SessionLogSwitchLossSchema),

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 
 import { config } from '../config';
 import {
@@ -74,7 +74,17 @@ describe('planSignupContact', () => {
 
 describe('syncSignupContactToMailtrap', () => {
   const realFetch = globalThis.fetch;
-  const configured = !!(config.MAILTRAP_API_TOKEN && config.MAILTRAP_ACCOUNT_ID);
+  // The hermetic test env (scripts/test.env) sets no Mailtrap credentials.
+  const mailtrap = config as { MAILTRAP_API_TOKEN?: string; MAILTRAP_ACCOUNT_ID?: string };
+  const saved = { token: mailtrap.MAILTRAP_API_TOKEN, account: mailtrap.MAILTRAP_ACCOUNT_ID };
+  beforeAll(() => {
+    mailtrap.MAILTRAP_API_TOKEN = 'test-token';
+    mailtrap.MAILTRAP_ACCOUNT_ID = '1234';
+  });
+  afterAll(() => {
+    mailtrap.MAILTRAP_API_TOKEN = saved.token;
+    mailtrap.MAILTRAP_ACCOUNT_ID = saved.account;
+  });
 
   afterEach(() => {
     globalThis.fetch = realFetch;
@@ -99,7 +109,7 @@ describe('syncSignupContactToMailtrap', () => {
     expect(calls.length).toBe(0);
   });
 
-  test.if(configured)('posts the contact with the planned list ids', async () => {
+  test('posts the contact with the planned list ids', async () => {
     const calls = mockMailtrap([{ status: 200 }]);
     const result = await syncSignupContactToMailtrap('cto@acme.com', 1);
     expect(result).toMatchObject({ ok: true, kind: 'business', alreadyExisted: false });
@@ -112,14 +122,14 @@ describe('syncSignupContactToMailtrap', () => {
     expect(contact.email).toBe('cto@acme.com');
   });
 
-  test.if(configured)('422 already-exists counts as success, no retries', async () => {
+  test('422 already-exists counts as success, no retries', async () => {
     const calls = mockMailtrap([{ status: 422, body: '{"errors":{"email":["has already been taken"]}}' }]);
     const result = await syncSignupContactToMailtrap('cto@acme.com', 1);
     expect(result).toMatchObject({ ok: true, alreadyExisted: true });
     expect(calls.length).toBe(1);
   });
 
-  test.if(configured)('5xx retries then reports failure', async () => {
+  test('5xx retries then reports failure', async () => {
     const calls = mockMailtrap([{ status: 502, body: 'bad gateway' }]);
     const result = await syncSignupContactToMailtrap('cto@acme.com', 1);
     expect(result.ok).toBe(false);
@@ -127,7 +137,7 @@ describe('syncSignupContactToMailtrap', () => {
     expect((result as { error: string }).error).toContain('502');
   });
 
-  test.if(configured)('other 4xx fails fast without retries', async () => {
+  test('other 4xx fails fast without retries', async () => {
     const calls = mockMailtrap([{ status: 401, body: 'unauthorized' }]);
     const result = await syncSignupContactToMailtrap('cto@acme.com', 1);
     expect(result.ok).toBe(false);

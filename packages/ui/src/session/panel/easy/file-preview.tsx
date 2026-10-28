@@ -405,6 +405,7 @@ export function FilePreview({
             <FileContentRenderer
               filePath={path}
               reloadKey={reloadKey}
+              showCaption
               showHeader={false}
               className="h-full"
               fitOnOpen={isPdf}

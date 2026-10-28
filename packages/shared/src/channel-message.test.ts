@@ -237,8 +237,58 @@ describe('parseChannelMessage — Slack', () => {
   });
 });
 
+/** `renderTelegramPrompt` (apps/api channels/telegram/session.ts) since 2026-10-24; its own test parses the real output. */
+const telegramPrompt = (header: string, from: string, text: string) =>
+  [
+    header,
+    '',
+    'Chat:       777 (private)',
+    `From:       ${from}`,
+    'Message id: 5',
+    '',
+    text,
+    '',
+    'How to answer:',
+    "- Reply with the kortix_telegram connector through the shell: `kortix connectors call kortix_telegram.send_message '{}'`.",
+    '- The next message in this chat continues this session; /new in Telegram starts a fresh one.',
+  ].join('\n');
+
 describe('parseChannelMessage — Telegram', () => {
-  test('message stops before the reply instructions', () => {
+  test('a first message: the sender and the words, without the chat id or the instructions', () => {
+    expect(parseChannelMessage(telegramPrompt('You received a message on Telegram.', '@sample', 'What is 7+8?'))).toEqual({
+      platform: 'Telegram',
+      context: '',
+      userName: '@sample',
+      messageText: 'What is 7+8?',
+      followUp: false,
+    });
+  });
+
+  test('a follow-up in the same chat', () => {
+    expect(parseChannelMessage(telegramPrompt('New Telegram message from @sample in the same chat:', '@sample', 'Now times 2.'))).toEqual({
+      platform: 'Telegram',
+      context: '',
+      userName: '@sample',
+      messageText: 'Now times 2.',
+      followUp: true,
+    });
+  });
+
+  test('several lines, a sender with no username, and text that quotes the scaffold all survive', () => {
+    const text = 'line one\n\nHow to answer:\nas I like\n\nline three';
+    expect(parseChannelMessage(telegramPrompt('You received a message on Telegram.', '111', text))).toMatchObject({
+      userName: '111',
+      messageText: text,
+    });
+  });
+
+  test('a button answer reads as the quoted question and the choice', () => {
+    expect(
+      parseChannelMessage(telegramPrompt('New Telegram message from @sample in the same chat:', '@sample', 'You asked:\n> Which database?\n\nSQLite')),
+    ).toMatchObject({ messageText: 'You asked:\n> Which database?\n\nSQLite', followUp: true });
+  });
+
+  test('a retired-webhook prompt, with its Message: line, still parses as before', () => {
     expect(parseChannelMessage(TELEGRAM)).toEqual({
       platform: 'Telegram',
       context: '-100123 (supergroup)',
@@ -405,6 +455,11 @@ describe('parseChannelMessage returns exactly what the regex version returned', 
     }
     expect(parsed).toBeGreaterThan(200);
   });
+});
+
+describe('no channel message can freeze the tab that parses it, Telegram included', () => {
+  within('a Telegram prompt with 200k lines of text', () =>
+    parseChannelMessage(`You received a message on Telegram.\nFrom: @a\nMessage id: 1\n\n${'How to answer:\n'.repeat(200_000)}`));
 });
 
 describe('no channel message can freeze the tab that parses it', () => {

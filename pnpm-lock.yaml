@@ -34,6 +34,7 @@ overrides:
   nodemailer@>=10.0.0 <10.1.4: 10.2.1
   node-forge@<1.4.1: 1.4.1
   body-parser@>=2.0.0 <2.4.0: 2.4.0
+  qs@>=6.7.0 <6.16.1: 6.16.1
   postcss-selector-parser@>=6.0.0 <6.1.5: 6.1.5
   uuid@>=7.0.0 <11.1.1: 11.1.1
   uuid@>=13.0.0 <13.0.1: 13.0.1
@@ -1239,9 +1240,6 @@ importers:
       fumadocs-mdx:
         specifier: 15.2.3
         version: 15.2.3(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.2)(react@19.3.0)(vite@8.3.4)
-      heic2any:
-        specifier: 0.0.4
-        version: 0.0.4
       i18next:
         specifier: ^26.3.6
         version: 26.4.2(typescript@5.9.3)
@@ -2129,9 +2127,9 @@ importers:
       frimousse:
         specifier: ^0.3.0
         version: 0.3.0(react@19.3.0)(typescript@5.9.3)
-      heic2any:
-        specifier: 0.0.4
-        version: 0.0.4
+      heic-to:
+        specifier: 1.6.7
+        version: 1.6.7
       i18next:
         specifier: ^26.3.6
         version: 26.4.2(typescript@5.9.3)
@@ -21824,7 +21822,7 @@ packages:
       once: 1.4.0
       parseurl: 1.3.3
       proxy-addr: 2.0.8
-      qs: 6.16.0
+      qs: 6.16.1
       range-parser: 1.3.0
       router: 2.2.0
       send: 1.2.1
@@ -23054,8 +23052,8 @@ packages:
       space-separated-tokens: 2.0.2
     dev: false
 
-  /heic2any@0.0.4:
-    resolution: {integrity: sha512-3lLnZiDELfabVH87htnRolZ2iehX9zwpRyGNz22GKXIu0fznlblf0/ftppXKNqS26dqFSeqfIBhAmAj/uSp0cA==}
+  /heic-to@1.6.7:
+    resolution: {integrity: sha512-GCPYNl86u6eZ7mr2aa+uQB+PrQOVKSBYfH8esovr8kh2c6EYQSDYIJ6uhXSmM2hPC8PdBVJ/Trn0jnfM9H9gvg==}
     dev: false
 
   /hermes-compiler@250829098.0.17:
@@ -28256,8 +28254,8 @@ packages:
     engines: {node: '>=16.0.0'}
     dev: true
 
-  /qs@6.16.0:
-    resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
+  /qs@6.16.1:
+    resolution: {integrity: sha512-5Px6J7rfHBAGUhNQ3es4YzcOdBBw0SDcVtThJml4RdnKw4tKs2epA0kPZ+K8X+WiHktT93RHVcQ/3ym5aTCgtg==}
     engines: {node: '>=0.6'}
     dependencies:
       es-define-property: 1.0.1
@@ -30886,7 +30884,7 @@ packages:
     engines: {node: '>=12.*'}
     dependencies:
       '@types/node': 20.19.43
-      qs: 6.16.0
+      qs: 6.16.1
     dev: false
 
   /strnum@2.4.2:

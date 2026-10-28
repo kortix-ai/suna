@@ -296,6 +296,8 @@ A merge runs these steps:
 3. Otherwise it creates a merge commit, `Merge CR #<n>: <title>`, authored by `Kortix <noreply@kortix.ai>`. `--message` sets another message.
 4. A conflict stops the merge with `409` and the list of conflicting files.
 
+A merge can carry the commits of other open change requests on the same base. Example: you merge the top request of a stack, and the requests below it land with it. Kortix marks each of those requests `merged`, with the same merge commit. The response lists them in `also_merged`, and `kortix cr merge` prints `Also merged #<n>`.
+
 After the merge, running sessions on that base pick up the new config, and Kortix syncs the project's connectors from the new `kortix.yaml`. See [Config comes from the base branch](#config-comes-from-the-base-branch).
 
 **Request changes** records the note on the change request and sends it to the session that opened it as a new prompt. A sleeping sandbox wakes.

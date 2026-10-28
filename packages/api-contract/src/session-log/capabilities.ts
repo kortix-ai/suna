@@ -12,10 +12,10 @@
  *
  * `switchPreflight(log, to, ctx)` is the report of a switch to `to`:
  * - `available` / `reason`: the switch can happen. `same_harness`: the log already runs on `to`.
- * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on and the log is
- *   under the API's restore cap (`SESSION_LOG_RESTORE_MAX_BYTES`), so the new box restores the log.
- *   Otherwise the new box starts without the conversation, and `losses` starts with a `history` line
- *   (every live message).
+ * - `restores`: the project's `session_log_restore` flag (and the operator switch) is on and the log, or
+ *   else what the model sees of it (`modelViewSliceIds`), is under the API's restore cap
+ *   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the new box restores the model's context. Otherwise the new box
+ *   starts without the earlier conversation, and `losses` starts with a `history` line (every live message).
  * - `unsupported`: everything the source harness handles that `to` handles worse, used or not:
  *   model features of the manifests and runtime controls (`HARNESS_RUNTIME_CAPABILITIES`).
  * - `losses`: the `unsupported` lines the log shows in use, with counts. A feature the source

@@ -45,7 +45,7 @@ describe('buildAgentCapabilities', () => {
     expect(tools.find((tool) => tool.id === 'web_search')?.source).toBe('tools/search.ts');
   });
 
-  test('v2: kortix:<name> keeps a Kortix tool (no replacement), and only the Kortix tools a tools key lists exist', () => {
+  test('v2: kortix:<name> keeps a Kortix tool (no replacement); a tools key lists the Kortix tools, plus the default-on image_gen', () => {
     const v2 = buildAgentCapabilities({
       agentName: 'lead',
       manifest: { kortix_version: 2, tools: { web_search: 'kortix:web_search', memory: 'tools/memory.ts', lookup: 'tools/lookup.ts' } },
@@ -56,6 +56,7 @@ describe('buildAgentCapabilities', () => {
     });
     expect(v2.tools.filter((tool) => tool.group === 'kortix').map((tool) => [tool.id, tool.source])).toEqual([
       ['web_search', null],
+      ['image_gen', null],
       ['memory', 'tools/memory.ts'],
     ]);
     expect(v2.tools.filter((tool) => tool.group === 'project').map((tool) => tool.id)).toEqual(['lookup']);

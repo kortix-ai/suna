@@ -23,6 +23,7 @@ import { useTranslations } from '../../i18n';
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../primitives/drawer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
+import { SessionBootStatus } from '../status/session-starting-loader';
 import { useIsMobile } from '../../internal/hooks';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { CloseButton, DetailLayer, type PersistentLayer } from './easy/detail-view';
@@ -36,7 +37,9 @@ export function SessionDetailPanel() {
   if (!panel) return null;
 
   const { detail, closeDetail, terminalOpen, terminalSwap, closeTerminal, sessionId } = panel;
-  const { projectId, projectSessionId } = panel;
+  const { projectId, projectSessionId, booting } = panel;
+  // While the computer boots, a card wears its real chrome over the wake status,
+  // and the panel with no card open shows that status alone, never blank.
 
   const terminalLayer: PersistentLayer = {
     open: terminalOpen,
@@ -44,7 +47,9 @@ export function SessionDetailPanel() {
     title: tI18nComplete.raw('texte0926fdac700'),
     icon: <TerminalIcon className="text-muted-foreground size-4 shrink-0" />,
     onClose: closeTerminal,
-    body: (
+    body: booting ? (
+      <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+    ) : (
       <SessionTerminalPanel
         sessionId={sessionId}
         projectId={projectId}
@@ -53,6 +58,10 @@ export function SessionDetailPanel() {
       />
     ),
   };
+
+  if (isMobile && booting) {
+    return <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />;
+  }
 
   if (isMobile) {
     return (
@@ -98,7 +107,12 @@ export function SessionDetailPanel() {
         onBack={closeDetail}
         isMobile={false}
         persistentLayer={terminalLayer}
-      />
+      >
+        {/* Only while nothing covers the home: one wake status mounted at a time. */}
+        {booting && !detail && !terminalOpen ? (
+          <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
+        ) : null}
+      </DetailLayer>
     </div>
   );
 }

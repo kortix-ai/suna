@@ -198,7 +198,7 @@
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p examples/tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsgo-examples.tsbuildinfo",
-    "test": "node ../../scripts/test-guard.mjs \"find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate\"",
+    "test": "node ../../scripts/test-guard.mjs \"bash scripts/test.sh\"",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",

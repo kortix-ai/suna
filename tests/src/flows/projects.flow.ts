@@ -297,9 +297,9 @@ flow("PROJ-8", {
     const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
     if (rows.length !== 1) throw new Error(`expected the project to list 1 connector, listed ${rows.length}`);
   });
-  await ctx.step("OWNER archives project", async () => {
+  await ctx.step("OWNER deletes the project → 200 deleted: true (permanent; archived kept for older clients)", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
-    r.status(200).body().has("$.ok", true);
+    r.status(200).body().has("$.ok", true).has("$.deleted", true).has("$.archived", true).exists("$.repo_deleted");
   });
   await ctx.step("archived project reads 404", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: id } });

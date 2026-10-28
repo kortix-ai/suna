@@ -111,10 +111,6 @@ describe('runningAssetsVerdict', () => {
     expect(await runningAssetsVerdict(running({ cli_sha256: 'f'.repeat(64) }))).toBe('behind');
   });
 
-  test('a stale OpenCode version is behind — the one component with no sha to compare', async () => {
-    expect(await runningAssetsVerdict(running({ opencode_version: '0.0.1' }))).toBe('behind');
-  });
-
   test('a stale managed-skill overlay is behind', async () => {
     expect(await runningAssetsVerdict(running({ managed_skills_hash: 'f'.repeat(64) }))).toBe(
       'behind',

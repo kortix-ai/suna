@@ -2801,6 +2801,7 @@
     "signInWithEmail": "Accedi con email",
     "createNewAccount": "Crea nuovo account",
     "byContinuingYouAgreeSimple": "Continuando, accetti la nostra",
+    "customerLogoNotice": "Kortix può mostrare il nome e il logo della tua organizzazione come cliente, con qualsiasi piano. Puoi opporti in qualsiasi momento scrivendo a legal@kortix.com.",
     "phoneVerification": {
       "title": "Verifica il tuo numero di telefono",
       "titleOtp": "Inserisci il codice di verifica",
@@ -20815,7 +20816,14 @@
     "sessionModel": "Modello {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Nessun limite · spesa illimitata",
-    "tokensSub": "{in} input · {out} output"
+    "tokensSub": "{in} input · {out} output",
+    "unknownValue": "Sconosciuto",
+    "estimateCoverageUnavailable": "Copertura della stima non disponibile.",
+    "estimatesSeparate": "La spesa effettiva sopra è separata. Le stime non vengono mai aggiunte agli addebiti.",
+    "estimatedUsageValueLabel": "Valore d'uso LLM stimato (non è una fattura):",
+    "pricedRequests": "{count} richieste con prezzo",
+    "unpricedRequests": "{count} richieste senza prezzo",
+    "llmEstimateLabel": "Stima LLM:"
   },
   "triggerComposer": {
     "every": "Ogni",
@@ -21244,6 +21252,18 @@
     "emailHeroLede": "Collega il tuo account Resend e scegli un indirizzo sul tuo dominio. Le persone scrivono a quell'indirizzo e l'agente legge la conversazione e risponde lì.",
     "telegramHeroTitle": "Porta il tuo agente su Telegram",
     "telegramHeroLede": "Collega un bot che crei con BotFather. Le persone scrivono al bot e l’agente risponde in chat.",
+    "telegramUsersDescription": "Solo queste persone possono parlare con il bot. Se qualcun altro gli scrive in privato, compare qui.",
+    "telegramRequestsTitle": "Chiede l’accesso",
+    "telegramAllowedTitle": "Autorizzati",
+    "telegramUsersEmptyTitle": "Le persone che autorizzi compariranno qui",
+    "telegramUsersEmptyDescription": "Chiedi a qualcuno di scrivere al bot, poi autorizza la sua richiesta o aggiungi il suo ID utente.",
+    "telegramUsersLoadError": "Impossibile caricare gli utenti Telegram.",
+    "telegramAddByIdLabel": "Aggiungi tramite ID utente",
+    "telegramAddByIdHint": "Il bot risponde a chi non conosce con il suo ID utente.",
+    "telegramAddByIdInvalid": "Un ID utente Telegram è un numero, ad esempio 123456789.",
+    "telegramAllowAria": "Autorizza {name}",
+    "telegramRemoveTitle": "Rimuovere {name}?",
+    "telegramRemoveDescription": "{name} non può più parlare con il bot. Per autorizzarlo di nuovo, aggiungi il suo ID utente o autorizza la sua prossima richiesta.",
     "otherWaysToConnect": "Altri modi per collegarsi",
     "computerHeroTitle": "Porta il tuo agente sul tuo computer",
     "computerConnectedTitle": "{count, plural, one {Il tuo computer è collegato} other {# computer sono collegati}}",
@@ -23698,6 +23718,21 @@
       "unarchivedToast": "#{name} ripristinato",
       "failed": "Impossibile aggiornare #{name}. Riprova."
     }
+  },
+  "imageGen": {
+    "generating": "Generazione immagine",
+    "editing": "Modifica immagine",
+    "generatingCount": "Generazione di {count, plural, one {# immagine} other {# immagini}}",
+    "editingCount": "Modifica di {count, plural, one {# immagine} other {# immagini}}",
+    "openFullScreen": "Apri a schermo intero",
+    "openFullScreenPrompt": "Apri a schermo intero: {prompt}",
+    "loading": "Caricamento immagine",
+    "stopped": "Interrotto",
+    "failed": "L’immagine non è stata generata.",
+    "retry": "Riprova {when}.",
+    "unavailable": "Immagine non disponibile",
+    "tryAgain": "Riprova",
+    "details": "Dettagli immagine"
   },
   "agentMounts": {
     "lead": "Folders from Files this agent's sessions mount. A change applies at once and reaches every new session.",

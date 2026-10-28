@@ -1409,9 +1409,10 @@ function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
 }
 
 /**
- * A session with nothing saved to read yet: its frame (header and composer
- * outline) while the computer wakes in the background. The frame speaks only
- * when the wake needs attention (`SessionStartingLoader`).
+ * A session with nothing saved to read yet: its frame (header, skeleton rows,
+ * composer outline) while the computer wakes in the background. The frame
+ * speaks only when the wake needs attention (`SessionStartingLoader`), in a
+ * card above the rows.
  */
 function SessionBootSurface({
   stage,

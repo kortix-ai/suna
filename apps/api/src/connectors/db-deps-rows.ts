@@ -1,5 +1,6 @@
 /** Connector row reads shared by the DB-backed deps: auth/headers/base URL of a row, its connected state, the active connection, and the policy loaders. */
 import {
+  connectorActions,
   connectorPolicies,
   connectorPolicySets,
   connectors,
@@ -15,7 +16,8 @@ import {
   loadTeamsInstall,
   loadTelegramInstall,
 } from '../channels/install-store';
-import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
+import { agentPolicySet } from '../iam/agent-scope';
+import { canonicalConnectorAlias, resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
 import {
   connectionIsEffectiveProjectDefault,
@@ -23,7 +25,8 @@ import {
   connectionCredentialExists,
 } from './credentials';
 import type { ConnectorAuth } from './call';
-import { type DefaultMode, type Policy, parseStoredConditions } from './policy';
+import { type DefaultMode, type Policy, type Risk, parseStoredConditions, resolveEffectiveAction } from './policy';
+import { principalMayUseConnector } from './principal-access';
 import type { ConnectorPrincipal } from './router-contract';
 
 const DEFAULT_AUTH: ConnectorAuth = {
@@ -199,6 +202,60 @@ export async function resolveActiveConnectorConnection(principal: ConnectorPrinc
     connectorRow: row,
   });
   return connection?.status === 'active' ? connection : null;
+}
+
+/**
+ * Whether the agent's own `<slug>.<actionPath>` call with these args would run
+ * without approval. `principal` is the one the agent's session token names
+ * (`resolveTokenPrincipal`). The gateway's checks, in its order: the connector
+ * is assigned to the agent, enabled, has an active account this session may
+ * use, and has the action. Then its policy layers (project, the agent's policy
+ * set, connector, `sensitive`, the default mode), with the exact args. For a
+ * server post that stands in for that call.
+ */
+export async function connectorActionAlwaysRuns(input: {
+  principal: ConnectorPrincipal;
+  slug: string;
+  actionPath: string;
+  args: Record<string, unknown>;
+}): Promise<boolean> {
+  const { principal } = input;
+  const alias = canonicalConnectorAlias(input.slug);
+  if (!principalMayUseConnector(principal, alias)) return false;
+  const [row] = await db
+    .select()
+    .from(connectors)
+    .where(and(eq(connectors.projectId, principal.projectId), eq(connectors.slug, input.slug)))
+    .limit(1);
+  if (!row?.enabled || !(await resolveActiveConnectorConnection(principal, row))) return false;
+  const setName = agentPolicySet(principal.agentGrant ?? null, alias);
+  const [[action], connectorPolicies, projectPolicies, defaultMode, setPolicies] = await Promise.all([
+    db
+      .select({ risk: connectorActions.risk })
+      .from(connectorActions)
+      .where(and(eq(connectorActions.connectorId, row.connectorId), eq(connectorActions.path, input.actionPath)))
+      .limit(1),
+    loadConnectorPoliciesFor(row.connectorId),
+    loadProjectPoliciesFor(principal.projectId),
+    loadDefaultModeFor(principal.projectId),
+    setName === null ? Promise.resolve(undefined) : loadConnectorPolicySetFor(row.connectorId, setName),
+  ]);
+  if (!action) return false;
+  return (
+    resolveEffectiveAction({
+      fullPath: `${input.slug}.${input.actionPath}`,
+      relPath: input.actionPath,
+      projectPolicies,
+      connectorPolicies,
+      setPolicies: setPolicies ?? undefined,
+      setMissing: setName !== null && !setPolicies,
+      risk: action.risk as Risk,
+      defaultMode,
+      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+      args: input.args,
+      argsAvailable: true,
+    }).action === 'always_run'
+  );
 }
 
 export async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> {

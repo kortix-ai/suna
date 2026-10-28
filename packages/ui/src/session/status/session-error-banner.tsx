@@ -3,15 +3,9 @@
 import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { useLocale, useTranslations } from '../../i18n';
 import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
-import { useSessionIds } from '../../providers/session-ids';
-import { useUiComponents, useUiViewerId } from '../../providers/ui-provider';
-import { useState, type ComponentProps, type ReactNode } from 'react';
-import {
-  type ChatGptConnectionAction,
-  chatGptActionApplies,
-  chatGptConnectionAction,
-} from '../models/chatgpt-connection-action';
-import { sessionPersonalUser } from '../overrides/provider-pool-draft';
+import { type ComponentProps, type ReactNode } from 'react';
+import { chatGptConnectionAction } from '../models/chatgpt-connection-action';
+import { ChatGptConnectionSlot } from '../models/chatgpt-connection-button';
 import { AskOwnerForCreditsButton } from '../models/ask-owner-for-credits-button';
 
 import { Button } from '../../primitives/button';
@@ -37,10 +31,6 @@ import {
   type GatewayErrorDetails,
 } from '@kortix/sdk';
 import {
-  useFeatureFlag,
-  useModelAccess,
-  useProjectSession,
-  useSessionProviderSecretPools,
   type KortixSendError,
 } from '@kortix/sdk/react';
 import {
@@ -651,67 +641,6 @@ export function TurnErrorDisplay({
       modelOptions={modelOptions}
       className={className}
     />
-  );
-}
-
-/**
- * The ChatGPT fix for a failed turn. It needs the session the turn belongs
- * to, so it renders only on a session route; elsewhere the row stays
- * informational, exactly as before.
- */
-function ChatGptConnectionSlot({ action }: { action: ChatGptConnectionAction }) {
-  const ids = useSessionIds();
-  const projectId = ids.projectId ?? null;
-  const sessionId = ids.sessionId ?? null;
-  if (!projectId || !sessionId) return null;
-  return <ChatGptConnectionButton action={action} projectId={projectId} sessionId={sessionId} />;
-}
-
-/**
- * Opens the ChatGPT accounts dialog, which exists only with pooled provider
- * secrets and the LLM gateway on. Shown only where connecting or
- * reconnecting an account can fix this session (`chatGptActionApplies`).
- */
-function ChatGptConnectionButton({
-  action,
-  projectId,
-  sessionId,
-}: {
-  action: ChatGptConnectionAction;
-  projectId: string;
-  sessionId: string;
-}) {
-  const t = useTranslations('pooledSecrets');
-  const viewerId = useUiViewerId();
-  const pooled = useFeatureFlag(projectId, 'pooled_provider_secrets');
-  const enabled = pooled.enabled;
-  const access = useModelAccess(enabled ? projectId : null);
-  const session = useProjectSession(projectId, sessionId, { enabled });
-  const pools = useSessionProviderSecretPools(enabled ? projectId : null, sessionId);
-  const [open, setOpen] = useState(false);
-  const { ProviderAccountsModal } = useUiComponents();
-
-  const applies =
-    !!ProviderAccountsModal &&
-    enabled &&
-    !(access.data?.disabledProviders ?? []).includes('codex') &&
-    chatGptActionApplies({
-      action,
-      personalUser: sessionPersonalUser(session.data),
-      viewerId: viewerId,
-      explicitSelection: pools.isSuccess
-        ? pools.data.pools.some((pool) => pool.provider_id === 'codex')
-        : undefined,
-    });
-  if (!applies || !ProviderAccountsModal) return null;
-
-  return (
-    <div className="mt-2 pl-7">
-      <Button size="sm" className="active:scale-[0.96]" onClick={() => setOpen(true)}>
-        {t(action === 'reconnect' ? 'reconnectChatGpt' : 'connectChatGpt')}
-      </Button>
-      <ProviderAccountsModal projectId={projectId} providerId="codex" open={open} onOpenChange={setOpen} />
-    </div>
   );
 }
 

@@ -2323,6 +2323,7 @@
             "enum": [
               "web_search",
               "image_search",
+              "image_gen",
               "scrape_webpage",
               "memory",
               "show"

@@ -1026,6 +1026,53 @@ describe('api-router worker', () => {
     expect(calls).toBe(2);
   });
 
+  test('retries read-only IAM batch POST with the complete body after a connection reset', async () => {
+    const body = JSON.stringify({ probes: [{ action: 'project.read' }] });
+    const bodies = [];
+    globalThis.fetch = async (request) => {
+      bodies.push(await request.text());
+      if (bodies.length === 1) throw new Error('Network connection lost.');
+      return Response.json({ results: [{ allowed: true }] });
+    };
+    const response = await worker.fetch(new Request(
+      'https://api.kortix.com/v1/accounts/00000000-0000-4000-8000-000000000001/iam/members/00000000-0000-4000-8000-000000000002/effective:batch',
+      { method: 'POST', body },
+    ), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ results: [{ allowed: true }] });
+    expect(bodies).toEqual([body, body]);
+  });
+
+  test('bounds permission batch retries and excludes mutations, gateways and origin HTTP errors', async () => {
+    const path = '/v1/accounts/00000000-0000-4000-8000-000000000001/iam/members/00000000-0000-4000-8000-000000000002/effective:batch';
+    for (const [url, expected] of [
+      [`https://api.kortix.com${path}`, 2],
+      [`https://gateway.kortix.com${path}`, 1],
+      [`https://api.kortix.com${path}/extra`, 1],
+      ['https://api.kortix.com/v1/accounts', 1],
+    ]) {
+      let calls = 0;
+      globalThis.fetch = async (request) => {
+        await request.text();
+        calls++;
+        throw new Error('Network connection lost.');
+      };
+      const response = await worker.fetch(new Request(url, { method: 'POST', body: '{}' }), env);
+      expect(response.status).toBe(503);
+      expect((await response.json()).code).toBe('origin_unreachable');
+      expect(calls).toBe(expected);
+    }
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return Response.json({ error: 'origin failure' }, { status: 503 });
+    };
+    const response = await worker.fetch(new Request(`https://api.kortix.com${path}`, { method: 'POST', body: '{}' }), env);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'origin failure' });
+    expect(calls).toBe(1);
+  });
+
   test('a healthy origin response carries no origin-status header', async () => {
     globalThis.fetch = async () => Response.json({ ok: true }, { status: 200 });
 

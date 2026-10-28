@@ -22,3 +22,4 @@ planned, in flight, or parked, so another person or agent can pick it up.
 | [`email-cost-passthrough/`](email-cost-passthrough/README.md) | parked: meter managed Resend inboxes and emails per account |
 | [`connector-policy-sets/`](connector-policy-sets/README.md) | in progress: one connector profile, a named rule set per agent |
 | [`kortix-yaml-versionless/`](kortix-yaml-versionless/README.md) | planned: one versionless kortix.yaml schema, imports kept, old shapes auto-upgraded |
+| [`image-generation/`](image-generation/README.md) | in progress (branch `image-gen`): `image_gen` tool, gpt-image-2 on a connected ChatGPT plan |
