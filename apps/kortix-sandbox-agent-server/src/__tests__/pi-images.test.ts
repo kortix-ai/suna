@@ -116,8 +116,11 @@ describe('images in the compiled daemon', () => {
     // Bun leaves a 70 MB `.<hash>.bun-build` runtime copy in the working directory: build from the temp dir.
     const cwd = process.cwd()
     process.chdir(dir)
+    const pkg = join(import.meta.dir, '../..')
     const built = await Bun.build({
-      entrypoints: [join(import.meta.dir, 'fixtures/pi-image-probe.ts')],
+      // pi's resize worker is a second entrypoint, under the package root, as in scripts/build.sh.
+      entrypoints: [join(import.meta.dir, 'fixtures/pi-image-probe.ts'), join(pkg, 'src/utils/image-resize-worker.ts')],
+      root: pkg,
       compile: { outfile },
       tsconfig: join(import.meta.dir, '../../tsconfig.json'),
       plugins: [{
@@ -138,11 +141,13 @@ describe('images in the compiled daemon', () => {
     writeFileSync(file, PNG)
     const run = Bun.spawnSync([outfile, file, workspace], { cwd: dir, stderr: 'pipe' })
     expect(run.exitCode, run.stderr.toString()).toBe(0)
-    const out = JSON.parse(run.stdout.toString()) as { read: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; prompt: unknown[] }
+    const out = JSON.parse(run.stdout.toString()) as { read: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; prompt: unknown[]; photonOnMainThread: boolean }
     expect(out.read).toEqual([
       { type: 'text', text: 'Read image file [image/png]' },
       { type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' },
     ])
     expect(out.prompt).toEqual([{ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' }])
+    // pi resized both in its worker, never on the daemon's event loop.
+    expect(out.photonOnMainThread).toBe(false)
   }, 120_000)
 })

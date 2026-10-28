@@ -510,7 +510,9 @@ reads them and fails when a pin leaves them:
   `quickjs-wasi` are pinned beside them at the versions pi-coding-agent depends on (codemode's
   worker and wasm, above): move them with the bump, and check that pi still resolves the
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
-  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
+  `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way;
+  pi's `resizeImage` must still start its worker as `./src/utils/image-resize-worker.ts`
+  (`pi-images.test.ts` fails when it does not).
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
   installs it).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
@@ -1115,12 +1117,18 @@ rules; a `deny` from either wins, so delegating never unlocks a denied call.
   A compiled daemon bakes the build machine's path there, so before 2026-10-16 photon never
   loaded on a box and pi dropped every image ("[Image omitted: could not be resized below the
   inline image size limit.]"). `pi/images.ts` embeds the wasm in the binary and redirects that
-  one file name to the embedded copy. In a binary pi's resize worker does not load, so pi
-  resizes in-process (about 0.65 s for an 18 MB 3000x2000 PNG on an M-series laptop; at most
-  20 per prompt). Follow-up: build the worker path pi's `resizeImage` asks for in a binary as a
-  second entrypoint, as codemode's worker (`scripts/build.sh`); it must install the wasm redirect itself.
-  `pi-images.test.ts` builds a binary against a copy of photon-node, deletes the copy, and runs
-  pi's `read` and `promptImages` in it.
+  one file name to the embedded copy.
+- **Resize worker.** pi resizes each image in a worker thread that it starts per image. In a binary
+  it starts `./src/utils/image-resize-worker.ts`, an extra entrypoint (`scripts/build.sh`, as
+  codemode's worker). That worker is its own module graph, so it imports `pi/images.ts` for the wasm
+  redirect, then pi's worker module. Before 2026-10-28 the binary had no such entrypoint, and pi
+  resized on the daemon's event loop: a 6000x4000 PNG held `/kortix/health` and every SSE stream for
+  about 0.9 s. In the worker the loop stays free, a worker costs about 12 ms to start, and its photon
+  memory is freed when it exits. A worker that fails to start makes pi resize on the loop, as before. Built-in tools run one at a time, so a turn resizes one image at a time;
+  parallel subagents or a codemode script can run several workers at once (about 450 MB peak each
+  for a 6000x4000 PNG).
+  `pi-images.test.ts` builds a binary with that worker against a copy of photon-node, deletes the
+  copy, and runs pi's `read` and `promptImages` in it; photon must not load on the main thread.
 
 ### The conversation, compaction and slash commands
 

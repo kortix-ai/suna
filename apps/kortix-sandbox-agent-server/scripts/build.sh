@@ -30,10 +30,10 @@ compile_with_retry() {
   local delay=5
 
   while true; do
-    # The codemode worker is a second entrypoint: in a compiled binary pi starts it as
-    # `./src/extensions/codemode/worker.ts`, resolved against `--root` (default: the
-    # entrypoints' common folder, `src/`, which would not match).
-    if bun build --compile --root=. --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts src/extensions/codemode/worker.ts; then
+    # pi's two workers are extra entrypoints: in a compiled binary pi starts them as
+    # `./src/extensions/codemode/worker.ts` and `./src/utils/image-resize-worker.ts`, resolved
+    # against `--root` (default: the entrypoints' common folder, `src/`, which would not match).
+    if bun build --compile --root=. --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts src/extensions/codemode/worker.ts src/utils/image-resize-worker.ts; then
       return 0
     fi
 
