@@ -1,3 +1,4 @@
+import { showsMarketingLink } from '@/lib/config';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -259,9 +260,12 @@ Run the install script.
     const urls = new Set(sitemap().map((entry) => entry.url));
     const records = getPublicContentRecords({ includeUseCases: true });
     for (const record of records) {
-      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(true);
-      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(true);
+      // /services and /case-studies stay out while SERVICES_PAGES_ENABLED is off.
+      const listed = showsMarketingLink(record.htmlPath);
+      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(listed);
+      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(listed);
     }
+    expect(showsMarketingLink('/services')).toBe(false);
     expect(
       [...urls].every((url) => url.startsWith(CANONICAL_ORIGIN) && !url.includes('www.')),
     ).toBe(true);
