@@ -12,6 +12,13 @@ import {
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
+  allowChannelUser,
+  dismissChannelAccessRequest,
+  getChannelUserPhoto,
+  listChannelUsers,
+  removeChannelUser,
+  type ChannelAccessList,
+  type ChannelUsers,
   allowTelegramUser,
   connectTelegram,
   disconnectTelegram,
@@ -589,6 +596,119 @@ describe('getTelegramUserPhoto', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(getTelegramUserPhoto('P1', '42', 'AQAD', controller.signal)).rejects.toThrow('Request aborted');
+  });
+});
+
+test('listChannelUsers reads the same route as listTelegramUsers', async () => {
+  const users: ChannelUsers = {
+    allowed: [
+      { user_id: '42', username: 'sam', first_name: 'Sam', last_name: null, photo_version: 'AQAD', known: true },
+    ],
+    requests: [
+      {
+        user_id: '77',
+        username: null,
+        first_name: null,
+        last_name: null,
+        photo_version: null,
+        known: false,
+        last_seen: '2026-10-28T10:00:00.000Z',
+      },
+    ],
+  };
+  nextResponse = { status: 200, body: users };
+  expect(await listChannelUsers('P/1', 'telegram')).toEqual(users);
+  const generic = last();
+  await listTelegramUsers('P/1');
+  expect(generic).toEqual(last());
+  expect(generic).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P%2F1/channels/telegram/users' });
+});
+
+test('listChannelUsers throws the API error message', async () => {
+  nextResponse = { status: 404, body: { error: 'Telegram is not connected', code: 'telegram_not_connected' } };
+  await expect(listChannelUsers('P1', 'telegram')).rejects.toThrow('Telegram is not connected');
+});
+
+test('allowChannelUser posts one user id and returns the access list', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, allowed_user_ids: ['42', '77'], access_request_count: 0 } };
+  const result: ChannelAccessList = await allowChannelUser('P1', 'telegram', '77');
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://test.local/projects/P1/channels/telegram/allowed-users',
+    body: { user_id: '77' },
+  });
+  expect(result).toMatchObject({ allowed_user_ids: ['42', '77'], access_request_count: 0 });
+});
+
+test('allowChannelUser throws the API error message when the list is full', async () => {
+  nextResponse = { status: 409, body: { error: 'At most 200 allowed users', code: 'telegram_allowed_users_full' } };
+  await expect(allowChannelUser('P1', 'telegram', '77')).rejects.toThrow('At most 200 allowed users');
+});
+
+test('removeChannelUser deletes one allowed user id', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, allowed_user_ids: [] } };
+  expect((await removeChannelUser('P1', 'telegram', '4/2')).allowed_user_ids).toEqual([]);
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/P1/channels/telegram/allowed-users/4%2F2',
+    body: undefined,
+  });
+});
+
+test('dismissChannelAccessRequest deletes one access request', async () => {
+  nextResponse = { status: 200, body: { ...telegramInstall, access_request_count: 0 } };
+  expect((await dismissChannelAccessRequest('P1', 'telegram', '77')).access_request_count).toBe(0);
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/P1/channels/telegram/access-requests/77',
+    body: undefined,
+  });
+});
+
+describe('getChannelUserPhoto', () => {
+  let status = 200;
+  beforeEach(() => {
+    status = 200;
+    globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
+      calls.push({ url: String(url), method: opts.method ?? 'GET', body: undefined });
+      if (status === 200) {
+        return new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status, headers: { 'content-type': 'image/jpeg' } });
+      }
+      return new Response(JSON.stringify({ error: `Photo failed (${status})` }), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+  });
+
+  test('reads the photo bytes from the same route as getTelegramUserPhoto', async () => {
+    const photo = await getChannelUserPhoto('P1', 'telegram', '42', 'AQAD+x/y');
+    expect(photo?.type).toBe('image/jpeg');
+    expect(Array.from(new Uint8Array(await photo!.arrayBuffer()))).toEqual([0xff, 0xd8, 0xff]);
+    const generic = last();
+    await getTelegramUserPhoto('P1', '42', 'AQAD+x/y');
+    expect(generic).toEqual(last());
+    expect(generic).toMatchObject({
+      method: 'GET',
+      url: `http://test.local/projects/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
+    });
+    await getChannelUserPhoto('P1', 'telegram', '42');
+    expect(last().url).toBe('http://test.local/projects/P1/channels/telegram/users/42/photo');
+  });
+
+  test('returns null when the user has no photo (404) and throws on other errors', async () => {
+    status = 404;
+    expect(await getChannelUserPhoto('P1', 'telegram', '42', 'AQAD')).toBeNull();
+    status = 502;
+    await expect(getChannelUserPhoto('P1', 'telegram', '42', 'AQAD')).rejects.toThrow('Photo failed (502)');
+  });
+
+  test('rejects when the caller aborts the signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(getChannelUserPhoto('P1', 'telegram', '42', 'AQAD', controller.signal)).rejects.toThrow(
+      'Request aborted',
+    );
   });
 });
 
