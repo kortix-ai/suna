@@ -191,6 +191,8 @@ export function useModelConnectionGate(
 
   return {
     canConnectProvider,
+    /** The viewer holds `project.model.write`: the provider modal can change the project's models. */
+    canWriteProviders,
     openConnectProvider,
     openUpgrade,
     modal,

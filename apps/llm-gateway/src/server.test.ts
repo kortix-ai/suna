@@ -331,3 +331,49 @@ describe('public discovery without credentials', () => {
     });
   }
 });
+
+const { registerRoutes } = await import('./routes');
+const { Hono } = await import('hono');
+
+describe('standalone image routes', () => {
+  function imageApp(inflight = new InflightBudget({ maxBytes: 1024 * 1024, perRequestMaxBytes: 1024 * 1024, amplification: 1 })) {
+    const calls: { authorization: string | undefined; rawBody: string; operation: string }[] = [];
+    const unused = async (): Promise<Response> => { throw new Error('not an image route'); };
+    const app = new Hono();
+    registerRoutes(app, {
+      chatCompletions: unused, messages: unused, responses: unused, listModels: unused,
+      images: async (request) => {
+        calls.push({ authorization: request.authorization, rawBody: request.rawBody, operation: request.operation });
+        return Response.json({ data: [{ b64_json: 'AAAA' }] });
+      },
+    }, inflight, () => {});
+    return { app, calls, inflight };
+  }
+
+  test('POST /v1/images/generations reaches gateway.images with operation generations', async () => {
+    const { app, calls, inflight } = imageApp();
+    const body = JSON.stringify({ model: 'codex/gpt-image-2', prompt: 'a red cube' });
+    const res = await app.request('/v1/images/generations', {
+      method: 'POST', headers: { authorization: 'Bearer token', 'content-type': 'application/json' }, body,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveProperty('data.0.b64_json', 'AAAA');
+    expect(calls).toEqual([{ authorization: 'Bearer token', rawBody: body, operation: 'generations' }]);
+    expect(inflight.inflightBytes).toBe(0);
+    for (const path of ['/images/edits', '/v1/llm/images/edits', '/v1/openai/images/generations']) {
+      expect((await app.request(path, { method: 'POST', body })).status).toBe(200);
+    }
+    expect(calls.map((call) => call.operation)).toEqual(['generations', 'edits', 'edits', 'generations']);
+  });
+
+  test('an oversized image body is 413 before gateway.images runs', async () => {
+    const { app, calls, inflight } = imageApp(new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 }));
+    const res = await app.request('/v1/images/edits', {
+      method: 'POST', headers: { 'content-length': '1025' }, body: 'x'.repeat(1025),
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'request_too_large');
+    expect(calls).toHaveLength(0);
+    expect(inflight.inflightBytes).toBe(0);
+  });
+});

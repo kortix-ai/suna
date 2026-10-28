@@ -70,17 +70,23 @@ function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
 }
 
-async function directOpenAiRequest(
-  body: Record<string, unknown>,
-  descriptor: UpstreamDescriptor,
-  opts: CallUpstreamOptions,
-): Promise<Response> {
+/** The JSON request headers of a direct (bearer-key) call to `descriptor`. */
+export function upstreamHeaders(descriptor: UpstreamDescriptor, requestId?: string): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (!descriptor.omitAuthorization) headers.authorization = `Bearer ${descriptor.apiKey}`;
   if (descriptor.appName) headers['x-title'] = descriptor.appName;
   if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
-  if (opts.requestId) headers['x-request-id'] = opts.requestId;
+  if (requestId) headers['x-request-id'] = requestId;
+  return headers;
+}
+
+async function directOpenAiRequest(
+  body: Record<string, unknown>,
+  descriptor: UpstreamDescriptor,
+  opts: CallUpstreamOptions,
+): Promise<Response> {
+  const headers = upstreamHeaders(descriptor, opts.requestId);
 
   const payload = descriptor.resolvedModel ? { ...body, model: descriptor.resolvedModel } : body;
 

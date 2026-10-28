@@ -4,7 +4,7 @@
  * While the agent works, every segment streams as is. Once the turn settles,
  * the process detail (bursts, interim sentences, sub-agent cards) folds into
  * one "Worked for 2m 14s" row, and only what the user asked for stays open:
- * the `show` / `show_user` deliverables and the final message.
+ * the deliverables (`show`, `show_user`, `image_gen`) and the final message.
  *
  * Final text = scan from the end, skip deliverables and blank text; if the
  * next segment is a non-empty `text`, it is final. Every other segment before
@@ -15,13 +15,13 @@
  * that never groups show calls uses the same rule.
  */
 import { formatDuration } from '../state';
-import { normalizeActivityToolName } from './session-activity-groups';
+import { isNoGroupActivityTool } from './session-activity-groups';
 import type { ShowGroupedSegment } from './show-group';
 
 export interface TurnWorkSplit<S extends ShowGroupedSegment = ShowGroupedSegment> {
   /** Folded behind the "Worked for" row. Never empty. */
   work: S[];
-  /** `show` / `show_user` cards, in call order, rendered above the final text. */
+  /** Deliverable cards (`show`, `show_user`, `image_gen`), in call order, rendered above the final text. */
   hoisted: S[];
   /** The final text segment, or empty when the turn did not end on text. */
   final: S[];
@@ -29,9 +29,7 @@ export interface TurnWorkSplit<S extends ShowGroupedSegment = ShowGroupedSegment
 
 function isDeliverableSegment(segment: ShowGroupedSegment): boolean {
   if (segment.kind === 'show-group') return true;
-  if (segment.kind !== 'standalone') return false;
-  const name = normalizeActivityToolName(segment.part.tool);
-  return name === 'show' || name === 'show_user';
+  return segment.kind === 'standalone' && isNoGroupActivityTool(segment.part.tool);
 }
 
 function isBlankText(segment: ShowGroupedSegment): boolean {

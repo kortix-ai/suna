@@ -1,6 +1,6 @@
 ---
 title: Tools
-description: The five Kortix tools, project tools you write in TypeScript or JavaScript, and which agent may call which.
+description: The six Kortix tools, project tools you write in TypeScript or JavaScript, and which agent may call which.
 ---
 
 A tool is a function the model calls during a turn. This page is for project authors who choose the tools a project loads, write their own, and limit them per agent. Tool selection and per-agent access live in [`kortix.yaml`](/docs/project/manifest).
@@ -10,7 +10,7 @@ A tool is a function the model calls during a turn. This page is for project aut
 | Kind | Names | Comes from |
 | --- | --- | --- |
 | Harness tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `task`, `question`, `codemode` | pi, the harness of every new session. A session that still runs OpenCode (deprecated) also has `apply_patch`, `list`, `todowrite`, `webfetch`, `websearch`, `skill` and `lsp`. |
-| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Kortix maintains them. You select them under `tools:`. |
+| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `memory`, `show` | Kortix maintains them. You select them under `tools:`. |
 | Project tools | Any name you declare | One module in your repo, declared under `tools:`. |
 
 Kortix tools and project tools are one module each. The sandbox runs the same module on both [harnesses](/docs/project/agents#harnesses-opencode-and-pi), with the same name, arguments, and output.
@@ -19,18 +19,20 @@ Kortix tools and project tools are one module each. The sandbox runs the same mo
 | --- | --- |
 | `web_search` | Searches the web. Returns titles, URLs, snippets, and a short answer. |
 | `image_search` | Searches for images. Returns image URLs, titles, source pages, and dimensions. |
+| `image_gen` | Generates or edits 1 to 4 images with an image model the project can use, and saves them in the workspace. See [Generate images](#generate-images). |
 | `scrape_webpage` | Fetches one or more pages and returns them as Markdown. |
 | `memory` | Views, creates, edits, renames, and deletes files under `memory/`, the project memory. |
-| `show` | Presents a file, image, URL, document, or text to the person in the session. |
+| `show` | Presents a file, image, URL, document, or text to the person in the session. Each shown item whose path is an image file (png, jpg, jpeg, webp, gif, avif, svg) of at most 32 MiB carries `sha256`, the lowercase hex SHA-256 of its bytes, when the file is read within 2 s. |
 
 ## Choose Kortix tools
 
-A new project lists all five under the top-level `tools:` key:
+A new project lists all six under the top-level `tools:` key:
 
 ```yaml
 tools:
   web_search: kortix:web_search      # maintained by Kortix, updated automatically
   image_search: kortix:image_search
+  image_gen: kortix:image_gen      # generates images with an image model the project can use
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
@@ -41,12 +43,12 @@ tools:
 
 | `kortix.yaml` | Kortix tools a session gets |
 | --- | --- |
-| No `tools:` key, in the root file or in any [imported](/docs/project/manifest#imports) file | All five. |
-| A `tools:` key in any file, even an empty one | Only the Kortix tools it lists. |
+| No `tools:` key, in the root file or in any [imported](/docs/project/manifest#imports) file | All six. |
+| A `tools:` key in any file, even an empty one | The Kortix tools it lists, plus `image_gen`. |
 
 Project tools load in both cases.
 
-- **Remove a Kortix tool:** delete its line. Every agent of the project loses it. To hide a tool from one agent only, use [`agents.<name>.tools`](#give-each-agent-its-tools).
+- **Remove a Kortix tool:** delete its line. Every agent of the project loses it. `image_gen` is the exception: it loads when its line is missing. See [Turn it off](#turn-it-off). To hide a tool from one agent only, use [`agents.<name>.tools`](#give-each-agent-its-tools).
 - **A skill that names a removed tool still loads.** The model finds no such tool and uses other tools.
 - **See what a session gets:** run `kortix tools ls` from the project root.
 
@@ -54,6 +56,7 @@ Project tools load in both cases.
 $ kortix tools ls
 NAME            KIND                 SOURCE
 web_search      kortix (overridden)  tools/web_search.ts
+image_gen       kortix               kortix:image_gen
 scrape_webpage  kortix               kortix:scrape_webpage
 memory          kortix               kortix:memory
 show            kortix               kortix:show
@@ -72,6 +75,104 @@ Rules for every entry under `tools:`:
 - A value is `kortix:<name>` with the same name as the key, or a repo-relative module path.
 - A path ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or `.cjs`. It does not start with `/` or `-` and has no `.` or `..` segment. The folder is your choice.
 - An imported file may declare tools. A name declared in two files is an error.
+
+## Generate images
+
+`image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, or an image model of an OpenAI, Google, xAI, or OpenRouter key. You can also name a model of your [custom endpoint](/docs/project/models#which-model-makes-the-image). Kortix-managed models do not generate images yet. It saves each image under `/workspace/output/images/`.
+
+- **One call, one to four images.** Each prompt is one image. The tool sends one request per prompt, all at the same time.
+- **It needs an image model.** Connect ChatGPT in **Models** (**Connect ChatGPT**) or with `kortix providers login openai`, or add an OpenAI, Google, xAI, or OpenRouter key. See [Models](/docs/project/models#generate-images). With none, the call fails with `image_model_unavailable`.
+- **It loads by default.** A project gets `image_gen` when its `tools:` list does not name it. A project with no `tools:` key gets it too.
+- **The output is paths, not images.** The model receives `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed: [{ prompt, error }] }`. `model` and `provider` name what made the first saved image. `size` is `WxH`, read from the saved file when its header is readable, else the size the provider reported. `sha256` is the lowercase hex SHA-256 of the saved file's bytes. `failed` is present only when a prompt failed. When every prompt fails, the call fails with the first error.
+
+| Argument | Value |
+| --- | --- |
+| `action` | `generate` new images, or `edit` the reference images. Required. |
+| `prompts` | 1 to 4 non-empty strings, one per image: what the image shows, or what to change. Required. |
+| `model` | An image model id, for example `codex/gpt-image-2`, `openai/gpt-image-1`, `google/gemini-2.5-flash-image`, or `openrouter/google/gemini-2.5-flash-image`. Omit it to use `auto`. See [Which model makes the image](/docs/project/models#which-model-makes-the-image). |
+| `aspect_ratio` | `auto` (the default), `1:1`, `3:2`, `2:3`, `16:9`, `9:16`, `4:3`, or `3:4`. |
+| `quality` | `auto` (the default), `low`, `medium`, or `high`. |
+| `transparent_background` | `true` for a transparent background. The default is `false`. |
+| `reference_images` | For `edit` only, and required there: 1 to 5 workspace paths of png, jpg, jpeg, or webp files. Every prompt uses them. |
+
+- `quality` and `transparent_background` reach ChatGPT and OpenAI models only. Other models do not receive them.
+- ChatGPT and OpenAI models receive a size, not a ratio. `auto` is `auto`. `1:1` is `1024x1024`. `3:2`, `4:3`, and `16:9` are `1536x1024`. `2:3`, `3:4`, and `9:16` are `1024x1536`. xAI models receive no aspect ratio. Other models receive the ratio as it is, and no ratio for `auto`.
+- The file name is a slug of the prompt plus a timestamp. The extension comes from the image bytes: `.png`, `.jpg`, or `.webp`. Any other answer, for example an SVG, is not written.
+
+### In the chat
+
+A call shows one card with one frame per prompt.
+
+- While the call runs, the card shows a placeholder per image in the requested aspect ratio, with "Generating image" (or "Generating 3 images"; "Editing image" for an edit) and the elapsed time. The images replace the placeholders when the call ends.
+- One image fills the width of the message. Two to four images fill one rectangle: 2 side by side, 3 as one large image and two small ones, 4 as a 2 × 2 grid. On web, the card is at most 60% of the window height.
+- The card shows no prompt and no model name. Click an image to open it full screen, uncropped. The full-screen view shows its prompt and the model that made it.
+- A frame whose prompt failed shows the error. When the cause is a missing or expired connection, the card shows one connect action. A shared or read-only view shows no action.
+
+### Limits
+
+The tool enforces these limits in code. A prompt, a file, or a web page that the agent reads cannot raise them.
+
+| Limit | Value |
+| --- | --- |
+| Images per call | 4. |
+| Images per turn | 10. A call that would pass 10 is refused whole, before any request: `Image limit for this turn reached (10 images; 8 used, 3 asked).` |
+| Images per session | 50, counted within one sandbox run. A sandbox restart resets the count. |
+| Reference images per edit | 5. |
+| Size of one reference image | 20 MiB. |
+| Size of all reference images in one edit | 50 MiB. |
+| Time per call | 300 seconds. |
+
+- Every call of one turn counts toward the same 10: direct calls, parallel calls, calls from a `codemode` script, retried calls, and calls from a subagent the turn started.
+- A reference image must be inside `/workspace`, after symlinks are resolved. Its content must match its extension. Any other file is refused before a request leaves the sandbox.
+- An image is always written under `/workspace/output/images/`. An existing file is never replaced: the tool adds `-2`, `-3`, and so on to the name.
+- When the turn stops, the requests stop and no further file is written.
+
+### Errors
+
+When the gateway refuses a prompt, its error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code. When the gateway names the provider that failed, `[provider:<id>]` comes right before the code, for example `[provider:openai] [provider_reauth_required]`. `openai-codex` is ChatGPT. The tool reports three failures itself: `Image generation returned no image.`, an image that is not png, jpeg, or webp, and its own 300-second timeout. The tool's timeout starts before the gateway's, so a slow request usually ends with the tool's timeout, not `image_timeout`.
+
+| Code | Cause |
+| --- | --- |
+| `image_model_unavailable` | The project reaches no image model. |
+| `not_an_image_model` | `model` names a model that cannot generate images. The suggestion names up to 5 image models the project can use. |
+| `image_model_unsupported` | Kortix cannot call this model's provider for images, for example Anthropic or Bedrock. |
+| `provider_not_connected` | `model` names a provider the project has no key or ChatGPT account for. |
+| `provider_reauth_required` | The ChatGPT login expired, or the provider refused the key. Reconnect ChatGPT or check the key. |
+| `image_rate_limited` | The provider's image limit is reached. The error gives the seconds until it resets. |
+| `image_upstream_error` | The provider failed or answered without an image, for example after a safety refusal. |
+| `image_upstream_unreachable` | The provider could not be reached. |
+| `image_response_too_large` | The provider answered with more than 48 MiB. |
+| `image_timeout` | The gateway stopped the request after 300 seconds. |
+
+### Turn it off
+
+Turn `image_gen` off for one agent with its `tools` map, or deny it with a permission rule:
+
+```yaml
+agents:
+  kortix:
+    tools:
+      image_gen: false        # the model does not see the tool
+  researcher:
+    permission:
+      image_gen: deny         # the model sees it, every call is denied
+```
+
+- Set `image_gen: ask` to approve each call.
+- `image_gen` writes a file, so `edit: deny` also denies it, unless the agent sets a rule for `image_gen`. The same applies to `memory`, on both harnesses.
+- On OpenCode (deprecated), these tools cannot ask: `edit: ask` or an `edit` pattern map denies them.
+- Deleting the `image_gen` line under `tools:` does not remove it.
+
+### Replace it
+
+Map `image_gen` to your own module. The module replaces the Kortix tool on every harness:
+
+```yaml
+tools:
+  image_gen: tools/image_gen.ts
+```
+
+`kortix tools eject image_gen` writes the Kortix source to `tools/image_gen.ts` and sets this line. Keep the output shape `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed }`, or the chat shows the raw output in place of the image card. `sha256` is optional: outputs from before it was added have none.
 
 ## Write a project tool
 
@@ -153,6 +254,7 @@ The default export is a plain object. It imports nothing from a harness.
 | `directory` | The project checkout the session works in, `/workspace`. Resolve relative paths against it. |
 | `env` | The sandbox environment plus the secrets this agent receives, with their current values. Read a secret as `context.env.NAME`. A secret changed after the sandbox started is in `context.env`, not in `process.env`. |
 | `signal` | An `AbortSignal` that aborts when the turn stops. Pass it to `fetch`. |
+| `turnId` | Optional. The turn the call belongs to, when the harness names it. pi sets it, and it is the same for every call of one turn, also for calls from a `codemode` script or a subagent. `signal` can differ per call. Key a per-turn limit on `turnId`. An OpenCode session does not set it. |
 
 - **Output size.** An output over 49 KiB or 1,990 lines is saved whole to a file in the sandbox temp directory. The model receives the head, the size, and the file path. Return what the model needs, not a raw dump.
 - **Errors.** Throw a message that says what to change. The model reads it and can act on it.
@@ -242,9 +344,9 @@ Sessions load the copy after the change request merges.
 
 In a local checkout, give `kortix cr open` the branch you pushed: `--head <branch>`. Inside a sandbox the CLI fills it in.
 
-- It writes the source the sandbox runs to `tools/<name>.ts`. The copy imports only `node:*` modules, so it runs as it is. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `memory` and `show` work on files in the project checkout.
+- It writes the source the sandbox runs to `tools/<name>.ts`. The copy imports only `node:*` modules, so it runs as it is. `web_search`, `image_search`, and `scrape_webpage` call the Kortix API with `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env`. `image_gen` calls the Kortix LLM gateway with `KORTIX_LLM_BASE_URL` and `KORTIX_TOKEN`. `memory` and `show` work on files in the project checkout.
 - It sets `<name>: tools/<name>.ts` in the file that declares the entry, the root file or an imported file. The line ends with `# ejected from kortix:<name>`. Other lines and comments stay.
-- With no `tools:` key, it creates one and also lists the other four Kortix tools as `kortix:<name>`, so the eject removes nothing.
+- With no `tools:` key, it creates one and also lists the other five Kortix tools as `kortix:<name>`, so the eject removes nothing.
 - It refuses when `tools/<name>.ts` exists or when the tool already points at another module. `--force` overwrites.
 - It refuses a name that is not a Kortix tool, and a project without `kortix.yaml` at `kortix_version` 2 or 3.
 

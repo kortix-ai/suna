@@ -552,6 +552,7 @@ export function FilePreviewModal({
         <FileSourceProvider value={source}>
           <FileContentRenderer
             filePath={selectedFilePath!}
+            showCaption
             reloadKey={reloadKey}
             onUnsavedChange={setDirty}
             showHeader={!!source.editablePreview}

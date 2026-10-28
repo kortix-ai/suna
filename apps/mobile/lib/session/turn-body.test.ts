@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { toolCallMetadata, type SessionLogTurn, type ToolCallBlock } from '@kortix/sdk';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogTurns, showDrawnByImageGen, toolCallMetadata, type SessionLogBlock, type SessionLogMessage, type SessionLogTurn, type ToolCallBlock } from '@kortix/sdk';
 
 import { blocksOf, turnsOf } from '@/lib/testing/session-log';
 import {
   WORKSPACE_ROOTS,
   answeredQuestionCalls,
+  imagePathsDrawnByImageGen,
   busyStatusText,
   commandPromptText,
   compactionTurnView,
@@ -719,5 +720,40 @@ describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () 
 
   test('no assistant message yet → no segments list', () => {
     expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
+  });
+});
+
+describe('imagePathsDrawnByImageGen: the D5 path set, read from the segments', () => {
+  const IMAGE = '/workspace/output/images/fox.png';
+  const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+  const nested = (n: number, tool: string, input: Record<string, unknown>, output: string): SessionLogBlock => ({
+    type: 'harness', id: `n${n}`, harness: 'pi', kind: 'nested_part', model_visible: false,
+    data: { parent_call_id: 'code-1', part: { type: 'tool', callID: `code-1/${n}`, tool, state: { status: 'completed', input, output, title: tool, metadata: {}, time: { start: 1, end: 2 } } } },
+  });
+  const message = (id: string, role: 'user' | 'assistant', blocks: SessionLogBlock[], seq: number): SessionLogMessage => ({
+    ...V, message_id: id, thread_id: 't', seq, role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+    finish: null, error: null, created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(), completed_at: null,
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1.2.0' }, blocks, ...(role === 'assistant' && { reply_to: 'u' }),
+  });
+
+  test('v2: a script\'s nested image_gen and a nested show of the same image draw the image once', () => {
+    const turn = sessionLogTurns({
+      ...V, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '',
+      messages: [
+        message('u', 'user', [{ type: 'text', id: 'q', text: 'Draw a synthetic fox' }], 1),
+        message('a', 'assistant', [
+          { type: 'tool_call', id: 'code-1', call_id: 'code-1', name: 'codemode', kind: 'code', input: { code: 'x' }, status: 'complete', result: { content: [{ type: 'text', text: 'done' }], is_error: false } },
+          nested(1, 'image_gen', { action: 'generate', prompts: ['A synthetic fox'] }, JSON.stringify({ action: 'generate', images: [{ path: IMAGE, size: '1024x1024', prompt: 'A synthetic fox' }] })),
+          nested(2, 'show', { action: 'show', type: 'image', path: IMAGE }, ''),
+          { type: 'text', id: 't1', text: 'Done.' },
+        ], 2),
+      ],
+    })[0]!;
+    const segments = turnSegments(turnBlocks(turn), new Set());
+    const paths = imagePathsDrawnByImageGen(segments);
+    expect([...paths]).toHaveLength(1);
+    // The show of that file draws nothing: the image_gen card already drew it.
+    const show = segments.flatMap((s) => (s.kind === 'standalone' ? [s.block] : [])).find((b) => b.name === 'show')!;
+    expect(showDrawnByImageGen(show, paths)).toBe(true);
   });
 });

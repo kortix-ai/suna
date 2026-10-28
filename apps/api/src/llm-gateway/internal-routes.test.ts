@@ -53,13 +53,15 @@ mock.module('./models/servable-catalog', () => ({
     };
   },
 }));
+// Swapped per-test: an image route can refuse (GatewayResolutionError).
+let routeAnswer: () => Promise<unknown> = async () => ({
+  policyId: 'auto',
+  primaryModel: 'codex/gpt-5.6-sol',
+  fallbackModels: [],
+  fallbackOn: 'transient',
+});
 mock.module('./routing', () => ({
-  resolveGatewayRoute: async () => ({
-    policyId: 'auto',
-    primaryModel: 'codex/gpt-5.6-sol',
-    fallbackModels: [],
-    fallbackOn: 'transient',
-  }),
+  resolveGatewayRoute: async () => routeAnswer(),
 }));
 
 // The thrower is swapped per-test via resolveCandidatesMock.
@@ -165,6 +167,39 @@ describe('POST /internal/gateway/resolve-upstream — GatewayResolutionError con
       authedRequest({ principal: { userId: 'u' }, model: 'auto' }),
     );
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /internal/gateway/resolve-route — an image route refusal', () => {
+  const route = (input: unknown) => app().request(new Request('http://test/resolve-route', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ principal: { userId: 'u' }, input }),
+  }));
+  const input = { requestedModel: 'auto', requires: { imageInput: false, imageOutput: true } };
+
+  test('answers 200 with a null route and the resolution error, as /resolve-upstream does', async () => {
+    const original = routeAnswer;
+    routeAnswer = async () => {
+      throw new GatewayResolutionError('image_model_unavailable', 'No image model is connected to this project.',
+        'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.');
+    };
+    try {
+      const res = await route(input);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        route: null,
+        resolutionError: {
+          code: 'image_model_unavailable',
+          message: 'No image model is connected to this project.',
+          suggestion: 'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.',
+        },
+      });
+      routeAnswer = async () => { throw new Error('boom: real bug'); };
+      expect((await route(input)).status).toBe(500);
+    } finally {
+      routeAnswer = original;
+    }
   });
 });
 
@@ -480,6 +515,23 @@ describe('POST /admit — authorize, route, resolve and billing in one call', ()
     const unresolved = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
     expect(unresolved.resolutionError).toEqual({ code: 'provider_not_connected', message: 'Connect it', suggestion: 'Connect the provider' });
     expect(held).toBe(0);
+  });
+
+  test('a route refusal answers a null route and the resolution error, never resolving a model', async () => {
+    authorizeAnswer = { ok: true, principal };
+    const original = routeAnswer;
+    routeAnswer = async () => { throw new GatewayResolutionError('not_an_image_model', 'Not an image model', 'Use an image model'); };
+    resolveCandidatesMock.mockClear();
+    try {
+      const json = await (await admit({ token: 't', input: { ...input, requires: { imageInput: false, imageOutput: true } } })).json() as Record<string, unknown>;
+      expect(json.route).toBeNull();
+      expect(json.candidates).toEqual([]);
+      expect(json.resolutionError).toEqual({ code: 'not_an_image_model', message: 'Not an image model', suggestion: 'Use an image model' });
+      expect(resolveCandidatesMock).not.toHaveBeenCalled();
+    } finally {
+      routeAnswer = original;
+      authorizeAnswer = { ok: true };
+    }
   });
 
   test('a denial answers only the admission, and an unexpected resolve failure leaves resolution to the gateway', async () => {

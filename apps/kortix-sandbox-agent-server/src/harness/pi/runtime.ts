@@ -198,6 +198,10 @@ export function parsePromptBody(raw: unknown): PromptInput {
 
 export type TurnOutcome = 'completed' | 'error' | 'aborted'
 
+/** Tools whose call renders as its own transcript part (a card), also when a codemode script makes it. */
+const NATIVE_PART_TOOLS: readonly string[] = ['show', 'image_gen']
+/** Built-in tools that run concurrently with each other: independent network I/O whose caps count before any await. */
+const PARALLEL_TOOLS: readonly string[] = ['image_gen']
 /**
  * pi's `compaction_end` text when `AgentSession.compact()` refuses (pi 1.2.0 gives no code, only
  * these two messages). Exact strings: a pi bump that rewords them fails the pi-harness tests.
@@ -574,12 +578,14 @@ export class PiRuntime {
         recovers: (message) => this.recovers(message),
       })
       const hosted = await loadTools(this.projectRoot(), this.compiled)
-      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName }))
-      // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
-      // so only a batch made entirely of parallel tools (task calls) runs concurrently.
+      // `turnId` is the running turn's message id: the same for its direct, script, retried and subagent calls.
+      this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName, turnId: this.active?.messageId }))
+      // The root agent runs parallel-capable; every built-in tool except PARALLEL_TOOLS pins its batch
+      // to sequential, so only a batch made entirely of parallel tools (task, image_gen calls) runs
+      // concurrently. pi applies the same mode to a script's nested calls.
       // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
       this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
-        (tool) => ({ ...tool, executionMode: 'sequential' as const }),
+        (tool) => ({ ...tool, executionMode: PARALLEL_TOOLS.includes(tool.name) ? ('parallel' as const) : ('sequential' as const) }),
       )
       this.skills = await this.loadSkills()
       this.instructions = this.loadInstructions()
@@ -1217,6 +1223,16 @@ export class PiRuntime {
    */
   private onSessionEvent(event: AgentSessionEvent): void {
     const sessionID = this.rootId
+    // A script's call to a native-part tool: pi emits its execution on the session only (with the
+    // calling part's id), never on the agent. Published like a direct call, it gets its own card.
+    if (
+      (event.type === 'tool_execution_start' || event.type === 'tool_execution_update' || event.type === 'tool_execution_end') &&
+      event.parentToolCallId &&
+      NATIVE_PART_TOOLS.includes(event.toolName)
+    ) {
+      this.translateAndPublish(event)
+      return
+    }
     if (event.type === 'compaction_start') {
       const created = this.now()
       const markerId = this.clock.mint(created)
@@ -1367,7 +1383,8 @@ export class PiRuntime {
    * The root's rule for a call a tool made (`parentToolCallId`: a codemode script's
    * `tools.<name>()`). pi runs nested calls through extension `tool_call` handlers only,
    * never `agent.beforeToolCall`, so without this the policy would not see them. A direct
-   * call has no parent: `toolGate` already decided it. An ask attaches to the calling part.
+   * call has no parent: `toolGate` already decided it. An ask attaches to the call's own part
+   * (a native-part tool, see `onSessionEvent`), else to the calling part.
    */
   private nestedCallGate(): InlineExtension {
     return {
@@ -1377,11 +1394,11 @@ export class PiRuntime {
         pi.on('tool_call', (event) => {
           const parent = event.parentToolCallId
           if (!parent) return undefined
-          // A subagent thread links to its root `task` call, and a question renders on its own part.
+          // A subagent thread links to its root `task` call; a question needs the model-issued call it answers.
           if (event.toolName === 'task' || event.toolName === 'question') {
             return { block: true, reason: `Call ${event.toolName} directly, not from a script.` }
           }
-          return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(parent))
+          return this.decide(this.rootRule(event.toolName, event.input), event.toolName, event.input, () => this.adapter?.toolRef(event.toolCallId) ?? this.adapter?.toolRef(parent))
         })
       },
     }
@@ -1393,8 +1410,8 @@ export class PiRuntime {
       name: 'kortix-presentation',
       hidden: true,
       factory: (pi) => {
-        const show = this.baseTools.find((tool) => tool.name === 'show')
-        if (this.codemodeMode === 'only' && show) pi.registerTool({ ...show, exposure: 'model-only' })
+        if (this.codemodeMode !== 'only') return
+        for (const tool of this.baseTools) if (NATIVE_PART_TOOLS.includes(tool.name)) pi.registerTool({ ...tool, exposure: 'model-only' })
       },
     }
   }

@@ -1402,18 +1402,21 @@ describe('v2 project tools', () => {
     ]);
     const others =
       'must be a repo-relative path to a .ts or .js module (e.g. `tools/web_serch.ts`). `kortix:<name>` names a Kortix tool under its own name: ' +
-      '`web_search: kortix:web_search`, `image_search: kortix:image_search`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`.';
+      '`web_search: kortix:web_search`, `image_search: kortix:image_search`, `image_gen: kortix:image_gen`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`.';
     expect(message('  web_serch: kortix:web_serch')).toEqual([['tools.web_serch', others]]);
     expect(message('  web_serch: kortix:web_search')).toEqual([['tools.web_serch', others]]);
     expect(message('  memory: "kortix:"')).toEqual([['tools.memory', 'must be `kortix:memory` (the Kortix tool) or a repo-relative path to a .ts or .js module (e.g. `tools/memory.ts`) that replaces it.']]);
     expect(message('  show: KORTIX:show').map(([path]) => path)).toEqual(['tools.show']);
   });
 
-  test('selection: no tools key loads every Kortix tool; a tools key loads only the ones it lists', () => {
+  test('selection: no tools key loads every Kortix tool; a tools key loads the ones it lists plus the default-on ones', () => {
     expect(selectedKortixTools(undefined)).toEqual([...KORTIX_TOOL_NAMES]);
-    expect(selectedKortixTools({})).toEqual([]);
-    expect(selectedKortixTools(null)).toEqual([]);
-    expect(selectedKortixTools({ show: 'kortix:show', lookup_order: 'tools/l.ts', web_search: 'tools/web_search.ts' })).toEqual(['web_search', 'show']);
+    expect(selectedKortixTools({})).toEqual(['image_gen']);
+    expect(selectedKortixTools(null)).toEqual(['image_gen']);
+    expect(selectedKortixTools({ show: 'kortix:show', lookup_order: 'tools/l.ts', web_search: 'tools/web_search.ts' })).toEqual(['web_search', 'image_gen', 'show']);
+    // A list that names a default-on tool decides it: a module replaces it.
+    expect(selectedKortixTools({ image_gen: 'tools/img.ts' })).toEqual(['image_gen']);
+    expect(summarize(base + 'tools:\n  web_search: kortix:web_search\n  image_gen: kortix:image_gen\n').issues).toEqual([]);
     expect(kortixToolRef('kortix:memory')).toBe('memory');
     expect(kortixToolRef('tools/memory.ts')).toBeNull();
   });

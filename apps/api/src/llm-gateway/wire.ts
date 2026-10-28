@@ -239,6 +239,77 @@ function messagesRoute(path: string) {
   });
 }
 
+const ImageRequestSchema = z
+  .object({
+    model: z.string().optional().openapi({
+      description: 'Any image model the project can reach, or `auto` (the default): the gateway picks one.',
+      example: 'auto',
+    }),
+    prompt: z.string().min(1).openapi({ example: 'A red cube on a white table' }),
+    aspect_ratio: z
+      .enum(['auto', '1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4'])
+      .optional()
+      .openapi({ example: '16:9' }),
+    quality: z.string().optional().openapi({ example: 'auto' }),
+    background: z.string().optional().openapi({ example: 'auto' }),
+    images: z
+      .array(z.object({ image_url: z.string() }))
+      .min(1)
+      .max(5)
+      .optional()
+      .openapi({ description: 'Edits only, required there: 1 to 5 reference images as `data:` URLs.' }),
+  })
+  .openapi('GatewayImageRequest');
+
+const ImageResponseSchema = z
+  .object({
+    created: z.number(),
+    model: z.string().openapi({ description: 'The model that made the image.', example: 'codex/gpt-image-2' }),
+    provider: z.string().openapi({ example: 'openai-codex' }),
+    data: z.array(z.object({ b64_json: z.string(), mime_type: z.string().openapi({ example: 'image/png' }) })),
+    size: z.string().optional().openapi({ description: 'The image size, when the upstream reports it.', example: '1024x1024' }),
+    usage: z
+      .object({ input_tokens: z.number(), output_tokens: z.number(), total_tokens: z.number() })
+      .optional()
+      .openapi({ description: 'Present when the upstream reports token usage.' }),
+  })
+  .openapi('GatewayImageResponse');
+
+// No 502 or 504 reaches a client: the gateway's `cloudflareSafe` (apps/llm-gateway/src/server.ts,
+// applied to every inference answer in routes.ts `inference`) sends both as 503 with
+// `x-kortix-upstream-status` and the body's `upstream_status`; the API's `EDGE_REWRITTEN_STATUSES`
+// middleware (http-middleware.ts) does the same for any 502, 504 or 520-524 it relays.
+const IMAGE_ERROR_CODES = [
+  '- `400`: `invalid_request`, `image_model_unavailable` (no image model is reachable), `not_an_image_model`, `image_model_unsupported`, `image_model_unpriced`, `provider_not_connected`, `model_unavailable`.',
+  '- `401`: `missing_token`, a refused gateway credential, `provider_reauth_required`.',
+  '- `402`: a budget limit, or the wallet refused a Kortix-billed model.',
+  '- `403`: the credential has no access to the project.',
+  '- `413`: `request_too_large`: the request body is over the gateway limit.',
+  '- `429`: `image_rate_limited`, or `provider_pool_rate_limited` (every pooled ChatGPT account rests), with `retry-after`.',
+  '- `499`: `client_aborted`: the client cancelled the request.',
+  '- `502`, sent as `503`: `image_upstream_error`, `image_upstream_unreachable` (the provider could not be reached), `image_response_too_large`, `routing_unavailable`.',
+  '- `503`: `admission_unavailable`, `gateway_overloaded` (the gateway is at capacity), `gateway_unavailable` (no gateway is configured), `gateway_proxy_error` and `gateway_proxy_unreachable` (the API could not relay the gateway).',
+  '- `504`, sent as `503`: `image_timeout`: the request ran out of its 300 s budget.',
+  'Any other upstream 4xx answers with that status and `image_upstream_error`.',
+].join('\n');
+
+function imagesRoute(path: string, operation: 'generations' | 'edits') {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: operation === 'generations' ? 'Generate an image' : 'Edit an image',
+    description: `${operation === 'generations' ? 'Makes one image from a prompt' : 'Makes one image from a prompt and reference images'}; \`n\` is always 1. \`model\` names any image model the project can reach (the project's ChatGPT login, or an OpenAI, Google, xAI or OpenRouter key). With \`auto\` or no \`model\`, the gateway picks a reachable image model and tries the next planned model when one fails. The gateway reads \`prompt\`, \`aspect_ratio\`, \`quality\`, \`background\` and, for edits, \`images\`. A legacy \`size\` (\`1024x1024\`, \`1536x1024\`, \`1024x1536\`) maps to its aspect ratio; every other field is dropped. The response is the same shape for every provider. A ChatGPT image carries the \`x-codex-primary-used-percent\`, \`x-codex-primary-reset-after-seconds\` and \`x-codex-primary-window-minutes\` headers on 200 and 429.\n\nError codes (the body's \`code\`):\n${IMAGE_ERROR_CODES}\n\nThe body's \`provider\` names the provider that failed by its public id (\`openai-codex\` is ChatGPT); it is empty or absent when no model resolved.\n\nA client never receives 502 or 504. The gateway sends every 502 and 504 as 503, with the original status in the \`x-kortix-upstream-status\` header and in the JSON body's \`upstream_status\`. The API sends any 502 or 504 it relays as 503 with the same header. The \`code\` stays the one listed above.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'application/json': { schema: ImageRequestSchema } } } },
+    responses: {
+      200: json(ImageResponseSchema, 'One image, base64-encoded'),
+      ...errors(400, 401, 402, 403, 413, 429, 503),
+      499: { description: 'The client cancelled the request (`client_aborted`).' },
+    },
+  });
+}
+
 // The reasoning_options entry shape — three real forms models.dev emits
 // (effort/toggle/budget_tokens; see @kortix/llm-catalog's
 // CatalogReasoningOption for the full field-by-field rationale). All fields
@@ -506,6 +577,8 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   llm.openAPIRegistry.registerPath(chatCompletionsRoute('/v1/chat/completions'));
   llm.openAPIRegistry.registerPath(modelsRoute('/v1/models'));
   llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/generations', 'generations'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/edits', 'edits'));
   llm.all('*', (c) => {
     const tail = c.req.path.slice('/v1/llm'.length) || '/';
     return proxy(c, tail);
