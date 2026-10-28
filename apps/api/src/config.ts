@@ -336,13 +336,13 @@ const envSchema = z.object({
   ),
   MOBILE_STORE_URL_IOS: optUrl(''),
   MOBILE_STORE_URL_ANDROID: optUrl(''),
-  // Self-host enterprise license: when the operator has purchased/holds a
-  // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
-  // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
-  // audit access) regardless of the account's billing tier — see
-  // getAccountEntitlements()/accountHasEntitlement() in
-  // billing/services/entitlements.ts. Off by default; billing is irrelevant
-  // for a self-host license check.
+  // Self-host Kortix Enterprise license key, issued by Kortix with an
+  // Enterprise subscription (ee/LICENSE). A valid, unexpired key unlocks SSO,
+  // SCIM, custom roles and audit access on every account:
+  // billing/services/enterprise-license.ts.
+  KORTIX_LICENSE_KEY: optStr,
+  // Retired: a boolean cannot prove a subscription. Read only so boot can tell
+  // an operator who still sets it to use KORTIX_LICENSE_KEY.
   ENTERPRISE_LICENSE_AVAILABLE: optBoolFalse,
   // Self-host account-creation restriction: when true, POST /v1/accounts
   // (creating an ADDITIONAL/org account) is blocked with 403 for everyone
@@ -1299,6 +1299,7 @@ export const config = {
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
   MOBILE_STORE_URL_ANDROID: env.MOBILE_STORE_URL_ANDROID,
+  KORTIX_LICENSE_KEY: env.KORTIX_LICENSE_KEY.trim(),
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
 

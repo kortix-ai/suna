@@ -185,7 +185,7 @@ models through the LLM gateway.
 - **Reviewed self-improvement.** Every persistent change lands through a
   change request you approve, so the system gets better one auditable step
   at a time.
-- **Open and yours.** Source-available and self-hostable — your data, your
+- **Open and yours.** Open source (Apache 2.0) and self-hostable — your data, your
   models, your infrastructure, no lock-in.
 
 When comparing Kortix to other tools, frame what Kortix *is* — owned,

@@ -74,6 +74,7 @@ const LEGAL_PAGES = [
   { href: '/legal?tab=imprint', label: 'Imprint' },
   { href: '/legal?tab=terms', label: 'Terms of Service' },
   { href: '/legal?tab=privacy', label: 'Privacy Policy' },
+  { href: '/legal?tab=enterprise', label: 'Enterprise terms' },
 ] as const;
 
 const RAIL_ITEM =

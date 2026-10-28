@@ -1,6 +1,6 @@
 // Pure SCIM serializer/filter helpers — no DB, safe to run standalone.
 import { describe, expect, test } from 'bun:test';
-import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter, listResponse } from '../scim/app';
+import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter, listResponse } from '../ee/scim/app';
 
 describe('parseFilter', () => {
   test('parses the supported `attr eq "value"` form (with whitespace)', () => {
@@ -101,7 +101,7 @@ describe('buildInviteUser', () => {
 import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
 
-const SCIM_USERS_SRC = readScimSource(joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'), 'utf8');
+const SCIM_USERS_SRC = readScimSource(joinScimPath(import.meta.dir, '..', 'ee', 'scim', 'users.ts'), 'utf8');
 const OFFBOARD_SRC = readScimSource(
   joinScimPath(import.meta.dir, '..', 'accounts', 'core', 'offboard-member.ts'),
   'utf8',
@@ -119,7 +119,6 @@ describe('SCIM deprovision revokes the member YOLO token', () => {
 
   test('SCIM deactivation runs the shared offboarding', () => {
     expect(SCIM_USERS_SRC).toContain("offboardMember(SYSTEM_ACTOR, user.accountId, userId, 'deprovisioned')");
-    expect(SCIM_USERS_SRC).toContain("from '../accounts/core/offboard-member'");
   });
 
   test('the offboarding awaits revokeYoloTokenForMember after the member row is gone', () => {

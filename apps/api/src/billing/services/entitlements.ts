@@ -16,6 +16,7 @@
 // enterprise surface.
 
 import { config } from '../../config';
+import { enterpriseLicenseActive } from './enterprise-license';
 import type { TierEntitlements } from '../../types';
 import type { getCreditAccount } from '../repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from './billing-cache';
@@ -106,10 +107,11 @@ export function invalidateCachedAccountTier(accountId?: string): void {
  * The full enterprise entitlement set for an account.
  *
  * Resolution order (all but the first live inside `resolveBillingFromRow`):
- *   1. `ENTERPRISE_LICENSE_AVAILABLE` — a self-host operator holding a Kortix
- *      Enterprise license unlocks every enterprise entitlement platform-wide,
- *      regardless of billing tier (self-host has no Stripe-backed tier to
- *      assign 'enterprise' to). An ENV fact, not a row fact, so it stays here.
+ *   1. `KORTIX_LICENSE_KEY` — a self-host deployment with a valid, unexpired
+ *      Kortix Enterprise license key unlocks every enterprise entitlement
+ *      platform-wide, regardless of billing tier (self-host has no
+ *      Stripe-backed tier to assign 'enterprise' to). A deployment fact, not a
+ *      row fact, so it stays here (enterprise-license.ts).
  *   2. the resolved plan — the stored plan or an active trial, plus the SSO/SCIM
  *      grace after an Enterprise trial ends and the per-feature overrides.
  *
@@ -120,7 +122,7 @@ export async function getAccountEntitlements(
   accountId: string,
   prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
 ): Promise<TierEntitlements> {
-  if (config.ENTERPRISE_LICENSE_AVAILABLE) return enterpriseLicenseGates();
+  if (enterpriseLicenseActive()) return enterpriseLicenseGates();
   const resolved = await resolveAccountBilling(
     accountId,
     // `undefined` means "fetch the row"; `null` means "this account has none".
@@ -134,6 +136,6 @@ export async function accountHasEntitlement(
   accountId: string,
   key: keyof TierEntitlements,
 ): Promise<boolean> {
-  if (config.ENTERPRISE_LICENSE_AVAILABLE) return true;
+  if (enterpriseLicenseActive()) return true;
   return (await getAccountEntitlements(accountId))[key] === true;
 }

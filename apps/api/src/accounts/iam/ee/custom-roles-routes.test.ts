@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./custom-roles.ts', import.meta.url), 'utf8');
 const policySource = readFileSync(new URL('./custom-roles-policy.ts', import.meta.url), 'utf8');
-const barrel = readFileSync(new URL('../iam.ts', import.meta.url), 'utf8');
+const barrel = readFileSync(new URL('../../iam.ts', import.meta.url), 'utf8');
 
 function route(method: string, path: string): string {
   const escaped = path.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');

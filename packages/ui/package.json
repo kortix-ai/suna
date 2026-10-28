@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Kortix UI: the shared React component library for apps/web, Kortix Apps and SDK hosts. Tailwind v4 classes, themed by CSS variables.",
   "type": "module",
-  "license": "Elastic-2.0",
+  "license": "Apache-2.0",
   "homepage": "https://github.com/kortix-ai/suna/tree/dev/packages/ui",
   "repository": {
     "type": "git",

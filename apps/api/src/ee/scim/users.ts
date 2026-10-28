@@ -5,15 +5,15 @@ import { userChanges, applyProfile } from './user-profile';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers } from '@kortix/db';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
-import { offboardMember } from '../accounts/core/offboard-member';
-import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
-import { accountRoleFor, countAccountOwners } from '../iam/read-models';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
-import { scimError } from '../middleware/scim-auth';
-import { auth, errors, json } from '../openapi';
-import { db } from '../shared/db';
-import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
-import { accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
+import { offboardMember } from '../../accounts/core/offboard-member';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { scimError } from './scim-auth';
+import { auth, errors, json } from '../../openapi';
+import { db } from '../../shared/db';
+import { scimMemberRow, scimMemberRows } from '../../iam/membership-read';
+import { accountGroupsAmong, scimGroupIdsOfUser } from '../../iam/group-read';
 import { buildDirectoryUser, directoryUserById, directoryUserByEmail, saveDirectoryUser, directoryGroupIds, type DirectoryUser } from './directory-users';
 import {
   ScimResource,

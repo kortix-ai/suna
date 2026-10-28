@@ -29,7 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 LABEL org.opencontainers.image.title="kortix-frontend" \
       org.opencontainers.image.description="Kortix web frontend (Next.js standalone)" \
       org.opencontainers.image.source="https://github.com/kortix-ai/suna" \
-      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Kortix"
 
 RUN addgroup --system --gid 1001 nodejs && \
@@ -49,7 +49,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # License
-COPY LICENSE /LICENSE
+COPY LICENSE NOTICE /
 
 # Copy pre-built standalone output from the host.
 COPY --chown=nextjs:nodejs apps/web/.next/standalone ./

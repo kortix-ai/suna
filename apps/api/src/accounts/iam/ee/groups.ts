@@ -2,19 +2,19 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { json, errors, auth } from '../../openapi';
+import { json, errors, auth } from '../../../openapi';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { groupProjectGrants } from '../../iam/read-models';
-import { db } from '../../shared/db';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { actorOf } from '../../iam/actor';
-import { visibleDirectory } from '../../iam/directory-visibility';
+import { groupProjectGrants } from '../../../iam/read-models';
+import { db } from '../../../shared/db';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../iam';
+import { actorOf } from '../../../iam/actor';
+import { visibleDirectory } from '../../../iam/directory-visibility';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
   invalidateIamCacheForUsers,
-} from '../../iam/cache-invalidation';
+} from '../../../iam/cache-invalidation';
 import {
   addGroupMembers,
   createGroup,
@@ -24,7 +24,7 @@ import {
   listGroups,
   removeGroupMember,
   updateGroup,
-} from '../../repositories/iam';
+} from '../../../repositories/iam';
 import {
   iamRouter,
   AccountIdParam,
@@ -32,9 +32,9 @@ import {
   GroupSchema,
   GroupMemberSchema,
   ProjectGrantSchema,
-} from './app';
-import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
-import { readJsonObject } from '../../shared/http-body';
+} from '../app';
+import { auditIam, isUniqueViolation, requireEntitlement } from '../http-helpers';
+import { readJsonObject } from '../../../shared/http-body';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state

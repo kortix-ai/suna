@@ -7,7 +7,7 @@ import {
   type AgentIdentity,
   type EagerProvisionProjectRow,
   eagerlyProvisionAgentIdentities,
-} from './custom-roles';
+} from './agent-identities';
 
 /**
  * Regression coverage for `GET /:accountId/iam/agent-identities`'s eager
@@ -15,7 +15,7 @@ import {
  *
  * Incident: unbounded `Promise.all` over up to 50 projects fired 50
  * concurrent git reads at once (201 total git operations, 22.9s, 503) —
- * apps/api/src/accounts/iam/custom-roles.ts, 2026-09-27. These tests pin the
+ * apps/api/src/accounts/iam/custom-roles.ts (now agent-identities.ts), 2026-09-27. These tests pin the
  * three independent fixes: bounded concurrency, a per-project load timeout
  * that degrades to the implicit `default` agent, and a whole-phase deadline
  * that degrades to whatever was already provisioned instead of hanging.

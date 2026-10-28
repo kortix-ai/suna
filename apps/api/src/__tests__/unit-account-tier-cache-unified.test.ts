@@ -25,7 +25,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: { ENTERPRISE_LICENSE_AVAILABLE: false },
+  config: { KORTIX_LICENSE_KEY: '' },
 }));
 
 const { getCachedAccountTier, invalidateCachedAccountTier } = await import(

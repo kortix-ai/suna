@@ -16,18 +16,18 @@
 
 import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships, accountScimUsers } from '@kortix/db';
-import { db } from '../shared/db';
-import { withDirectoryTransaction } from './directory-transaction';
-import { assignRole, SYSTEM_ACTOR } from './assignments';
-import { invalidateIamCacheForUser } from './cache-invalidation';
-import { identitiesMergeableIntoSso, reconcileAccountIdentities } from './account-identity';
+import { db } from '../../shared/db';
+import { withDirectoryTransaction } from '../directory-transaction';
+import { assignRole, SYSTEM_ACTOR } from '../assignments';
+import { invalidateIamCacheForUser } from '../cache-invalidation';
+import { identitiesMergeableIntoSso, reconcileAccountIdentities } from '../account-identity';
 import {
   emailDomain,
   ensureAutoProvisionedGroup,
   getSsoProviderBySupabaseId,
   isSsoDomainVerified,
   listSsoGroupMappings,
-} from '../repositories/sso';
+} from '../../repositories/sso';
 
 interface SsoSyncOutcome {
   /** No SAML provider id on this JWT — sync skipped. */
@@ -185,7 +185,7 @@ const GROUP_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 /**
  * Apply SCIM group memberships that were parked on a pending invite for this
- * email (see scim/groups.ts addGroupMembersOrDeferInvites). JIT auto-create
+ * email (see ee/scim/groups.ts addGroupMembersOrDeferInvites). JIT auto-create
  * bypasses the invite-acceptance flow, so without this the parked entries
  * strand forever. Applies + strips only the `{group_id}` entries; project
  * grants stay on the (still pending) invite for the real accept flow.
@@ -387,7 +387,7 @@ export async function syncSsoMembership(args: {
       }
       memberCreated = true;
       // JIT bypasses invite acceptance, so SCIM group memberships parked on a
-      // pending invite for this email (scim/groups.ts) would strand forever —
+      // pending invite for this email (ee/scim/groups.ts) would strand forever —
       // consume them now. Project grants on the invite stay for the real
       // accept flow; only the {group_id} entries are applied and stripped.
       await consumeInviteGroupGrants(provider.accountId, args.userId, args.email);

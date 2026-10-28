@@ -10,14 +10,15 @@ import { cn } from '@kortix/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Fragment, Suspense, useState, type ReactNode } from 'react';
 
+import { ENTERPRISE_TERMS, ENTERPRISE_TERMS_LAST_UPDATED } from './enterprise-terms';
 import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
 const LEGAL_LAST_UPDATED = 'September 29, 2026';
 
-type LegalTab = 'imprint' | 'terms' | 'privacy';
+type LegalTab = 'imprint' | 'terms' | 'privacy' | 'enterprise';
 
 function isLegalTab(value: string | null): value is LegalTab {
-  return value === 'imprint' || value === 'terms' || value === 'privacy';
+  return value === 'imprint' || value === 'terms' || value === 'privacy' || value === 'enterprise';
 }
 
 /**
@@ -444,6 +445,7 @@ function parseTerms(source: string): { intro: TermsBlock[]; sections: TermsSecti
 }
 
 const TERMS = parseTerms(TERMS_OF_SERVICE);
+const ENTERPRISE = parseTerms(ENTERPRISE_TERMS);
 
 /** `**Defined term**` reads in the foreground; an address is a mail link. */
 function TermsInline({ text }: { text: string }) {
@@ -493,14 +495,14 @@ function TermsBlocks({ blocks }: { blocks: TermsBlock[] }) {
   );
 }
 
-/** English only, like the privacy policy. The text lives in `terms-of-service.ts`. */
-function TermsOfService() {
+/** English only, like the privacy policy. The texts live in `terms-of-service.ts` and `enterprise-terms.ts`. */
+function TermsDocument({ doc }: { doc: ReturnType<typeof parseTerms> }) {
   return (
     <div className="space-y-10">
       <div className="space-y-4">
-        <TermsBlocks blocks={TERMS.intro} />
+        <TermsBlocks blocks={doc.intro} />
       </div>
-      {TERMS.sections.map((section) => (
+      {doc.sections.map((section) => (
         <Section key={section.id} id={section.id} title={section.title}>
           <TermsBlocks blocks={section.blocks} />
         </Section>
@@ -566,6 +568,7 @@ function LegalContent() {
     { id: 'imprint', label: t.raw('i18nComplete.textd198ed30d09b') },
     { id: 'terms', label: t.raw('i18nComplete.text4afa55bf7aec') },
     { id: 'privacy', label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy') },
+    { id: 'enterprise', label: 'Enterprise terms' },
   ];
 
   const toc: TocItem[] = (
@@ -576,8 +579,8 @@ function LegalContent() {
           ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
           ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
         ]
-      : activeTab === 'terms'
-        ? TERMS.sections.map((section) => [section.id, section.title])
+      : activeTab === 'terms' || activeTab === 'enterprise'
+        ? (activeTab === 'terms' ? TERMS : ENTERPRISE).sections.map((section) => [section.id, section.title])
         : Object.entries(PRIVACY_TITLES)
   ).map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
 
@@ -622,12 +625,18 @@ function LegalContent() {
                     ? 'Imprint'
                     : activeTab === 'terms'
                       ? t.raw('i18nComplete.text4afa55bf7aec')
-                      : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
+                      : activeTab === 'enterprise'
+                        ? 'Enterprise Subscription Terms'
+                        : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
                 </h2>
                 {activeTab === 'imprint' ? null : (
                   <p className="text-muted-foreground mt-2 text-sm tabular-nums">
                     {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
-                    {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
+                    {activeTab === 'terms'
+                      ? TERMS_LAST_UPDATED
+                      : activeTab === 'enterprise'
+                        ? ENTERPRISE_TERMS_LAST_UPDATED
+                        : LEGAL_LAST_UPDATED}
                   </p>
                 )}
               </div>
@@ -635,7 +644,9 @@ function LegalContent() {
               {activeTab === 'imprint' ? (
                 <Imprint />
               ) : activeTab === 'terms' ? (
-                <TermsOfService />
+                <TermsDocument doc={TERMS} />
+              ) : activeTab === 'enterprise' ? (
+                <TermsDocument doc={ENTERPRISE} />
               ) : (
                 <PrivacyPolicy />
               )}

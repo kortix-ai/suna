@@ -412,7 +412,7 @@ esac
     expect(stdout).not.toContain('Terraform');
   });
 
-  describe('configuration feature flags (landing / enterprise-license / billing)', () => {
+  describe('configuration feature flags (landing / license-key / billing)', () => {
     test('default to off (except the landing page, off by default too), and are explicit in .env (not just hard-coded in the compose template)', async () => {
       const { code } = await run(['init', '--yes']);
       expect(code).toBe(0);
@@ -420,7 +420,7 @@ esac
       // Self-host is an app deployment, not a marketing site — the marketing
       // landing page is DISABLED by default (unlike Kortix Cloud).
       expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
-      expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
+      expect(env.KORTIX_LICENSE_KEY).toBe('');
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
     });
@@ -484,20 +484,25 @@ esac
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
     });
 
-    test('--enterprise-license sets ENTERPRISE_LICENSE_AVAILABLE', async () => {
-      const { code } = await run(['init', '--yes', '--enterprise-license']);
+    test('--license-key writes KORTIX_LICENSE_KEY', async () => {
+      const { code } = await run(['init', '--yes', '--license-key', 'payload.signature']);
       expect(code).toBe(0);
-      expect(readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
+      expect(readEnv().KORTIX_LICENSE_KEY).toBe('payload.signature');
     });
 
-    test('a re-run of init without the flag does not reset a previously-set flag', async () => {
-      await run(['init', '--yes', '--enterprise-license']);
-      expect(readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
+    test('a re-run of init without the flag does not reset a previously-set key', async () => {
+      await run(['init', '--yes', '--license-key', 'payload.signature']);
 
-      // Plain re-init (e.g. a config refresh) must not silently turn it back off.
+      // Plain re-init (e.g. a config refresh) must not silently drop it.
       const { code } = await run(['init', '--yes']);
       expect(code).toBe(0);
-      expect(readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
+      expect(readEnv().KORTIX_LICENSE_KEY).toBe('payload.signature');
+    });
+
+    test('the retired --enterprise-license flag is a usage error that names --license-key', async () => {
+      const { code, stderr } = await run(['init', '--yes', '--enterprise-license']);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('--license-key');
     });
 
     // Note: `kortix self-host update` shells out to a real `docker compose`
@@ -535,7 +540,7 @@ esac
       // and re-introduce the old "billing hard-pinned false" bug.
       const apiEnv = (compose.services['kortix-api'] as any).environment;
       expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
-      expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
+      expect(apiEnv.KORTIX_LICENSE_KEY).toBeUndefined();
       expect(apiEnv.KORTIX_RESTRICT_ACCOUNT_CREATION).toBeUndefined();
       // The API reads the same ENABLE_EMAIL_AUTOCONFIRM GoTrue does: while it
       // is on, a password email proves nothing (KRTX-1715). A pinned entry here

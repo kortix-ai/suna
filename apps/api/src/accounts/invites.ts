@@ -219,7 +219,7 @@ async function invitedProjects(
 }
 
 // A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
-// while they were still a pending invite (see scim/groups.ts). Validated the same
+// while they were still a pending invite (see ee/scim/groups.ts). Validated the same
 // defensive way as project grants so a bad jsonb write can't break acceptance.
 // Exported for unit tests.
 export function validateBootstrapGroup(raw: unknown): { group_id: string } | null {

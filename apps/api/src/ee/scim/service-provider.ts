@@ -2,8 +2,8 @@
 // registerScimServiceProviderRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { scimError } from '../middleware/scim-auth';
-import { auth, errors, json } from '../openapi';
+import { scimError } from './scim-auth';
+import { auth, errors, json } from '../../openapi';
 import { ScimResource, listResponse, scimRouter } from './app';
 import { ENTERPRISE_USER_SCHEMA } from './user-profile';
 

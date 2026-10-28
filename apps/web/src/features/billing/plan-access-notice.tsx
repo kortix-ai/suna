@@ -103,7 +103,10 @@ function OfferBanner({ offer, manager }: { offer: NonNullable<AccountState['ente
       }
     >
       {t('offerLicense', { license: formatWholeUsd(offer.license_usd, locale), months: offer.term_months })}{' '}
-      {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('offerAskManager')}
+      {offer.collection !== 'checkout' ? t('offerInvoiced') : manager ? null : t('offerAskManager')}{' '}
+      <a href="/legal?tab=enterprise" target="_blank" rel="noreferrer" className="underline underline-offset-4">
+        {t('offerTerms')}
+      </a>
     </InfoBanner>
   );
 }

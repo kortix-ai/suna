@@ -1,9 +1,4 @@
 {
-  "src/accounts/audit.ts": {
-    "no-restricted-syntax": {
-      "count": 9
-    }
-  },
   "src/accounts/branding.ts": {
     "no-console": {
       "count": 1
@@ -51,6 +46,11 @@
       "count": 4
     }
   },
+  "src/accounts/ee/audit.ts": {
+    "no-restricted-syntax": {
+      "count": 9
+    }
+  },
   "src/accounts/iam/assignments.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -59,22 +59,32 @@
       "count": 4
     }
   },
-  "src/accounts/iam/custom-roles-policy.ts": {
+  "src/accounts/iam/ee/custom-roles-policy.ts": {
     "no-restricted-syntax": {
       "count": 6
     }
   },
-  "src/accounts/iam/custom-roles.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
+  "src/accounts/iam/ee/custom-roles.ts": {
     "no-restricted-syntax": {
       "count": 9
     }
   },
-  "src/accounts/iam/groups.ts": {
+  "src/accounts/iam/ee/groups.ts": {
     "no-restricted-syntax": {
       "count": 10
+    }
+  },
+  "src/accounts/iam/ee/scim-tokens.ts": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/accounts/iam/ee/sso.ts": {
+    "no-console": {
+      "count": 2
+    },
+    "no-restricted-syntax": {
+      "count": 8
     }
   },
   "src/accounts/iam/http-helpers.ts": {
@@ -110,11 +120,6 @@
       "count": 1
     }
   },
-  "src/accounts/iam/scim-tokens.ts": {
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
   "src/accounts/iam/service-accounts.ts": {
     "no-restricted-syntax": {
       "count": 4
@@ -123,14 +128,6 @@
   "src/accounts/iam/session-oversight.ts": {
     "no-restricted-syntax": {
       "count": 2
-    }
-  },
-  "src/accounts/iam/sso.ts": {
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 8
     }
   },
   "src/accounts/invites.ts": {
@@ -1012,6 +1009,29 @@
       "count": 3
     }
   },
+  "src/ee/scim/app.ts": {
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/ee/scim/groups.ts": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ee/scim/service-provider.ts": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ee/scim/users.ts": {
+    "no-console": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
   "src/ensure-schema.ts": {
     "no-console": {
       "count": 9
@@ -1116,6 +1136,11 @@
       "count": 1
     }
   },
+  "src/iam/ee/sso-sync.ts": {
+    "no-console": {
+      "count": 3
+    }
+  },
   "src/iam/expiry-sweeper.ts": {
     "no-console": {
       "count": 1
@@ -1127,11 +1152,6 @@
     },
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/iam/sso-sync.ts": {
-    "no-console": {
-      "count": 3
     }
   },
   "src/inbound-dispatch.ts": {
@@ -2024,6 +2044,11 @@
       "count": 4
     }
   },
+  "src/projects/routes/ee/group-grants.ts": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
   "src/projects/routes/gateway-keys.ts": {
     "no-restricted-syntax": {
       "count": 3
@@ -2076,11 +2101,6 @@
   "src/projects/routes/github-repositories.ts": {
     "no-restricted-syntax": {
       "count": 1
-    }
-  },
-  "src/projects/routes/group-grants.ts": {
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/projects/routes/manifest-validation.ts": {
@@ -2799,29 +2819,6 @@
   "src/sandbox-proxy/ws-proxy.ts": {
     "no-console": {
       "count": 2
-    }
-  },
-  "src/scim/app.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/scim/groups.ts": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/scim/service-provider.ts": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
-  "src/scim/users.ts": {
-    "no-console": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/secrets/account-resource.ts": {

@@ -144,7 +144,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     // that `AccessProjectsTab` probes per project. An account member with no
     // projects simply gets an empty list, never a 403.
     'access-projects': true,
-    // GET .../iam/roles — `ROLE_READ` (accounts/iam/custom-roles.ts:104),
+    // GET .../iam/roles — `ROLE_READ` (accounts/iam/ee/custom-roles.ts:104),
     // which lives in ADMIN_EXTRAS. This was hard-coded `true`, so every plain
     // member saw a Roles item that could only ever fail to load.
     roles: canReadRoles === true,

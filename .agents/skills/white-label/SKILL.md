@@ -1,56 +1,53 @@
 ---
 name: white-label
-description: "White-label Kortix: license it, run it on Platinum, and rebrand it as the partner's own product. Load WHENEVER a user asks to white-label, rebrand, resell, or host Kortix under their own name, logo, or domain, or asks about the white-label license or the Exclusive Compute Agreement."
+description: "White-label Kortix: fork it, run it on Platinum, and rebrand it as the user's own product. No license to sign. Load WHENEVER a user asks to white-label, rebrand, resell, fork, or host Kortix under their own name, logo, or domain, or asks what the license allows."
 ---
 
 # White-label Kortix
 
-The license is `WHITE-LABEL-LICENSE.md` at the repository root. Read its summary
-first. The agreement there is the binding text. Do not paraphrase it as legal
-advice.
+Kortix is open source under the Apache License 2.0 (`LICENSE`). Anyone may
+fork it, change it, rebrand it and sell it, also as a hosted service. There is
+no agreement to sign and no license key to get. Do not give legal advice:
+point the user to the files.
 
-The one requirement: the partner uses Platinum as its exclusive compute provider,
-for every service Platinum offers (sandboxes today; volumes, runners, AI compute,
-and inference when Platinum offers them and Kortix uses them).
+| File | What it says |
+|---|---|
+| `LICENSE` | Apache 2.0 for everything outside an `ee/` directory. |
+| `ee/LICENSE` | The Kortix Enterprise License for every path under an `ee/` directory (SAML SSO, SCIM, custom roles and groups, audit log access). Development and testing are free. Production use needs a Kortix Enterprise subscription. `ee/README.md` explains it. |
+| `TRADEMARKS.md` | Only Kortix may use the Kortix name and logo. A fork uses its own. |
 
-## 1. License: a person signs, never the agent
+## 1. Fork
 
-1. Give the user the signing link from "Get a license" in
-   `WHITE-LABEL-LICENSE.md`.
-2. A person with authority for their organization signs it. You must not sign,
-   type a signature, or accept the agreement for them.
-3. Continue when the user confirms that they signed. Documenso emails them the
-   signed copy.
-4. Custom terms: the user emails marko@kortix.ai. Do not promise terms that the
-   agreement does not contain.
+Fork `kortix-ai/suna` on GitHub, or clone it. Keep every copyright and license
+notice in the source. The UI does not need to show Kortix.
 
 ## 2. Compute: Platinum
 
-The license covers any fork or wrapper of this repository, on any infrastructure.
-The deployment method does not matter. The compute provider does.
+Kortix runs its sessions on Platinum. It is the only sandbox provider for a new
+deployment.
 
 1. The user signs in at `https://platinum.dev/dashboard` and creates an API key
    (`pt_live_…`). Platinum shows the key once. When signup is closed for them,
-   they email marko@kortix.ai from the address they signed with.
+   they email marko@kortix.ai.
 2. Treat the key as a secret. Never write it into a tracked file, a commit, or a
    log. Put it in the deployment's secret store or untracked env file.
 3. Set the API environment of the deployment:
 
    ```bash
-   ALLOWED_SANDBOX_PROVIDERS=platinum   # platinum only, never a list with another provider
+   ALLOWED_SANDBOX_PROVIDERS=platinum
    PLATINUM_API_KEY=pt_live_...
    PLATINUM_API_URL=https://api.platinum.dev
-   ENTERPRISE_LICENSE_AVAILABLE=true    # turns on the branding entitlement
    ```
 
    `apps/api/src/config.ts` reads these. With `kortix self-host start`, the same
-   values come from the "Sandbox provider" prompt (choose `platinum`) and the
-   `--enterprise-license` flag.
+   values come from the "Sandbox provider" prompt (choose `platinum`).
 4. Start one session and confirm that it reaches a running sandbox.
 
-`ENTERPRISE_LICENSE_AVAILABLE=true` turns on the `branding` entitlement (and SSO,
-SCIM, RBAC, and audit). Section 2.2(d) of the agreement permits it for a licensed
-partner.
+Organization branding is free on every plan: no key turns it on. The Enterprise
+features need `KORTIX_LICENSE_KEY`, a signed key that Kortix issues with an
+Enterprise subscription (`kortix self-host` flag `--license-key <key>`).
+Without a key, an owner can turn on the Enterprise Demo for development and
+testing.
 
 ## 3. Rebrand
 
@@ -103,11 +100,8 @@ id map.
 
 ## 4. Stay compliant
 
-- Never configure Daytona (the legacy fallback) or any other sandbox provider
-  for a white-label instance. Platinum is the only one.
-- When Kortix gives notice of a new Platinum service that the instance uses, move
-  that work to Platinum within 90 days.
-- Keep every copyright and license notice in the source code. The UI does not
-  need to show Kortix.
-- Do not use the Kortix or Platinum names or logos, except "powered by Kortix" or
-  "powered by Platinum".
+- Keep every copyright and license notice in the source code.
+- Do not use the Kortix name or logo for the user's product. `TRADEMARKS.md`
+  says which factual references to Kortix are allowed.
+- Do not run code from an `ee/` directory in production without a Kortix
+  Enterprise subscription.

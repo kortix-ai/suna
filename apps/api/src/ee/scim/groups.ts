@@ -5,13 +5,13 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
-import { scimError } from '../middleware/scim-auth';
-import { auth, errors, json } from '../openapi';
-import { db } from '../shared/db';
-import { accountMemberRow, accountMembersAmong } from '../iam/membership-read';
-import { accountGroupFullRow, groupMemberUserIds, groupNameInAccountRow, scimGroupRow, scimGroupRowById, scimGroupRows } from '../iam/group-read';
-import { deleteGroup } from '../repositories/iam';
+import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../../iam/cache-invalidation';
+import { scimError } from './scim-auth';
+import { auth, errors, json } from '../../openapi';
+import { db } from '../../shared/db';
+import { accountMemberRow, accountMembersAmong } from '../../iam/membership-read';
+import { accountGroupFullRow, groupMemberUserIds, groupNameInAccountRow, scimGroupRow, scimGroupRowById, scimGroupRows } from '../../iam/group-read';
+import { deleteGroup } from '../../repositories/iam';
 import { directoryUserById, directoryGroupIds, saveDirectoryGroups } from './directory-users';
 import { groupChanges, memberValues, InvalidGroupMemberError, type GroupChange } from './group-patch';
 import {

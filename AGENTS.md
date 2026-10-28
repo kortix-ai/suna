@@ -117,6 +117,30 @@ ledger. Put design detail and RCAs in the PR body. Never cite a repo path that d
 not exist. The pre-commit hook and `tests/unit/no-docs-tree.test.ts` reject a new
 `docs/` file and any citation of one.
 
+## License: Apache 2.0 core, `ee/` under the Kortix Enterprise License
+
+Kortix is Apache 2.0 (`LICENSE`, `NOTICE`). Every file under a directory named
+`ee` is under the Kortix Enterprise License (`ee/LICENSE`): production use needs
+a subscription. Enterprise is exactly the `sso`, `scim`, `rbac` and
+`auditAccess` entitlements. Server code that only serves them goes in an `ee`
+directory (`accounts/iam/ee/`, `projects/routes/ee/`, `apps/api/src/ee/`). Core
+calls `ee/` only through `register…Routes()` and the SSO sign-in hook. Read
+`ee/README.md` before you add or move Enterprise code. Anyone may fork and
+rebrand Kortix; only the trademark rules in `TRADEMARKS.md` limit the name and
+logo.
+
+## License: Apache 2.0 core, `ee/` under the Kortix Enterprise License
+
+Kortix is Apache 2.0 (`LICENSE`, `NOTICE`). Every file under a directory named
+`ee` is under the Kortix Enterprise License (`ee/LICENSE`): production use needs
+a subscription. Enterprise is exactly the `sso`, `scim`, `rbac` and
+`auditAccess` entitlements. Server code that only serves them goes in an `ee`
+directory (`accounts/iam/ee/`, `projects/routes/ee/`, `apps/api/src/ee/`). Core
+calls `ee/` only through `register…Routes()` and the SSO sign-in hook. Read
+`ee/README.md` before you add or move Enterprise code. Anyone may fork and
+rebrand Kortix; only the trademark rules in `TRADEMARKS.md` limit the name and
+logo.
+
 ## Ponytail is on by default
 
 Every code change runs through the **ponytail** skill at level `full`. Load it before you

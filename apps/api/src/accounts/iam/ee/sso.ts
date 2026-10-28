@@ -6,10 +6,10 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { json, errors, auth } from '../../openapi';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { actorOf } from '../../iam/actor';
-import { visibleDirectory } from '../../iam/directory-visibility';
+import { json, errors, auth } from '../../../openapi';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../iam';
+import { actorOf } from '../../../iam/actor';
+import { visibleDirectory } from '../../../iam/directory-visibility';
 import { Resolver } from 'node:dns/promises';
 import {
   createSsoGroupMapping,
@@ -25,16 +25,16 @@ import {
   upsertSsoProvider,
   isPersonalAccount,
   signOutNonSsoMembers,
-} from '../../repositories/sso';
-import { logger } from '../../lib/logger';
+} from '../../../repositories/sso';
+import { logger } from '../../../lib/logger';
 import {
   iamRouter,
   AccountIdParam,
   SsoProviderSchema,
   SsoMappingSchema,
-} from './app';
-import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
-import { readJsonObject } from '../../shared/http-body';
+} from '../app';
+import { auditIam, isUniqueViolation, requireEntitlement } from '../http-helpers';
+import { readJsonObject } from '../../../shared/http-body';
 import {
   deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,

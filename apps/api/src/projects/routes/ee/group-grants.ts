@@ -3,29 +3,29 @@
  * role, detach it, and read the project's grants with member counts.
  */
 
-import { PROJECT_ACTIONS } from '../../iam';
-import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
+import { PROJECT_ACTIONS } from '../../../iam';
+import { invalidateIamCacheForGroup } from '../../../iam/cache-invalidation';
 import {
   assignRole,
   listAssignments,
   revokeProjectRole,
   SYSTEM_ACTOR,
-} from '../../iam/assignments';
-import { actorOf } from '../../iam/actor';
+} from '../../../iam/assignments';
+import { actorOf } from '../../../iam/actor';
 import {
   accountRoleMap,
   groupProjectGrants,
   isAccountManagerRole,
-} from '../../iam/read-models';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
-import { auth, errors, json, lenientBody } from '../../openapi';
-import { accountGroupNames, groupInAccountRow, groupMemberAccountRows } from '../../iam/group-read';
+} from '../../../iam/read-models';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../../iam/roles';
+import { auth, errors, json, lenientBody } from '../../../openapi';
+import { accountGroupNames, groupInAccountRow, groupMemberAccountRows } from '../../../iam/group-read';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
-import { GroupGrantSchema, projectsApp } from '../lib/app';
-import { normalizeString } from '../lib/serializers';
-import { readJsonObject } from '../../shared/http-body';
-import { requireEntitlement } from '../../accounts/iam/http-helpers';
+import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../../lib/access';
+import { GroupGrantSchema, projectsApp } from '../../lib/app';
+import { normalizeString } from '../../lib/serializers';
+import { readJsonObject } from '../../../shared/http-body';
+import { requireEntitlement } from '../../../accounts/iam/http-helpers';
 
 /**
  * A group→project role grant. `kortix.project_group_grants` is a view over
@@ -84,7 +84,7 @@ export function registerGroupGrantsRoutes(): void {
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Manager-only, like the POST/PATCH/DELETE siblings in this file and the
-    // contract in accounts/iam/groups.ts ("those routes gate on
+    // contract in accounts/iam/ee/groups.ts ("those routes gate on
     // project.members.manage"). The listing carries member_count /
     // override_count that the rest of the IAM surface treats as manager data;
     // gating it on project.session.read let any baseline project member read
@@ -200,7 +200,7 @@ export function registerGroupGrantsRoutes(): void {
         projectId,
         PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
       );
-    // Entitlement mirror of accounts/iam/groups.ts so grants can't be minted
+    // Entitlement mirror of accounts/iam/ee/groups.ts so grants can't be minted
     // through the project-scoped path when the account-scoped one is gated.
     // Dormant since 2026-07-08: `rbac` is granted on every tier (groups + roles
     // are core collaboration, not an upsell) — it only bites again if the

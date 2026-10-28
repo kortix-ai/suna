@@ -260,9 +260,9 @@ export interface AccountStateResponse {
      *  the SSO / SCIM setup cards. */
     entitlements: TierEntitlements;
   };
-  /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
-   *  forces every enterprise entitlement on platform-wide. The frontend then
-   *  hides every Enterprise upsell. */
+  /** True when a self-host deployment holds a valid Kortix Enterprise license
+   *  key (KORTIX_LICENSE_KEY), which turns every enterprise entitlement on
+   *  platform-wide. The frontend then hides every Enterprise upsell. */
   enterprise_license_available: boolean;
   /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
    *  plan (a contract or an Enterprise trial). */

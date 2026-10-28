@@ -9,23 +9,23 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import { runWithContext } from '../lib/request-context';
-import { attachInboundAuditScope } from '../shared/audit-scope';
+import { runWithContext } from '../../lib/request-context';
+import { attachInboundAuditScope } from '../../shared/audit-scope';
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
 const OTHER = '00000000-0000-4000-a000-000000000102';
 let entitled = true;
 
-const realScim = await import('../repositories/scim');
-mock.module('../repositories/scim', () => ({
+const realScim = await import('../../repositories/scim');
+mock.module('../../repositories/scim', () => ({
   ...realScim,
   validateScimToken: async (token: string) =>
     token === 'scim-good'
       ? { ok: true, accountId: ACCOUNT, tokenId: 'scim-tok-1' }
       : { ok: false, reason: 'unknown' },
 }));
-const realEntitlements = await import('../billing/services/entitlements');
-mock.module('../billing/services/entitlements', () => ({
+const realEntitlements = await import('../../billing/services/entitlements');
+mock.module('../../billing/services/entitlements', () => ({
   ...realEntitlements,
   accountHasEntitlement: async () => entitled,
 }));

@@ -1,7 +1,7 @@
 // Pure query-shaping for the account audit log — the one piece of logic
 // shared by the list (cursor-paginated) and export (CSV/JSONL) endpoints.
 // Kept in its own module with ZERO heavy imports so it's trivially unit-
-// testable (no config/db/openapi bootstrap); `accounts/audit.ts` re-exports
+// testable (no config/db/openapi bootstrap); `accounts/ee/audit.ts` re-exports
 // it. What you see in the viewer is exactly what export gives you.
 //
 // Index-backed where it matters: idx_audit_events_actor_time (actor + since).

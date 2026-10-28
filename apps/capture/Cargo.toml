@@ -2,7 +2,7 @@
 name = "kortix-backend"
 version = "0.1.0"
 edition = "2021"
-license = "Elastic-2.0"
+license = "Apache-2.0"
 
 [[bin]]
 name = "kortix-backend"

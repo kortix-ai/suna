@@ -54,7 +54,7 @@ export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
  * is DEACTIVATED by default (KORTIX_PUBLIC_DISABLE_LANDING_PAGE='true') — a
  * self-host is an app deployment, not a marketing site, so every marketing
  * route auto-redirects to the app (see apps/web middleware). `kortix self-host
- * configure` / the init wizard / --landing, --no-landing, --enterprise-license
+ * configure` / the init wizard / --landing, --no-landing, --license-key
  * flip these; they are ordinary runtime env, so they survive
  * `kortix self-host update` unchanged (only the image tags move) and are
  * explicit in .env instead of only hard-coded into the compose template.
@@ -62,7 +62,7 @@ export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
 export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   // Marketing site off by default on self-host — redirect straight to the app.
   KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
-  ENTERPRISE_LICENSE_AVAILABLE: 'false',
+  KORTIX_LICENSE_KEY: '',
   KORTIX_BILLING_INTERNAL_ENABLED: 'false',
   KORTIX_PUBLIC_BILLING_ENABLED: 'false',
   // Connector UI (the "Connect your tools" onboarding step,

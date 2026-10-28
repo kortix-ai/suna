@@ -18,7 +18,7 @@
  * replaces, field for field, because the responses built from them are consumed
  * by a web app that ships independently of this API. `policy_id` and `grant_id`
  * become the ASSIGNMENT id — the same uuid the canonical DELETE route takes —
- * and the legacy DELETE routes accept either id (see accounts/iam/custom-roles.ts
+ * and the legacy DELETE routes accept either id (see accounts/iam/ee/custom-roles.ts
  * and projects/routes/resource-grants.ts), so a client holding one from either
  * era can still revoke it.
  *

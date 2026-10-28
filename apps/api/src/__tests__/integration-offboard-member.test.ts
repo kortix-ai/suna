@@ -37,7 +37,7 @@ const { attributeYoloToken, mintYoloTokenForMember } = await import('../billing/
 const { attachComputerConnection } = await import('../connectors/computers');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { createScimToken } = await import('../repositories/scim');
-const { saveDirectoryUser } = await import('../scim/directory-users');
+const { saveDirectoryUser } = await import('../ee/scim/directory-users');
 
 async function seedUsers(ids: string[]): Promise<void> {
   await db.execute(sql`

@@ -73,13 +73,15 @@ test('the legal page renders the Terms as a tab, with no link out', () => {
 
   // The tab union is the contract: it names every tab the page can render.
   expect(
-    src.includes(`type LegalTab = 'imprint' | 'terms' | 'privacy';`),
+    src.includes(`type LegalTab = 'imprint' | 'terms' | 'privacy' | 'enterprise';`),
     'legal tab union changed',
   ).toBe(true);
   expect(src.includes(`{ id: 'imprint'`), 'imprint tab missing from the rail').toBe(true);
   expect(src.includes(`{ id: 'terms'`), 'terms tab missing from the rail').toBe(true);
   expect(src.includes(`{ id: 'privacy'`), 'privacy tab missing from the rail').toBe(true);
-  expect(src.includes('<TermsOfService />'), 'terms document not rendered').toBe(true);
+  expect(src.includes(`{ id: 'enterprise'`), 'enterprise terms tab missing from the rail').toBe(true);
+  expect(src.includes('<TermsDocument doc={TERMS} />'), 'terms document not rendered').toBe(true);
+  expect(src.includes('<TermsDocument doc={ENTERPRISE} />'), 'enterprise terms not rendered').toBe(true);
   // The Terms no longer live in an external Drive file: no link out of the rail.
   expect(src.includes(`href="/legal/terms"`), 'legal page still links Terms out').toBe(false);
   expect(src, 'legal page still names the Drive file').not.toContain('drive.google.com');

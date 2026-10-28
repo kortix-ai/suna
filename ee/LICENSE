@@ -1,0 +1,54 @@
+Kortix Enterprise License
+
+Copyright 2024-present Kortix AI Corp.
+
+This license applies to every file under a directory named "ee" in the
+Kortix source code (the "Enterprise Software"). All other Kortix source code
+is licensed under the Apache License, Version 2.0.
+
+1. Subscription. "Subscription" means an active order with Kortix AI Corp
+   ("Kortix") for Kortix Enterprise that covers your use, under the Kortix
+   Enterprise Subscription Terms (https://kortix.com/legal?tab=enterprise).
+   "Production Use" means any use with real users or real data for the
+   operations of a business or organization.
+
+2. Development and testing. You may copy, run, and modify the Enterprise
+   Software for development, testing, and evaluation that is not Production
+   Use, without a Subscription.
+
+3. Production Use. You may make Production Use of the Enterprise Software,
+   or of any modified version of it, only while you hold a valid Subscription
+   for that use, and only within the scope of that Subscription. This applies
+   whether or not a license key check runs.
+
+4. Modifications. You may modify the Enterprise Software and publish
+   patches to it. Kortix and its licensors keep all rights, title, and
+   interest in the Enterprise Software and in modifications of it. Sections 2
+   and 3 apply to modified versions.
+
+5. Distribution. You may copy and distribute the Enterprise Software only as
+   part of a copy or fork of the Kortix source code, with this license and
+   all notices intact. Distribution gives no recipient a right of Production
+   Use. You may not sell, sublicense, or offer the Enterprise Software, or
+   its functionality, as a separate product or service.
+
+6. No other rights. This license grants no rights except the rights stated
+   above, and no rights to the trademarks of Kortix.
+
+7. Termination. If you break this license, your rights under it end
+   automatically.
+
+8. Third-party components. Third-party components in the Enterprise Software
+   keep their own licenses.
+
+9. No warranty. THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY
+   OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT. IN NO EVENT WILL KORTIX, ITS LICENSORS, OR ANY COPYRIGHT
+   HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE ENTERPRISE SOFTWARE OR ITS USE. A Subscription can
+   give different warranties; if it does, the Subscription controls.
+
+10. Governing law. Delaware law governs this license, without regard to
+    conflict-of-laws rules.

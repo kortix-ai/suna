@@ -68,12 +68,14 @@ export const PLAN_FAMILY_LABELS: Record<PlanFamily, string> = {
   enterprise: 'Enterprise',
 };
 
+// Organization branding is on every plan: anyone may rebrand Kortix
+// (Apache 2.0), so it is not an Enterprise feature.
 const NO_ENTERPRISE = {
   sso: false,
   scim: false,
   rbac: false,
   auditAccess: false,
-  branding: false,
+  branding: true,
 } as const;
 
 export const PLAN_CATALOG: Record<string, PlanRecord> = {

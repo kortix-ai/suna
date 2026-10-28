@@ -50,7 +50,7 @@ import { projectWebhooksApp, projectsApp, registerAllProjectRoutes, registerSess
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { registerScimRoutes, scimRouter } from './scim';
+import { registerScimRoutes, scimRouter } from './ee/scim';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';

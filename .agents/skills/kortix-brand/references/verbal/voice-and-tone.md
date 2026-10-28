@@ -118,7 +118,7 @@ capitalized only at the start of a sentence or as a UI label.
 | We host your AI | Open, self-hostable, yours | We do not rent your company back to you. |
 | Fully autonomous | "Opens a change request you approve" | A person approves. |
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
-| Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
+| Source-available, Elastic License, Apache, MIT | open source | Never name a license in public copy. The core is open source; the Enterprise features are a subscription. Name "Apache 2.0" and "Kortix Enterprise License" only in license files, the README license section and legal text. |
 | more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
 | preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 

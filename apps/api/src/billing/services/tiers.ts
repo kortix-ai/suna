@@ -116,7 +116,8 @@ const SELF_SERVE: TierEntitlements = {
   scim: false,
   rbac: false,
   auditAccess: false,
-  branding: false,
+  // Branding is on every plan; it is not an Enterprise feature.
+  branding: true,
 };
 const ALL_ENTERPRISE: TierEntitlements = {
   sso: true,

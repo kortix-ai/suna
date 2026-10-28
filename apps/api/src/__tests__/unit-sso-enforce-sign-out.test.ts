@@ -27,7 +27,7 @@ mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => true,
 }));
 
-mock.module('../accounts/iam/sso-provisioning', () => ({
+mock.module('../accounts/iam/ee/sso-provisioning', () => ({
   syncSupabaseSamlAttributeMapping: async () => ({ ok: true }),
   registerSupabaseSamlProvider: async () => ({ ok: false, status: 400, error: 'unused' }),
   deleteSupabaseSamlProvider: async () => ({ ok: true }),
@@ -89,7 +89,7 @@ mock.module('../repositories/sso', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/sso')).registerIamSsoRoutes();
+(await import('../accounts/iam/ee/sso')).registerIamSsoRoutes();
 const { adminApp } = await import('../admin');
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000001';

@@ -11,16 +11,16 @@ import { z } from '@hono/zod-openapi';
 import { accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { scimAuth } from '../middleware/scim-auth';
-import { makeOpenApiApp } from '../openapi';
-import { recordAuditEvent } from '../shared/audit';
-import { db } from '../shared/db';
-import { userIdByEmailRows } from '../iam/membership-read';
-import { groupMemberUserIds } from '../iam/group-read';
-import { withDirectoryTransaction } from '../iam/directory-transaction';
-import { emailTrustedSql } from '../iam/email-trust';
-import { getSupabase } from '../shared/supabase';
-import { isUuid } from '../shared/validate';
+import { scimAuth } from './scim-auth';
+import { makeOpenApiApp } from '../../openapi';
+import { recordAuditEvent } from '../../shared/audit';
+import { db } from '../../shared/db';
+import { userIdByEmailRows } from '../../iam/membership-read';
+import { groupMemberUserIds } from '../../iam/group-read';
+import { withDirectoryTransaction } from '../../iam/directory-transaction';
+import { emailTrustedSql } from '../../iam/email-trust';
+import { getSupabase } from '../../shared/supabase';
+import { isUuid } from '../../shared/validate';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());

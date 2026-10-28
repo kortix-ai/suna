@@ -3,7 +3,7 @@
  * (apps/api/src/index.ts → app.route('/scim/v2', scimRouter)). Maps to spec
  * §scim (SCIM-*).
  *
- * Auth model (apps/api/src/middleware/scim-auth.ts):
+ * Auth model (apps/api/src/ee/scim/scim-auth.ts):
  *   - EVERY /scim/v2/accounts/:accountId/* route (incl. ServiceProviderConfig)
  *     is behind `scimAuth`, which requires a per-account SCIM *bearer token*
  *     minted via POST /v1/accounts/:accountId/iam/scim/tokens. The user JWT is

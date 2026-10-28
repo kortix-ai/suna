@@ -125,7 +125,7 @@ kortix self-host start
 |---|---|
 | Reachability | `domain` (domain, API subdomain, ACME email) or `tunnel` (quick or named tunnel). |
 | Admin email | `KORTIX_PLATFORM_ADMIN_EMAILS`, comma-separated. These people are platform admins. Also `--admin-email <email>`. |
-| Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control and audit. Also `--enterprise-license`. |
+| Enterprise license key | `KORTIX_LICENSE_KEY`. Kortix issues the key with an Enterprise subscription. It unlocks SSO, SCIM, role-based access control and audit. Also `--license-key <key>`. |
 | Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
 | Sandbox provider | `platinum` (the default) or the legacy `daytona`, written to `ALLOWED_SANDBOX_PROVIDERS`, plus that provider's settings (below). |
 | Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
@@ -447,7 +447,7 @@ Every subcommand takes `--instance <name>` (default `default`).
 | `--auto-update <on\|off>` | `init`, `update`, `configure` | The daily updater. Takes effect at the next `start`. |
 | `--update-time <HH:MM>`, `--update-tz <zone>` | `init`, `update`, `configure` | The daily window, as 24-hour time and an IANA zone. Takes effect at the next `start`. |
 | `--admin-email <email>` | `init`, `configure` | Sets `KORTIX_PLATFORM_ADMIN_EMAILS`. |
-| `--enterprise-license` | `init`, `configure`, `update` | Sets `ENTERPRISE_LICENSE_AVAILABLE=true`. |
+| `--license-key <key>` | `init`, `configure`, `update` | Sets `KORTIX_LICENSE_KEY`. |
 | `--restrict-account-creation`, `--no-restrict-account-creation` | `init`, `configure`, `update` | Account creation for admins only, or for everyone. |
 | `--disable-signup` | `init`, `configure`, `update` | Sets `DISABLE_SIGNUP=true`. Nobody can sign up, the admin included. `env set DISABLE_SIGNUP=false` opens it again. |
 | `--yes` | any | Accept defaults. Required for `uninstall` without a terminal. |

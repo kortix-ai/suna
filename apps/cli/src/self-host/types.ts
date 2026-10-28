@@ -10,10 +10,10 @@ export interface SelfHostCommandFlags {
   updateTime?: string;
   /** IANA timezone the auto-updater interprets updateTime in (default America/New_York). */
   updateTz?: string;
-  /** Operator holds a Kortix Enterprise license: unlocks SSO/SCIM/RBAC/audit
-   *  entitlements platform-wide regardless of billing tier
-   *  (ENTERPRISE_LICENSE_AVAILABLE, --enterprise-license). */
-  enterpriseLicense?: boolean;
+  /** Kortix Enterprise license key, issued with an Enterprise subscription:
+   *  unlocks SSO/SCIM/roles/audit platform-wide regardless of billing tier
+   *  (KORTIX_LICENSE_KEY, --license-key). */
+  licenseKey?: string;
   /** Restrict new-account/organization creation to platform admins only
    *  (KORTIX_RESTRICT_ACCOUNT_CREATION + the frontend-mirroring
    *  KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION). Signups, existing teams, and

@@ -154,7 +154,7 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `insufficient_credits` | `402` | The account's credit balance is empty. | [Plans & credits](/docs/credits#running-out) |
 | `subscription_required` | `402` | The account has no plan for Kortix-billed usage. | [Plans & credits](/docs/credits#running-out) |
 | `no_account` | `402` | The account has no credit account yet. Its setup is not complete. | [Plans & credits](/docs/credits#running-out) |
-| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Sign-in, SSO & API keys](/docs/accounts/identity#enterprise-features) |
+| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, or `auditAccess`. The body names `entitlement`. | [Sign-in, SSO & API keys](/docs/accounts/identity#enterprise-features) |
 | `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs/project/models#budgets-and-costs) |
 | `feature_disabled` | `403` | The project has this feature flag off. The body names `feature`. | [Projects](/docs/project#feature-flags) |
 | `feature_operator_only` | `403` | Only Kortix (a platform admin) may change this flag. Apps is generally available and has no feature flag. | [Projects](/docs/project#feature-flags) |

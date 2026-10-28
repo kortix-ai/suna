@@ -95,7 +95,7 @@ Options:
   --auto-update <on|off>  Override the default (ON everywhere except --local-images).
   --update-time <HH:MM> / --update-tz <tz>   Auto-updater schedule.
   --local-images          Run locally-built images (dev mode); forces auto-update off.
-  --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
+  --license-key <key>     Kortix Enterprise license key: SSO/SCIM/roles/audit (kortix.com/enterprise).
   --admin-email <email>   Grant platform-admin to this account.
   --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
   --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
@@ -181,7 +181,7 @@ interface SelfHostEnv {
   API_IMAGE: string;
   GATEWAY_IMAGE: string;
   // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
-  // DAYTONA_TARGET, KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
+  // DAYTONA_TARGET, KORTIX_PUBLIC_DISABLE_LANDING_PAGE, KORTIX_LICENSE_KEY,
   // KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_PUBLIC_BILLING_ENABLED, and
   // KORTIX_PUBLIC_CONNECTORS_ENABLED are covered by the [key: string] index
   // signature below — their defaults come from the SHARED_SELF_HOST_DEFAULTS
@@ -197,7 +197,7 @@ interface SelfHostEnv {
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
   // GoTrue SAML SSO — enabled by default so an operator flipping
-  // --enterprise-license (ENTERPRISE_LICENSE_AVAILABLE) is the only step left
+  // --license-key (KORTIX_LICENSE_KEY) is the only step left
   // to light up the enterprise SSO/SCIM surface; SAML_PRIVATE_KEY is generated
   // once at `init` (samlPrivateKeyDer()) and persisted, never regenerated on a
   // later `init`/`update` (see defaultEnv()/writeEnv()). Do not rotate it once
@@ -308,7 +308,10 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const autoUpdateRaw = takeFlagValue(args, ['--auto-update']);
   const updateTime = takeFlagValue(args, ['--update-time']);
   const updateTz = takeFlagValue(args, ['--update-tz']);
-  const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
+  if (takeFlagBool(args, ['--enterprise-license'])) {
+    throw new Error('--enterprise-license is retired: pass --license-key <key> with the key Kortix issued for your Enterprise subscription');
+  }
+  const licenseKey = takeFlagValue(args, ['--license-key']);
   const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
   const domain = takeFlagValue(args, ['--domain']);
   const tunnelRaw = takeFlagValue(args, ['--tunnel']);
@@ -345,7 +348,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     autoUpdate: autoUpdateRaw === undefined ? undefined : autoUpdateRaw === 'on',
     updateTime,
     updateTz,
-    enterpriseLicense: enterpriseLicense || undefined,
+    licenseKey: licenseKey?.trim() || undefined,
     localImages: localImages || undefined,
     domain,
     tunnel: tunnelRaw as 'cloudflare' | undefined,
@@ -747,7 +750,7 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, env));
-  // Runtime feature flags (enterprise-license) and
+  // Runtime feature flags (license-key) and
   // reachability (domain/tunnel/local) are ordinary env — an update only ever
   // moves image tags, so an explicit flag is honored (non-interactively;
   // `update` never prompts) but nothing here resets a value the operator
@@ -1040,7 +1043,7 @@ function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean
 }
 
 /**
- * Apply --enterprise-license onto env, non-interactively. Only overwrites
+ * Apply --license-key onto env, non-interactively. Only overwrites
  * when the flag was actually passed (undefined = "not passed", never a
  * literal false — see parseGlobalFlags), so a bare `init`/`update` with no
  * flags never resets a value the operator set via `configure` or `env set`.
@@ -1056,9 +1059,7 @@ function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean
  * marketing site, full stop.
  */
 function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
-  if (flags.enterpriseLicense !== undefined) {
-    env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
-  }
+  if (flags.licenseKey !== undefined) env.KORTIX_LICENSE_KEY = flags.licenseKey;
   if (flags.restrictAccountCreation !== undefined) {
     const value = flags.restrictAccountCreation ? 'true' : 'false';
     env.KORTIX_RESTRICT_ACCOUNT_CREATION = value;
@@ -1072,7 +1073,7 @@ function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
 
 /**
  * Interactive follow-up to applyFeatureFlags: the two deployment-shape y/n
- * questions — Enterprise license, then account-creation restriction — each
+ * questions — Enterprise license key, then account-creation restriction — each
  * defaulting to whatever is currently in .env (so re-running `configure`
  * doesn't reset a prior answer). No-ops under --yes / non-TTY (see
  * shouldPrompt).
@@ -1082,12 +1083,10 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
 
   process.stdout.write(`\n  ${C.bold}Deployment shape${C.reset}\n`);
 
-  const enterpriseLicense = await selectFrom(
-    'Do you have an Enterprise license? (SSO / RBAC / Directory Sync / Groups — kortix.com/enterprise)',
-    ['no', 'yes'] as const,
-    env.ENTERPRISE_LICENSE_AVAILABLE === 'true' ? 'yes' : 'no',
+  env.KORTIX_LICENSE_KEY = await promptSecret(
+    'Kortix Enterprise license key, enter to skip (SSO / SCIM / roles / audit — kortix.com/enterprise)',
+    env.KORTIX_LICENSE_KEY ?? '',
   );
-  env.ENTERPRISE_LICENSE_AVAILABLE = enterpriseLicense === 'yes' ? 'true' : 'false';
 
   // Default Yes: signups/teams/SSO all keep working either way — this only
   // gates who can spin up a brand-new organization (POST /v1/accounts).
@@ -2480,7 +2479,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MAILER_URLPATHS_RECOVERY: '/auth/v1/verify',
     MAILER_URLPATHS_EMAIL_CHANGE: '/auth/v1/verify',
     // GoTrue SAML SSO — always on so the enterprise entitlement
-    // (--enterprise-license) is the only remaining step to unlock the SAML SSO
+    // (--license-key) is the only remaining step to unlock the SAML SSO
     // + SCIM surface (Account → Settings → Identity). The private key is a
     // per-instance RSA-2048 keypair generated once here and persisted like
     // SUPABASE_JWT_SECRET/POSTGRES_PASSWORD — see samlPrivateKeyDer() and the

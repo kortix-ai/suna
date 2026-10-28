@@ -249,8 +249,8 @@ export const stack = {
 /* ── 5 · same product ──────────────────────────────────────────────────────
    Grounded in: the same docker.io/kortix/* images the pipeline built; no
    self-host feature flag branching in apps/api/src. The ONE honest caveat is
-   ENTERPRISE_LICENSE_AVAILABLE, which gates SSO / custom roles / directory sync
-   / groups — so it is stated, not buried. */
+   the Kortix Enterprise license key (KORTIX_LICENSE_KEY), which gates SSO /
+   custom roles / directory sync / groups — so it is stated, not buried. */
 export const parity = {
   eyebrow: 'Parity',
   title: 'Not a community edition.',

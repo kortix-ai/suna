@@ -402,7 +402,7 @@ request. The app must ask you again.
 ## Enterprise features
 
 An entitlement decides whether a feature exists for the account. The role still
-decides who may use it. Enterprise turns all five on, on any plan, in one of
+decides who may use it. Enterprise turns all four on, on any plan, in one of
 two ways:
 
 - **Enterprise demo.** An owner or admin turns it on in **Billing → Plan** or in
@@ -421,7 +421,9 @@ sign-in.
 | `scim` | [SCIM provisioning](#scim-provisioning) and SCIM tokens |
 | `rbac` | [Custom roles](/docs/accounts#custom-roles); creating, editing, and adding members to groups |
 | `auditAccess` | Reading and exporting the [audit log](/docs/accounts#audit-log), audit webhooks |
-| `branding` | [Branding](/docs/accounts#branding) |
+
+[Branding](/docs/accounts#branding) is on for every plan. It needs no Enterprise
+feature.
 
 Without the entitlement, the gated route returns `402` with
 `code: "entitlement_required"` and `entitlement` set to its key. A SCIM request
@@ -429,7 +431,9 @@ Without the entitlement, the gated route returns `402` with
 configuration (an SSO provider, a SCIM token) never needs the entitlement. Plans
 are on [Plans & credits](/docs/credits).
 
-On a self-hosted instance, a Kortix Enterprise license unlocks all five for
-every account: set `ENTERPRISE_LICENSE_AVAILABLE=true`, or install with
-`kortix self-host init --enterprise-license`. See
+On a self-hosted instance, a Kortix Enterprise license key unlocks all four for
+every account. Kortix issues the key with an Enterprise subscription. Set
+`KORTIX_LICENSE_KEY=<key>`, or install with
+`kortix self-host init --license-key <key>`. Without a key, an owner or admin
+can turn on the Enterprise demo for development and testing. See
 [Self-hosting](/docs/host).

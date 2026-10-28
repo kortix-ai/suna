@@ -8,9 +8,9 @@
 // We don't use Hono's HTTPException here so we can return that exact shape.
 
 import type { Context, Next } from 'hono';
-import { validateScimToken } from '../repositories/scim';
-import { accountHasEntitlement } from '../billing/services/entitlements';
-import { bindAuditPrincipal } from '../shared/audit-scope';
+import { validateScimToken } from '../../repositories/scim';
+import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { bindAuditPrincipal } from '../../shared/audit-scope';
 
 const SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error';
 

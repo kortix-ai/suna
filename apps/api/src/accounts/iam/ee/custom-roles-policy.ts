@@ -1,21 +1,21 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { projects, serviceAccounts } from '@kortix/db';
-import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
-import { groupInAccountRow } from '../../iam/group-read';
-import { userAccountMemberRow } from '../../iam/membership-read';
-import { accountCustomRoles, customRoleRow } from '../../iam/role-read';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { actorOf } from '../../iam/actor';
-import { assignRole, revokeAssignment, updateAssignment, type AssignmentRow } from '../../iam/assignments';
-import type { ScopeType } from '../../iam/catalog';
-import { customRoleBindings, legacyToCanonicalPrincipal, type CustomRoleBinding } from '../../iam/read-models';
-import { invalidateIamCacheForPolicyPrincipal } from '../../iam/cache-invalidation';
-import { iamRouter, AccountIdParam } from './app';
-import { auditIam, requireEntitlement } from './http-helpers';
-import { readJsonObject } from '../../shared/http-body';
-import { loadSystemRoles } from '../../iam/catalog';
+import { json, errors, auth } from '../../../openapi';
+import { db } from '../../../shared/db';
+import { groupInAccountRow } from '../../../iam/group-read';
+import { userAccountMemberRow } from '../../../iam/membership-read';
+import { accountCustomRoles, customRoleRow } from '../../../iam/role-read';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../iam';
+import { actorOf } from '../../../iam/actor';
+import { assignRole, revokeAssignment, updateAssignment, type AssignmentRow } from '../../../iam/assignments';
+import type { ScopeType } from '../../../iam/catalog';
+import { customRoleBindings, legacyToCanonicalPrincipal, type CustomRoleBinding } from '../../../iam/read-models';
+import { invalidateIamCacheForPolicyPrincipal } from '../../../iam/cache-invalidation';
+import { iamRouter, AccountIdParam } from '../app';
+import { auditIam, requireEntitlement } from '../http-helpers';
+import { readJsonObject } from '../../../shared/http-body';
+import { loadSystemRoles } from '../../../iam/catalog';
 
 export function systemRoleWireId(scopeType: string, key: string): string {
   return scopeType === 'project' && key === 'member' ? 'builtin:user' : `builtin:${key}`;

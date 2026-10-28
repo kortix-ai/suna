@@ -4,13 +4,13 @@ import { Hono } from 'hono';
 // KRTX-211 (Better Stack pattern 97669531): SCIM's `:accountId` path param is
 // the tenant the IdP configures into its base URL; a malformed one reached
 // withDirectoryTransaction and the uuid-typed casts, dying as SQLSTATE 22P02
-// -> an opaque 500. The router-boundary guard in scim/app.ts answers 400
+// -> an opaque 500. The router-boundary guard in ee/scim/app.ts answers 400
 // before any handler. scimAuth runs first, so the guard is asserted behind a
 // mocked-authenticated bearer. The route modules are NOT mounted here — this
 // exercises the guard itself; a well-formed uuid falls through to the router's
 // own 404.
 
-mock.module('../middleware/scim-auth', () => ({
+mock.module('../ee/scim/scim-auth', () => ({
   scimAuth: async (c: any, next: any) => {
     c.set('accountId', c.req.param('accountId'));
     await next();
@@ -22,7 +22,7 @@ mock.module('../middleware/scim-auth', () => ({
     ),
 }));
 
-// `mock.module` replaces @kortix/db wholesale — every name scim/app.ts's graph
+// `mock.module` replaces @kortix/db wholesale — every name ee/scim/app.ts's graph
 // touches has to exist even where this suite never reads it.
 const tables = [
   'accountGroupMembers',
@@ -37,7 +37,7 @@ const tables = [
   'projects',
   'accountMembers',
   'accountMemberships',
-  // scim/app.ts imports the iam membership/group read models (dev's directory
+  // ee/scim/app.ts imports the iam membership/group read models (dev's directory
   // sync), and membership-read.ts reads the accounts view.
   'accounts',
 ] as const;
@@ -72,7 +72,7 @@ mock.module('../iam/email-trust', () => ({
   emailTrustedSql: () => ({ args: ['true'] }),
 }));
 
-const { scimRouter } = await import('../scim/app');
+const { scimRouter } = await import('../ee/scim/app');
 
 function createApp() {
   const app = new Hono();

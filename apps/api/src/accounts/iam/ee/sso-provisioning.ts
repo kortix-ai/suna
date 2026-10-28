@@ -4,8 +4,8 @@
 // register the customer's IdP, and hand back the provider UUID the rest of the
 // SSO config keys off.
 
-import { config } from '../../config';
-import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard';
+import { config } from '../../../config';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../../shared/ssrf-guard';
 
 export interface SamlMetadataInput {
   /** Raw IdP federation metadata XML (Entra: "App Federation Metadata XML"). */

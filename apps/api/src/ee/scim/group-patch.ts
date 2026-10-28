@@ -1,4 +1,4 @@
-import { isUuid } from '../shared/validate';
+import { isUuid } from '../../shared/validate';
 
 export class InvalidGroupMemberError extends Error {}
 

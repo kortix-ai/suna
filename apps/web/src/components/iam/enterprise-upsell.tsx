@@ -30,7 +30,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { cn } from '@kortix/ui';
 import { canManageBilling } from '@kortix/sdk';
 
-type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding' | 'roles';
+type UpsellFeature = 'groups' | 'audit' | 'identity' | 'roles';
 
 const FEATURE_COPY: Record<
   UpsellFeature,
@@ -78,16 +78,6 @@ const FEATURE_COPY: Record<
       'Start from a built-in role and remove what you do not need',
       'Assign a custom role on the account or on one project',
       'See every capability a role grants before you assign it',
-    ],
-  },
-  branding: {
-    title: 'Branding is an Enterprise feature',
-    blurb:
-      'Put your own logo, icon, favicon, and product name on the app for everyone in this account — Kortix becomes your tool.',
-    points: [
-      'Your brandmark in the header and on every loading screen',
-      'Your favicon and product name in the browser tab, with dark-mode variants',
-      'Members see your brand from the moment they sign in',
     ],
   },
 };

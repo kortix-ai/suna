@@ -145,7 +145,7 @@ describe('audit CLI process', () => {
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
     // KRTX-2992: the webhook PATCH (enable AND disable) checks `auditAccess`;
-    // only DELETE skips it (apps/api/src/accounts/audit.ts).
+    // only DELETE skips it (apps/api/src/accounts/ee/audit.ts).
     const flat = stdout.replace(/\s+/g, ' ');
     expect(flat).toContain('add, enable and disable also need the Enterprise entitlement');
     expect(flat).not.toContain('disable and delete never do');

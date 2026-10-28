@@ -6,7 +6,7 @@ import * as ownership from '../shared/preview-ownership';
 import * as audit from './auth-audit';
 import * as sentry from '../lib/sentry';
 import * as context from '../lib/request-context';
-import * as sso from '../iam/sso-sync';
+import * as sso from '../iam/ee/sso-sync';
 
 mock.module('../shared/crypto', () => ({
   ...crypto,
@@ -55,7 +55,7 @@ mock.module('./auth-audit', () => ({
 }));
 mock.module('../lib/sentry', () => ({ ...sentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...context, setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));
+mock.module('../iam/ee/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));
 mock.module('../iam/actor', () => ({ buildActor: async () => null }));
 
 const { supabaseAuth, combinedAuth, apiKeyAuth } = await import('./auth');

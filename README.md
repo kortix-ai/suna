@@ -49,7 +49,7 @@ Any model, your own API keys, your own infrastructure or our managed cloud.
 - ✅ You want an **"AI employee"** that does the work and waits for a person's approval before it acts → [details](#an-ai-employee-that-asks-before-it-acts)
 - ✅ Your security team needs **governed agents**: per-tool rules, approval gates, an audit trail, SAML SSO, your own VPC → [details](#agents-that-survive-a-security-review)
 - ✅ You want an **AI Operating System to run a company with agents**: every agent, skill, memory file and connector in one git repo → [details](#an-ai-operating-system-for-your-company)
-- ✅ You want to **sell an agent platform under your own brand**: your logo, your structure, Kortix underneath → [details](#white-label)
+- ✅ You want to **sell an agent platform under your own brand**: your logo, your structure, Kortix underneath → [license](#license)
 
 Kortix is probably **not** the right fit if you want a visual flowchart of fixed steps (a workflow
 builder such as n8n does that well), or only a chat window over your documents (Onyx, Open WebUI or
@@ -272,14 +272,19 @@ Daytona remains only as a legacy fallback, and its removal is scheduled.
 
 ---
 
-## White-label
+## License
 
-Kortix stays open source. On top of that, a free white-label license lets you run Kortix however
-you want: your name and logo in place of ours, your own structure, and Kortix as a hosted service
-for your customers. The one requirement: use [Platinum](https://www.platinum.dev) as your exclusive
-compute provider for everything it offers (sandboxes, volumes, runners, AI compute, inference), at
-rates we commit to keep competitive. Sign online and you are licensed on the spot:
-**[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
+Kortix is open source under the [Apache License 2.0](LICENSE). Fork it, change it, rebrand it,
+and sell it, also as a hosted service for your customers. No agreement to sign.
+
+- **Core:** everything outside an `ee/` directory is Apache 2.0.
+- **Enterprise:** code in an `ee/` directory (SAML SSO, SCIM, custom roles and groups, audit log
+  access and export) is under the [Kortix Enterprise License](ee/LICENSE). Development and testing
+  are free. Production use needs a Kortix Enterprise subscription. See [ee/README.md](ee/README.md).
+- **Name and logo:** only Kortix may use the Kortix name and logo. A fork uses its own. See
+  [TRADEMARKS.md](TRADEMARKS.md).
+
+Kortix runs its sessions on [Platinum](https://www.platinum.dev). Enterprise subscriptions:
 [marko@kortix.ai](mailto:marko@kortix.ai).
 
 ---

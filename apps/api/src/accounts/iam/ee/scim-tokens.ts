@@ -5,18 +5,18 @@
 // exactly once at mint; everything else shows the public prefix only.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { json, errors, auth } from '../../openapi';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { actorOf } from '../../iam/actor';
+import { json, errors, auth } from '../../../openapi';
+import { ACCOUNT_ACTIONS, assertAuthorized } from '../../../iam';
+import { actorOf } from '../../../iam/actor';
 import {
   createScimToken,
   listScimTokens,
   revokeScimToken,
-} from '../../repositories/scim';
-import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, requireEntitlement } from './http-helpers';
-import { readJsonObject } from '../../shared/http-body';
-import { isUuid } from '../../shared/validate';
+} from '../../../repositories/scim';
+import { iamRouter, AccountIdParam, ScimTokenSchema } from '../app';
+import { auditIam, requireEntitlement } from '../http-helpers';
+import { readJsonObject } from '../../../shared/http-body';
+import { isUuid } from '../../../shared/validate';
 
 export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(

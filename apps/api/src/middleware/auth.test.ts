@@ -5,7 +5,7 @@ import * as realPreviewOwnership from '../shared/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../lib/sentry';
-import * as realSsoSync from '../iam/sso-sync';
+import * as realSsoSync from '../iam/ee/sso-sync';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -174,7 +174,7 @@ mock.module('./auth-audit', () => ({
 
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
+mock.module('../iam/ee/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
 const { combinedAuth, supabaseAuth, deadCredential401 } = await import('./auth');
 

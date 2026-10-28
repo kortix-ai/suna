@@ -55,7 +55,7 @@ import { registerProjectSettingsRoutes } from './routes/project-settings';
 import { registerProjectAccessRoutes } from './routes/project-access';
 import { registerAccessRequestsRoutes } from './routes/access-requests';
 import { registerProjectInvitesRoutes } from './routes/project-invites';
-import { registerGroupGrantsRoutes } from './routes/group-grants';
+import { registerGroupGrantsRoutes } from './routes/ee/group-grants';
 import { registerWarmSessionsRoutes } from './routes/warm-sessions';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
 import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';

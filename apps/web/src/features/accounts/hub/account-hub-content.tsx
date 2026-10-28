@@ -206,7 +206,7 @@ export function AccountHubContent() {
   // render only when the tier carries the entitlement — mirrors the server-side
   // 402 so we never show a control the backend rejects.
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
-  // The hub brands as the account it SHOWS (Enterprise branding), not the
+  // The hub brands as the account it SHOWS (account branding), not the
   // switcher's selected one — so an upload on the Branding tab re-brands the
   // header above it live.
   useBrandingScope(accountId);
@@ -216,7 +216,7 @@ export function AccountHubContent() {
   // list until the account is entitled, so the EnterpriseUpsell card stands
   // in for the whole feature. Groups and Roles are different: `GET
   // .../groups` and `GET .../roles` carry NO entitlement check
-  // (`apps/api/src/accounts/iam/groups.ts` / `custom-roles.ts` — only the
+  // (`apps/api/src/accounts/iam/ee/groups.ts` / `custom-roles.ts` — only the
   // mutating routes call `requireEntitlement(..., 'rbac')`), because the six
   // built-in roles and an account's real (if empty) group list are product,
   // not upsell. `GroupsTab`/`RolesTab` already render that list unconditionally
@@ -232,7 +232,6 @@ export function AccountHubContent() {
   // loading we render nothing gated (skeleton) to avoid flashing.
   const rbacEnabled = !!entitlements?.rbac;
   const auditEnabled = !!entitlements?.auditAccess;
-  const brandingEnabled = !!entitlements?.branding;
   const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
   // Forms open in the hub's split sheet beside the pane. A sheet belongs to
   // the pane that opened it, so leaving the pane closes it.
@@ -550,18 +549,10 @@ export function AccountHubContent() {
             </div>
           ) : null}
 
-          {/* Branding — Enterprise. The pane exists for anyone with
-              account.write (rail rule); the entitlement decides whether it
-              is the editor or the upsell, mirroring the server's 402 on the
-              write routes. */}
+          {/* Branding — every plan. The pane exists for anyone with
+              account.write (rail rule). */}
           {activeSection === 'branding' && canWriteAccount ? (
-            entitlementsLoading ? (
-              <Skeleton className="h-64 w-full rounded-md" />
-            ) : brandingEnabled ? (
-              <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
-            ) : (
-              <EnterpriseUpsell feature="branding" accountId={account.account_id} />
-            )
+            <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
           ) : null}
 
           {activeSection === 'settings' && canWriteAccount ? (
@@ -1077,7 +1068,7 @@ function MembersCard({
   //     and no policies to resolve, so every row's role is the built-in one.
   //  2. PERMISSION (`canReadRoles` / `canReadPolicies`) — `GET .../iam/roles`
   //     asserts `role.read` and `GET .../iam/policies` asserts `policy.read`
-  //     (`apps/api/src/accounts/iam/custom-roles.ts`). Both leaves sit in
+  //     (`apps/api/src/accounts/iam/ee/custom-roles.ts`). Both leaves sit in
   //     `ADMIN_EXTRAS`; `MEMBER_BASELINE` holds neither
   //     (`apps/api/src/iam/role-perms.ts`).
   //
