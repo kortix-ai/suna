@@ -38,8 +38,8 @@ export const SHARED_AUTH_DEFAULTS: Record<string, string> = {
 };
 
 /**
- * Agent code-execution sandbox provider: Platinum, the reference. The Daytona
- * values only apply when an operator opts into the legacy Daytona fallback.
+ * Agent code-execution sandbox provider: Platinum. The two DAYTONA_* values
+ * apply only to an instance whose env still names the legacy provider.
  */
 export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
   ALLOWED_SANDBOX_PROVIDERS: 'platinum',

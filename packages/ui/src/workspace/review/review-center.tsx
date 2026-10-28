@@ -97,7 +97,7 @@ import {
   reviewApprovalDenyOnly,
   reviewApprovalDetails,
 } from './approval-modal';
-import { type ReviewActions, ReviewDetail } from './review-detail';
+import { type ReviewActions, ReviewDetail, ReviewItemModal } from './review-detail';
 import {
   KIND_META,
   reviewKindLabel,
@@ -1062,7 +1062,9 @@ export function ReviewCenter({
       if (e.key === 'Escape') {
         if (helpOpen) return setHelpOpen(false);
         if (typing) return (el as HTMLElement).blur();
-        if (selectedId) return setSelectedId(null);
+        // A modal closes itself on Escape and marks it handled: only the top
+        // layer closes (a file preview opened from the item, then the item).
+        if (selectedId && !e.defaultPrevented) return setSelectedId(null);
         // An Esc that a dialog or menu already handled is theirs, not the selection's.
         if (selectMode && !bulkProgress && !e.defaultPrevented && !hasOpenFloatingLayer()) {
           exitSelectMode();
@@ -1321,9 +1323,18 @@ export function ReviewCenter({
     />
   );
 
-  // Every other review page replaces the inbox in place — same scroll
-  // container, no modal. Escape and "Back to inbox" return to the list.
-  if (selected && !approval) {
+  // Every other item opens in a modal over the inbox, the same way.
+  const itemModal = (
+    <ReviewItemModal
+      item={selected && !approval && selected.kind !== 'change' ? selected : null}
+      actions={actions}
+      onClose={() => setSelectedId(null)}
+    />
+  );
+
+  // A change request replaces the inbox in place: its diff needs the width.
+  // Escape and "Back to inbox" return to the list.
+  if (selected?.kind === 'change') {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1576,6 +1587,7 @@ export function ReviewCenter({
       />
 
       {approvalModal}
+      {itemModal}
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );

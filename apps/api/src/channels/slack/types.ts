@@ -100,6 +100,17 @@ export interface SlackEvent {
   };
 }
 
+/** A click on an agent question's button, carried to the follow-up (`spawnAgentTurn`). */
+export interface SlackQuestionPress {
+  /** The follow-up's idempotency key: one per click. */
+  key: string;
+  /** The stored question and option the button names (`kq:`). Absent: a button whose value carries its label (`{q,a}`), as posted before. */
+  button?: { pendingId: string; question: number; index: number };
+  responseUrl?: string;
+  /** The clicked message's blocks, from the click. */
+  blocks?: unknown[];
+}
+
 export interface SlackInteractionPayload {
   type: string;
   /** Single-use, expires in ~3s. Present on block_actions; required by views.open. */
@@ -117,7 +128,8 @@ export interface SlackInteractionPayload {
   team?: { id: string };
   user?: { id: string };
   channel?: { id: string };
-  message?: { ts: string; thread_ts?: string };
+  /** The message the clicked block is on, with its blocks as Slack renders them. */
+  message?: { ts: string; thread_ts?: string; blocks?: unknown[] };
   actions?: Array<{
     action_id?: string;
     value?: string;

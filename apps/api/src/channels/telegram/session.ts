@@ -22,8 +22,8 @@ import { type IntegrationEvent, registerEventConsumer } from '../../integrations
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
-import { databaseErrorSummary } from '../../shared/database-errors';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
+import { gateSender, refusedPressText } from '../core/channel-access';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
 import {
   clearQuestionButtons,
@@ -36,8 +36,9 @@ import { registerSessionPort } from '../core/session-notice';
 import { classifyTurnError } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
+import { telegramAccessPort } from './access';
 import { TELEGRAM_UPDATES, telegramCall } from './api';
-import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret, recordTelegramAccessRequest } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -344,25 +345,16 @@ export async function handleTelegramEvent(
   };
   const reply = (body: string) => sendTelegramReply(token, target, body);
 
-  if (!senderId || !install.allowedUserIds.includes(senderId)) {
-    // Only a private chat asks for access: there the sender wrote to the bot itself.
-    const asks = !!senderId && message.chat.type === 'private';
-    const waiting =
-      asks &&
-      (await recordTelegramAccessRequest(event.projectId, install, message.from!).catch((error) => {
-        // A failed query's message carries its parameters, the sender's names among them.
-        logger.warn('[telegram] access request not recorded', {
-          projectId: event.projectId,
-          error: databaseErrorSummary(error) ?? String(error),
-        });
-        return false;
-      }));
-    await reply(
-      `This bot belongs to a Kortix project, and your Telegram account is not allowed to use it yet. ` +
-        (waiting
-          ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Telegram. Your Telegram user ID is ${senderId}.`
-          : `Ask a project admin to allow your Telegram user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → Telegram${asks ? '' : ', or message this bot privately to ask for access'}.`),
-    );
+  const refusal = await gateSender(telegramAccessPort, {
+    projectId: event.projectId,
+    scopeId: install.botId,
+    lists: install,
+    senderId,
+    direct: message.chat.type === 'private',
+    from: message.from,
+  });
+  if (refusal) {
+    await reply(refusal);
     return;
   }
   const createClaim = `telegram:threadcreate:${event.projectId}:${install.botId}:${target.threadId}`;
@@ -433,7 +425,7 @@ export async function handleTelegramPress(
   // The same gate as a typed message. An alert, never a chat message: in a group
   // the pairing reply would reach everyone.
   if (!install.allowedUserIds.includes(String(press.from.id))) {
-    await answerPress(token, press.id, `Your Telegram account is not allowed to use this bot. Ask a project admin to allow user ID ${press.from.id} under Customize → Connectors → Channels → Telegram.`, true);
+    await answerPress(token, press.id, refusedPressText(telegramAccessPort, String(press.from.id)), true);
     return;
   }
   const message = press.message;

@@ -227,10 +227,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
-  'Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.':
-    'textc3d1545dd522',
+  'Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.':
+    'text7823a1f3af93',
   Extensions: 'textfe3436af86b4',
-  'Migrate manifest to v2 (kortix.yaml)': 'textd85a383e851d',
+  'Upgrade manifest to v3 (kortix.yaml)': 'text08edd5b6dcdc',
   Failed: 'text031a8f0f659d',
   Favicon: 'text4295528943df',
   'Fetching deals updated ≤ 7d': 'text5bae674104b6',

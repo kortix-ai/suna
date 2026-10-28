@@ -47,7 +47,7 @@ const VALUE_PROPS = [
   },
   {
     title: 'Compliance',
-    desc: 'SOC 2 Type I is held. SOC 2 Type II is in progress.',
+    desc: 'SOC 2 Type I verified.',
   },
   {
     title: 'Yours to own',
