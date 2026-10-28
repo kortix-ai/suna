@@ -65,6 +65,8 @@ jobs:
             app_runtime:
               - '.github/workflows/ci.yml'
               - 'apps/kortix-app-runtime/**'
+              # build_test.go asserts the Caddy pin in this file.
+              - 'apps/api/Dockerfile'
             frontend:
               - *pnpm
               - 'apps/web/**'
