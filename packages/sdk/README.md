@@ -936,8 +936,10 @@ else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
 
 An `image_gen` card reads `imageGenView(call, live?)`: an `ImageGenView` with
 `phase` (`ImageGenPhase`: `generating`, `ready`, `failed`, `stopped`), `action`,
-`prompt`, `aspectRatio`, `imagePath`, `directUrl`, `startedAt` and `error`
-(`message`, `suggestion?`, `code?`, `retryAfterSeconds?`, `connectChatGpt`).
+`prompts`, `startedAt`, `model`, `provider`, `error` (`message`, `suggestion?`,
+`code?`, `retryAfterSeconds?`, `connectModel`) and `images`: one frame per image
+(`prompt`, `phase`, `aspectRatio`, `imagePath`, `directUrl`, `error`), one to four
+per call.
 `imageGenRetryDelay(seconds)` and `formatImageGenElapsed(ms)` format its retry wait
 and elapsed time. `imagePathsShownByImageGen(blocks)`,
 `withoutImageGenDuplicates(items, paths)` and `showDrawnByImageGen(call, paths)` keep

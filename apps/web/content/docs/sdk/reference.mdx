@@ -617,11 +617,12 @@ What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sd
 
 | Name | What it does |
 | --- | --- |
-| `imageGenView(call, live?)` | The card of one `ToolCallBlock` as an `ImageGenView`: `phase` (`ImageGenPhase`: `generating`, `ready`, `failed` or `stopped`), `action` (`generate` or `edit`), `prompt`, `aspectRatio` (`"<w> / <h>"`: the delivered size once the call completed, else the requested size; `auto` is `1 / 1`), `imagePath` (a sandbox file), `directUrl` (legacy outputs without a path; an http(s) URL only, never set beside a path), `startedAt` (epoch ms, from the call's start), `error`. A call that failed with an interrupt, a closure-rule result or an abort text is `stopped`. A completed call with no image path or URL is `failed`. An open call is `stopped` when `live` is `false`, else `generating`. |
-| `ImageGenView['error']` | `message`, `suggestion?` (the text after the first sentence), `code?` (the gateway's trailing `[code]`, such as `provider_not_connected` or `image_rate_limited`), `retryAfterSeconds?` (from `Retry after N s.`), `connectChatGpt` (true only for `provider_not_connected` or `provider_reauth_required`). `null` unless `phase` is `failed`. |
+| `imageGenView(call, live?)` | The card of one `ToolCallBlock` as an `ImageGenView`. One call asks for one to four images. The call: `phase` (`ImageGenPhase`: `generating`, `ready`, `failed` or `stopped`), `action` (`generate` or `edit`), `prompts` (the call's `prompts`; a Phase 1 call's one `prompt`), `startedAt` (epoch ms, from the call's start), `model` and `provider` (the model that made the images, such as `google/gemini-2.5-flash-image`, and the provider that answered, from the tool output; `null` until the call completed or when the output names none), `error` (the whole call's failure), `images`. A call that failed with an interrupt, a closure-rule result or an abort text is `stopped`. A completed call with no image path or URL is `failed`. An open call is `stopped` when `live` is `false`, else `generating`. |
+| `ImageGenView['images']` | One frame per image: one per prompt while the call runs (one while its arguments stream), then each image the call made and each prompt that failed, in prompt order. Empty when the call `failed` or `stopped` as a whole. A frame has `prompt`, `phase` (`generating`, `ready` or `failed`), `aspectRatio` (`"<w> / <h>"`: the delivered size once the image came, else the requested `aspect_ratio` (`16:9` is `16 / 9`), else a legacy requested `size`; `auto` or neither is `1 / 1`), `imagePath` (a sandbox file: `.png`, `.jpg` or `.webp`), `directUrl` (legacy one-image outputs without a path; an http(s) URL only, never set beside a path) and `error` (this prompt's failure). An older one-image output (`{"path"}`, a Replicate URL or a bare path) is one frame. |
+| `ImageGenView['error']` | `message`, `suggestion?` (the text after the first sentence), `code?` (the gateway's trailing `[code]`, such as `provider_not_connected` or `image_rate_limited`), `retryAfterSeconds?` (from `Retry after N s.`), `connectModel` (true only for `image_model_unavailable`, `provider_not_connected` or `provider_reauth_required`: connecting a model in the project's settings fixes the call). On the view, `null` unless `phase` is `failed`; on a frame, `null` unless its `phase` is `failed`. |
 | `imageGenRetryDelay(seconds)` | `{ value, unit }`: whole seconds below 90 s (at least 1), minutes below 90 min, else hours, each rounded up. |
 | `formatImageGenElapsed(ms)` | The elapsed time as `m:ss`, such as `0:42` or `2:05`. |
-| `imagePathsShownByImageGen(blocks)` | The image paths the `image_gen` calls among `blocks` drew (`ready` calls only), each without its `/workspace/` prefix. |
+| `imagePathsShownByImageGen(blocks)` | The image paths the `image_gen` calls among `blocks` drew (every `ready` frame of every call), each without its `/workspace/` prefix. |
 | `withoutImageGenDuplicates(items, paths)` | `items` without each item whose `path` is in `paths` (with or without the `/workspace/` prefix). Items without a `path` stay. |
 | `showDrawnByImageGen(call, paths)` | True when `call` is a `show` or `show_user` call and every file it names (`items`, else `path`) is in `paths`: the host renders nothing for it. |
 
@@ -630,7 +631,11 @@ import { imageGenView, imagePathsShownByImageGen, showDrawnByImageGen } from '@k
 
 const drawn = imagePathsShownByImageGen(turn.blocks);
 const view = imageGenView(call, turn.live);
-if (view.phase === 'ready' && view.imagePath) renderImage(view.imagePath, view.aspectRatio);
+for (const image of view.images) {
+  if (image.phase === 'ready' && image.imagePath) renderImage(image.imagePath, image.aspectRatio);
+  else if (image.phase === 'failed') renderNote(image.error?.message);
+  else renderPlaceholder(image.aspectRatio, image.prompt);
+}
 if (showDrawnByImageGen(showCall, drawn)) skip(showCall); // the image card already shows it
 ```
 

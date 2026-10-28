@@ -420,7 +420,21 @@ function truncate(s: string, max = 60): string {
   return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
 }
 
+/** The images one `image_gen` call made (its output's `images`), else the prompts it asked for, else 1. */
+function imageCount(part: ToolPart): number {
+  try {
+    const images = JSON.parse(String((part.state as { output?: unknown } | undefined)?.output)).images;
+    if (Array.isArray(images) && images.length) return images.length;
+  } catch {
+    // no output yet, or a one-image output
+  }
+  const prompts = rawInput(part).prompts;
+  return Array.isArray(prompts) && prompts.length ? prompts.length : 1;
+}
+
 function imageGenSentence(part: ToolPart): string {
+  const count = imageCount(part);
+  if (count > 1) return CREATE_GROUP_SENTENCE[createPartKey(part)](count);
   const action = rawInput(part).action as string | undefined;
   return (action && IMAGE_GEN_ACTION_SENTENCE[action]) || 'Worked on an image';
 }
@@ -648,7 +662,11 @@ export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | 
       }
 
       const keys = parts.map(createPartKey);
-      if (allSame(keys)) return CREATE_GROUP_SENTENCE[keys[0]](n);
+      if (allSame(keys)) {
+        // One image_gen call can make up to four images: count images, not calls.
+        const count = createMediaOf(keys[0]) === 'image' ? parts.reduce((sum, p) => sum + imageCount(p), 0) : n;
+        return CREATE_GROUP_SENTENCE[keys[0]](count);
+      }
       return mixedCreateSentence(keys);
     }
     case 'plan':

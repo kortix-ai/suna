@@ -1,8 +1,9 @@
 /**
- * The `image_gen` card's four states, rendered: generating (busy label and
- * elapsed time), failed (message without the `[code]` token, suggestion, the
- * retry wait), stopped (an open call on a finished turn), ready (the sandbox
- * image). Native surfaces are host stand-ins; `imageGenView` stays real.
+ * The `image_gen` card's four states, rendered: generating (busy label,
+ * elapsed time, the requested aspect ratio), failed (message without the
+ * `[code]` token, suggestion, the retry wait), stopped (an open call on a
+ * finished turn), ready (the sandbox image and the model that made it).
+ * Native surfaces are host stand-ins; `imageGenView` stays real.
  */
 
 import { afterEach, beforeAll, describe, expect, jest, mock, test } from 'bun:test';
@@ -30,6 +31,8 @@ mock.module('react-native-reanimated', () => ({
 const EN: Record<string, string> = {
   'imageGen.generating': 'Generating image',
   'imageGen.editing': 'Editing image',
+  'imageGen.generatingCount': 'Generating {{count}} images',
+  'imageGen.editingCount': 'Editing {{count}} images',
   'imageGen.loading': 'Loading image',
   'imageGen.stopped': 'Stopped',
   'imageGen.failed': 'The image was not generated.',
@@ -89,7 +92,26 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-const INPUT = { action: 'generate', prompt: 'A paper-cutout fox', size: '1536x1024' };
+const INPUT = { action: 'generate', prompts: ['A paper-cutout fox'], aspect_ratio: '3:2' };
+const THREE = ['A fox in a shuttle', 'An owl in a shuttle', 'A hare in a shuttle'];
+const FOX = '/workspace/output/images/fox.png';
+
+/** The tool's batch output for the given images (`[path, size, prompt]`) and failed prompts. */
+function batch(images: [string, string, string][], failed: { prompt: string; error: string }[] = [], model = 'codex/gpt-image-2') {
+  return JSON.stringify({
+    action: 'generate',
+    model,
+    provider: 'openai-codex',
+    images: images.map(([path, size, prompt]) => ({ path, size, prompt })),
+    ...(failed.length ? { failed } : {}),
+  });
+}
+
+/** Every frame's `aspectRatio`, in render order. */
+function frameRatios(): number[] {
+  return (tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { aspectRatio?: number } | undefined)?.aspectRatio !== undefined) ?? [])
+    .map((node) => (node.props.style as { aspectRatio: number }).aspectRatio);
+}
 
 function call(state: Record<string, unknown>): ToolCallBlock {
   return toolCallBlock({
@@ -150,7 +172,7 @@ describe('ImageGenTool', () => {
   });
 
   test('a completed call loads the sandbox image', async () => {
-    const output = JSON.stringify({ path: '/workspace/output/images/fox.png', action: 'generate', size: '1254x836', model: 'gpt-image-2' });
+    const output = batch([[FOX, '1254x836', 'A paper-cutout fox']]);
     await render(call({ status: 'completed', output }), false);
     const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
     expect(images).toHaveLength(1);
@@ -164,10 +186,96 @@ describe('ImageGenTool', () => {
     expect((frame[0]!.props.style as { aspectRatio: number }).aspectRatio).toBe(1.5);
   });
 
+  test('aspect_ratio 16:9 holds a 16:9 frame; a legacy size still sets the frame', async () => {
+    const ratio = () =>
+      (tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { aspectRatio?: number } | undefined)?.aspectRatio !== undefined)[0]!
+        .props.style as { aspectRatio: number }).aspectRatio;
+    await render(call({ status: 'running', input: { ...INPUT, aspect_ratio: '16:9' } }), true);
+    expect(ratio()).toBeCloseTo(16 / 9);
+    await act(async () => tree?.unmount());
+    await render(call({ status: 'running', input: { action: 'generate', prompt: 'x', size: '1024x1536' } }), true);
+    expect(ratio()).toBeCloseTo(2 / 3);
+  });
+
+  test('a ready card names the model that made the image, a JPEG loads like a PNG', async () => {
+    const output = batch([['/workspace/output/images/fox.jpg', '1344x768', 'A paper-cutout fox']], [], 'google/gemini-2.5-flash-image');
+    await render(call({ status: 'completed', output }), false);
+    expect(texts()).toContain('A paper-cutout fox');
+    expect(texts()).toContain('google/gemini-2.5-flash-image');
+    const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
+    expect(images[0]!.props.source).toEqual({ uri: 'sandbox:/workspace/output/images/fox.jpg', headers: undefined });
+  });
+
+  test('a three-prompt call shows three generating frames under one busy line', async () => {
+    await render(call({ status: 'running', input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' } }), true);
+    const ratios = frameRatios();
+    expect(ratios).toHaveLength(3);
+    for (const ratio of ratios) expect(ratio).toBeCloseTo(16 / 9);
+    expect(texts().filter((t) => t === 'Generating 3 images')).toHaveLength(1);
+    expect(texts().filter((t) => t === '0:42')).toHaveLength(1);
+    expect(texts()).not.toContain('Generating image');
+    for (const prompt of THREE) expect(texts()).toContain(prompt);
+  });
+
+  test('a batch with one failure shows two images and one error, each in its place', async () => {
+    const output = batch(
+      [
+        [FOX, '1024x1024', THREE[0]!],
+        ['/workspace/output/images/hare.webp', '1536x1024', THREE[2]!],
+      ],
+      [{ prompt: THREE[1]!, error: 'Image generation failed (400): The request was refused. Change the prompt, then retry. [content_policy]' }],
+    );
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: THREE }, output }), false);
+    const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
+    expect(images.map((image) => (image.props.source as { uri: string }).uri)).toEqual([
+      `sandbox:${FOX}`,
+      'sandbox:/workspace/output/images/hare.webp',
+    ]);
+    const all = texts();
+    expect(all.filter((t) => t === 'The request was refused.')).toHaveLength(1);
+    expect(all).toContain('Change the prompt, then retry.');
+    expect(all.some((t) => t.includes('content_policy'))).toBe(false);
+    // The frames keep the order the call asked for; the model caption is once, last.
+    const at = (text: string) => all.indexOf(text);
+    expect(at(THREE[0]!) < at('The request was refused.') && at('The request was refused.') < at(THREE[2]!)).toBe(true);
+    expect(all.filter((t) => t === 'codex/gpt-image-2')).toHaveLength(1);
+    expect(all.at(-1)).toBe('codex/gpt-image-2');
+  });
+
+  test('legacy single path output still renders', async () => {
+    const output = JSON.stringify({ path: FOX, action: 'generate', size: '1254x836', model: 'gpt-image-2' });
+    await render(call({ status: 'completed', input: { action: 'generate', prompt: 'A paper-cutout fox', size: '1536x1024' }, output }), false);
+    const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
+    expect(images).toHaveLength(1);
+    expect(images[0]!.props.source).toEqual({ uri: `sandbox:${FOX}`, headers: undefined });
+    expect(texts()).toContain('A paper-cutout fox');
+    expect(texts()).toContain('gpt-image-2');
+  });
+
+  test('a running call names no model', async () => {
+    await render(call({ status: 'running' }), true);
+    expect(texts().some((t) => t.includes('/'))).toBe(false);
+  });
+
+  test('image_model_unavailable shows the message and suggestion, with no button', async () => {
+    await render(
+      call({
+        status: 'error',
+        error:
+          'Image generation failed (400): No image model is available for this project. Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings. [image_model_unavailable]',
+      }),
+      false,
+    );
+    expect(texts()).toContain('No image model is available for this project.');
+    expect(texts()).toContain('Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.');
+    expect(texts().some((t) => t.includes('image_model_unavailable'))).toBe(false);
+    expect(tree?.root.findAll((node) => node.type === 'button')).toHaveLength(0);
+  });
+
   test('a load that keeps failing says so after the retries, and Try again starts over', async () => {
     jest.useFakeTimers();
     imagePhase = 'error';
-    const output = JSON.stringify({ path: '/workspace/output/images/fox.png', action: 'generate', size: '1254x836', model: 'gpt-image-2' });
+    const output = batch([[FOX, '1254x836', 'A paper-cutout fox']]);
     await render(call({ status: 'completed', output }), false);
     expect(texts()).toContain('Loading image');
     for (let i = 0; i < 21; i++) {

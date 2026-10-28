@@ -8055,6 +8055,8 @@ const catalog = {
   "imageGen": {
     "generating": "Generating image",
     "editing": "Editing image",
+    "generatingCount": "Generating {count, plural, one {# image} other {# images}}",
+    "editingCount": "Editing {count, plural, one {# image} other {# images}}",
     "loading": "Loading image",
     "stopped": "Stopped",
     "failed": "The image was not generated.",

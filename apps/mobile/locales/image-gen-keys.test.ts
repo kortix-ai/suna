@@ -8,6 +8,8 @@ import { SUPPORTED_LOCALES } from '@/lib/utils/locale-config';
 
 const KEYS = ['generating', 'editing', 'loading', 'stopped', 'failed', 'notLoaded', 'tapToLoad'].map((k) => `imageGen.${k}`);
 const RETRY_KEYS = ['imageGen.retrySecond', 'imageGen.retryMinute', 'imageGen.retryHour'];
+// A batch's one busy line: "Generating 3 images".
+const COUNT_KEYS = ['imageGen.generatingCount', 'imageGen.editingCount'];
 
 async function instanceFor(locale: string) {
   const i18n = i18next.createInstance();
@@ -31,6 +33,8 @@ describe('image card strings', () => {
     expect(en.t('imageGen.retryHour', { count: 2 })).toBe('Try again in 2 hours.');
     expect(en.t('imageGen.retryMinute', { count: 1 })).toBe('Try again in 1 minute.');
     expect(en.t('imageGen.tapToLoad', { size: '9.0 MB' })).toBe('Tap to load (9.0 MB)');
+    expect(en.t('imageGen.generatingCount', { count: 3 })).toBe('Generating 3 images');
+    expect(en.t('imageGen.editingCount', { count: 2 })).toBe('Editing 2 images');
   });
 
   for (const locale of SUPPORTED_LOCALES.filter((locale) => locale !== 'en')) {
@@ -41,7 +45,7 @@ describe('image card strings', () => {
         expect(i18n.exists(key, { lng: locale, fallbackLng: false })).toBe(true);
         expect(i18n.t(key)).not.toBe(en.t(key));
       }
-      for (const key of RETRY_KEYS) {
+      for (const key of [...RETRY_KEYS, ...COUNT_KEYS]) {
         for (const count of [1, 5]) {
           const text = i18n.t(key, { count });
           expect(text).toContain(String(count));

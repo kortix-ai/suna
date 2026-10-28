@@ -1268,6 +1268,10 @@
   "imageGen": {
     "generating": "Generating image",
     "editing": "Editing image",
+    "generatingCount_one": "Generating {{count}} image",
+    "generatingCount_other": "Generating {{count}} images",
+    "editingCount_one": "Editing {{count}} image",
+    "editingCount_other": "Editing {{count}} images",
     "loading": "Loading image",
     "stopped": "Stopped",
     "failed": "The image was not generated.",

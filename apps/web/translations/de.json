@@ -23368,6 +23368,8 @@
   "imageGen": {
     "generating": "Bild wird erstellt",
     "editing": "Bild wird bearbeitet",
+    "generatingCount": "{count, plural, one {# Bild wird erstellt} other {# Bilder werden erstellt}}",
+    "editingCount": "{count, plural, one {# Bild wird bearbeitet} other {# Bilder werden bearbeitet}}",
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
     "failed": "Das Bild wurde nicht erstellt.",

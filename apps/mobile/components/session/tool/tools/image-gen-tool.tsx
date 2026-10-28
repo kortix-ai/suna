@@ -3,22 +3,28 @@
  * and its frame (`files/renderers/image-frame.tsx`); the state mapping is
  * `imageGenView` from `@kortix/sdk`, the one both cards read.
  *
- * No disclosure row: the card is the image.
- * - generating: a flat `muted` frame at the requested aspect ratio, the
- *   busy line centred over it — `SessionDotMatrix` (14px, keyed by the call)
- *   · "Generating image" / "Editing image" shimmer · the elapsed time from
- *   the call's start, so a reload keeps it;
- * - ready: the image fades in (200 ms ease-out, none under Reduce Motion)
- *   and the frame takes the image's own ratio; a tap opens it full screen
- *   (a sandbox file in the app's file sheet, a legacy URL in the browser);
- * - failed: the message without the `[code]` token, the suggestion, and the
- *   localized retry wait for a rate limit;
+ * No disclosure row: the card is the images. One call asks for one to four
+ * (`prompts`): one frame per image, alone, or two per row when there are more.
+ * - generating: each frame a flat `muted` box at the requested aspect ratio
+ *   (the call's `aspect_ratio`, else a legacy `size`). The busy line —
+ *   `SessionDotMatrix` (14px, keyed by the call) · "Generating image" /
+ *   "Generating 3 images" shimmer · the elapsed time from the call's start, so
+ *   a reload keeps it — sits in a lone frame, or once above a grid;
+ * - ready: each image (PNG, JPEG or WebP) fades in (200 ms ease-out, none
+ *   under Reduce Motion) and its frame takes the image's own ratio; a tap
+ *   opens it full screen (a sandbox file in the app's file sheet, a legacy
+ *   URL in the browser). A prompt that failed shows its error in its place;
+ * - failed (the whole call): the message without the `[code]` token, the
+ *   suggestion, and the localized retry wait for a rate limit;
  * - stopped: "Stopped".
- * The prompt is the caption under every state.
+ * Each frame's prompt is its caption; the model that made the images is one
+ * mono line under the card.
  *
  * Differences from web:
- * - no Connect ChatGPT action: mobile has no ChatGPT accounts sheet yet, so a
- *   `provider_not_connected` failure shows the gateway's message and
+ * - no Connect model action: mobile has no model settings screen (its one
+ *   provider hand-off, `ConnectProviderSheet`, opens only from an empty model
+ *   catalog), so an `image_model_unavailable`, `provider_not_connected` or
+ *   `provider_reauth_required` failure shows the gateway's message and
  *   suggestion only;
  * - the native image loader cannot tell a waking sandbox's 503 from any other
  *   failure, so a failed load retries every 3 s for about a minute before it
@@ -30,7 +36,7 @@ import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode }
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
-import { formatImageGenElapsed, imageGenRetryDelay, imageGenView } from '@kortix/sdk';
+import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView } from '@kortix/sdk';
 import { formatMegabytes } from '@kortix/sdk/react';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
@@ -137,12 +143,14 @@ interface SandboxImageProps {
   path: string;
   alt: string;
   seed: string;
+  /** The card's only frame: it says "Loading image"; a grid's frames wait silently. */
+  solo: boolean;
   onRatio: (ratio: number | null) => void;
   onPress: () => void;
 }
 
 /** One load of the sandbox file; a failure hands over to the next attempt after `WAKE_RETRY_MS`. */
-function SandboxImageAttempt({ path, alt, seed, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
+function SandboxImageAttempt({ path, alt, seed, solo, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
   const { t } = useTranslation();
   const image = useSandboxImage(path, true);
   const [loaded, setLoaded] = useState(false);
@@ -177,7 +185,7 @@ function SandboxImageAttempt({ path, alt, seed, onRatio, onPress, onFail }: Sand
           onPress={onPress}
         />
       ) : null}
-      {loaded ? null : (
+      {loaded || !solo ? null : (
         <Overlay>
           <BusyLabel seed={seed} label={t('imageGen.loading')} />
         </Overlay>
@@ -207,111 +215,188 @@ function SandboxImage(props: SandboxImageProps) {
   return <SandboxImageAttempt key={round} {...props} onFail={next} />;
 }
 
+type ImageGenImage = ImageGenView['images'][number];
+
+function usePlate() {
+  const palette = useTurnPalette();
+  return {
+    backgroundColor: palette.muted,
+    borderRadius: TURN_SPACE.radiusMd,
+    paddingHorizontal: webSpace(3),
+    paddingVertical: webSpace(2.5),
+  };
+}
+
+/** A failure in a quiet plate: the message, the suggestion and the retry wait. No error reads "Stopped". */
+function FailureNote({ error }: { error: ImageGenView['error'] }) {
+  const { t } = useTranslation();
+  const palette = useTurnPalette();
+  const plate = usePlate();
+  const wait = error?.retryAfterSeconds !== undefined ? imageGenRetryDelay(error.retryAfterSeconds) : null;
+  const xs = (color: string) => [TURN_TYPE.xs, { color }];
+  return (
+    <View style={[plate, { alignItems: 'flex-start', gap: webSpace(1) }]}>
+      {error ? (
+        <>
+          <Text selectable style={xs(palette.foreground)}>
+            {error.message || t('imageGen.failed')}
+          </Text>
+          {error.suggestion ? <Text style={xs(palette.mutedForeground)}>{error.suggestion}</Text> : null}
+          {wait ? <Text style={xs(palette.mutedForeground)}>{t(RETRY_KEY[wait.unit], { count: wait.value })}</Text> : null}
+        </>
+      ) : (
+        <Text style={xs(palette.mutedForeground)}>{t('imageGen.stopped')}</Text>
+      )}
+    </View>
+  );
+}
+
+/** One image, from its generating frame to the file. `solo`: the card's only frame carries the busy line itself. */
+function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
+  image: ImageGenImage;
+  seed: string;
+  solo: boolean;
+  busyLabel: string;
+  startedAt: number | null;
+}) {
+  const { t } = useTranslation();
+  const palette = useTurnPalette();
+  const plate = usePlate();
+  const { openFile, openExternal } = useToolNavigation();
+  const [natural, setNatural] = useState<number | null>(null);
+  const [urlLoaded, setUrlLoaded] = useState(false);
+  const onRatio = useCallback((ratio: number | null) => setNatural(ratio), []);
+
+  if (image.phase === 'failed') return <FailureNote error={image.error} />;
+  const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
+  if (image.imagePath && !filePath && !image.directUrl) {
+    // A path the file API cannot read: name it instead of loading forever.
+    return (
+      <View style={plate}>
+        <Text selectable style={[TURN_TYPE.xs, { color: palette.mutedForeground, fontFamily: monoFont }]}>
+          {image.imagePath}
+        </Text>
+      </View>
+    );
+  }
+  const alt = image.prompt || busyLabel;
+  const directUrl = image.directUrl;
+  let content: ReactNode = null;
+  if (image.phase === 'generating') {
+    content = solo ? (
+      <Overlay>
+        <BusyLabel seed={seed} label={busyLabel} startedAt={startedAt} />
+      </Overlay>
+    ) : null;
+  } else if (directUrl) {
+    content = (
+      <>
+        <FadeInImage
+          uri={directUrl}
+          alt={alt}
+          onLoaded={(ratio) => {
+            setUrlLoaded(true);
+            onRatio(ratio);
+          }}
+          onPress={() => openExternal(directUrl)}
+        />
+        {urlLoaded || !solo ? null : (
+          <Overlay>
+            <BusyLabel seed={seed} label={t('imageGen.loading')} />
+          </Overlay>
+        )}
+      </>
+    );
+  } else if (filePath) {
+    content = <SandboxImage path={filePath} alt={alt} seed={seed} solo={solo} onRatio={onRatio} onPress={() => openFile(filePath)} />;
+  }
+  return (
+    <View
+      accessibilityState={{ busy: image.phase === 'generating' }}
+      style={{
+        width: '100%',
+        aspectRatio: natural ?? aspectRatioValue(image.aspectRatio),
+        backgroundColor: palette.muted,
+        borderRadius: TURN_SPACE.radiusMd,
+        overflow: 'hidden',
+      }}
+    >
+      {content}
+    </View>
+  );
+}
+
 export function ImageGenTool({ call }: ToolProps) {
   const { t } = useTranslation();
   const palette = useTurnPalette();
   // The turn says whether an open call still runs: an open call on a finished turn was stopped.
   const live = useContext(TurnLiveContext);
   const view = useMemo(() => imageGenView(call, live), [call, live]);
-  const { openFile, openExternal } = useToolNavigation();
-  const [natural, setNatural] = useState<number | null>(null);
-  const [urlLoaded, setUrlLoaded] = useState(false);
-
-  const filePath = view.imagePath && isLocalSandboxFilePath(view.imagePath) ? view.imagePath : null;
-  const busyLabel = t(view.action === 'edit' ? 'imageGen.editing' : 'imageGen.generating');
-  const alt = view.prompt || busyLabel;
-  const onRatio = useCallback((ratio: number | null) => setNatural(ratio), []);
+  const edit = view.action === 'edit';
+  const solo = view.images.length === 1;
   const xs = (color: string) => [TURN_TYPE.xs, { color }];
-  const plate = {
-    backgroundColor: palette.muted,
-    borderRadius: TURN_SPACE.radiusMd,
-    paddingHorizontal: webSpace(3),
-    paddingVertical: webSpace(2.5),
-  };
+  const promptLine = (prompt: string) =>
+    prompt ? (
+      <Text numberOfLines={2} style={xs(palette.mutedForeground)}>
+        {prompt}
+      </Text>
+    ) : null;
 
   let body: ReactNode;
-  if (view.phase === 'failed' || view.phase === 'stopped') {
-    const error = view.error;
-    const wait = error?.retryAfterSeconds !== undefined ? imageGenRetryDelay(error.retryAfterSeconds) : null;
+  if (!view.images.length) {
+    // The whole call failed or stopped.
     body = (
-      <View style={[plate, { alignItems: 'flex-start', gap: webSpace(1) }]}>
-        {error ? (
-          <>
-            <Text selectable style={xs(palette.foreground)}>
-              {error.message || t('imageGen.failed')}
-            </Text>
-            {error.suggestion ? <Text style={xs(palette.mutedForeground)}>{error.suggestion}</Text> : null}
-            {wait ? <Text style={xs(palette.mutedForeground)}>{t(RETRY_KEY[wait.unit], { count: wait.value })}</Text> : null}
-          </>
-        ) : (
-          <Text style={xs(palette.mutedForeground)}>{t('imageGen.stopped')}</Text>
-        )}
-      </View>
-    );
-  } else if (view.phase === 'ready' && view.imagePath && !filePath && !view.directUrl) {
-    // A path the file API cannot read: name it instead of loading forever.
-    body = (
-      <View style={plate}>
-        <Text selectable style={[...xs(palette.mutedForeground), { fontFamily: monoFont }]}>
-          {view.imagePath}
-        </Text>
-      </View>
+      <>
+        <FailureNote error={view.error} />
+        {view.prompts.map((prompt, i) => (
+          <View key={i}>{promptLine(prompt)}</View>
+        ))}
+      </>
     );
   } else {
-    const directUrl = view.directUrl;
-    let content: ReactNode;
-    if (view.phase === 'generating') {
-      content = (
-        <Overlay>
-          <BusyLabel seed={call.call_id} label={busyLabel} startedAt={view.startedAt} />
-        </Overlay>
-      );
-    } else if (directUrl) {
-      content = (
-        <>
-          <FadeInImage
-            uri={directUrl}
-            alt={alt}
-            onLoaded={(ratio) => {
-              setUrlLoaded(true);
-              onRatio(ratio);
-            }}
-            onPress={() => openExternal(directUrl)}
-          />
-          {urlLoaded ? null : (
-            <Overlay>
-              <BusyLabel seed={call.call_id} label={t('imageGen.loading')} />
-            </Overlay>
-          )}
-        </>
-      );
-    } else if (filePath) {
-      content = (
-        <SandboxImage path={filePath} alt={alt} seed={call.call_id} onRatio={onRatio} onPress={() => openFile(filePath)} />
-      );
-    }
-    body = (
-      <View
-        accessibilityState={{ busy: view.phase === 'generating' }}
-        style={{
-          width: '100%',
-          aspectRatio: natural ?? aspectRatioValue(view.aspectRatio),
-          backgroundColor: palette.muted,
-          borderRadius: TURN_SPACE.radiusMd,
-          overflow: 'hidden',
-        }}
-      >
-        {content}
+    const cell = (image: ImageGenImage, i: number) => (
+      // In a row, `flex: 1` splits the width; a lone frame takes the card's.
+      <View key={i} style={solo ? { gap: webSpace(2) } : { flex: 1, gap: webSpace(2) }}>
+        <ImageGenFrame
+          image={image}
+          seed={call.call_id}
+          solo={solo}
+          busyLabel={t(edit ? 'imageGen.editing' : 'imageGen.generating')}
+          startedAt={view.startedAt}
+        />
+        {promptLine(image.prompt)}
       </View>
+    );
+    const rows: ImageGenImage[][] = [];
+    for (let i = 0; i < view.images.length; i += 2) rows.push(view.images.slice(i, i + 2));
+    body = solo ? (
+      cell(view.images[0]!, 0)
+    ) : (
+      <>
+        {view.phase === 'generating' ? (
+          <BusyLabel
+            seed={call.call_id}
+            label={t(edit ? 'imageGen.editingCount' : 'imageGen.generatingCount', { count: view.images.length })}
+            startedAt={view.startedAt}
+          />
+        ) : null}
+        {rows.map((row, r) => (
+          <View key={r} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2) }}>
+            {row.map((image, i) => cell(image, r * 2 + i))}
+            {/* An odd last row keeps its frame at half width. */}
+            {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
+          </View>
+        ))}
+      </>
     );
   }
 
   return (
     <View className="w-full max-w-md" style={{ gap: webSpace(2) }}>
       {body}
-      {view.prompt ? (
-        <Text numberOfLines={2} style={xs(palette.mutedForeground)}>
-          {view.prompt}
+      {view.model ? (
+        <Text numberOfLines={1} style={[...xs(palette.mutedForeground), { fontFamily: monoFont }]}>
+          {view.model}
         </Text>
       ) : null}
     </View>

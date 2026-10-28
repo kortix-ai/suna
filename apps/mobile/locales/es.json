@@ -1266,6 +1266,10 @@
   "imageGen": {
     "generating": "Generando imagen",
     "editing": "Editando imagen",
+    "generatingCount_one": "Generando {{count}} imagen",
+    "generatingCount_other": "Generando {{count}} imágenes",
+    "editingCount_one": "Editando {{count}} imagen",
+    "editingCount_other": "Editando {{count}} imágenes",
     "loading": "Cargando imagen",
     "stopped": "Detenido",
     "failed": "No se generó la imagen.",

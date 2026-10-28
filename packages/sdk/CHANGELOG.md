@@ -7,16 +7,29 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added (image generation card)
 - `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
-  card draws from its `ToolCallBlock`. `phase` is `generating`, `ready`, `failed` or `stopped`;
-  `action`, `prompt`, `aspectRatio` (`"<w> / <h>"`, from the delivered size, else the requested
-  size, else `1 / 1`), `imagePath` (a sandbox file), `directUrl` (legacy outputs without a path,
-  http(s) only), `startedAt` and `error` (`message`, `suggestion?`, `code?`, `retryAfterSeconds?`,
-  `connectChatGpt`). `live: false` reads an open call as `stopped`.
+  card draws from its `ToolCallBlock`, for any image model and for one to four images per call.
+  The call: `phase` (`generating`, `ready`, `failed` or `stopped`), `action`, `prompts` (the
+  call's `prompts`, or a Phase 1 call's one `prompt`), `startedAt`, `model` and `provider` (from
+  the tool output once the call completed, else `null`), `error` (the whole call's failure).
+  `images` holds one frame per image: one per prompt while the call runs, then each image the call
+  made and each prompt that failed, in prompt order; empty when the whole call failed or stopped.
+  A frame has `prompt`, `phase` (`generating`, `ready` or `failed`), `aspectRatio` (`"<w> / <h>"`,
+  from the delivered size, else the requested `aspect_ratio` (`16:9` is `16 / 9`), else a legacy
+  requested `size`, else `1 / 1`), `imagePath` (a sandbox file: `.png`, `.jpg` or `.webp`),
+  `directUrl` (legacy outputs without a path, http(s) only) and `error`. An error has `message`,
+  `suggestion?`, `code?`, `retryAfterSeconds?` and `connectModel` (true for a trailing
+  `[image_model_unavailable]`, `[provider_not_connected]` or `[provider_reauth_required]` code).
+  Older one-image outputs (`{"path"}`, a Replicate URL, a bare path) render as one frame.
+  `live: false` reads an open call as `stopped`. The single-image fields of the unreleased branch
+  (`prompt`, `aspectRatio`, `imagePath`, `directUrl` on the view, `connectChatGpt`) never shipped.
 - `imageGenRetryDelay(seconds)`: `{ value, unit }` in seconds below 90 s, minutes below 90 min,
   else hours. `formatImageGenElapsed(ms)`: `m:ss`.
 - `imagePathsShownByImageGen(blocks)`, `withoutImageGenDuplicates(items, paths)` and
   `showDrawnByImageGen(call, paths)`: a `show` of an image that an `image_gen` card of the same
-  turn already drew is left out, and a `show` call whose every file is such an image draws nothing.
+  turn already drew (every image of a batch) is left out, and a `show` call whose every file is
+  such an image draws nothing.
+- Narration counts the images of one `image_gen` call: "Made 3 images" (the images it made, else
+  the prompts it asked for). `getToolInfo('image_gen', input).subtitle` is the first prompt.
 
 ### Changed (image_gen is a deliverable)
 - `NO_GROUP_ACTIVITY_TOOLS`, and with it `STANDALONE_TOOLS`, include `image_gen`. An `image_gen`

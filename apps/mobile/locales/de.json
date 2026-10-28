@@ -1266,6 +1266,10 @@
   "imageGen": {
     "generating": "Bild wird erstellt",
     "editing": "Bild wird bearbeitet",
+    "generatingCount_one": "{{count}} Bild wird erstellt",
+    "generatingCount_other": "{{count}} Bilder werden erstellt",
+    "editingCount_one": "{{count}} Bild wird bearbeitet",
+    "editingCount_other": "{{count}} Bilder werden bearbeitet",
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
     "failed": "Das Bild wurde nicht erstellt.",

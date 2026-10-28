@@ -23368,6 +23368,8 @@
   "imageGen": {
     "generating": "Génération de l’image",
     "editing": "Modification de l’image",
+    "generatingCount": "Génération de {count, plural, one {# image} other {# images}}",
+    "editingCount": "Modification de {count, plural, one {# image} other {# images}}",
     "loading": "Chargement de l’image",
     "stopped": "Arrêté",
     "failed": "L’image n’a pas été générée.",

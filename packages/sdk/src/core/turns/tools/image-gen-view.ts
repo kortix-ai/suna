@@ -3,10 +3,15 @@
  * framework, so the web card (`@kortix/ui`) and the mobile card read one
  * mapping.
  *
- * The tool returns `{"path", "action", "size", "model"}`. A gateway refusal
- * throws `Image generation failed (<status>): <message> <suggestion>
- * [Retry after N s.] [<code>]`; the code is the last bracketed token, present
- * only when the gateway sent one (kortixd `image_gen.ts`, `refusal`).
+ * One call asks for one to four images (`prompts`; a Phase 1 call has one
+ * `prompt`) and returns `{"action", "model", "provider", "images": [{"path",
+ * "size", "prompt"}], "failed": [{"prompt", "error"}]}`; a path ends in
+ * `.png`, `.jpg` or `.webp`. Older calls returned one image as
+ * `{"path", …}`, a Replicate URL, or a bare path. A gateway refusal, of the
+ * whole call or of one prompt, reads `Image generation failed (<status>):
+ * <message> <suggestion> [Retry after N s.] [<code>]`; the code is the last
+ * bracketed token, present only when the gateway sent one (kortixd
+ * `image_gen.ts`, `refusal`).
  */
 import type { SessionLogBlock, ToolCallBlock } from '../../session-log/types';
 import { safeHttpUrl } from '../safe-url';
@@ -15,30 +20,63 @@ import { normalizeName } from './tool-meta';
 export type ImageGenPhase = 'generating' | 'ready' | 'failed' | 'stopped';
 
 export interface ImageGenView {
+  /**
+   * The call: `generating` while it runs, `ready` once it returned (each of
+   * `images` says how its prompt went), `failed` when the whole call failed
+   * (`error`), `stopped` when the turn stopped it.
+   */
   phase: ImageGenPhase;
   action: 'generate' | 'edit';
-  prompt: string;
-  /** `"<w> / <h>"`: the delivered size once the call completed, else the requested size; `auto` is `1 / 1`. */
-  aspectRatio: string;
-  imagePath: string | null;
-  /** Legacy outputs only (no `path`), and only an http(s) URL. */
-  directUrl: string | null;
+  /** The prompts the call asked for; a Phase 1 call's one `prompt`. */
+  prompts: string[];
   /** The call's start (epoch ms), so the elapsed time survives a reload. */
   startedAt: number | null;
+  /** The model that made the images (`codex/gpt-image-2`, `google/gemini-2.5-flash-image`); null until the call completed, or when the output names none. */
+  model: string | null;
+  /** The provider that answered, as the tool output names it; null until the call completed, or when the output names none. */
+  provider: string | null;
+  /**
+   * One frame per image: one per prompt while the call runs (one while its
+   * arguments stream), then each image it made and each prompt that failed,
+   * in prompt order. Empty when the call `failed` or `stopped` as a whole.
+   */
+  images: {
+    prompt: string;
+    /** `generating`, `ready` (the image is in) or `failed` (this prompt failed; see `error`). */
+    phase: ImageGenPhase;
+    /**
+     * `"<w> / <h>"`: the delivered size once the image came, else the
+     * requested `aspect_ratio` (`16:9` is `16 / 9`), else a legacy requested
+     * `size`; `auto` or neither is `1 / 1`.
+     */
+    aspectRatio: string;
+    /** A sandbox file. */
+    imagePath: string | null;
+    /** Legacy outputs only (no `path`), and only an http(s) URL. */
+    directUrl: string | null;
+    error: ImageGenView['error'];
+  }[];
+  /** A failure: of the whole call on the view, of one prompt on an image. */
   error: {
     message: string;
     suggestion?: string;
     /** The gateway's stable code (`provider_not_connected`, `image_rate_limited`, …). */
     code?: string;
-    /** Seconds until the ChatGPT image limit resets (`retry-after`). */
+    /** Seconds until the image limit resets (`retry-after`). */
     retryAfterSeconds?: number;
-    /** True only for the trailing `[provider_not_connected]` / `[provider_reauth_required]` code. */
-    connectChatGpt: boolean;
+    /**
+     * True only for a trailing `[image_model_unavailable]`,
+     * `[provider_not_connected]` or `[provider_reauth_required]` code: a
+     * model connection in the project's settings fixes the call.
+     */
+    connectModel: boolean;
   } | null;
 }
 
+type ImageGenFrame = ImageGenView['images'][number];
+
 const SQUARE = '1 / 1';
-const CONNECT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
+const CONNECT_CODES = new Set(['image_model_unavailable', 'provider_not_connected', 'provider_reauth_required']);
 const TRAILING_CODE = /\s*\[([a-z][a-z0-9_]*)\]\s*$/;
 const TRAILING_RETRY = /\s*Retry after (\d+) s\.\s*$/;
 const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
@@ -54,8 +92,8 @@ const STOPPED_TEXTS = new Set(['Operation aborted', 'The operation was aborted.'
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 
 /**
- * The tool's output → a sandbox path and/or a URL. Every `image_gen` (the
- * kortixd tool and the retired Replicate tool) returned JSON; a bare,
+ * A one-image output → a sandbox path and/or a URL. Every older `image_gen`
+ * (the kortixd tool and the retired Replicate tool) returned JSON; a bare,
  * possibly quoted image path is read too.
  */
 function imageOutput(text: string): { imagePath: string | null; directUrl: string | null } {
@@ -80,9 +118,9 @@ function gcd(a: number, b: number): number {
   return b ? gcd(b, a % b) : a;
 }
 
-/** `'1536x1024'` → `'3 / 2'`; anything else → null. */
+/** `'1536x1024'` or `'3:2'` → `'3 / 2'`; anything else (`auto`) → null. */
 function sizeAspect(size: unknown): string | null {
-  const m = typeof size === 'string' ? /^(\d+)x(\d+)$/.exec(size.trim()) : null;
+  const m = typeof size === 'string' ? /^(\d+)[x:](\d+)$/.exec(size.trim()) : null;
   if (!m) return null;
   const w = Number(m[1]);
   const h = Number(m[2]);
@@ -121,7 +159,7 @@ function failure(text: string): NonNullable<ImageGenView['error']> {
   rest = rest.replace(REFUSAL_PREFIX, '').trim();
   const error: NonNullable<ImageGenView['error']> = {
     message: rest,
-    connectChatGpt: !!code && CONNECT_CODES.has(code[1]!),
+    connectModel: !!code && CONNECT_CODES.has(code[1]!),
     ...(code && { code: code[1] }),
     ...(retry && { retryAfterSeconds: Number(retry[1]) }),
   };
@@ -140,42 +178,77 @@ function failure(text: string): NonNullable<ImageGenView['error']> {
 export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView {
   const input = inputOf(call);
   const started = call.started_at ? Date.parse(call.started_at) : NaN;
+  const prompts = Array.isArray(input.prompts)
+    ? input.prompts.filter((prompt): prompt is string => typeof prompt === 'string')
+    : typeof input.prompt === 'string'
+      ? [input.prompt]
+      : [];
+  const requested = sizeAspect(input.aspect_ratio) ?? sizeAspect(input.size) ?? SQUARE;
+  const frame = (prompt: string, phase: ImageGenPhase): ImageGenFrame => ({
+    prompt,
+    phase,
+    aspectRatio: requested,
+    imagePath: null,
+    directUrl: null,
+    error: null,
+  });
   const view: ImageGenView = {
     phase: 'generating',
     action: input.action === 'edit' ? 'edit' : 'generate',
-    prompt: typeof input.prompt === 'string' ? input.prompt : '',
-    aspectRatio: sizeAspect(input.size) ?? SQUARE,
-    imagePath: null,
-    directUrl: null,
+    prompts,
     startedAt: Number.isFinite(started) ? started : null,
+    model: null,
+    provider: null,
+    images: (prompts.length ? prompts : ['']).map((prompt) => frame(prompt, 'generating')),
     error: null,
   };
 
   if (call.status === 'error') {
     const text = call.result?.error?.message || resultText(call);
     const stopped = call.result?.error?.code === 'interrupted' || call.result?.synthetic || STOPPED_TEXTS.has(text.trim());
-    if (stopped) return { ...view, phase: 'stopped' };
-    return { ...view, phase: 'failed', error: failure(text) };
+    if (stopped) return { ...view, phase: 'stopped', images: [] };
+    return { ...view, phase: 'failed', images: [], error: failure(text) };
   }
-  if (call.status !== 'complete') return live === false ? { ...view, phase: 'stopped' } : view;
+  if (call.status !== 'complete') return live === false ? { ...view, phase: 'stopped', images: [] } : view;
 
   const text = resultText(call);
+  let output: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') output = parsed;
+  } catch {
+    // a legacy text output carries no size, model or provider
+  }
+  const named = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  const failedCard: ImageGenView = { ...view, phase: 'failed', images: [], error: failure(text) };
+  const done: ImageGenView = { ...view, phase: 'ready', model: named(output.model), provider: named(output.provider) };
+
+  if (Array.isArray(output.images) || Array.isArray(output.failed)) {
+    const entries: ImageGenFrame[] = [];
+    for (const image of Array.isArray(output.images) ? output.images : []) {
+      // S6: a batch image is a sandbox path, never a URL.
+      const path = named(image?.path);
+      if (path) entries.push({ ...frame(String(image.prompt ?? ''), 'ready'), aspectRatio: sizeAspect(image.size) ?? requested, imagePath: path });
+    }
+    for (const miss of Array.isArray(output.failed) ? output.failed : []) {
+      entries.push({ ...frame(String(miss?.prompt ?? ''), 'failed'), error: failure(String(miss?.error ?? '')) });
+    }
+    // In the order the call asked: a frame keeps its place from generating to done.
+    const asked = prompts.flatMap((prompt) => {
+      const at = entries.findIndex((entry) => entry.prompt === prompt);
+      return at < 0 ? [] : entries.splice(at, 1);
+    });
+    const images = [...asked, ...entries];
+    return images.length ? { ...done, images } : failedCard;
+  }
+
   const { imagePath, directUrl } = imageOutput(text);
   // S6: a path means a sandbox file. A URL beside it is never loaded.
   const remote = imagePath ? null : directUrl ? safeHttpUrl(directUrl) : null;
-  if (!imagePath && !remote) return { ...view, phase: 'failed', error: failure(text) };
-  let size: unknown;
-  try {
-    size = JSON.parse(text).size;
-  } catch {
-    // a legacy text output carries no size
-  }
+  if (!imagePath && !remote) return failedCard;
   return {
-    ...view,
-    phase: 'ready',
-    aspectRatio: sizeAspect(size) ?? view.aspectRatio,
-    imagePath,
-    directUrl: remote,
+    ...done,
+    images: [{ ...frame(prompts[0] ?? '', 'ready'), aspectRatio: sizeAspect(output.size) ?? requested, imagePath, directUrl: remote }],
   };
 }
 
@@ -202,8 +275,7 @@ export function imagePathsShownByImageGen(blocks: readonly SessionLogBlock[]): S
   const paths = new Set<string>();
   for (const block of blocks) {
     if (block.type !== 'tool_call' || !/^image[-_]gen$/.test(block.name)) continue;
-    const view = imageGenView(block);
-    if (view.phase === 'ready' && view.imagePath) paths.add(imageGenPathKey(view.imagePath));
+    for (const image of imageGenView(block).images) if (image.imagePath) paths.add(imageGenPathKey(image.imagePath));
   }
   return paths;
 }
