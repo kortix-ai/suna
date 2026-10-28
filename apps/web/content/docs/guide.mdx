@@ -3,13 +3,33 @@ title: Guide
 description: "A plain-language guide to Kortix, the open-source AI Operating System: every part of it, how it works and how to set it up."
 ---
 
-Kortix is an open-source AI Operating System. A project's agents, skills, memory and connector settings are files in one git repo. Every session runs on its own cloud computer. When an agent changes the project, it opens a change request that a person merges. This page covers every part of Kortix, in the order you meet it.
+Kortix is an open-source AI Operating System. It is two things:
+
+1. **A backend framework and server for agents.** Your agents, their skills and their access are code in one git repo. Kortix runs them.
+2. **A workspace and command center for people.** Your team starts work, reviews and approves what agents do, and manages the agents from the Kortix apps.
+
+This page covers every part of Kortix, in the order you meet it.
+
+## A backend for agents
+
+- **A project is a git repo.** Kortix hosts the repo for you, or you connect your own on GitHub.
+- **`kortix.yaml` declares the project.** It lists the agents and the skills, tools, connectors and triggers they use. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+- **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. See [Computers](/docs/guide#computers).
+- **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Automations](/docs/guide#automations).
+- **Developers build on the same backend.** The [REST API](/docs/developers#rest-api), the [CLI](/docs/developers#cli), [`@kortix/sdk`](/docs/developers#sdk) and [`@kortix/ui`](/docs/developers#kortix-ui) reach every project and session.
+
+## A workspace for people
+
+- **People start work where they already are.** Use the web app, the desktop app or the mobile app. Or mention the Kortix bot in Slack, Microsoft Teams or Telegram, or send it an email. See [Everywhere](/docs/guide#everywhere) and [Channels](/docs/guide#channels).
+- **People review and approve.** A change an agent makes to the project waits on the **Review** page until a person merges it. A connector rule set to **Ask** holds the action until a person approves it.
+- **People manage the agents.** **Customize** holds agents, skills, connectors, triggers, models and secrets. **Drive** holds shared folders. **Apps** lists what agents built and deployed.
+- **People control access.** You decide who can open each project, which agents each person may run, and who sees each session. See [Teams](/docs/guide#teams).
 
 ## How it works
 
 <Steps>
 <Step title="A project holds everything">
-A project is your company's workspace. Agents, skills, memory and connector settings are files in one git repo. Kortix hosts the repo for you, or you connect your own on GitHub.
+A project is one git repo. Its agents, skills, memory and connector settings are files in that repo.
 </Step>
 <Step title="You start a session">
 A session is one piece of agent work. You type a request, and an agent picks it up. The session runs on its own cloud computer, so it never touches your laptop or other sessions.
@@ -34,7 +54,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
 | Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide#computers) |
 | Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide#apps) |
-| Channels | Start work from Slack, Microsoft Teams or Telegram. | [Channels](/docs/guide#channels) |
+| Channels | Start work from Slack, Microsoft Teams, Telegram or email. | [Channels](/docs/guide#channels) |
 | Models | The AI models your agents run on, including your own provider keys. | [Models](/docs/guide#models) |
 | Everywhere | Web, desktop, mobile and the other places you use Kortix. | [Everywhere](/docs/guide#everywhere) |
 | Teams | Accounts, members, roles and who may run which agent. | [Teams](/docs/guide#teams) |
@@ -52,7 +72,7 @@ Create a project, run a session, connect a tool and invite your team. All of it 
 
 ### Create your first project
 
-A project is your company's workspace. It holds your agents, skills, memory and connector settings. A new account has no projects, and Kortix never creates one for you.
+A project is one git repo. It holds your agents, skills, memory and connector settings. A new account has no projects, and Kortix never creates one for you.
 
 <Steps>
 <Step title="Open Create a project">

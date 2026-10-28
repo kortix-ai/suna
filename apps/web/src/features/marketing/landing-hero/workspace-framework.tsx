@@ -9,8 +9,8 @@ import { FrameworkWindow } from './framework-window';
 import { SessionWindow } from './session-window';
 
 const STEPS = [
-  { label: 'Workspace', sub: 'Your team works here' },
-  { label: 'Framework', sub: 'Everything underneath is code' },
+  { label: 'Workspace', sub: 'Command center for people' },
+  { label: 'Framework', sub: 'Backend for agents' },
 ] as const;
 
 /** How long each view shows before the next one, in ms. */

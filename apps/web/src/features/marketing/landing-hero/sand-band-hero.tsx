@@ -84,7 +84,7 @@ export function SandBandHero() {
           </div>
           {/* What the two views show, in one line. */}
           <p className="text-foreground px-4 text-center text-base font-medium text-balance">
-            A workspace for your team. Everything underneath is code.{' '}
+            A workspace and command center for people. A backend framework for agents underneath.{' '}
             <span className="text-muted-foreground">The same project, as files in a git repo you own.</span>
           </p>
         </div>
