@@ -185,6 +185,8 @@ kortix gateway routing reset
 
 When a fallback model answers, the composer shows **Running on** and the model name. The turn details name the model that answered and the model it replaced. **Costs** counts the spend under the model that answered.
 
+A project chain also takes over when the requested model id is unknown or retired (`404`). Every gateway answer therefore carries two headers: `x-kortix-requested-model` names the model the request asked for, and `x-kortix-model` names the model that answered. When they differ, a fallback served the request.
+
 ## Shared keys and ChatGPT accounts
 
 By default, a provider key belongs to the whole project. A personal override of a provider key returns `llm_credentials_project_wide`.
