@@ -405,6 +405,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         if (!open) {
           // The person closed it: coming back must not reopen it.
           forgetActivePanel(get());
+          // A tool closed while the computer boots stays closed after the
+          // boot→ready handoff: drop the intent it would replant.
+          update._bootQuickView = null;
           update.panelSplit = null;
           update.panelAspect = null;
           update.isExpanded = false;
