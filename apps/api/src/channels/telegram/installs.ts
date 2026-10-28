@@ -111,10 +111,10 @@ export async function deleteTelegramInstall(projectId: string): Promise<void> {
 }
 
 /**
- * The project delete releases its bot: the webhook, only while it points at
- * this project (the bot may serve another project since), then the install and
- * its secrets. Telegram is best effort and never blocks the delete; an update
- * that still arrives finds no secret and gets the webhook's 404.
+ * Disconnect and the project delete release the bot: the webhook, only while
+ * it points at this project (the bot may serve another project since), then
+ * the install and its secrets. Telegram is best effort and never blocks either;
+ * an update that still arrives finds no secret and gets the webhook's 404.
  */
 export async function releaseTelegramBot(projectId: string): Promise<void> {
   const token = await loadTelegramBotToken(projectId);
@@ -123,7 +123,7 @@ export async function releaseTelegramBot(projectId: string): Promise<void> {
       const info = await telegramCall<{ url?: string }>(token, 'getWebhookInfo', {}, 5_000);
       if (info.url?.endsWith(`/v1/webhooks/telegram/${projectId}`)) await telegramCall(token, 'deleteWebhook', {}, 5_000);
     } catch (error) {
-      logger.warn('[telegram] the deleted project kept its bot webhook', { projectId, error: String(error) });
+      logger.warn('[telegram] the released bot kept its webhook', { projectId, error: String(error) });
     }
   }
   await deleteTelegramInstall(projectId);

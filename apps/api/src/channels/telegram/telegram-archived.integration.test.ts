@@ -47,7 +47,7 @@ const BOUND_CHAT = 778;
 const TELEGRAM_SECRETS = [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_BOT_USERNAME];
 
 interface Fixture {
-  state: 'tombstone' | 'deleted' | 'moved';
+  state: 'tombstone' | 'deleted' | 'moved' | 'revoked' | 'unreachable';
   project: string;
   botId: string;
   token: string;
@@ -65,12 +65,16 @@ type Call = { botId: string; method: string; body: Record<string, unknown> };
 const calls: Call[] = [];
 /** The webhook URL `getWebhookInfo` reports per bot id. */
 const webhookUrl = new Map<string, string>();
+/** The HTTP status every Bot API call of a bot id fails with: 401 a revoked token, 500 an outage. */
+const failWith = new Map<string, number>();
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
     const [, botToken, method] = new URL(req.url).pathname.split('/');
     const botId = (botToken ?? '').replace(/^bot/, '').split(':')[0]!;
     calls.push({ botId, method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> });
+    const failure = failWith.get(botId);
+    if (failure) return Response.json({ ok: false, description: failure === 401 ? 'Unauthorized' : 'synthetic failure' }, { status: failure });
     if (method === 'getWebhookInfo') {
       return Response.json({ ok: true, result: { url: webhookUrl.get(botId) ?? '', allowed_updates: ['message', 'callback_query'] } });
     }
@@ -241,4 +245,25 @@ describe('Telegram bot connected to another project since — migrated PostgreSQ
     const installs = await db.select().from(chatInstalls).where(eq(chatInstalls.projectId, f.project));
     expect({ deleteCalls: f.deleteCalls, installs: installs.length }).toEqual({ deleteCalls: ['getWebhookInfo'], installs: 0 });
   });
+});
+
+describe('Telegram refuses or fails during the delete — migrated PostgreSQL', () => {
+  for (const [state, status, bot] of [['revoked', 401, 'a revoked bot'], ['unreachable', 500, 'an unreachable bot']] as const) {
+    test(`${bot} (HTTP ${status}) does not block the delete: the project is archived, the install and its secrets go`, async () => {
+      const f = fixture(state);
+      await seed(f);
+      failWith.set(f.botId, status);
+      await deleteProject(f);
+      const installs = await db.select().from(chatInstalls).where(eq(chatInstalls.projectId, f.project));
+      const secrets = await db
+        .select({ name: projectSecrets.name })
+        .from(projectSecrets)
+        .where(and(eq(projectSecrets.projectId, f.project), inArray(projectSecrets.name, TELEGRAM_SECRETS)));
+      expect({ deleteCalls: f.deleteCalls, installs: installs.length, secrets: secrets.map((s) => s.name) }).toEqual({
+        deleteCalls: ['getWebhookInfo'],
+        installs: 0,
+        secrets: [],
+      });
+    });
+  }
 });

@@ -9,9 +9,8 @@ import type { Context } from 'hono';
 import { TELEGRAM_TOKEN_PATTERN, TELEGRAM_UPDATES, type TelegramBot, TelegramApiError, telegramCall } from '../../channels/telegram/api';
 import { CHANNEL_MAX_ALLOWED_USERS } from '../../channels/core/channel-access';
 import {
-  deleteTelegramInstall,
-  loadTelegramBotToken,
   loadTelegramInstall,
+  releaseTelegramBot,
   saveTelegramInstall,
   setTelegramAllowedUserIds,
   TELEGRAM_USER_ID,
@@ -157,10 +156,8 @@ export function registerChannelTelegramRoutes(): void {
     async (c: Context<AppEnv>) => {
       const ctx = await channelContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
       if (ctx.response) return ctx.response;
-      const token = await loadTelegramBotToken(ctx.projectId);
-      // Best effort: a revoked token cannot remove its webhook, and the install goes either way.
-      if (token) await telegramCall(token, 'deleteWebhook').catch(() => undefined);
-      await deleteTelegramInstall(ctx.projectId);
+      // The project delete's path: the webhook goes only while it points here.
+      await releaseTelegramBot(ctx.projectId);
       reconcileInBackground(ctx.projectId);
       return c.json({ ok: true });
     },

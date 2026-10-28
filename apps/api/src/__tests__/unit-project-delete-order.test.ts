@@ -10,8 +10,9 @@
  *    project row as a tombstone, so the database's FK cascade never fires and
  *    the rows would outlive the purged project. Same retry rule as the
  *    repository delete: a failure answers 500 and the project stays active.
- * 4. Release the Telegram bot: its webhook, install and secrets outlive the
- *    archive for the same reason, and its bot kept answering. Same retry rule.
+ * 4. Release the chat channels: the Telegram bot, the Slack and Teams installs
+ *    and bindings outlive the archive for the same reason, and kept routing
+ *    messages to the deleted project. Same retry rule.
  * 5. Archive the project row.
  *
  * PROJ-8 (tests/src/flows) proves the archive over real HTTP. A local stack has
@@ -60,11 +61,11 @@ mock.module('../projects/lib/project-deletion', () => ({
   },
 }));
 
-const realTelegram = await import('../channels/telegram/installs');
-mock.module('../channels/telegram/installs', () => ({
-  ...realTelegram,
-  releaseTelegramBot: async () => {
-    steps.push('release-telegram');
+const realInstallStore = await import('../channels/install-store');
+mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
+  releaseProjectChannels: async () => {
+    steps.push('release-channels');
   },
 }));
 
@@ -101,12 +102,12 @@ beforeEach(() => {
 });
 
 describe('DELETE /projects/:projectId step order', () => {
-  test('release, then repository delete, then connector purge, then the Telegram bot, then archive', async () => {
+  test('release, then repository delete, then connector purge, then the chat channels, then archive', async () => {
     const res = await deleteProject();
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: true });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'release-telegram', 'archive:archived', 'revoke-tokens']);
+    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'release-channels', 'archive:archived', 'revoke-tokens']);
   });
 
   test('a failed repository delete answers 502 and leaves the project active', async () => {
