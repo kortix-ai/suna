@@ -88,7 +88,7 @@ opencode:
 tools:
   web_search: kortix:web_search      # maintained by Kortix, updated automatically
   image_search: kortix:image_search
-  image_gen: kortix:image_gen        # generates images with your ChatGPT plan
+  image_gen: kortix:image_gen        # generates images with an image model the project can use
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
