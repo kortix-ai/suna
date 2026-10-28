@@ -147,7 +147,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // — the same resolution every account-scoped surface uses. Feeds the
   // `?customize=` redirect below, which can name an account-scoped section.
   const shellAccountId = useSettingsAccountId(projectAccountId);
-  // An open project brands as ITS account (Enterprise branding), even when the
+  // An open project brands as ITS account (account branding), even when the
   // switcher's selected account is another one. Clears on unmount.
   useBrandingScope(projectAccountId);
 

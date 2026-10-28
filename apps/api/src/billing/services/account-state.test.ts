@@ -31,7 +31,7 @@ async function trackedDelay<T>(value: T, ms = 15): Promise<T> {
 
 mock.module('../../config', () => ({
   config: {
-    ENTERPRISE_LICENSE_AVAILABLE: false,
+    KORTIX_LICENSE_KEY: '',
     get KORTIX_BILLING_INTERNAL_ENABLED() {
       return billingEnabled;
     },

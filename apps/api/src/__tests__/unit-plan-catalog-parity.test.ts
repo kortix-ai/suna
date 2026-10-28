@@ -26,7 +26,7 @@ mock.module('../config', () => ({
   config: {
     INTERNAL_KORTIX_ENV: 'dev',
     KORTIX_BILLING_INTERNAL_ENABLED: true,
-    ENTERPRISE_LICENSE_AVAILABLE: false,
+    KORTIX_LICENSE_KEY: '',
     KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: FREE_REQS_PER_MIN,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: PAID_REQS_PER_MIN,
   },
@@ -118,8 +118,11 @@ for (const key of TIER_KEYS) {
         scim: record.entitlements.scim,
         rbac: record.entitlements.rbac,
         auditAccess: record.entitlements.auditAccess,
-        branding: record.entitlements.branding,
       }).toEqual(expected);
+    });
+
+    test('branding is on for every plan', () => {
+      expect(record.entitlements.branding).toBe(true);
     });
 
     test('managedModels matches tierGrantsAllModels', () => {

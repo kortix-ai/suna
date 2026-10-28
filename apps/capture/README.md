@@ -305,5 +305,5 @@ Secrets and human steps: the
 
 ## License
 
-Elastic License 2.0, like the rest of this repository ([`LICENSE`](../../LICENSE)).
+Apache License 2.0, like the rest of this repository ([`LICENSE`](../../LICENSE)).
 Third-party notices: [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).

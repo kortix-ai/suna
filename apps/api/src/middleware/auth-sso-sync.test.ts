@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../lib/sentry';
-import * as realSsoSync from '../iam/sso-sync';
+import * as realSsoSync from '../iam/ee/sso-sync';
 
 let verifyResult: unknown;
 let networkUser: unknown;
@@ -20,7 +20,7 @@ mock.module('../shared/supabase', () => ({
 
 const syncCalls: Array<{ userId: string; email: string; jwtPayload: unknown }> = [];
 let syncFailure: Error | null = null;
-mock.module('../iam/sso-sync', () => ({
+mock.module('../iam/ee/sso-sync', () => ({
   ...realSsoSync,
   syncSsoMembership: async (args: { userId: string; email: string; jwtPayload: unknown }) => {
     syncCalls.push(args);

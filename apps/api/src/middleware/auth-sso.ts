@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
+import { extractSsoProviderId, syncSsoMembership } from '../iam/ee/sso-sync';
 
 /**
  * Run SAML JIT provisioning for a Supabase-authenticated request. Cheap no-op

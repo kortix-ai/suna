@@ -9,7 +9,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { accountSessionGate } from '../iam/session-gate';
 import { accountSsoGate } from '../middleware/sso-gate';
 import { iamRouter, registerIamRoutes } from './iam';
-import { auditRouter } from './audit';
+import { auditRouter } from './ee/audit';
 import { registerTokenRoutes } from './core/tokens';
 import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';

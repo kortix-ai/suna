@@ -19,9 +19,9 @@ import { autoClaimPendingInvites } from '../accounts/core/app';
 import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { trustedEmailForUser } from '../iam/email-trust';
 import { createAccountToken } from '../repositories/account-tokens';
-import { createScimToken } from '../repositories/scim';
+import { createScimToken } from '../repositories/ee/scim';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
-import { userIdByEmail } from '../scim/app';
+import { userIdByEmail } from '../ee/scim/app';
 
 const { app } = await import('../index');
 

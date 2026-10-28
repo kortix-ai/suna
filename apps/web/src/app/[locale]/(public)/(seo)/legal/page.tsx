@@ -10,14 +10,15 @@ import { cn } from '@kortix/ui';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Fragment, Suspense, useState, type ReactNode } from 'react';
 
+import { ENTERPRISE_TERMS, ENTERPRISE_TERMS_LAST_UPDATED } from './enterprise-terms';
 import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
 const LEGAL_LAST_UPDATED = 'September 29, 2026';
 
-type LegalTab = 'imprint' | 'terms' | 'privacy';
+type LegalTab = 'imprint' | 'terms' | 'privacy' | 'enterprise';
 
 function isLegalTab(value: string | null): value is LegalTab {
-  return value === 'imprint' || value === 'terms' || value === 'privacy';
+  return value === 'imprint' || value === 'terms' || value === 'privacy' || value === 'enterprise';
 }
 
 /**
@@ -444,6 +445,7 @@ function parseTerms(source: string): { intro: TermsBlock[]; sections: TermsSecti
 }
 
 const TERMS = parseTerms(TERMS_OF_SERVICE);
+const ENTERPRISE = parseTerms(ENTERPRISE_TERMS);
 
 /** `**Defined term**` reads in the foreground; an address is a mail link. */
 function TermsInline({ text }: { text: string }) {
@@ -493,14 +495,14 @@ function TermsBlocks({ blocks }: { blocks: TermsBlock[] }) {
   );
 }
 
-/** English only, like the privacy policy. The text lives in `terms-of-service.ts`. */
-function TermsOfService() {
+/** English only, like the privacy policy. The texts live in `terms-of-service.ts` and `enterprise-terms.ts`. */
+function TermsDocument({ doc }: { doc: ReturnType<typeof parseTerms> }) {
   return (
     <div className="space-y-10">
       <div className="space-y-4">
-        <TermsBlocks blocks={TERMS.intro} />
+        <TermsBlocks blocks={doc.intro} />
       </div>
-      {TERMS.sections.map((section) => (
+      {doc.sections.map((section) => (
         <Section key={section.id} id={section.id} title={section.title}>
           <TermsBlocks blocks={section.blocks} />
         </Section>
@@ -573,12 +575,14 @@ function LegalContent() {
         ],
       body: <Imprint /> },
     terms: { label: t.raw('i18nComplete.text4afa55bf7aec'), heading: t.raw('i18nComplete.text4afa55bf7aec'), updated: TERMS_LAST_UPDATED,
-      contents: TERMS.sections.map((section) => [section.id, section.title]), body: <TermsOfService /> },
+      contents: TERMS.sections.map((section) => [section.id, section.title]), body: <TermsDocument doc={TERMS} /> },
     privacy: { label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'), heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'), updated: LEGAL_LAST_UPDATED,
       contents: Object.entries(PRIVACY_TITLES), body: <PrivacyPolicy /> },
+    enterprise: { label: 'Enterprise terms', heading: 'Enterprise Subscription Terms', updated: ENTERPRISE_TERMS_LAST_UPDATED,
+      contents: ENTERPRISE.sections.map((section) => [section.id, section.title]), body: <TermsDocument doc={ENTERPRISE} /> },
   };
   const selected = documents[activeTab];
-  const tabs: LegalTab[] = ['imprint', 'terms', 'privacy'];
+  const tabs: LegalTab[] = ['imprint', 'terms', 'privacy', 'enterprise'];
   const toc: TocItem[] = selected.contents.map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
 
   return (

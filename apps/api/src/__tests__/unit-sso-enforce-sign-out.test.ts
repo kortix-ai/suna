@@ -9,7 +9,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
-import * as realSsoRepository from '../repositories/sso';
+import * as realSsoRepository from '../repositories/ee/sso';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
@@ -27,7 +27,7 @@ mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => true,
 }));
 
-mock.module('../accounts/iam/sso-provisioning', () => ({
+mock.module('../accounts/iam/ee/sso-provisioning', () => ({
   syncSupabaseSamlAttributeMapping: async () => ({ ok: true }),
   registerSupabaseSamlProvider: async () => ({ ok: false, status: 400, error: 'unused' }),
   deleteSupabaseSamlProvider: async () => ({ ok: true }),
@@ -74,7 +74,7 @@ const provider = {
 let current = { ...provider };
 let signOut: () => Promise<number> = async () => 0;
 const signOutCalls: Array<[string, string | null]> = [];
-mock.module('../repositories/sso', () => ({
+mock.module('../repositories/ee/sso', () => ({
   ...realSsoRepository,
   isPersonalAccount: async () => false,
   getSsoProvider: async () => current,
@@ -89,7 +89,7 @@ mock.module('../repositories/sso', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-(await import('../accounts/iam/sso')).registerIamSsoRoutes();
+(await import('../accounts/iam/ee/sso')).registerIamSsoRoutes();
 const { adminApp } = await import('../admin');
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000001';

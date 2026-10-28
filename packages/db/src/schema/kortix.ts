@@ -4855,8 +4855,8 @@ export const creditAccounts = kortixSchema.table(
     // Set out-of-band by an operator (admin route / migration), like the
     // `tier='enterprise'` sales-assignment, but independent of it. Default
     // false → fail-closed. Distinct from `demo_enterprise` (a self-serve
-    // preview) and from `config.ENTERPRISE_LICENSE_AVAILABLE` (a platform-wide
-    // self-host license): this is the per-account, real-contract flag.
+    // preview) and from `KORTIX_LICENSE_KEY` (a platform-wide self-host
+    // license key): this is the per-account, real-contract flag.
     enterpriseEntitled: boolean('enterprise_entitled').default(false).notNull(),
     // RETIRED: the operator-set concurrent-session cap. Sessions are uncapped
     // and no code reads or writes this column; drop it in its own migration.
@@ -6877,7 +6877,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
       .notNull()
       .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
     /** Match against an entry in the IdP group claim. Compared case- and
-     *  whitespace-INSENSITIVELY at sync time (see iam/sso-sync.ts
+     *  whitespace-INSENSITIVELY at sync time (see iam/ee/sso-sync.ts
      *  resolveClaimedGroupIds) so an admin can't silently lock users out by
      *  mistyping the casing of an Entra/Okta group name. */
     claimValue: varchar('claim_value', { length: 256 }).notNull(),

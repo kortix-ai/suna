@@ -21,7 +21,6 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Auto Top-up': 'textb22c4907adbb',
   Automate: 'textf9dcbb55deba',
   Billing: 'text3ac8bbca9a74',
-  'Branding is an Enterprise feature': 'textc44722e44ce4',
   'Bring your own keys — Anthropic, OpenAI, or local models — or run on Kortix compute.':
     'text0ced428dea65',
   'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.':
@@ -62,7 +61,6 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'LLM Overage': 'text3f6365f81e08',
   'Machine Bonus': 'text917ffd97c41a',
   Members: 'text1044a4c056d0',
-  'Members see your brand from the moment they sign in': 'text8c5fe5f09fc1',
   Mo: 'textd23e867e38e8',
   Models: 'textd17d2d78d76e',
   'New sessions start on the prepared machine right away. There is nothing to do on this page.':
@@ -117,8 +115,6 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Weekends: 'text93dcf1d1d25e',
   'Work is code': 'text03db0aeae3a9',
   'You own the stack': 'text22b4436e2cc6',
-  'Your brandmark in the header and on every loading screen': 'text4a8f5784f179',
-  'Your favicon and product name in the browser tab, with dark-mode variants': 'text293b5ec8aac7',
   building: 'text5167e9677e1f',
   failed: 'text5d28a90f4498',
   ready: 'textb24d6d33736e',

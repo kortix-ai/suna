@@ -28,6 +28,7 @@ import { PLAN_CATALOG, PLAN_FAMILY_LABELS } from './plan-catalog';
 import { canonicalTier, getTier, getTierEntitlements, planMonthlyUsd } from './tiers';
 import { getAccountEntitlements } from './entitlements';
 import { currentPeriodStart, getUsageBreakdownThisPeriod } from './usage-breakdown';
+import { enterpriseLicenseActive } from './enterprise-license';
 
 type CreditAccountRow = Awaited<ReturnType<typeof getCreditAccount>>;
 
@@ -178,9 +179,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns.
       monthly_credits: monthlyUsd ?? tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
-      entitlements,
+      entitlements: { ...entitlements, branding: resolved.entitlements.branding },
     },
-    enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    enterprise_license_available: enterpriseLicenseActive(),
     enterprise_entitled: resolved.enterprise !== 'off',
     // Trials are removed (plans-and-access.md): always null, kept for the wire shape.
     trial: null,
@@ -292,9 +293,9 @@ export function buildLocalAccountState(): AccountStateResponse {
       display_name: 'Free',
       monthly_credits: 0,
       can_purchase_credits: false,
-      entitlements: getTierEntitlements('free'),
+      entitlements: { ...getTierEntitlements('free'), branding: true },
     },
-    enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    enterprise_license_available: enterpriseLicenseActive(),
     // No-DB local mode has no credit_accounts row, so the contracted-Enterprise
     // flag is false by construction (fail-closed).
     enterprise_entitled: false,

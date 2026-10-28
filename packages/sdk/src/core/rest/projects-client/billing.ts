@@ -240,9 +240,9 @@ export interface AccountState {
       branding: boolean;
     };
   };
-  /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
-   *  forces every enterprise entitlement on platform-wide — the frontend
-   *  hides every Enterprise upsell when this is true. */
+  /** True when a self-host deployment holds a valid Kortix Enterprise license
+   *  key (KORTIX_LICENSE_KEY), which turns every enterprise entitlement on
+   *  platform-wide — the frontend hides every Enterprise upsell when true. */
   enterprise_license_available?: boolean;
   /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
    *  plan (a contract or an Enterprise trial). */

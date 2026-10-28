@@ -160,7 +160,7 @@ export function resolveDefaultCreatableAccountId(
  * anchor to their identity, because their identity genuinely has no
  * creatable account of its own. So today the ONLY reachable trigger for this
  * predicate is (b), a legitimate user, not a caching defect — reachable via
- * SAML JIT provisioning (`iam/sso-sync.ts` inserting a membership directly)
+ * SAML JIT provisioning (`iam/ee/sso-sync.ts` inserting a membership directly)
  * or direct invite acceptance (`accounts/invites.ts`), either of which can
  * add someone as owner/admin on 2+ accounts without ever running the
  * `memberships.length === 0` personal-account bootstrap gate.

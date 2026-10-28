@@ -50,6 +50,7 @@ for (const [query, heading, dated] of [
   ['tab=imprint', 'Imprint', false],
   ['tab=terms', 'Terms of Service', true],
   ['tab=privacy', 'Privacy Policy', true],
+  ['tab=enterprise', 'Enterprise Subscription Terms', true],
 ] as const) {
   test(`legal document for ${query || 'missing tab'}`, async () => {
     await render(query);

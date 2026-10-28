@@ -34,7 +34,7 @@ same version. The server side (ingest, devices, policy, the web area) lives in
 - A format change updates the schemas, the fixtures
   (`KORTIX_CAPTURE_WRITE_FIXTURES=1 cargo test --test capture_format`), the API
   reader (`apps/api/src/capture/format.ts`) and the CAP flows in one branch.
-- License: Elastic License 2.0 (the root `LICENSE`). Third-party notices are in
+- License: Apache License 2.0 (the root `LICENSE`). Third-party notices are in
   `apps/capture/THIRD_PARTY_NOTICES`. Update them when a dependency with other
   terms is added.
 - Copy and comments: short, plain, one idea per sentence.

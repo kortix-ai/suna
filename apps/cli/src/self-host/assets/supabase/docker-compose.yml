@@ -229,7 +229,7 @@ services:
       # SUPABASE_JWT_SECRET/POSTGRES_PASSWORD. This only turns on the GoTrue SAML
       # *capability* — no IdP is registered until an operator/admin actually
       # configures one (Account → Settings → SAML SSO, gated on the `sso`
-      # entitlement — see --enterprise-license). Do not rotate SAML_PRIVATE_KEY
+      # entitlement — see --license-key). Do not rotate SAML_PRIVATE_KEY
       # once an IdP is registered: it changes the SP's signing identity, which
       # breaks every already-trusted IdP relationship until re-registered.
       # See: https://supabase.com/docs/guides/self-hosting/self-hosted-saml-sso

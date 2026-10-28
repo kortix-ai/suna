@@ -5,11 +5,11 @@ import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { RowList, SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import SectionHeader from '@/features/marketing/component/section-header';
 import {
-  AGREEMENT_URL,
-  CUSTOM_TERMS_URL,
+  ENTERPRISE_URL,
   ENV_LINES,
   getLocalizedWhiteLabelContent,
-  SIGN_URL,
+  GITHUB_URL,
+  LICENSE_URL,
 } from '@/features/marketing/white-label/content';
 import { getTranslations } from '@/i18n/get-translations';
 import { ArrowRightIcon } from '@/lib/icons/ssr';
@@ -35,14 +35,14 @@ function Bullets({ title, items }: { title: string; items: readonly string[] }):
  * `/white-label` — build your own product on Kortix, on Platinum.dev compute.
  *
  * Copy lives in `features/marketing/white-label/content.ts`, and that file's
- * header lists what the page may and may not claim. The binding text is
- * `WHITE-LABEL-LICENSE.md`; the page restates it and links it.
+ * header lists what the page may and may not claim. The binding texts are
+ * `LICENSE`, `ee/LICENSE` and `TRADEMARKS.md`; the page restates them.
  *
  * Unlisted on purpose: no nav, footer or menu links here.
  */
 export default async function WhiteLabelPage(): Promise<ReactNode> {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
-  const { closing, deal, hero, platinum, scenarios, steps, terms } =
+  const { closing, deal, hero, platinum, scenarios, steps } =
     getLocalizedWhiteLabelContent(tI18nComplete);
   return (
     <div className="bg-background relative">
@@ -136,36 +136,19 @@ export default async function WhiteLabelPage(): Promise<ReactNode> {
 
       <SectionDivider />
 
-      {/* ── 5 · the agreement ───────────────────────────────────────────── */}
-      <section id="agreement" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={terms.eyebrow} title={terms.title} description={terms.sub} />
-        <Reveal delay={0.06}>
-          <div className="mt-10">
-            <RowList rows={terms.rows} />
-          </div>
-        </Reveal>
-        <Reveal delay={0.1}>
-          <Button variant="link" asChild>
-            <a href={AGREEMENT_URL}>{terms.readLabel}</a>
-          </Button>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 6 · sign ────────────────────────────────────────────────────── */}
-      <section id="sign" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+      {/* ── 5 · start ────────────────────────────────────────────────────── */}
+      <section id="start" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeader eyebrow={closing.eyebrow} title={closing.title} description={closing.sub} />
         <Reveal delay={0.06}>
           <div className="mt-10 flex flex-wrap items-center gap-2 sm:gap-3">
             <Button size="lg" asChild>
-              <a href={SIGN_URL}>{closing.primaryLabel}</a>
+              <a href={GITHUB_URL}>{closing.primaryLabel}</a>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <a href={AGREEMENT_URL}>{closing.secondaryLabel}</a>
+              <a href={LICENSE_URL}>{closing.secondaryLabel}</a>
             </Button>
             <Button size="lg" variant="ghost" className="gap-1.5" asChild>
-              <a href={CUSTOM_TERMS_URL}>
+              <a href={ENTERPRISE_URL}>
                 {closing.tertiaryLabel}
                 <ArrowRightIcon className="size-4" aria-hidden />
               </a>

@@ -32,7 +32,7 @@ mock.module('../shared/access-control-cache', () => ({
 
 // The same rule as the real `ssoEnforcedForEmail`: enforcement needs a
 // verified domain. The DB-backed rule is exercised end to end by flow SSO-1.
-mock.module('../repositories/sso', () => ({
+mock.module('../repositories/ee/sso', () => ({
   ssoEnforcedForEmail: async (email: string) => {
     const provider = ssoProvidersByDomain.get(email.trim().toLowerCase().split('@')[1] ?? '');
     return provider?.enforceSso && provider.domainVerifiedAt ? provider : null;

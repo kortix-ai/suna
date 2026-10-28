@@ -136,7 +136,7 @@ export const pillars = {
      sign-up warning in the intro.
    updates: developers.mdx "Updates and versions".
    enterprise: developers.mdx "Configure" (Enterprise license row),
-     "Commands" flags (`--enterprise-license` with init/configure/update),
+     "Commands" flags (`--license-key <key>` with init/configure/update),
      "The platform admin console"; guide.mdx "Run Kortix on your own
      infrastructure".
    needs: developers.mdx "Requirements". */
@@ -254,7 +254,7 @@ export const updateLines = [
 ] as const;
 
 export const enterpriseLines = [
-  '$ kortix self-host configure --enterprise-license',
+  '$ kortix self-host configure --license-key <key>',
   '$ kortix self-host start',
 ] as const;
 

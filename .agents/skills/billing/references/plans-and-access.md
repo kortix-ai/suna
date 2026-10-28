@@ -17,8 +17,12 @@ account buys, and which features it may use.
 
 1. **Money and features are separate.** Every account buys usage the same way:
    a billing plan (Free or Credits) plus top-ups. Enterprise never changes that.
-2. **Enterprise is a feature entitlement**, nothing else: SSO, SCIM, advanced
-   roles, audit export, branding. No credits come with it.
+2. **Enterprise is a feature entitlement**, nothing else: the four features
+   `sso`, `scim`, `rbac`, `auditAccess` (`ENTERPRISE_FEATURES`,
+   `apps/api/src/types.ts`, the only list). No credits come with it. The gate
+   rule for every Enterprise route is in `ee/README.md` and flow `IAM-45`
+   proves it. Organization branding is a plan entitlement, on for every plan
+   (2026-10-28: Kortix is Apache 2.0, so anyone may rebrand it).
 3. **Three Enterprise states, no clocks.** Off, Demo (self-serve) and Licensed
    (a contract). There are no trials.
 4. **Exceptions are per-key overrides** in `entitlement_overrides`, each with an
@@ -71,7 +75,7 @@ continue to use `billing_state`, independently of this soft warning.
 | State | Stored as | How it starts | Features | Limits | BYOK fee |
 |---|---|---|---|---|---|
 | Off | — | default | plan's | plan's | plan's (on) |
-| **Demo** | `credit_accounts.demo_enterprise = true` | an owner or admin turns it on (`PUT /v1/accounts/{id}/iam/enterprise-demo`) | + SSO, SCIM, roles, audit, branding | plan's | plan's (on) |
+| **Demo** | `credit_accounts.demo_enterprise = true` | an owner or admin turns it on (`PUT /v1/accounts/{id}/iam/enterprise-demo`) | + SSO, SCIM, roles, audit | plan's | plan's (on) |
 | **Licensed** | `credit_accounts.enterprise_entitled = true` | an active license contract | + all Enterprise features | Enterprise (uncapped projects/apps) | off |
 
 - Demo has no end date. Turning it on emails Kortix sales
@@ -106,6 +110,31 @@ subscription deleted, manual term over) sets it false and writes `sso`/`scim`
 overrides expiring 14 days later. Warnings go out 30, 7 and 1 days before a
 non-renewing license ends. The billing plan is never touched.
 
+## The Enterprise License and the self-host key
+
+Kortix is Apache 2.0. The server code of the four Enterprise features is in
+directories named `ee` and is under the Kortix Enterprise License
+(`ee/LICENSE`, `ee/README.md`): production use needs a subscription. The
+commercial terms are the Enterprise Subscription Terms
+(`/legal?tab=enterprise`, `legal/enterprise-terms.ts`). A contract above is
+the order. New Enterprise server code goes in an `ee` directory and starts with
+`// SPDX-License-Identifier: LicenseRef-Kortix-Enterprise`.
+
+Self-host has no contract row. A license key does the same job:
+
+- `KORTIX_LICENSE_KEY` (`kortix self-host configure --license-key <key>`) is
+  `<payload>.<signature>`, base64url: JSON `{ licensee, expires_at }` signed
+  with Ed25519 (`billing/services/enterprise-license.ts`).
+- A valid, unexpired key turns `sso`, `scim`, `rbac` and `auditAccess` on for
+  every account and sets `enterprise_license_available`. Boot logs the
+  licensee and the end date. An expired or invalid key leaves the features
+  off; owners can still use the Demo.
+- Issue a key per term, owner only:
+  `dotenvx run -f apps/api/.env.prod -- bun apps/api/scripts/issue-license-key.ts --licensee "<organization>" --expires <order end date>`.
+  The signing key is `KORTIX_LICENSE_SIGNING_KEY` in `apps/api/.env.prod`.
+- `ENTERPRISE_LICENSE_AVAILABLE` is retired (2026-10-28). It unlocks nothing;
+  boot warns when it is set.
+
 ## Bring your own key (BYOK)
 
 A model request on the account's own provider key is billed by the provider
@@ -124,7 +153,9 @@ A model request on the account's own provider key is billed by the provider
 
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
 `auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
-Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+Set through `PUT /v1/admin/api/accounts/{id}/overrides`. `branding: false` is
+the operator's switch to stop one account showing its own branding (writes
+answer `403 branding_disabled`); branding is otherwise on for every plan.
 
 ## Managed models are sold, never given
 

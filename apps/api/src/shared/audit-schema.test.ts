@@ -36,8 +36,8 @@ describe('audit actor types', () => {
   });
 
   test.each([
-    ['../accounts/audit.ts', 3],
-    ['../projects/routes/project-audit.ts', 1],
+    ['../accounts/ee/audit.ts', 3],
+    ['../projects/routes/ee/project-audit-log.ts', 1],
   ])('%s filters with the shared schema, never a local copy', (path, uses) => {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
     expect(source).not.toContain("z.enum(['human', 'agent', 'service_account', 'system'");

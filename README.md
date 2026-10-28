@@ -179,13 +179,19 @@ with agents, builds your custom apps and trains your team, all on Kortix, in a r
 
 ---
 
-## White-label
+## License
 
-Kortix stays open source. A free white-label license lets you run it under your own name and logo,
-in your own structure, and as a hosted service for your customers. The one requirement: use
-[Platinum](https://www.platinum.dev) as your exclusive compute provider for everything it offers,
-at rates we commit to keep competitive. Sign online and you are licensed on the spot:
-**[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
+Kortix is open source under the [Apache License 2.0](LICENSE). Fork it, change it, rebrand it
+and sell it, also as a hosted service for your customers.
+
+- **Core:** everything outside an `ee/` directory is Apache 2.0.
+- **Enterprise:** code in an `ee/` directory (SAML SSO, SCIM, custom roles and groups, audit log
+  access and export) is under the [Kortix Enterprise License](ee/LICENSE). Development and testing
+  are free. Production use needs a Kortix Enterprise subscription. See [ee/README.md](ee/README.md).
+- **Name and logo:** only Kortix may use the Kortix name and logo. A fork uses its own. See
+  [TRADEMARKS.md](TRADEMARKS.md).
+
+Kortix runs its sessions on [Platinum](https://www.platinum.dev). Enterprise subscriptions:
 [marko@kortix.ai](mailto:marko@kortix.ai).
 
 ---

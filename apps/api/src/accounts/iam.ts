@@ -29,17 +29,17 @@
 // contract.
 
 import { iamRouter } from './iam/app';
-import { registerIamGroupsRoutes } from './iam/groups'; // groups, group members, group→project grants
+import { registerIamGroupsRoutes } from './iam/ee/groups'; // groups, group members, group→project grants
 import { registerIamMembersRoutes } from './iam/members'; // super-admin, member groups / project-access / effective(+batch)
 import { registerIamResourceGrantsRoutes } from './iam/resource-grants'; // account-wide resource-grants rollup (agent/skill grants across every project)
 import { registerIamMfaRoutes } from './iam/mfa'; // account-wide MFA enforcement
-import { registerIamScimTokensRoutes } from './iam/scim-tokens'; // SCIM provisioning tokens
-import { registerIamSsoRoutes } from './iam/sso'; // SAML SSO provider + group mappings
+import { registerIamScimTokensRoutes } from './iam/ee/scim-tokens'; // SCIM provisioning tokens
+import { registerIamSsoRoutes } from './iam/ee/sso'; // SAML SSO provider + group mappings
 import { registerIamPoliciesRoutes } from './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import { registerIamServiceAccountsRoutes } from './iam/service-accounts'; // service accounts (non-human IAM principals)
 import { registerIamOauthClientsRoutes } from './iam/oauth-clients'; // Sign in with Kortix: OAuth client registry
 import { registerIamSessionOversightRoutes } from './iam/session-oversight'; // owner/admin access to every session (owner-only toggle)
-import { registerIamCustomRolesRoutes } from './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
+import { registerIamCustomRolesRoutes } from './iam/ee/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
 import { registerIamAssignmentsRoutes } from './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
 import { registerIamEnterpriseDemoRoutes } from './iam/enterprise-demo'; // self-serve Enterprise demo (owners and admins)
 

@@ -3,7 +3,7 @@ import { accessRequests } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { ssoEnforcedForEmail } from '../repositories/sso';
+import { ssoEnforcedForEmail } from '../repositories/ee/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { db } from '../shared/db';
 import { createCheckEmailRateLimitMiddleware } from '../middleware/rate-limit';

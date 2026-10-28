@@ -155,3 +155,6 @@ export { recordChannelsReenabled } from './lib/channels-onboarding';
 // Author names written into memory files (consumed by ../memory/layers.ts).
 export { resolveUserIdentities } from './lib/user-identity';
 export { readPublicResponse } from './lib/public-response';
+
+// Cached project config load (consumed by accounts/iam/agent-identities).
+export { loadConfigWithFilesCached } from './lib/project-resources';

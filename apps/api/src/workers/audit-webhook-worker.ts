@@ -1,5 +1,5 @@
 import { runWorkerTick } from '../shared/audit-scope';
-import { runAuditWebhookDeliveryPass } from '../shared/audit-webhooks';
+import { runAuditWebhookDeliveryPass } from '../shared/ee/audit-webhooks';
 
 const WORKER_IDLE_MS = 2_000;
 const WORKER_ERROR_MS = 5_000;

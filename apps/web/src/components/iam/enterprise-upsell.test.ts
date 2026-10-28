@@ -30,7 +30,7 @@ describe('EnterpriseUpsell component', () => {
   });
 
   test('covers the gated surfaces, Roles included', () => {
-    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:', 'roles:']) {
+    for (const feature of ['groups:', 'audit:', 'identity:', 'roles:']) {
       expect(upsellSource).toContain(feature);
     }
   });
@@ -83,12 +83,6 @@ describe('account page gates each IAM surface behind the entitlement', () => {
     // SsoCard renders before ScimCard.
     expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \([\s\S]*?<SsoCard[\s\S]*?<ScimCard/);
     expect(pageSource).toContain('<EnterpriseUpsell feature="identity" accountId={account.account_id} />');
-  });
-
-  test('branding pane: branding entitlement or upsell', () => {
-    expect(pageSource).toContain('const brandingEnabled = !!entitlements?.branding');
-    expect(pageSource).toMatch(/brandingEnabled \? \(\s*<BrandingTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" accountId={account.account_id} />');
   });
 
   test('no upsell flash while entitlements load', () => {

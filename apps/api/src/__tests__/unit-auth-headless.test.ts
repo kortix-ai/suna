@@ -43,8 +43,8 @@ mock.module('../shared/access-control-cache', () => ({
   ...realAccessControl,
   canSignUp: (email: string) => signupsOpen || email.endsWith('@allowed.test'),
 }));
-const realSso = await import('../repositories/sso');
-mock.module('../repositories/sso', () => ({
+const realSso = await import('../repositories/ee/sso');
+mock.module('../repositories/ee/sso', () => ({
   ...realSso,
   ssoEnforcedForEmail: async (email: string) => (email.endsWith('@sso.test') ? { id: 'idp' } : null),
 }));

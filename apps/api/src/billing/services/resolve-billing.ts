@@ -15,6 +15,7 @@
 
 import { ENTITLEMENT_OVERRIDE_KEYS, readOverride } from './entitlement-overrides';
 import { PLAN_FAMILY_LABELS, type PlanRecord, resolvePlanRecord } from './plan-catalog';
+import { pickEnterprise } from '../../types';
 
 /** The credit_accounts columns this resolver reads. */
 export interface BillingRow {
@@ -122,8 +123,7 @@ export function resolveBillingFromRow(
 
   const entitlements: PlanRecord['entitlements'] = { ...stored.entitlements };
   if (enterprise !== 'off') {
-    const { sso, scim, rbac, auditAccess, branding } = licensed.entitlements;
-    Object.assign(entitlements, { sso, scim, rbac, auditAccess, branding });
+    Object.assign(entitlements, pickEnterprise(licensed.entitlements));
   }
   if (enterprise === 'licensed') Object.assign(entitlements, licensed.entitlements);
 

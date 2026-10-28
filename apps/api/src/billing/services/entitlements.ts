@@ -16,28 +16,14 @@
 // enterprise surface.
 
 import { config } from '../../config';
-import type { TierEntitlements } from '../../types';
+import { enterpriseLicenseActive } from './enterprise-license';
+import { pickEnterprise, type EnterpriseEntitlements, type EnterpriseFeature } from '../../types';
 import type { getCreditAccount } from '../repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from './billing-cache';
 import { resolvePlanRecord } from './plan-catalog';
 import type { ResolvedBilling } from './resolve-billing';
 
-/** The five enterprise feature gates, projected out of a resolved plan. */
-function enterpriseGates(resolved: ResolvedBilling): TierEntitlements {
-  const { sso, scim, rbac, auditAccess, branding } = resolved.entitlements;
-  return { sso, scim, rbac, auditAccess, branding };
-}
 
-/**
- * The entitlement set a self-host Kortix Enterprise license grants. Read from
- * the plan catalog rather than `getTierEntitlements('enterprise')` so this
- * module never imports `tiers.ts` (which boots env validation at module scope).
- * The parity test pins the two to the same values.
- */
-function enterpriseLicenseGates(): TierEntitlements {
-  const { sso, scim, rbac, auditAccess, branding } = resolvePlanRecord('enterprise').entitlements;
-  return { sso, scim, rbac, auditAccess, branding };
-}
 
 /**
  * Resolve the plan key backing an account ('none' if no billing row).
@@ -106,10 +92,11 @@ export function invalidateCachedAccountTier(accountId?: string): void {
  * The full enterprise entitlement set for an account.
  *
  * Resolution order (all but the first live inside `resolveBillingFromRow`):
- *   1. `ENTERPRISE_LICENSE_AVAILABLE` — a self-host operator holding a Kortix
- *      Enterprise license unlocks every enterprise entitlement platform-wide,
- *      regardless of billing tier (self-host has no Stripe-backed tier to
- *      assign 'enterprise' to). An ENV fact, not a row fact, so it stays here.
+ *   1. `KORTIX_LICENSE_KEY` — a self-host deployment with a valid, unexpired
+ *      Kortix Enterprise license key unlocks every enterprise entitlement
+ *      platform-wide, regardless of billing tier (self-host has no
+ *      Stripe-backed tier to assign 'enterprise' to). A deployment fact, not a
+ *      row fact, so it stays here (enterprise-license.ts).
  *   2. the resolved plan — the stored plan or an active trial, plus the SSO/SCIM
  *      grace after an Enterprise trial ends and the per-feature overrides.
  *
@@ -119,21 +106,21 @@ export function invalidateCachedAccountTier(accountId?: string): void {
 export async function getAccountEntitlements(
   accountId: string,
   prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
-): Promise<TierEntitlements> {
-  if (config.ENTERPRISE_LICENSE_AVAILABLE) return enterpriseLicenseGates();
+): Promise<EnterpriseEntitlements> {
+  if (enterpriseLicenseActive()) return pickEnterprise(resolvePlanRecord('enterprise').entitlements);
   const resolved = await resolveAccountBilling(
     accountId,
     // `undefined` means "fetch the row"; `null` means "this account has none".
     prefetchedAccount !== undefined ? { row: prefetchedAccount } : { fresh: true },
   );
-  return enterpriseGates(resolved);
+  return pickEnterprise(resolved.entitlements);
 }
 
 /** Whether an account's plan unlocks a specific enterprise feature. */
 export async function accountHasEntitlement(
   accountId: string,
-  key: keyof TierEntitlements,
+  feature: EnterpriseFeature,
 ): Promise<boolean> {
-  if (config.ENTERPRISE_LICENSE_AVAILABLE) return true;
-  return (await getAccountEntitlements(accountId))[key] === true;
+  if (enterpriseLicenseActive()) return true;
+  return (await getAccountEntitlements(accountId))[feature] === true;
 }

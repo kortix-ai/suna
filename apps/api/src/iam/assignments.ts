@@ -956,7 +956,7 @@ async function clearSuperAdminAfterOwnerLoss(writer: Writer, accountId: string, 
 /**
  * An account must never reach zero live owners. The guard was six hand-written
  * `countOwners()` checks spread across members.ts, admin/index.ts and
- * scim/users.ts — one of which (SCIM `deprovisionMember`) is the only
+ * ee/scim/users.ts — one of which (SCIM `deprovisionMember`) is the only
  * membership-removal path with no `assertAuthorized` in front of it at all.
  */
 async function assertNotLastOwner(accountId: string, row: AssignmentRow): Promise<void> {

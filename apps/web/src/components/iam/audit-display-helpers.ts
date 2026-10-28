@@ -143,7 +143,7 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.policy_template.apply': { title: 'Applied policy template', kind: 'grant' },
   // These were briefly dead (V1 policies removed in PR5) but a DB-backed
   // custom-role/policy surface was rebuilt in Phase 3 of feat/iam-rbac-v1
-  // (June 2026, accounts/iam/custom-roles.ts) at the same action codes —
+  // (June 2026, accounts/iam/ee/custom-roles.ts) at the same action codes —
   // this map now covers LIVE activity again, not just historical rows.
   'iam.policy.create': { title: 'Created IAM policy', kind: 'create' },
   'iam.policy.update': { title: 'Updated IAM policy', kind: 'update' },

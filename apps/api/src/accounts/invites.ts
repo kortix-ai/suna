@@ -19,7 +19,7 @@ import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
-import { getSsoProvider } from '../repositories/sso';
+import { getSsoProvider } from '../repositories/ee/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
 
@@ -219,7 +219,7 @@ async function invitedProjects(
 }
 
 // A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
-// while they were still a pending invite (see scim/groups.ts). Validated the same
+// while they were still a pending invite (see ee/scim/groups.ts). Validated the same
 // defensive way as project grants so a bad jsonb write can't break acceptance.
 // Exported for unit tests.
 export function validateBootstrapGroup(raw: unknown): { group_id: string } | null {

@@ -9,7 +9,7 @@ import { sql, type SQL } from 'drizzle-orm';
 
 /**
  * SQL expression: the Supabase `sso_providers` id an Auth user row signed in
- * with, or NULL. Mirrors `extractSsoProviderId` (iam/sso-sync.ts): an explicit
+ * with, or NULL. Mirrors `extractSsoProviderId` (iam/ee/sso-sync.ts): an explicit
  * `sso_provider_id`/`provider_id`, then `provider = 'sso:<id>'`, then the first
  * `providers[]` entry of that shape.
  */

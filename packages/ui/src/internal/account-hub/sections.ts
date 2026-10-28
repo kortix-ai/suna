@@ -82,7 +82,7 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
   {
     items: [
       { id: 'settings', label: 'Settings', icon: GearSixIcon },
-      // Organization branding (Enterprise): the account's own logo, icon,
+      // Organization branding (every plan): the account's own logo, icon,
       // favicon (light + dark), and product name for every member. Sits with
       // the other "how is this account configured" items, not under Access.
       { id: 'branding', label: 'Branding', icon: PaintBrushIcon },

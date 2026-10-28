@@ -13,7 +13,7 @@ import { authorize, listAccessible, ssoRequiredFor } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
-import { signOutNonSsoMembers } from '../repositories/sso';
+import { signOutNonSsoMembers } from '../repositories/ee/sso';
 import { getPlatformRole } from '../shared/platform-roles';
 import { confirmJwtLive } from '../shared/jwt-liveness';
 import { insertIntoView } from './helpers/compat-views';

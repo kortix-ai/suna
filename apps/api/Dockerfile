@@ -209,8 +209,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
-# License
-COPY LICENSE /LICENSE
+# License: Apache 2.0, plus the Kortix Enterprise License for the ee/ code.
+COPY LICENSE NOTICE /
+COPY ee/LICENSE /LICENSE-ENTERPRISE
 
 # Copy installed node_modules and source from deps stage.
 # Root node_modules contains all hoisted deps (--shamefully-hoist).
@@ -336,7 +337,7 @@ RUN mkdir -p /app/${SERVICE}/.kortix-data && \
 LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.description="Kortix API server" \
       org.opencontainers.image.source="https://github.com/kortix-ai/suna" \
-      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.licenses="Apache-2.0 AND LicenseRef-Kortix-Enterprise" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

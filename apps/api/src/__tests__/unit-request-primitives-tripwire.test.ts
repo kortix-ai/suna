@@ -66,7 +66,7 @@ const XFF_ALLOW: Record<string, string> = {
   'shared/client-ip.ts': 'the one implementation',
   'auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
   // TODO(follow-up): convert once the SCIM identity work lands on main.
-  'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
+  'ee/scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
   // TODO(follow-up): convert once PR #7403 lands. The raw header is stored on
   // purpose as webhook delivery metadata, so the follow-up keeps the raw value.
   'projects/lib/trigger-webhook-auth.ts': 'webhook payload stores the raw forwarded header as metadata',
@@ -78,7 +78,7 @@ const UUID_ALLOW: Record<string, string> = {
   'shared/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
   'connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
-  'iam/sso-sync.ts': 'open SSO identity work edits this file',
+  'iam/ee/sso-sync.ts': 'open SSO identity work edits this file',
 };
 
 // An inline JSON body read that falls back to `{}`, in either form:

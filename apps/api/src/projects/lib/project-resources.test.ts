@@ -5,7 +5,7 @@ import { CONFIG_WITH_FILES_TTL_MS, skillSlugFromPath } from './project-resources
 /**
  * `loadConfigWithFilesCached` (project-resources.ts) exists so a read that
  * enumerates MANY projects per request — the IAM agent-identity picker,
- * apps/api/src/accounts/iam/custom-roles.ts — doesn't re-clone/re-list every
+ * apps/api/src/accounts/iam/ee/custom-roles.ts — doesn't re-clone/re-list every
  * project's repo on every call. `ttlMemo` is bypassed under `bun test` by
  * design (unit tests must never bleed cache state across cases), so — same
  * pattern as `unit-sandbox-health-budget.test.ts`'s "poll caching" section —

@@ -13,6 +13,7 @@ import {
 } from './shared/leader-election';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
+import { logEnterpriseLicense } from './billing/services/enterprise-license';
 import { maintenanceSetting } from './platform/services/maintenance-setting';
 // Every background loop: its timer, start/stop and runWorkerTick call live in workers/.
 import { startAccessControlCache, stopAccessControlCache } from './workers/access-control-cache-worker';
@@ -140,6 +141,7 @@ export function markSchemaReady(): void {
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
+  logEnterpriseLicense(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
   startManagedLineupRefresh();

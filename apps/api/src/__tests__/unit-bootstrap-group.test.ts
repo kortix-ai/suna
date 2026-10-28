@@ -3,7 +3,7 @@
 // Malformed jsonb must be rejected (null), never fed into account_group_members.
 import { describe, expect, test } from 'bun:test';
 import { validateBootstrapGroup } from '../accounts/invites';
-import { resolveInviteMemberAction, stripGroupGrant } from '../scim/groups';
+import { resolveInviteMemberAction, stripGroupGrant } from '../ee/scim/groups';
 
 const UUID = '5888c520-d8f0-489a-a807-d2f8bf007fd1';
 

@@ -24,4 +24,4 @@ The gateway answers every overflow as HTTP 400 `context_length_exceeded`, includ
 
 ## License
 
-Elastic-2.0.
+Apache-2.0.

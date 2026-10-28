@@ -119,7 +119,7 @@ interface AuthUserRow {
 
 /**
  * One query for every identity, from the auth table the API's own database
- * connection already reads (`scim/app.ts`, `admin/index.ts`).
+ * connection already reads (`ee/scim/app.ts`, `admin/index.ts`).
  *
  * Why (2026-09-27): prod `GET /:projectId/sessions` still made 4–6 auth admin
  * calls (`gotrue;dur=70–140`) on EVERY list fetch. The memo above keeps only

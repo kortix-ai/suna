@@ -43,7 +43,7 @@ import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
+import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/agent-identities';
 import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 

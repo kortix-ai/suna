@@ -1,6 +1,6 @@
 Kortix Capture: third-party notices
 
-Kortix Capture is licensed under the Elastic License 2.0, the LICENSE at the
+Kortix Capture is licensed under the Apache License 2.0, the LICENSE at the
 root of this repository. It links the components below, each under its own
 license. Every Rust crate it builds in is listed with its license by:
 
