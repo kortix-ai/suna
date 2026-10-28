@@ -121,9 +121,9 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 2. CLI — local + auth (no/low API)
 
-`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` in the root project layout: `kortix.yaml` (naming `file: agents/kortix.md` and `opencode.config_dir: harnesses/opencode`), `agents/`, `skills/` (canonical skill), `memory/`, `harnesses/opencode/`, and no `.kortix/` folder; agent wiring; and `git init -b main`. **Zero API calls.** Exit 0.
+`INIT-1` `kortix init <name> -y` → fresh standalone `<name>/` in the v3 root project layout: `kortix.yaml` (`default_agent: worker`, `agents.worker` with `prompt_file: agents/worker.md`), `agents/worker.md`, `skills/` (canonical skill), `memory/`, no `harnesses/` folder and no `.kortix/` folder; agent wiring; and `git init -b main`. **Zero API calls.** Exit 0.
 `INIT-2` `kortix init <name>` when `<name>/` already exists and is non-empty → exit 1 (refuses).
-`INIT-3` `kortix init <name> --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (`.opencode` → `harnesses/opencode`, `.agents/skills` and `.claude/skills` → `skills/`) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
+`INIT-3` `kortix init <name> --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (`.claude/agents` → `agents/`, so `.claude/agents/worker.md` resolves; `.agents/skills` and `.claude/skills` → `skills/`) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
 `INIT-4` `kortix init <name> --no-git` → scaffold created with no repository.
 `CREATE-1` bare `kortix <name>` is an unknown command → exit 2, explains `kortix init <name>`, and never creates a directory. Scaffolding is explicit-only so mistyped commands cannot mutate the filesystem.
 `LOGIN-1` `kortix login --token kortix_pat_…` → validate `kortix_pat_` prefix → `GET /accounts/me` → 200 → host saved + active in `~/.config/kortix/config.json` (mode 0600).
@@ -1209,7 +1209,7 @@ owner. `kortix connectors accounts <slug> --json` lists the account for the
 Sales member and omits it for the outsider. `kortix access assignments` names
 the grant. `kortix access grant --everyone --connection <id>` opens it: the
 outsider lists it, WHO CAN USE reads `everyone`, and the listing names the
-principal `everyone`. `kortix access grant --everyone --agent kortix` writes a
+principal `everyone`. `kortix access grant --everyone --agent worker` writes a
 `project` principal agent grant. `--everyone` with only a role exits 2 before
 any request. `kortix connectors connections share <id> --group <id>` shares the
 owner's OWN private account: it becomes a project account narrowed to Sales

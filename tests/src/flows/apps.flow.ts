@@ -1165,7 +1165,7 @@ flow(
 
       await ctx.step("the viewer's own role is the ceiling: as a project member with no agent grant, 403 no_agent_access", async () => {
         const refused = await asToken(firstToken).post("/v1/projects/:projectId/sessions",
-          { agent_name: "kortix", metadata: { repository_access: false, workspace_mode: "runtime" } }, { params: projectParams });
+          { agent_name: "worker", metadata: { repository_access: false, workspace_mode: "runtime" } }, { params: projectParams });
         refused.status(403).body().has("$.code", "no_agent_access");
       });
 

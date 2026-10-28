@@ -49,24 +49,24 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
-        // The root project layout: harness-neutral folders at the root, the
-        // OpenCode-only files under harnesses/opencode, and no .kortix/ folder.
+        // The v3 root layout: one worker agent, its skills and memory at the
+        // root, no harness folder and no .kortix/ folder.
         for (const path of [
-          'agents/kortix.md',
+          'agents/worker.md',
           'skills/kortix-cli/SKILL.md',
           'memory/MEMORY.md',
-          'harnesses/opencode/opencode.jsonc',
         ]) {
           check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
         }
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
-          'kortix.yaml names the agent file and the OpenCode dir',
-          manifest.includes('file: agents/kortix.md') && manifest.includes('config_dir: harnesses/opencode'),
+          'kortix.yaml declares the worker agent as the default and names its prompt file',
+          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
           true,
-          manifest.includes('file: agents/kortix.md'),
+          manifest.includes('default_agent: worker') && manifest.includes('prompt_file: agents/worker.md'),
         );
+        check('no harness folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
           'AGENTS.md (codex default) wired',
@@ -126,13 +126,13 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           '--no-git',
         ]);
         check('exit 0', r.exitCode === 0, 0, r.exitCode);
-        // Selected agents' native dirs are symlinks onto the OpenCode config dir;
+        // Selected agents' native dirs are symlinks onto the root folders;
         // existsSync follows the link, so a resolving path proves it works.
         check(
-          '.opencode → harnesses/opencode resolves',
-          sb.exists('wired/.opencode/opencode.jsonc'),
+          '.claude/agents → agents resolves to the worker agent',
+          sb.exists('wired/.claude/agents/worker.md'),
           true,
-          sb.exists('wired/.opencode/opencode.jsonc'),
+          sb.exists('wired/.claude/agents/worker.md'),
         );
         check(
           '.agents/skills → skills resolves (OpenCode reads it natively)',

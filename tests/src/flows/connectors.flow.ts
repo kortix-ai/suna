@@ -4238,8 +4238,8 @@ flow(
         if (!everyoneRow) throw new Error(`no everyone row: ${listed.stdout.slice(0, 800)}`);
       });
 
-      await ctx.step('`kortix access grant --everyone --agent kortix` writes a project principal agent grant', async () => {
-        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'kortix']);
+      await ctx.step('`kortix access grant --everyone --agent worker` writes a project principal agent grant', async () => {
+        await kortix(owner, ['access', 'grant', '--everyone', '--agent', 'worker']);
         const grants = await ctx.client
           .as(ctx.P.OWNER)
           .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
@@ -4248,8 +4248,8 @@ flow(
         assert({
           kind: 'body',
           description: 'the agent grant names everyone in the project',
-          pass: rows.some((g) => g.resource_id === 'kortix' && g.principal_type === 'project'),
-          expected: { resource_id: 'kortix', principal_type: 'project' },
+          pass: rows.some((g) => g.resource_id === 'worker' && g.principal_type === 'project'),
+          expected: { resource_id: 'worker', principal_type: 'project' },
           actual: rows,
         });
       });
