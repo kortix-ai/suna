@@ -78,12 +78,12 @@ Rules for every entry under `tools:`:
 
 ## Generate images
 
-`image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, an image model of an OpenAI, Google, xAI, or OpenRouter key, or a Kortix-managed model with image output. It saves each image under `/workspace/output/images/`.
+`image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, or an image model of an OpenAI, Google, xAI, or OpenRouter key. You can also name a model of your [custom endpoint](/docs/project/models#which-model-makes-the-image). Kortix-managed models do not generate images yet. It saves each image under `/workspace/output/images/`.
 
 - **One call, one to four images.** Each prompt is one image. The tool sends one request per prompt, all at the same time.
 - **It needs an image model.** Connect ChatGPT in **Models** (**Connect ChatGPT**) or with `kortix providers login openai`, or add an OpenAI, Google, xAI, or OpenRouter key. See [Models](/docs/project/models#generate-images). With none, the call fails with `image_model_unavailable`.
 - **It loads by default.** A project gets `image_gen` when its `tools:` list does not name it. A project with no `tools:` key gets it too.
-- **The output is paths, not images.** The model receives `{ action, model, provider, images: [{ path, size, prompt }], failed: [{ prompt, error }] }`. `model` and `provider` name what made the first saved image. `size` is read from the saved file, as `WxH`. `failed` is present only when a prompt failed. When every prompt fails, the call fails with the first error.
+- **The output is paths, not images.** The model receives `{ action, model, provider, images: [{ path, size, prompt }], failed: [{ prompt, error }] }`. `model` and `provider` name what made the first saved image. `size` is `WxH`, read from the saved file when its header is readable, else the size the provider reported. `failed` is present only when a prompt failed. When every prompt fails, the call fails with the first error.
 
 | Argument | Value |
 | --- | --- |
@@ -96,14 +96,14 @@ Rules for every entry under `tools:`:
 | `reference_images` | For `edit` only, and required there: 1 to 5 workspace paths of png, jpg, jpeg, or webp files. Every prompt uses them. |
 
 - `quality` and `transparent_background` reach ChatGPT and OpenAI models only. Other models do not receive them.
-- ChatGPT and OpenAI models receive a size, not a ratio. `1:1` is `1024x1024`. `3:2`, `4:3`, and `16:9` are `1536x1024`. `2:3`, `3:4`, and `9:16` are `1024x1536`. xAI models receive no aspect ratio. Other models receive the ratio as it is.
+- ChatGPT and OpenAI models receive a size, not a ratio. `auto` is `auto`. `1:1` is `1024x1024`. `3:2`, `4:3`, and `16:9` are `1536x1024`. `2:3`, `3:4`, and `9:16` are `1024x1536`. xAI models receive no aspect ratio. Other models receive the ratio as it is, and no ratio for `auto`.
 - The file name is a slug of the prompt plus a timestamp. The extension comes from the image bytes: `.png`, `.jpg`, or `.webp`. Any other answer, for example an SVG, is not written.
 
 ### In the chat
 
 A call shows one card with one frame per prompt.
 
-- While the call runs, the card shows a placeholder per image in the requested aspect ratio, with "Generating image" (or "Generating 3 images") and the elapsed time. The images replace the placeholders when the call ends.
+- While the call runs, the card shows a placeholder per image in the requested aspect ratio, with "Generating image" (or "Generating 3 images"; "Editing image" for an edit) and the elapsed time. The images replace the placeholders when the call ends.
 - One image fills the width of the message. Two to four images fill one rectangle: 2 side by side, 3 as one large image and two small ones, 4 as a 2 × 2 grid. On web, the card is at most 60% of the window height.
 - The card shows no prompt and no model name. Click an image to open it full screen, uncropped. The full-screen view shows its prompt and the model that made it.
 - A frame whose prompt failed shows the error. When the cause is a missing or expired connection, the card shows one connect action. A shared or read-only view shows no action.
@@ -129,21 +129,20 @@ The tool enforces these limits in code. A prompt, a file, or a web page that the
 
 ### Errors
 
-A failed prompt's error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code.
+When the gateway refuses a prompt, its error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code. The tool reports three failures itself: `Image generation returned no image.`, an image that is not png, jpeg, or webp, and its own 300-second timeout. The tool's timeout starts before the gateway's, so a slow request usually ends with the tool's timeout, not `image_timeout`.
 
 | Code | Cause |
 | --- | --- |
 | `image_model_unavailable` | The project reaches no image model. |
 | `not_an_image_model` | `model` names a model that cannot generate images. The suggestion names up to 5 image models the project can use. |
 | `image_model_unsupported` | Kortix cannot call this model's provider for images, for example Anthropic or Bedrock. |
-| `image_model_unpriced` | A Kortix-managed model has no image price. Kortix does not serve it. |
 | `provider_not_connected` | `model` names a provider the project has no key or ChatGPT account for. |
 | `provider_reauth_required` | The ChatGPT login expired, or the provider refused the key. Reconnect ChatGPT or check the key. |
 | `image_rate_limited` | The provider's image limit is reached. The error gives the seconds until it resets. |
-| `image_upstream_error` | The provider answered without an image, for example after a safety refusal. |
+| `image_upstream_error` | The provider failed or answered without an image, for example after a safety refusal. |
 | `image_upstream_unreachable` | The provider could not be reached. |
 | `image_response_too_large` | The provider answered with more than 48 MiB. |
-| `image_timeout` | The request took more than 300 seconds. |
+| `image_timeout` | The gateway stopped the request after 300 seconds. |
 
 ### Turn it off
 

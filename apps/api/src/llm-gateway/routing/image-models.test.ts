@@ -83,4 +83,27 @@ describe('image model route plan', () => {
       });
     }
   });
+
+  test('an explicit custom-provider model is planned as the image primary', async () => {
+    // The project named its own endpoint: its model is tried; resolveUpstream decides the rest.
+    expect(await planImageRoute('my-vllm/flux-dev', neverRead, async () => ['my-vllm'])).toEqual({
+      policyId: 'image', primaryModel: 'my-vllm/flux-dev', fallbackModels: [], fallbackOn: 'any-error',
+    });
+  });
+
+  test("a model from another project's custom provider is refused as not_an_image_model", async () => {
+    const error = await refusal(planImageRoute('other-vllm/flux-dev', reach([]), async () => ['my-vllm']));
+    expect(error.code).toBe('not_an_image_model');
+    // No custom-provider list at all (a principal without a project): refused too.
+    expect((await refusal(planImageRoute('my-vllm/flux-dev', reach([])))).code).toBe('not_an_image_model');
+  });
+
+  test('auto ignores custom providers', async () => {
+    const error = await refusal(planImageRoute('auto', reach(['CUSTOM_MY_VLLM_API_KEY']), async () => ['my-vllm']));
+    expect(error.code).toBe('image_model_unavailable');
+    // A catalog provider's text model and a bare managed id are still refused, not taken as custom.
+    for (const model of ['openai/gpt-5.5', 'glm-5.3-flash']) {
+      expect((await refusal(planImageRoute(model, reach([]), async () => ['my-vllm']))).code, model).toBe('not_an_image_model');
+    }
+  });
 });

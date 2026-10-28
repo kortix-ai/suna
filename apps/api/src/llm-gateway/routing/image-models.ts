@@ -58,16 +58,22 @@ export function reachableImageModels({ secretNames, access, managedModels }: Ima
 
 /**
  * The route of an `/images/*` request. An explicit model must be an image
- * model and gets no fallback. `auto` (or none) plans every reachable image
- * model, in order. `reachable` is read only when the plan needs it.
+ * model, or a model of one of the project's custom providers
+ * (`customProviderIds`: the catalog knows nothing of their models, so a named
+ * one is tried and the endpoint's answer decides, R34). It gets no fallback.
+ * `auto` (or none) plans every reachable image model, in order; it never
+ * plans a custom model. `reachable` and `customProviderIds` are read only
+ * when the plan needs them.
  */
 export async function planImageRoute(
   requestedModel: string,
   reachable: () => Promise<string[]>,
+  customProviderIds: () => Promise<string[]> = async () => [],
 ): Promise<ModelRoutePlan> {
   const wire = toWireModel(requestedModel);
   if (wire && wire !== 'auto') {
-    if (generatesImages(wire)) {
+    const provider = wire.includes('/') ? wire.split('/')[0]! : null;
+    if (generatesImages(wire) || (provider !== null && (await customProviderIds()).includes(provider))) {
       return { policyId: 'image', primaryModel: wire, fallbackModels: [], fallbackOn: 'any-error' };
     }
     const models = (await reachable()).slice(0, 5);

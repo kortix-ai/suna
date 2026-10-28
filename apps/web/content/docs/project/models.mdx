@@ -201,19 +201,20 @@ With `model` set to `auto` or left out, the gateway tries every image model the 
    - Google key: `gemini-2.5-flash-image`, `gemini-3.1-flash-image`.
    - OpenRouter key: `google/gemini-2.5-flash-image`, `google/gemini-3.1-flash-image`.
    - xAI key: `grok-imagine-image`.
-3. Kortix-managed models with image output, when the lineup has one.
 
 - A disabled provider or model is skipped.
 - A named model must be one the model catalog lists with image output. Any other model returns `not_an_image_model`, with up to 5 image models the project can use. A named model has no fallback.
-- Two kinds of models with image output in the catalog do not count: Google Deep Research agents (`deep-research-*`) and routers that pick a model per request (an id that ends in `auto`, such as `openrouter/auto`).
+- Two kinds of models with image output in the catalog do not count: Google Deep Research agents (`deep-research-*`) and routers that pick a model per request (an id whose last segment is `auto`, such as `openrouter/openrouter/auto`).
+- Kortix-managed models do not generate images yet. No model in the managed lineup has image output.
+- A model of your [custom endpoint](#connect-your-own-provider) is tried when you name it, for example `my-vllm/flux-dev`. `auto` never picks one. The model must be in the endpoint's model list. It works when the endpoint answers `/chat/completions` with the image in `choices[0].message.images[0].image_url.url`, as a `data:` URL. Otherwise the call fails with `image_upstream_error`: the endpoint's own error, or `<model> returned no image.`
 - The routing policy and fallback chain of [Routing and fallback](#routing-and-fallback) do not apply to images.
-- Kortix calls the model with the protocol of its provider: the OpenAI Images API for ChatGPT, OpenAI, and xAI; Gemini `generateContent` for a Google key; chat completions with image output for OpenRouter, Kortix-managed models, and a custom endpoint. Anthropic and Bedrock models cannot generate images through Kortix.
+- Kortix calls the model with the protocol of its provider: the OpenAI Images API for ChatGPT, OpenAI, and xAI; Gemini `generateContent` for a Google key; chat completions with image output for OpenRouter and a custom endpoint. Anthropic and Bedrock models cannot generate images through Kortix.
 
 ### Image costs
 
 - **A ChatGPT plan:** Kortix charges nothing. The image counts against the plan's image limit.
+- **A custom endpoint:** Kortix charges nothing.
 - **Your own key:** your provider bills the image. Kortix applies the same rule as for chat on your own key: see [Connect your own provider](#connect-your-own-provider).
-- **A Kortix-managed model:** the image uses credits. A managed model without an image price is not served (`image_model_unpriced`).
 - **Kortix charges only for a delivered image.** A refusal, an answer without an image, a timeout, or a stopped request records no Kortix charge, and any credit hold is returned.
 
 ## Shared keys and ChatGPT accounts
@@ -323,7 +324,7 @@ wire_api = "responses"
 
 Then run `KORTIX_GATEWAY_KEY=kortix_gw_... codex`.
 
-**Images.** `/v1/images/generations` and `/v1/images/edits` take `{ model, prompt, aspect_ratio, quality, background, images }`. `model` defaults to `auto`. `images` is for edits only: `[{ "image_url": "data:image/png;base64,..." }]`. The gateway makes one image per request and drops every other field. The answer is `{ created, model, provider, data: [{ b64_json, mime_type }], size, usage }` for every provider. `size` and `usage` are present when the provider reports them.
+**Images.** `/v1/images/generations` and `/v1/images/edits` take `{ model, prompt, aspect_ratio, quality, background, images }`. `model` defaults to `auto`. `images` is for edits only: `[{ "image_url": "data:image/png;base64,..." }]`. The gateway makes one image per request and drops every other field. A legacy `size` (`1024x1024`, `1536x1024`, `1024x1536`) is read as the matching ratio when `aspect_ratio` is absent. The answer is `{ created, model, provider, data: [{ b64_json, mime_type }], size, usage }` for every provider. `size` and `usage` are present when the provider reports them.
 
 Limits:
 

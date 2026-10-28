@@ -51,7 +51,13 @@ const resolver = createGatewayRouteResolver({
   resolveDefaultModel: resolveDefaultModelForPrincipal,
   catalogModelFor: (model) => catalogModelForWireModel(model),
   canonicalModel: toWireModel,
-  imageRoute: (principal, requestedModel) => planImageRoute(requestedModel, () => principalImageModels(principal)),
+  imageRoute: (principal, requestedModel) => planImageRoute(
+    requestedModel,
+    () => principalImageModels(principal),
+    async () => principal.projectId
+      ? (await getProjectGatewayResolution(principal.projectId)).customProviders.map((provider) => provider.id)
+      : [],
+  ),
 });
 
 export function resolveGatewayRoute(
