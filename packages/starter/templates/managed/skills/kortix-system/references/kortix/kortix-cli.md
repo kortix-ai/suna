@@ -387,28 +387,33 @@ a status word per event trigger (`live`, `pending`, `needs connection`,
 `error`). `triggers info <slug>` shows the status, the error, the last event,
 and a `Next` block with the exact command to run.
 
-### Reminders
+### Loops
 
-A reminder re-prompts ONE session later or on repeat. It is a trigger
+A loop re-prompts ONE session later or on repeat. It is a trigger
 scoped to that session and stored in the database — no `kortix.yaml`
 edit. Inside a sandbox `--session` defaults to `$KORTIX_SESSION_ID`.
-Behind the per-project `reminders` feature flag (off by default): a
-project without it answers `feature_disabled`; `kortix projects features
-enable reminders` turns it on (the user's decision).
+Loops were called reminders until 2026-10: `kortix remind` and
+`kortix reminders` still run as aliases, and the wire names (routes, ids
+`reminder.<hex>`, the flag key) stay `reminder`. The per-project feature
+flag is on by default (key `reminders`). A project that turned it off
+answers `code: feature_disabled`; `kortix projects features enable
+reminders` turns it back on (the user's decision).
 
 | Command | What it does |
 | --- | --- |
-| `kortix remind "<text>" --in 24h` | Fire once, 24h from now. `--at <ISO>` for an instant. |
-| `kortix remind "<text>" --in 24h --every 1h` | First fire in 24h, then hourly until removed. `--every` min `5m`. |
-| `kortix reminders add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
-| `kortix reminders ls [--json]` | This session's reminders: id, state (`active`/`paused`/`done`), next fire. |
-| `kortix reminders pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
-| `kortix reminders run <id>` | Fire once now: retry a failed run. The schedule does not move. |
-| `kortix reminders rm <id>` | Delete it. Do this as soon as its condition is met. |
+| `kortix loop "<text>" --in 24h` | Fire once, 24h from now. `--at <ISO>` for an instant. |
+| `kortix loop "<text>" --in 24h --every 1h` | First fire in 24h, then hourly until removed. `--every` min `5m`. |
+| `kortix loops add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
+| `kortix loops ls [--json]` | This session's loops: id, state (`active`/`paused`/`done`), next fire. |
+| `kortix loops pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
+| `kortix loops run <id>` | Fire once now: retry a failed run. The schedule does not move. |
+| `kortix loops rm <id>` | Delete it. Do this as soon as its condition is met. |
 
-Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
-parked session. A fire never starts a new session; if the session is
-deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
+`--name <text>` labels a loop; `--session <id>` targets another session
+you can open. Each fire arrives as `[REMINDER <id> — …]` (the wire name)
+followed by the text, and wakes a parked session. A fire never starts a new
+session; if the session is deleted or failed the loop pauses itself. Max 20
+active per session, 200 per project; schedules reach at most 366 days ahead.
 
 ### Capture timeline
 
@@ -687,7 +692,7 @@ conflict story, and data model.
 | Variable | Purpose |
 | --- | --- |
 | `KORTIX_TOKEN` | Session-scoped PAT the CLI authenticates with (injected in sandboxes). |
-| `KORTIX_SESSION_ID` | This session. `kortix reminders`, `cr open`, and `review` default `--session` to it. |
+| `KORTIX_SESSION_ID` | This session. `kortix loops`, `cr open`, and `review` default `--session` to it. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |

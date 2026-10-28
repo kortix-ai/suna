@@ -23,14 +23,14 @@ Projects created before 2026-09 often import `.kortix/triggers/`; both work.
 Rules: `kortix-yaml.md` → `imports:`.
 
 > **Talking to people about this:** say "recurring task", "scheduled run",
-> "automatic check", or "reminder." Don't say "cron job" or paste a cron
+> "automatic check", or "loop." Don't say "cron job" or paste a cron
 > string at a non-technical user — translate it ("every weekday at 9am").
 
 ## Which mechanism — decide first
 
 | The user wants… | Use | How |
 | --- | --- | --- |
-| To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
+| To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **loop** (on this session) | `kortix loop "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **schedule, one-off** | `on: { at: "<ISO-8601>" }` (flat: `run_at`; CLI `--run-at`) |
 | Something to repeat at wall-clock times ("every weekday morning", "daily digest") | **schedule, recurring** | `on: { cron: "<6-field>", timezone }` |
 | Something to repeat at a fixed period ("every 5 minutes", "every 2 hours") | **schedule, every** | `on: { every: 5m }` (≥60s; flat top-level `every:`; CLI `--every 5m`) |
@@ -39,7 +39,7 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **connector event trigger** | `on: { event, connector }` (flat: `type: event`). Needs the project flag `event_triggers`, off by default. See [Composio event triggers](#composio-event-triggers) |
 | To react to a system that has **no app connector** but can call a URL ("when our in-house tool calls us", Stripe, a CI job) | **webhook trigger** | `on: { webhook: { secret } }` (flat: `type: webhook` + `secret_env`) |
 | To react to something that **sends no event and no webhook**, needs code to decide what matters, or needs a long-lived connection (a WebSocket, a stream) | **App event trigger — last resort** | An App watches and posts events; `on: { event, app }`. See [App events](#app-events-last-resort) |
-| To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
+| To **pause mid-task and resume later with full context** | **loop** (on this session) | See [Pausing mid-task](#pausing-mid-task) |
 
 **React to something outside Kortix: pick the first that fits.**
 
@@ -123,7 +123,7 @@ continuing thread via `session_mode`:
 
 Two practical consequences of a `fresh` run:
 
-- It has **no memory of your chat.** If a reminder must reference "what we
+- It has **no memory of your chat.** If a scheduled run must reference "what we
   just discussed," either put that context directly into the `prompt`, or
   use `reuse`.
 - It runs as project automation, not your live chat. Drive everything it
@@ -175,40 +175,44 @@ Make recurring runs idempotent yourself:
 ## Pausing mid-task
 
 A session turn either completes or it doesn't — you can't suspend an
-in-flight turn for hours. A **session reminder** is the resume half: it
-re-prompts THIS session later, with its whole conversation and workspace.
+in-flight turn for hours. A **loop** is the resume half: it re-prompts THIS
+session later, with its whole conversation and workspace. Loops were called
+reminders until 2026-10; `kortix remind` and `kortix reminders` still run as
+aliases of `kortix loop` and `kortix loops`.
 
-Reminders are a **per-project feature flag** (`reminders`, off by default).
-`kortix projects features` shows whether it is on. If `kortix remind` answers
-"Reminders is not enabled for this project", tell the user and name the switch
-(`kortix projects features enable reminders`, or Settings → Feature flags) —
-enabling it is their decision, not yours — and fall back to a one-off `run_at`
-trigger (`session_mode: reuse`) until they do.
+Loops are a **per-project feature flag**, on by default (flag key
+`reminders`). `kortix projects features` shows whether it is on. If
+`kortix loop` fails with `code: feature_disabled`, a project admin turned it
+off: tell the user and name the switch (`kortix projects features enable
+reminders`, or Settings → Feature flags) — enabling it is their decision, not
+yours — and fall back to a one-off `run_at` trigger (`session_mode: reuse`)
+until they do.
 
 When you'd reach for a mid-task wait (rate-limit cooldown, waiting on an
 approval or an email reply, a slow external job):
 
-1. **Set a reminder** that says exactly what to check and what to do next:
+1. **Set a loop** that says exactly what to check and what to do next:
    ```bash
-   kortix remind "The rate-limit window has reset. Resume the export from record 1,001." --in 1h
-   kortix remind "Did the vendor reply to the contract email? If yes, summarize it for the user and remove this reminder. If no, do nothing." --in 24h --every 1h
+   kortix loop "The rate-limit window has reset. Resume the export from record 1,001." --in 1h
+   kortix loop "Did the vendor reply to the contract email? If yes, summarize it for the user and remove this loop. If no, do nothing." --in 24h --every 1h
    ```
    `--in`/`--at` alone fires once. Add `--every <duration>` (min `5m`) or
    `--cron "<6-field>" --timezone <tz>` to keep checking.
 2. **End the turn** at the natural breakpoint, with a clear note of what's
    done and what's pending.
 3. Each fire arrives as a prompt that starts `[REMINDER reminder.<id> — …]`
-   and wakes the session if it was parked. It is not a new user message.
-4. **Remove a recurring reminder the moment its condition is met:**
-   `kortix reminders rm <id>`. Every fire is a model turn.
+   (the wire name) and wakes the session if it was parked. It is not a new
+   user message.
+4. **Remove a recurring loop the moment its condition is met:**
+   `kortix loops rm <id>`. Every fire is a model turn.
 
 **From a Slack or Teams thread**, put the channel and thread ids into the
-reminder text: the fire is not a channel turn, so the answer must be posted
+loop text: the fire is not a channel turn, so the answer must be posted
 with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
 
-`kortix reminders ls` shows this session's reminders, `pause <id>` /
+`kortix loops ls` shows this session's loops, `pause <id>` /
 `resume <id>` turn one off and on, and `run <id>` fires one once now (the
-retry of a failed run; the schedule does not move). A reminder lives in the database, not
+retry of a failed run; the schedule does not move). A loop lives in the database, not
 `kortix.yaml`: no CR, no manifest edit, and it pauses itself if its session
 is deleted. It never starts a new session — for work that must survive the
 session, use a trigger.
@@ -440,16 +444,16 @@ keeps firing (and keeps costing runs):
 - **A trigger that keeps failing** (auth expired, missing permission you
   can't fix) should be disabled, not left to burn runs every fire while
   blocked.
-- **Reminders:** `kortix reminders pause <id>` (keep) or
-  `kortix reminders rm <id>` (delete). `kortix reminders ls` lists them.
-  The project-wide `triggers_paused` kill-switch also stops reminders.
+- **Loops:** `kortix loops pause <id>` (keep) or
+  `kortix loops rm <id>` (delete). `kortix loops ls` lists them.
+  The project-wide `triggers_paused` kill-switch also stops loops.
 
 ## Worked examples
 
 **"Remind me at 4pm to review the contract."**
-→ Session reminder. Convert 4pm in the user's timezone to an ISO-8601
-instant, then `kortix remind "Remind the user to review the contract; post it to their channel." --at 2026-10-01T14:00:00Z`.
-It fires once in this session, then shows as `done` in `kortix reminders ls`.
+→ A one-time loop. Convert 4pm in the user's timezone to an ISO-8601
+instant, then `kortix loop "Remind the user to review the contract; post it to their channel." --at 2026-10-01T14:00:00Z`.
+It fires once in this session, then shows as `done` in `kortix loops ls`.
 
 **"Every weekday at 8am, give me a digest of overnight support tickets in
 Slack."**
@@ -478,12 +482,12 @@ pattern in action.
 
 **"Process 50k records, but the API rate-limits me."**
 → Not a mid-turn pause. Process a batch, then
-`kortix remind "Cooldown is over. Continue from record <n>." --in 15m` and
+`kortix loop "Cooldown is over. Continue from record <n>." --in 15m` and
 end the turn. See [Pausing mid-task](#pausing-mid-task).
 
 ## Quick checklist
 
-- [ ] Right mechanism? Session reminder (this task) vs one-off `at`
+- [ ] Right mechanism? A loop (this task) vs one-off `at`
       vs recurring `cron` / `every` vs `event` (connector event, flag on) vs
       `webhook` (no connector) vs an App event (last resort) vs a schedule
       that calls an App (no agent).

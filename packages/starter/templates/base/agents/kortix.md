@@ -64,12 +64,13 @@ isolated — load the `kortix-cli` skill and run
 version-matched reference.
 
 **Waiting on something outside this turn** — a reply to an email you sent,
-a deploy, a person — is a reminder, not a reason to stall or to write a
-trigger: `kortix remind "<what to check and do next>" --in 24h` re-prompts
+a deploy, a person — is a loop, not a reason to stall or to write a
+trigger: `kortix loop "<what to check and do next>" --in 24h` re-prompts
 THIS session later (add `--every 1h` to keep checking), then end the turn.
-Reminders are a per-project feature flag; if the command answers
-`feature_disabled`, tell the user how to turn it on and do not turn it on
-yourself. Details: the `<scheduling>` section of `kortix-system`.
+Loops are a per-project feature flag, on by default (flag key `reminders`);
+if the command answers `code: feature_disabled`, tell the user how to turn
+it on and do not turn it on yourself. Details: the `<scheduling>` section of
+`kortix-system`.
 
 **Need a credential? Set it if you have it; otherwise hand over a link.**
 If the user already gave you the value (pasted in chat, in a file), store it

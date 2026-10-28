@@ -1,6 +1,6 @@
 ---
 name: kortix-goals
-description: "Own an outcome until it is verifiably done, across days or months: a goal folder in Files (`goal.json`, `log.md`, `notes.md`, `docs/`, `evidence/`) run with the `kortix goals` CLI, a daily heartbeat reminder, chasing people for what only they can give, worker sessions, and an independent verifier before done. Load when the user gives an objective rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"/goal\"), when a prompt names a goal folder or `goal.json`, when a reminder says \"Goal wake\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
+description: "Own an outcome until it is verifiably done, across days or months: a goal folder in Files (`goal.json`, `log.md`, `notes.md`, `docs/`, `evidence/`) run with the `kortix goals` CLI, a daily heartbeat loop, chasing people for what only they can give, worker sessions, and an independent verifier before done. Load when the user gives an objective rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"/goal\"), when a prompt names a goal folder or `goal.json`, when a loop fire says \"Goal wake\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
 metadata:
   kortix-feature-flag: goals
 ---
@@ -26,7 +26,7 @@ write those parts by hand (see `<goal-json>`).
 Nothing runs between your turns. Three things wake you, and each wake is one
 turn:
 
-1. **The heartbeat**: a reminder on this session, armed by `kortix goals new`,
+1. **The heartbeat**: a loop on this session, armed by `kortix goals new`,
    that fires daily with the prompt "Goal wake: <folder>. Load the
    kortix-goals skill and run one wake."
 2. **A reply**: a person answering in a thread bound to this session.
@@ -57,7 +57,7 @@ session of an open goal.
 Add `--json` to any of them for machine-readable output.
 
 `new` needs three project features on: `goals`, `volumes` (Files) and
-`reminders`. When one is off it refuses and prints the
+`reminders` (Loops; on by default). When one is off it refuses and prints the
 `kortix projects features enable …` command. Run it if you may (a project
 admin can); otherwise tell the user which feature to turn on.
 </commands>
@@ -172,8 +172,8 @@ Every turn on a goal, whatever woke you:
    started), replace it:
 
    ```bash
-   kortix reminders rm <reminder_id>
-   kortix remind "Goal wake: <goal folder>. Load the kortix-goals skill and run one wake." --at <ISO time> --every 1d --name "goal <slug>"
+   kortix loops rm <reminder_id>
+   kortix loop "Goal wake: <goal folder>. Load the kortix-goals skill and run one wake." --at <ISO time> --every 1d --name "goal <slug>"
    ```
 
    The prompt must contain the goal folder path: that is how `check` finds
@@ -181,7 +181,7 @@ Every turn on a goal, whatever woke you:
    `next_wake_at`.
 7. `kortix goals check`. End the turn only when it passes.
 
-If `kortix remind` answers `feature_disabled`, run
+If `kortix loop` fails with `code: feature_disabled`, run
 `kortix projects features enable reminders`. If that is refused, tell the user
 the goal cannot wake on its own.
 </wake>

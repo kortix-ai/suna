@@ -173,7 +173,7 @@ Load this skill when the user asks any of:
   schedule" / "recurring task" / "cron job" / "webhook trigger" / "when a PR opens /
   an email arrives" (connector event trigger)
 - "Check back on this later / follow up tomorrow / keep checking until X
-  happens" — a session reminder (`kortix remind`)
+  happens" — a loop on this session (`kortix loop`)
 - "My App should wake an agent" / "call my App every N minutes" / "what are
   App events?" — App events and App targets (`references/scheduling.md`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
@@ -226,10 +226,10 @@ Kortix cloud state — not just files in the repo. Examples:
 | "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
-| "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
+| "check back on this later / keep checking until it's done" | `kortix loop "…" --in 24h --every 1h` · `kortix loops ls|pause|resume|run|rm` (old names `remind` / `reminders` still work) |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
+| "turn on / off a feature flag (Loops — key `reminders`, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. The internal-only flags (`session_log`, `session_log_restore`) are Kortix-managed: listed only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …] [--policy-set <slug>=<name>]` · `kortix agents config <agent>` |
@@ -543,20 +543,24 @@ project keeps its triggers and follow that layout.
 Decide the mechanism first:
 
 - **Follow up on THIS task later** — did the email arrive, is the deploy
-  green, did they reply → a **reminder**, not a trigger:
-  `kortix remind "Did the vendor email arrive? If yes, act on it, then remove this reminder." --in 24h --every 1h`.
+  green, did they reply → a **loop**, not a trigger:
+  `kortix loop "Did the vendor email arrive? If yes, act on it, then remove this loop." --in 24h --every 1h`.
   One command, no `kortix.yaml` change. It re-prompts THIS session (full
   context) at each fire, waking it if parked, until you remove it. `--in`/
-  `--at` alone fires once; `--every` (≥5m) or `--cron` repeats. A reminder
+  `--at` alone fires once; `--every` (≥5m) or `--cron` repeats. A loop
   is a trigger scoped to one session: it lives in the database and pauses
   itself if the session is deleted. This is the native mid-task
-  pause/resume: set a reminder, end the turn. Always remove a recurring
-  reminder once its condition is met — every fire is a model turn.
-  Reminders are a per-project feature flag (`reminders`, off by default).
-  If `kortix remind` answers "Reminders is not enabled for this project",
-  tell the user and name the switch (`kortix projects features enable
-  reminders`, or Settings → Feature flags); turning it on is their call, not
-  yours. Until then, use a one-off `run_at` trigger instead.
+  pause/resume: set a loop, end the turn. Always remove a recurring
+  loop once its condition is met (`kortix loops rm <id>`) — every fire is a
+  model turn. A fire arrives as `[REMINDER reminder.<id> — …]` (the wire
+  name) followed by the loop text. `kortix remind` / `kortix reminders` are
+  aliases of `kortix loop` / `kortix loops`.
+  Loops are a per-project feature flag, on by default (flag key
+  `reminders`). If `kortix loop` fails with `code: feature_disabled`, a
+  project admin turned Loops off: tell the user and name the switch
+  (`kortix projects features enable reminders`, or Settings → Feature
+  flags); turning it on is their call, not yours. Until then, use a one-off
+  `run_at` trigger instead.
 - **Recurring project work** anyone should see (daily digest) →
   `on: { cron: "<6-field>", timezone }`, or a fixed period
   `on: { every: 5m }` (≥60s).
@@ -585,7 +589,7 @@ trigger decides.
 
 For triggers, `session` (flat `session_mode`) governs every fire:
 `"fresh"` (default, clean session, no chat history — right for digests),
-`"reuse"` (re-prompts the same long-lived session), `"pinned"` or `"keyed"`. Say "recurring task" / "scheduled run" / "reminder" to
+`"reuse"` (re-prompts the same long-lived session), `"pinned"` or `"keyed"`. Say "recurring task" / "scheduled run" / "loop" to
 non-technical users, not "cron job".
 
 Two practices matter for any recurring run: it must **push** a notification
@@ -607,7 +611,7 @@ watching — usually via `slack send`, silent otherwise), and it must be
   playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and
-  `kortix reminders` command reference.
+  `kortix loops` command reference.
 </scheduling>
 
 <continual-harness>
@@ -1030,7 +1034,7 @@ access and refuses its next prompt with the same code.
   recurring runs, the pause-and-wait re-fire pattern for mid-task waits,
   worked examples, and a pre-ship checklist. Companion to
   `kortix-yaml.md` (schema) and `kortix-cli.md` (commands). Load whenever
-  the user wants something scheduled, recurring, reminded, or
+  the user wants something scheduled, recurring, looped, or
   webhook-triggered.
 </reference>
 
