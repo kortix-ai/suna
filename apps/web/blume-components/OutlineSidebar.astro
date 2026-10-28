@@ -1,5 +1,5 @@
 ---
-// The left column of the one-page docs: the page's outline, "On this page",
+// The left column of each docs page: that page's outline, "On this page",
 // grouped as the sidebar config groups it (blume.config.ts). Each entry is an
 // in-page `#anchor`, and <blume-toc> (registered by Blume's RootLayout) marks
 // the section in view with aria-current="location", the same scrollspy as
@@ -15,18 +15,26 @@ interface Props {
   items: Node[];
   currentRoute: string;
 }
-const { items } = Astro.props;
+const { items, currentRoute } = Astro.props;
+// The page a link points at, without the /docs base: "/" or "/developers".
+const pageOf = (target: string) => {
+  const path = target.split('#')[0].replace(/^\/docs(?=\/|$)/, '').replace(/\/$/, '');
+  return path === '' ? '/' : path;
+};
+const here = pageOf(currentRoute);
 const anchor = (node: Node) => {
   const target = node.href ?? node.route ?? '';
   const hash = target.indexOf('#');
-  return hash === -1 ? null : target.slice(hash);
+  return hash === -1 || pageOf(target) !== here ? null : target.slice(hash);
 };
+// Only the groups with an entry on this page.
+const groups = items.filter((group) => (group.children ?? []).some((node) => anchor(node)));
 ---
 
 <p class="mb-3 px-2.5 font-semibold text-foreground text-sm">On this page</p>
 <blume-toc class="block">
   {
-    items.map((group) => (
+    groups.map((group) => (
       <div class="mt-6 first:mt-0">
         <p class="mb-2 px-2.5 font-medium text-foreground text-sm">{group.label}</p>
         <ul class="m-0 list-none space-y-px p-0">

@@ -1,3 +1,4 @@
+import { showsMarketingLink } from '@/lib/config';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -136,13 +137,13 @@ describe('public SEO/AEO content coverage', () => {
   });
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
-    const resolved = resolvePublicMarkdown(['docs', 'index.md']);
+    const resolved = resolvePublicMarkdown(['docs', 'guide.md']);
     expect(resolved?.markdown).toContain(
       'A plain-language guide to Kortix',
     );
-    // The docs are one page: the developer reference is a section of it.
-    expect(resolved?.markdown).toContain('## Quickstart');
-    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
+    // The developer reference is its own page, apart from the Guide.
+    expect(resolvePublicMarkdown(['docs', 'developers.md'])?.markdown).toContain('## Quickstart');
+    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/guide.md');
 
     const mdx = `---
 title: Sample
@@ -259,9 +260,12 @@ Run the install script.
     const urls = new Set(sitemap().map((entry) => entry.url));
     const records = getPublicContentRecords({ includeUseCases: true });
     for (const record of records) {
-      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(true);
-      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(true);
+      // /services and /case-studies stay out while SERVICES_PAGES_ENABLED is off.
+      const listed = showsMarketingLink(record.htmlPath);
+      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(listed);
+      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(listed);
     }
+    expect(showsMarketingLink('/services')).toBe(false);
     expect(
       [...urls].every((url) => url.startsWith(CANONICAL_ORIGIN) && !url.includes('www.')),
     ).toBe(true);

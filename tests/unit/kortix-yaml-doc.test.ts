@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// The kortix.yaml key tables in apps/web/content/docs/index.mdx (the
+// The kortix.yaml key tables in apps/web/content/docs/developers.mdx (the
 // generated:kortix-yaml region) are generated from the v3 JSON Schema. A key or
 // description changed in packages/manifest-schema/src/json-schema.ts without a
 // regenerate leaves the public reference stale. Fix:

@@ -12,6 +12,7 @@ import { useGitHubStars } from '@/hooks/use-github-stars';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { useTranslations } from '@/i18n/use-translations';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { showsMarketingLink } from '@/lib/config';
 import { cn } from '@kortix/ui';
 import {
   ContextMenu,
@@ -139,7 +140,10 @@ export function Navbar() {
       ...menu,
       groups: menu.groups.map((group) => ({
         ...group,
-        links: group.links.filter((link) => USE_CASES_ENABLED || link.href !== '/use-cases'),
+        links: group.links.filter(
+          (link) =>
+            (USE_CASES_ENABLED || link.href !== '/use-cases') && showsMarketingLink(link.href),
+        ),
       })),
     }),
   );

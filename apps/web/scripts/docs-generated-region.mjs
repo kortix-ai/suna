@@ -35,13 +35,13 @@ export function cell(text) {
 
 /**
  * Rewrites the text between `{/* generated:<name>:start *\/}` and `{/* generated:<name>:end *\/}`.
- * Arguments: [file] (default apps/web/content/docs/index.mdx) and --check, which exits 1
+ * Arguments: [file] (default apps/web/content/docs/developers.mdx) and --check, which exits 1
  * when the region is stale instead of writing it.
  */
 export async function runRegionGenerator(name, script, render) {
   const args = process.argv.slice(2);
   const check = args.includes('--check');
-  const page = resolve(repositoryRoot, 'apps/web/content/docs/index.mdx');
+  const page = resolve(repositoryRoot, 'apps/web/content/docs/developers.mdx');
   const target = resolve(args.find((arg) => arg !== '--check') ?? page);
   const start = `{/* generated:${name}:start */}`;
   const end = `{/* generated:${name}:end */}`;

@@ -16,7 +16,7 @@ describe('built docs document titles', () => {
     buildBlumeDocs();
     const home = await Bun.file(new URL('../public/docs/index.html', import.meta.url)).text();
     const inner = await Bun.file(new URL('../public/docs/audit-actions/index.html', import.meta.url)).text();
-    expect(home.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Guide - Kortix');
+    expect(home.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Docs - Kortix');
     expect(inner.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Audit actions - Kortix');
   }, 120_000);
 });

@@ -66,7 +66,7 @@ const VPS_FIRST_NOTICE =
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run Kortix on your own VPS — a domain is the production path; a Cloudflare
-tunnel is for evaluation with no public domain. Docs: kortix.com/docs/#self-hosting
+tunnel is for evaluation with no public domain. Docs: kortix.com/docs/developers#self-hosting
 
 Subcommands:
   init                    Create/refresh this instance's Compose + env config.

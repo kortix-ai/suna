@@ -42,6 +42,8 @@ const OPTIONAL_KEYS = [
   'NEXT_PUBLIC_PHONE_NUMBER_MANDATORY',
   'NEXT_PUBLIC_SENTRY_DSN',
   'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
+  // /services and /case-studies: "true" on dev only until they ship.
+  'KORTIX_PUBLIC_SERVICES_PAGES_ENABLED',
 ];
 
 const PREVIEW_DENIED_KEYS = new Set(['EDGE_CONFIG', 'EDGE_CONFIG_ID', 'VERCEL_API_TOKEN']);

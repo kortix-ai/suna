@@ -35,7 +35,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *     isolated topologies to `/enterprise`.
  *  5. There is no Redis and no separate worker service in this stack. Do not
  *     add either to the diagram.
- *  6. Link the docs section `/docs/#self-hosting`. `/docs/host` and
+ *  6. Link the docs section `/docs/developers#self-hosting`. `/docs/host` and
  *     `/docs/self-hosting` are only redirects to it (`next.config.ts`).
  */
 
@@ -45,7 +45,7 @@ export const hero = {
   titleMuted: 'Built to self-host, in your own tenant.',
   sub: 'Kortix is self-hosting native: one Docker Compose stack in your cloud account, your VPC or on your own servers, from the same images the managed cloud runs. Your database, files, repos and policies stay on infrastructure you control. It is open source, so what you run is code you can read.',
   ctaPrimary: 'Self-host free',
-  ctaPrimaryHref: '/docs/#self-hosting',
+  ctaPrimaryHref: '/docs/developers#self-hosting',
   ctaSecondary: 'Use Kortix Cloud',
   ctaSecondaryHref: '/auth',
   microline: 'Self-hosting native · One command · Any model, your keys',
@@ -357,7 +357,7 @@ export const closing = {
   title: 'Run it yourself, or let us run it.',
   sub: 'Self-hosting is free and always will be. Kortix Cloud is the same product with the box, the upgrades and the sandbox tier taken off your hands.',
   ctaPrimary: 'Self-host free',
-  ctaPrimaryHref: '/docs/#self-hosting',
+  ctaPrimaryHref: '/docs/developers#self-hosting',
   ctaSecondary: 'Use Kortix Cloud',
   ctaSecondaryHref: '/auth',
   tertiary: 'Need it inside your own network, with SSO and a license? Talk to us.',

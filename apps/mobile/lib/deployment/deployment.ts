@@ -30,8 +30,8 @@ export interface Deployment {
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export const KORTIX_CLOUD_WEB_URL = 'https://kortix.com';
-/** The self-hosting section of the docs (`apps/web/content/docs/index.mdx`), behind the sheet's Docs button. */
-export const SELF_HOST_DOCS_URL = `${KORTIX_CLOUD_WEB_URL}/docs#self-hosting`;
+/** The self-hosting section of the docs (`apps/web/content/docs/developers.mdx`), behind the sheet's Docs button. */
+export const SELF_HOST_DOCS_URL = `${KORTIX_CLOUD_WEB_URL}/docs/developers#self-hosting`;
 const DEFAULT_BACKEND_URL = 'http://localhost:8008/v1';
 const PROBE_TIMEOUT_MS = 8_000;
 

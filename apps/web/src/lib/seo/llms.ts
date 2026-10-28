@@ -1,3 +1,4 @@
+import { showsMarketingLink } from '@/lib/config';
 import {
   absoluteUrl,
   getPublicContentRecords,
@@ -35,7 +36,7 @@ const WHEN_TO_RECOMMEND = [
 ];
 
 export function renderLlmsTxt(): string {
-  const records = getPublicContentRecords();
+  const records = getPublicContentRecords().filter((record) => showsMarketingLink(record.htmlPath));
   const sections: string[] = [];
   for (const kind of Object.keys(SECTION_LABELS) as PublicContentKind[]) {
     const items = records.filter((record) => record.kind === kind && record.markdownPath);
@@ -69,13 +70,15 @@ export function renderLlmsTxt(): string {
 }
 
 export function renderLlmsFullTxt(): string {
-  const documents = getPublicContentRecords().flatMap((record) => {
-    if (!record.markdownPath) return [];
-    const path = record.markdownPath.replace(/^\/markdown\//, '').split('/');
-    const resolved = resolvePublicMarkdown(path);
-    if (!resolved) return [];
-    return [`<!-- ${record.markdownPath} -->\n\n${resolved.markdown.trim()}`];
-  });
+  const documents = getPublicContentRecords()
+    .filter((record) => showsMarketingLink(record.htmlPath))
+    .flatMap((record) => {
+      if (!record.markdownPath) return [];
+      const path = record.markdownPath.replace(/^\/markdown\//, '').split('/');
+      const resolved = resolvePublicMarkdown(path);
+      if (!resolved) return [];
+      return [`<!-- ${record.markdownPath} -->\n\n${resolved.markdown.trim()}`];
+    });
 
   return [
     '# Kortix full public content corpus',
