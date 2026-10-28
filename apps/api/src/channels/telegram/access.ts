@@ -1,11 +1,11 @@
 /**
  * Telegram's channel access port (channels/core/channel-access.ts): the bot's
- * install and token, `getChat` for a user's names and photo, and `getFile` for
- * the photo bytes.
+ * install and token, the installation body the routes answer, `getChat` for a
+ * user's names and photo, and `getFile` for the photo bytes.
  */
 import { type ChannelAccessPort, cleanName } from '../core/channel-access';
 import { telegramCall, telegramDownload, telegramUnreachable } from './api';
-import { loadTelegramBotToken, loadTelegramInstall } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall, TELEGRAM_USER_ID } from './installs';
 
 const PROFILE_TIMEOUT_MS = 3_000;
 
@@ -13,12 +13,28 @@ const str = (value: unknown) => (typeof value === 'string' && value ? value : nu
 
 export const telegramAccessPort: ChannelAccessPort = {
   platform: 'telegram',
+  label: 'Telegram',
+  userId: TELEGRAM_USER_ID,
+  idDescription: 'numeric Telegram user id',
   // Telegram profile photos are JPEG; anything else is not served as one.
   photoTypes: ['image/jpeg'],
 
   async connection(projectId) {
     const [install, token] = await Promise.all([loadTelegramInstall(projectId), loadTelegramBotToken(projectId)]);
     return install && { scopeId: install.botId, credential: token, lists: install };
+  },
+
+  // Every Telegram channel route that answers the installation answers this body.
+  async installation(projectId) {
+    const install = await loadTelegramInstall(projectId);
+    return (
+      install && {
+        bot_id: install.botId,
+        username: install.username,
+        allowed_user_ids: install.allowedUserIds,
+        access_request_count: install.accessRequests.length,
+      }
+    );
   },
 
   // Null: Telegram has no chat with this user (never started the bot, or blocked it).

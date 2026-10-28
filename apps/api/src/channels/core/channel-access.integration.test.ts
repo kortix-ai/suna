@@ -54,8 +54,12 @@ const port = (
   bytes = new Uint8Array(),
 ): ChannelAccessPort => ({
   platform,
+  label: name,
+  userId: /^\d+$/,
+  idDescription: 'numeric id',
   photoTypes,
   connection: async () => ({ scopeId: SCOPE, credential: 'synthetic', lists: readChannelAccess(await metadata(), platform) }),
+  installation: async () => ({}),
   fetchProfile: async () => ({ username: null, first_name: name, last_name: null, photo: { ref: 'r', version: name } }),
   fetchPhoto: async () => bytes,
 });
