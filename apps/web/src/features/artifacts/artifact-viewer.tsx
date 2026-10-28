@@ -103,6 +103,12 @@ export function ArtifactViewer({
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
+  // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
+  const [reloads, setReloads] = useState(0);
+  const reloadDoc = () => {
+    setDocStatus('saved');
+    void query.refetch().then(() => setReloads((n) => n + 1));
+  };
   // Export as PDF prints the saved file: with edits pending, it waits for the autosave.
   const [exporting, setExporting] = useState(false);
   const exportUrl = artifact?.version.view_url;
@@ -214,7 +220,13 @@ export function ArtifactViewer({
 
         {artifact ? (
           <div className="flex shrink-0 items-center gap-1">
-            {statusText ? <span className="text-muted-foreground px-2 text-xs">{statusText}</span> : null}
+            {docStatus === 'conflict' && statusText ? (
+              <Button size="sm" variant="ghost" className="text-xs" onClick={reloadDoc}>
+                {statusText} · {t('conflictReload')}
+              </Button>
+            ) : statusText ? (
+              <span className="text-muted-foreground px-2 text-xs">{statusText}</span>
+            ) : null}
             <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -368,11 +380,12 @@ export function ArtifactViewer({
         ) : isDoc ? (
           <div className="bg-background min-w-0 flex-1 overflow-y-auto">
             <DocEditor
-              key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}`}
+              key={`${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}`}
               projectId={projectId}
               artifact={artifact}
               editable={canEdit}
               onStatus={setDocStatus}
+              onReload={reloadDoc}
             />
           </div>
         ) : (

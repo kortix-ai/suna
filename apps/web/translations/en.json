@@ -23199,7 +23199,8 @@
     "docStatus": {
       "unsaved": "Unsaved changes",
       "saving": "Saving…",
-      "error": "Not saved"
+      "error": "Not saved. Retrying…",
+      "conflict": "Changed elsewhere"
     },
     "placeholder": "Write, or type # for a heading, - for a list, [ ] for a task",
     "placeholderHeading": "Title",
@@ -23220,7 +23221,7 @@
     "addColumn": "Add column",
     "deleteRow": "Delete row",
     "deleteTable": "Delete table",
-    "conflict": "Someone else saved this doc after you opened it. Reload to see their version; your last changes were not saved.",
+    "conflict": "This doc changed in Files after you opened it (an agent or another tab saved it). Your edits are still here.",
     "newDoc": "New doc",
     "untitledDoc": "Untitled doc",
     "history": "History",
@@ -23241,7 +23242,9 @@
     "codeLanguage": "Code language",
     "editedAgo": "Edited {time}",
     "openFullPage": "Open full page",
-    "close": "Close"
+    "close": "Close",
+    "conflictReload": "Reload theirs",
+    "conflictKeepMine": "Keep mine"
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

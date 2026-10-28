@@ -23199,7 +23199,8 @@
     "docStatus": {
       "unsaved": "未保存の変更があります",
       "saving": "保存中…",
-      "error": "保存されていません"
+      "error": "保存されていません。再試行中…",
+      "conflict": "別の場所で変更されました"
     },
     "placeholder": "書き始めるか、# で見出し、- でリスト、[ ] でタスクを入力",
     "placeholderHeading": "タイトル",
@@ -23220,7 +23221,7 @@
     "addColumn": "列を追加",
     "deleteRow": "行を削除",
     "deleteTable": "表を削除",
-    "conflict": "開いた後に、他のユーザーがこのドキュメントを保存しました。再読み込みして最新版を確認してください。最後の変更は保存されていません。",
+    "conflict": "開いた後に Files でこのドキュメントが変更されました（エージェントまたは別のタブが保存しました）。あなたの編集は残っています。",
     "newDoc": "新規ドキュメント",
     "untitledDoc": "無題のドキュメント",
     "history": "履歴",
@@ -23241,7 +23242,9 @@
     "codeLanguage": "コードの言語",
     "editedAgo": "{time}に編集",
     "openFullPage": "ページ全体で開く",
-    "close": "閉じる"
+    "close": "閉じる",
+    "conflictReload": "相手の版を読み込む",
+    "conflictKeepMine": "自分の版を残す"
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",

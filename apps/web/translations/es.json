@@ -23199,7 +23199,8 @@
     "docStatus": {
       "unsaved": "Cambios sin guardar",
       "saving": "Guardando…",
-      "error": "No guardado"
+      "error": "No guardado. Reintentando…",
+      "conflict": "Cambiado en otro lugar"
     },
     "placeholder": "Escribe, o teclea # para un encabezado, - para una lista, [ ] para una tarea",
     "placeholderHeading": "Título",
@@ -23220,7 +23221,7 @@
     "addColumn": "Añadir columna",
     "deleteRow": "Eliminar fila",
     "deleteTable": "Eliminar tabla",
-    "conflict": "Otra persona guardó este documento después de que lo abrieras. Recarga para ver su versión; tus últimos cambios no se guardaron.",
+    "conflict": "Este documento cambió en Files después de abrirlo (lo guardó un agente u otra pestaña). Tus cambios siguen aquí.",
     "newDoc": "Documento nuevo",
     "untitledDoc": "Documento sin título",
     "history": "Historial",
@@ -23241,7 +23242,9 @@
     "codeLanguage": "Lenguaje del código",
     "editedAgo": "Editado {time}",
     "openFullPage": "Abrir a página completa",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "conflictReload": "Cargar la suya",
+    "conflictKeepMine": "Mantener la mía"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

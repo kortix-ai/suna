@@ -100,7 +100,14 @@ type ImageGenFrame = ImageGenView['images'][number];
 const SQUARE = '1 / 1';
 const CONNECT_CODES = new Set(['image_model_unavailable', 'provider_not_connected', 'provider_reauth_required']);
 const TRAILING_CODE = /\[([a-z][a-z0-9_]*)\]$/;
-const TRAILING_PROVIDER = /^\[provider:([^\]\s]+)\]$/;
+/** The trailing `[provider:<id>]` token, found without a regex (CodeQL js/polynomial-redos). */
+function trailingProvider(text: string): { index: number; id: string } | null {
+  if (!text.endsWith(']')) return null;
+  const index = text.lastIndexOf('[provider:');
+  if (index < 0) return null;
+  const id = text.slice(index + '[provider:'.length, -1);
+  return id && !/[\]\s]/.test(id) ? { index, id } : null;
+}
 /** Before the provider token: only ChatGPT's own texts named ChatGPT or Codex for these codes. */
 const LEGACY_CHATGPT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
 const NAMES_CHATGPT = /\b(ChatGPT|Codex)\b/;
@@ -198,15 +205,13 @@ function failure(text: string): NonNullable<ImageGenView['error']> {
   // Each trailing pattern is anchored at the end with no leading `\s*`, and the
   // whitespace is trimmed here: a leading `\s*` backtracks quadratically on long runs.
   if (code) rest = rest.slice(0, code.index).trimEnd();
-  // Inspect only the final token. Earlier unterminated prefixes cannot restart a scan.
-  const providerStart = rest.lastIndexOf('[provider:');
-  const named = code && providerStart >= 0 && TRAILING_PROVIDER.exec(rest.slice(providerStart));
-  if (named) rest = rest.slice(0, providerStart).trimEnd();
+  const named = code ? trailingProvider(rest) : null;
+  if (named) rest = rest.slice(0, named.index).trimEnd();
   const retry = TRAILING_RETRY.exec(rest);
   if (retry) rest = rest.slice(0, retry.index).trimEnd();
   rest = rest.replace(REFUSAL_PREFIX, '').trim();
   const provider = named
-    ? named[1]
+    ? named.id
     : code && LEGACY_CHATGPT_CODES.has(code[1]!) && NAMES_CHATGPT.test(rest)
       ? 'openai-codex'
       : undefined;

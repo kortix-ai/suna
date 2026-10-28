@@ -9,9 +9,11 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: /^Put agents to work across your company\./ }),
     ).toBeVisible();
-    await expect(page.getByText('Free', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Enterprise', exact: true })).toBeVisible();
+    // The plan names inside the plans section: the navbar holds hidden links with the same words.
+    const plans = page.locator('#plans');
+    await expect(plans.getByText('Free', { exact: true }).first()).toBeVisible();
+    await expect(plans.getByText('Credits', { exact: true }).first()).toBeVisible();
+    await expect(plans.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
     await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();

@@ -23199,7 +23199,8 @@
     "docStatus": {
       "unsaved": "Ungespeicherte Änderungen",
       "saving": "Speichern…",
-      "error": "Nicht gespeichert"
+      "error": "Nicht gespeichert. Neuer Versuch…",
+      "conflict": "Anderswo geändert"
     },
     "placeholder": "Schreibe etwas, oder tippe # für eine Überschrift, - für eine Liste, [ ] für eine Aufgabe",
     "placeholderHeading": "Titel",
@@ -23220,7 +23221,7 @@
     "addColumn": "Spalte hinzufügen",
     "deleteRow": "Zeile löschen",
     "deleteTable": "Tabelle löschen",
-    "conflict": "Jemand anderes hat dieses Dokument gespeichert, nachdem du es geöffnet hast. Lade die Seite neu, um die Version zu sehen; deine letzten Änderungen wurden nicht gespeichert.",
+    "conflict": "Dieses Dokument wurde in Files geändert, nachdem du es geöffnet hast (ein Agent oder ein anderer Tab hat es gespeichert). Deine Änderungen sind noch da.",
     "newDoc": "Neues Dokument",
     "untitledDoc": "Unbenanntes Dokument",
     "history": "Verlauf",
@@ -23241,7 +23242,9 @@
     "codeLanguage": "Sprache des Codes",
     "editedAgo": "Bearbeitet {time}",
     "openFullPage": "Ganze Seite öffnen",
-    "close": "Schließen"
+    "close": "Schließen",
+    "conflictReload": "Ihre Version laden",
+    "conflictKeepMine": "Meine behalten"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",
