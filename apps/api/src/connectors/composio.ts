@@ -114,6 +114,8 @@ export interface ComposioExecuteInput {
   connectedAccountId: string | null;
   /** The tool's input schema. Its `file_uploadable` fields take a URL (`composio-files.ts`). */
   inputSchema?: Record<string, unknown> | null;
+  /** The call's deadline; it stops a file download. */
+  signal?: AbortSignal;
 }
 
 export interface ComposioConnectResult {
@@ -734,7 +736,7 @@ export async function executeComposio(
       args = await uploadFileArgs(
         args,
         input.inputSchema,
-        composioFileUpload(runtime.files, input.toolkit, input.toolSlug),
+        composioFileUpload(runtime.files, input.toolkit, input.toolSlug, input.signal),
       );
     } catch (error) {
       const status = (error as { status?: unknown }).status;

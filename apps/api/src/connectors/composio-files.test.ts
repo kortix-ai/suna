@@ -104,6 +104,7 @@ test('the uploader reads the URL through the given fetch and hands Composio a na
     { upload: async (input) => (uploaded.push(input as never), { name: 'clip.mp4', mimetype: 'video/mp4', s3key: 'k1' }) },
     'youtube',
     'YOUTUBE_MULTIPART_UPLOAD_VIDEO',
+    undefined,
     async () => new Response('bytes', { headers: { 'content-type': 'video/mp4; charset=binary' } }),
   );
   expect(await upload('https://example.com/media/clip.mp4?sig=1', {})).toEqual({
@@ -121,9 +122,71 @@ test('the uploader refuses a URL that does not answer 2xx, as a caller error', a
     { upload: async () => ({ name: '', mimetype: '', s3key: '' }) },
     'youtube',
     'YOUTUBE_MULTIPART_UPLOAD_VIDEO',
+    undefined,
     async () => new Response('nope', { status: 404 }),
   );
   const error = await upload('https://example.com/clip.mp4', {}).catch((e) => e);
   expect(error.message).toBe('the URL answered HTTP 404');
   expect(error.status).toBe(400);
+});
+
+test('a chunked body with no Content-Length is refused past 100 MB and its reader is cancelled', async () => {
+  let cancelled = false;
+  let pulled = 0;
+  const chunk = new Uint8Array(1024 * 1024);
+  // Endless body: a reader that buffered it all would never return.
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulled++;
+      controller.enqueue(chunk);
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  let uploads = 0;
+  const upload = composioFileUpload(
+    { upload: async () => (uploads++, { name: '', mimetype: '', s3key: '' }) },
+    'youtube',
+    'YOUTUBE_MULTIPART_UPLOAD_VIDEO',
+    undefined,
+    async () => new Response(body),
+  );
+  const error = await upload('https://example.com/clip.mp4', {}).catch((e) => e);
+  expect(error.message).toBe('the file is larger than 100 MB');
+  expect(error.status).toBe(400);
+  expect(cancelled).toBe(true);
+  expect(pulled).toBeLessThanOrEqual(103);
+  expect(uploads).toBe(0);
+});
+
+test('more than 20 files in one call is a 400 that names the field, before any upload', async () => {
+  const calls: Array<[string, unknown]> = [];
+  const urls = Array.from({ length: 21 }, (_, i) => `https://example.com/${i}.pdf`);
+  const error = await uploadFileArgs({ attachment: urls }, schema, fakeUpload(calls)).catch((e) => e);
+  expect(error.message).toBe('file upload failed for attachment[20]: one call uploads at most 20 files');
+  expect(error.status).toBe(400);
+  expect(calls).toEqual([]);
+  const twenty = await uploadFileArgs({ attachment: urls.slice(0, 20) }, schema, fakeUpload(calls));
+  expect(twenty.attachment).toHaveLength(20);
+});
+
+test('the caller signal reaches the download and an abort stops it', async () => {
+  const controller = new AbortController();
+  let seen: AbortSignal | undefined;
+  const upload = composioFileUpload(
+    { upload: async () => ({ name: '', mimetype: '', s3key: '' }) },
+    'youtube',
+    'YOUTUBE_MULTIPART_UPLOAD_VIDEO',
+    controller.signal,
+    (_url, signal) => {
+      seen = signal;
+      return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason)));
+    },
+  );
+  const pending = upload('https://example.com/clip.mp4', {}).catch((e) => e);
+  controller.abort(new Error('deadline'));
+  const error = await pending;
+  expect(seen).toBe(controller.signal);
+  expect(error.message).toBe('the URL could not be read (deadline)');
 });

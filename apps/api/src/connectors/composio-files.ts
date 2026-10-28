@@ -31,6 +31,9 @@ type Schema = Record<string, unknown> & {
 /** Composio's own cap on a file read from a URL (`MAX_URL_UPLOAD_SIZE_BYTES`). */
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
+/** Most files one call uploads, the same as a call's staged attachments. */
+const MAX_FILES = 20;
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -49,8 +52,8 @@ const callerError = (message: string) => Object.assign(new Error(message), { sta
 
 /**
  * Return `args` with every URL in a `file_uploadable` field replaced by the
- * uploaded file's reference. Throws `file upload failed for <field>: …`,
- * carrying the uploader's `status` when it has one.
+ * uploaded file's reference, one file at a time. Throws
+ * `file upload failed for <field>: …`, carrying the uploader's `status`.
  */
 export async function uploadFileArgs(
   args: Record<string, unknown>,
@@ -58,6 +61,13 @@ export async function uploadFileArgs(
   upload: FileUpload,
 ): Promise<Record<string, unknown>> {
   if (!schema) return args;
+  // A dry run counts the files first, so a call over the cap uploads nothing.
+  let files = 0;
+  await walk(args, schema as Schema, '', async () => {
+    if (++files > MAX_FILES) throw callerError(`one call uploads at most ${MAX_FILES} files`);
+    return { name: '', mimetype: '', s3key: '' };
+  });
+  if (files === 0) return args;
   return (await walk(args, schema as Schema, '', upload)) as Record<string, unknown>;
 }
 
@@ -90,7 +100,9 @@ async function walk(value: unknown, schema: Schema | undefined, field: string, u
     }
   }
   if (Array.isArray(value) && schema.items) {
-    return Promise.all(value.map((item, i) => walk(item, schema.items, `${field}[${i}]`, upload)));
+    const out: unknown[] = [];
+    for (const [i, item] of value.entries()) out.push(await walk(item, schema.items, `${field}[${i}]`, upload));
+    return out;
   }
   if (isObject(value) && schema.properties) {
     const out: Record<string, unknown> = {};
@@ -108,28 +120,58 @@ export interface ComposioFilesLike {
 }
 
 /**
+ * Read the body, refusing as soon as it passes `MAX_FILE_BYTES`: a missing or
+ * false `Content-Length` never gets the whole body buffered first.
+ */
+async function readCapped(res: Response, tooLarge: Error): Promise<Uint8Array[]> {
+  const chunks: Uint8Array[] = [];
+  if (!res.body) return chunks;
+  const reader = res.body.getReader();
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return chunks;
+    total += value.byteLength;
+    if (total > MAX_FILE_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge;
+    }
+    chunks.push(value);
+  }
+}
+
+/**
  * Read `url` through the egress guard (public hosts only, every redirect
- * re-checked) and upload it to Composio for this tool.
- * ponytail: the file is held in memory (≤ 100 MB); stream it if large files become common.
+ * re-checked) and upload it to Composio for this tool. `signal` (the call's
+ * deadline) stops the download.
+ * ponytail: the file is held in memory (≤ 100 MB); stream it to Composio if large files become common.
  */
 export function composioFileUpload(
   files: ComposioFilesLike,
   toolkit: string,
   toolSlug: string,
-  fetchImpl: (url: string) => Promise<Response> = (url) => safeEgressFetch(url, { allowHttp: true }),
+  signal?: AbortSignal,
+  fetchImpl: (url: string, signal?: AbortSignal) => Promise<Response> = (url, signal) =>
+    safeEgressFetch(url, { allowHttp: true, signal }),
 ): FileUpload {
+  const unreadable = (error: unknown) =>
+    callerError(`the URL could not be read (${error instanceof Error ? error.message : String(error)})`);
   return async (url, hint) => {
-    const res = await fetchImpl(url).catch((error: unknown) => {
-      throw callerError(`the URL could not be read (${error instanceof Error ? error.message : String(error)})`);
+    const res = await fetchImpl(url, signal).catch((error: unknown) => {
+      throw unreadable(error);
     });
     if (!res.ok) throw callerError(`the URL answered HTTP ${res.status}`);
     const tooLarge = callerError('the file is larger than 100 MB');
-    if (Number(res.headers.get('content-length') ?? 0) > MAX_FILE_BYTES) throw tooLarge;
-    const bytes = await res.arrayBuffer();
-    if (bytes.byteLength > MAX_FILE_BYTES) throw tooLarge;
+    if (Number(res.headers.get('content-length') ?? 0) > MAX_FILE_BYTES) {
+      await res.body?.cancel().catch(() => {});
+      throw tooLarge;
+    }
+    const bytes = await readCapped(res, tooLarge).catch((error: unknown) => {
+      throw error === tooLarge ? error : unreadable(error);
+    });
     const name = hint.name ?? (new URL(url).pathname.split('/').pop() || 'file');
     const type =
       hint.mimetype ?? (res.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream');
-    return files.upload({ file: new File([bytes], name, { type }), toolSlug, toolkitSlug: toolkit });
+    return files.upload({ file: new File(bytes as BlobPart[], name, { type }), toolSlug, toolkitSlug: toolkit });
   };
 }

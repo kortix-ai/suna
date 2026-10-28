@@ -951,6 +951,8 @@ test('gateway executes Composio with selected-row metadata and never exposes a s
       args: { to: 'a@example.com' },
       connectedAccountId: 'connected-account-1',
       inputSchema: null,
+      // The call's deadline, so it can stop a file download.
+      signal: expect.any(AbortSignal),
     },
   });
   expect(JSON.stringify(executions)).not.toContain('COMPOSIO_API_KEY');

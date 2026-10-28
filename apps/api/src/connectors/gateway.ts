@@ -348,6 +348,7 @@ export interface GatewayDeps {
     args: Record<string, unknown>;
     connectedAccountId: string | null;
     inputSchema?: Record<string, unknown> | null;
+    signal?: AbortSignal;
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
@@ -1243,7 +1244,7 @@ async function runConnectorAction(
         runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs),
       );
     } else if (connector.provider === 'composio') {
-      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs, action.inputSchema));
+      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs, action.inputSchema, signal));
     } else {
       let providerArgs =
         connector.provider === 'channel'
@@ -1546,6 +1547,7 @@ export async function runComposioAction(
   b: ActionBinding,
   executionArgs: Record<string, unknown>,
   inputSchema?: Record<string, unknown> | null,
+  signal?: AbortSignal,
 ): Promise<ExecResult> {
   if (b.kind !== 'composio') {
     throw new Error(`composio connector has unexpected binding kind "${b.kind}"`);
@@ -1570,6 +1572,7 @@ export async function runComposioAction(
     args: executionArgs,
     connectedAccountId,
     inputSchema,
+    ...(signal ? { signal } : {}),
   });
 }
 
