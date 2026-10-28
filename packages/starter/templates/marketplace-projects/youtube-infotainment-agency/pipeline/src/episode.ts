@@ -331,9 +331,13 @@ export function requestGate(state: EpisodeState, gate: Gate, reviewId?: string) 
   log(state, `gate ${gate} requested (${g.mode})`);
 }
 
+/** A human gate is decided only by `yt gate sync`, from the Kortix review item it was requested with. */
 export function decideGate(state: EpisodeState, gate: Gate, approve: boolean, by: string, notes?: string) {
   const g = state.gates[gate];
   if (g.mode === "human" && by === "critic") throw new Error(`gate ${gate} needs a human decision`);
+  if (g.mode === "human" && (g.status !== "requested" || !g.review_id)) {
+    throw new Error(`gate ${gate} is ${g.status}${g.review_id ? "" : " with no review item"}; a person decides it in the Kortix review inbox (\`yt gate request --submit\`, then \`yt gate sync\`)`);
+  }
   g.status = approve ? "approved" : "rejected";
   g.by = by;
   g.at = now();

@@ -3,12 +3,18 @@ import { brollBudget } from "../src/broll";
 import { channel, setChannel } from "../src/config";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { completeStage, decideGate, newEpisode, nextAction, reopen, requestGate, startStage, failStage, stageTimings, STAGES, STAGE_SPECS, type EpisodeState, type Stage } from "../src/episode";
+import { completeStage, decideGate, newEpisode, nextAction, reopen, requestGate, startStage, failStage, stageTimings, STAGES, STAGE_SPECS, type EpisodeState, type Gate, type Stage } from "../src/episode";
 import { ep } from "../src/lib/paths";
 import { Storyboard } from "../src/schemas";
 import { fixture, tempEpisode } from "./helpers";
 
 beforeEach(() => tempEpisode());
+
+/** What `yt gate sync` does once a person approved the gate's Kortix review item. */
+function approveByPerson(st: EpisodeState, gate: Gate) {
+  requestGate(st, gate, `r-${gate}`);
+  decideGate(st, gate, true, "reviewer");
+}
 
 describe("episode state machine", () => {
   test("starts at topic", () => {
@@ -21,15 +27,25 @@ describe("episode state machine", () => {
     expect(nextAction(st)).toMatchObject({ action: "await_gate", gate: "topic", mode: "human" });
     expect(() => startStage(st, "research")).toThrow(/gate topic/);
     expect(() => decideGate(st, "topic", true, "critic")).toThrow(/human/);
-    decideGate(st, "topic", true, "reviewer");
+    approveByPerson(st, "topic");
     expect(nextAction(st)).toMatchObject({ action: "run_stage", stage: "research" });
+  });
+  test("a human gate is decided only from the Kortix review item it was requested with", () => {
+    const st = newEpisode("_smoke", "t");
+    startStage(st, "topic");
+    completeStage(st, "topic");
+    expect(() => decideGate(st, "topic", true, "reviewer")).toThrow(/review inbox/);
+    requestGate(st, "topic");
+    expect(() => decideGate(st, "topic", true, "reviewer")).toThrow(/review inbox/);
+    requestGate(st, "topic", "r-topic");
+    decideGate(st, "topic", true, "reviewer");
+    expect(st.gates.topic).toMatchObject({ status: "approved", by: "reviewer", review_id: "r-topic" });
   });
   test("an approved gate can't be re-requested", () => {
     const st = newEpisode("_smoke", "t");
     startStage(st, "topic");
     completeStage(st, "topic");
-    requestGate(st, "topic");
-    decideGate(st, "topic", true, "reviewer");
+    approveByPerson(st, "topic");
     expect(() => requestGate(st, "topic")).toThrow(/already approved/);
   });
   test("cannot skip ahead", () => {
@@ -40,7 +56,7 @@ describe("episode state machine", () => {
     const st = newEpisode("_smoke", "t");
     startStage(st, "topic");
     completeStage(st, "topic");
-    decideGate(st, "topic", true, "reviewer");
+    approveByPerson(st, "topic");
     startStage(st, "research");
     process.env.YT_EPISODES_DIR = "/nonexistent";
     expect(() => completeStage(st, "research")).toThrow(/missing outputs/);
@@ -54,6 +70,7 @@ describe("episode state machine", () => {
     const st = newEpisode("_smoke", "t");
     startStage(st, "topic");
     completeStage(st, "topic");
+    requestGate(st, "topic", "r-topic");
     decideGate(st, "topic", false, "reviewer", "too generic");
     expect(nextAction(st)).toMatchObject({ action: "blocked" });
     reopen(st, "topic", "too generic");
@@ -118,7 +135,7 @@ describe("stage graph (parallel stages)", () => {
     runUntil(st, "publish");
     expect(nextAction(st)).toMatchObject({ action: "await_gate", gate: "final" });
     expect(() => startStage(st, "publish")).toThrow(/gate final/);
-    decideGate(st, "final", true, "reviewer");
+    approveByPerson(st, "final");
     expect(nextAction(st)).toMatchObject({ action: "run_stage", stage: "publish" });
   });
 

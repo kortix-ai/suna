@@ -9,7 +9,7 @@ import { applyFactCheck, primaryShare } from "./claims";
 import { channel } from "./config";
 import { stageVerdict } from "./critic";
 import {
-  completeStage, decideGate, failStage, loadEpisode, newEpisode, nextAction, reopen, saveEpisode, stageTimings, startStage,
+  completeStage, failStage, loadEpisode, newEpisode, nextAction, reopen, saveEpisode, stageTimings, startStage,
   STAGES, totalCost, GATES, type Gate, type Stage,
 } from "./episode";
 import * as gate from "./gate";
@@ -53,8 +53,7 @@ Gates (human review via the Kortix review inbox)
   yt review verdict <slug> <stage>            pass/fail by the pipeline's rule: no auto-fail, blocker or major
                                               (scenes: combines qa/scenes-<scene>-review.json; failing lists scenes)
   yt gate request <slug> <gate> [--submit]    write qa/gate-<gate>.md; --submit sends it to \`kortix review\`
-  yt gate sync <slug>                         pull verdicts from the review inbox
-  yt gate approve|reject <slug> <gate> --by <who> [--note ..]
+  yt gate sync <slug>                         pull verdicts from the review inbox (the only way a human gate is decided)
   yt gate critic <slug> <gate>                decide a critic-mode gate from the stage review
 
 Research & script
@@ -210,12 +209,6 @@ async function main() {
       if (sub === "request") return out(await gate.request(slug, asGate(a2), { submit: !!flags.submit }));
       if (sub === "sync") return out(await gate.sync(slug));
       if (sub === "critic") return out(gate.decideFromReview(slug, asGate(a2)));
-      if (sub === "approve" || sub === "reject") {
-        const st = loadEpisode(slug);
-        decideGate(st, asGate(a2), sub === "approve", String(flags.by ?? "human"), flags.note as string | undefined);
-        saveEpisode(st);
-        return out(nextAction(st));
-      }
       throw new Error(`unknown: gate ${sub}`);
     }
 

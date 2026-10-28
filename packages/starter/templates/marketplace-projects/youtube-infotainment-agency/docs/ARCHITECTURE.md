@@ -57,7 +57,7 @@ episodes. Upload/schedule are hard-wired to require a human-approved final gate.
 | 1 | `Dockerfile.video` builds; Chrome works in the sandbox | `kortix sandboxes build --local video`, then a session runs `bin/yt smoke` | use platform image + `npx hyperframes browser ensure` at session start |
 | 2 | Render time on the 6-vCPU `video` sandbox for a 60 s scene | `bin/yt render` on a pilot act | raise template CPU; render acts in child sessions; HyperFrames Lambda/Cloud Run |
 | 3 | Episode branch persistence across sessions | showrunner pushes `episode/<slug>`, next tick restores it | keep one keyed session per episode; merge state to main per stage via CR |
-| 4 | `kortix review submit/show --json` shapes | `bin/yt gate request --submit`, then `bin/yt gate sync` | gate via `bin/yt gate approve/reject` from the person's chat |
+| 4 | `kortix review submit/show --json` shapes (verified Oct 2026) | `bin/yt gate request --submit`, then `bin/yt gate sync` | none: only a person can approve a review item (`project.review.act`), and upload re-reads it |
 | 5 | ElevenLabs v3/v4 `with-timestamps` alignment (verified on v4, Oct 2026) | `bin/yt voice` on the pilot | alignment fallback: `hyperframes transcribe` (whisper) |
 | 6 | ElevenLabs Music endpoint/params (`/v1/music`) | `bin/yt sound` | stock/licensed music file dropped into `media/music/` |
 | 7 | YouTube private upload + captions + `containsSyntheticMedia` | `bin/yt youtube upload` on the pilot | upload manually; keep metadata flow |

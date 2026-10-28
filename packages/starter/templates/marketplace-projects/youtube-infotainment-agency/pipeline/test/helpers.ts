@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync } from "node:fs";
+import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setChannel } from "../src/config";
@@ -17,4 +17,15 @@ export function tempEpisode(slug = "_smoke") {
   setChannel(undefined);
   cpSync(FIXTURE, join(tmp, "episodes", slug), { recursive: true });
   return tmp;
+}
+
+/**
+ * Put a fake `kortix` first on PATH: `kortix review show <id> --json` prints `item`; any other call
+ * exits 1. Restore `process.env.PATH` after the test.
+ */
+export function fakeKortixReview(id: string, item: object) {
+  const bin = mkdtempSync(join(tmpdir(), "yt-kortix-"));
+  writeFileSync(join(bin, "item.json"), JSON.stringify(item));
+  writeFileSync(join(bin, "kortix"), `#!/bin/sh\n[ "$*" = "review show ${id} --json" ] && exec cat "${join(bin, "item.json")}"\nexit 1\n`, { mode: 0o755 });
+  process.env.PATH = `${bin}:${process.env.PATH}`;
 }

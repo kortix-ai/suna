@@ -55,7 +55,9 @@ bin/yt episode next <slug> --json       # → run_stage (+ also: […]) | await_
 - **Casting is part of the voice stage**: the sound-editor casts each episode's narrator (`bin/yt cast library` → `bin/yt cast adopt`) before narrating; no human gate. On a re-voice, say whether to keep the cast (the default) or re-cast.
 - **await_gate** → if the gate status is `closed`, run `bin/yt gate request <slug> <gate> --submit`
   (it refuses until the critic's review of the gate's stage passes: run the critic loop first)
-  and tell the human in one line what to review. If `requested`, do nothing — it's theirs.
+  and tell the human in one line what to review. If `requested`, do nothing — it's theirs. A verdict
+  counts only when the person sets it on the review item; `bin/yt gate sync` applies it. If they
+  approve in chat, ask them to approve the item in the review inbox (upload re-checks the item).
 - **blocked** → do not retry blindly. Summarise the blocker for the human (`kortix review submit
   --kind decision`) with options, and move on to other episodes.
 - **done** → nothing to do.

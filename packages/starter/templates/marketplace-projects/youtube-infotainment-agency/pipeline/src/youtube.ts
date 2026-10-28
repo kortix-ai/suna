@@ -5,7 +5,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { channel } from "./config";
-import { loadEpisode } from "./episode";
+import { requireHumanApproval } from "./gate";
 import { load, readJson, writeJson } from "./lib/io";
 import { ep } from "./lib/paths";
 import { Package, Publish } from "./schemas";
@@ -52,17 +52,10 @@ function statusBody(pkg: Package, privacy: string, publishAt?: string) {
   };
 }
 
-/** Publishing is irreversible-ish: only after a person approved the final gate. */
-function requireFinalGate(slug: string) {
-  const g = loadEpisode(slug).gates.final;
-  if (g.status !== "approved" || g.by === "critic") {
-    throw new Error(`final gate is ${g.status}${g.by ? ` (by ${g.by})` : ""}; a human must approve it before upload/schedule`);
-  }
-}
-
 /** Resumable upload as PRIVATE, then captions + thumbnail. Idempotent: refuses if already uploaded. */
 export async function upload(slug: string) {
-  requireFinalGate(slug);
+  // Publishing is irreversible-ish: only after a person approved the final gate.
+  await requireHumanApproval(slug, "final");
   const p = ep(slug);
   if (existsSync(p.publish)) throw new Error(`${slug} already uploaded (${readJson<Publish>(p.publish).url}); use \`yt youtube update\``);
   const pkg = load(Package, p.pkg);
@@ -135,7 +128,7 @@ async function uploadCaptions(token: string, videoId: string, srtPath: string, l
 
 /** After the final gate: schedule (private + publishAt) or publish now. */
 export async function schedule(slug: string, opts: { at?: string; now?: boolean }) {
-  requireFinalGate(slug);
+  await requireHumanApproval(slug, "final");
   const p = ep(slug);
   const rec = load(Publish, p.publish);
   const pkg = load(Package, p.pkg);

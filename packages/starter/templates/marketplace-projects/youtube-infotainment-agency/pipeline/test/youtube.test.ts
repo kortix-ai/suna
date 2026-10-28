@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { whoami } from "../src/youtube";
+import { newEpisode, saveEpisode } from "../src/episode";
+import { schedule, upload, whoami } from "../src/youtube";
+import { fakeKortixReview, tempEpisode } from "./helpers";
 
 const realFetch = globalThis.fetch;
 const env = { ...process.env };
@@ -44,6 +46,20 @@ describe("yt youtube whoami", () => {
     delete process.env.YT_REFRESH_TOKEN;
     mockGoogle([]);
     await expect(whoami()).rejects.toThrow(/YT_REFRESH_TOKEN/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("yt youtube upload / schedule", () => {
+  test("refuse before any Google request unless a person approved the final gate's review item", async () => {
+    tempEpisode();
+    const st = newEpisode("_smoke", "t");
+    Object.assign(st.gates.final, { status: "approved", by: "showrunner", review_id: "r-final" });
+    saveEpisode(st);
+    fakeKortixReview("r-final", { status: "needs_you", detail: { episode: "_smoke", gate: "final" } });
+    mockGoogle([]);
+    await expect(upload("_smoke")).rejects.toThrow(/review inbox/);
+    await expect(schedule("_smoke", { now: true })).rejects.toThrow(/review inbox/);
     expect(calls).toHaveLength(0);
   });
 });

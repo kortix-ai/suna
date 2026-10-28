@@ -145,6 +145,23 @@ export async function sync(slug: string) {
   return out;
 }
 
+/**
+ * Throws unless a person approved `gate` in the Kortix review inbox. episode.yaml is a file any agent
+ * in the sandbox can write, but only a person can approve a review item (`project.review.act`), so
+ * the item itself is re-read: approved, and submitted for this episode and gate.
+ */
+export async function requireHumanApproval(slug: string, gate: Gate) {
+  const g = loadEpisode(slug).gates[gate];
+  const refuse = (why: string) =>
+    new Error(`gate ${gate} is not approved by a person (${why}); a person approves it in the Kortix review inbox, then run \`yt gate sync ${slug}\``);
+  if (g.status !== "approved") throw refuse(`episode.yaml: ${g.status}`);
+  if (!g.review_id) throw refuse("no review item");
+  const r = await readReview(g.review_id);
+  if (!r) throw refuse(`could not read review item ${g.review_id}`);
+  if (r.verdict !== "approved") throw refuse(`review item ${g.review_id} is ${r.verdict || "undecided"}`);
+  if (r.detail?.episode !== slug || r.detail?.gate !== gate) throw refuse(`review item ${g.review_id} is for ${r.detail?.episode} ${r.detail?.gate}`);
+}
+
 /** Critic-mode gates: decide from the stage's review file. */
 export function decideFromReview(slug: string, gate: Gate) {
   const state = loadEpisode(slug);

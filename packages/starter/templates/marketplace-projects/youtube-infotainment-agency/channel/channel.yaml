@@ -11,7 +11,7 @@ video:
   quality: standard # draft | standard | high  (draft for previews)
 
 voice:
-  provider: elevenlabs # elevenlabs | kokoro (local, free) | stub (offline tests)
+  provider: elevenlabs # elevenlabs | kokoro (local, free; needs Python kokoro-onnx, not in the video image) | stub (offline tests)
   wpm: 150 # used for estimates and the stub voice
   default_pause: 0.35 # seconds of air after each beat unless the beat sets pause_after
   elevenlabs: # delivery settings for every narrator; the voice and model are cast per episode (03-script/voice.json)

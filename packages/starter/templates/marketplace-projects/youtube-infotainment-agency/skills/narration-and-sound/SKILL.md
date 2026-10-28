@@ -25,7 +25,8 @@ A re-voice keeps the episode's cast unless the showrunner asks for a re-cast. Ne
 ## Voice stage — lock the timing
 ```bash
 bin/yt voice <slug>                       # provider from channel.yaml (elevenlabs); cached per beat
-bin/yt voice <slug> --provider kokoro     # free local draft voice
+bin/yt voice <slug> --provider kokoro     # free local draft voice; needs Python kokoro-onnx + soundfile,
+                                          # which the video image does not ship
 ```
 - Each beat is synthesised separately (ElevenLabs `with-timestamps` → word timings) and laid end to
   end with `pause_after` (default 0.35 s). Output: `media/narration/<beat>.wav` + `03-script/timing.json`.

@@ -1,17 +1,17 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { channel } from "../src/config";
 import { stageVerdict } from "../src/critic";
 import { newEpisode, saveEpisode } from "../src/episode";
-import { packet, request } from "../src/gate";
+import { packet, request, requireHumanApproval } from "../src/gate";
 import { writeJson } from "../src/lib/io";
 import { ep } from "../src/lib/paths";
 import { parseShowOutput, parseSubmitOutput } from "../src/lib/review";
 import { Review, reviewVerdict } from "../src/schemas";
-import { tempEpisode } from "./helpers";
+import { fakeKortixReview, tempEpisode } from "./helpers";
 
 describe("kortix review submit output", () => {
   test("reads review_item_id (what the CLI actually returns)", () => {
-    expect(parseSubmitOutput('{"review_item_id":"55db11a2-e259-4449-bc09-ab167ec8a230","status":"needs_you"}')).toBe("55db11a2-e259-4449-bc09-ab167ec8a230");
+    expect(parseSubmitOutput('{"review_item_id":"00000000-0000-4000-8000-000000000001","status":"needs_you"}')).toBe("00000000-0000-4000-8000-000000000001");
   });
   test("still accepts id / item.id / data.id shapes", () => {
     expect(parseSubmitOutput('{"id":"a"}')).toBe("a");
@@ -25,12 +25,16 @@ describe("kortix review submit output", () => {
 });
 
 describe("kortix review show output", () => {
-  test("reads the real item shape: status + feedback + acted_by", () => {
+  test("reads the real item shape: status + feedback + acted_by + detail", () => {
     const real = JSON.stringify({
-      review_item_id: "55db11a2", kind: "decision", status: "approved", agent: "sound-editor",
-      acted_by: "36fda367", acted_at: "2026-10-13T12:22:19.740Z", feedback: "2",
+      review_item_id: "r-1", kind: "decision", status: "approved", agent: "showrunner",
+      acted_by: "u-1", acted_at: "2026-10-13T12:22:19.740Z", feedback: "2",
+      detail: { episode: "001-x", gate: "final", packet: "/workspace/episodes/001-x/qa/gate-final.md" },
     });
-    expect(parseShowOutput(real)).toEqual({ verdict: "approved", note: "2", by: "36fda367" });
+    expect(parseShowOutput(real)).toEqual({
+      verdict: "approved", note: "2", by: "u-1",
+      detail: { episode: "001-x", gate: "final", packet: "/workspace/episodes/001-x/qa/gate-final.md" },
+    });
   });
   test("a pending item has no note and a needs_you status", () => {
     expect(parseShowOutput(JSON.stringify({ status: "needs_you" }))).toMatchObject({ verdict: "needs_you", note: undefined });
@@ -115,5 +119,51 @@ describe("gate requests", () => {
   test("the final gate needs the final-cut review (stage render)", async () => {
     writeJson(ep("_smoke").review("final"), review("render"));
     await expect(request("_smoke", "final", {})).rejects.toThrow(/render-review\.json.*final-review\.json/s);
+  });
+});
+
+// episode.yaml is a file any agent in the sandbox can write. Only a person can approve a Kortix review
+// item (`project.review.act`), so the irreversible steps re-read the item itself.
+describe("a person's approval is re-read from the Kortix review inbox", () => {
+  const PATH = process.env.PATH;
+  const item = (o: object = {}) => ({ review_item_id: "r-final", status: "approved", acted_by: "u-1", detail: { episode: "_smoke", gate: "final" }, ...o });
+  /** episode.yaml claims the final gate is approved, whatever the review item says. */
+  const approvedOnDisk = (review_id?: string) => {
+    const st = newEpisode("_smoke", "t");
+    Object.assign(st.gates.final, { status: "approved", by: "u-1", review_id });
+    saveEpisode(st);
+  };
+
+  beforeEach(() => tempEpisode());
+  afterEach(() => { process.env.PATH = PATH; });
+
+  test("an approved item for this episode and gate passes", async () => {
+    approvedOnDisk("r-final");
+    fakeKortixReview("r-final", item());
+    await expect(requireHumanApproval("_smoke", "final")).resolves.toBeUndefined();
+  });
+  test("an item still waiting for the person fails, whatever episode.yaml says", async () => {
+    approvedOnDisk("r-final");
+    fakeKortixReview("r-final", item({ status: "needs_you" }));
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/r-final is needs_you/);
+  });
+  test("an approved item for another episode or another gate fails", async () => {
+    approvedOnDisk("r-final");
+    fakeKortixReview("r-final", item({ detail: { episode: "002-other", gate: "final" } }));
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/for 002-other final/);
+    fakeKortixReview("r-final", item({ detail: { episode: "_smoke", gate: "script" } }));
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/for _smoke script/);
+  });
+  test("a gate with no review item, or one that can't be read, fails", async () => {
+    approvedOnDisk(undefined);
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/no review item/);
+    approvedOnDisk("r-final");
+    fakeKortixReview("r-other", item());
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/could not read review item r-final/);
+  });
+  test("a gate episode.yaml does not show as approved fails before any lookup", async () => {
+    saveEpisode(newEpisode("_smoke", "t"));
+    fakeKortixReview("r-final", item());
+    await expect(requireHumanApproval("_smoke", "final")).rejects.toThrow(/episode\.yaml: closed/);
   });
 });

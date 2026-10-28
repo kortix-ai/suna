@@ -8,6 +8,8 @@ export interface ReviewVerdict {
   verdict: string;
   note?: string;
   by: string;
+  /** What `yt gate request` submitted as `--detail`: `{ episode, gate, packet }`. */
+  detail?: Record<string, unknown>;
 }
 
 export async function submitReview(o: {
@@ -50,7 +52,7 @@ export async function readReview(id: string): Promise<ReviewVerdict | null> {
 
 /**
  * Parse `kortix review show --json`. Observed shape (2026-10): `status` (needs_you | approved |
- * rejected | …), the person's note in `feedback`, the actor in `acted_by`.
+ * rejected | …), the person's note in `feedback`, the actor in `acted_by`, the submitted `detail`.
  */
 export function parseShowOutput(stdout: string): ReviewVerdict {
   const j = JSON.parse(stdout);
@@ -59,5 +61,6 @@ export function parseShowOutput(stdout: string): ReviewVerdict {
     verdict: String(item.status ?? item.verdict ?? item.decision ?? "").toLowerCase(),
     note: item.feedback ?? item.message ?? item.note ?? undefined,
     by: String(item.acted_by ?? item.decided_by ?? "human"),
+    detail: item.detail ?? undefined,
   };
 }

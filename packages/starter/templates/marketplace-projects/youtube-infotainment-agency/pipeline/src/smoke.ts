@@ -6,7 +6,7 @@
 import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { completeStage, decideGate, loadEpisode, newEpisode, nextAction, saveEpisode, startStage, type Stage } from "./episode";
+import { completeStage, decideGate, loadEpisode, newEpisode, nextAction, requestGate, saveEpisode, startStage, type Stage } from "./episode";
 import { applyFactCheck } from "./claims";
 import { setChannel } from "./config";
 import { load, writeJson, writeText } from "./lib/io";
@@ -52,9 +52,13 @@ export async function smoke(opts: { keep?: boolean } = {}) {
     saveEpisode(s2);
     step(`✔ ${stage}`);
   };
+  // Offline, so no Kortix review item: stand in for one, as `yt gate sync` would apply it.
   const approve = (gate: "topic" | "script" | "storyboard" | "final") => {
     const s = loadEpisode(slug);
-    if (s.gates[gate].mode !== "auto") decideGate(s, gate, true, "smoke-test");
+    if (s.gates[gate].mode !== "auto") {
+      requestGate(s, gate, "smoke-test");
+      decideGate(s, gate, true, "smoke-test");
+    }
     saveEpisode(s);
   };
 

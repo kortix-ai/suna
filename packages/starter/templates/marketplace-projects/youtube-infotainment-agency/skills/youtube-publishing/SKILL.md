@@ -6,7 +6,8 @@ description: Upload an approved episode to YouTube privately with captions, thum
 # YouTube publishing (stage 8)
 
 ## Preconditions (check, don't assume)
-- `bin/yt episode status <slug>` shows the **final gate approved** by a human.
+- `bin/yt episode status <slug>` shows the **final gate approved** by a human. `yt youtube upload`
+  and `schedule` also re-read the gate's Kortix review item and refuse unless a person approved it.
 - `qa/final-qa.json` ok; `08-publish/description.txt` and `media/thumbnail.png` exist.
 - Credentials: `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, `YT_REFRESH_TOKEN` in the environment, and
   `bin/yt youtube whoami` names the intended channel. Missing? Follow **Credentials** below.

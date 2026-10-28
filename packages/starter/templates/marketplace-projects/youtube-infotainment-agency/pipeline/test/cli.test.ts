@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { newEpisode, saveEpisode } from "../src/episode";
+import { loadEpisode, newEpisode, requestGate, saveEpisode } from "../src/episode";
 import { PIPELINE } from "../src/lib/paths";
 import { tempEpisode } from "./helpers";
 
@@ -26,5 +26,16 @@ describe("yt CLI", () => {
     const r = yt(["episode", "timing", "_timing"]);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout)).toMatchObject({ stages: [{ stage: "topic", attempts: 1, minutes: 3 }], wall_minutes: 3 });
+  });
+
+  test("the CLI cannot decide a human gate; only `yt gate sync` from the review inbox can", () => {
+    tempEpisode("_gate");
+    const st = newEpisode("_gate", "t");
+    requestGate(st, "topic", "r-topic");
+    saveEpisode(st);
+    const r = yt(["gate", "approve", "_gate", "topic", "--by", "reviewer"]);
+    expect(r.code).not.toBe(0);
+    expect(loadEpisode("_gate").gates.topic.status).toBe("requested");
+    expect(yt(["help"]).stdout).not.toContain("gate approve");
   });
 });

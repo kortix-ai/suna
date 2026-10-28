@@ -233,8 +233,9 @@ agents:
     workspace: { project_repository: true }
     # Refines prompts/skills/memory from session evidence; opens (never merges) a harness CR.
     # No `permission` rule, so every tool is allowed: it runs unattended on a cron, and an `ask`
-    # rule would have nobody to answer it.
-    kortix_permissions: all
+    # rule would have nobody to answer it. Its Kortix grants read sessions and git and push its own
+    # branch (`kortix cr open`); it cannot merge, decide review items or read secrets.
+    kortix_permissions: [project.read, project.session.read, project.gitops.read, project.gitops.push]
     skills: all
 
   session-reviewer:
@@ -247,9 +248,10 @@ agents:
     prompt_file: agents/session-reviewer.md
     subagents: all
     workspace: { project_repository: true }
-    # Read-only is its discipline (see its prompt), not a permission rule: a `deny`/`ask` rule would
-    # only block the read commands (cat, grep, kortix …) it needs, with no human present.
-    kortix_permissions: all
+    # Read-only: its Kortix grants only read sessions and git, so it cannot push or open a CR. No
+    # `deny`/`ask` rule: it would only block the read commands (cat, grep, kortix …) it needs, with
+    # no human present.
+    kortix_permissions: [project.read, project.session.read, project.gitops.read]
     skills: all
 
 # Triggers ship DISABLED: each fire boots a sandbox. Turn them on once secrets are set
