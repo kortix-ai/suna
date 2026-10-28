@@ -15,7 +15,9 @@ import { asc, like, sql } from 'drizzle-orm';
 import { installHttpErrors } from '../../http-errors';
 import { logger } from '../../lib/logger';
 import { renderMetrics } from '../../lib/metrics';
+import { runWithContext } from '../../lib/request-context';
 import { makeOpenApiApp } from '../../openapi';
+import { type AuditPrincipal, attachInboundAuditScope } from '../../shared/audit-scope';
 import { db } from '../../shared/db';
 import { type ChannelInbound, type InboundReply, safeEqual } from './inbound';
 import { channelWebhookRoutes } from './webhook-routes';
@@ -65,18 +67,39 @@ installHttpErrors(app);
 const GLOBAL_500 = { error: true, message: 'Internal server error', status: 500 };
 const errorLog = spyOn(logger, 'error');
 
-/** POST a raw body, signed with the fake's secret unless `signature` says otherwise. */
+/** The audit principal of the last `post()`. A request the route did not attribute leaves `{}`. */
+let principal: AuditPrincipal = {};
+/** A verified request is the fake channel acting on LIVE. */
+const FAKE_ACTOR: AuditPrincipal = {
+  projectId: LIVE,
+  actorUserId: null,
+  actorType: 'system',
+  authoritativeSource: 'integration',
+  authMethod: { kind: 'webhook_signature', provider: 'fake' },
+};
+
+/**
+ * POST a raw body, signed with the fake's secret unless `signature` says otherwise.
+ * The request runs in an open audit scope, as the server edge opens one, so the
+ * route's principal bind is visible in `principal`.
+ */
 function post(raw: string | ReadableStream, opts: { projectId?: string; signature?: string; headers?: Record<string, string> } = {}) {
-  return app.request(`/v1/webhooks/fake/${opts.projectId ?? LIVE}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-fake-signature': opts.signature ?? (typeof raw === 'string' ? sign(raw) : ''),
-      ...opts.headers,
-    },
-    body: raw,
-    ...(typeof raw === 'string' ? {} : { duplex: 'half' }),
-  } as RequestInit);
+  const path = `/v1/webhooks/fake/${opts.projectId ?? LIVE}`;
+  return runWithContext('POST', path, async () => {
+    const scope = attachInboundAuditScope({ owner: 'edge', method: 'POST' });
+    const res = await app.request(path, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-fake-signature': opts.signature ?? (typeof raw === 'string' ? sign(raw) : ''),
+        ...opts.headers,
+      },
+      body: raw,
+      ...(typeof raw === 'string' ? {} : { duplex: 'half' }),
+    } as RequestInit);
+    principal = scope.principal;
+    return res;
+  });
 }
 
 /** The event ids stored for this run, by job_key, with the queue and max_attempts of each row. */
@@ -120,10 +143,11 @@ describe('channel webhook scaffold — migrated PostgreSQL', () => {
   test('a signature over the raw bytes verifies when the JSON body has irregular whitespace', async () => {
     const raw = '{ "events" :\n\t[ "spaced" ] ,  "pad":1 }';
     const res = await post(raw);
-    expect({ status: res.status, body: await res.json(), rows: await stored() }).toEqual({
+    expect({ status: res.status, body: await res.json(), rows: await stored(), principal }).toEqual({
       status: 200,
       body: { ok: true },
       rows: [row('spaced')],
+      principal: FAKE_ACTOR,
     });
   });
 
@@ -131,12 +155,13 @@ describe('channel webhook scaffold — migrated PostgreSQL', () => {
     ['no install', { projectId: UNKNOWN }, 404, { error: 'Not configured' }],
     ['a wrong signature', { signature: sign('another body') }, 401, { error: 'Invalid signature' }],
     ['an install that is gone', { projectId: GONE }, 200, { ok: true, ignored: true }],
-  ] as const)('verify answers %s: its reply goes out unchanged and nothing is stored', async (_name, opts, status, body) => {
+  ] as const)('verify answers %s: its reply goes out unchanged, nothing is stored and nobody is attributed', async (_name, opts, status, body) => {
     const res = await post(JSON.stringify({ events: ['refused'] }), opts);
-    expect({ status: res.status, body: await res.json(), rows: await stored() }).toEqual({
+    expect({ status: res.status, body: await res.json(), rows: await stored(), principal }).toEqual({
       status,
       body,
       rows: [row('spaced')],
+      principal: {},
     });
   });
 
@@ -144,16 +169,17 @@ describe('channel webhook scaffold — migrated PostgreSQL', () => {
     const res = await post(JSON.stringify({ events: ['slow'], reply: { status: 200, body: { type: 5 } } }));
     // Read before the body: the response itself must already prove the row.
     const rows = await stored();
-    expect({ status: res.status, body: await res.json(), rows }).toEqual({
+    expect({ status: res.status, body: await res.json(), rows, principal }).toEqual({
       status: 200,
       body: { type: 5 },
       rows: [row('slow'), row('spaced')],
+      principal: FAKE_ACTOR,
     });
   });
 
   test('a reply with a null body goes out as an empty 204', async () => {
     const res = await post(JSON.stringify({ reply: { status: 204, body: null } }));
-    expect({ status: res.status, body: await res.text() }).toEqual({ status: 204, body: '' });
+    expect({ status: res.status, body: await res.text(), principal }).toEqual({ status: 204, body: '', principal: FAKE_ACTOR });
   });
 
   const oversize = JSON.stringify({ events: ['big'], pad: 'x'.repeat(1024 * 1024) });
@@ -172,19 +198,24 @@ describe('channel webhook scaffold — migrated PostgreSQL', () => {
           { signature: sign(oversize) },
         ),
     ],
-  ] as const)('a body over 1 MiB %s gets 413 before verify runs', async (_name, send) => {
+  ] as const)('a body over 1 MiB %s gets 413 before verify runs, and nobody is attributed', async (_name, send) => {
     const res = await send();
-    expect({ status: res.status, body: await res.json(), verifyCalls, rows: await stored() }).toEqual({
+    expect({ status: res.status, body: await res.json(), verifyCalls, rows: await stored(), principal }).toEqual({
       status: 413,
       body: { error: 'Payload too large' },
       verifyCalls: 0,
       rows: [row('slow'), row('spaced')],
+      principal: {},
     });
   });
 
-  test('a verified body that is not JSON, sent as text/plain, gets 400', async () => {
+  test('a verified body that is not JSON, sent as text/plain, gets 400 and is attributed', async () => {
     const res = await post('{', { headers: { 'content-type': 'text/plain' } });
-    expect({ status: res.status, body: await res.json() }).toEqual({ status: 400, body: { error: 'Invalid JSON' } });
+    expect({ status: res.status, body: await res.json(), principal }).toEqual({
+      status: 400,
+      body: { error: 'Invalid JSON' },
+      principal: FAKE_ACTOR,
+    });
   });
 
   const twoEvents = JSON.stringify({ events: ['first', 'fail'], reply: { status: 200, body: { type: 5 } } });
@@ -196,11 +227,13 @@ describe('channel webhook scaffold — migrated PostgreSQL', () => {
       body: await res.json(),
       rows: await stored(),
       errorLines: errorLog.mock.calls.map(([line]) => line),
+      principal,
     }).toEqual({
       status: 500,
       body: GLOBAL_500,
       rows: [row('first'), row('slow'), row('spaced')],
       errorLines: [`POST /v1/webhooks/fake/${LIVE} -> 500 [DB ERROR P0001]`],
+      principal: FAKE_ACTOR,
     });
   });
 

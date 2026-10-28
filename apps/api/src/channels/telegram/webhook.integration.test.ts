@@ -15,7 +15,9 @@ import { accounts, jobQueue, projects } from '@kortix/db';
 import { asc, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { installHttpErrors } from '../../http-errors';
 import { logger } from '../../lib/logger';
+import { runWithContext } from '../../lib/request-context';
 import { makeOpenApiApp } from '../../openapi';
+import { type AuditPrincipal, attachInboundAuditScope } from '../../shared/audit-scope';
 import { db } from '../../shared/db';
 import { channelWebhookRoutes } from '../inbound/webhook-routes';
 import { telegramInbound } from './inbound';
@@ -69,6 +71,8 @@ interface Case {
   payload?: { updateId: number; value: Record<string, unknown> };
   /** The global handler's error line, where the case throws. */
   errorLine?: string;
+  /** The request's audit principal, where the case pins it: `{}` is nobody. */
+  principal?: AuditPrincipal;
 }
 
 const CASES: Case[] = [
@@ -122,6 +126,7 @@ const CASES: Case[] = [
     status: 401,
     response: { error: 'Invalid secret' },
     stored: [],
+    principal: {},
   },
   {
     name: "a body that is not JSON, sent as text/plain, gets the handler's 400",
@@ -142,13 +147,20 @@ const CASES: Case[] = [
     stored: [],
   },
   {
-    name: 'a message gets 200 after its row is stored',
+    name: 'a message gets 200 after its row is stored, attributed to Telegram',
     projectId: LIVE,
     headers: SIGNED,
     body: message(1001),
     status: 200,
     response: { ok: true },
     stored: [1001],
+    principal: {
+      projectId: LIVE,
+      actorUserId: null,
+      actorType: 'system',
+      authoritativeSource: 'integration',
+      authMethod: { kind: 'webhook_signature', provider: 'telegram' },
+    },
     payload: {
       updateId: 1001,
       value: {
@@ -299,7 +311,12 @@ afterAll(async () => {
 describe('Telegram webhook parity table — migrated PostgreSQL', () => {
   for (const c of CASES) {
     test(c.name, async () => {
-      const res = await app.request(`/v1/webhooks/telegram/${c.projectId}`, { method: 'POST', headers: c.headers, body: c.body });
+      // An open audit scope, as the server edge opens one, so the route's principal bind is visible.
+      const path = `/v1/webhooks/telegram/${c.projectId}`;
+      const { res, principal } = await runWithContext('POST', path, async () => {
+        const scope = attachInboundAuditScope({ owner: 'edge', method: 'POST' });
+        return { res: await app.request(path, { method: 'POST', headers: c.headers, body: c.body }), principal: scope.principal };
+      });
       const rows = await db
         .select({ queue: jobQueue.queue, jobKey: jobQueue.jobKey, maxAttempts: jobQueue.maxAttempts, payload: jobQueue.payload })
         .from(jobQueue)
@@ -316,6 +333,7 @@ describe('Telegram webhook parity table — migrated PostgreSQL', () => {
         rows: c.stored.map((id) => ['integration.events', `telegram:${BOT}:${id}`, 4]),
         errorLines: c.errorLine ? [c.errorLine] : [],
       });
+      if (c.principal) expect(principal).toEqual(c.principal);
       if (c.payload) {
         expect(rows.find((r) => r.jobKey === `telegram:${BOT}:${c.payload!.updateId}`)?.payload).toEqual(c.payload.value);
       }
