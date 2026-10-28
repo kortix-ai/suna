@@ -11,6 +11,7 @@ import { useSession } from './opencode';
 import { useSessionLogThread } from './use-session-log';
 import { qk } from './query-keys';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
+import { getSessionSyncController, resetSessionSyncControllersForSession } from '../browser/session-sync/session-sync-registry';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -227,6 +228,44 @@ describe('useSession with its chat engine: the session log owns the history once
     await flush();
     expect(seen.result!.savedTranscript).toBe('loading');
     expect(seen.result!.conversationEmpty).toBe(false);
+  });
+
+  test('GET …/log fails and the runtime holds older messages: hasOlder and loadOlder page the runtime', async () => {
+    failedLog = 'server-error';
+    const ROOT = 'ses_runtime_root_older';
+    const before: Array<string | undefined> = [];
+    const row = (id: string) => ({ info: { id, sessionID: ROOT, role: 'user', time: { created: 1 } }, parts: [{ id: `${id}-p`, sessionID: ROOT, messageID: id, type: 'text', text: id }] });
+    // The runtime's newest page leaves a cursor: an older page exists there.
+    const client = {
+      session: {
+        messages: async (request: { sessionID: string; limit: number; before?: string }) => {
+          before.push(request.before);
+          return request.before
+            ? { data: [row('msg_older')], response: new Response(null) }
+            : { data: [row('msg_newest')], response: new Response(null, { headers: { 'x-next-cursor': 'cursor-1' } }) };
+        },
+      },
+    };
+    const controller = getSessionSyncController(ROOT, client as never, 'none');
+    try {
+      await controller.start();
+      expect(controller.getSnapshot().hasOlder).toBe(true);
+      const seen: { result: Result | null } = { result: null };
+      function Host() {
+        seen.result = useSession(PROJECT_ID, SESSION_ID, { replayStartStash: false, initialRuntimeSessionId: ROOT });
+        return null;
+      }
+      act(() => {
+        renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+      });
+      await flush();
+      expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+      expect(seen.result!.hasOlder).toBe(true);
+      await act(async () => { await seen.result!.loadOlder(); });
+      expect(before).toEqual([undefined, 'cursor-1']);
+    } finally {
+      resetSessionSyncControllersForSession(ROOT);
+    }
   });
 
   test('a cold open (the project features not loaded) reads GET …/log first and sends no /transcript', async () => {
