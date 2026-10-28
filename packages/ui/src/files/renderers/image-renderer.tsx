@@ -8,6 +8,7 @@ import { ButtonGroup, ButtonGroupSeparator } from '../../primitives/button-group
 import Hint from '../../primitives/hint';
 import Loading from '../../primitives/loading';
 import { IconInfo } from '../../primitives/kortix-icons';
+import { DisclosureTrigger } from '../../primitives/disclosure';
 import { usePreviewFit } from '../viewer/preview-fit';
 import { cn } from '../../lib/utils';
 import {
@@ -47,8 +48,25 @@ interface ImageRendererProps {
   /**
    * The image's details toggle (ⓘ), last on the shelf: shown only when the
    * host has details for this image (a generated image's prompt and model).
+   * It is a `DisclosureTrigger`: the host renders this renderer inside the
+   * `Disclosure` whose content holds the details.
    */
-  info?: { pressed: boolean; onToggle: () => void; label: string };
+  info?: { pressed: boolean; label: string };
+}
+
+/**
+ * The details toggle: a `DisclosureTrigger` (toggle, Enter/Space,
+ * `aria-expanded`) around the shelf's button. Props and ref pass through, so
+ * the tooltip trigger around it still works.
+ */
+function InfoTrigger({ pressed, label, ...props }: { pressed: boolean; label: string } & React.ComponentProps<typeof Button>) {
+  return (
+    <DisclosureTrigger>
+      <Button {...props} variant="secondary" size="icon-base" aria-label={label} aria-pressed={pressed} data-image-info="">
+        <IconInfo className="size-4" weight={pressed ? 'fill' : 'regular'} />
+      </Button>
+    </DisclosureTrigger>
+  );
 }
 
 const MAX_RETRIES = 3;
@@ -375,16 +393,7 @@ export function ImageRenderer({
             </Hint>
             {info ? (
               <Hint label={info.label} side="bottom">
-                <Button
-                  variant="secondary"
-                  size="icon-base"
-                  onClick={info.onToggle}
-                  aria-label={info.label}
-                  aria-pressed={info.pressed}
-                  data-image-info=""
-                >
-                  <IconInfo className="size-4" weight={info.pressed ? 'fill' : 'regular'} />
-                </Button>
+                <InfoTrigger pressed={info.pressed} label={info.label} />
               </Hint>
             ) : null}
             {/* Backdrop swatches join the SAME group behind a separator rather

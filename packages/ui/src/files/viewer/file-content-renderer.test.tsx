@@ -4,7 +4,8 @@ import { act, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FileSourceProvider, type FileSource } from './file-source';
-import { FileContentRenderer } from './file-content-renderer';
+import { captionMotion, FileContentRenderer } from './file-content-renderer';
+import { domMax, LazyMotion } from 'motion/react';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 
 const source: FileSource = {
@@ -109,16 +110,41 @@ describe('the full-screen view shows the caption section only when caption data 
         // The toggle sits right after rotate, off, named in the viewer's language.
         expect(html).toMatch(/aria-label="Rotate[^"]*"[\s\S]*?<button[^>]*aria-label="Image details" aria-pressed="false"[^>]*data-image-info=""/);
       }
-      await inDom(<FileSourceProvider value={imageSource}><FileContentRenderer filePath="/workspace/output/images/fox.png" showCaption /></FileSourceProvider>, async (container, act) => {
+      // Inside the app's LazyMotion boundary (`UiProvider`), so the disclosure animates as it does live.
+      const viewer = (
+        <LazyMotion features={domMax}>
+          <FileSourceProvider value={imageSource}><FileContentRenderer filePath="/workspace/output/images/fox.png" showCaption /></FileSourceProvider>
+        </LazyMotion>
+      );
+      await inDom(viewer, async (container, act) => {
         const info = () => container.querySelector('[data-image-info]') as HTMLButtonElement;
+        // The button carries the tooltip's own data-state: the disclosure root is the nearest div above it with one.
+        const disclosure = () => info().parentElement!.closest('div[data-state]') as HTMLElement;
         expect(container.querySelector('[data-file-caption]')).toBeNull();
+        expect(disclosure().getAttribute('data-state')).toBe('closed');
+        expect(info().getAttribute('aria-expanded')).toBe('false');
         await act(async () => info().click());
         expect(info().getAttribute('aria-pressed')).toBe('true');
-        expect(container.querySelector('[data-file-caption]')?.textContent).toContain('A fox in a shuttle');
-        expect(container.querySelector('[data-file-caption]')?.textContent).toContain('codex/gpt-image-2');
-        await act(async () => info().click());
+        expect(info().getAttribute('aria-expanded')).toBe('true');
+        expect(disclosure().getAttribute('data-state')).toBe('open');
+        // The caption region is the disclosure content the trigger controls.
+        const controls = info().getAttribute('aria-controls');
+        const region = [...container.querySelectorAll('[id]')].find((node) => node.id === controls);
+        expect(region?.querySelector('[data-file-caption]')?.textContent).toContain('A fox in a shuttle');
+        expect(region?.textContent).toContain('codex/gpt-image-2');
+        // Keyboard: Enter on the trigger closes it again. The content then plays its exit
+        // (`AnimatePresence`, the primitive's own contract) and the trigger stops pointing at it.
+        await act(async () => {
+          info().dispatchEvent(new (window as unknown as { KeyboardEvent: typeof KeyboardEvent }).KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        });
         expect(info().getAttribute('aria-pressed')).toBe('false');
-        expect(container.querySelector('[data-file-caption]')).toBeNull();
+        expect(info().getAttribute('aria-expanded')).toBe('false');
+        expect(info().getAttribute('aria-controls')).toBeNull();
+        expect(disclosure().getAttribute('data-state')).toBe('closed');
+        // Open again by click: the same content returns.
+        await act(async () => info().click());
+        expect(disclosure().getAttribute('data-state')).toBe('open');
+        expect(container.querySelectorAll('[data-file-caption]')).toHaveLength(1);
       });
       // Another file, opened in the same viewer, carries no caption.
       expect(fullScreen('/workspace/output/images/other.png')).not.toContain('data-file-caption');
@@ -126,6 +152,15 @@ describe('the full-screen view shows the caption section only when caption data 
     } finally {
       reset();
     }
+  });
+
+  test('the caption opens over duration-moderate and closes faster, ease-out; reduced motion skips the transition', () => {
+    const moving = captionMotion(false);
+    expect(moving.expanded).toEqual({ height: 'auto', opacity: 1, transition: { duration: 0.2, ease: [0, 0, 0.2, 1] } });
+    expect(moving.collapsed).toEqual({ height: 0, opacity: 0, transition: { duration: 0.15, ease: [0, 0, 0.2, 1] } });
+    const still = captionMotion(true);
+    expect(still.expanded).toMatchObject({ height: 'auto', opacity: 1, transition: { duration: 0 } });
+    expect(still.collapsed).toMatchObject({ height: 0, opacity: 0, transition: { duration: 0 } });
   });
 
   test('the info button is absent without caption data', () => {

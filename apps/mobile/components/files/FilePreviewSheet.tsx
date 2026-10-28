@@ -41,9 +41,12 @@ import { haptics } from '@/lib/haptics';
 import { DownloadSimpleIcon, InfoIcon, PlusIcon } from '@/lib/icons';
 import { useTranslation } from 'react-i18next';
 import { previewsInline, sessionFileKindLabel, type SessionFileKind } from '@/lib/session/session-files';
-import { THEME } from '@/lib/utils/theme';
+import { MOTION, THEME } from '@/lib/utils/theme';
 import type { FileCaption } from '@/stores/tool-file-preview-store';
 import { FilePreviewCaption } from '@/components/files/file-preview-caption';
+import { DisclosureContent } from '@/components/session/chain-of-thought';
+import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-motion';
+import { Easing } from 'react-native-reanimated';
 
 /** What the sheet needs of a file. A tool path knows only its name and path. */
 export interface PreviewFile {
@@ -58,6 +61,11 @@ export interface PreviewFile {
 const SNAP_POINTS = ['100%'];
 /** `Button` default height: the pinned bar's row. */
 const BAR_CONTROL_HEIGHT = 40;
+/** kortix-brand motion: a disclosure enters at `moderate` and leaves faster at `normal`, ease-out. */
+const CAPTION_TIMING = {
+  open: { duration: MOTION.duration.moderate, easing: Easing.bezier(...MOTION.easing.out) },
+  close: { duration: MOTION.duration.normal, easing: Easing.bezier(...MOTION.easing.out) },
+};
 
 /** Sandbox paths are absolute; a relative one is workspace-relative. */
 function toSandboxFile(file: PreviewFile): SandboxFile {
@@ -155,8 +163,10 @@ export function FilePreviewBody({
   // toggle opens it, as on web; open, it sits above the bar and the preview ends at it.
   const { t } = useTranslation();
   const [captionOpen, setCaptionOpen] = React.useState(false);
-  const showCaption = !!file.caption && captionOpen;
-  const contentInset = showCaption ? 0 : barInset;
+  const reduceMotion = useReduceMotion();
+  // With a caption, the preview always ends at the caption band above the bar,
+  // so only the caption's own height moves when it opens or closes.
+  const contentInset = file.caption ? 0 : barInset;
   const toast = useToast();
   const sandboxFile = React.useMemo(() => toSandboxFile(file), [file]);
   // A PDF, an Office file, an archive or media is not rendered here and nothing
@@ -262,9 +272,16 @@ export function FilePreviewBody({
           />
         )}
       </FilePreviewBottomInsetContext.Provider>
-      {showCaption && file.caption ? (
+      {file.caption ? (
+        // The web viewer's caption disclosure: height + opacity, 200ms in and
+        // 150ms out on the brand ease-out; none under Reduce Motion. The
+        // preview above is `flex-1`, so it gives the caption its room as it grows.
         <View style={{ paddingBottom: barInset }}>
-          <FilePreviewCaption caption={file.caption} />
+          <DisclosureContent open={captionOpen} timing={CAPTION_TIMING} still={reduceMotion}>
+            <View testID="file-caption-section">
+              <FilePreviewCaption caption={file.caption} />
+            </View>
+          </DisclosureContent>
         </View>
       ) : null}
 

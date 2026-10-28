@@ -39,14 +39,32 @@ mock.module('@/lib/utils/theme', () => ({
     dark: { background: 'bg', foreground: 'fg', card: 'card', border: 'border', destructive: 'red', muted: 'muted', mutedForeground: 'mfg', accent: { blue: 'blue' } },
   },
   withAlpha: (color: string) => color,
+  MOTION: { duration: { fast: 100, normal: 150, moderate: 200, slow: 300, slower: 500 }, easing: { default: [0.2, 0, 0, 1], in: [0.4, 0, 1, 1], out: [0, 0, 0.2, 1], inOut: [0.4, 0, 0.2, 1] } },
 }));
+/** Every Reanimated timing the caption disclosure started: its target and duration. A timing completes at once. */
+const timings: { to: number; duration: number }[] = [];
+mock.module('react-native-reanimated', () => ({
+  default: { View: host('animated') },
+  Easing: { bezier: (...curve: number[]) => curve, out: () => 0, cubic: 0 },
+  runOnJS: (fn: () => void) => fn,
+  // One object per mount, as Reanimated keeps it.
+  useSharedValue: (value: unknown) => React.useRef({ value }).current,
+  useAnimatedStyle: () => ({}),
+  withTiming: (to: number, config: { duration: number }, done?: (finished: boolean) => void) => {
+    timings.push({ to, duration: config.duration });
+    done?.(true);
+    return to;
+  },
+}));
+let reduceMotion = false;
+mock.module('@/components/session/dot-matrix/use-reduce-motion', () => ({ useReduceMotion: () => reduceMotion }));
 mock.module('@/lib/utils/mono-font', () => ({ MONO_FONT_FAMILY: 'mono' }));
 mock.module('@/lib/logger', () => ({ log: { error: none, warn: none } }));
 mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
 mock.module('@/lib/utils/html-embed', () => ({ HTML_SANITIZER_SCRIPT: '', decidePreviewNavigation: () => 'allow', escapeForInlineScript: (s: string) => s }));
 mock.module('@/lib/icons', () =>
   Object.fromEntries(
-    ['ArrowSquareOutIcon', 'FileIcon', 'FileTextIcon', 'FileXIcon', 'GlobeIcon', 'MusicNotesIcon', 'PlayIcon', 'WarningIcon', 'WarningCircleIcon', 'InfoIcon', 'DownloadSimpleIcon', 'PlusIcon'].map((name) => [name, none]),
+    ['ArrowSquareOutIcon', 'FileIcon', 'FileTextIcon', 'FileXIcon', 'GlobeIcon', 'MusicNotesIcon', 'PlayIcon', 'WarningIcon', 'WarningCircleIcon', 'InfoIcon', 'DownloadSimpleIcon', 'PlusIcon', 'CaretRightIcon'].map((name) => [name, none]),
   ),
 );
 mock.module('@/contexts/SandboxContext', () => ({ useSandboxContext: () => ({ sandboxUrl: SANDBOX }) }));
@@ -109,6 +127,8 @@ afterEach(async () => {
   tree = undefined;
   reads.length = 0;
   probes.length = 0;
+  timings.length = 0;
+  reduceMotion = false;
 });
 
 const FOX = '/workspace/output/images/fox.png';
@@ -180,15 +200,36 @@ test('the caption is hidden until the info button is pressed', async () => {
     tree = create(<FilePreviewBody file={{ name: 'fox.png', path: FOX, caption }} sandboxUrl={SANDBOX} onCopyTextChange={none} />);
   });
   const toggle = () => tree!.root.find((node) => node.props.testID === 'file-caption-toggle' && typeof node.props.onPress === 'function');
+  const section = () => tree!.root.findAll((node) => node.props.testID === 'file-caption-section' && typeof node.type === 'string');
   expect(texts()).not.toContain('A fox in a shuttle');
+  expect(section()).toHaveLength(0);
   expect(toggle().props.accessibilityLabel).toBe('Image details');
   expect(toggle().props.accessibilityRole).toBe('togglebutton');
   expect(toggle().props.accessibilityState).toEqual({ checked: false });
+  // Open: the disclosure expands (height + opacity) over 200 ms.
   await act(async () => (toggle().props.onPress as () => void)());
   expect(texts()).toEqual(expect.arrayContaining(['A fox in a shuttle', 'codex/gpt-image-2']));
   expect(toggle().props.accessibilityState).toEqual({ checked: true });
+  expect(timings).toEqual([{ to: 1, duration: 200 }]);
+  // Close: it collapses faster, 150 ms, then unmounts.
+  await act(async () => (toggle().props.onPress as () => void)());
+  expect(timings).toEqual([{ to: 1, duration: 200 }, { to: 0, duration: 150 }]);
+  expect(section()).toHaveLength(0);
+  expect(texts()).not.toContain('A fox in a shuttle');
+});
+
+test('reduced motion skips the caption transition', async () => {
+  reduceMotion = true;
+  const caption = { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' };
+  await act(async () => {
+    tree = create(<FilePreviewBody file={{ name: 'fox.png', path: FOX, caption }} sandboxUrl={SANDBOX} onCopyTextChange={none} />);
+  });
+  const toggle = () => tree!.root.find((node) => node.props.testID === 'file-caption-toggle' && typeof node.props.onPress === 'function');
+  await act(async () => (toggle().props.onPress as () => void)());
+  expect(texts()).toContain('A fox in a shuttle');
   await act(async () => (toggle().props.onPress as () => void)());
   expect(texts()).not.toContain('A fox in a shuttle');
+  expect(timings).toEqual([]);
 });
 
 test('the info button is absent without caption data', async () => {

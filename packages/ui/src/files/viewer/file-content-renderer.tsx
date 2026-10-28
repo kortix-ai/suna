@@ -29,7 +29,9 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense, useCallback, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { useReducedMotion, type Variant } from 'motion/react';
+import { Disclosure, DisclosureContent } from '../../primitives/disclosure';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
@@ -85,22 +87,55 @@ function RendererFallback() {
   );
 }
 
+/** kortix-brand `motion.easing.out`: enter and exit. */
+const EASE_OUT = [0, 0, 0.2, 1] as const;
+
+/**
+ * The caption's disclosure motion (kortix-brand motion.md: a disclosure is
+ * `duration-moderate`, ease-out; the exit runs faster, at `duration-normal`).
+ * Height and opacity together, so the image above shrinks and grows with it.
+ * Reduced motion: no transition, the caption is simply there or not.
+ */
+export function captionMotion(reduceMotion: boolean): { expanded: Variant; collapsed: Variant } {
+  const enter = reduceMotion ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT };
+  const exit = reduceMotion ? { duration: 0 } : { duration: 0.15, ease: EASE_OUT };
+  return {
+    expanded: { height: 'auto', opacity: 1, transition: enter },
+    collapsed: { height: 0, opacity: 0, transition: exit },
+  };
+}
+
 /**
  * An image with its caption under it: a generated image's prompt and the model
- * that made it, shown while the viewer's details toggle (ⓘ) is on. Only an
- * image opened with a caption has one; any other file renders exactly as
- * without it.
+ * that made it, in a disclosure the viewer's details toggle (ⓘ, the trigger on
+ * the zoom shelf, `ImageRenderer` `info`) opens. Only an image opened with a
+ * caption has one; any other file renders exactly as without it.
  */
-function CaptionedImage({ caption, open, children }: { caption: FileCaption | undefined; open: boolean; children: React.ReactNode }) {
-  if (!caption || !open) return <>{children}</>;
+function CaptionedImage({
+  caption,
+  open,
+  onOpenChange,
+  children,
+}: {
+  caption: FileCaption | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const reduceMotion = !!useReducedMotion();
+  const variants = useMemo(() => captionMotion(reduceMotion), [reduceMotion]);
+  if (!caption) return <>{children}</>;
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Disclosure open={open} onOpenChange={onOpenChange} variants={variants} className="flex h-full min-h-0 flex-col">
+      {/* flex-1: the image area takes what the caption leaves, frame by frame. */}
       <div className="min-h-0 flex-1">{children}</div>
-      <div data-file-caption="" className="border-border max-h-32 shrink-0 overflow-y-auto border-t px-4 py-3">
-        <p className="text-foreground text-sm text-pretty">{caption.text}</p>
-        {caption.model ? <p className="text-muted-foreground mt-1 font-mono text-xs">{caption.model}</p> : null}
-      </div>
-    </div>
+      <DisclosureContent className="shrink-0">
+        <div data-file-caption="" className="border-border max-h-32 overflow-y-auto border-t px-4 py-3">
+          <p className="text-foreground text-sm text-pretty">{caption.text}</p>
+          {caption.model ? <p className="text-muted-foreground mt-1 font-mono text-xs">{caption.model}</p> : null}
+        </div>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
 
@@ -235,9 +270,8 @@ export function FileContentRenderer({
   const tImageGen = useTranslations('imageGen');
   const [captionOpenFor, setCaptionOpenFor] = useState<string | null>(null);
   const captionOpen = captionOpenFor === filePath;
-  const imageInfo = caption
-    ? { pressed: captionOpen, onToggle: () => setCaptionOpenFor(captionOpen ? null : filePath), label: tImageGen('details') }
-    : undefined;
+  const onCaptionOpenChange = (open: boolean) => setCaptionOpenFor(open ? filePath : null);
+  const imageInfo = caption ? { pressed: captionOpen, label: tImageGen('details') } : undefined;
   const bytesOnly = !!source.bytesOnly;
   // The table has no lines: a jump to a line (a content-search match) opens
   // CSV and TSV in the code editor.
@@ -364,7 +398,7 @@ export function FileContentRenderer({
 
           {/* Image content (non-HEIC) */}
           {!isLoading && !error && imageDataUrl && (
-            <CaptionedImage caption={caption} open={captionOpen}>
+            <CaptionedImage caption={caption} open={captionOpen} onOpenChange={onCaptionOpenChange}>
               <Suspense fallback={<RendererFallback />}>
                 <ImageRenderer
                   url={imageDataUrl}
@@ -380,7 +414,7 @@ export function FileContentRenderer({
           {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
           {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
           {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-            <CaptionedImage caption={caption} open={captionOpen}>
+            <CaptionedImage caption={caption} open={captionOpen} onOpenChange={onCaptionOpenChange}>
               <Suspense fallback={<RendererFallback />}>
                 <ImageRenderer
                   url={heicImageUrl}
