@@ -60,7 +60,7 @@ cd my-agent
 
 `kortix projects clone` clones the repository through Kortix with your Kortix login. The directory name defaults to the project ID, so pass a name. Inside the clone, the CLI writes `.kortix/link.json` and installs a credential helper. Plain `git pull` then works. `git push` and `kortix ship` need `project.gitops.push`, which the project **Manager** role holds. A **Member** can clone and pull only.
 
-To start a session, a Member also needs an agent grant. A manager runs `kortix access grant --user <your-email> --agent kortix`, or `--everyone --agent kortix` for every project member. The first grant on an agent closes it to everyone the grants do not name, managers included. See [Accounts & access](/docs/accounts#project-access).
+To start a session, a Member also needs an agent grant. A manager runs `kortix access grant --user <your-email> --agent worker`, or `--everyone --agent worker` for every project member. `worker` is the agent of a new project; use the name your project declares. The first grant on an agent closes it to everyone the grants do not name, managers included. See [Accounts & access](/docs/accounts#project-access).
 
 Run the next commands from inside the clone. Outside it, commands use your default project, which can be a different one.
 
@@ -125,7 +125,7 @@ git pull              # bring the merged work into your clone
 
 An agent declared in `kortix.yaml` merges only when its `kortix_permissions` include `project.gitops.merge`. Otherwise the merge returns `403` with code `agent_scope_insufficient`. See [Agents that merge](/docs/git#agents-that-merge).
 
-The starter `kortix` agent has `kortix_permissions: all`, so the API lets it merge its own change request. The managed `kortix-system` skill tells it to stop after it opens one, so a person merges.
+The starter `worker` agent has `kortix_permissions: all`, so the API lets it merge its own change request. The managed `kortix-system` skill tells it to stop after it opens one, so a person merges.
 
 ## Check your setup
 

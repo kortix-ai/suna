@@ -22,8 +22,8 @@ An account holds projects and the people who work in them. Every person holds on
     Give them at least one agent. In the **Grant access** dialog, set **Agents** to **All agents** or **Only these…**. From a terminal:
 
     ```bash
-    kortix access grant --user alice@example.com --agent kortix   # one person
-    kortix access grant --everyone --agent kortix                 # every project member
+    kortix access grant --user alice@example.com --agent worker   # one person
+    kortix access grant --everyone --agent worker                 # every project member
     ```
 
     Without an agent grant, a `member` cannot start a session: the API answers `403` with "You don't have access to any agent in this project."

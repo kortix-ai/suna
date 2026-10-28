@@ -69,13 +69,13 @@ A new project starts from the general starter. It commits these files to the def
 
 | Item | What it is |
 | --- | --- |
-| `kortix` agent | The one agent of a new project and its `default_agent`. It has access to all tools, connectors, secrets, skills and Kortix permissions. My Kortix, the built-in agent you talk to, runs it. Edit `agents/kortix.md` to specialize it. |
-| `kortix.yaml` | Declares the `kortix` agent. It has no triggers and no `tools:` entries. The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) need no entry: every agent with `tools: all` gets them. |
+| `worker` agent | The one agent of a new project and its `default_agent`. It does general-purpose work: coding, research, writing, ops and data work. It has access to all tools, connectors, secrets, skills and Kortix permissions. My Kortix, the built-in agent you talk to, routes each task to the project agent that fits it. In a new project, that agent is `worker`. Edit `agents/worker.md` to specialize it, or add specialist agents next to it. |
+| `kortix.yaml` | Declares the `worker` agent. It has no triggers and no `tools:` entries. The Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) need no entry: every agent with `tools: all` gets them. |
 | Skills | `kortix-cli`, `agent-browser`, `convert-documents-to-markdown`, `design-foundations`, `docx`, `pdf`, `presentations`, `web-publishing-and-deployments`, `webapp`, `website-building`, `xlsx`. |
 | `memory/MEMORY.md` | The empty memory index. |
 | `README.md`, `.gitignore` | A short guide to the files, and the ignore rules. |
 
-A new project has no other agent, no trigger and no harness folder. Every new session runs pi.
+A new project has no other agent, no trigger and no harness folder. Every new session runs pi. A project created before the `worker` starter keeps its `kortix` agent. Kortix does not rename it.
 
 Kortix adds its managed `kortix-*` skills to every session when it boots (19 today, `kortix-cli` among them). A skill tied to a feature flag, such as `kortix-goals` or `kortix-rooms`, is added only while that flag is on. They overwrite a committed copy with the same name. See [Agents & permissions](/docs/project/agents#skills). Read one with `kortix system-skills get <name>`.
 
