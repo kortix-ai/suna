@@ -1,6 +1,6 @@
 ---
 title: Native image generation in sessions
-status: in progress (branch image-gen)
+status: built on branch image-gen (Phases 1–3), PR #10990 open, not merged; dev verification pending
 owner: Jay Suthar
 updated: 2026-10-28
 ---
@@ -494,3 +494,26 @@ Jay: image generation is not ChatGPT-only. Any model that can generate images (G
 
 - [ ] `apps/web/content/docs/project/tools.mdx` and `models.mdx`: image generation works with any connected image model; list the providers and the auto order; limits unchanged. SDK reference for the renamed field.
 - [ ] Update the PR body (#10990) to the universal scope.
+
+---
+
+## Phase 3 — parallel batches, fixes (2026-10-28)
+
+A live test on the worktree stack found three defects: a `codemode` script's `image_gen` calls were refused, three parallel calls arrived with empty arguments, and the successful calls ran one after another (~41 s each, 123 s in total).
+
+### Decisions (Phase 3)
+
+- **R20 — One call, 1–4 prompts.** `image_gen` takes `prompts[]` and sends one gateway request per prompt at the same time. The output is `{ action, model, provider, images: [{ path, size, prompt }], failed?: [{ prompt, error }] }`. `output_name` is removed. Live: one call with 3 prompts took 39.4 s.
+- **R21 — `image_gen` runs in parallel in pi** (`PARALLEL_TOOLS`, `harness/pi/runtime.ts`). The caps count before the first await.
+- **R22 — A script's `image_gen` or `show` call is a native card** (`NATIVE_PART_TOOLS`), not a refusal. R31: in `codemode: only` both stay direct-only (pi constraint).
+- **Per-turn cap keys on `ToolContext.turnId`** (`services/tools/tool.ts`, optional, pi's turn message id). Direct, parallel, script, retried and subagent calls of one turn share the 10. Without `turnId` (OpenCode) the cap keys on the call's abort signal.
+- **Parallel-call arguments.** `transports/ai-sdk/sse.ts` dropped the final tool-call part when Codex sent parallel-call arguments only in `output_item.done`. Fixed, with a learnings entry.
+- **R29, R30, R32, R33 — Card.** No caption and no model on the card. The prompt and model show only in the full-screen view. 2–4 images fill one bento rectangle (2 side by side; 3 = one large + two stacked; 4 = 2 × 2), tiles cover-cropped, capped at 60vh; full screen is uncropped. Web and mobile.
+- **R24 — No image, no charge.** A 200 answer without an image tries the next model and returns any hold. **R25** — an image answer over 48 MiB is refused (`image_response_too_large`).
+
+### Final batch
+
+- [ ] F1 — gateway and API hardening: usage `operation` field (R26), `sse.ts` guard and tests, `wire.ts` `/images` description, ledger trim.
+- [ ] F2 — persist a script's image card across a reload (api-contract, SDK, kortixd).
+- [x] F3 — user docs: `tools.mdx` (the 1–4 prompt contract, the card, limits, errors, `ToolContext.turnId`) and `models.mdx` (the `auto` order, the protocols, image costs, the `/v1/images/*` endpoints).
+- [ ] F4 — investigate the first-stream hang seen once (no completion after 11 min).

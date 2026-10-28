@@ -19,7 +19,7 @@ Kortix tools and project tools are one module each. The sandbox runs the same mo
 | --- | --- |
 | `web_search` | Searches the web. Returns titles, URLs, snippets, and a short answer. |
 | `image_search` | Searches for images. Returns image URLs, titles, source pages, and dimensions. |
-| `image_gen` | Generates or edits an image with your ChatGPT plan and saves it as a PNG. See [Generate images](#generate-images). |
+| `image_gen` | Generates or edits 1 to 4 images with an image model the project can use, and saves them in the workspace. See [Generate images](#generate-images). |
 | `scrape_webpage` | Fetches one or more pages and returns them as Markdown. |
 | `memory` | Views, creates, edits, renames, and deletes files under `memory/`, the project memory. |
 | `show` | Presents a file, image, URL, document, or text to the person in the session. |
@@ -32,7 +32,7 @@ A new project lists all six under the top-level `tools:` key:
 tools:
   web_search: kortix:web_search      # maintained by Kortix, updated automatically
   image_search: kortix:image_search
-  image_gen: kortix:image_gen      # generates images with your ChatGPT plan
+  image_gen: kortix:image_gen      # generates images with an image model the project can use
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show
@@ -78,22 +78,35 @@ Rules for every entry under `tools:`:
 
 ## Generate images
 
-`image_gen` generates an image from a prompt, or edits images that are in the workspace. It uses `gpt-image-2` on the ChatGPT plan of a connected ChatGPT account. It saves each image as a PNG under `/workspace/output/images/`. The chat shows an image card: a generating state while the image renders, then the image.
+`image_gen` generates one to four images from prompts, or edits images that are in the workspace. It uses an image model the project can reach: `gpt-image-2` on a connected ChatGPT plan, an image model of an OpenAI, Google, xAI, or OpenRouter key, or a Kortix-managed model with image output. It saves each image under `/workspace/output/images/`.
 
-- **It needs a connected ChatGPT account.** Connect one in **Models** (**Connect ChatGPT**) or with `kortix providers login openai`. See [Models](/docs/project/models). Without one, the call fails with `provider_not_connected`. When the login stopped working, it fails with `provider_reauth_required`: reconnect ChatGPT.
-- **Kortix charges no credits for it.** The images count against your ChatGPT plan's image limit. That limit is separate from the plan's chat limit. When it is reached, the call fails with `image_rate_limited` and the time until the limit resets.
+- **One call, one to four images.** Each prompt is one image. The tool sends one request per prompt, all at the same time.
+- **It needs an image model.** Connect ChatGPT in **Models** (**Connect ChatGPT**) or with `kortix providers login openai`, or add an OpenAI, Google, xAI, or OpenRouter key. See [Models](/docs/project/models#generate-images). With none, the call fails with `image_model_unavailable`.
 - **It loads by default.** A project gets `image_gen` when its `tools:` list does not name it. A project with no `tools:` key gets it too.
-- **The output is a path, not the image.** The model receives `{ path, action, size, model }`. `size` is the size ChatGPT delivered, which can differ from the requested size.
+- **The output is paths, not images.** The model receives `{ action, model, provider, images: [{ path, size, prompt }], failed: [{ prompt, error }] }`. `model` and `provider` name what made the first saved image. `size` is read from the saved file, as `WxH`. `failed` is present only when a prompt failed. When every prompt fails, the call fails with the first error.
 
 | Argument | Value |
 | --- | --- |
-| `action` | `generate` a new image, or `edit` the reference images. Required. |
-| `prompt` | What the image shows, or what to change. Required. |
-| `reference_images` | For `edit` only: 1 to 5 workspace paths of png, jpg, jpeg, or webp files. |
-| `size` | `auto` (the default), `1024x1024`, `1536x1024`, or `1024x1536`. |
+| `action` | `generate` new images, or `edit` the reference images. Required. |
+| `prompts` | 1 to 4 non-empty strings, one per image: what the image shows, or what to change. Required. |
+| `model` | An image model id, for example `codex/gpt-image-2`, `openai/gpt-image-1`, `google/gemini-2.5-flash-image`, or `openrouter/google/gemini-2.5-flash-image`. Omit it to use `auto`. See [Which model makes the image](/docs/project/models#which-model-makes-the-image). |
+| `aspect_ratio` | `auto` (the default), `1:1`, `3:2`, `2:3`, `16:9`, `9:16`, `4:3`, or `3:4`. |
 | `quality` | `auto` (the default), `low`, `medium`, or `high`. |
 | `transparent_background` | `true` for a transparent background. The default is `false`. |
-| `output_name` | A file name only, matching `[a-z0-9._-]{1,80}.png`. The default is a slug of the prompt plus a timestamp. |
+| `reference_images` | For `edit` only, and required there: 1 to 5 workspace paths of png, jpg, jpeg, or webp files. Every prompt uses them. |
+
+- `quality` and `transparent_background` reach ChatGPT and OpenAI models only. Other models do not receive them.
+- ChatGPT and OpenAI models receive a size, not a ratio. `1:1` is `1024x1024`. `3:2`, `4:3`, and `16:9` are `1536x1024`. `2:3`, `3:4`, and `9:16` are `1024x1536`. xAI models receive no aspect ratio. Other models receive the ratio as it is.
+- The file name is a slug of the prompt plus a timestamp. The extension comes from the image bytes: `.png`, `.jpg`, or `.webp`. Any other answer, for example an SVG, is not written.
+
+### In the chat
+
+A call shows one card with one frame per prompt.
+
+- While the call runs, the card shows a placeholder per image in the requested aspect ratio, with "Generating image" (or "Generating 3 images") and the elapsed time. The images replace the placeholders when the call ends.
+- One image fills the width of the message. Two to four images fill one rectangle: 2 side by side, 3 as one large image and two small ones, 4 as a 2 × 2 grid. On web, the card is at most 60% of the window height.
+- The card shows no prompt and no model name. Click an image to open it full screen, uncropped. The full-screen view shows its prompt and the model that made it.
+- A frame whose prompt failed shows the error. When the cause is a missing or expired connection, the card shows one connect action. A shared or read-only view shows no action.
 
 ### Limits
 
@@ -101,16 +114,36 @@ The tool enforces these limits in code. A prompt, a file, or a web page that the
 
 | Limit | Value |
 | --- | --- |
-| Images per turn | 10. The 11th call fails with `Image limit for this turn reached (10).` |
+| Images per call | 4. |
+| Images per turn | 10. A call that would pass 10 is refused whole, before any request: `Image limit for this turn reached (10 images; 8 used, 3 asked).` |
 | Images per session | 50, counted within one sandbox run. A sandbox restart resets the count. |
 | Reference images per edit | 5. |
 | Size of one reference image | 20 MiB. |
 | Size of all reference images in one edit | 50 MiB. |
 | Time per call | 300 seconds. |
 
+- Every call of one turn counts toward the same 10: direct calls, parallel calls, calls from a `codemode` script, retried calls, and calls from a subagent the turn started.
 - A reference image must be inside `/workspace`, after symlinks are resolved. Its content must match its extension. Any other file is refused before a request leaves the sandbox.
 - An image is always written under `/workspace/output/images/`. An existing file is never replaced: the tool adds `-2`, `-3`, and so on to the name.
-- When the turn stops, the request stops and no file is written.
+- When the turn stops, the requests stop and no further file is written.
+
+### Errors
+
+A failed prompt's error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code.
+
+| Code | Cause |
+| --- | --- |
+| `image_model_unavailable` | The project reaches no image model. |
+| `not_an_image_model` | `model` names a model that cannot generate images. The suggestion names up to 5 image models the project can use. |
+| `image_model_unsupported` | Kortix cannot call this model's provider for images, for example Anthropic or Bedrock. |
+| `image_model_unpriced` | A Kortix-managed model has no image price. Kortix does not serve it. |
+| `provider_not_connected` | `model` names a provider the project has no key or ChatGPT account for. |
+| `provider_reauth_required` | The ChatGPT login expired, or the provider refused the key. Reconnect ChatGPT or check the key. |
+| `image_rate_limited` | The provider's image limit is reached. The error gives the seconds until it resets. |
+| `image_upstream_error` | The provider answered without an image, for example after a safety refusal. |
+| `image_upstream_unreachable` | The provider could not be reached. |
+| `image_response_too_large` | The provider answered with more than 48 MiB. |
+| `image_timeout` | The request took more than 300 seconds. |
 
 ### Turn it off
 
@@ -139,7 +172,7 @@ tools:
   image_gen: tools/image_gen.ts
 ```
 
-`kortix tools eject image_gen` writes the Kortix source to `tools/image_gen.ts` and sets this line. Keep the output shape `{ path, action, size, model }`, or the chat shows the raw output in place of the image card.
+`kortix tools eject image_gen` writes the Kortix source to `tools/image_gen.ts` and sets this line. Keep the output shape `{ action, model, provider, images: [{ path, size, prompt }], failed }`, or the chat shows the raw output in place of the image card.
 
 ## Write a project tool
 
@@ -221,6 +254,7 @@ The default export is a plain object. It imports nothing from a harness.
 | `directory` | The project checkout the session works in, `/workspace`. Resolve relative paths against it. |
 | `env` | The sandbox environment plus the secrets this agent receives, with their current values. Read a secret as `context.env.NAME`. A secret changed after the sandbox started is in `context.env`, not in `process.env`. |
 | `signal` | An `AbortSignal` that aborts when the turn stops. Pass it to `fetch`. |
+| `turnId` | Optional. The turn the call belongs to, when the harness names it. pi sets it, and it is the same for every call of one turn, also for calls from a `codemode` script or a subagent. `signal` can differ per call. Key a per-turn limit on `turnId`. An OpenCode session does not set it. |
 
 - **Output size.** An output over 49 KiB or 1,990 lines is saved whole to a file in the sandbox temp directory. The model receives the head, the size, and the file path. Return what the model needs, not a raw dump.
 - **Errors.** Throw a message that says what to change. The model reads it and can act on it.

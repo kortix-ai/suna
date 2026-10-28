@@ -92,7 +92,7 @@ kortix providers login opencode-go   # OpenCode Go
 
 In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCode Zen login runs only from the CLI. Zen and Go each need their own login. An OpenCode login lasts 30 days, and Kortix renews it one day before it expires. When a renewal is refused, requests return `provider_reauth_required`: sign in again.
 
-**A ChatGPT plan also generates images.** With a connected ChatGPT account, the agent can generate and edit images in a session with the `image_gen` tool. It uses `gpt-image-2` on your plan, and Kortix charges no credits for it. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. See [Generate images](/docs/project/tools#generate-images).
+**A ChatGPT plan also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. See [Generate images](#generate-images).
 
 **A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL and one or more models (an id and a name each). Kortix stores the endpoint in the project. The gateway calls `<base_url>/chat/completions` with the OpenAI chat-completions format. The key is optional: Kortix saves it as the project secret `CUSTOM_<ID>_API_KEY` and sends it as a Bearer token. Budgets, logs, access rules and routing apply as for any other model. Kortix charges no credits for a custom endpoint. Both harnesses, OpenCode and pi, can use its models. A model id is `<id>/<model>`, for example `my-vllm/qwen-3`.
 
@@ -187,6 +187,35 @@ kortix gateway routing reset
 
 When a fallback model answers, the composer shows **Running on** and the model name. The turn details name the model that answered and the model it replaced. **Costs** counts the spend under the model that answered.
 
+## Generate images
+
+The `image_gen` tool and the gateway's `/v1/images/*` endpoints use one image model per request. The tool is on [Tools](/docs/project/tools#generate-images).
+
+### Which model makes the image
+
+With `model` set to `auto` or left out, the gateway tries every image model the request can reach, in this order. Any error moves the request to the next model. A timeout or a stopped request ends it.
+
+1. `codex/gpt-image-2`, when a ChatGPT account is connected.
+2. One model per connected provider, in this order. Each provider uses the first id the model catalog lists as an image model.
+   - OpenAI key: `gpt-image-1.5`, `gpt-image-1`, `gpt-image-1-mini`.
+   - Google key: `gemini-2.5-flash-image`, `gemini-3.1-flash-image`.
+   - OpenRouter key: `google/gemini-2.5-flash-image`, `google/gemini-3.1-flash-image`.
+   - xAI key: `grok-imagine-image`.
+3. Kortix-managed models with image output, when the lineup has one.
+
+- A disabled provider or model is skipped.
+- A named model must be one the model catalog lists with image output. Any other model returns `not_an_image_model`, with up to 5 image models the project can use. A named model has no fallback.
+- Two kinds of models with image output in the catalog do not count: Google Deep Research agents (`deep-research-*`) and routers that pick a model per request (an id that ends in `auto`, such as `openrouter/auto`).
+- The routing policy and fallback chain of [Routing and fallback](#routing-and-fallback) do not apply to images.
+- Kortix calls the model with the protocol of its provider: the OpenAI Images API for ChatGPT, OpenAI, and xAI; Gemini `generateContent` for a Google key; chat completions with image output for OpenRouter, Kortix-managed models, and a custom endpoint. Anthropic and Bedrock models cannot generate images through Kortix.
+
+### Image costs
+
+- **A ChatGPT plan:** Kortix charges nothing. The image counts against the plan's image limit.
+- **Your own key:** your provider bills the image. Kortix applies the same rule as for chat on your own key: see [Connect your own provider](#connect-your-own-provider).
+- **A Kortix-managed model:** the image uses credits. A managed model without an image price is not served (`image_model_unpriced`).
+- **Kortix charges only for a delivered image.** A refusal, an answer without an image, a timeout, or a stopped request records no Kortix charge, and any credit hold is returned.
+
 ## Shared keys and ChatGPT accounts
 
 By default, a provider key belongs to the whole project. A personal override of a provider key returns `llm_credentials_project_wide`.
@@ -258,6 +287,8 @@ A gateway key lets any OpenAI- or Anthropic-compatible client call the project's
 | `POST /v1/chat/completions` | OpenAI Chat Completions |
 | `POST /v1/messages` | Anthropic Messages |
 | `POST /v1/responses` | OpenAI Responses |
+| `POST /v1/images/generations` | Image generation. See [Generate images](#generate-images). |
+| `POST /v1/images/edits` | Image edit with 1 to 5 reference images |
 | `GET /v1/models` | Model list |
 
 The gateway reads the key from `Authorization: Bearer`, and on `/v1/messages` also from `x-api-key`, so `ANTHROPIC_API_KEY` works as well as `ANTHROPIC_AUTH_TOKEN`.
@@ -291,6 +322,8 @@ wire_api = "responses"
 ```
 
 Then run `KORTIX_GATEWAY_KEY=kortix_gw_... codex`.
+
+**Images.** `/v1/images/generations` and `/v1/images/edits` take `{ model, prompt, aspect_ratio, quality, background, images }`. `model` defaults to `auto`. `images` is for edits only: `[{ "image_url": "data:image/png;base64,..." }]`. The gateway makes one image per request and drops every other field. The answer is `{ created, model, provider, data: [{ b64_json, mime_type }], size, usage }` for every provider. `size` and `usage` are present when the provider reports them.
 
 Limits:
 
