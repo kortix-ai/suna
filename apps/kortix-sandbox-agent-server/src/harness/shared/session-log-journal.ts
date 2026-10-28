@@ -86,7 +86,8 @@
  * no `log.message`, and its live puts go on, so the stream keeps their v1 metadata (a running
  * task's `sessionId`). The API keeps the highest rev, so a later record replaces it. A box that
  * dies leaves it `streaming`, as the stop path always did; a restore gives pi the open calls, and
- * pi-ai sends "No result provided" for them. The reply pi streams has no entry before its
+ * pi-ai sends "No result provided" for them. The restored box's next turn exports the step closed
+ * (C2) and replaces the record. The reply pi streams has no entry before its
  * `message_end` and stays out. The first finished step marks the turn `log_durable_at` (apps/api
  * `markDurableTurns`). OpenCode's `fromV1` closes open calls at rest: it collects at turn end only.
  *

@@ -657,8 +657,11 @@ apps/api holds what pi stored of the turn:
   cursor hash `~`, publishes no `log.message`, and its live puts go on, so the
   stream keeps their v1 metadata (a running task's `sessionId`). A later record
   has a higher rev and replaces it. A box that dies leaves it `streaming`, as
-  the stop path always did; a restore hands pi the open calls, and pi-ai sends
-  "No result provided" for each.
+  the stop path always did. A restore hands pi the open calls, and pi-ai sends
+  "No result provided" for each. The record stays `streaming` in the log until
+  the restored box's next turn: once pi appends that turn's reply, the step
+  exports closed (C2: the call `error`, a synthetic "No result provided"
+  result) and its record is replaced.
 
 The reply pi streams has no entry before its `message_end` and is not sent: its
 text lives on the stream only. An idle session has no frames and sends nothing.
