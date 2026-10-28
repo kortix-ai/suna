@@ -546,15 +546,13 @@ describe('readSavedSessionCopy reads the session log first (P8)', () => {
     expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
   });
 
-  test('no stored log (404, a server older than the log): the v1 window answers as the fallback', async () => {
-    const v1Window = { available: true, reason: null, source: 'mirror', complete: true, runtime_session_id: rootRuntimeId, opencode_session_id: rootRuntimeId, message_count: 0, messages: [] };
-    const urls = serve((url) =>
-      url.includes('/log?') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : Response.json(v1Window),
-    );
-    const answer = await read();
-    expect(answer.log ?? null).toBeNull();
-    expect(answer.envelope?.available).toBe(true);
-    expect(urls[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
-    expect(urls[1]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
+  test.each([
+    ['a 404 without a code', () => Response.json({ error: 'No session log for this session' }, { status: 404 })],
+    ['a 500', () => Response.json({ error: 'Internal Server Error' }, { status: 500 })],
+    ['an invalid page', () => Response.json(page({ messages: [{ seq: 'x' }] }))],
+  ] as const)('GET …/log answers %s: no copy, and no v1 window (P8.3)', async (_name, answer) => {
+    const urls = serve((url) => (url.includes('/log?') ? answer() : Response.json({ available: true, source: 'mirror', messages: [] })));
+    expect(await read()).toEqual({ envelope: null, empty: false, log: null });
+    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
   });
 });

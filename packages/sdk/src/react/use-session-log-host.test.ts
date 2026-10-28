@@ -40,6 +40,8 @@ let emptyLog = false;
 let detailPending = false;
 /** `GET …/log` answers 404 `session_log_missing`: an API that serves the log, a session with none yet. */
 let missingLog = false;
+/** `GET …/log` answers no page another way: a bare 404, a 500, an invalid page. */
+let failedLog: 'bare-404' | 'server-error' | 'invalid' | null = null;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
@@ -50,6 +52,7 @@ beforeEach(() => {
   emptyLog = false;
   detailPending = false;
   missingLog = false;
+  failedLog = null;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
@@ -57,6 +60,11 @@ beforeEach(() => {
     const path = parsed.pathname;
     urls.push(path + parsed.search);
     if (missingLog && path.endsWith('/log')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
+    if (failedLog && path.endsWith('/log')) {
+      if (failedLog === 'bare-404') return Response.json({ error: 'No session log for this session' }, { status: 404 });
+      if (failedLog === 'server-error') return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+      return Response.json({ ...page(), messages: [{ seq: 'x' }] });
+    }
     if (serveLog && path.endsWith('/log')) {
       if (emptyLog) return Response.json({ ...page(), messages: [], has_more: false });
       if (!pagedLog) return Response.json(page());
@@ -237,13 +245,13 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(seen.result!.savedTranscript).toBe('none');
   });
 
-  test.each([true, false])('flag %p: a server older than the log (GET …/log answers 404) falls back to the v1 saved copy', async (flag) => {
-    mountHost(flag);
+  test.each(['bare-404', 'server-error', 'invalid'] as const)('GET …/log answers no page (%s): no /transcript (P8.3), nothing saved to show', async (failure) => {
+    failedLog = failure;
+    const seen = mountHost(true);
     await flush();
     const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls).toContain(`${base}/log?limit=40`);
-    expect(urls).toContain(`${base}/transcript?shape=sync&limit=40&history=true`);
-    // The log is asked first.
-    expect(urls.indexOf(`${base}/log?limit=40`)).toBeLessThan(urls.indexOf(`${base}/transcript?shape=sync&limit=40&history=true`));
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.savedTranscript).toBe('none');
   });
 });

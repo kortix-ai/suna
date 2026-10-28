@@ -391,13 +391,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
   });
 
-  test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {
+  test('a 404 without a code (a mirror the API has not converted yet) stays on the log, and is retried at the next turn end and on a stream reconnect', async () => {
     let calls = 0;
     let stored = false;
     const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
     const state = mount({ loader: async () => { calls++; if (!stored) throw new Error('404'); return v1Page(); } });
     await flush();
-    expect(state.dialect).toBe('v1');
+    // Never v1: a current client reads no v1 transcript (P8.3).
+    expect(state.dialect).toBe('missing');
     expect(calls).toBe(1);
     // It waits on the session stream without schema v2.
     expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
@@ -481,13 +482,14 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
-  test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
+  test('a 404 without a code, a failed read or an invalid page: missing (never v1), no session log, no schema v2', async () => {
     const bad = v1Page();
     (bad.messages[0] as Record<string, unknown>).seq = 'x';
-    for (const loader of [async () => { throw new Error('404'); }, async () => bad]) {
+    const failed = Object.assign(new Error('Internal Server Error'), { status: 500 });
+    for (const loader of [async () => { throw new Error('404'); }, async () => { throw failed; }, async () => bad]) {
       const state = mount({ loader });
       await flush();
-      expect(state.dialect).toBe('v1');
+      expect(state.dialect).toBe('missing');
       expect(useSyncStore.getState().sessionLogs).toEqual({});
       expect(joined.some((j) => j.options.schema === 'v2')).toBe(false);
       act(() => renderer?.unmount());

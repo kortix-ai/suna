@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -618,4 +618,94 @@ test('a new session on an API that serves the log (404 session_log_missing): no 
   expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
   expect(hook.value().messages).toHaveLength(0);
   expect(hook.value().mirrorState).toBe('absent');
+});
+
+// P8.3: a current client sends no `GET …/transcript`. The session log is the only saved copy;
+// a session without a page shows what the runtime has (or the boot screen) instead.
+describe('no GET …/transcript on any path (P8.3)', () => {
+  const failures = {
+    'a 404 without a code': () => Response.json({ error: 'No session log for this session' }, { status: 404 }),
+    'a 500': () => Response.json({ error: 'Internal Server Error' }, { status: 500 }),
+    'an invalid page': () => Response.json({ ...logPage(), messages: [{ seq: 'x' }] }),
+  };
+  function recordAll(log: () => Response): string[] {
+    logServed = true;
+    const requests: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      requests.push(String(url));
+      if (String(url).includes('/log?')) return log();
+      return Response.json(envelope('ses_never_read', 2, '2026-09-27T00:00:00Z'));
+    }) as unknown as typeof fetch;
+    return requests;
+  }
+  const v1Reads = (requests: string[]) => requests.filter((url) => url.includes('/transcript'));
+
+  for (const [name, answer] of Object.entries(failures)) {
+    for (const savedChild of [false, true]) {
+      test(`${savedChild ? 'a sub-agent' : 'a host that hands in no saved copy'}, GET …/log answers ${name}: no /transcript, nothing saved`, async () => {
+        const requests = recordAll(answer);
+        const hook = await mount('ses_no_v1', { ...offline, savedChild });
+        await settle();
+        expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+        expect(v1Reads(requests)).toEqual([]);
+        expect(hook.value().messages).toHaveLength(0);
+        expect(hook.value().mirrorState).toBe('absent');
+      });
+    }
+  }
+
+  // `useSession({ chatEngine: false })` (apps/mobile) mounts `useSessionSync('')` with the
+  // session's scope and its `working` answer; the thread page mounts its own without `working`.
+  for (const sessionId of ['', 'ses_turn_end_no_v1']) {
+    test(`a turn end reads no saved copy (useSessionSync(${JSON.stringify(sessionId)}), no log in the store): no /transcript`, async () => {
+      await seeded('ses_turn_end_no_v1', 1);
+      const requests = recordAll(() => Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 }));
+      const later: Array<() => void> = [];
+      const realSetTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = ((callback: () => void, ms?: number) => {
+        if ((ms ?? 0) >= 1_000) {
+          later.push(callback);
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        }
+        return realSetTimeout(callback, ms);
+      }) as typeof setTimeout;
+      try {
+        let working = true;
+        if (sessionId) touched.push(sessionId);
+        configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+        function Probe() {
+          useSessionSync(sessionId, { ...offline, working });
+          return null;
+        }
+        await act(async () => {
+          root = create(React.createElement(Probe));
+        });
+        await settle();
+        working = false;
+        await act(async () => {
+          root?.update(React.createElement(Probe));
+        });
+        // Every timer of a second or more runs now: the clock is not waited on.
+        await act(async () => {
+          for (const run of later.splice(0)) run();
+          await new Promise((resolve) => realSetTimeout(resolve, 20));
+        });
+        expect(v1Reads(requests)).toEqual([]);
+      } finally {
+        globalThis.setTimeout = realSetTimeout;
+      }
+    });
+  }
+
+  test("a painted saved copy (the host's, with a cursor) offers no older window: loadOlder sends no /transcript", async () => {
+    const requests = recordAll(() => Response.json(logPage()));
+    const hook = await mountWithHostCopy('ses_paged_copy');
+    await hook.answer({ ...envelope('ses_paged_copy', 3), next_cursor: 'msg_ses_paged_copy_1' } as SessionTranscriptSyncEnvelope);
+    expect(hook.value().messages).toHaveLength(3);
+    expect(hook.value().hasOlder).toBe(false);
+    await act(async () => {
+      await hook.value().loadOlder();
+    });
+    expect(v1Reads(requests)).toEqual([]);
+  });
 });
