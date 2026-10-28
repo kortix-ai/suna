@@ -18,9 +18,9 @@ import {
   ShareIcon,
   TerminalIcon,
   DotsThreeIcon,
-  DotsThreeOutlineIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
+  SquaresFourIcon,
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -253,8 +253,8 @@ function SessionRow({
   );
 }
 
-function Sidebar() {
-  const [active, setActive] = useState(TODAY[0]);
+function Sidebar({ nav }: { nav?: 'customize' }) {
+  const [active, setActive] = useState<string | null>(nav ? null : TODAY[0]);
   return (
     <aside className="bg-sidebar border-sidebar-border flex w-68 shrink-0 flex-col border-r">
       <div className="flex h-15 shrink-0 items-center justify-between pr-4 pl-4">
@@ -276,7 +276,7 @@ function Sidebar() {
           <NavigationArrowIcon className="size-4 shrink-0 rotate-90" />
           <span className="text-sm">New session</span>
         </div>
-        <div className="flex h-9 items-center justify-between px-2">
+        <div className={cn('flex h-9 items-center justify-between rounded-md px-2', nav === 'customize' && 'bg-active')}>
           <span className="flex items-center gap-2.5">
             <CustomizeGlyph className="size-4 shrink-0" />
             <span className="text-sm">Customize</span>
@@ -284,8 +284,12 @@ function Sidebar() {
           <CountBadge count={4} />
         </div>
         <div className="flex h-9 items-center gap-2.5 px-2">
-          <DotsThreeOutlineIcon weight="fill" className="size-4 shrink-0" />
-          <span className="text-sm">More</span>
+          <FolderSimpleIcon className="size-4 shrink-0" />
+          <span className="text-sm">Drive</span>
+        </div>
+        <div className="flex h-9 items-center gap-2.5 px-2">
+          <SquaresFourIcon className="size-4 shrink-0" />
+          <span className="text-sm">Apps</span>
         </div>
       </div>
 
@@ -522,13 +526,16 @@ function Session({ stage }: { stage: Stage }) {
   );
 }
 
-export function SessionWindow({ className }: { className?: string }) {
+/**
+ * The app's chrome at board size, scaled to the column: the glass ring, the
+ * sidebar, then the page. The session window and the hero's Customize pages
+ * share it, so a step change swaps only the page.
+ */
+export function AppBoard({ nav, children }: { nav?: 'customize'; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null);
   const scale = useFitScale(frame);
-  const stage = useScript(frame);
-
   return (
-    <div ref={frame} className={cn('relative w-full', className)} style={{ aspectRatio: `${W} / ${H}` }}>
+    <div ref={frame} className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
       <div
         className="absolute top-0 left-0 origin-top-left"
         style={{ width: W, height: H, transform: `scale(${scale})` }}
@@ -536,11 +543,23 @@ export function SessionWindow({ className }: { className?: string }) {
         {/* Glass ring: an 8px lip of the band showing through, then the app. */}
         <div className="bg-background/20 ring-border flex size-full rounded-2xl p-2 ring-1">
           <div className="bg-background text-foreground flex size-full overflow-hidden rounded-xl border">
-            <Sidebar />
-            <Session stage={stage} />
+            <Sidebar nav={nav} />
+            {children}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function SessionWindow({ className }: { className?: string }) {
+  const target = useRef<HTMLDivElement>(null);
+  const stage = useScript(target);
+  return (
+    <div ref={target} className={className}>
+      <AppBoard>
+        <Session stage={stage} />
+      </AppBoard>
     </div>
   );
 }

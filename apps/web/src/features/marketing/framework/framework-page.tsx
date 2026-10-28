@@ -5,7 +5,7 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, KeyRows, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import Link from 'next/link';
 
-import { ArchitectureDiagram, CROSSINGS, CrossingMark } from './architecture-diagram';
+import { ArchitectureDiagram, CROSSINGS, CrossingMark, PARTS } from './architecture-diagram';
 import { MANIFEST } from './content';
 
 // Facts: framework/content.ts (the manifest gate), the docs sections
@@ -13,30 +13,37 @@ import { MANIFEST } from './content';
 // The SDK samples use only calls from the verified "Your first session" and
 // "The thread alone" samples in content/docs/developers.mdx.
 
+/** A kortix.yaml excerpt: MANIFEST lines [from, to), with `focus` given in
+ *  MANIFEST line indexes so each range reads against the whole file. */
+function excerpt(from: number, to: number, focus: readonly [number, number]): CodeTab['panel'] {
+  return { title: 'kortix.yaml', lang: 'yaml', lines: MANIFEST.slice(from, to), focus: [focus[0] - from, focus[1] - from] };
+}
+
 const TABS: readonly CodeTab[] = [
   {
     id: 'agents',
     k: 'Declare your agents',
     v: 'One agent per job, grouped by team: engineering, marketing, sales. Each is a Markdown prompt and one entry that names its tools, connectors and skills. Access is deny-by-default.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [33, 64] },
+    // The three team agents (MANIFEST 40–63) under the `agents:` key.
+    panel: { title: 'kortix.yaml', lang: 'yaml', lines: [MANIFEST[33], ...MANIFEST.slice(40, 64)], focus: [1, 25] },
   },
   {
     id: 'connectors',
     k: 'Connect your tools',
     v: 'GitHub, LinkedIn, HubSpot and 3,000+ more. Credentials stay in Kortix. A rule can hold an action, such as a LinkedIn post, until a person approves it.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [10, 25] },
+    panel: excerpt(7, 24, [10, 24]),
   },
   {
     id: 'triggers',
     k: 'Run them 24/7',
     v: 'A new GitHub issue, an inbound lead from your website, or a schedule starts the right agent with nobody at the keyboard.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [65, MANIFEST.length] },
+    panel: excerpt(65, MANIFEST.length, [65, MANIFEST.length]),
   },
   {
     id: 'secrets',
     k: 'Keep secrets out of the repo',
     v: 'kortix.yaml names the secrets a project needs, such as the ones that sign its webhooks. The values live encrypted in Kortix.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [7, 9] },
+    panel: excerpt(0, 15, [7, 9]),
   },
   {
     id: 'ship',
@@ -101,7 +108,13 @@ const kortix = createKortix({
   getToken: async () => process.env.KORTIX_API_KEY ?? null,
 });
 
-const { session_id } = await kortix.project(projectId).sessions.create({ name: 'Nightly report' });
+const [project] = await kortix.projects.list();
+if (!project) throw new Error('No project.');
+const projectId = project.project_id;
+
+const { session_id } = await kortix
+  .project(projectId)
+  .sessions.create({ name: 'Nightly report' });
 const session = kortix.session(projectId, session_id);
 await session.ensureReady();
 await session.send('Summarize yesterday’s orders.');`;
@@ -109,7 +122,9 @@ await session.send('Summarize yesterday’s orders.');`;
 const UI_SAMPLE = `import { useSession } from '@kortix/sdk/react';
 import { SessionThread } from '@kortix/ui/session';
 
-export function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+type Props = { projectId: string; sessionId: string };
+
+export function Chat({ projectId, sessionId }: Props) {
   const session = useSession(projectId, sessionId);
   return <SessionThread session={session} />;
 }`;
@@ -117,8 +132,8 @@ export function Chat({ projectId, sessionId }: { projectId: string; sessionId: s
 function Code({ title, code }: { title: string; code: string }) {
   return (
     <div className="bg-background flex min-w-0 flex-col">
-      <p className="text-muted-foreground border-b px-6 py-3 font-mono text-xs">{title}</p>
-      <pre className="text-foreground overflow-x-auto p-6 font-mono text-xs leading-relaxed">
+      <p className="text-muted-foreground border-b px-4 py-3 font-mono text-xs lg:px-6">{title}</p>
+      <pre className="text-foreground overflow-x-auto p-4 font-mono text-xs leading-relaxed lg:p-6">
         <code>{code}</code>
       </pre>
     </div>
@@ -155,6 +170,9 @@ export function FrameworkPage() {
         <Band className="mt-12">
           <ArchitectureDiagram />
         </Band>
+        <div className="mt-12">
+          <KeyRows rows={PARTS} />
+        </div>
       </Block>
 
       <Block id="files">
@@ -190,7 +208,7 @@ export function FrameworkPage() {
           }
         />
         <Band className="mt-12">
-          <div className="bg-border grid grid-cols-1 gap-px lg:grid-cols-2">
+          <div className="bg-border grid grid-cols-1 gap-px xl:grid-cols-2">
             <Code title="nightly-report.mts · @kortix/sdk" code={SDK_SAMPLE} />
             <Code title="chat.tsx · @kortix/ui" code={UI_SAMPLE} />
           </div>
