@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { enabledFeatureFlags, skillFeatureFlag } from '@/lib/config/feature-flags'
-import { ensureInjectedManagedSkills, syncFlaggedManagedSkills, withheldManagedSkills } from '@/services/skills/managed-skills'
+import { ensureInjectedManagedSkills, withheldManagedSkills } from '@/services/skills/managed-skills'
 
 const roots: string[] = []
 
@@ -52,17 +52,5 @@ describe('a flagged managed skill follows its flag', () => {
     await ensureInjectedManagedSkills(configDir, { bakedDir, env: {} })
     expect(existsSync(join(configDir, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true)
     expect(existsSync(join(configDir, 'skills', 'kortix-rooms'))).toBe(false)
-  })
-
-  test('flag on: written; turned off later: a reused dir loses it; on again: restored', async () => {
-    const { bakedDir, configDir } = await fixture()
-    const on = { KORTIX_FEATURE_FLAGS: 'agent_rooms' }
-    await ensureInjectedManagedSkills(configDir, { bakedDir, env: on })
-    const skillsDir = join(configDir, 'skills')
-    expect(existsSync(join(skillsDir, 'kortix-rooms', 'SKILL.md'))).toBe(true)
-    await syncFlaggedManagedSkills(skillsDir, { bakedDir, env: {} })
-    expect(existsSync(join(skillsDir, 'kortix-rooms'))).toBe(false)
-    await syncFlaggedManagedSkills(skillsDir, { bakedDir, env: on })
-    expect(existsSync(join(skillsDir, 'kortix-rooms', 'SKILL.md'))).toBe(true)
   })
 })

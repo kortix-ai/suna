@@ -298,16 +298,6 @@ export class CliSandbox {
   }
 }
 
-/** Sugar: make a sandbox, run a single command, dispose, return the result. */
-export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<CliResult> {
-  const sb = new CliSandbox();
-  try {
-    return await sb.run(args, opts);
-  } finally {
-    sb.dispose();
-  }
-}
-
 /** What `kortix login` prints on stdout once its loopback server is up. */
 interface AuthorizeUrl {
   callbackUrl: string;

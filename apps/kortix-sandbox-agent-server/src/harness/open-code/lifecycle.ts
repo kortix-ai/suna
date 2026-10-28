@@ -1770,7 +1770,7 @@ export interface LivenessDecision {
 
 /**
  * Decide the next opencode state from one liveness-probe result, with
- * hysteresis. Pure + deterministic — see opencode-liveness-hysteresis.test.ts.
+ * hysteresis. Pure + deterministic.
  *
  * - a ready probe is always `ok` and clears the failure count;
  * - an `ok` session TOLERATES failures below `threshold` (stays `ok`), and

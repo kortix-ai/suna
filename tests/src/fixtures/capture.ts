@@ -196,11 +196,6 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
   };
 }
 
-/** The vendored issuer responses (`issuer/*.json`), by file name without `.json`. */
-export function vendoredIssuer(name: "device-authorization" | "device-token" | "device-token-pending" | "credentials"): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(CONTRACT_DIR, "issuer", `${name}.json`), "utf8"));
-}
-
 export type CaptureSchemaName =
   | "actions-line" | "device" | "frames-line" | "index-line" | "issuer-credentials" | "issuer-device-authorization"
   | "issuer-device-token" | "manifest-actions" | "manifest-audio" | "manifest-chunk" | "policy" | "status";

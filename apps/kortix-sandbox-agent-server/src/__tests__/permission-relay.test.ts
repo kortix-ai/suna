@@ -1,15 +1,14 @@
 /**
- * OpenCode `permission.asked` reaches apps/api so the session creator gets a
+ * A runtime `permission.asked` reaches apps/api so the session creator gets a
  * "needs your approval" push. The relay only REPORTS: it never replies to or
  * resolves the permission, and a failed report never throws.
  *
- * One fake server plays apps/api and OpenCode, so each test asserts the real
- * requests the adapter sends.
+ * One fake server plays apps/api, so each test asserts the real requests the
+ * relay sends.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
 import type { RuntimePermissionRequest as PermissionRequest } from '@kortix/api-contract/transcript'
-import { dispatch } from '@/harness/open-code/events'
 import { relayPermission } from '@/harness/shared/turn-relay'
 
 type Recorded = { method: string; path: string; auth: string | null; body: any }
@@ -103,35 +102,5 @@ describe('relayPermission', () => {
     delete process.env.KORTIX_API_URL
     await relayPermission(REQUEST)
     expect(requests).toHaveLength(0)
-  })
-})
-
-describe('dispatch — permission.asked', () => {
-  test('hands a well-formed request to onPermissionAsked', () => {
-    const got: PermissionRequest[] = []
-    dispatch({ type: 'permission.asked', properties: REQUEST }, { onPermissionAsked: (r) => got.push(r) })
-    expect(got).toEqual([REQUEST])
-  })
-
-  test('drops a frame without an id or session id', () => {
-    const got: PermissionRequest[] = []
-    dispatch(
-      { type: 'permission.asked', properties: { sessionID: 'ses_root', permission: 'bash' } },
-      { onPermissionAsked: (r) => got.push(r) },
-    )
-    dispatch(
-      { type: 'permission.asked', properties: { id: 'per_2', permission: 'bash' } },
-      { onPermissionAsked: (r) => got.push(r) },
-    )
-    expect(got).toHaveLength(0)
-  })
-
-  test('still reaches onEvent for the runtime projection', () => {
-    const seen: string[] = []
-    dispatch(
-      { type: 'permission.asked', properties: REQUEST },
-      { onEvent: (e) => seen.push(e.type ?? ''), onPermissionAsked: () => {} },
-    )
-    expect(seen).toEqual(['permission.asked'])
   })
 })
