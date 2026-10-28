@@ -116,15 +116,15 @@ function JoinButton({
 /** The team you meet on the call: faces cut from the /about team photo. */
 function TeamFaces() {
   return (
-    <span aria-hidden className="flex -space-x-1.5">
+    <span aria-hidden className="flex -space-x-3">
       {[1, 2, 3, 4, 5, 6].map((n) => (
         <Image
           key={n}
           src={`/images/team/face-${n}.webp`}
           alt=""
-          width={40}
-          height={40}
-          className="ring-background size-6 rounded-full ring-2"
+          width={80}
+          height={80}
+          className="ring-card size-14 rounded-full ring-4"
         />
       ))}
     </span>
@@ -146,7 +146,6 @@ function IntroButton({
       className={className}
       onClick={() => openDemo({ source: 'services' })}
     >
-      <TeamFaces />
       Book an intro call
     </MarketingButton>
   );
@@ -421,6 +420,9 @@ export default function ServicesPage() {
               <div>
                 <h3 className="text-foreground text-lg font-medium">{intro.title}</h3>
                 <p className="text-muted-foreground mt-2 text-sm text-pretty">{intro.body}</p>
+              </div>
+              <div className="flex flex-1 items-center">
+                <TeamFaces />
               </div>
               <IntroButton className="mt-auto w-full" />
             </div>
