@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { TELEGRAM_TOKEN_PATTERN, type TelegramBot, TelegramApiError, telegramCall } from '../../channels/telegram/api';
+import { TELEGRAM_TOKEN_PATTERN, TELEGRAM_UPDATES, type TelegramBot, TelegramApiError, telegramCall } from '../../channels/telegram/api';
 import {
   deleteTelegramInstall,
   loadTelegramBotToken,
@@ -98,7 +98,7 @@ export function registerChannelTelegramRoutes(): void {
         await telegramCall(token, 'setWebhook', {
           url: `${(config.KORTIX_URL || new URL(c.req.url).origin).replace(/\/+$/, '')}/v1/webhooks/telegram/${ctx.projectId}`,
           secret_token: webhookSecret,
-          allowed_updates: ['message'],
+          allowed_updates: TELEGRAM_UPDATES,
           drop_pending_updates: true,
         });
       } catch (error) {

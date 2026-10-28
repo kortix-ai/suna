@@ -6,16 +6,16 @@ import { db } from '../../shared/db';
 /**
  * Thread → session binding for every chat channel.
  *
- * A chat thread (a Slack thread, a Teams conversation, an email thread) maps
+ * A chat thread (one conversation on a chat platform) maps
  * to exactly one Kortix session in exactly one project: `chat_threads` is
  * unique on (platform, workspace, thread) across every project. A reply in the
  * thread is delivered into that session, so it runs under that project's
  * access rules, whatever project the channel resolves to today.
  */
 export interface ChatThreadKey {
-  /** `slack`, `teams`, `email`, or `telegram` (the `chat_threads.platform` column). */
+  /** One of `CHANNEL_PLATFORMS` (the `chat_threads.platform` column). */
   platform: string;
-  /** Slack team, Teams tenant, or email (Resend) inbox. */
+  /** The platform install the thread belongs to (a workspace, a tenant, an inbox or a bot). */
   workspaceId: string;
   threadId: string;
 }
