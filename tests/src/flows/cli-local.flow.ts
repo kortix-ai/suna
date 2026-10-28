@@ -58,6 +58,7 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
         ]) {
           check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
         }
+        check('no harnesses/ folder', !sb.exists('init-one/harnesses'), false, sb.exists('init-one/harnesses'));
         check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
         const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
@@ -110,7 +111,7 @@ flow('INIT-2', { domain: 'cli', routes: [] }, async (ctx) => {
 
 flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
   await ctx.step(
-    'kortix init --primary opencode --agents claude,cursor -y → chosen agents wired via symlinks + AGENTS.md',
+    'kortix init --primary codex --agents claude,cursor -y → chosen agents wired via symlinks + AGENTS.md',
     async () => {
       const sb = new CliSandbox('init3');
       ctx.track('cli-sandbox', sb.cwd);
@@ -119,15 +120,16 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           'init',
           'wired',
           '--primary',
-          'opencode',
+          'codex',
           '--agents',
           'claude,cursor',
           '-y',
           '--no-git',
         ]);
         check('exit 0', r.exitCode === 0, 0, r.exitCode);
-        // Selected agents' native dirs are symlinks onto the root folders;
+        // Selected agents' native dirs are symlinks onto the shared folders;
         // existsSync follows the link, so a resolving path proves it works.
+        check('no .opencode link', !sb.exists('wired/.opencode'), false, sb.exists('wired/.opencode'));
         check(
           '.claude/agents → agents resolves to the worker agent',
           sb.exists('wired/.claude/agents/worker.md'),
@@ -135,7 +137,7 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           sb.exists('wired/.claude/agents/worker.md'),
         );
         check(
-          '.agents/skills → skills resolves (OpenCode reads it natively)',
+          '.agents/skills → skills resolves (Codex reads it natively)',
           sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
           true,
           sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
@@ -162,8 +164,7 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           false,
           sb.exists('wired/.cursor'),
         );
-        // `.agents/skills` is shared by OpenCode and Codex, so the unselected-tool
-        // check uses pi: it was NOT selected → no .pi link.
+        // pi was NOT selected → no .pi link.
         check(
           'unselected pi not wired',
           !sb.exists('wired/.pi'),

@@ -610,7 +610,7 @@ export async function loadProjectConfig(
     space: agent.space ?? manifestText(manifestMap(manifestAgentBlocks[agent.name]).space),
   }));
   const spaces = spacesFromManifest(manifest);
-  const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
+  const skills = withKortixSkills(await scanSkills(project, repoFiles, skillDirs(manifest)));
   const commands = await scanCommands(project, repoFiles, commandRe);
   // v2 makes the manifest's declared default authoritative. Legacy projects
   // keep reading OpenCode's native default_agent for backwards compatibility.
@@ -686,12 +686,7 @@ async function loadProjectConfigV3(
       return { name, path, description: meta.description || null };
     }),
   );
-  const kortixSkills = listManagedSkills().map((skill) => ({
-    name: skill.name,
-    path: `${SKILLS_DIR}/${skill.name}/SKILL.md`,
-    description: skill.description || null,
-  }));
-  const skills = [...projectSkills, ...kortixSkills].sort((a, b) => a.name.localeCompare(b.name));
+  const skills = withKortixSkills(projectSkills);
 
   const manifestPath = project.manifestPath || 'kortix.yaml';
   const commands = Object.entries(map(manifest.commands))
@@ -703,6 +698,23 @@ async function loadProjectConfigV3(
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return { agent_discovery: 'declarative', agents, skills, commands, spaces: spacesFromManifest(manifest) };
+}
+
+/**
+ * The project's skills plus the Kortix skills. kortixd injects the Kortix skills
+ * into every session on every manifest version, so every version lists them. A
+ * repo copy of the same name (the scaffold's `kortix-cli`) is listed once.
+ */
+function withKortixSkills(skills: ProjectConfigSummary['skills']): ProjectConfigSummary['skills'] {
+  const names = new Set(skills.map((skill) => skill.name));
+  const kortixSkills = listManagedSkills()
+    .filter((skill) => !names.has(skill.name))
+    .map((skill) => ({
+      name: skill.name,
+      path: `${SKILLS_DIR}/${skill.name}/SKILL.md`,
+      description: skill.description || null,
+    }));
+  return [...skills, ...kortixSkills].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function escapeRegExp(input: string): string {

@@ -73,8 +73,10 @@ describe('applyScaffold', () => {
     expect(manifest).not.toContain('{{projectName}}');
 
     expect(manifest).not.toMatch(/^sandbox:/m);
-    expect(manifest).not.toContain('harnesses/');
+    expect(manifest).toContain('kortix_version: 3');
     expect(manifest).toContain('prompt_file: agents/worker.md');
+    expect(manifest).not.toContain('harnesses/opencode');
+    expect(result.written.some((p) => p.startsWith('harnesses/'))).toBe(false);
 
     expect(readFileSync(join(dir, 'agents/worker.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);

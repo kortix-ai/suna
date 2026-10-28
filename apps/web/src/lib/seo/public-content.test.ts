@@ -1,3 +1,4 @@
+import { showsMarketingLink } from '@/lib/config';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,6 +36,7 @@ function expectCleanAgentMarkdown(markdown: string, label: string): void {
   expect(prose, label).not.toMatch(/^\s*(?:import|export)\s/m);
   expect(prose, label).not.toMatch(UNRESOLVED_MDX_COMPONENT);
   expect(prose, label).not.toMatch(LINE_START_UNRESOLVED_JSX);
+  expect(prose, label).not.toContain('{/*');
 }
 
 beforeEach(() => {
@@ -135,12 +137,13 @@ describe('public SEO/AEO content coverage', () => {
   });
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
-    const resolved = resolvePublicMarkdown(['docs', 'index.md']);
+    const resolved = resolvePublicMarkdown(['docs', 'guide.md']);
     expect(resolved?.markdown).toContain(
-      'Install the CLI, run a session, and merge your first change request',
+      'A plain-language guide to Kortix',
     );
-    expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
-    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
+    // The developer reference is its own page, apart from the Guide.
+    expect(resolvePublicMarkdown(['docs', 'developers.md'])?.markdown).toContain('## Quickstart');
+    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/guide.md');
 
     const mdx = `---
 title: Sample
@@ -156,6 +159,9 @@ Do not drop this meaningful content.
   <Stat value="3 systems" label="One agent" />
 </StatGrid>
 
+{/* generated:sample:start */}
+Keep the line {/* VERIFY: an editor note */} without the note.
+
 <Tabs>
 <Tab title="Claude Code">
 Run the add command.
@@ -168,6 +174,7 @@ Run the add command.
     expect(markdown).toContain('> Figure: A truthful diagram');
     expect(markdown).toContain('- **3 systems:** One agent');
     expect(markdown).toContain('**Claude Code**\nRun the add command.');
+    expect(markdown).toContain('Keep the line without the note.');
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 
@@ -253,9 +260,12 @@ Run the install script.
     const urls = new Set(sitemap().map((entry) => entry.url));
     const records = getPublicContentRecords({ includeUseCases: true });
     for (const record of records) {
-      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(true);
-      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(true);
+      // /services and /case-studies stay out while SERVICES_PAGES_ENABLED is off.
+      const listed = showsMarketingLink(record.htmlPath);
+      expect(urls.has(absoluteUrl(record.htmlPath))).toBe(listed);
+      if (record.markdownPath) expect(urls.has(absoluteUrl(record.markdownPath))).toBe(listed);
     }
+    expect(showsMarketingLink('/services')).toBe(false);
     expect(
       [...urls].every((url) => url.startsWith(CANONICAL_ORIGIN) && !url.includes('www.')),
     ).toBe(true);

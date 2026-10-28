@@ -51,7 +51,7 @@ import {
   useRemindersUrlState,
 } from './use-reminders-url-state';
 
-const DOCS_HREF = '/docs/connect/triggers#loops';
+const DOCS_HREF = '/docs/guide#loops';
 
 /** The app's mobile breakpoint (`useIsMobile`): below it the page is the List only. */
 const NARROW = '(max-width: 767px)';

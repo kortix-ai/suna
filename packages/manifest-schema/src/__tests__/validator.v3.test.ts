@@ -87,9 +87,15 @@ describe('kortix_version 3: registries', () => {
     expect(errorPaths(swap('  web-access:\n    pi: npm:pi-web-access@0.30.0', '  web-access: {}'))).toContain('extensions.web-access');
     expect(errorPaths(swap('pi: npm:pi-web-access@0.30.0', 'pi: npm:pi-web-access@^0.30.0'))).toContain('extensions.web-access.pi');
     expect(errorPaths(swap('pi: npm:pi-web-access@0.30.0', 'pi: ./extensions/x.ts'))).toContain('extensions.web-access.pi');
-    expect(errorPaths(swap('opencode: extensions/audit.opencode.ts', 'opencode: npm:audit@1.0.0'))).toContain('extensions.audit.opencode');
-    expect(errorPaths(swap('opencode: extensions/audit.opencode.ts', 'claude: x.ts'))).toContain('extensions.audit.claude');
+    expect(errorPaths(swap('pi: extensions/audit.pi.ts', 'pi: extensions/audit.pi.ts\n    opencode: npm:audit@1.0.0'))).toContain('extensions.audit.opencode');
+    expect(errorPaths(swap('pi: extensions/audit.pi.ts', 'pi: extensions/audit.pi.ts\n    claude: x.ts'))).toContain('extensions.audit.claude');
     expect(errorPaths(swap('extensions: ["extensions/*.ts"]', 'bogus: []'))).toContain('extensions.mcp-adapter.pi.bogus');
+  });
+
+  test('an OpenCode implementation validates with a deprecation warning', () => {
+    const { errors, warnings } = check(swap('pi: extensions/audit.pi.ts', 'pi: extensions/audit.pi.ts\n    opencode: extensions/audit.opencode.ts'));
+    expect(errors).toEqual([]);
+    expect(warnings.map((issue) => issue.path)).toEqual(['extensions.audit.opencode']);
   });
 });
 

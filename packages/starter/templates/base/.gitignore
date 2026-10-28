@@ -1,6 +1,7 @@
 # Local Kortix runtime state — never commit.
 .kortix/state/
 node_modules/
+package-lock.json
 .env
 .env.local
 .DS_Store

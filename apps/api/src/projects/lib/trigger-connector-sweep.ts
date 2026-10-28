@@ -2,7 +2,6 @@ import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, gt, or, sql } from 'drizzle-orm';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { db } from '../../shared/db';
-import { invalidateProjectMirror } from '../git';
 import { countUncatalogedTriggerProjects } from '../trigger-execution-store';
 import type { ProjectRow } from './serializers';
 import { schedulerHealth, connectorProjectConcurrency, connectorProjectTimeoutMs, manifestCatalogBatchSize, manifestDiscoveryBatchSize, mapWithConcurrency, withTimeout } from './trigger-scheduler-state';
@@ -98,10 +97,9 @@ export async function runProjectConnectorSweep(): Promise<{
       projectsForSweep,
       connectorProjectConcurrency(),
       async (project) => {
-        invalidateProjectMirror(project.projectId);
         try {
           const result = await withTimeout(
-            syncProjectConnectors(project.projectId, project.accountId),
+            syncProjectConnectors(project.projectId, project.accountId, { reuseManifestAtTip: true }),
             connectorProjectTimeoutMs(),
             `sync connectors ${project.projectId}`,
           );

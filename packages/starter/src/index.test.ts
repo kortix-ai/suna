@@ -18,7 +18,7 @@ function byPath(files: StarterFile[]): Map<string, string> {
 }
 
 describe('STARTER_TEMPLATE_IDS', () => {
-  test('contains the two OpenCode templates', () => {
+  test('contains the two starter templates', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual([
       'minimal',
       'general-knowledge-worker',
@@ -250,12 +250,12 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter ships no harness folder and no optional marketplace skills', () => {
+  test('minimal starter ships no harness folder, no tool copies and no optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
-    // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
-    expect([...paths].filter((path) => path.startsWith('harnesses/'))).toEqual([]);
+    // The Kortix tools (show, memory, web_search, …) are hosted by the runtime.
+    expect([...paths].filter((path) => path.startsWith('tools/') || path.startsWith('harnesses/'))).toEqual([]);
     // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
     // `kortix-*` family lives in `templates/managed/` and is injected at boot.
     expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
@@ -290,6 +290,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-channel-memory',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-design',
       'kortix-drives',
       'kortix-genui',
       'kortix-goals',

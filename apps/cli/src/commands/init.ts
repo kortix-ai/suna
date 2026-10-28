@@ -24,10 +24,8 @@ import { selectMultiFromList } from '../tui-select.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
-    case 'opencode':
-      return 'symlink .agents/skills → skills (and .opencode → its config folder, when the project has one)';
     case 'claude':
-      return 'link .claude skills, agents, and commands';
+      return 'link .claude skills and agents';
     case 'codex':
       return 'symlink .agents/skills → skills + AGENTS.md';
     case 'pi':
@@ -58,16 +56,13 @@ linked into each native discovery location. Local tool files remain in
 .claude, .codex, and .pi.
 Codex, Pi, and Cursor also get a root AGENTS.md pointer.
 
-This local tool selection does not change the cloud OpenCode REST runtime.
-
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --force              Configure the current cloned Kortix repository in place.
-                       Requires kortix.yaml (or kortix.toml) and an OpenCode
-                       config dir (harnesses/opencode, or .kortix/opencode).
+                       Requires kortix.yaml (or kortix.toml).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -117,7 +112,7 @@ function gitAvailable(): boolean {
 function excludeLocalAgentWiring(repoRoot: string): void {
   appendGitExcludeEntries(
     repoRoot,
-    ['/.agents', '/.claude', '/.opencode', '/.pi', '/AGENTS.md'],
+    ['/.agents', '/.claude', '/.pi', '/AGENTS.md'],
     'Kortix local coding-agent wiring',
   );
 }
@@ -135,7 +130,7 @@ function printAgentPreamble(): void {
     `  Pick the local coding tools to wire into this Kortix project.`,
     '',
     `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
-    `  ${dim}Ask it to configure triggers, agents, or OpenCode settings.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or skills.${reset}`,
     '',
     `  ${opts}`,
     '',

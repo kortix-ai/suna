@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { qk } from '../../../../../packages/sdk/src/react/query-keys';
 import { resolve } from 'node:path';
 import { uiSourcePath } from '@/test-utils/read-source';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 
 const root = resolve(import.meta.dir, '../..');
 
@@ -92,8 +93,10 @@ for (const [name, experimental] of [
     mounted = root;
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: queryClient },
-        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem, { projectId })),
-        React.createElement(viewModule.AppsView, { projectId }),
+        React.createElement(TooltipProvider, null,
+          React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem, { projectId })),
+          React.createElement(viewModule.AppsView, { projectId }),
+        ),
       ));
     });
     const link = host.querySelector('[data-testid="sidebar"] a');
