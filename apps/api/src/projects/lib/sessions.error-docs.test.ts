@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path';
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..');
 const API_SRC = join(REPO_ROOT, 'apps/api/src');
 
-const ERROR_TABLES = ['apps/web/content/docs/sdk/sessions.mdx'];
+const ERROR_TABLES = ['apps/web/content/docs/index.mdx'];
 
 function apiSourceText(): string {
   const parts: string[] = [];

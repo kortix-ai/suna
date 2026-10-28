@@ -22,7 +22,7 @@ the component subpaths and the stylesheets. Inside kortix-ai/suna:
 `"@kortix/ui": "workspace:*"`.
 `react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
-- Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
+- Public docs: the "Kortix UI" section of `apps/web/content/docs/index.mdx` (https://kortix.com/docs#kortix-ui).
 - Agent skill: `skills/kortix-ui/SKILL.md`, with `references/custom-dashboard.md`
   (a whole dashboard), `references/modules.md` (every entry, its props, an example) and
   `references/theming.md` (every theme key). Kortix sessions load the same files

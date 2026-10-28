@@ -580,15 +580,87 @@ const nextConfig = (): NextConfig => ({
       // 404'd. The CLI, README and external links still use the old spellings.
       {
         source: '/docs/self-hosting',
-        destination: '/docs/host',
+        destination: '/docs#self-hosting',
         permanent: true,
       },
       {
         source: '/docs/self-host',
-        destination: '/docs/host',
+        destination: '/docs#self-hosting',
         permanent: true,
       },
       // 2026-10-27: the Guide is one page; each former Guide page lands on its section.
+      // 2026-10-28: the docs are one page (founder). Every former page
+      // moves to its section of /docs.
+      {
+        source: '/docs/quickstart',
+        destination: '/docs#quickstart',
+        permanent: true,
+      },
+      {
+        source: '/docs/git',
+        destination: '/docs#git',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/manifest',
+        destination: '/docs#kortixyaml-reference',
+        permanent: true,
+      },
+      {
+        source: '/docs/cli',
+        destination: '/docs#cli',
+        permanent: true,
+      },
+      {
+        source: '/docs/api',
+        destination: '/docs#rest-api',
+        permanent: true,
+      },
+      {
+        source: '/docs/apps',
+        destination: '/docs#apps-reference',
+        permanent: true,
+      },
+      {
+        source: '/docs/host',
+        destination: '/docs#self-hosting',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk',
+        destination: '/docs#sdk',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/auth',
+        destination: '/docs#sdk-authentication',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/sessions',
+        destination: '/docs#sessions-from-code',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/react',
+        destination: '/docs#react',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/ui',
+        destination: '/docs#kortix-ui',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/genui',
+        destination: '/docs#generative-ui',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/reference',
+        destination: '/docs#sdk-reference',
+        permanent: true,
+      },
       {
         source: '/docs/guide/get-started',
         destination: '/docs#get-started',
@@ -766,7 +838,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/legacy-toml',
-        destination: '/docs/project/manifest#migrate-from-kortixtoml',
+        destination: '/docs#migrate-from-kortixtoml',
         permanent: true,
       },
       {
@@ -786,7 +858,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/work/change-requests',
-        destination: '/docs/git#change-requests',
+        destination: '/docs#change-requests',
         permanent: true,
       },
       {
@@ -821,32 +893,32 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/feature-flags/apps',
-        destination: '/docs/apps',
+        destination: '/docs#apps-reference',
         permanent: true,
       },
       {
         source: '/docs/host/architecture',
-        destination: '/docs/host#what-runs-where',
+        destination: '/docs#what-runs-where',
         permanent: true,
       },
       {
         source: '/docs/backend',
-        destination: '/docs/sdk/sessions#start-sessions-from-your-server',
+        destination: '/docs#start-sessions-from-your-server',
         permanent: true,
       },
       {
         source: '/docs/sdk/example',
-        destination: '/docs/sdk#a-complete-script',
+        destination: '/docs#a-complete-script',
         permanent: true,
       },
       {
         source: '/docs/sdk/sign-in',
-        destination: '/docs/sdk/auth#sign-in-with-kortix',
+        destination: '/docs#sign-in-with-kortix',
         permanent: true,
       },
       {
         source: '/docs/sdk/apps',
-        destination: '/docs/apps#build-on-apps-from-typescript',
+        destination: '/docs#build-on-apps-from-typescript',
         permanent: true,
       },
       {

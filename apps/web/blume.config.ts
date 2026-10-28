@@ -1,19 +1,21 @@
 import { defineConfig } from 'blume';
 
-// The sidebar, in reading order. The Guide comes first: the A-to-Z journey
-// of Kortix in plain language for business readers (founder, 2026-10-27).
-// Every Guide page ends with "For developers"
-// links into the technical reference, which follows under "Developers".
-// Every page id must exist under content/docs; Blume renders a group's items
-// in this exact order. This tree is the only nav source: content/docs has no
-// meta.ts files.
+// The docs are ONE page (content/docs/index.mdx, founder 2026-10-28):
+// everything from the first project to the SDK reference, top to bottom.
+// This sidebar is that page's outline, one link per top-level section, and
+// it replaces Blume's right-hand "On this page" (toc: false below). Blume
+// prefixes each href with the /docs base. Kortix Capture's pages and the
+// generated audit-actions reference stay built but unlisted: the app links
+// to them.
 const sidebar = [
-  // The Guide is ONE scrollable page (content/docs/index.mdx, founder
-  // 2026-10-27); these entries jump to its sections. Blume prefixes them
-  // with the /docs base.
-  { label: 'Guide', items: ['index', { label: 'Get started', href: '/#get-started' }] },
-  // The building blocks, one section each, each opening with a short
-  // walkthrough video (founder, 2026-10-28: the docs revolve around them).
+  {
+    label: 'Start',
+    items: [
+      { label: 'Overview', href: '/#how-it-works' },
+      { label: 'How the pieces fit', href: '/#how-the-pieces-fit' },
+      { label: 'Get started', href: '/#get-started' },
+    ],
+  },
   {
     label: 'Building blocks',
     items: [
@@ -38,15 +40,30 @@ const sidebar = [
       { label: 'Billing', href: '/#billing' },
     ],
   },
-  // Less is more (founder, 2026-10-27): the technical reference is the few
-  // pages a developer needs. Removed pages redirect to their Guide page
-  // (next.config.ts). Kortix Capture's pages and the generated audit-actions
-  // reference stay built but unlisted: the app links to them.
   {
     label: 'Developers',
-    items: ['quickstart', 'git', 'project/manifest', 'cli', 'api', 'apps', 'host'],
+    items: [
+      { label: 'Quickstart', href: '/#quickstart' },
+      { label: 'Git', href: '/#git' },
+      { label: 'kortix.yaml reference', href: '/#kortixyaml-reference' },
+      { label: 'CLI', href: '/#cli' },
+      { label: 'REST API', href: '/#rest-api' },
+      { label: 'Apps reference', href: '/#apps-reference' },
+      { label: 'Self-hosting', href: '/#self-hosting' },
+    ],
   },
-  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/ui', 'sdk/genui', 'sdk/reference'] },
+  {
+    label: 'SDK',
+    items: [
+      { label: 'SDK', href: '/#sdk' },
+      { label: 'Authentication', href: '/#sdk-authentication' },
+      { label: 'Sessions from code', href: '/#sessions-from-code' },
+      { label: 'React', href: '/#react' },
+      { label: 'Kortix UI', href: '/#kortix-ui' },
+      { label: 'Generative UI', href: '/#generative-ui' },
+      { label: 'SDK reference', href: '/#sdk-reference' },
+    ],
+  },
 ];
 
 // The docs render through Blume, not through the Next app. Nothing in
@@ -74,9 +91,8 @@ export default defineConfig({
     site: 'https://kortix.com',
   },
 
-  // "On this page" lists h2 only: the one-page Guide has 19 sections and
-  // about 90 subheads.
-  toc: { maxHeadingLevel: 2 },
+  // No right-hand "On this page": the sidebar is the page's outline.
+  toc: false,
 
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see
   // decision D3 in the spec. The accent is NOT set here: it is bound to the
@@ -89,18 +105,15 @@ export default defineConfig({
     href: '/docs',
     // 1.5.3 correction: light/dark/alt live under `image`, not top-level
     // `logo` — see task-4-report.md for the config-key corrections log.
+    // The full logo file (symbol and wordmark, from public/brandkit). Blume
+    // prints the site title beside the image unless `text` is "", and the
+    // wordmark is already in the file.
     image: {
-      // BOTH are symbol-only, the same 30x25 mark in black and white.
-      // Blume renders the logo image and then a <span> with the site title
-      // beside it, so the dark slot must NOT hold a full logomark: it used to
-      // point at kortix-logomark-white.svg (708x142), which already contains
-      // the wordmark, and dark mode printed "Kortix" twice while light was
-      // correct. Keep both slots symbol-only.
-      light: '/kortix-symbol.svg',
-      dark: '/kortix-symbol-white.svg',
-      // The adjacent site title names the link; the symbol is decorative.
-      alt: '',
+      light: '/kortix-logo.svg',
+      dark: '/kortix-logo-white.svg',
+      alt: 'Kortix',
     },
+    text: '',
   },
 
   // Search is the ONE surface Blume takes over, replacing /api/search and the
