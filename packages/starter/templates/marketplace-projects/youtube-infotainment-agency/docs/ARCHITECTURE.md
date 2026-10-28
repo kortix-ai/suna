@@ -30,7 +30,7 @@ flowchart LR
   SFX on cue words, two-pass loudnorm to −14 LUFS.
 - **Quality loop**: maker → `yt` checks → critic (rubric, vision on contact sheets) → revise (≤3) →
   human gate. Human rejections feed the harness-reflector, which proposes skill/rubric changes.
-- **Harness**: sessions run on **pi** (`runtime: pi`). Stage agents are pi subagents dispatched with
+- **Harness**: sessions run on **pi** (`kortix_version: 3`). Stage agents are pi subagents dispatched with
   `task`; they can't nest or ask the user, so the showrunner owns critic dispatch and human questions.
 - **Persistence**: episode text artifacts on branch `episode/<slug>`; media in S3/R2 indexed by
   `media.lock.json`; any fresh sandbox can resume from `episode.yaml`.

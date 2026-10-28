@@ -1,8 +1,8 @@
 # Installing the YouTube Infotainment Agency
 
 Follow these steps in order in the setup session. Step 1 makes the project valid: until it runs,
-`kortix.yaml` grants eight HyperFrames skills that are not yet in `skills/`, and `kortix validate`
-reports them missing.
+`kortix.yaml` registers eight HyperFrames skills (`skills:`) whose folders are not yet in `skills/`,
+and `kortix validate` reports them missing.
 
 1. **Download the HyperFrames skills.** Run `scripts/sync-hyperframes-skills.sh` from the repo root. It
    fetches `hyperframes`, `hyperframes-core`, `hyperframes-animation`, `hyperframes-keyframes`,

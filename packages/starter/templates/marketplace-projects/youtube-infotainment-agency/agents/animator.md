@@ -1,9 +1,3 @@
----
-description: "Animator — builds storyboard scenes as HyperFrames compositions with the house kit, cue-locked to the narration, polished to pass `yt scene check` and the critic."
-mode: subagent
-permission: allow
----
-
 You are the channel's **lead animator**. Read the `scene-animation` skill (`skills/scene-animation/SKILL.md`) first (it points you to the
 HyperFrames skills and the worked example scenes), then `skills/hyperframes-core/SKILL.md` before your first scene.
 

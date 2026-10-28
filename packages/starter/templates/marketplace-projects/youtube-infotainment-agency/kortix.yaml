@@ -1,9 +1,9 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
 #
 # YouTube Infotainment Agency — an agent loop that researches, writes, animates, voices, packages and
 # publishes science explainers at the Kurzgesagt / Veritasium quality bar.
 #
-#   agents/<name>.md        behaviour (frontmatter + system prompt)   ← one agent per production role
+#   agents/<name>.md        each agent's system prompt (its prompt_file) ← one agent per production role
 #   skills/<name>/SKILL.md  how-to knowledge, loaded on demand
 #   rubrics/                the quality bar the critic scores against
 #   channel/                channel bible (brand, design, audio) + channel.yaml (pipeline config)
@@ -11,14 +11,14 @@
 #   pipeline/               the `yt` CLI (bin/yt): state machine, validation, timing, render, QA, upload
 #   episodes/<slug>/        one folder per video; heavy media lives in object storage (media.lock.json)
 #
-# This file is governance only (grants, triggers, sandbox). v2 grants are deny-by-default.
-kortix_version: 2
+# This file defines every agent (behaviour + grants), the skills registry, triggers and the sandbox.
+# v3 grants are deny-by-default; an agent with no `permission` rule may use every tool.
+kortix_version: 3
 default_agent: showrunner
 
-# Sessions run on the pi harness (calls models through the Kortix LLM gateway). pi reads agents/,
-# skills/, AGENTS.md, memory/ and this file; it has no `skill` tool (agents read SKILL.md files) and
+# Sessions run on pi (models through the Kortix LLM gateway). A v3 session reads the agent's
+# prompt_file, the skills it enables (by name, from the registry below), AGENTS.md and memory/; it
 # gets the five Kortix tools (web_search, scrape_webpage, image_search, memory, show) automatically.
-runtime: pi
 
 project:
   name: "{{projectName}}"
@@ -52,10 +52,42 @@ sandbox:
       memory: 12
       disk: 40
 
+# Skills: name → folder. Each agent enables the ones it uses by name; kortix-cli is built in.
+skills:
+  agent-browser:             skills/agent-browser
+  art-direction:             skills/art-direction
+  claim-verification:        skills/claim-verification
+  critique:                  skills/critique
+  editorial-framing:         skills/editorial-framing
+  edutainment-scriptwriting: skills/edutainment-scriptwriting
+  narration-and-sound:       skills/narration-and-sound
+  packaging:                 skills/packaging
+  post-mortem:               skills/post-mortem
+  research-dossier:          skills/research-dossier
+  scene-animation:           skills/scene-animation
+  showrunner-loop:           skills/showrunner-loop
+  youtube-publishing:        skills/youtube-publishing
+  # HyperFrames (vendored at the release tag pipeline/package.json pins: scripts/sync-hyperframes-skills.sh)
+  hyperframes:               skills/hyperframes
+  hyperframes-animation:     skills/hyperframes-animation
+  hyperframes-audio:         skills/hyperframes-audio
+  hyperframes-cli:           skills/hyperframes-cli
+  hyperframes-core:          skills/hyperframes-core
+  hyperframes-creative:      skills/hyperframes-creative
+  hyperframes-keyframes:     skills/hyperframes-keyframes
+  hyperframes-registry:      skills/hyperframes-registry
+
 agents:
   # ── Orchestration ────────────────────────────────────────────────────────────
   showrunner:
-    file: agents/showrunner.md
+    description: >-
+      Showrunner — runs edutainment episodes end to end: drives the `yt` state machine, dispatches
+      the stage agents, runs the critic loop, requests human gates, and keeps every episode
+      resumable. Default agent; start here for anything about making a video.
+    mode: primary
+    prompt_file: agents/showrunner.md
+    subagents: all
+    workspace: { project_repository: true }
     # Runs whole episodes: dispatches stage subagents (same sandbox), so it holds every secret they use.
     secrets: [ELEVENLABS_API_KEY, OPENAI_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN, YT_API_KEY, MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY, MEDIA_S3_PREFIX, FAL_KEY]
     skills: [showrunner-loop, kortix-cli, agent-browser]
@@ -66,57 +98,122 @@ agents:
       project.secret.read, project.secret.write]
 
   critic:
-    file: agents/critic.md
+    description: >-
+      Critic — independent quality reviewer. Scores briefs, research, scripts, storyboards, scenes,
+      final cuts and packaging against rubrics/ and writes qa/<stage>-review.json with specific,
+      actionable fixes.
+    mode: subagent
+    prompt_file: agents/critic.md
+    subagents: all
+    workspace: { project_repository: true }
     skills: [critique, agent-browser]
 
   # ── 1 · Topic choice & editorial framing ────────────────────────────────────
   topic-scout:
-    file: agents/topic-scout.md
+    description: >-
+      Topic scout — finds and frames episode topics: the question, the misconception, the payoff and
+      an original angle proven against existing YouTube coverage. Writes 01-brief.json and maintains
+      episodes/backlog.md.
+    mode: subagent
+    prompt_file: agents/topic-scout.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [YT_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN]
     skills: [editorial-framing, agent-browser]
 
   # ── 2 · Research & reporting ────────────────────────────────────────────────
   researcher:
-    file: agents/researcher.md
+    description: >-
+      Researcher — turns an approved brief into a deep, primary-source dossier and a claims.json of
+      atomic, verbatim-quoted, tiered claims. The factual foundation for everything downstream.
+    mode: subagent
+    prompt_file: agents/researcher.md
+    subagents: all
+    workspace: { project_repository: true }
     skills: [research-dossier, agent-browser]
 
   fact-checker:
-    file: agents/fact-checker.md
+    description: >-
+      Fact-checker — independently re-fetches every source and verifies every claim in claims.json;
+      writes fact-check.json and applies verdicts. Also re-verifies claims after viewer reports.
+    mode: subagent
+    prompt_file: agents/fact-checker.md
+    subagents: all
+    workspace: { project_repository: true }
     skills: [claim-verification, agent-browser]
 
   # ── 3 · Script writing & structure ──────────────────────────────────────────
   scriptwriter:
-    file: agents/scriptwriter.md
+    description: >-
+      Scriptwriter — writes the narration as structured beats (script.json) in the channel voice:
+      hook, misconception → journey → payoff → resolution, every fact citing verified claims, every
+      beat with a drawable visual intent.
+    mode: subagent
+    prompt_file: agents/scriptwriter.md
+    subagents: all
+    workspace: { project_repository: true }
     skills: [edutainment-scriptwriting]
 
   # ── 4 · Visual concepting & set design ──────────────────────────────────────
   art-director:
-    file: agents/art-director.md
+    description: >-
+      Art director — designs what the viewer sees: storyboard.json over the locked narration timing,
+      scene archetypes and visual metaphors, colour meanings, SFX cues and style frames. Keeps the
+      episode's look consistent.
+    mode: subagent
+    prompt_file: agents/art-director.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [OPENAI_API_KEY, FAL_KEY]
     skills: [art-direction, scene-animation, hyperframes, hyperframes-creative, hyperframes-core, hyperframes-registry]
 
   # ── 5 · 2D/3D animation ─────────────────────────────────────────────────────
   animator:
-    file: agents/animator.md
+    description: >-
+      Animator — builds storyboard scenes as HyperFrames compositions with the house kit, cue-locked
+      to the narration, polished to pass `yt scene check` and the critic.
+    mode: subagent
+    prompt_file: agents/animator.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [FAL_KEY]
     skills: [scene-animation, hyperframes, hyperframes-core, hyperframes-animation, hyperframes-keyframes,
       hyperframes-registry, hyperframes-cli, hyperframes-creative]
 
   # ── 6 · Editing, sound & music ──────────────────────────────────────────────
   sound-editor:
-    file: agents/sound-editor.md
+    description: >-
+      Sound editor — narration (TTS per beat with word timings → locked timing.json), music score
+      cues and SFX for the mix; re-voices changed beats and keeps scenes in sync.
+    mode: subagent
+    prompt_file: agents/sound-editor.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [ELEVENLABS_API_KEY]
     skills: [narration-and-sound, hyperframes-audio]
 
   # ── 7 · Thumbnails & packaging ──────────────────────────────────────────────
   packager:
-    file: agents/packager.md
+    description: >-
+      Packager — titles, code-rendered thumbnail, description, tags and disclosure flags; builds the
+      sources page and final description. Makes the promise the video keeps.
+    mode: subagent
+    prompt_file: agents/packager.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [YT_API_KEY, YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN]
     skills: [packaging, scene-animation, hyperframes-core]
 
   # ── 8 · Publication, sources & follow-through ───────────────────────────────
   publisher:
-    file: agents/publisher.md
+    description: >-
+      Publisher — uploads approved episodes to YouTube (private first) with captions, thumbnail,
+      sources and correct disclosure; schedules only after the human final gate; runs
+      post-publication follow-through, corrections and analytics learnings.
+    mode: subagent
+    prompt_file: agents/publisher.md
+    subagents: all
+    workspace: { project_repository: true }
     secrets: [YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN, MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY, MEDIA_S3_PREFIX]
     skills: [youtube-publishing, post-mortem, kortix-cli]
     kortix_permissions: [project.read, project.review.read, project.review.submit, project.gitops.read,
@@ -124,13 +221,34 @@ agents:
 
   # ── Harness upkeep ──────────────────────────────────────────────────────────
   harness-reflector:
-    file: agents/harness-reflector.md
+    description: >-
+      Continual-harness reflector. Surveys recent sessions across the project and refines the shared
+      harness — agent prompts, sub-agents, skills/tools, and memory — via the four-pass protocol in
+      the `kortix-harness-refinement` skill. Runs on a cron (the `harness-reflector` trigger in
+      kortix.yaml) and ends every run by opening a single change request titled `harness: …`. Memory
+      curation (`memory/`, per the `kortix-memory` rubric) is its fourth pass.
+    mode: primary
+    prompt_file: agents/harness-reflector.md
+    subagents: all
+    workspace: { project_repository: true }
     # Refines prompts/skills/memory from session evidence; opens (never merges) a harness CR.
+    # No `permission` rule, so every tool is allowed: it runs unattended on a cron, and an `ask`
+    # rule would have nobody to answer it.
     kortix_permissions: all
     skills: all
 
   session-reviewer:
-    file: agents/session-reviewer.md
+    description: >-
+      Read-only sub-agent of the harness-reflector. Given ONE session id, gathers that session's
+      full history — transcript (when available), git branch commits/diffs, change requests — works
+      through it turn by turn, and returns a structured failure-signature findings report. Never
+      edits the harness, never opens CRs.
+    mode: subagent
+    prompt_file: agents/session-reviewer.md
+    subagents: all
+    workspace: { project_repository: true }
+    # Read-only is its discipline (see its prompt), not a permission rule: a `deny`/`ask` rule would
+    # only block the read commands (cat, grep, kortix …) it needs, with no human present.
     kortix_permissions: all
     skills: all
 

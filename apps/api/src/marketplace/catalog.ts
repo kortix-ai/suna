@@ -156,11 +156,13 @@ function projectAgentsAndTriggers(
     const md = candidates
       .map((candidate) => files.find((f) => pathOf(f) === candidate))
       .find((file) => file !== undefined);
-    // Parse the agent's own `.md` frontmatter with the YAML parser (not a
+    // kortix_version 3 keeps the description in the agent's kortix.yaml block;
+    // v1/v2 keep it in the `.md` frontmatter, parsed with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
-    // real text, and collapse it to a single line for the card.
-    const fm = frontmatterOf(md?.content);
-    const desc = typeof fm.description === "string" ? fm.description.replace(/\s+/g, " ").trim() : null;
+    // real text. Either way, collapse it to a single line for the card.
+    const block = (m.agents?.[name] ?? {}) as { description?: unknown };
+    const raw = typeof block.description === "string" ? block.description : frontmatterOf(md?.content).description;
+    const desc = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : null;
     return { name, title: name, description: desc || null };
   });
 

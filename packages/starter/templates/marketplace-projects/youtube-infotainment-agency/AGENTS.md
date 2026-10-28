@@ -53,7 +53,9 @@ media/                  narration, music, SFX, thumbnail — NOT in git (object 
 `sources`, `gate request|sync`, `youtube upload|schedule|analytics`, `smoke`.
 
 ## Environment
-Sessions run on the **pi** harness (`runtime: pi` in `kortix.yaml`):
+Sessions run on **pi**. The project is `kortix_version: 3`: each agent is one block in `kortix.yaml`
+(behaviour and grants) whose `prompt_file` is `agents/<name>.md`, and skills are registered under
+`skills:` and enabled per agent by name.
 - Skills are files: read `skills/<name>/SKILL.md` (your system prompt lists the ones you may use).
 - The web is reached with `web_search` and `scrape_webpage`; there is no `webfetch`, todo or skill tool.
 - Subagents (`task`) can't start further subagents or ask the user questions — report questions back.
