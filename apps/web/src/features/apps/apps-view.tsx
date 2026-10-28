@@ -11,6 +11,7 @@ import { appGrantRows } from '@kortix/ui/customize/agents/agent-apps-grant';
 import {
   type AgentGrant,
   GrantModeTabs,
+  withCatalog,
   grantOrphans,
   type ResourceScope,
 } from '@kortix/ui/customize/shared/agent-resource-scope';
@@ -113,11 +114,14 @@ export function AppsView({
   projectId,
   surface = { kind: 'global' },
   grant,
+  needsAppRead = false,
 }: {
   projectId: string;
   surface?: ResourceScope;
   /** Required in `agent` scope: the agent's `apps` grant. */
   grant?: AgentGrant;
+  /** Agent scope: the agent's Kortix permissions lack `project.app.read`. */
+  needsAppRead?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tAgentApps = useTranslations('agentApps');
@@ -306,9 +310,9 @@ export function AppsView({
         title={tI18nComplete.raw('text89dd748442c1')}
         description={tAgentApps('description')}
         action={<div className="flex shrink-0 items-center">{controls}</div>}
-        filters={<GrantModeTabs grant={agentGrant} label={tAgentScope('appsAccess')} />}
+        filters={<GrantModeTabs grant={withCatalog(agentGrant, (apps.data ?? []).map((item) => item.slug))} label={tAgentScope('appsAccess')} />}
       >
-        <p className="text-muted-foreground mb-4 text-xs">{tAgentApps('grantNote')}</p>
+        {needsAppRead ? <p className="text-muted-foreground mb-4 text-xs">{tAgentApps('grantNote')}</p> : null}
         {missing.length > 0 ? (
           <section className="mb-6 space-y-2">
             <h2 className="text-sm font-medium">{tAgentScope('missingApps')}</h2>

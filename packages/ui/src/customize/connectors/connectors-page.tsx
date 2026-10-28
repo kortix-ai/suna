@@ -75,7 +75,7 @@ import {
 } from './catalog/catalog-entry';
 import { ConnectorBrowse } from './catalog/connector-browse';
 import { useCatalog } from './catalog/use-catalog';
-import { type AgentGrant, GrantModeTabs, type ResourceScope } from '../shared/agent-resource-scope';
+import { type AgentGrant, GrantModeTabs, withCatalog, type ResourceScope } from '../shared/agent-resource-scope';
 import { CapabilityPageShell } from '../shared/capability-page-shell';
 import { AccessList, type AccessItem, plainGrantSwitch } from '../shared/access-list';
 import { EditorList } from '../sections/view/agent-editor-primitives';
@@ -637,7 +637,7 @@ export function ConnectorsPage({
           }
           filters={
             agentScoped && grant ? (
-              <GrantModeTabs grant={grant} label={tAgentScope('connectorsAccess')} />
+              <GrantModeTabs grant={withCatalog(grant, connectors.map((c) => c.slug))} label={tAgentScope('connectorsAccess')} />
             ) : visibleScopes.length > 1 ? (
               <>
                 {scopeTabs}

@@ -39,6 +39,7 @@ import { adminPath } from '../../lib/routes';
 
 import {
   type AgentConfigBlock,
+  type AgentGrantSetV2,
   getProjectDetail,
   listProjectResourceGrants,
   listProjectTriggers,
@@ -141,7 +142,7 @@ import { useDefaultAgent } from './use-default-agent';
  * A host's Apps screen in agent mode: the ONE Apps component (it lives in
  * the host app) with this agent's grant. Without it Access → Apps is hidden.
  */
-export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant }) => ReactNode;
+export type RenderAgentApps = (args: { agentName: string; grant: AgentGrant; needsAppRead: boolean }) => ReactNode;
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -926,7 +927,7 @@ function EditableAgentPage({
         if (view === 'apps' && renderApps)
           return (
             <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
-              {renderApps({ agentName: agent.name, grant: appsGrant })}
+              {renderApps({ agentName: agent.name, grant: appsGrant, needsAppRead: !grantsAppRead(draft.kortix_permissions ?? draft.kortix_cli) })}
             </Embedded>
           );
         if (view === 'drives')
@@ -1222,3 +1223,7 @@ function PlatformAgentPage({
   );
 }
 
+/** Whether a Kortix permissions grant lets the agent open project Apps. */
+function grantsAppRead(grant: AgentGrantSetV2 | null | undefined): boolean {
+  return grant === 'all' || (Array.isArray(grant) && grant.includes('project.app.read'));
+}

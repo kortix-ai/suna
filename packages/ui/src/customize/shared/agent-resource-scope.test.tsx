@@ -4,7 +4,7 @@ import { act, create } from 'react-test-renderer';
 
 import type { AgentGrantSetV2 } from '@kortix/sdk';
 
-import { type AgentGrant, grantOrphans, useAgentGrant } from './agent-resource-scope';
+import { type AgentGrant, grantOrphans, useAgentGrant, withCatalog } from './agent-resource-scope';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
@@ -50,5 +50,32 @@ describe('grantOrphans', () => {
     expect(grant.isGranted('OLD_TOKEN')).toBe(true);
     grant.toggle('OLD_TOKEN');
     expect(onChange).toHaveBeenCalledWith(['API_KEY']);
+  });
+});
+
+describe('withCatalog', () => {
+  const grant = (value: AgentGrantSetV2): AgentGrant & { writes: unknown[] } => {
+    const writes: unknown[] = [];
+    return {
+      value,
+      writes,
+      setMode: (mode: string) => writes.push(mode),
+      set: (next: AgentGrantSetV2) => writes.push(next),
+    } as unknown as AgentGrant & { writes: unknown[] };
+  };
+
+  test('All → Specific keeps every catalog item on, not an empty list (reads back as None)', () => {
+    const g = grant('all');
+    withCatalog(g, ['github', 'slack']).setMode('specific');
+    expect(g.writes).toEqual([['github', 'slack']]);
+  });
+
+  test('None → Specific and an empty catalog fall through to the plain mode switch', () => {
+    const none = grant('none');
+    withCatalog(none, ['github']).setMode('specific');
+    expect(none.writes).toEqual(['specific']);
+    const empty = grant('all');
+    withCatalog(empty, []).setMode('specific');
+    expect(empty.writes).toEqual(['specific']);
   });
 });

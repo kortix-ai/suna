@@ -88,6 +88,20 @@ export function useAgentGrant(
 }
 
 /**
+ * The grant over a known catalog: All → Specific keeps every id that is on
+ * (all of them), instead of an empty pick list that reads back as None.
+ */
+export function withCatalog(grant: AgentGrant, ids: readonly string[]): AgentGrant {
+  return {
+    ...grant,
+    setMode: (next) =>
+      next === 'specific' && grant.value === 'all' && grant.set && ids.length > 0
+        ? grant.set([...ids])
+        : grant.setMode(next),
+  };
+}
+
+/**
  * The ids a Specific grant names that the catalog no longer holds: a resource
  * deleted or renamed after the grant was written. The agent page lists them
  * beside the catalog with a Missing mark, so the editor can see each one and

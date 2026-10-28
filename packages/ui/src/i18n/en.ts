@@ -7506,7 +7506,7 @@ const catalog = {
       "unsavedTab": "Unsaved changes",
       "canUse": "{name} can use",
       "grantAllHint": "Every one in this project, including ones added later.",
-      "grantSpecificHint": "Only the ones checked below.",
+      "grantSpecificHint": "Only the ones switched on below.",
       "grantNoneHint": "Nothing. Choose Specific to pick some, or All.",
       "enabled": "Enabled",
       "off": "Off",

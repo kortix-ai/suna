@@ -553,7 +553,7 @@ const nextConfig = (): NextConfig => ({
         permanent: false,
       },
       {
-        source: '/projects/:id/customize/:tab(skills|triggers|models|secrets)',
+        source: '/projects/:id/customize/:tab(skills|tools|extensions|drives|triggers|models|secrets)',
         destination: '/projects/:id/admin/:tab',
         permanent: false,
       },

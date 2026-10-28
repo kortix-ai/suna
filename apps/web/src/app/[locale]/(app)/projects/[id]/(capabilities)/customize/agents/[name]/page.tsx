@@ -34,8 +34,8 @@ export default function ProjectAgentDetailPage() {
         key={agentName}
         projectId={projectId}
         agentName={agentName}
-        renderApps={({ agentName: name, grant }) => (
-          <AppsView projectId={projectId} surface={{ kind: 'agent', agentName: name }} grant={grant} />
+        renderApps={({ agentName: name, grant, needsAppRead }) => (
+          <AppsView projectId={projectId} surface={{ kind: 'agent', agentName: name }} grant={grant} needsAppRead={needsAppRead} />
         )}
       />
     </div>

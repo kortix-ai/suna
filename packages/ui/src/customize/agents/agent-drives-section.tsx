@@ -244,7 +244,7 @@ function FolderPicker({
 }) {
   const t = useTranslations('agentMounts');
   const [path, setPath] = useState('/');
-  const [level, setLevel] = useState<'read' | 'write'>('write');
+  const [level, setLevel] = useState<'read' | 'write'>('read');
   const folder = useDriveFolder(open ? driveId : null, path);
   const share = useShareFolder();
   // Personal folders under /Users are their owners' to share, never a mount to pick here.
@@ -322,7 +322,7 @@ function FolderPicker({
         </ModalBody>
         <ModalFooter className="flex items-center justify-between gap-2">
           <Select value={level} onValueChange={(v) => setLevel(v as 'read' | 'write')}>
-            <SelectTrigger size="sm" className="w-36" aria-label={t('levelFor', { path })}>
+            <SelectTrigger size="sm" className="w-36 shrink-0" aria-label={t('levelFor', { path })}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

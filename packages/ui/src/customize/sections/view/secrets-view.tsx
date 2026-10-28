@@ -90,6 +90,7 @@ import { CapabilityPageShell } from '../../shared/capability-page-shell';
 import {
   type AgentGrant,
   GrantModeTabs,
+  withCatalog,
   grantOrphans,
   type ResourceScope,
 } from '../../shared/agent-resource-scope';
@@ -386,7 +387,7 @@ export function SecretsView({
       }
       filters={
         agentGrant ? (
-          <GrantModeTabs grant={agentGrant} label={tAgentScope('secretsAccess')} />
+          <GrantModeTabs grant={withCatalog(agentGrant, allRows.map((r) => r.identifier))} label={tAgentScope('secretsAccess')} />
         ) : undefined
       }
       search={
