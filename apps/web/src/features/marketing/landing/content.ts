@@ -42,10 +42,9 @@ export const heroEyebrow = {
 
 /**
  * Closing CTA, above the site map on every marketing page: one line that
- * echoes the hero, then three ways in, one per buyer. Each claim is a
- * claims.md row (Hosting, Source, SSO, Services offer) or self-hosted
- * `commands.install`. No price here: prices live on /pricing and /services.
- * The door copy is English only for now, like the case studies.
+ * echoes the hero, two actions and the trust line. Each claim is a claims.md
+ * row (Hosting, Source, SSO). No price here: prices live on /pricing and
+ * /services.
  */
 export const cta = {
   title: 'Own your company’s AI.',
@@ -53,29 +52,6 @@ export const cta = {
   ctaPrimary: 'Start for free',
   ctaSecondary: 'Talk to sales',
   trust: 'Open source · SOC 2 Type I · SAML SSO and SCIM · Any model, your keys',
-} as const;
-
-export const ctaDoors = {
-  cloud: {
-    label: 'Kortix Cloud',
-    title: 'Start for free.',
-    body: 'Sign up, invite your team and connect your tools. Nothing to install.',
-    signedIn: 'Open your project',
-    link: 'See plans',
-  },
-  selfHost: {
-    label: 'Self-hosted',
-    title: 'Run it on your own infrastructure.',
-    body: 'Your VPC or your own on-prem network. Install the CLI, then run kortix self-host start.',
-    command: 'curl -fsSL https://kortix.com/install | bash',
-    link: 'Self-hosting guide',
-  },
-  team: {
-    label: 'Enterprise and services',
-    title: 'Roll it out with our team.',
-    body: 'SSO, on-prem and approval rules for the whole company. Or we map your company and build it for you.',
-    link: 'AI Transformation services',
-  },
 } as const;
 
 /**

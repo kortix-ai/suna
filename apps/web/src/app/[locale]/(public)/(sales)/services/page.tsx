@@ -2,17 +2,11 @@
 
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { CaseStudies } from '@/features/marketing/case-studies/case-studies';
-import { Disclosure, DisclosureList } from '@/features/marketing/kit/disclosure';
 import { DitherField } from '@/features/marketing/kit/dither-field';
 import { FeatureSplit } from '@/features/marketing/kit/feature-split';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
-import {
-  Band,
-  Block,
-  CellGrid,
-  Heading,
-  PageFrame,
-} from '@/features/marketing/kit/page-frame';
+import { Band, Block, CellGrid, Heading, PageFrame } from '@/features/marketing/kit/page-frame';
+import { FaqSection } from '@/features/marketing/landing-sections/faq-section';
 import {
   benefits,
   caseCta,
@@ -30,15 +24,11 @@ import {
   stages,
 } from '@/features/marketing/services/content';
 import { cn } from '@kortix/ui';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import {
-  AppWindowIcon,
   ArrowRightIcon,
-  ArrowsClockwiseIcon,
-  CheckIcon,
-  DatabaseIcon,
   GitBranchIcon,
   GraduationCapIcon,
-  MapTrifoldIcon,
   PathIcon,
   ReceiptIcon,
   StackIcon,
@@ -66,15 +56,6 @@ const CHECKOUT_URL = process.env.NEXT_PUBLIC_SERVICES_CHECKOUT_URL;
 
 /** A third-party logo is drawn for a white ground: white in both themes (color.md, logo tile rule). */
 const LOGO_TILE_BACKGROUND = 'bg-white';
-
-/** Icons for the hero's five offer tiles. */
-const OFFER_ICONS = {
-  map: MapTrifoldIcon,
-  data: DatabaseIcon,
-  loop: ArrowsClockwiseIcon,
-  app: AppWindowIcon,
-  train: GraduationCapIcon,
-} as const;
 
 const BENEFIT_ICONS = {
   team: UsersThreeIcon,
@@ -163,16 +144,17 @@ function Price({ className }: { className?: string }): ReactNode {
 export default function ServicesPage() {
   return (
     <PageFrame>
-      {/* ── hero: one promise, one ask, the offer as tiles, the logos ─────── */}
+      {/* ── hero: one promise, one ask, the logos ──────────────────────────── */}
       <section
         id="hero"
         className="relative overflow-hidden px-6 pt-32 pb-16 lg:px-28 lg:pt-40 lg:pb-20"
       >
         {/* The brand's dither field over the top band, faded out before the
-            title (same masks as the closing call to action). */}
+            title (same masks as the closing call to action). It stays
+            between the two rails, clipped there, never across them. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-81.5 [mask-image:linear-gradient(to_bottom,#000,transparent_150px),radial-gradient(50%_300px_at_50%_0,#000,transparent)]"
+          className="pointer-events-none absolute inset-x-4 top-0 h-81.5 overflow-hidden [mask-image:linear-gradient(to_bottom,#000,transparent_150px),radial-gradient(50%_300px_at_50%_0,#000,transparent)] lg:inset-x-17"
         >
           <DitherField />
         </div>
@@ -193,22 +175,7 @@ export default function ServicesPage() {
           <p className="text-muted-foreground text-sm text-pretty">{hero.terms}</p>
         </div>
 
-        <ul className="bg-border relative mx-auto mt-14 grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-lg border lg:grid-cols-5">
-          {hero.does.map((item) => {
-            const Icon = OFFER_ICONS[item.icon];
-            return (
-              <li key={item.id} className="bg-background flex flex-col gap-3 p-5 text-left last:col-span-2 lg:last:col-span-1">
-                <Icon className="text-foreground size-5" aria-hidden />
-                <div>
-                  <p className="text-foreground text-base font-medium">{item.k}</p>
-                  <p className="text-muted-foreground mt-1 text-sm text-pretty">{item.v}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-
-        <div className="relative mt-10 flex flex-wrap items-center justify-center gap-3">
+        <div className="relative mt-14 flex flex-wrap items-center justify-center gap-3">
           <span className="text-muted-foreground text-sm">{hero.logosLabel}</span>
           {hero.logos.map((logo) => (
             <span
@@ -260,17 +227,18 @@ export default function ServicesPage() {
                   </span>
                   <h3 className="text-foreground text-xl font-medium tracking-tight">{stage.k}</h3>
                 </div>
-                <p className="text-muted-foreground text-base text-pretty lg:col-span-5">
-                  {stage.v}
-                </p>
-                <ul className="flex flex-col gap-2 text-sm lg:col-span-4">
-                  {stage.get.map((item) => (
-                    <li key={item} className="text-foreground flex items-start gap-2">
-                      <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                {/* The description runs the full width; what you get sits under it. */}
+                <div className="flex flex-col gap-5 lg:col-span-9">
+                  <p className="text-muted-foreground text-base text-pretty">{stage.v}</p>
+                  <ul className="flex flex-col gap-x-8 gap-y-2 text-sm sm:flex-row sm:flex-wrap">
+                    {stage.get.map((item) => (
+                      <li key={item} className="text-foreground flex items-start gap-2">
+                        <SolidCheckIcon className="text-ring mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </li>
             ))}
           </ol>
@@ -285,6 +253,18 @@ export default function ServicesPage() {
           <JoinButton variant="secondary" />
         </div>
       </div>
+
+      {/* ── every function, and what agents take over ────────────────────── */}
+      <Block id="functions">
+        <Heading title={functions.title} titleMuted={functions.titleMuted} />
+        <Band className="mt-12">
+          <CellGrid items={functions.items} cols="lg:grid-cols-4" />
+          <div className="flex flex-col gap-2 border-t p-6 lg:p-8">
+            <h3 className="text-foreground text-base font-medium">{functions.more.k}</h3>
+            <p className="text-muted-foreground text-sm text-pretty">{functions.more.v}</p>
+          </div>
+        </Band>
+      </Block>
 
       {/* ── built on Kortix: what everything runs on ───────────────────── */}
       <FeatureSplit
@@ -305,18 +285,6 @@ export default function ServicesPage() {
           </div>
         }
       />
-
-      {/* ── every function, and what agents take over ────────────────────── */}
-      <Block id="functions">
-        <Heading title={functions.title} titleMuted={functions.titleMuted} />
-        <Band className="mt-12">
-          <CellGrid items={functions.items} cols="lg:grid-cols-4" />
-          <div className="flex flex-col gap-2 border-t p-6 lg:p-8">
-            <h3 className="text-foreground text-base font-medium">{functions.more.k}</h3>
-            <p className="text-muted-foreground text-sm text-pretty">{functions.more.v}</p>
-          </div>
-        </Band>
-      </Block>
 
       {/* ── the alternatives ──────────────────────────────────────────────── */}
       <Block id="compare">
@@ -358,7 +326,7 @@ export default function ServicesPage() {
                     >
                       {i === 0 ? (
                         <span className="flex items-start gap-2">
-                          <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                          <SolidCheckIcon className="text-ring mt-0.5" />
                           {cell}
                         </span>
                       ) : (
@@ -395,52 +363,50 @@ export default function ServicesPage() {
       {/* ── pricing: one plan, the guarantee, the intro call ──────────────── */}
       <Block id="pricing">
         <Heading title={pricing.title} titleMuted={pricing.titleMuted} />
+        {/* Both cards carry the toast's smooth shadow ring (shadow.floriankiem.com
+            `ring-sm`) instead of a flat border, share one padding, and end on
+            their button, so Join now and Book an intro call sit on one line. */}
         <div className="mt-12 grid grid-cols-1 gap-4 px-8 lg:grid-cols-[3fr_2fr] lg:px-28">
-          <div className="bg-foreground text-background flex flex-col gap-6 rounded-lg p-8 lg:p-10">
+          <div className="bg-foreground text-background smooth-shadow-ring-sm flex flex-col gap-6 rounded-lg p-8 lg:p-10">
             <h3 className="text-lg font-medium">{pricing.plan}</h3>
             <Price />
             <p className="text-sm text-pretty opacity-70">{pricing.lock}</p>
             <ul className="grid grid-cols-1 gap-x-6 gap-y-3 border-t border-current/20 pt-6 text-sm sm:grid-cols-2">
               {pricing.includes.map((item) => (
                 <li key={item} className="flex items-start gap-2">
-                  <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <SolidCheckIcon className="text-ring mt-0.5" />
                   {item}
                 </li>
               ))}
             </ul>
-            <div className="flex flex-col gap-3 pt-2">
-              <JoinButton variant="secondary" className="w-full" />
-              <p className="text-center text-xs opacity-70">
-                {pricing.secure}. {GUARANTEE}
-              </p>
-            </div>
+            <p className="text-xs text-pretty opacity-70">
+              {pricing.secure}. {GUARANTEE}
+            </p>
+            <JoinButton variant="secondary" className="mt-auto w-full" />
           </div>
-          <div className="flex flex-col gap-4">
-            <div className="bg-card flex flex-1 flex-col gap-4 rounded-lg border p-6 lg:p-8">
-              <div>
-                <h3 className="text-foreground text-lg font-medium">{intro.title}</h3>
-                <p className="text-muted-foreground mt-2 text-sm text-pretty">{intro.body}</p>
-              </div>
-              <div className="flex flex-1 items-center">
-                <TeamFaces />
-              </div>
-              <IntroButton className="mt-auto w-full" />
+          <div className="bg-card smooth-shadow-ring-sm flex flex-col gap-6 rounded-lg p-8 lg:p-10">
+            <div>
+              <h3 className="text-foreground text-lg font-medium">{intro.title}</h3>
+              <p className="text-muted-foreground mt-2 text-sm text-pretty">{intro.body}</p>
             </div>
+            <div className="flex flex-1 items-center">
+              <TeamFaces />
+            </div>
+            <IntroButton className="mt-auto w-full" />
           </div>
         </div>
       </Block>
 
-      {/* ── objections ────────────────────────────────────────────────────── */}
-      <Block id="faq">
-        <Heading title={faq.title} titleMuted={faq.titleMuted} />
-        <DisclosureList className="mx-8 mt-10 lg:mx-28">
-          {faq.items.map((item) => (
-            <Disclosure key={item.id} id={`faq-${item.id}`} name="services-faq" summary={item.q}>
-              <p className="text-muted-foreground max-w-3xl text-base text-pretty">{item.a}</p>
-            </Disclosure>
-          ))}
-        </DisclosureList>
-      </Block>
+      {/* ── objections: the home page FAQ, with these questions ─────────── */}
+      <FaqSection
+        title={faq.title}
+        titleMuted={faq.titleMuted}
+        items={faq.items.map((item) => ({
+          id: `faq-${item.id}`,
+          question: item.q,
+          answer: item.a,
+        }))}
+      />
 
       {/* ── the last ask ──────────────────────────────────────────────────── */}
       <Block id="start">
