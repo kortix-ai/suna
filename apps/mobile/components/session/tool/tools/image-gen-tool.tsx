@@ -66,7 +66,8 @@ function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; st
     return () => clearInterval(id);
   }, [timed]);
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}>
+    // Wraps in a half-width frame instead of clipping ("Generating 3 images 0:42").
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: TURN_SPACE.gap2 }}>
       <SessionDotMatrix sessionId={seed} size={14} />
       <TextShimmer duration={1} spread={2} style={TURN_TYPE.xs}>
         {label}
@@ -327,25 +328,6 @@ function ImageGenFrame({ image, seed, busy, model }: {
   );
 }
 
-/** A failed frame has no ratio: its plate counts as a 2:1 frame when the masonry balances its columns. */
-const PLATE_HEIGHT = 0.5;
-
-/**
- * Two-column masonry: each image in turn joins the shorter column, measured
- * in widths (a frame's height over its width), so the columns stay even
- * without measuring a pixel.
- */
-function masonry(images: ImageGenImage[]): number[][] {
-  const columns: number[][] = [[], []];
-  const heights = [0, 0];
-  images.forEach((image, i) => {
-    const column = heights[1]! < heights[0]! ? 1 : 0;
-    columns[column]!.push(i);
-    heights[column]! += image.phase === 'failed' ? PLATE_HEIGHT : 1 / aspectRatioValue(image.aspectRatio);
-  });
-  return columns;
-}
-
 export function ImageGenTool({ call }: ToolProps) {
   const { t } = useTranslation();
   // The turn says whether an open call still runs: an open call on a finished turn was stopped.
@@ -382,8 +364,17 @@ export function ImageGenTool({ call }: ToolProps) {
       image={view.images[i]!}
       seed={call.call_id}
       model={view.model}
-      // The first frame carries the busy line, the others its glyph alone.
-      busy={i === 0 ? busyLine : <SessionDotMatrix sessionId={call.call_id} size={14} />}
+      // The first frame carries the busy line, the one announced status; the
+      // others show its glyph alone, hidden from assistive tech.
+      busy={
+        i === 0 ? (
+          busyLine
+        ) : (
+          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <SessionDotMatrix sessionId={call.call_id} size={14} />
+          </View>
+        )
+      }
     />
   );
 
@@ -392,10 +383,14 @@ export function ImageGenTool({ call }: ToolProps) {
       {solo ? (
         frame(0)
       ) : (
+        // Masonry: two stacks, each image at its own ratio. Frame i goes to
+        // stack i % 2 — the shorter stack under the call's one requested
+        // ratio — once, from the prompt list, so a frame never changes stack
+        // when its image or its error lands. Web places the same way.
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2) }}>
-          {masonry(view.images).map((column, c) => (
-            <View key={c} testID="image-gen-column" style={{ flex: 1, gap: webSpace(2) }}>
-              {column.map(frame)}
+          {[0, 1].map((column) => (
+            <View key={column} testID="image-gen-column" style={{ flex: 1, gap: webSpace(2) }}>
+              {view.images.map((_, i) => (i % 2 === column ? frame(i) : null))}
             </View>
           ))}
         </View>

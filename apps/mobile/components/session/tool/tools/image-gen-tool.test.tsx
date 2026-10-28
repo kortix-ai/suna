@@ -233,6 +233,38 @@ describe('ImageGenTool', () => {
     expect(frameRatios().map((r) => Number(r.toFixed(3)))).toEqual([1, 1.5, 0.667]);
   });
 
+  test('a frame never changes column when the batch finishes or a frame fails', async () => {
+    const input = { action: 'generate', prompts: THREE, aspect_ratio: '16:9' };
+    const columns = () => tree?.root.findAll((node) => node.type === 'view' && node.props.testID === 'image-gen-column') ?? [];
+    await render(call({ status: 'running', input }), true);
+    expect(columns().map((column) => column.findAll((node) => node.type === 'view' && node.props.accessibilityState?.busy === true).length)).toEqual([2, 1]);
+    await act(async () => tree?.unmount());
+    const output = batch(
+      [
+        [FOX, '1024x1024', THREE[0]!],
+        ['/workspace/output/images/hare.png', '1024x1536', THREE[2]!],
+      ],
+      [{ prompt: THREE[1]!, error: 'Image generation failed (500): Upstream error.' }],
+    );
+    await render(call({ status: 'completed', input, output }), false);
+    const [left, right] = columns();
+    expect(left!.findAll((node) => node.type === 'image').map((image) => (image.props.source as { uri: string }).uri)).toEqual([
+      `sandbox:${FOX}`,
+      'sandbox:/workspace/output/images/hare.png',
+    ]);
+    expect(right!.findAll((node) => node.type === 'image')).toHaveLength(0);
+    expect(right!.findAll((node) => node.type === 'text').map((node) => ([] as unknown[]).concat(node.props.children).join(''))).toContain('Upstream error.');
+  });
+
+  test('the busy line wraps in a half-width frame, and only the first frame is announced', async () => {
+    await render(call({ status: 'running', input: { action: 'generate', prompts: THREE } }), true);
+    const rows = tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { flexWrap?: string } | undefined)?.flexWrap === 'wrap') ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.findAll((node) => node.type === 'text').map((node) => ([] as unknown[]).concat(node.props.children).join(''))).toContain('Generating 3 images');
+    const hidden = tree?.root.findAll((node) => node.type === 'view' && node.props.importantForAccessibility === 'no-hide-descendants') ?? [];
+    expect(hidden).toHaveLength(2);
+  });
+
   test('the card renders no prompt or model text', async () => {
     const prompts = ['A fox in a shuttle', 'An owl in a shuttle'];
     const states = [

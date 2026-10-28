@@ -50,34 +50,53 @@ describe('file content renderer at a target line', () => {
 });
 
 // The image card opens a generated image with its prompt and the model that
-// made it (`openPreview(path, line, caption)`); every other file is unchanged.
+// made it (`openPreview(path, line, caption)`). Only a full-screen viewer
+// (`showCaption`: the preview modal, the panel's file preview) shows it; a
+// Files grid tile and every other embedded renderer never do.
 describe('the full-screen view shows the caption section only when caption data is given', () => {
-  const imageSource: FileSource = {
+  const imageSource = {
     ...source,
     useFileContent: () => ({ data: { type: 'binary', encoding: 'base64', mimeType: 'image/png', content: 'iVBORw0KGgo=' }, isLoading: false, error: null, refetch: async () => undefined }),
   } as FileSource;
-  const image = (path: string) =>
-    renderToStaticMarkup(<FileSourceProvider value={imageSource}><FileContentRenderer filePath={path} /></FileSourceProvider>);
+  const fullScreen = (path: string) =>
+    renderToStaticMarkup(<FileSourceProvider value={imageSource}><FileContentRenderer filePath={path} showCaption /></FileSourceProvider>);
+  const reset = () => useFilePreviewStore.setState({ isOpen: false, filePath: null, lineNumber: undefined, captions: {} });
 
   test('an image opened without caption data renders as before', () => {
-    const html = image('/workspace/output/images/plain.png');
-    expect(html).not.toContain('data-file-caption');
+    expect(fullScreen('/workspace/output/images/plain.png')).not.toContain('data-file-caption');
   });
 
   test('an image opened with its caption shows the prompt and the model under it', () => {
     useFilePreviewStore.getState().openPreview('/workspace/output/images/fox.png', undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
     try {
       for (const path of ['/workspace/output/images/fox.png', 'output/images/fox.png']) {
-        const html = image(path);
+        const html = fullScreen(path);
         expect(html).toContain('data-file-caption');
         expect(html).toContain('A fox in a shuttle');
         expect(html).toContain('codex/gpt-image-2');
       }
       // Another file, opened in the same viewer, carries no caption.
-      expect(image('/workspace/output/images/other.png')).not.toContain('data-file-caption');
+      expect(fullScreen('/workspace/output/images/other.png')).not.toContain('data-file-caption');
       expect(view('/workspace/notes.ts')).not.toContain('data-file-caption');
     } finally {
-      useFilePreviewStore.getState().closePreview();
+      reset();
+    }
+  });
+
+  test('a Files grid tile of a captioned image shows no caption', () => {
+    useFilePreviewStore.getState().openPreview('/workspace/output/images/fox.png', undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
+    try {
+      // `FileThumbnail` renders the image with exactly these props.
+      const tile = renderToStaticMarkup(
+        <FileSourceProvider value={imageSource}>
+          <FileContentRenderer filePath="/workspace/output/images/fox.png" readOnly showHeader={false} imageControls="none" />
+        </FileSourceProvider>,
+      );
+      expect(tile).toContain('<img');
+      expect(tile).not.toContain('data-file-caption');
+      expect(tile).not.toContain('A fox in a shuttle');
+    } finally {
+      reset();
     }
   });
 });

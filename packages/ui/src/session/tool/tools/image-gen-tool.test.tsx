@@ -62,6 +62,8 @@ function batch(images: [string, string, string][], failed: { prompt: string; err
 const FOX = '/workspace/output/images/fox.png';
 const THREE = ['A fox in a shuttle', 'An owl in a shuttle', 'A hare in a shuttle'];
 const count = (html: string, needle: string) => html.split(needle).length - 1;
+/** The masonry's two column stacks, as markup. */
+const columnsOf = (html: string) => html.split('data-image-gen-column=""').slice(1);
 /** The text a reader sees: markup and attributes (an image's `alt`) removed. */
 const visibleText = (html: string) => html.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
 
@@ -145,11 +147,44 @@ describe('ImageGenTool', () => {
     expect(count(html, 'aspect-ratio:16 / 9')).toBe(3);
     expect(count(html, 'aria-busy="true"')).toBe(3);
     // The first frame names the batch and its time; the others carry the glyph alone.
-    expect(count(html, 'role="status"')).toBe(3);
     expect(count(html, 'Generating 3 images')).toBe(1);
     expect(count(html, '0:42')).toBe(1);
     expect(html).not.toContain('Generating image<');
     expect(render({ status: 'running', input: { action: 'edit', prompts: THREE.slice(0, 2) } })).toContain('Editing 2 images');
+  });
+
+  test('only the first generating frame is a status region; the other glyphs are hidden from assistive tech', async () => {
+    await inDom({ status: 'running', input: { action: 'generate', prompts: THREE } }, async (container) => {
+      const statuses = [...container.querySelectorAll('[role="status"]')];
+      expect(statuses).toHaveLength(3);
+      const exposed = statuses.filter((node) => !node.closest('[aria-hidden="true"]'));
+      expect(exposed).toHaveLength(1);
+      expect(exposed[0]!.parentElement?.textContent).toContain('Generating 3 images');
+    });
+  });
+
+  test('a frame never changes column when the batch finishes or a frame fails', () => {
+    const input = { action: 'generate', prompts: THREE, aspect_ratio: '16:9' };
+    const running = columnsOf(render({ status: 'running', input }));
+    expect(running.map((column) => count(column, 'aspect-ratio:16 / 9'))).toEqual([2, 1]);
+    // The middle prompt fails, the others land at other ratios: frames 0 and 2 stay left, 1 stays right.
+    const done = columnsOf(
+      render({
+        status: 'completed',
+        input,
+        output: batch(
+          [
+            [FOX, '1024x1024', THREE[0]!],
+            ['/workspace/output/images/hare.png', '1024x1536', THREE[2]!],
+          ],
+          [{ prompt: THREE[1]!, error: 'Image generation failed (500): Upstream error.' }],
+        ),
+      }),
+    );
+    expect(done[0]).toContain('aspect-ratio:1 / 1');
+    expect(done[0]).toContain('aspect-ratio:2 / 3');
+    expect(done[1]).toContain('Upstream error.');
+    expect(done[1]).not.toContain('aspect-ratio:');
   });
 
   test('three images render as a masonry grid', () => {
@@ -162,13 +197,17 @@ describe('ImageGenTool', () => {
         ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
       ]),
     });
-    expect(html).toContain('columns-2');
-    expect(html).not.toContain('grid-cols-2');
-    expect(count(html, 'break-inside-avoid')).toBe(3);
+    // Two stacks, filled left, right, left; no bottom margin under the last frame.
+    const [left, right] = columnsOf(html);
+    expect(count(left!, 'aspect-ratio:')).toBe(2);
+    expect(count(right!, 'aspect-ratio:')).toBe(1);
+    expect(left!.indexOf('aspect-ratio:1 / 1')).toBeLessThan(left!.indexOf('aspect-ratio:3 / 2'));
+    expect(right).toContain('aspect-ratio:2 / 3');
+    expect(html).not.toContain('mb-2');
     // Each image keeps its own ratio.
     expect(['1 / 1', '2 / 3', '3 / 2'].map((ratio) => html.includes(`aspect-ratio:${ratio}`))).toEqual([true, true, true]);
     // One image is a single frame, no columns.
-    expect(render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) })).not.toContain('columns-2');
+    expect(render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) })).not.toContain('data-image-gen-column');
   });
 
   test('the card renders no prompt or model text', () => {
@@ -205,7 +244,7 @@ describe('ImageGenTool', () => {
       expect(useFilePreviewStore.getState().captions['output/images/fox.png']).toEqual({ text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
     } finally {
       blob = { blobUrl: null, blob: null, isLoading: true, error: null };
-      useFilePreviewStore.getState().closePreview();
+      useFilePreviewStore.setState({ isOpen: false, filePath: null, lineNumber: undefined, captions: {} });
     }
   });
 
@@ -221,17 +260,17 @@ describe('ImageGenTool', () => {
         [{ prompt: THREE[1]!, error: 'Image generation failed (400): The request was refused. Change the prompt, then retry. [content_policy]' }],
       ),
     });
-    expect(html).toContain('columns-2');
+    expect(columnsOf(html)).toHaveLength(2);
     expect(count(html, 'aspect-ratio:')).toBe(2);
     expect(html).toContain('aspect-ratio:1 / 1');
     expect(html).toContain('aspect-ratio:3 / 2');
     expect(count(html, 'The request was refused.')).toBe(1);
     expect(html).toContain('Change the prompt, then retry.');
     expect(html).not.toContain('content_policy');
-    // The frames keep the order the call asked for: fox, the failure, hare.
-    const refused = html.indexOf('The request was refused.');
-    expect(html.indexOf('aspect-ratio:1 / 1')).toBeLessThan(refused);
-    expect(refused).toBeLessThan(html.indexOf('aspect-ratio:3 / 2'));
+    // Each frame keeps its place: fox and hare (frames 0, 2) left, the failure (frame 1) right.
+    const [left, right] = columnsOf(html);
+    expect(left!.indexOf('aspect-ratio:1 / 1')).toBeLessThan(left!.indexOf('aspect-ratio:3 / 2'));
+    expect(right).toContain('The request was refused.');
   });
 
   test('a failed frame with a ChatGPT code offers the ChatGPT reconnect for its card', () => {
@@ -275,7 +314,7 @@ describe('ImageGenTool', () => {
     });
     expect(html).toContain('Loading image');
     expect(html).toContain('aspect-ratio:3 / 2');
-    expect(html).not.toContain('columns-2');
+    expect(html).not.toContain('data-image-gen-column');
   });
 
   test('a failure shows the gateway message and suggestion', () => {

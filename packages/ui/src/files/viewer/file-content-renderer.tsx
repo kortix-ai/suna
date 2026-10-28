@@ -84,7 +84,6 @@ function RendererFallback() {
   );
 }
 
-/** Shared "file does not exist" UI shown when a file cannot be loaded. */
 /**
  * An image with its caption under it: a generated image's prompt and the model
  * that made it. Only an image opened with a caption has one; any other file
@@ -103,6 +102,7 @@ function CaptionedImage({ caption, children }: { caption: FileCaption | undefine
   );
 }
 
+/** Shared "file does not exist" UI shown when a file cannot be loaded. */
 function FileNotFoundState({ filePath }: { filePath: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -175,6 +175,13 @@ export interface FileContentRendererProps {
    *  their own bytes (xlsx, sqlite, the HTML frame), which a cache refetch
    *  cannot reach. */
   reloadKey?: number;
+  /**
+   * A full-screen viewer (the preview modal, the panel's file preview) shows
+   * an image's caption under it when it was opened with one (a generated
+   * image's prompt and model). Off for every embedded render: a Files grid
+   * tile, a `show` card.
+   */
+  showCaption?: boolean;
 }
 
 export function FileContentRenderer({
@@ -196,6 +203,7 @@ export function FileContentRenderer({
   findText,
   codeEditorEditorClassName,
   reloadKey = 0,
+  showCaption = false,
 }: FileContentRendererProps) {
   const {
     source, Breadcrumbs, fileContent, isLoading, error,
@@ -219,7 +227,8 @@ export function FileContentRenderer({
     onStatusChange,
     targetLine,
   });
-  const caption = useFileCaption(filePath);
+  const storedCaption = useFileCaption(filePath);
+  const caption = showCaption ? storedCaption : undefined;
   const bytesOnly = !!source.bytesOnly;
   // The table has no lines: a jump to a line (a content-search match) opens
   // CSV and TSV in the code editor.

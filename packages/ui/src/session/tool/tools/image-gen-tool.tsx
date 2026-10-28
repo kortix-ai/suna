@@ -224,8 +224,17 @@ export function ImageGenTool({ call }: ToolProps) {
       image={image}
       seed={call.call_id}
       model={view.model}
-      // The first frame carries the busy line, the others its glyph alone.
-      busy={i === 0 ? busyLine : <SessionDotMatrix sessionId={call.call_id} size={14} className="text-muted-foreground" />}
+      // The first frame carries the busy line, the one status region; the
+      // others show its glyph alone, hidden from assistive tech.
+      busy={
+        i === 0 ? (
+          busyLine
+        ) : (
+          <span aria-hidden="true" className="text-muted-foreground">
+            <SessionDotMatrix sessionId={call.call_id} size={14} />
+          </span>
+        )
+      }
     />
   ));
 
@@ -234,12 +243,14 @@ export function ImageGenTool({ call }: ToolProps) {
       {solo ? (
         frames
       ) : (
-        // Masonry: two columns, each image at its own ratio (the requested one
-        // while it generates, so nothing jumps when it lands).
-        <div className="columns-2 gap-2">
-          {frames.map((frame, i) => (
-            <div key={i} className="mb-2 break-inside-avoid">
-              {frame}
+        // Masonry: two stacks, each image at its own ratio. Frame i goes to
+        // stack i % 2 — the shorter stack under the call's one requested
+        // ratio — once, from the prompt list, so a frame never changes stack
+        // when its image or its error lands. Mobile places the same way.
+        <div className="grid grid-cols-2 items-start gap-2">
+          {[0, 1].map((column) => (
+            <div key={column} data-image-gen-column="" className="flex min-w-0 flex-col gap-2">
+              {frames.filter((_, i) => i % 2 === column)}
             </div>
           ))}
         </div>

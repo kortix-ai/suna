@@ -10,7 +10,10 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type HostProps = React.PropsWithChildren<Record<string, unknown>>;
-mock.module('react-native', () => ({ View: ({ children, ...props }: HostProps) => React.createElement('view', props, children) }));
+mock.module('react-native', () => ({
+  View: ({ children, ...props }: HostProps) => React.createElement('view', props, children),
+  ScrollView: ({ children, ...props }: HostProps) => React.createElement('scroll', props, children),
+}));
 mock.module('@/components/ui/text', () => ({
   Text: ({ children }: HostProps) => React.createElement('text', null, children),
 }));
@@ -42,6 +45,13 @@ describe('the full-screen view shows the caption section only when caption data 
       'codex/gpt-image-2',
     ]);
     expect(texts(<FilePreviewCaption caption={{ text: 'A fox in a shuttle' }} />)).toEqual(['A fox in a shuttle']);
+  });
+
+  test('a long prompt scrolls inside a bounded section, so the image keeps its room', () => {
+    const tree = mount(<FilePreviewCaption caption={{ text: 'A fox '.repeat(200), model: 'codex/gpt-image-2' }} />);
+    const scroll = tree.root.findAll((node) => (node.type as string) === 'scroll');
+    expect(scroll).toHaveLength(1);
+    expect((scroll[0]!.props.style as { maxHeight?: number }).maxHeight).toBeGreaterThan(0);
   });
 
   test('the preview store carries the caption of the file it opens, and only that open', () => {
