@@ -17,7 +17,8 @@ import { installHttpErrors } from '../../http-errors';
 import { logger } from '../../lib/logger';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { telegramWebhookApp } from '../telegram-webhook';
+import { channelWebhookRoutes } from '../inbound/webhook-routes';
+import { telegramInbound } from './inbound';
 import { deleteTelegramInstall, saveTelegramInstall } from './installs';
 
 const ACCOUNT = crypto.randomUUID();
@@ -32,7 +33,7 @@ const SECRET = 'parity-secret';
 const FAILING_UPDATE = 9999;
 
 const app = makeOpenApiApp();
-app.route('/v1/webhooks/telegram', telegramWebhookApp);
+app.route('/v1/webhooks/telegram', channelWebhookRoutes(telegramInbound));
 installHttpErrors(app);
 
 const SIGNED = { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': SECRET };

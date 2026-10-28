@@ -24,7 +24,7 @@ const NO_QUERIES = {
   ],
   patterns: [{ group: ['drizzle-orm/*', '@kortix/db/*'], message: QUERIES_IN_SERVICES }],
 };
-/** A `no-restricted-imports` pattern for shared channel code: the platform folders and their sibling files (`telegram-webhook.ts`, `resend-email-api.ts`, …). */
+/** A `no-restricted-imports` pattern for shared channel code: the platform folders and their sibling files (`slack-webhook.ts`, `resend-email-api.ts`, …). */
 const NO_PLATFORM = {
   group: ['../slack*', '../teams*', '../telegram*', '../email*', '../resend*'],
   message: 'Shared channel code names no platform. The platform adapter registers its port.',
