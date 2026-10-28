@@ -60,3 +60,15 @@ CVE-2026-93753
 # fixed release; Caddy's caddypki module requires it. Remove when v3 is fixed or
 # Caddy drops it.
 CVE-2026-116587
+
+# better-auth (apps/white-label/lumen only): GHSA-965c-763c-88jm / CVE-2026-114607,
+# GHSA-r4xp-prcw-77qf, GHSA-q84f-53jg-9ppm, GHSA-44jh-23m7-hpcf, all fixed only in
+# better-auth 1.7.7+. @convex-dev/better-auth (latest 0.12.6) requires better-auth
+# <1.7.0, and 1.7 breaks it. Lumen is a demo app that no workflow builds or deploys,
+# and it uses none of the affected features (magic link, OAuth proxy, device login).
+# The same 4 ids are exempt in ci.yml's root audit step. Remove when lumen can move.
+CVE-2026-114607
+GHSA-965c-763c-88jm
+GHSA-r4xp-prcw-77qf
+GHSA-q84f-53jg-9ppm
+GHSA-44jh-23m7-hpcf
