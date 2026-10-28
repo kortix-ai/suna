@@ -50,9 +50,15 @@ const FLAGGED_ACTION_PREFIXES = {
   warm_sessions: ['session.warm.'],
 };
 
+// Actions of the legacy sandbox provider: its code still serves old boxes, and the docs name Platinum only.
+const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
+
 function hiddenActionFilter(actions) {
-  const prefixes = Object.entries(FLAGGED_ACTION_PREFIXES).flatMap(([flag, list]) => (onByDefault(flag) ? [] : list));
-  for (const prefix of Object.values(FLAGGED_ACTION_PREFIXES).flat()) {
+  const prefixes = [
+    ...Object.entries(FLAGGED_ACTION_PREFIXES).flatMap(([flag, list]) => (onByDefault(flag) ? [] : list)),
+    ...LEGACY_ACTION_PREFIXES,
+  ];
+  for (const prefix of [...Object.values(FLAGGED_ACTION_PREFIXES).flat(), ...LEGACY_ACTION_PREFIXES]) {
     if (!actions.some((action) => action.startsWith(prefix))) throw new Error(`no audit action starts with ${prefix}: update FLAGGED_ACTION_PREFIXES`);
   }
   return (action) => prefixes.some((prefix) => action.startsWith(prefix));
