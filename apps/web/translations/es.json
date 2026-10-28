@@ -21558,7 +21558,9 @@
       "readHint": "Leer envía el texto de esta página. Actuar deja que Kortix haga clic y escriba en esta pestaña.",
       "actHint": "Kortix pone esta pestaña en su grupo de pestañas y puede hacer clic y escribir allí. Detenlo desde la barra de la página.",
       "send": "Enviar",
-      "readFailed": "Kortix no pudo leer la pestaña. Recarga la página e inténtalo de nuevo."
+      "readFailed": "Kortix no pudo leer la pestaña. Recarga la página e inténtalo de nuevo.",
+      "screenshot": "Captura",
+      "captureFailed": "Kortix no pudo hacer una captura de esta pestaña."
     }
   },
   "computers": {

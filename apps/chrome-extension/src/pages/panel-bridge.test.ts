@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ACT_HANDOFF_MS, freshAct, isReadableUrl, MAX_READ_TABS, panelRequest, toPanelTab } from './panel-bridge';
+import { ACT_HANDOFF_MS, contextTab, freshAct, isReadableUrl, MAX_READ_TABS, panelRequest, toPanelTab } from './panel-bridge';
 
 const frame = {} as Window;
 const web = 'https://kortix.com';
@@ -12,6 +12,7 @@ describe('panel page channel', () => {
     expect(panelRequest(msg({ type: 'kortix.panel.read', requestId: 'r2', tabIds: [4, 4, 9] }), web, frame))
       .toEqual({ type: 'kortix.panel.read', requestId: 'r2', tabIds: [4, 9] });
     expect(panelRequest(msg({ type: 'kortix.panel.act', tabId: 7 }), web, frame)).toEqual({ type: 'kortix.panel.act', tabId: 7 });
+    expect(panelRequest(msg({ type: 'kortix.panel.capture', requestId: 'c1' }), web, frame)).toEqual({ type: 'kortix.panel.capture', requestId: 'c1' });
     expect(panelRequest(msg({ type: 'kortix.panel.route', path: '/projects/p/sessions/s', sessionId: 's' }), web, frame))
       .toEqual({ type: 'kortix.panel.route', path: '/projects/p/sessions/s', sessionId: 's' });
     expect(panelRequest(msg({ type: 'kortix.panel.route', path: '/panel' }), web, frame)).toEqual({ type: 'kortix.panel.route', path: '/panel' });
@@ -28,6 +29,7 @@ describe('panel page channel', () => {
 
   test('refuses malformed fields', () => {
     expect(panelRequest(msg({ type: 'kortix.panel.tabs' }), web, frame)).toBeUndefined();
+    expect(panelRequest(msg({ type: 'kortix.panel.capture' }), web, frame)).toBeUndefined();
     expect(panelRequest(msg({ type: 'kortix.panel.read', requestId: 'r', tabIds: [] }), web, frame)).toBeUndefined();
     expect(panelRequest(msg({ type: 'kortix.panel.read', requestId: 'r', tabIds: [1.5] }), web, frame)).toBeUndefined();
     expect(panelRequest(msg({ type: 'kortix.panel.read', requestId: 'r', tabIds: [-1] }), web, frame)).toBeUndefined();
@@ -55,6 +57,19 @@ describe('tabs', () => {
       .toEqual({ id: 3, title: 'https://example.com/', url: 'https://example.com/', readable: true });
     expect(toPanelTab({ url: 'https://example.com/' } as chrome.tabs.Tab)).toBeUndefined();
     expect(toPanelTab({ id: 3 } as chrome.tabs.Tab)).toBeUndefined();
+  });
+
+  test('the panel is about the active tab; as a tab itself, about the one used last before it', () => {
+    const tabs = [
+      { id: 1, active: false, lastAccessed: 30 },
+      { id: 2, active: true, lastAccessed: 50 },
+      { id: 3, active: false, lastAccessed: 40 },
+    ];
+    expect(contextTab(tabs)?.id).toBe(2);
+    expect(contextTab(tabs, 9)?.id).toBe(2);
+    expect(contextTab(tabs, 2)?.id).toBe(3);
+    expect(contextTab([{ id: 2, active: true }], 2)).toBeUndefined();
+    expect(contextTab([])).toBeUndefined();
   });
 
   test('an Act send hands its tab over only while it is fresh', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { pageAttachment, pageFileName, pageMarkdown, sendTabs, withActTab, withQuote } from './panel-prompt';
+import { pageAttachment, pageFileName, pageMarkdown, screenshotAttachment, sendTabs, withActTab, withQuote } from './panel-prompt';
 
 const page = { tabId: 4, title: 'Pricing — Northwind', url: 'https://northwind.example.com/pricing', text: 'Team $29', truncated: false };
 const tab = (id: number, title = `Tab ${id}`) => ({ id, title, url: `https://example.com/${id}`, readable: true });
@@ -32,6 +32,19 @@ describe('panel prompt', () => {
     expect(file.file.type).toBe('text/markdown');
     expect(file.isImage).toBe(false);
     expect(await file.file.text()).toBe(pageMarkdown(page, readAt));
+  });
+
+  test('a screenshot becomes a JPEG image attachment named after the page', async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    const dataUrl = `data:image/jpeg;base64,${btoa(String.fromCharCode(...bytes))}`;
+    const shot = screenshotAttachment(dataUrl, 'Pricing — Northwind', readAt);
+    expect(shot.kind).toBe('local');
+    if (shot.kind !== 'local') return;
+    expect(shot.isImage).toBe(true);
+    expect(shot.file.name).toBe('Pricing — Northwind screenshot.jpg');
+    expect(shot.file.type).toBe('image/jpeg');
+    expect(new Uint8Array(await shot.file.arrayBuffer())).toEqual(bytes);
+    expect(() => screenshotAttachment('data:text/html;base64,PGI+', 'x', readAt)).toThrow();
   });
 
   test('a quote goes under the message, with its source', () => {

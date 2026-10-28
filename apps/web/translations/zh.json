@@ -21558,7 +21558,9 @@
       "readHint": "“读取”会发送此页面的文本。“操作”让 Kortix 在此标签页中点击和输入。",
       "actHint": "Kortix 会把此标签页放入它的标签页组，并可以在其中点击和输入。可通过页面上的栏停止它。",
       "send": "发送",
-      "readFailed": "Kortix 无法读取该标签页。请重新加载页面后重试。"
+      "readFailed": "Kortix 无法读取该标签页。请重新加载页面后重试。",
+      "screenshot": "截图",
+      "captureFailed": "Kortix 无法截取此标签页。"
     }
   },
   "computers": {

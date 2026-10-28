@@ -6886,7 +6886,9 @@ const catalog = {
       "readHint": "Read sends this page's text. Act lets Kortix click and type in this tab.",
       "actHint": "Kortix puts this tab in its tab group and can click and type there. Stop it from the bar on the page.",
       "send": "Send",
-      "readFailed": "Kortix could not read the tab. Reload the page and try again."
+      "readFailed": "Kortix could not read the tab. Reload the page and try again.",
+      "screenshot": "Screenshot",
+      "captureFailed": "Kortix could not take a screenshot of this tab."
     }
   },
   "computers": {

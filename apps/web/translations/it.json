@@ -21558,7 +21558,9 @@
       "readHint": "Leggi invia il testo di questa pagina. Agisci permette a Kortix di cliccare e digitare in questa scheda.",
       "actHint": "Kortix mette questa scheda nel suo gruppo di schede e può cliccare e digitare lì. Fermalo dalla barra sulla pagina.",
       "send": "Invia",
-      "readFailed": "Kortix non è riuscito a leggere la scheda. Ricarica la pagina e riprova."
+      "readFailed": "Kortix non è riuscito a leggere la scheda. Ricarica la pagina e riprova.",
+      "screenshot": "Screenshot",
+      "captureFailed": "Kortix non è riuscito a fare uno screenshot di questa scheda."
     }
   },
   "computers": {

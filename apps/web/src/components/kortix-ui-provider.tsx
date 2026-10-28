@@ -19,7 +19,7 @@ import * as Sentry from '@sentry/nextjs';
 import NextImage from 'next/image';
 import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { forwardRef, useMemo, type ReactNode } from 'react';
+import { forwardRef, useMemo, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useBranding } from '@kortix/ui/internal/branding/branding-provider';
@@ -29,6 +29,7 @@ import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
 import { isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
 import { isStaticSitePath } from '@/lib/navigation/static-site-path';
+import { isInExtensionPanel } from '@/lib/supabase/panel-cookies';
 import { getEnv } from '@/lib/env-config';
 import { isSilentTimeoutMessage } from '@kortix/ui/internal/lib/timeout-toast-policy';
 import { track, type PanelEvent } from '@/lib/track';
@@ -100,6 +101,16 @@ function useViewer(): UiViewer | undefined {
   );
 }
 
+const noSubscription = () => () => {};
+
+/** `Component`, except inside the extension side panel. False on the server, so hydration matches. */
+function outsideExtensionPanel(Component: ComponentType): ComponentType {
+  return function OutsideExtensionPanel() {
+    const inPanel = useSyncExternalStore(noSubscription, isInExtensionPanel, () => false);
+    return inPanel ? null : <Component />;
+  };
+}
+
 // App features the session UI renders whole. Dialogs load lazily, so the
 // root bundle stays small. The wallpaper is static: it paints on first frame.
 const components: UiHostComponents = {
@@ -108,9 +119,10 @@ const components: UiHostComponents = {
   ArtifactViewer: lazyClient(() =>
     import('@/features/artifacts/artifact-viewer').then((m) => m.ArtifactViewer),
   ),
-  // The project home's announcement: the Kortix mobile app.
+  // The project home's announcement: the Kortix mobile app. Not in the Kortix in
+  // Chrome side panel: its width reads as a phone, and a send passes through home.
   HomeAnnouncement: lazyClient(() =>
-    import('@kortix/ui/workspace/home/mobile-app-promo').then((m) => m.MobileAppPromo),
+    import('@kortix/ui/workspace/home/mobile-app-promo').then((m) => outsideExtensionPanel(m.MobileAppPromo)),
   ),
   // Only the `codex` pooled provider exists today; the dialog ignores `providerId`.
   ProviderAccountsModal: lazyClient(() =>

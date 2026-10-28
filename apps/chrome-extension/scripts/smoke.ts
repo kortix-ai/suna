@@ -41,11 +41,14 @@ const web = Bun.serve({
       let asked = false;
       addEventListener('message', (e) => {
         if (e.origin !== ext) return;
-        fetch('/panel-report', { method: 'POST', body: JSON.stringify(e.data) });
+        // A screenshot's data URL is large: report its kind and size only.
+        const d = e.data?.dataUrl ? { ...e.data, dataUrl: e.data.dataUrl.slice(0, 23), bytes: e.data.dataUrl.length } : e.data;
+        fetch('/panel-report', { method: 'POST', body: JSON.stringify(d) });
         if (e.data?.type === 'kortix.panel.tab' && e.data.tab && !asked) {
           asked = true;
           parent.postMessage({ type: 'kortix.panel.tabs', requestId: 'T1' }, ext);
           parent.postMessage({ type: 'kortix.panel.read', requestId: 'R1', tabIds: [e.data.tab.id] }, ext);
+          parent.postMessage({ type: 'kortix.panel.capture', requestId: 'C1' }, ext);
         }
         if (e.data?.type === 'kortix.panel.context' && e.data.tab) {
           parent.postMessage({ type: 'kortix.panel.act', tabId: e.data.tab.id }, ext);
@@ -401,6 +404,8 @@ try {
   check('panel channel: tabs lists the window tabs', tabsMsg.requestId === 'T1' && tabsMsg.tabs.some((t: any) => t.id === tabMsg.tab.id), JSON.stringify(tabsMsg).slice(0, 300));
   const readMsg = await until('panel channel: read', () => panelReports.find((m) => m.type === 'kortix.panel.read.result'));
   check('panel channel: read returns the tab text', readMsg.requestId === 'R1' && readMsg.pages[0]?.tabId === tabMsg.tab.id && /Smoke form/.test(readMsg.pages[0]?.text ?? ''), JSON.stringify(readMsg).slice(0, 300));
+  const capMsg = await until('panel channel: capture', () => panelReports.find((m) => m.type === 'kortix.panel.capture.result'));
+  check('panel channel: capture returns a JPEG of the visible tab', capMsg.requestId === 'C1' && capMsg.dataUrl === 'data:image/jpeg;base64,' && capMsg.bytes > 1000, JSON.stringify(capMsg));
   // Right-click "Ask Kortix about this selection" stores the context; the open panel hands it to the page.
   await sw!.eval(`chrome.storage.session.set({ panelContext: { tabId: ${tabMsg.tab.id}, quote: 'Smoke quote', at: Date.now() } })`);
   const ctxMsg = await until('panel channel: context', () => panelReports.find((m) => m.type === 'kortix.panel.context'));

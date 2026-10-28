@@ -14,6 +14,7 @@ export type PanelRequest =
   | { type: 'kortix.panel.hello' }
   | { type: 'kortix.panel.tabs'; requestId: string }
   | { type: 'kortix.panel.read'; requestId: string; tabIds: number[] }
+  | { type: 'kortix.panel.capture'; requestId: string }
   | { type: 'kortix.panel.act'; tabId: number }
   | { type: 'kortix.panel.route'; path: string; sessionId?: string };
 
@@ -21,6 +22,8 @@ export type PanelRequest =
 export const MAX_PAGE_CHARS = 100_000;
 export const MAX_READ_TABS = 8;
 export const MAX_QUOTE_CHARS = 4_000;
+/** A screenshot is a JPEG of the visible part of the tab: a few hundred KB, enough for a model to read. */
+export const CAPTURE_QUALITY = 80;
 /** An Act send hands its tab to the session the panel opens within this time. */
 export const ACT_HANDOFF_MS = 5 * 60_000;
 
@@ -39,6 +42,7 @@ export function panelRequest(e: FrameMessage, webUrl: string, frame: Window | nu
       if (!isId(d.requestId, 64) || !Array.isArray(ids) || !ids.length || ids.length > MAX_READ_TABS || !ids.every(isTabId)) return undefined;
       return { type: d.type, requestId: d.requestId, tabIds: [...new Set(ids)] };
     }
+    case 'kortix.panel.capture': return isId(d.requestId, 64) ? { type: d.type, requestId: d.requestId } : undefined;
     case 'kortix.panel.act': return isTabId(d.tabId) ? { type: d.type, tabId: d.tabId } : undefined;
     case 'kortix.panel.route':
       if (!isId(d.path, 2048) || !d.path.startsWith('/')) return undefined;
@@ -54,6 +58,16 @@ export const isReadableUrl = (url: string) => /^https?:\/\//.test(url) && !STORE
 export function toPanelTab(t: chrome.tabs.Tab): PanelTab | undefined {
   if (!isTabId(t.id) || !t.url) return undefined;
   return { id: t.id, title: t.title || t.url, url: t.url, ...(t.favIconUrl ? { favIconUrl: t.favIconUrl } : {}), readable: isReadableUrl(t.url) };
+}
+
+/**
+ * The tab the panel is about: the window's active tab. When the panel is itself that tab
+ * (sidepanel.html opened as a page), the tab used last before it.
+ */
+export function contextTab<T extends { id?: number; active: boolean; lastAccessed?: number }>(tabs: T[], selfId?: number): T | undefined {
+  const active = tabs.find((t) => t.active);
+  if (active && active.id !== selfId) return active;
+  return tabs.filter((t) => t.id !== selfId).sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0];
 }
 
 /** Runs in the page (chrome.scripting): self-contained, no imports. */

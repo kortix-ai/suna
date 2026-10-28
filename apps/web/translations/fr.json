@@ -21558,7 +21558,9 @@
       "readHint": "Lire envoie le texte de cette page. Agir laisse Kortix cliquer et saisir dans cet onglet.",
       "actHint": "Kortix place cet onglet dans son groupe d'onglets et peut y cliquer et saisir. Arrêtez-le depuis la barre sur la page.",
       "send": "Envoyer",
-      "readFailed": "Kortix n'a pas pu lire l'onglet. Rechargez la page et réessayez."
+      "readFailed": "Kortix n'a pas pu lire l'onglet. Rechargez la page et réessayez.",
+      "screenshot": "Capture d'écran",
+      "captureFailed": "Kortix n'a pas pu faire de capture d'écran de cet onglet."
     }
   },
   "computers": {

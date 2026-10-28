@@ -21558,7 +21558,9 @@
       "readHint": "Ler envia o texto desta página. Agir deixa o Kortix clicar e escrever neste separador.",
       "actHint": "O Kortix coloca este separador no seu grupo de separadores e pode clicar e escrever aí. Pare-o na barra da página.",
       "send": "Enviar",
-      "readFailed": "O Kortix não conseguiu ler o separador. Recarregue a página e tente novamente."
+      "readFailed": "O Kortix não conseguiu ler o separador. Recarregue a página e tente novamente.",
+      "screenshot": "Captura de ecrã",
+      "captureFailed": "O Kortix não conseguiu fazer uma captura de ecrã deste separador."
     }
   },
   "computers": {

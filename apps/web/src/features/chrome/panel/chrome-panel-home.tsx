@@ -11,6 +11,7 @@
 
 import {
   ArrowUpIcon,
+  CameraIcon,
   CaretDownIcon,
   ColumnsIcon,
   EnvelopeSimpleIcon,
@@ -49,9 +50,18 @@ import { quickEntryRecentSessions } from '@/components/desktop/desktop-quick-ent
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 import { useTranslations } from '@/i18n/use-translations';
+import { isInExtensionPanel } from '@/lib/supabase/panel-cookies';
 
 import { usePanelChannel, type PanelContext, type PanelTab } from './panel-channel';
-import { isReadPage, pageAttachment, sendTabs, withActTab, withQuote, type PanelMode } from './panel-prompt';
+import {
+  isReadPage,
+  pageAttachment,
+  screenshotAttachment,
+  sendTabs,
+  withActTab,
+  withQuote,
+  type PanelMode,
+} from './panel-prompt';
 
 /** How many of the project's sessions the new chat lists. */
 const RECENT_SESSIONS = 3;
@@ -95,6 +105,8 @@ export function ChromePanelHome() {
   const [added, setAdded] = useState<PanelTab[]>([]);
   const [quote, setQuote] = useState<PanelContext | null>(null);
   const [sending, setSending] = useState(false);
+  /** Send also attaches a JPEG of the visible tab. */
+  const [shot, setShot] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
 
   // A right-click on "Ask Kortix": that tab, and the selection as a quote.
@@ -118,8 +130,11 @@ export function ChromePanelHome() {
   );
 
   useEffect(() => {
-    input.current?.focus();
-  }, []);
+    // Outside the side panel there is no tab to talk about: /panel is not a page of its own.
+    // nav-contract: prefetch-only — a stray visit leaves at once
+    if (!isInExtensionPanel()) router.replace('/projects');
+    else input.current?.focus();
+  }, [router]);
 
   const pickProject = (id: string) => {
     setPicked(id);
@@ -148,8 +163,17 @@ export function ChromePanelHome() {
         const readAt = new Date();
         files = read.map((page) => pageAttachment(page, readAt));
       }
+      if (shot) {
+        // Chrome captures the window's visible tab: the one the first chip shows.
+        const dataUrl = await channel.capture();
+        if (!dataUrl) throw new Error(t('captureFailed'));
+        files = [...files, screenshotAttachment(dataUrl, channel.activeTab?.title ?? '', new Date())];
+      }
       // Project home sends it as if the person pressed Enter there, then opens the session here.
-      useComposerPrefillStore.getState().setPrefill(projectId, prompt, { submit: true, ...(files.length ? { files } : {}) });
+      // 'when-ready': a one-shot submit on landing is dropped when the composer is still loading.
+      useComposerPrefillStore
+        .getState()
+        .setPrefill(projectId, prompt, { submit: 'when-ready', ...(files.length ? { files } : {}) });
       // nav-contract: prefetch-only — project home consumes the prefill and opens the new session
       router.push(`/projects/${projectId}`);
     } catch (error) {
@@ -337,6 +361,19 @@ export function ChromePanelHome() {
                     </Button>
                   }
                 />
+              ) : null}
+              {channel.inPanel && channel.activeTab?.readable ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  aria-pressed={shot}
+                  className={cn(shot ? 'bg-muted text-foreground' : 'text-muted-foreground')}
+                  onClick={() => setShot((on) => !on)}
+                >
+                  <CameraIcon />
+                  {t('screenshot')}
+                </Button>
               ) : null}
             </div>
           ) : null}

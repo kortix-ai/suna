@@ -21558,7 +21558,9 @@
       "readHint": "Lesen sendet den Text dieser Seite. Handeln lässt Kortix in diesem Tab klicken und tippen.",
       "actHint": "Kortix legt diesen Tab in seine Tab-Gruppe und kann dort klicken und tippen. Stoppe es über die Leiste auf der Seite.",
       "send": "Senden",
-      "readFailed": "Kortix konnte den Tab nicht lesen. Lade die Seite neu und versuche es erneut."
+      "readFailed": "Kortix konnte den Tab nicht lesen. Lade die Seite neu und versuche es erneut.",
+      "screenshot": "Screenshot",
+      "captureFailed": "Kortix konnte keinen Screenshot dieses Tabs aufnehmen."
     }
   },
   "computers": {

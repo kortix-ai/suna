@@ -27,6 +27,19 @@ export function pageAttachment(page: ReadPage, readAt: Date): AttachedFile {
   return { kind: 'local', file, localUrl: '', isImage: false, attachedAt: readAt.getTime() };
 }
 
+const JPEG_DATA_URL = 'data:image/jpeg;base64,';
+
+/** The extension's screenshot (a JPEG data URL) as an image attachment named after the page. */
+export function screenshotAttachment(dataUrl: string, title: string, takenAt: Date): AttachedFile {
+  if (!dataUrl.startsWith(JPEG_DATA_URL)) throw new Error('Not a JPEG screenshot');
+  const binary = atob(dataUrl.slice(JPEG_DATA_URL.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const name = `${pageFileName(title).slice(0, -'.md'.length)} screenshot.jpg`;
+  const file = new File([bytes], name, { type: 'image/jpeg' });
+  return { kind: 'local', file, localUrl: '', isImage: true, attachedAt: takenAt.getTime() };
+}
+
 /** The selected text under the person's message, with where it came from. */
 export function withQuote(text: string, quote: string, tab: PanelTab | null): string {
   const source = tab ? ` from “${tab.title}” (${tab.url})` : '';

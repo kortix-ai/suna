@@ -24,8 +24,13 @@ import { create } from 'zustand';
 
 interface ComposerPrefill {
   text: string;
-  /** Send once it lands, exactly as if the person pressed Enter. */
-  submit?: boolean;
+  /**
+   * Send once it lands, exactly as if the person pressed Enter. `'when-ready'`
+   * waits until the composer can send (models and entitlements loaded, Send
+   * enabled): an image for a model that cannot read one then stays in the box,
+   * where the composer says why.
+   */
+  submit?: boolean | 'when-ready';
   /** Files to attach (desktop Quick Entry screenshots and files). */
   files?: AttachedFile[];
   /** The agent, model and effort to select before it lands (desktop Quick Entry). */

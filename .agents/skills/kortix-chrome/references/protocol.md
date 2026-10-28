@@ -286,6 +286,7 @@ Page → panel:
 | `{"type":"kortix.panel.hello"}` | The panel answers `kortix.panel.tab` and delivers a waiting right-click context. |
 | `{"type":"kortix.panel.tabs","requestId"}` | `kortix.panel.tabs.result` with the tabs of the panel's window. |
 | `{"type":"kortix.panel.read","requestId","tabIds":[…]}` | `kortix.panel.read.result`. 1 to 8 tabs. The panel runs a script in each tab and returns `body.innerText`, cut at 100,000 characters. |
+| `{"type":"kortix.panel.capture","requestId"}` | `kortix.panel.capture.result` with `dataUrl`: a JPEG (quality 80) of the panel window's visible tab (`chrome.tabs.captureVisibleTab`), or `error: "uncapturable"`. |
 | `{"type":"kortix.panel.act","tabId"}` | Act: the next session the panel opens within 5 minutes gets this tab. |
 | `{"type":"kortix.panel.route","path","sessionId?"}` | Sent by the app shell on every route change in the panel. A `sessionId` takes a waiting Act tab: the worker adds the tab to that session's Kortix tab group, at attach or at once. |
 
@@ -297,6 +298,7 @@ Panel → page:
 | `{"type":"kortix.panel.context","tab","quote?"}` | After a right-click on "Ask Kortix about this selection" or "…this page". |
 | `{"type":"kortix.panel.tabs.result","requestId","tabs":[PanelTab]}` | |
 | `{"type":"kortix.panel.read.result","requestId","pages":[…]}` | A page is `{tabId,title,url,text,truncated}` or `{tabId,error:"unreadable"}`. |
+| `{"type":"kortix.panel.capture.result","requestId","dataUrl?"}` | The page accepts only a `data:image/jpeg;base64,` value. |
 
 `PanelTab` = `{id,title,url,readable}`. `readable` is false for Chrome's own
 pages and the Web Store: Chrome lets no extension script run there.
@@ -305,6 +307,9 @@ Send hands the prompt to the project home composer (`setPrefill(…, {submit:tru
 which sends it as a typed message does. Read attaches each page as a Markdown
 file (`<title>.md`: title, address, read time, text). A selection rides in the
 prompt as a quote; the page text goes only when the person adds "Whole page".
+**Screenshot** adds `<title> screenshot.jpg` to the send. The hand-off uses
+`submit: 'when-ready'`: the composer sends once it can, and a model that reads no
+images keeps the draft, with the reason in the composer.
 Act appends one English line that names the tab, and posts `kortix.panel.act`.
 The extension reads a tab only on `kortix.panel.read`, and the page asks only
 when the person presses Send.

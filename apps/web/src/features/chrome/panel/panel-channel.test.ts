@@ -51,6 +51,20 @@ describe('panel channel: messages from the extension', () => {
     });
   });
 
+  test('reads a screenshot result: a JPEG data URL, or nothing when Chrome refused', () => {
+    expect(
+      readExtensionMessage(from({ type: 'kortix.panel.capture.result', requestId: 'c1', dataUrl: 'data:image/jpeg;base64,AAAA' }), parent),
+    ).toEqual({ type: 'kortix.panel.capture.result', requestId: 'c1', dataUrl: 'data:image/jpeg;base64,AAAA' });
+    expect(readExtensionMessage(from({ type: 'kortix.panel.capture.result', requestId: 'c1', error: 'uncapturable' }), parent)).toEqual({
+      type: 'kortix.panel.capture.result',
+      requestId: 'c1',
+    });
+    // Only a JPEG data URL counts: never a page or script URL.
+    expect(
+      readExtensionMessage(from({ type: 'kortix.panel.capture.result', requestId: 'c1', dataUrl: 'javascript:alert(1)' }), parent),
+    ).toEqual({ type: 'kortix.panel.capture.result', requestId: 'c1' });
+  });
+
   test('a tab is readable only when the extension says so', () => {
     const { readable: _r, ...rest } = tab;
     expect(readExtensionMessage(from({ type: 'kortix.panel.tab', tab: rest }), parent)).toEqual({

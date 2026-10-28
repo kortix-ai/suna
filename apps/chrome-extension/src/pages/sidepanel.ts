@@ -1,6 +1,6 @@
 import type { Status } from '../background/types';
 import { accountsDiffer, getStatus, identityFrom, needsSession, openInTab, openWelcome, PanelHandoff, reconcile, whoami, type Identity } from './common';
-import { freshAct, MAX_PAGE_CHARS, panelRequest, readPage, toPanelTab, type PanelContext, type PanelPage, type PanelRequest } from './panel-bridge';
+import { CAPTURE_QUALITY, contextTab, freshAct, MAX_PAGE_CHARS, panelRequest, readPage, toPanelTab, type PanelContext, type PanelPage, type PanelRequest } from './panel-bridge';
 import { $, rpc } from './rpc';
 
 const frame = $<HTMLIFrameElement>('app');
@@ -86,6 +86,8 @@ addEventListener('message', (e) => {
 // ─── the page channel (protocol.md §11) ──────────────────────────────────────
 
 let windowId: number | undefined;
+/** Set only when sidepanel.html runs as a tab: that tab is never the one the panel is about. */
+let selfTabId: number | undefined;
 /** The path the panel's page shows, from its own `route` messages. */
 let framePath = '';
 /** An Act send: its tab goes to the session the page opens next. */
@@ -94,8 +96,10 @@ const post = (msg: Record<string, unknown>) => {
   try { frame.contentWindow?.postMessage(msg, new URL(webUrl).origin); } catch { /* no web app yet */ }
 };
 
+const windowTabs = () => chrome.tabs.query(windowId === undefined ? { lastFocusedWindow: true } : { windowId });
+
 async function activeTab() {
-  const [t] = await chrome.tabs.query({ active: true, ...(windowId === undefined ? { lastFocusedWindow: true } : { windowId }) });
+  const t = contextTab(await windowTabs(), selfTabId);
   return (t && toPanelTab(t)) ?? null;
 }
 const pushTab = async () => post({ type: 'kortix.panel.tab', tab: await activeTab() });
@@ -130,11 +134,17 @@ async function onPanelRequest(req: PanelRequest) {
       await pushTab();
       return pushContext();
     case 'kortix.panel.tabs': {
-      const tabs = await chrome.tabs.query(windowId === undefined ? { lastFocusedWindow: true } : { windowId });
+      const tabs = (await windowTabs()).filter((t) => t.id !== selfTabId);
       return post({ type: 'kortix.panel.tabs.result', requestId: req.requestId, tabs: tabs.map(toPanelTab).filter(Boolean) });
     }
     case 'kortix.panel.read':
       return post({ type: 'kortix.panel.read.result', requestId: req.requestId, pages: await readTabs(req.tabIds) });
+    case 'kortix.panel.capture': {
+      // Chrome captures the window's visible tab: the one the chip shows.
+      const dataUrl = windowId === undefined ? undefined
+        : await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: CAPTURE_QUALITY }).catch(() => undefined);
+      return post({ type: 'kortix.panel.capture.result', requestId: req.requestId, ...(dataUrl ? { dataUrl } : { error: 'uncapturable' }) });
+    }
     case 'kortix.panel.act':
       act = { tabId: req.tabId, at: Date.now() };
       return;
@@ -151,6 +161,7 @@ async function onPanelRequest(req: PanelRequest) {
 }
 
 void chrome.windows.getCurrent().then((w) => { windowId = w.id; });
+void chrome.tabs.getCurrent().then((t) => { selfTabId = t?.id; });
 chrome.tabs.onActivated.addListener((info) => { if (info.windowId === windowId) void pushTab(); });
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   if (tab.active && tab.windowId === windowId && (change.title || change.url || change.status === 'complete')) void pushTab();

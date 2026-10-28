@@ -34,7 +34,12 @@ export type ExtensionMessage =
   | { type: 'kortix.panel.tab'; tab: PanelTab | null }
   | { type: 'kortix.panel.context'; tab: PanelTab | null; quote?: string }
   | { type: 'kortix.panel.tabs.result'; requestId: string; tabs: PanelTab[] }
-  | { type: 'kortix.panel.read.result'; requestId: string; pages: PanelPage[] };
+  | { type: 'kortix.panel.read.result'; requestId: string; pages: PanelPage[] }
+  /** No `dataUrl`: Chrome refused the capture (its own pages, a minimized window). */
+  | { type: 'kortix.panel.capture.result'; requestId: string; dataUrl?: string };
+
+/** A JPEG of one visible tab; anything larger is not a screenshot the extension took. */
+const MAX_SCREENSHOT_DATA_URL = 20_000_000;
 
 /** The extension answers in well under a second; a read of several long pages takes longer. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -75,6 +80,11 @@ export function readExtensionMessage(
     case 'kortix.panel.tabs.result':
       if (!isString(d.requestId, 64) || !Array.isArray(d.tabs)) return null;
       return { type: d.type, requestId: d.requestId, tabs: d.tabs.map(readTab).filter((t): t is PanelTab => t !== null) };
+    case 'kortix.panel.capture.result': {
+      if (!isString(d.requestId, 64)) return null;
+      const ok = isString(d.dataUrl, MAX_SCREENSHOT_DATA_URL) && d.dataUrl.startsWith('data:image/jpeg;base64,');
+      return { type: d.type, requestId: d.requestId, ...(ok ? { dataUrl: d.dataUrl as string } : {}) };
+    }
     case 'kortix.panel.read.result':
       if (!isString(d.requestId, 64) || !Array.isArray(d.pages)) return null;
       return {
@@ -161,8 +171,15 @@ export function usePanelChannel(onContext: (context: PanelContext) => void) {
         .pages,
     [ask],
   );
+  /** A JPEG of the panel window's visible tab, or undefined when Chrome refused. */
+  const capture = useCallback(
+    async () =>
+      (await ask<Extract<ExtensionMessage, { type: 'kortix.panel.capture.result' }>>({ type: 'kortix.panel.capture' }))
+        .dataUrl,
+    [ask],
+  );
   /** Act: the next session this panel opens gets this tab in its Kortix tab group. */
   const handAct = useCallback((tabId: number) => post({ type: 'kortix.panel.act', tabId }), []);
 
-  return { inPanel, activeTab, listTabs, readTabs, handAct };
+  return { inPanel, activeTab, listTabs, readTabs, capture, handAct };
 }
