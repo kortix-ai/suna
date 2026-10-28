@@ -316,13 +316,19 @@ A manual `update` uses the same rollout as the daily run. When another update ho
 
 ### Saved conversations after an update
 
-Since the session log release, every session's saved conversation is its session log. An instance that ran an older version also holds conversations in the older v1 store. After the update, the API converts them by itself, so you do nothing:
+Every session's saved conversation is its session log. An instance that ran a version from before the session log also kept conversations in an older v1 store. Version `0.14.9` converts that store into the session log by itself, in a background pass on the leader API container. The pass logs this line when every conversation is in the session log:
 
-- A background pass (`SESSION_LOG_BACKFILL`, default `write`) converts every old session, oldest first, on the leader API container. It logs `[session-log] backfill tick` with counts, and `the v1 mirror holds no session without a log` when it is done.
-- Opening an old session before the pass reaches it converts that session first.
-- A conversation over the conversion size cap (about 24 MB, `SESSION_LOG_RESTORE_MAX_BYTES`) is converted only by the background pass. Until then, its log read answers `503` `session_log_converting` with `Retry-After: 60`.
+```text
+[session-log] backfill: the session logs hold every v1 mirror message; no code reads the mirror again
+```
 
-`SESSION_LOG_BACKFILL=off` stops the pass. Keep it on until that line appears: the v1 store is the only copy of a conversation the pass has not converted.
+Later versions drop the v1 store and no longer convert it. Their `kortix-migrate` step refuses while the store holds a conversation that the pass has not finished (`session_transcript_mirrors drop refused`). Nothing is swapped, and the previous version keeps serving. To finish the conversion:
+
+1. Pin the converting version: `kortix self-host update --tag 0.14.9`.
+2. Wait for the line above in `kortix self-host logs kortix-api`.
+3. Move back to your channel: `kortix self-host update`.
+
+An instance with an empty v1 store (a new install, or one that only ran versions with the session log) updates without these steps.
 
 ## Operate and tune
 

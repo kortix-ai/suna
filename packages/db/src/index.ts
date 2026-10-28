@@ -110,8 +110,6 @@ export {
   sessionSandboxes,
   sessionSandboxStatusEnum,
   sessionTurns,
-  sessionTranscriptMirrors,
-  sessionTranscriptMessages,
   sessionLogs,
   sessionLogThreads,
   sessionLogMessages,

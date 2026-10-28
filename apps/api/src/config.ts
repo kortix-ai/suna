@@ -303,21 +303,10 @@ const envSchema = z.object({
   // rows 30 days after a delete, 80 days after a subscription end (inert until decision D6b), their files 7 days later.
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
-  // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
-  // history only in the v1 mirror gets its v2 log. `write` (default since P8.2: no read serves the
-  // mirror, so a self-hosted upgrade converts its own history) writes the logs (it also needs
-  // SESSION_LOG_INGEST_ENABLED). `dry` converts in memory, writes nothing, and logs counts per
-  // tick and per pass. `off` runs nothing. Leader only. The pass resumes across leaders
-  // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
-  // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
-  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
-  SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('write'),
-  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
-  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
-  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
-  // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
-  KORTIX_COMMIT: optStrDefault('unknown'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The journal-less capture starts a
+  // conversion thread only while RSS plus its estimate stays under 75 % of this, or of cgroup
+  // memory.max when lower (`projects/lib/thread-memory.ts`).
+  SESSION_LOG_THREAD_MEMORY_MB: optInt(4096),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1293,9 +1282,7 @@ export const config = {
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
-  SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
-  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
-  KORTIX_COMMIT: env.KORTIX_COMMIT,
+  SESSION_LOG_THREAD_MEMORY_MB: env.SESSION_LOG_THREAD_MEMORY_MB,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,
