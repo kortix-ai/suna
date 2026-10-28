@@ -38,9 +38,9 @@ const groups = items.filter((group) => (group.children ?? []).some((node) => anc
 <blume-toc class="block">
   {
     groups.map((group) => (
-      <div class="mb-5">
-        <p class="mb-1 px-2.5 font-medium text-muted-foreground text-xs">{group.label}</p>
-        <ul class="m-0 list-none p-0">
+      <div class="mt-6 first:mt-0">
+        <p class="mb-2 px-2.5 font-medium text-foreground text-sm">{group.label}</p>
+        <ul class="m-0 list-none space-y-px p-0">
           {(group.children ?? []).map((node) => {
             const href = anchor(node);
             return href ? (
