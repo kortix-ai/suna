@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "Diese Nachricht konnte nicht gestoppt und gesendet werden",
     "submitEdit": "Absenden",
     "collapseQueue": "Warteschlange einklappen",
-    "expandQueue": "Warteschlange ausklappen"
+    "expandQueue": "Warteschlange ausklappen",
+    "myKortixRoutes": "Leitet jede Aufgabe an den passenden Agenten"
   },
   "billing": {
     "plan": {

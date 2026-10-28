@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "停止して送信できませんでした",
     "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
-    "expandQueue": "キューを展開"
+    "expandQueue": "キューを展開",
+    "myKortixRoutes": "各タスクを適したエージェントへ"
   },
   "billing": {
     "plan": {

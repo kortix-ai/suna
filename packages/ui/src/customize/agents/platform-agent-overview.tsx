@@ -19,6 +19,7 @@ import { useTranslations as useI18nTranslations } from '../../i18n';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { Button } from '../../primitives/button';
+import { AgentMark } from '../../internal/components/agent-mark';
 import { useConfigureThread } from '../use-configure-thread';
 
 /** Literal text (a kortix.yaml key) inside a translated sentence. */
@@ -76,14 +77,19 @@ export function PlatformAgentOverview({
   const how = [t('capabilities.delegate.help'), t('access.asYou.help'), tTabs('composerNote')];
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <p className="text-foreground text-base text-pretty">{tTabs('myKortixPromise')}</p>
-      <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm text-pretty">
+    <div className="flex w-full max-w-xl flex-col items-center gap-6 text-center">
+      <AgentMark slug="meta" size={42} />
+      <p className="text-foreground text-lg font-medium text-balance">{tTabs('myKortixPromise')}</p>
+      <div className="text-muted-foreground space-y-1 text-sm text-pretty">
         {how.map((line) => (
-          <li key={line}>{line}</li>
+          <p key={line}>{line}</p>
         ))}
-      </ul>
-      {canStart ? <Composer projectId={projectId} /> : null}
+      </div>
+      {canStart ? (
+        <div className="w-full text-left">
+          <Composer projectId={projectId} />
+        </div>
+      ) : null}
       <p className="text-muted-foreground text-xs text-pretty">{t.rich('project.help', { code })}</p>
     </div>
   );

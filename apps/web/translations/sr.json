@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "Није могуће зауставити и послати ту поруку",
     "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
-    "expandQueue": "Proširi red"
+    "expandQueue": "Proširi red",
+    "myKortixRoutes": "Сваки задатак шаље правом агенту"
   },
   "billing": {
     "plan": {

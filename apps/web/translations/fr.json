@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "Impossible d'arrêter et d'envoyer ce message",
     "submitEdit": "Valider",
     "collapseQueue": "Réduire la file",
-    "expandQueue": "Développer la file"
+    "expandQueue": "Développer la file",
+    "myKortixRoutes": "Confie chaque tâche au bon agent"
   },
   "billing": {
     "plan": {

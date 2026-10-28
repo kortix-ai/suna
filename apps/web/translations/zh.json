@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "无法停止并发送该消息",
     "submitEdit": "提交",
     "collapseQueue": "收起队列",
-    "expandQueue": "展开队列"
+    "expandQueue": "展开队列",
+    "myKortixRoutes": "把每个任务交给合适的智能体"
   },
   "billing": {
     "plan": {

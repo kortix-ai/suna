@@ -36,7 +36,7 @@ describe('PlatformAgentOverview (My Kortix)', () => {
   test('says what it does and how, in a few lines, with the project switch', () => {
     const markup = render(true);
     expect(markup).toContain('It routes each task to the agent made for it');
-    expect(markup.match(/<li>/g)?.length).toBe(3);
+    for (const line of ['durable cloud session', 'never holds more than you do', 'change request you approve']) expect(markup).toContain(line);
     expect(markup).toContain('<span class="font-mono">builtin_agents.my_kortix: false</span>');
   });
 

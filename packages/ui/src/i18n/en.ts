@@ -1571,7 +1571,8 @@ const catalog = {
     "hintChanged": "Ask what's changed in your project",
     "hintNewLine": "Press Shift+Enter for a new line",
     "hintSettings": "Press {modifier}, to open settings",
-    "hintCompact": "Ask to compact the session when it gets long"
+    "hintCompact": "Ask to compact the session when it gets long",
+    "myKortixRoutes": "Routes each task to the right agent"
   },
   "auth": {
     "haveReferralCode": "Have a referral code?",

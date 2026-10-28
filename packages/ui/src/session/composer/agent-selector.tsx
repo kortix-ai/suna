@@ -1,6 +1,5 @@
 'use client';
 
-import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import {
   CommandGroup,
@@ -192,16 +191,11 @@ export function AgentSelector({
   );
 
   /**
-   * One agent: name, its type, its description, and a check when it is the
-   * one in use.
+   * One agent: its mark, name and description (My Kortix: what picking it
+   * does), and a check when it is the one in use.
    *
-   * The type is a `Badge` on the row rather than a `CommandGroup` heading.
-   * Headings only earn their place when there is more than one section to
-   * tell apart, and there usually is not — most projects have no meta agents
-   * at all, so the list rendered a lone "Agents" label over a single group,
-   * captioning something that needed no caption. A badge says the same thing
-   * where it is actually useful (on the row that differs) and disappears
-   * entirely when every agent is the same kind.
+   * No type badge and no group heading: My Kortix sorts first, a separator
+   * follows it, and its own line says what it does.
    *
    * Selection is shown ONCE, by the check plus the tinted row. It used to be
    * said three times — check, tinted row, AND a heavier font weight on the
@@ -228,25 +222,20 @@ export function AgentSelector({
             scanned by face before names are read. The tile matches the text
             block edge to edge: name (20px) plus description (16px) = 36px,
             or the name line alone. */}
-        {agent.description ? (
+        {agent.description || meta ? (
           <AgentMark slug={agent.name} size={28} tile={36} />
         ) : (
           <AgentMark slug={agent.name} size={14} />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="text-foreground truncate text-sm font-medium">
-              {label(agent.name)}
-            </span>
-            {meta && (
-              <Badge variant="outline" size="xs" className="shrink-0 font-normal">
-                {tHardcodedUi.raw('i18nComplete.text85b7a59cdbd5')}
-              </Badge>
-            )}
-          </div>
-          {agent.description && (
-            <p className="text-muted-foreground truncate text-xs">{agent.description}</p>
-          )}
+          <span className="text-foreground block truncate text-sm font-medium">{label(agent.name)}</span>
+          {/* My Kortix says what picking it does; an agent shows its own
+              description, two lines at most, never cut mid-word on one. */}
+          {meta ? (
+            <p className="text-muted-foreground text-xs">{t('myKortixRoutes')}</p>
+          ) : agent.description ? (
+            <p className="text-muted-foreground line-clamp-2 text-xs text-pretty">{agent.description}</p>
+          ) : null}
         </div>
         {isSelected && (
           // `mt-0.5` optically centres the 16px check against the first line
@@ -369,7 +358,7 @@ export function AgentSelector({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[min(300px,calc(100vw-1.5rem))]"
+        className="w-[min(340px,calc(100vw-1.5rem))]"
       >
         {/*
           A search field over four agents is a control that costs a row of

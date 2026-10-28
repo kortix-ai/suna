@@ -135,6 +135,7 @@ import {
   sectionLocationHref,
 } from './agent-tabs';
 import { PlatformAgentOverview } from './platform-agent-overview';
+import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useSpacesEnabled } from '../../internal/lib/space-scope';
 import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPolicySetsPanel } from './agent-policy-sets-section';
@@ -1164,46 +1165,25 @@ function stripFrontmatter(content: string): string {
 
 // ─── My Kortix ───────────────────────────────────────────────────────────────
 
+/**
+ * My Kortix: no header and no tabs, one centred block (Marko, 2026-10-28).
+ * The floating opener keeps the collapsed sidebar reachable.
+ */
 function PlatformAgentPage({
   projectId,
-  agent,
   config,
-  canWrite,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   canWrite: boolean;
 }) {
-  const t = useI18nTranslations('agentEditor.tabs');
-  const tPage = useI18nTranslations('agentEditor.page');
-  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
-  const share = useShareDialog(false);
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col">
-      <AgentIdentityHeader
-        slug={agent.name}
-        title={agentDisplayName(agent.name)}
-        facts={[
-          { label: tPage('builtIn') },
-          ...(isDefault ? [{ label: t('defaultAgent') }] : []),
-          { label: t('actsAsYou') },
-        ]}
-        rule
-        actions={
-          <AgentActions
-            projectId={projectId}
-            agent={agent}
-            config={config}
-            canWrite={canWrite}
-            share={share}
-          />
-        }
-      />
-      {/* One view, so no tab row: the header's rule closes it. */}
-      <AgentTabBody>
+      <SidebarToggle placement="floating" />
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
         <PlatformAgentOverview projectId={projectId} config={config} />
-      </AgentTabBody>
+      </div>
     </div>
   );
 }

@@ -2255,7 +2255,8 @@
     "stopAndSendFailed": "Não foi possível parar e enviar essa mensagem",
     "submitEdit": "Enviar",
     "collapseQueue": "Recolher fila",
-    "expandQueue": "Expandir fila"
+    "expandQueue": "Expandir fila",
+    "myKortixRoutes": "Envia cada tarefa ao agente certo"
   },
   "billing": {
     "plan": {

@@ -472,7 +472,7 @@ function OverviewAside({
             <Input
               aria-label={t('color')}
               value={behavior.color ?? ''}
-              placeholder="#3b82f6"
+              placeholder="#RRGGBB"
               className="h-8 font-mono text-sm"
               onChange={(e) => editor.setOc('color', e.target.value.trim() || undefined)}
             />
