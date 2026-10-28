@@ -1,5 +1,5 @@
 /**
- * The Enterprise entitlement, end to end (spec IAM-34).
+ * The Enterprise entitlement, end to end (spec IAM-45).
  *
  * Enterprise is four features (`ENTERPRISE_FEATURES`, apps/api/src/types.ts):
  * sso, scim, rbac, auditAccess. One rule covers every Enterprise route
@@ -26,7 +26,7 @@ interface Probe {
 }
 
 /** A well-formed id that names nothing: the gate must answer before any lookup. */
-const NONE = '00000000-0000-4000-8000-000000000034';
+const NONE = '00000000-0000-4000-8000-000000000045';
 
 /** Routes that create or change Enterprise configuration, or read the audit log. */
 const GATED: Probe[] = [
@@ -35,16 +35,16 @@ const GATED: Probe[] = [
     feature: 'sso',
     method: 'post',
     path: '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
-    body: { name: 'Example', primary_domain: 'iam34.example.com', metadata_xml: '<x/>' },
+    body: { name: 'Example', primary_domain: 'iam45.example.com', metadata_xml: '<x/>' },
   },
   { feature: 'sso', method: 'post', path: '/v1/accounts/:accountId/iam/sso/provider/verify-domain', body: {} },
   { feature: 'sso', method: 'post', path: '/v1/accounts/:accountId/iam/sso/mappings', body: {} },
-  { feature: 'scim', method: 'post', path: '/v1/accounts/:accountId/iam/scim/tokens', body: { name: 'iam34' } },
-  { feature: 'rbac', method: 'post', path: '/v1/accounts/:accountId/iam/groups', body: { name: 'iam34' } },
-  { feature: 'rbac', method: 'patch', path: `/v1/accounts/:accountId/iam/groups/${NONE}`, body: { name: 'iam34' } },
+  { feature: 'scim', method: 'post', path: '/v1/accounts/:accountId/iam/scim/tokens', body: { name: 'iam45' } },
+  { feature: 'rbac', method: 'post', path: '/v1/accounts/:accountId/iam/groups', body: { name: 'iam45' } },
+  { feature: 'rbac', method: 'patch', path: `/v1/accounts/:accountId/iam/groups/${NONE}`, body: { name: 'iam45' } },
   { feature: 'rbac', method: 'post', path: `/v1/accounts/:accountId/iam/groups/${NONE}/members`, body: {} },
-  { feature: 'rbac', method: 'post', path: '/v1/accounts/:accountId/iam/roles', body: { name: 'iam34' } },
-  { feature: 'rbac', method: 'patch', path: `/v1/accounts/:accountId/iam/roles/${NONE}`, body: { name: 'iam34' } },
+  { feature: 'rbac', method: 'post', path: '/v1/accounts/:accountId/iam/roles', body: { name: 'iam45' } },
+  { feature: 'rbac', method: 'patch', path: `/v1/accounts/:accountId/iam/roles/${NONE}`, body: { name: 'iam45' } },
   { feature: 'rbac', method: 'put', path: `/v1/accounts/:accountId/iam/roles/${NONE}/permissions`, body: { actions: [] } },
   { feature: 'rbac', method: 'post', path: '/v1/accounts/:accountId/iam/policies', body: {} },
   { feature: 'rbac', method: 'patch', path: `/v1/accounts/:accountId/iam/policies/${NONE}`, body: {} },
@@ -59,7 +59,7 @@ const GATED: Probe[] = [
     feature: 'auditAccess',
     method: 'post',
     path: '/v1/accounts/:accountId/audit/webhooks',
-    body: { url: 'https://iam34.example.com/hook' },
+    body: { name: 'iam45', url: 'https://iam45.example.com/hook' },
   },
   { feature: 'auditAccess', method: 'patch', path: `/v1/accounts/:accountId/audit/webhooks/${NONE}`, body: {} },
   {
@@ -112,8 +112,14 @@ function routeKey(p: Probe): string {
 
 async function call(client: Client, p: Probe, params: { accountId: string; projectId: string }) {
   const opts = { params };
-  if (p.method === 'get' || p.method === 'delete') return client[p.method](p.path, opts);
-  return client[p.method](p.path, p.body ?? {}, opts);
+  switch (p.method) {
+    case 'get':
+      return client.get(p.path, opts);
+    case 'delete':
+      return client.del(p.path, opts);
+    default:
+      return client[p.method](p.path, p.body ?? {}, opts);
+  }
 }
 
 /** Every gated route answers 402 naming its feature; every open route does not. */
@@ -146,7 +152,7 @@ async function assertOn(owner: Client, params: { accountId: string; projectId: s
 const DEMO = '/v1/accounts/:accountId/iam/enterprise-demo';
 
 flow(
-  'IAM-34',
+  'IAM-45',
   {
     domain: 'iam',
     routes: [
@@ -188,11 +194,11 @@ flow(
     );
 
     await ctx.step('organization branding is not Enterprise: the OWNER sets an app name on the Off account → 200', async () => {
-      (await owner.put('/v1/accounts/:accountId/branding', { app_name: 'IAM34' }, { params: { accountId: team.id } })).status(200);
+      (await owner.put('/v1/accounts/:accountId/branding', { app_name: 'IAM45' }, { params: { accountId: team.id } })).status(200);
       (await owner.get('/v1/accounts/:accountId/branding', { params: { accountId: team.id } }))
         .status(200)
         .body()
-        .has('$.branding.app_name', 'IAM34')
+        .has('$.branding.app_name', 'IAM45')
         .has('$.entitled', true);
     });
 
@@ -202,7 +208,7 @@ flow(
     });
 
     await ctx.step('Demo: the OWNER mints a SCIM token and the SCIM API accepts it → 200', async () => {
-      const r = await owner.post('/v1/accounts/:accountId/iam/scim/tokens', { name: 'iam34-live' }, { params: { accountId: team.id } });
+      const r = await owner.post('/v1/accounts/:accountId/iam/scim/tokens', { name: 'iam45-live' }, { params: { accountId: team.id } });
       r.status(201);
       scimToken = r.json<{ secret: string }>().secret;
       (await ctx.client.withBearer(scimToken, 'SCIM').get('/scim/v2/accounts/:accountId/Users', { params: { accountId: team.id } })).status(200);
