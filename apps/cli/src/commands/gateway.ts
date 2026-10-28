@@ -450,7 +450,9 @@ async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promi
     process.stdout.write(
       `\n  ${C.dim}LAST ${overview.window_days}d${C.reset}  ` +
         `${overview.requests} req · ${overview.errors} err · ${spend(overview.total_cost)} · ` +
-        `${overview.input_tokens}/${overview.output_tokens} tok\n`,
+        `${overview.input_tokens}/${overview.output_tokens} tok\n` +
+        `  LLM estimated usage value (not a bill): ${overview.estimated_usage_value == null ? 'unknown' : spend(overview.estimated_usage_value)} · priced ${overview.priced_requests ?? 0}; unpriced ${overview.unpriced_requests ?? 0}\n` +
+        `  ${overview.valuation?.coverage ?? 'Estimate coverage unavailable'}\n`,
     );
     if (breakdown.models?.length) {
       process.stdout.write(`\n  ${C.dim}BY MODEL${C.reset}\n`);
@@ -484,14 +486,16 @@ async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Pro
     process.stdout.write(
       `\n  ${C.dim}LAST ${data.window_hours}h${C.reset}  ` +
         `${t.requests ?? 0} req · ${t.sessions ?? 0} sessions · ${spend(t.cost)} · ` +
-        `avg ${Number(t.avg_input_tokens ?? 0).toLocaleString('en-US')} input tok/req\n`,
+        `avg ${Number(t.avg_input_tokens ?? 0).toLocaleString('en-US')} input tok/req\n` +
+        `  LLM estimated usage value (not a bill): ${t.estimated_usage_value == null ? 'unknown' : spend(t.estimated_usage_value)} · priced ${t.priced_requests ?? 0}; unpriced ${t.unpriced_requests ?? 0}\n` +
+        `  ${data.valuation?.coverage ?? 'Estimate coverage unavailable'}\n`,
     );
     if (data.sources?.length) {
       process.stdout.write(`\n  ${C.dim}BY SOURCE${C.reset}\n`);
       for (const s of data.sources) {
         process.stdout.write(
           `  ${pad(s.source, 40)} ${spend(s.cost).padStart(14)}  ${String(s.sessions).padStart(4)} sess  ` +
-            `${String(s.requests).padStart(6)} req  ${C.dim}avg ${Number(s.avg_input_tokens).toLocaleString('en-US')} tok${C.reset}\n`,
+            `${String(s.requests).padStart(6)} req  estimate ${s.estimated_usage_value == null ? 'unknown' : spend(s.estimated_usage_value)}  ${C.dim}avg ${Number(s.avg_input_tokens).toLocaleString('en-US')} tok${C.reset}\n`,
         );
       }
     }

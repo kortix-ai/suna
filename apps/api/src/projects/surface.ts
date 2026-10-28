@@ -121,6 +121,14 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
 
+// A chat button answers a stored question, in the turn it blocks or as a
+// follow-up (consumed by channels/telegram).
+export { getPendingQuestion, renderAnswerPrompt, resolvePendingQuestion } from './lib/pending-questions';
+export { releaseRuntimeQuestion } from './session-lifecycle/release-runtime-question';
+// The grant the gateway decides a session's connector calls with (consumed by
+// channels/telegram: a question the server posts for the agent).
+export { reconcileStoredSessionAgentGrant } from './lib/session-token-grant';
+
 // The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
 

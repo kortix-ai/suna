@@ -181,6 +181,8 @@ function TwoStepCard({ enabled, orgId }: { enabled: boolean; orgId: string }) {
     run(async () => {
       const { data, error } = await authClient.twoFactor.enable({ password });
       if (error) throw new Error(error.message);
+      // better-auth 1.7 answers a union; this page sets up an authenticator app (TOTP).
+      if (data.method !== 'totp') throw new Error('Two-step sign-in did not return an authenticator setup.');
       setSetup({ uri: data.totpURI, backupCodes: data.backupCodes });
       setPassword('');
     });

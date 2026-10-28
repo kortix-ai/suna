@@ -46,8 +46,8 @@ export function channelOfSessionMetadata(metadata: unknown): ChatChannel | null 
 
 /**
  * Where a question lands, and the agent's own way to ask in plain words when it
- * could not be posted. Telegram and Email have no live turn to post into (their
- * agent answers through its connector), so their questions are never posted.
+ * could not be posted. A Telegram question is posted through its session port
+ * when the connector policy lets `send_message` run unattended; Email posts none.
  */
 const QUESTION_COPY: Record<ChatChannel, { where: string; send: string }> = {
   slack: { where: 'the Slack thread', send: '`slack send`' },

@@ -1,19 +1,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
-import { readSecret } from './install-store';
 import { emitIntegrationEvent } from '../integrations/event-inbox';
-import { loadTelegramInstall } from './telegram/installs';
-import { type TelegramUpdate, telegramMessageEvent } from './telegram/session';
+import { loadTelegramInstall, loadTelegramWebhookSecret } from './telegram/installs';
+import { type TelegramUpdate, telegramMessageEvent, telegramPressEvent } from './telegram/session';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 
 export const telegramWebhookApp = makeOpenApiApp();
-
-const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
-
-async function loadTelegramWebhookSecretForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
-}
 
 telegramWebhookApp.openapi(
   createRoute({
@@ -40,7 +33,7 @@ telegramWebhookApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const expected = await loadTelegramWebhookSecretForProject(projectId);
+    const expected = await loadTelegramWebhookSecret(projectId);
     if (!expected) return c.json({ error: 'Not configured' }, 404);
 
     const presented = c.req.header('x-telegram-bot-api-secret-token') ?? '';
@@ -64,7 +57,7 @@ telegramWebhookApp.openapi(
     // crash after the ack loses nothing (channels/telegram/session.ts).
     const botId = (await loadTelegramInstall(projectId))?.botId;
     if (botId) {
-      const event = telegramMessageEvent(projectId, botId, update);
+      const event = telegramMessageEvent(projectId, botId, update) ?? telegramPressEvent(projectId, botId, update);
       if (event) await emitIntegrationEvent(event, { maxAttempts: 4 });
     }
     return c.json({ ok: true });

@@ -36,6 +36,7 @@ import {
 } from './dispatch';
 import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
+import { requestFieldError } from './request-fields';
 import {
   publicPayload,
   publicResponseHeaders,
@@ -408,6 +409,28 @@ export async function handleChatCompletions(
       resolvedModel: '',
       requestId: id,
       suggestion: 'Send one valid JSON request body.',
+    });
+  }
+
+  const fieldError = requestFieldError(body);
+  if (fieldError) {
+    refundHold(hooks, principal, logger);
+    emit({
+      ...identity(principal),
+      requestedModel,
+      status: 400,
+      ok: false,
+      errorCode: 'invalid_request',
+      errorMessage: fieldError,
+    });
+    return gatewayErrorResponse(400, {
+      message: fieldError,
+      code: 'invalid_request',
+      provider: '',
+      requestedModel,
+      resolvedModel: '',
+      requestId: id,
+      suggestion: 'Fix the field and retry.',
     });
   }
 
@@ -968,6 +991,7 @@ export async function handleChatCompletions(
       attemptFailures,
       servedModel: routedModel,
       ...(routedModel !== routeModel ? { fallbackFrom: routeModel } : {}),
+      metadata: { usageEstimated: estimated || !reported },
       usage: counts,
       upstreamCost,
       finalCost,
@@ -1002,6 +1026,17 @@ export async function handleChatCompletions(
     return new Response(providerClientErrorBody(upstream.status, upstreamText), { status: upstream.status, headers });
   }
 
+  // KRTX-3369: an answer names the model the client asked for and the model
+  // that served it. A project chain that stood in for the requested model
+  // (an unknown or retired name, a resting pool) is otherwise invisible.
+  // A name a header cannot carry is left out rather than failing the answer.
+  const nameModels = (headers: Headers): Headers => {
+    for (const [name, value] of [['x-kortix-requested-model', requestedModel], ['x-kortix-model', routedModel]] as const) {
+      if (/^[\x20-\x7e]{1,200}$/.test(value)) headers.set(name, value);
+    }
+    return headers;
+  };
+
   if (streaming && upstream.body) {
     return new Response(
       relayStream({
@@ -1025,9 +1060,9 @@ export async function handleChatCompletions(
       }),
       {
         status: upstream.status,
-        headers: served.publicProvider
+        headers: nameModels(served.publicProvider
           ? publicResponseHeaders(upstream.headers)
-          : passthroughHeaders(upstream.headers),
+          : passthroughHeaders(upstream.headers)),
       },
     );
   }
@@ -1069,12 +1104,12 @@ export async function handleChatCompletions(
     return new Response(publicText, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: publicResponseHeaders(upstream.headers),
+      headers: nameModels(publicResponseHeaders(upstream.headers)),
     });
   }
   return new Response(responseText, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: passthroughHeaders(upstream.headers),
+    headers: nameModels(passthroughHeaders(upstream.headers)),
   });
 }

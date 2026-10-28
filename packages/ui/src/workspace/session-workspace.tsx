@@ -11,7 +11,6 @@ import { ProviderPoolDraftBoundary } from '../session/overrides/provider-pool-dr
 import { SessionAuditPanel } from '../session/panel/session-audit-panel';
 import { SessionFilesExplorer } from '../session/panel/session-files-explorer';
 import { PanelHeaderSwitcher } from '../session/panel/session-panel-header';
-import { SessionStartingLoader } from '../session/status/session-starting-loader';
 import { SessionTerminalPanel } from '../terminal/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '../session/panel/session-wallpaper-layer';
 import { useSessionPanelLayout } from '../session/panel/use-session-panel-layout';
@@ -47,6 +46,7 @@ type SessionPanelProps = {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
+  booting: boolean;
   isExpanded: boolean;
   shouldShowPanel: boolean;
 } & ReturnType<typeof useSessionPanelView> &
@@ -88,14 +88,14 @@ export const SessionLayout = memo(function SessionLayout({
     sessionId,
     projectId,
     projectSessionId,
-    isEasy,
+    // Boot draws the Easy body (the detail shell, gated inside on `booting`)
+    // whatever the mode: Advanced's tabs mount the PTY, browser and explorer.
+    isEasy: isEasy || booting,
     effectiveView,
   });
   const surfaces = useSessionPanelSurfaces({
     sessionId,
-    projectId,
-    projectSessionId,
-    bootStage,
+    booting,
     isEasy,
     effectiveView,
     auditPendingCount,
@@ -107,6 +107,7 @@ export const SessionLayout = memo(function SessionLayout({
     sessionId,
     projectId,
     projectSessionId,
+    booting,
     ...panels,
     isSessionBusy,
     effectiveView,
@@ -159,9 +160,7 @@ function useSessionPanelSplitState() {
 
 function useSessionPanelSurfaces({
   sessionId,
-  projectId,
-  projectSessionId,
-  bootStage,
+  booting,
   isEasy,
   effectiveView,
   auditPendingCount,
@@ -169,16 +168,13 @@ function useSessionPanelSurfaces({
   panelBody,
 }: {
   sessionId: string;
-  projectId?: string;
-  projectSessionId?: string;
-  bootStage: SessionStartStage | null;
+  booting: boolean;
   isEasy: boolean;
   effectiveView: SessionPanelView;
   auditPendingCount: number;
   togglePanelMode: () => void;
   panelBody: React.ReactNode;
 }) {
-  const booting = !!bootStage;
   const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
   const setPanelView = useSessionBrowserStore((s) => s.setView);
@@ -198,10 +194,12 @@ function useSessionPanelSurfaces({
     />
   );
 
-  // While booting, the panel is JUST the wake status — empty unless the wake
-  // needs attention, and then dead-center in the card — with no header bar.
-  // The runtime-coupled views (Actions/Files/Terminal/Browser) need a
-  // live sandbox, so they only render once booted.
+  // While booting there is no header bar. The body is the same `panelBody`
+  // tree as when ready, so the boot→ready flip never remounts the detail shell;
+  // `SessionDetailPanel` reads `booting` from the provider: a Terminal/Browser/
+  // Files card wears its real chrome over the wake status, and with no card
+  // open the panel is the wake status alone. The runtime-coupled bodies (PTY,
+  // preview frame, file listing) mount only once booted.
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
@@ -211,11 +209,7 @@ function useSessionPanelSurfaces({
   // own close DISCARDS the detail (it is done with), while ⌘I only puts it
   // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
-  const effectivePanelBody = booting ? (
-    <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />
-  ) : (
-    panelBody
-  );
+  const effectivePanelBody = panelBody;
 
   return { effectivePanelHeader, effectivePanelBody };
 }
@@ -299,7 +293,11 @@ const withPanelProvider = (
     projectId,
     projectSessionId,
     isSessionBusy,
-  }: Pick<SessionPanelProps, 'sessionId' | 'projectId' | 'projectSessionId' | 'isSessionBusy'>,
+    booting,
+  }: Pick<
+    SessionPanelProps,
+    'sessionId' | 'projectId' | 'projectSessionId' | 'isSessionBusy' | 'booting'
+  >,
   node: React.ReactNode,
 ) => (
   <ProviderPoolDraftBoundary identity={`${projectId}/${projectSessionId ?? sessionId}`}>
@@ -308,6 +306,7 @@ const withPanelProvider = (
       isSessionBusy={isSessionBusy}
       projectId={projectId}
       projectSessionId={projectSessionId}
+      booting={booting}
     >
       <SessionOutcomesBridge key={`${projectId}/${projectSessionId ?? sessionId}`}>{node}</SessionOutcomesBridge>
     </SessionPanelProvider>
