@@ -24,27 +24,38 @@ REQUIRED = ['full suite + quality gates', 'Frontend build', 'App runtime Go test
             'fmt + validate', 'tflint', 'checkov', 'nacl admin-port audit']
 
 
+RELEASE_JOBS = {'sweep stale test accounts', 'sweep this run\'s test accounts',
+                'deployed api smoke', 'full suite + quality gates'} | {
+                    f'deployed browser shard ({i})' for i in range(1, 5)} | {
+                    f'contract / {lane} lane' for lane in
+                    ['core-flows', 'core-db', 'packages-api', 'packages-cli', 'packages-kortixd', 'packages-rest']}
+
+
+def jobs_admitted(jobs, required, allowed_skips=()):
+    by_name = {j['name']: j['conclusion'] for j in jobs}
+    return required <= by_name.keys() and all(
+        conclusion == 'success' or (conclusion == 'skipped' and name in allowed_skips)
+        for name, conclusion in by_name.items())
+
+
 def boundary(day):
     return datetime.fromisoformat(day).replace(tzinfo=ZoneInfo('Europe/Belgrade')).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def cutoff_candidate(events, cutoff, tip):
-    """Reconstruct branch value from server push times, never author-controlled dates.
+    """Reconstruct branch value from server branch activity times, never author-controlled dates.
 
     Require an observed staging push at/before cutoff to bound the history. If
     GitHub no longer exposes it, hold rather than guess from commit timestamps.
     """
-    pushes = sorted([e for e in events if e.get('type') == 'PushEvent' and
-                     e['payload'].get('ref') == 'refs/heads/staging'],
-                    key=lambda e: e['created_at'], reverse=True)
+    pushes = sorted(events, key=lambda e: e['timestamp'], reverse=True)
     current = tip
     for event in pushes:
-        payload = event['payload']
-        if payload['head'] != current:
-            raise RuntimeError('Staging push history incomplete or raced; cannot prove cutoff')
-        if event['created_at'] <= cutoff:
+        if event['after'] != current:
+            raise RuntimeError('Staging activity history incomplete or raced; cannot prove cutoff')
+        if event['timestamp'] <= cutoff:
             return current
-        current = payload['before']
+        current = event['before']
     raise RuntimeError('No server-timestamped staging history at cutoff; cannot safely snapshot')
 
 
@@ -131,8 +142,8 @@ def main():
             return
         run('git', 'fetch', '--no-tags', 'origin', 'staging', 'prod')
         # The cron may be late. Read the first-parent staging history as of the
-        # intended local midnight, using server push times, never commit dates.
-        candidate = cutoff_candidate(pages('events'), cutoff, run('git', 'rev-parse', 'origin/staging'))
+        # intended local midnight, using server branch activity times, never commit dates.
+        candidate = cutoff_candidate(pages('activity?ref=refs/heads/staging'), cutoff, run('git', 'rev-parse', 'origin/staging'))
         if not candidate:
             raise RuntimeError('No staging commit at cutoff')
         previous = run('git', 'show', 'origin/prod:RELEASE_SOURCE_SHA')
@@ -177,7 +188,7 @@ def main():
         # A new PR into staging is reviewed/merged by existing protections. Do
         # not merge a moving staging tip or push directly to staging.
         branch = f'daily-repair/{state["day"]}-{args.repair_pr}'
-        if state.get('repair_pr') == args.repair_pr:
+        if state.get('repair_head'):
             hold(issue, state, 'Repair already recorded; resume without repair_pr'); return
         state['repair_pr'] = args.repair_pr
         save(issue, state)
@@ -185,8 +196,16 @@ def main():
         run('git', 'switch', '--detach', state['candidate'])
         parents = run('git', 'rev-list', '--parents', '-n', '1', fix).split()
         run('git', 'cherry-pick', *(['-m', '1'] if len(parents) > 2 else []), fix)
-        run('git', 'push', 'origin', f'HEAD:refs/heads/{branch}')
         repair_head = run('git', 'rev-parse', 'HEAD')
+        existing = run('git', 'ls-remote', 'origin', f'refs/heads/{branch}')
+        if existing:
+            remote = existing.split()[0]
+            run('git', 'fetch', 'origin', remote)
+            if run('git', 'rev-parse', remote + '^{tree}') != run('git', 'rev-parse', repair_head + '^{tree}'):
+                raise RuntimeError('Existing repair branch differs from reviewed fix-only tree')
+            repair_head = remote
+        else:
+            run('git', 'push', 'origin', f'HEAD:refs/heads/{branch}')
         run('gh', 'pr', 'create', '--repo', REPO, '--base', 'staging', '--head', branch,
             '--title', f'Daily release repair {state["day"]}: #{args.repair_pr}',
             '--body', f'Fix-only candidate `{repair_head}` from pinned `{state["candidate"]}` plus reviewed dev PR #{args.repair_pr}. Do not merge unrelated staging content. Daily controller will not deploy until this exact tree is staged and all gates rerun.')
@@ -267,7 +286,8 @@ def main():
                 'codeql.yml': set(), 'ci.yml': set(), 'db-migrations.yml': set(),
             }
             bad = [j['name'] for j in jobs if j['conclusion'] != 'success' and not (j['conclusion'] == 'skipped' and j['name'] in allowed_skips[workflow])]
-            if not jobs or bad:
+            required_jobs = RELEASE_JOBS if workflow == 'tests-release.yml' else set()
+            if not jobs or bad or not jobs_admitted(jobs, required_jobs, allowed_skips[workflow]):
                 hold(issue, state, f'{workflow} jobs missing/not successful: {bad}'); return
         migrations = run('git', 'diff', '--name-only', state['prod'], state['candidate'], '--', 'packages/db/migrations')
         reviews = pages(f'pulls/{state["pr"]}/reviews')

@@ -43,7 +43,7 @@ class ControllerTests(unittest.TestCase):
         if path.startswith('issues?'):
             return [{'number':7,'state':'open','title':'Daily production release: 2026-10-29','body':'```json\n'+__import__('json').dumps(self.state)+'\n```'}]
         if path.endswith('/reviews'): return [{'state':'APPROVED','commit_id':'tested'}]
-        if '/jobs?' in path: return [{'name':'test','conclusion':'success'}]
+        if '/jobs?' in path: return [{'name':name,'conclusion':'success'} for name in self.daily.RELEASE_JOBS]
         if 'check-runs' in path:
             return [{'name':n,'head_sha':'tested','status':'completed','conclusion':self.result} for n in self.daily.REQUIRED]
         raise AssertionError(path)
@@ -89,11 +89,22 @@ class ControllerTests(unittest.TestCase):
 class CutoffTests(unittest.TestCase):
     def test_server_push_time_not_commit_time(self):
         from daily import cutoff_candidate
-        events = [{'type':'PushEvent','created_at':'2026-10-28T23:05:00Z','payload':{'ref':'refs/heads/staging','head':'later','before':'cutoff'}},
-                  {'type':'PushEvent','created_at':'2026-10-28T22:05:00Z','payload':{'ref':'refs/heads/staging','head':'cutoff','before':'prior'}}]
+        events = [{'activity_type':'pr_merge','timestamp':'2026-10-28T23:05:00Z','after':'later','before':'cutoff'},
+                  {'activity_type':'push','timestamp':'2026-10-28T22:05:00Z','after':'cutoff','before':'prior'}]
         self.assertEqual(cutoff_candidate(events, boundary('2026-10-29'), 'later'), 'cutoff')
         with self.assertRaises(RuntimeError): cutoff_candidate(events, boundary('2026-10-29'), 'raced')
         with self.assertRaises(RuntimeError): cutoff_candidate(events[:1], boundary('2026-10-29'), 'later')
+
+
+class MatrixTests(unittest.TestCase):
+    def test_missing_matrix_member_never_admits(self):
+        from daily import RELEASE_JOBS, jobs_admitted
+        jobs = [{'name':name,'conclusion':'success'} for name in RELEASE_JOBS]
+        self.assertTrue(jobs_admitted(jobs, RELEASE_JOBS))
+        for index in range(len(jobs)):
+            self.assertFalse(jobs_admitted(jobs[:index]+jobs[index+1:], RELEASE_JOBS))
+        self.assertFalse(jobs_admitted(jobs+[{'name':'extra','conclusion':'failure'}], RELEASE_JOBS))
+        self.assertFalse(jobs_admitted([{'name':'control','conclusion':'failure'}], set(), {'control'}))
 
 
 if __name__ == '__main__':
