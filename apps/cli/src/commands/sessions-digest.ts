@@ -21,17 +21,17 @@ import {
 } from '../command-helpers.ts';
 import { resolveSessionRuntime } from '../session-runtime.ts';
 import { C, help, pad } from '../style.ts';
-import { sessionLogOn, withLiveTurn } from './sessions-chat.ts';
+import { withLiveTurn } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
-in a time window and reads each one's transcript through the project sessions
-API — live from the sandbox while a session runs, and from the server's saved
-copy once it stops. Tool calls are compressed to name/status only; tool inputs
-and outputs are intentionally stripped so the digest stays readable.
+in a time window and reads each one's stored session log, plus a running
+session's open turn live from its sandbox. Tool calls are compressed to
+name/status only; tool inputs and outputs are intentionally stripped so the
+digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
@@ -47,15 +47,11 @@ and outputs are intentionally stripped so the digest stays readable.
 Aliases: review, summary.
 
 Notes:
-- A running session's transcript is read live from its sandbox.
-- A stopped or failed session is served from the server's saved copy, written at
-  every turn end. Such a transcript is marked "saved", and "partial" when the
-  saved copy does not reach the session's first message.
-- A session whose sandbox never wrote a saved copy reports its transcript as
-  unavailable, with the reason.
-- With the project flag session_log on, the saved copy is the stored session
-  log (source "log"), plus a running session's open turn read live from its
-  sandbox. No v1 transcript is read.
+- The transcript is the stored session log (source "log"), written at every
+  turn end, plus a running session's open turn read live from its sandbox.
+- A session with no stored log yet reports its transcript as unavailable, with
+  the reason.
+- No v1 transcript (GET …/transcript) is read.
 `;
 
 interface CompactToolCall {
@@ -99,8 +95,8 @@ interface SessionDigest {
   transcript: {
     available: boolean;
     reason: string | null;
-    /** Where the messages came from: the running sandbox, the durable
-     *  server-side mirror, the stored session log (`session_log` on), or nowhere. */
+    /** Where the messages came from: the stored session log, or nowhere. `live` and `mirror`
+     *  are the pre-P8.3 values; this CLI no longer answers them. */
     source: 'live' | 'mirror' | 'log' | 'none';
     /** The mirror proved it holds the session's first message AND returned
      *  every row it holds. Never a guess — see `mirrorIsComplete`. */
@@ -169,15 +165,9 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     .filter((s) => all || isInWindow(s, since!))
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 
-  const logOn = filtered.length > 0 && (await sessionLogOn(ctx.auth, ctx.projectId));
   const digests = new Map<string, SessionDigest>();
   await mapLimit(filtered, 6, async (s) => {
-    digests.set(
-      s.session_id,
-      logOn
-        ? await buildLogDigest(s, ctx.auth, ctx.client, ctx.projectId, messageLimit, maxChars)
-        : await buildDigest(s, ctx.client, ctx.projectId, messageLimit, maxChars),
-    );
+    digests.set(s.session_id, await buildLogDigest(s, ctx.auth, ctx.client, ctx.projectId, messageLimit, maxChars));
   });
   const out = filtered.map((s) => digests.get(s.session_id)!).filter(Boolean);
 
@@ -201,43 +191,10 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   return 0;
 }
 
-async function buildDigest(
-  s: ProjectSession,
-  client: ApiClient,
-  projectId: string,
-  messageLimit: number,
-  maxChars: number,
-): Promise<SessionDigest> {
-  const base = baseDigest(s);
-  /*
-    ASK, WHATEVER THE STATUS SAYS.
-
-    This used to return here for any session that was not `running`, with the
-    reason hard-coded. That reason is the API's own string — and the API
-    stopped using it as a refusal: `buildSessionTranscriptDigest` passes it to
-    `degrade()`, which serves the durable mirror and answers `available: true,
-    source: 'mirror'` whenever rows exist. Serving a stopped session is the
-    whole point of the mirror.
-
-    So the guard was answering a question it never asked. The route reports
-    `source` and `complete` for itself; let it.
-  */
-  try {
-    const transcript = await client.get<unknown>(
-      `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
-    );
-    base.transcript = sanitizeTranscript(transcript, runtimeSessionIdOf(s));
-    return base;
-  } catch (err) {
-    base.transcript.reason = `could not read session transcript: ${(err as Error).message}`;
-    return base;
-  }
-}
-
 /**
- * `session_log` on: the root thread's newest `limit` messages from the stored session log
- * (`GET …/log`), and a running session's open turn from its sandbox (as `sessions log`).
- * No v1 transcript route is read.
+ * The root thread's newest `limit` messages from the stored session log (`GET …/log`), and a
+ * running session's open turn from its sandbox (as `sessions log`). No v1 transcript route is
+ * read (P8.3).
  */
 async function buildLogDigest(
   s: ProjectSession,
@@ -297,69 +254,6 @@ export function compactLogMessage(message: SessionLogMessage, maxChars: number):
     files: message.blocks.flatMap((block) => (block.type === 'attachment' ? [{ filename: block.name ?? null, mime: block.mime ?? null }] : [])),
     reasoning_omitted: message.blocks.some((block) => block.type === 'reasoning'),
     error: classifySessionLogMessage(message).error ?? null,
-  };
-}
-
-export function sanitizeTranscript(raw: unknown, fallbackRuntimeSessionId: string | null): SessionDigest['transcript'] {
-  const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
-  const messages = Array.isArray(obj.messages)
-    ? obj.messages.map(sanitizeCompactMessage)
-    : [];
-  const count = typeof obj.message_count === 'number' && Number.isFinite(obj.message_count)
-    ? obj.message_count
-    : messages.length;
-  // A W4 API names it `runtime_session_id`; an older one only `opencode_session_id`.
-  const served = [obj.runtime_session_id, obj.opencode_session_id].find((id) => typeof id === 'string');
-  const runtimeSessionId = typeof served === 'string' ? served : fallbackRuntimeSessionId;
-  return {
-    available: obj.available === true,
-    reason: typeof obj.reason === 'string' ? obj.reason : null,
-    // An older API answers neither field. Default to the shape that claims
-    // nothing: a transcript it served is at least live, and completeness is
-    // never assumed.
-    source: obj.source === 'live' || obj.source === 'mirror' || obj.source === 'none'
-      ? obj.source
-      : obj.available === true ? 'live' : 'none',
-    complete: obj.complete === true,
-    runtime_session_id: runtimeSessionId,
-    opencode_session_id: runtimeSessionId,
-    message_count: count,
-    messages,
-  };
-}
-
-function sanitizeCompactMessage(raw: unknown): CompactMessage {
-  const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
-  const tools = Array.isArray(obj.tools)
-    ? obj.tools.map((tool) => {
-        const t = typeof tool === 'object' && tool ? tool as Record<string, unknown> : {};
-        return {
-          tool: typeof t.tool === 'string' ? t.tool : 'tool',
-          status: typeof t.status === 'string' ? t.status : null,
-        };
-      })
-    : [];
-  const files = Array.isArray(obj.files)
-    ? obj.files.map((file) => {
-        const f = typeof file === 'object' && file ? file as Record<string, unknown> : {};
-        return {
-          filename: typeof f.filename === 'string' ? f.filename : null,
-          mime: typeof f.mime === 'string' ? f.mime : null,
-        };
-      })
-    : [];
-  const error = typeof obj.error === 'object' && obj.error
-    ? obj.error as { name?: string; message?: string }
-    : null;
-  return {
-    role: typeof obj.role === 'string' ? obj.role : 'unknown',
-    created: typeof obj.created === 'string' ? obj.created : null,
-    completed: typeof obj.completed === 'string' ? obj.completed : null,
-    text: typeof obj.text === 'string' ? obj.text : '',
-    tools,
-    files,
-    reasoning_omitted: obj.reasoning_omitted === true,
-    error,
   };
 }
 

@@ -40,6 +40,8 @@ let emptyLog = false;
 let detailPending = false;
 /** `GET …/log` answers 404 `session_log_missing`: an API that serves the log, a session with none yet. */
 let missingLog = false;
+/** The turn record (`GET …/turn`) never answers. */
+let turnPending = false;
 /** `GET …/log` answers no page another way: a bare 404, a 500, an invalid page. */
 let failedLog: 'bare-404' | 'server-error' | 'invalid' | null = null;
 let renderer: ReactTestRenderer | null = null;
@@ -53,6 +55,7 @@ beforeEach(() => {
   detailPending = false;
   missingLog = false;
   failedLog = null;
+  turnPending = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
@@ -76,6 +79,7 @@ beforeEach(() => {
     // The session stream: an open SSE body that never ends.
     if (serveLog && path.endsWith('/events')) return new Response(new ReadableStream({ start() {} }), { headers: { 'content-type': 'text/event-stream' } });
     // The turn record of a session that never ran a turn.
+    if (turnPending && path.endsWith('/turn')) return new Promise<Response>(() => {});
     if (emptyLog && path.endsWith('/turn')) return Response.json({ turns: [], last_ended: null });
     if (path === `/projects/${PROJECT_ID}/detail` && detailPending) return new Promise<Response>(() => {});
     if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
@@ -213,6 +217,16 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.savedTranscript).toBe('none');
     expect(seen.result!.conversationEmpty).toBe(true);
+  });
+
+  test('an empty root thread and an unanswered turn record: loading, never empty and never the boot screen', async () => {
+    serveLog = true;
+    emptyLog = true;
+    turnPending = true;
+    const seen = mountHost(true);
+    await flush();
+    expect(seen.result!.savedTranscript).toBe('loading');
+    expect(seen.result!.conversationEmpty).toBe(false);
   });
 
   test('a cold open (the project features not loaded) reads GET …/log first and sends no /transcript', async () => {

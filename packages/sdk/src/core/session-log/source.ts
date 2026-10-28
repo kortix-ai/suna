@@ -1,11 +1,11 @@
 /**
  * Where the v2 session log comes from, and when a client reads it.
  *
- * NEGOTIATION. A session reads `kortix.session/2` first, always: the first read of an open is
- * `GET …/log`. The project flag `session_log` is not read (the API deletes it). A 404 coded
- * `session_log_missing` (a session with no stored log yet) keeps the session on the log with
- * nothing in it. A 404 without that code or an invalid page (an API that predates the session
- * log) falls back to v1, exactly as before the session log existed. The runtime is not asked: the stored log is the API's (a stopped box reads it too), and the session
+ * NEGOTIATION. A session reads `kortix.session/2`, always: the first read of an open is
+ * `GET …/log`. The project flag `session_log` is not read (the API deletes it). Any answer
+ * without a page (a 404 coded `session_log_missing`, a 404 without that code, a failed read, an
+ * invalid page) keeps the session on the log with nothing in it. No v1 transcript is read
+ * (`GET …/transcript`, P8.3). The runtime is not asked: the stored log is the API's (a stopped box reads it too), and the session
  * stream serves `schema=v2` for every daemon (it converts the v1 frames of a daemon that
  * does not list `session.log.v2`).
  *
@@ -14,7 +14,7 @@
  * schema's type, written out because this package has no zod; `contract-drift.test.ts` holds
  * the two equal at typecheck. `SessionLogPage` and `SessionLogPageQuery` are public (the types of
  * `getSessionLogPage`); the loader is internal. A 404 (the session has no stored log, or no such
- * thread) reads as no page, and the session stays on v1.
+ * thread) reads as no page.
  */
 import { backendApi } from '../http/api-client';
 import { isSessionLogPage } from './guard';
@@ -73,7 +73,7 @@ export const SESSION_LOG_OLDER_PAGE_LIMIT = 100;
 
 export type SessionLogDialect = 'v1' | 'v2';
 
-/** `useSessionLogSync`'s answer: a dialect, or `'missing'` (v2, and the API holds no log for the session yet). */
+/** `useSessionLogSync`'s answer: a dialect, or `'missing'` (v2, and the last read answered no page: the API holds no log for the session yet, or the read failed). */
 export type SessionLogSyncState = SessionLogDialect | 'missing';
 
 /** The code of the API's 404 for a session with no stored log yet. An API without the route answers 404 with no code. */
@@ -81,8 +81,8 @@ const SESSION_LOG_MISSING_CODE = 'session_log_missing';
 
 /**
  * One page, validated. `'missing'`: the API serves the session log and this session has none
- * yet (a new session): a client stays on the log and reads no v1 copy. Null on any other
- * failure (an API older than the log, an invalid page, the network); never throws.
+ * yet (a new session). Null on any other failure (a 404 without that code, an invalid page, the
+ * network); never throws. A client reads no v1 copy for either.
  */
 export async function readSessionLogAnswer(
   load: LoadSessionLogPage,

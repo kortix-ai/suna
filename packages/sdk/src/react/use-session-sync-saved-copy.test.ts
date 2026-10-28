@@ -115,31 +115,6 @@ test('without a root nothing can be read yet', async () => {
   expect(hook.value().mirrorState).toBe('idle');
 });
 
-/** A server older than the session log: `GET …/log` answers 404, and the v1 copy is read. */
-const noLog = (url: unknown) => String(url).includes('/log?');
-
-test('the default read (no log: 404) is loading until the server answers, then paints', async () => {
-  let answer!: (response: Response) => void;
-  const requests: string[] = [];
-  globalThis.fetch = mock(async (url: unknown) => {
-    if (noLog(url)) return Response.json({ error: 'Not found' }, { status: 404 });
-    requests.push(String(url));
-    return new Promise<Response>((resolve) => {
-      answer = resolve;
-    });
-  }) as unknown as typeof fetch;
-  const hook = await mount('ses_copy_read', offline);
-  expect(hook.value().mirrorState).toBe('loading');
-  expect(requests).toHaveLength(1);
-  expect(requests[0]).toContain('/transcript?shape=sync');
-  await act(async () => {
-    answer(Response.json(envelope('ses_copy_read')));
-  });
-  await settle();
-  expect(hook.value().mirrorState).toBe('painted');
-  expect(hook.value().messages).toHaveLength(1);
-});
-
 test('an empty answer is not sticky: the envelope that follows it still paints', async () => {
   const hook = await mount('ses_copy_late', { ...offline, mirror: null });
   expect(hook.value().mirrorState).toBe('absent');
@@ -166,13 +141,17 @@ test('a saved copy that arrives after an empty runtime read still paints', async
   expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_late_empty']);
 });
 
-test('between an empty runtime read and the saved-copy paint the hook says loading, not absent', async () => {
+test('between an empty runtime read and the log answer the hook says loading, not absent', async () => {
   // The host shows its boot loader on `absent`. An empty runtime read is not
-  // the thread, so it must not flip the answer while the saved copy is on its way.
+  // the thread, so it must not flip the answer while the log read is on its way.
   let answer!: (response: Response) => void;
-  globalThis.fetch = mock(async (url: unknown) => noLog(url) ? Response.json({ error: 'Not found' }, { status: 404 }) : new Promise<Response>((resolve) => {
-    answer = resolve;
-  })) as unknown as typeof fetch;
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+  }) as unknown as typeof fetch;
   const hook = await mount('ses_copy_between', offline);
   expect(hook.value().mirrorState).toBe('loading');
   await act(async () => {
@@ -181,11 +160,11 @@ test('between an empty runtime read and the saved-copy paint the hook says loadi
   await settle();
   expect(hook.value().mirrorState).toBe('loading');
   await act(async () => {
-    answer(Response.json(envelope('ses_copy_between')));
+    answer(Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 }));
   });
   await settle();
-  expect(hook.value().mirrorState).toBe('painted');
-  expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_between']);
+  expect(hook.value().mirrorState).toBe('absent');
+  expect(requests.filter((url) => url.includes('/transcript'))).toEqual([]);
 });
 
 test('a genuinely empty new session (empty runtime read, no saved copy) ends absent', async () => {

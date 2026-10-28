@@ -698,17 +698,18 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
-An open reads the session log first (`GET …/log`), on every host, with no project flag:
+An open reads the session log (`GET …/log`), on every host, with no project flag:
 `useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
-with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
-applies a page it reads itself to the session store and renders `useSessionLogThread`.
-A new session with no stored log yet answers 404 with `code: 'session_log_missing'`: the open
-stays on the log and reads nothing more. Only when the log answers 404 with no `code` (an API
-older than the session log) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
-The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
-`readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
-follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
-`loadSessionTranscriptMirror`, …) are deprecated.
+with `savedChild`, and `loadSessionExportMessages`. The host applies a page it reads itself to
+the session store and renders `useSessionLogThread`. No hook and no SDK read sends
+`GET …/transcript`, whatever the log answers. An answer without a page (a new session's 404
+with `code: 'session_log_missing'`, a 404 with no `code`, a failed read, an invalid page) keeps
+the session on the log with nothing in it: no saved copy shows, the runtime's rows are the
+history, and the log is read again at the next turn end and after a stream reconnect. An export
+with no page reads the runtime, and fails when the runtime has nothing. The session-open
+snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`). The v1 reads
+(`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`, `transcriptSync`) are
+deprecated.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -904,8 +905,8 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
 first when the API holds a log for the session (OpenCode or pi). No project flag is read.
-A session whose log answers 404 with no `code` (an API older than the log) reads v1, and the hooks return `source: 'v1'`: the `fromV1`
-conversion of the v1 rows, with the turn that runs kept open. Pass the session's
+Until a session's log answers a page, the hooks return `source: 'v1'`: the `fromV1`
+conversion of the runtime's v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows

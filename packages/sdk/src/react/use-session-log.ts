@@ -203,7 +203,7 @@ export function useSessionLogOlder(
 /**
  * Internal (`useSession` mounts it). Negotiates the session's dialect from the API's answer
  * alone: no project flag, no runtime. `'v2'` from the first render, while the first page is
- * read; `useSession` reads no v1 saved copy then. On v2:
+ * read. On v2:
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. the session stream switches to `schema=v2` (`log.*` frames in place of the `message.*`
@@ -212,12 +212,12 @@ export function useSessionLogOlder(
  *     the tab becomes visible again.
  * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
- * A 404 coded `session_log_missing` (a new session whose journal has not posted yet) answers
- * `'missing'`: still v2, with no log yet, so `useSession` reads no v1 saved copy and has nothing
- * saved to wait for. A 404 without that code (an API older than the log) or an invalid page
- * leaves the session on v1: no session log, no `schema=v2`. Either is retried at the next turn end
- * and after a stream reconnect (on the session stream without `schema=v2`), one request at a time.
- * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again.
+ * Any answer without a page answers `'missing'`: a 404 coded `session_log_missing` (a new
+ * session whose journal has not posted yet), a 404 without that code (a v1 mirror the API has not
+ * converted yet), a failed read or an invalid page. The session stays on the log with nothing in
+ * it: `useSession` reads no v1 saved copy (`GET …/transcript`, P8.3) and has nothing saved to wait
+ * for, and the stream stays without `schema=v2`. It is retried at the next turn end and after a
+ * stream reconnect, one request at a time. Unmounting drops the log.
  */
 export function useSessionLogSync(
   projectId: string,
@@ -234,12 +234,9 @@ export function useSessionLogSync(
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
   const key = `${projectId}/${sessionId}`;
   const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
-  // The page answered that this session cannot read v2 (404 without a code, invalid): v1 from then on.
-  const [refusedKey, setRefusedKey] = useState<string | null>(null);
-  // The API serves the log and this session has none yet (404 `session_log_missing`).
+  // The last read answered no page: the session has no log to show yet.
   const [missingKey, setMissingKey] = useState<string | null>(null);
-  const state: SessionLogSyncState =
-    negotiated !== 'v2' || refusedKey === key ? 'v1' : missingKey === key ? 'missing' : 'v2';
+  const state: SessionLogSyncState = negotiated !== 'v2' ? 'v1' : missingKey === key ? 'missing' : 'v2';
 
   useEffect(() => {
     if (negotiated !== 'v2' || !loader) return;
@@ -283,7 +280,6 @@ export function useSessionLogSync(
       const page = answer === 'missing' ? null : answer;
       onV2 = !!page;
       if (page) {
-        setRefusedKey(null);
         setMissingKey(null);
         // A v2 connection resumes at the v1 cursor; a server on another epoch answers
         // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
@@ -291,11 +287,10 @@ export function useSessionLogSync(
         return;
       }
       store().dropSessionLog(sessionId);
-      if (answer === 'missing') setMissingKey(`${projectId}/${sessionId}`);
-      else setRefusedKey(`${projectId}/${sessionId}`);
-      // A missing log (a new session whose journal has not posted yet) or an invalid page is
-      // retried at the next turn end and after a stream reconnect, on the session stream
-      // without `schema=v2`.
+      setMissingKey(`${projectId}/${sessionId}`);
+      // No page (a new session whose journal has not posted yet, an unconverted mirror, a failed
+      // read) is retried at the next turn end and after a stream reconnect, on the session
+      // stream without `schema=v2`.
       join({
         onControl: (frame) => {
           if (frame.type !== 'kortix.control.turn') return;

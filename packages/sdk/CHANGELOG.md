@@ -5,6 +5,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (no v1 transcript reads, P8.3)
+- No hook and no SDK read sends `GET …/transcript` any more. `useSession`, `useSessionSync`
+  (root, `savedChild`, turn end, older pages), `readSavedSessionCopy` and
+  `loadSessionExportMessages` read only the session log (`GET …/log`). A log answer without a page
+  (404 with or without `code: 'session_log_missing'`, a failed read, an invalid page) keeps the
+  session on the log with nothing in it: no saved copy shows and the runtime's rows are the
+  history. Before, a 404 without a code or a failed read fell back to the v1 saved copy, and
+  `useSessionSync` re-read the v1 copy 3 s after each turn end.
+- `readSavedSessionCopy` returns `envelope: null` always; `SavedSessionCopy.envelope` is
+  deprecated.
+- `loadSessionExportMessages` throws when the log answers no page and the runtime has no
+  messages, instead of reading the v1 copy.
+- The deprecated v1 reads (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`,
+  `transcriptSync`) stay exported for older code; nothing in the SDK calls them.
+
 ### Deprecated (app form)
 - `getConnectorAppForm`, `submitConnectorAppForm`, `ConnectorAppFormInfo`, `ConnectorAppFormInput`
   and `ConnectorAppFormResult`. The server removed `/connectors/app-form/:token`; every call
