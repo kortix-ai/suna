@@ -20805,7 +20805,14 @@
     "sessionModel": "モデル {cost}",
     "sessionSandbox": "サンドボックス {cost}",
     "noCapUnlimited": "上限なし · 支出は無制限",
-    "tokensSub": "入力 {in} · 出力 {out}"
+    "tokensSub": "入力 {in} · 出力 {out}",
+    "unknownValue": "不明",
+    "estimateCoverageUnavailable": "見積もりの対象範囲を取得できません。",
+    "estimatesSeparate": "上の実際の支出は別に扱われます。見積もりが請求額に加算されることはありません。",
+    "estimatedUsageValueLabel": "LLM の推定利用額(請求ではありません):",
+    "pricedRequests": "料金計算済みリクエスト {count} 件",
+    "unpricedRequests": "料金未計算リクエスト {count} 件",
+    "llmEstimateLabel": "LLM の推定:"
   },
   "triggerComposer": {
     "every": "間隔",

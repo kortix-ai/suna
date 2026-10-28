@@ -20805,7 +20805,14 @@
     "sessionModel": "Modèle {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Aucun plafond · dépenses illimitées",
-    "tokensSub": "{in} entrée · {out} sortie"
+    "tokensSub": "{in} entrée · {out} sortie",
+    "unknownValue": "Inconnu",
+    "estimateCoverageUnavailable": "Couverture de l'estimation indisponible.",
+    "estimatesSeparate": "Les dépenses réelles ci-dessus sont distinctes. Les estimations ne sont jamais ajoutées aux frais.",
+    "estimatedUsageValueLabel": "Valeur d'usage LLM estimée (pas une facture) :",
+    "pricedRequests": "{count} requêtes tarifées",
+    "unpricedRequests": "{count} requêtes non tarifées",
+    "llmEstimateLabel": "Estimation LLM :"
   },
   "triggerComposer": {
     "every": "Toutes les",

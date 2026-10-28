@@ -20805,7 +20805,14 @@
     "sessionModel": "Modello {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Nessun limite · spesa illimitata",
-    "tokensSub": "{in} input · {out} output"
+    "tokensSub": "{in} input · {out} output",
+    "unknownValue": "Sconosciuto",
+    "estimateCoverageUnavailable": "Copertura della stima non disponibile.",
+    "estimatesSeparate": "La spesa effettiva sopra è separata. Le stime non vengono mai aggiunte agli addebiti.",
+    "estimatedUsageValueLabel": "Valore d'uso LLM stimato (non è una fattura):",
+    "pricedRequests": "{count} richieste con prezzo",
+    "unpricedRequests": "{count} richieste senza prezzo",
+    "llmEstimateLabel": "Stima LLM:"
   },
   "triggerComposer": {
     "every": "Ogni",
