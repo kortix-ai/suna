@@ -11,7 +11,9 @@
  *
  * Add a platform: name it in CHANNEL_ACCESS_PLATFORMS
  * (shared/channel-access-platforms.ts), which also hides its key from project
- * reads, and record requests with its `chat_installs.workspace_id` as the scope.
+ * reads, record requests with its `chat_installs.workspace_id` as the scope,
+ * and give channel-access-profiles.ts a ChannelAccessPort for names and photos
+ * (telegram/access.ts is the reference).
  */
 import { chatInstalls, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -42,7 +44,32 @@ export interface ChannelAccessLists {
   accessRequests: ChannelAccessEntry[];
 }
 
-const stored = (metadata: unknown, platform: ChannelAccessPlatform) =>
+/** The photo types the core serves; it checks a photo's magic bytes against the port's list. */
+export type ChannelPhotoType = 'image/jpeg' | 'image/png' | 'image/webp';
+
+/** A user's names and photo as the platform answers them. */
+export interface ChannelAccessProfile {
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  /** `ref` fetches the photo; `version` changes when the photo changes. Null: no photo. */
+  photo: { ref: string; version: string } | null;
+}
+
+/** What a platform supplies to the channel access core. */
+export interface ChannelAccessPort {
+  /** The metadata key and `chat_installs.platform`. */
+  platform: ChannelAccessPlatform;
+  photoTypes: readonly ChannelPhotoType[];
+  /** The install's scope, the credential for the platform's API, and the lists. Null: not connected. */
+  connection(projectId: string): Promise<{ scopeId: string; credential: string | null; lists: ChannelAccessLists } | null>;
+  /** Null: the platform gives no profile. Throws only when the platform is unreachable. */
+  fetchProfile(credential: string, userId: string): Promise<ChannelAccessProfile | null>;
+  /** At most `maxBytes`. Null: no photo. Throws only when the platform is unreachable. */
+  fetchPhoto(credential: string, ref: string, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null>;
+}
+
+const stored =(metadata: unknown, platform: ChannelAccessPlatform) =>
   (metadata as Partial<Record<string, { allowedUserIds?: unknown; accessRequests?: unknown }>> | null)?.[platform];
 
 /** A legacy entry may be a number: read as a string. */

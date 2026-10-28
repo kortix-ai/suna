@@ -9,6 +9,7 @@ import {
   dismissChannelAccessRequest,
   removeChannelUser,
 } from '../../channels/core/channel-access';
+import { channelUserPhoto, listChannelUsers } from '../../channels/core/channel-access-profiles';
 import {
   deleteTelegramInstall,
   loadTelegramBotToken,
@@ -18,7 +19,7 @@ import {
   TELEGRAM_USER_ID,
   type TelegramInstall,
 } from '../../channels/telegram/installs';
-import { listTelegramUsers, telegramUserPhoto } from '../../channels/telegram/profiles';
+import { telegramAccessPort } from '../../channels/telegram/access';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -124,7 +125,7 @@ export function registerChannelTelegramRoutes(): void {
       // Names and photos are personal data: the connector readers only.
       const ctx = await telegramContext(c, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
       if (ctx.response) return ctx.response;
-      const users = await listTelegramUsers(ctx.projectId);
+      const users = await listChannelUsers(telegramAccessPort, ctx.projectId);
       return users ? c.json(users) : notConnected(c);
     },
   );
@@ -145,21 +146,21 @@ export function registerChannelTelegramRoutes(): void {
       if (ctx.response) return ctx.response;
       const userId = c.req.param('user_id') ?? '';
       const photo = TELEGRAM_USER_ID.test(userId)
-        ? await telegramUserPhoto(ctx.projectId, userId)
-        : ({ ok: false, code: 'telegram_user_unknown' } as const);
+        ? await channelUserPhoto(telegramAccessPort, ctx.projectId, userId)
+        : ({ ok: false, code: 'user_unknown' } as const);
       if (!photo.ok) {
         const message = {
-          telegram_not_connected: 'Telegram is not connected',
-          telegram_user_unknown: 'This Telegram user is not allowed and has not asked for access',
-          telegram_photo_unavailable: 'This Telegram user has no photo the bot can see',
-          telegram_unreachable: 'Could not reach Telegram',
+          not_connected: 'Telegram is not connected',
+          user_unknown: 'This Telegram user is not allowed and has not asked for access',
+          photo_unavailable: 'This Telegram user has no photo the bot can see',
+          unreachable: 'Could not reach Telegram',
         }[photo.code];
-        return c.json({ error: message, code: photo.code }, photo.code === 'telegram_unreachable' ? 502 : 404);
+        return c.json({ error: message, code: `telegram_${photo.code}` }, photo.code === 'unreachable' ? 502 : 404);
       }
       return new Response(photo.bytes, {
         status: 200,
         headers: {
-          'Content-Type': 'image/jpeg',
+          'Content-Type': photo.contentType,
           'X-Content-Type-Options': 'nosniff',
           'Cache-Control': 'private, max-age=86400',
         },

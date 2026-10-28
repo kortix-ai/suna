@@ -3,6 +3,8 @@
  * a second platform beside Telegram: each platform's lists live under its own
  * metadata key, concurrent writes to both all land, an id is stored as sent,
  * the install check is per platform, and project reads hide every listed key.
+ * The profile half (channel-access-profiles.ts) keeps each platform's profiles
+ * apart and serves a photo only as a type its port declares.
  * The Telegram behaviour itself is pinned by telegram.integration.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
@@ -14,6 +16,8 @@ import { CHANNEL_ACCESS_PLATFORMS, type ChannelAccessPlatform } from '../../shar
 import { db } from '../../shared/db';
 import {
   allowChannelUser,
+  type ChannelAccessPort,
+  type ChannelPhotoType,
   clearChannelAccessRequests,
   dismissChannelAccessRequest,
   readChannelAccess,
@@ -21,6 +25,7 @@ import {
   removeChannelUser,
   setChannelAllowedUsers,
 } from './channel-access';
+import { channelUserPhoto, listChannelUsers } from './channel-access-profiles';
 
 /** A platform the list does not name yet: `chat_installs.platform` is a plain varchar. */
 const FAKE_KEY: string = 'fakechat';
@@ -40,6 +45,20 @@ const metadata = async () =>
     {}) as Record<string, any>;
 const lists = async (platform: ChannelAccessPlatform) => readChannelAccess(await metadata(), platform);
 const scope = { scopeId: SCOPE, accessRequests: [] };
+
+/** A port over the stored lists whose every user is `name` with one photo of `bytes`. */
+const port = (
+  platform: ChannelAccessPlatform,
+  name: string,
+  photoTypes: ChannelPhotoType[] = [],
+  bytes = new Uint8Array(),
+): ChannelAccessPort => ({
+  platform,
+  photoTypes,
+  connection: async () => ({ scopeId: SCOPE, credential: 'synthetic', lists: readChannelAccess(await metadata(), platform) }),
+  fetchProfile: async () => ({ username: null, first_name: name, last_name: null, photo: { ref: 'r', version: name } }),
+  fetchPhoto: async () => bytes,
+});
 
 beforeAll(async () => {
   project = await seedProject(`access-${crypto.randomUUID().slice(0, 8)}`);
@@ -112,5 +131,34 @@ describe('channel access store — a second platform beside Telegram', () => {
     const shown = serializeProject(row!).metadata;
     for (const platform of CHANNEL_ACCESS_PLATFORMS) expect(shown).not.toHaveProperty(platform);
     expect(shown).toMatchObject({ keep: 1 });
+  });
+
+  test("a profile looked up for one platform never names the other platform's user with the same id and scope", async () => {
+    await setChannelAllowedUsers('telegram', project.project_id, ['71']);
+    await setChannelAllowedUsers(FAKE, project.project_id, ['71']);
+    expect((await listChannelUsers(port('telegram', 'Tele'), project.project_id))!.allowed[0]).toMatchObject({ first_name: 'Tele' });
+    expect((await listChannelUsers(port(FAKE, 'Fake'), project.project_id))!.allowed[0]).toMatchObject({ first_name: 'Fake' });
+  });
+
+  test('a photo is served only when its magic bytes match a type the port declares, and as that type', async () => {
+    await setChannelAllowedUsers(FAKE, project.project_id, ['81']);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    const webp = new TextEncoder().encode('RIFF\x10\x00\x00\x00WEBPVP8 ');
+    const photo = (types: ChannelPhotoType[], bytes: Uint8Array<ArrayBuffer>) =>
+      channelUserPhoto(port(FAKE, 'Photo', types, bytes), project.project_id, '81');
+    const unavailable = { ok: false, code: 'photo_unavailable' } as const;
+    expect(await photo(['image/jpeg'], png)).toEqual(unavailable);
+    expect(await photo(['image/jpeg'], webp)).toEqual(unavailable);
+    expect(await photo(['image/png', 'image/webp'], jpeg)).toEqual(unavailable);
+    expect(await photo(['image/jpeg'], jpeg.slice(0, 2))).toEqual(unavailable);
+    expect(await photo(['image/jpeg'], jpeg)).toEqual({ ok: true, bytes: jpeg, contentType: 'image/jpeg' });
+    expect(await photo(['image/jpeg', 'image/png'], png)).toEqual({ ok: true, bytes: png, contentType: 'image/png' });
+    expect(await photo(['image/webp'], webp)).toEqual({ ok: true, bytes: webp, contentType: 'image/webp' });
+    // Only a listed user: the bot is no lookup service.
+    expect(await channelUserPhoto(port(FAKE, 'Photo', ['image/jpeg'], jpeg), project.project_id, '82')).toEqual({
+      ok: false,
+      code: 'user_unknown',
+    });
   });
 });
