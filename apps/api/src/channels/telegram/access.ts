@@ -1,11 +1,12 @@
 /**
  * Telegram's channel access port (channels/core/channel-access.ts): the bot's
- * install and token, the installation body the routes answer, `getChat` for a
- * user's names and photo, and `getFile` for the photo bytes.
+ * install and token, the installation body the routes answer, the sender of a
+ * message as a requester, `getChat` for a user's names and photo, and
+ * `getFile` for the photo bytes.
  */
 import { type ChannelAccessPort, cleanName } from '../core/channel-access';
 import { telegramCall, telegramDownload, telegramUnreachable } from './api';
-import { loadTelegramBotToken, loadTelegramInstall, TELEGRAM_USER_ID } from './installs';
+import { loadTelegramBotToken, loadTelegramInstall, TELEGRAM_USER_ID, telegramRequester } from './installs';
 
 const PROFILE_TIMEOUT_MS = 3_000;
 
@@ -36,6 +37,8 @@ export const telegramAccessPort: ChannelAccessPort = {
       }
     );
   },
+
+  requester: telegramRequester,
 
   // Null: Telegram has no chat with this user (never started the bot, or blocked it).
   async fetchProfile(token, userId) {

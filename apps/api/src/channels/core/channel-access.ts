@@ -13,14 +13,17 @@
  * (shared/channel-access-platforms.ts), which also hides its key from project
  * reads, record requests with its `chat_installs.workspace_id` as the scope,
  * give it a ChannelAccessPort for names, photos and the routes
- * (telegram/access.ts is the reference), and register its 5 access routes with
+ * (telegram/access.ts is the reference), register its 5 access routes with
  * registerChannelAccessRoutes (projects/routes/channel-access.ts), each with
- * its line in packages/shared/src/audit-route-labels.ts.
+ * its line in packages/shared/src/audit-route-labels.ts, and gate its
+ * messages with gateSender and its button presses with refusedPressText.
  */
 import { chatInstalls, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { metadataClearSubtreeKey, metadataMergeSubtree } from '../../projects/surface';
 import type { ChannelAccessPlatform } from '../../shared/channel-access-platforms';
+import { databaseErrorSummary } from '../../shared/database-errors';
 import { db } from '../../shared/db';
 
 export const CHANNEL_MAX_ALLOWED_USERS = 200;
@@ -73,6 +76,8 @@ export interface ChannelAccessPort {
   connection(projectId: string): Promise<{ scopeId: string; credential: string | null; lists: ChannelAccessLists } | null>;
   /** The body the access edit routes answer. Null: not connected. */
   installation(projectId: string): Promise<object | null>;
+  /** The sender's id and cleaned names from the platform's sender object. Null: no valid user id. */
+  requester(from: unknown): ChannelAccessRequester | null;
   /** Null: the platform gives no profile. Throws only when the platform is unreachable. */
   fetchProfile(credential: string, userId: string): Promise<ChannelAccessProfile | null>;
   /** At most `maxBytes`. Null: no photo. Throws only when the platform is unreachable. */
@@ -253,4 +258,47 @@ export async function recordChannelAccessRequest(
     scope.scopeId,
   );
   return recorded;
+}
+
+/**
+ * The gate for a message: null when the sender is allowed, otherwise the
+ * pairing reply. In a direct chat, a sender with a valid id is also recorded
+ * as an access request; a failed write still gets the plain reply.
+ */
+export async function gateSender(
+  port: ChannelAccessPort,
+  input: { projectId: string; scopeId: string; lists: ChannelAccessLists; senderId: string; direct: boolean; from: unknown },
+): Promise<string | null> {
+  const { projectId, senderId } = input;
+  if (senderId && input.lists.allowedUserIds.includes(senderId)) return null;
+  // Only a direct chat asks for access: there the sender wrote to the bot itself.
+  const asks = !!senderId && input.direct;
+  const requester = asks ? port.requester(input.from) : null;
+  const waiting =
+    !!requester &&
+    (await recordChannelAccessRequest(
+      port.platform,
+      projectId,
+      { scopeId: input.scopeId, accessRequests: input.lists.accessRequests },
+      requester,
+    ).catch((error) => {
+      // A failed query's message carries its parameters, the sender's names among them.
+      logger.warn(`[${port.platform}] access request not recorded`, {
+        projectId,
+        error: databaseErrorSummary(error) ?? String(error),
+      });
+      return false;
+    }));
+  const { label } = port;
+  return (
+    `This bot belongs to a Kortix project, and your ${label} account is not allowed to use it yet. ` +
+    (waiting
+      ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → ${label}. Your ${label} user ID is ${senderId}.`
+      : `Ask a project admin to allow your ${label} user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → ${label}${asks ? '' : ', or message this bot privately to ask for access'}.`)
+  );
+}
+
+/** The alert for a button press from a sender who is not allowed. Only they see it: never post it to the chat. */
+export function refusedPressText(port: ChannelAccessPort, senderId: string): string {
+  return `Your ${port.label} account is not allowed to use this bot. Ask a project admin to allow user ID ${senderId} under Customize → Connectors → Channels → ${port.label}.`;
 }

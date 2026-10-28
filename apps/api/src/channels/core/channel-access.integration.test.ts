@@ -4,7 +4,8 @@
  * metadata key, concurrent writes to both all land, an id is stored as sent,
  * the install check is per platform, and project reads hide every listed key.
  * The profile half (channel-access-profiles.ts) keeps each platform's profiles
- * apart and serves a photo only as a type its port declares.
+ * apart and serves a photo only as a type its port declares. The gate records
+ * a direct request under its own platform and names that platform in its replies.
  * The Telegram behaviour itself is pinned by telegram.integration.test.ts.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
@@ -17,11 +18,14 @@ import { db } from '../../shared/db';
 import {
   allowChannelUser,
   type ChannelAccessPort,
+  type ChannelAccessRequester,
   type ChannelPhotoType,
   clearChannelAccessRequests,
   dismissChannelAccessRequest,
+  gateSender,
   readChannelAccess,
   recordChannelAccessRequest,
+  refusedPressText,
   removeChannelUser,
   setChannelAllowedUsers,
 } from './channel-access';
@@ -60,6 +64,7 @@ const port = (
   photoTypes,
   connection: async () => ({ scopeId: SCOPE, credential: 'synthetic', lists: readChannelAccess(await metadata(), platform) }),
   installation: async () => ({}),
+  requester: (from) => from as ChannelAccessRequester,
   fetchProfile: async () => ({ username: null, first_name: name, last_name: null, photo: { ref: 'r', version: name } }),
   fetchPhoto: async () => bytes,
 });
@@ -164,5 +169,26 @@ describe('channel access store — a second platform beside Telegram', () => {
       ok: false,
       code: 'user_unknown',
     });
+  });
+
+  test('the gate passes an allowed sender, records only a direct request under its own platform, and names that platform', async () => {
+    await setChannelAllowedUsers(FAKE, project.project_id, ['90']);
+    const gate = (senderId: string, direct: boolean) =>
+      lists(FAKE).then((stored) =>
+        gateSender(port(FAKE, 'Fakechat'), { projectId: project.project_id, scopeId: SCOPE, lists: stored, senderId, direct, from: requester(senderId) }),
+      );
+    expect(await gate('90', true)).toBeNull();
+    expect(await gate('91', false)).toBe(
+      'This bot belongs to a Kortix project, and your Fakechat account is not allowed to use it yet. Ask a project admin to allow your Fakechat user ID 91 under Customize → Connectors → Channels → Fakechat, or message this bot privately to ask for access.',
+    );
+    expect((await lists(FAKE)).accessRequests).toEqual([]);
+    expect(await gate('91', true)).toBe(
+      'This bot belongs to a Kortix project, and your Fakechat account is not allowed to use it yet. Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Fakechat. Your Fakechat user ID is 91.',
+    );
+    expect((await lists(FAKE)).accessRequests.map((r) => r.id)).toEqual(['91']);
+    expect((await metadata()).telegram).toEqual(TELEGRAM);
+    expect(refusedPressText(port(FAKE, 'Fakechat'), '91')).toBe(
+      'Your Fakechat account is not allowed to use this bot. Ask a project admin to allow user ID 91 under Customize → Connectors → Channels → Fakechat.',
+    );
   });
 });

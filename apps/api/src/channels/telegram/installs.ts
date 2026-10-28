@@ -10,6 +10,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import {
   type ChannelAccessEntry,
+  type ChannelAccessRequester,
   cleanName,
   clearChannelAccessRequests,
   readChannelAccess,
@@ -24,6 +25,19 @@ export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
 
 export const TELEGRAM_USER_ID = /^\d{1,20}$/;
+
+/** A sender's id and cleaned names (the port's `requester`). Null: `from` has no valid Telegram user id. */
+export function telegramRequester(from: unknown): ChannelAccessRequester | null {
+  const sender = (from ?? {}) as { id?: unknown; username?: unknown; first_name?: unknown; last_name?: unknown };
+  const id = typeof sender.id === 'number' && Number.isSafeInteger(sender.id) && sender.id > 0 ? String(sender.id) : '';
+  if (!TELEGRAM_USER_ID.test(id)) return null;
+  return {
+    id,
+    username: cleanName(sender.username, 32),
+    first_name: cleanName(sender.first_name, 64),
+    last_name: cleanName(sender.last_name, 64),
+  };
+}
 
 export interface TelegramInstall {
   botId: string;
@@ -105,12 +119,9 @@ export async function recordTelegramAccessRequest(
   install: Pick<TelegramInstall, 'botId' | 'accessRequests'>,
   from: { id?: unknown; username?: unknown; first_name?: unknown; last_name?: unknown },
 ): Promise<boolean> {
-  const id = typeof from.id === 'number' && Number.isSafeInteger(from.id) && from.id > 0 ? String(from.id) : '';
-  if (!TELEGRAM_USER_ID.test(id)) return false;
-  return recordChannelAccessRequest('telegram', projectId, { scopeId: install.botId, accessRequests: install.accessRequests }, {
-    id,
-    username: cleanName(from.username, 32),
-    first_name: cleanName(from.first_name, 64),
-    last_name: cleanName(from.last_name, 64),
-  });
+  const requester = telegramRequester(from);
+  return (
+    !!requester &&
+    recordChannelAccessRequest('telegram', projectId, { scopeId: install.botId, accessRequests: install.accessRequests }, requester)
+  );
 }
