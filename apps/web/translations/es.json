@@ -23384,5 +23384,20 @@
       "unarchivedToast": "#{name} desarchivado",
       "failed": "No se pudo actualizar #{name}. Inténtalo de nuevo."
     }
+  },
+  "imageGen": {
+    "generating": "Generando imagen",
+    "editing": "Editando imagen",
+    "generatingCount": "Generando {count, plural, one {# imagen} other {# imágenes}}",
+    "editingCount": "Editando {count, plural, one {# imagen} other {# imágenes}}",
+    "openFullScreen": "Abrir en pantalla completa",
+    "openFullScreenPrompt": "Abrir en pantalla completa: {prompt}",
+    "loading": "Cargando imagen",
+    "stopped": "Detenido",
+    "failed": "No se generó la imagen.",
+    "retry": "Vuelve a intentarlo {when}.",
+    "unavailable": "Imagen no disponible",
+    "tryAgain": "Reintentar",
+    "details": "Detalles de la imagen"
   }
 }

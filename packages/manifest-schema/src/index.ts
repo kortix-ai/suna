@@ -222,6 +222,8 @@ export {
   SLUG_RE,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
+  DEFAULT_ON_KORTIX_TOOLS,
+  isDefaultOnKortixTool,
   KORTIX_TOOL_PREFIX,
   kortixToolRef,
   selectedKortixTools,

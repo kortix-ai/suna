@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { compilePermissionPolicy, permissionSubject, resolvePolicyRule } from '@/harness/pi/interactions'
+import { buildOpencodeConfigContent } from '@/harness/open-code/lifecycle'
+import { compilePermissionPolicy, permissionSubject, resolvePolicyRule, toolCapability } from '@/harness/pi/interactions'
 import { openCodeAction } from './helpers/opencode-permission'
 
 /**
@@ -31,5 +32,38 @@ describe('both harnesses resolve every rule the same way', () => {
     const openCode = openCodeAction([orderPermissionRules(rules)], tool, permissionSubject(tool, args, '/workspace')!)
     expect(pi).toBe(expected as never)
     expect(openCode).toBe(expected)
+  })
+})
+
+/** The Kortix tools that write files in the checkout (`output/images/`, `memory/`). */
+const WORKSPACE_WRITERS = ['image_gen', 'memory']
+
+describe('`edit` governs every Kortix tool that writes the workspace, on both harnesses', () => {
+  const compose = async (permission: Record<string, unknown>) => {
+    const content = await buildOpencodeConfigContent({
+      KORTIX_LLM_BASE_URL: 'http://gateway.test/v1',
+      KORTIX_TOKEN: 'kortix_test_token',
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ agent: { writer: { permission } } }),
+    })
+    const config = JSON.parse(content!) as { permission?: unknown; agent: { writer: { permission: unknown } } }
+    return [config.permission, config.agent.writer.permission]
+  }
+
+  test.each(WORKSPACE_WRITERS)('OpenCode: an agent with `edit: deny` is denied %s', async (tool) => {
+    expect(openCodeAction(await compose({ edit: 'deny' }), tool, '*')).toBe('deny')
+  })
+
+  test.each(WORKSPACE_WRITERS)('OpenCode: `edit: ask` denies %s, which cannot ask (fail closed)', async (tool) => {
+    expect(openCodeAction(await compose({ edit: 'ask' }), tool, '*')).toBe('deny')
+  })
+
+  test.each(WORKSPACE_WRITERS)('OpenCode: `edit: allow` keeps %s, and its own rule wins', async (tool) => {
+    expect(openCodeAction(await compose({ edit: 'allow' }), tool, '*')).toBe('allow')
+    expect(openCodeAction(await compose({ edit: 'deny', [tool]: 'allow' }), tool, '*')).toBe('allow')
+  })
+
+  test.each(WORKSPACE_WRITERS)('pi: %s answers to `edit`', (tool) => {
+    expect(toolCapability(tool, { command: 'create' })).toBe('edit')
+    expect(resolvePolicyRule(compilePermissionPolicy({ edit: 'deny' }), tool, { command: 'create' }, '/workspace')).toBe('deny')
   })
 })

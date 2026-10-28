@@ -514,6 +514,7 @@ export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
+export * from './core/files/image-cache';
 export * from './core/attachments/limits';
 export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
