@@ -1,3 +1,4 @@
+import { questionButtonData } from '../core/question-token';
 import type { StreamTaskChunk } from '../slack-api';
 import { markdownToCardElements } from './markdown';
 
@@ -768,8 +769,12 @@ function questionFieldId(question: string, index: number): string {
  * floor. A form answers all of them — one `Input.ChoiceSet` per question,
  * multi-select when asked, a text box when free-form answers are allowed — and
  * `handleForm` relays the answers back labelled with their questions.
+ *
+ * `pendingId`: the stored question. A button, a field id and a choice value
+ * then name the question and option by their stored index (core/question-token.ts),
+ * so a press answers from the stored row (question-press.ts).
  */
-export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, unknown> {
+export function buildQuestionCard(questions: TeamsQuestion[], pendingId?: string): Record<string, unknown> {
   const list = (questions ?? []).filter((q) => q?.question?.trim());
   if (list.length === 0) return buildNoticeCard('The agent asked a question, but it arrived empty.', '💬');
 
@@ -806,6 +811,7 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
         executeAction(o.label, 'teams_answer', {
           answer: o.label,
           question: single.question.slice(0, 200),
+          ...(pendingId ? { kq: questionButtonData(pendingId, single.options!.indexOf(o), questions.indexOf(single)) } : {}),
         }),
       ),
     );
@@ -815,6 +821,7 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
   const numbered = list.length > 1;
   for (const [i, q] of list.entries()) {
     const id = questionFieldId(q.question, i);
+    const kq = pendingId && `kq${questions.indexOf(q)}`;
     const opts = q.options?.filter((o) => o?.label?.trim()) ?? [];
     // Shape of the Kortix web question UI: each question carries its short
     // header, and several questions say where they sit ("2 of 3") so
@@ -828,7 +835,7 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
     const caption = numbered ? `${i + 1} of ${list.length}${header ? ` · ${header}` : ''}` : header || undefined;
     if (opts.length > 0) {
       fields.push({
-        id,
+        id: kq || id,
         label,
         caption,
         type: q.multiple ? 'multichoice' : 'choice',
@@ -840,7 +847,7 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
         // A description belongs on the choice itself, where the user reads it.
         choices: opts.map((o) => ({
           title: o.description?.trim() ? `${o.label} — ${o.description.trim()}` : o.label,
-          value: o.label,
+          value: kq ? String(q.options!.indexOf(o)) : o.label,
         })),
         placeholder: q.multiple ? 'Pick one or more' : 'Pick one',
       });
@@ -850,10 +857,10 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
       // under the choices reads as "or say it yourself", where a repeated bold
       // "Something else" read as a second question.
       if (q.custom) {
-        fields.push({ id: `${id} (other)`, label: '', type: 'text', placeholder: 'Or type your own answer' });
+        fields.push({ id: kq ? `${kq}.text` : `${id} (other)`, label: '', type: 'text', placeholder: 'Or type your own answer' });
       }
     } else {
-      fields.push({ id, label, caption, type: 'textarea', placeholder: 'Your answer' });
+      fields.push({ id: kq ? `${kq}.text` : id, label, caption, type: 'textarea', placeholder: 'Your answer' });
     }
   }
 
@@ -862,6 +869,7 @@ export function buildQuestionCard(questions: TeamsQuestion[]): Record<string, un
     subtitle: 'Answer here, or just reply in the chat.',
     submitLabel: 'Send answers',
     fields,
+    ...(pendingId ? { data: { kq: pendingId } } : {}),
   });
   // `buildFormCard` returns null only when nothing usable survived; the
   // questions still have to reach the user, so fall back to plain text.
@@ -1044,6 +1052,8 @@ export interface TeamsFormSpec {
   subtitle?: string;
   submitLabel?: string;
   fields: TeamsFormField[];
+  /** More data on the submit, beside `fieldIds`. */
+  data?: Record<string, string>;
 }
 
 const MAX_FORM_FIELDS = 12;
@@ -1125,7 +1135,7 @@ export function buildFormCard(spec: TeamsFormSpec): Record<string, unknown> | nu
   }
   if (ids.length === 0) return null;
   return card(body, [
-    executeAction(spec.submitLabel?.trim() || 'Submit', TEAMS_FORM_VERB, { fieldIds: ids.join(',') }),
+    executeAction(spec.submitLabel?.trim() || 'Submit', TEAMS_FORM_VERB, { fieldIds: ids.join(','), ...spec.data }),
   ]);
 }
 

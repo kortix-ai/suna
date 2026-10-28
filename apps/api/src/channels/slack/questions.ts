@@ -32,6 +32,8 @@ const QUESTION_SENTINEL =
 export async function postQuestion(
   sessionId: string,
   questions: QuestionInfo[],
+  /** The stored question its buttons answer (`buildQuestionBlocks`). */
+  pendingId?: string,
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const handle = await loadTurn(sessionId);
   if (!handle) {
@@ -47,7 +49,7 @@ export async function postQuestion(
   await finalizeTurn(handle, { title: 'Waiting for your answer', unfinished: true });
   await deleteTurn(sessionId);
 
-  const blocks = buildQuestionBlocks(questions);
+  const blocks = buildQuestionBlocks(questions, pendingId);
   const fallback = questions[0]?.question?.slice(0, 200) ?? 'A question for you';
   const persona = await slackAgentPersona(handle).catch(() => null);
   const messageTs = await postBlocks(handle.token, handle.channel, fallback, blocks, handle.triggerTs, persona);

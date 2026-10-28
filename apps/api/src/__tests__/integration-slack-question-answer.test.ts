@@ -4,7 +4,8 @@
  *
  * Real: the route, its signature check and inbound scope (chat_installs), the
  * session and its chat thread, chat identities, IAM roles, the stored
- * question, the press core, the turn row and the lifecycle queue rows. Faked:
+ * question, the post through the turn relay, the press core, the turn row and
+ * the lifecycle queue rows. Faked:
  * Slack's HTTP surface (a fetch stub records every Web API call and
  * response_url post), the install's secrets, the queue drain and the runtime
  * release.
@@ -50,6 +51,8 @@ mock.module('../projects/session-lifecycle/release-runtime-question', () => ({
 const slackCalls: Array<{ method: string; body: Record<string, any> }> = [];
 const ephemeral: string[] = [];
 let failUpdate = false;
+/** The ts Slack gives a posted message. */
+const POSTED_TS = '900.0001';
 globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
   const href = String(url);
   const raw = String(init?.body ?? '');
@@ -59,6 +62,7 @@ globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
   }
   const method = href.replace('https://slack.com/api/', '');
   slackCalls.push({ method, body: raw.startsWith('{') ? JSON.parse(raw) : Object.fromEntries(new URLSearchParams(raw)) });
+  if (method === 'chat.postMessage') return Response.json({ ok: true, ts: POSTED_TS });
   return Response.json(failUpdate && method === 'chat.update' ? { ok: false, error: 'cant_update_message' } : { ok: true });
 }) as unknown as typeof fetch;
 
@@ -74,6 +78,7 @@ setSlackSessionLifecycleForTest({
 const { slackWebhookApp } = await import('../channels/slack/app');
 const { QUESTION_EARLIER, buildQuestionBlocks } = await import('../channels/slack/questions');
 const { questionButtonData } = await import('../channels/core/question-token');
+const { relayTurnQuestion } = await import('../channels/turn-relay');
 
 const TEAM = 'T0QUESTION';
 const CHANNEL = 'C0QUESTION';
@@ -213,6 +218,36 @@ afterAll(async () => {
   await db.delete(chatThreads).where(eq(chatThreads.projectId, project.project_id));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, project.project_id));
   await removeSeeded([project]);
+});
+
+test('a question the relay posts with its stored id: a click on the button Slack shows answers with the stored option', async () => {
+  const q = await asked();
+  await db.insert(chatTurnStreams).values({
+    sessionId: q.sessionId,
+    projectId: project.project_id,
+    teamId: TEAM,
+    channel: CHANNEL,
+    triggerTs: q.threadTs,
+    originatingEvent: {},
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  expect((await relayTurnQuestion(q.sessionId, QUESTIONS, null, q.pendingId)).ok).toBe(true);
+  const posted = calls('chat.postMessage').at(-1)!;
+  expect(actionBlocks(posted.blocks)).toEqual(['kq0', 'kq1']);
+  const button = posted.blocks.find((b: { block_id?: string }) => b.block_id === 'kq1').elements[1];
+  expect(button).toMatchObject({ action_id: 'qa_1_1', value: questionButtonData(q.pendingId, 1, 1) });
+
+  slackCalls.length = 0;
+  await click({ at: { threadTs: q.threadTs, messageTs: POSTED_TS }, user: SLACK.owner, actionId: button.action_id, value: button.value, text: button.text.text, blocks: posted.blocks });
+  const [row] = await followUps(q.sessionId);
+  expect(row!.key).toMatch(new RegExp(`^slack:kq:${TEAM}:${CHANNEL}:${POSTED_TS}:trig-`));
+  expect(row!.payload.text).toContain('You asked:\n> Deploy now?\n\nNo');
+  const [update] = calls('chat.update');
+  expect(update).toMatchObject({ channel: CHANNEL, ts: POSTED_TS });
+  expect(actionBlocks(update!.blocks)).toEqual(['kq0']);
+  expect(JSON.stringify(update!.blocks)).toContain(`✓ *No* — <@${SLACK.owner}>`);
+  expect(created).toEqual([]);
 });
 
 test('two people click two questions of one message: each answer reaches the session under its own key, as its clicker', async () => {

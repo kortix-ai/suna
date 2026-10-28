@@ -6,7 +6,8 @@
  * Real: the route, its token check (a local JWKS served from
  * `MICROSOFT_BOT_OPENID_METADATA`), the session and its chat thread, chat
  * identities, IAM roles, the join policy, `/new`, the stored question, the
- * press core, the turn row and the lifecycle queue rows. Faked: the Bot
+ * post through the turn relay, the press core, the turn row and the lifecycle
+ * queue rows. Faked: the Bot
  * Framework HTTP surface (a fetch stub records every connector call), the
  * queue drain and the runtime release.
  */
@@ -99,6 +100,7 @@ const { teamsWebhookApp } = await import('../channels/teams/app');
 const { questionButtonData } = await import('../channels/core/question-token');
 const { rememberQuestionMessage, rememberedQuestionRef } = await import('../channels/core/questions');
 const { startFreshTeamsConversation } = await import('../channels/teams/fresh-start');
+const { relayTurnQuestion } = await import('../channels/turn-relay');
 
 const EARLIER = 'This question is from an earlier conversation.';
 const TAP_AGAIN = "Couldn't record that. Tap the button again.";
@@ -206,6 +208,27 @@ const cardText = (card: any) => card.body.map((b: { text: string }) => b.text).j
 const cardUpdates = (activityId: string) =>
   botCalls.filter((c) => c.method === 'PUT' && c.url.endsWith(`/activities/${activityId}`)).map((c) => cardText(c.body.attachments[0].content));
 
+/** Post `questions` through the turn relay into the live turn of `q`'s chat; the card Teams got, and its id. */
+async function relayed(q: { sessionId: string; convo: string; pendingId: string }, questions: unknown[]) {
+  await db.insert(chatTurnStreams).values({
+    sessionId: q.sessionId,
+    projectId: project.project_id,
+    teamId: TENANT,
+    channel: q.convo,
+    triggerTs: `trigger-${q.sessionId}`,
+    originatingEvent: {},
+    channelRef: { platform: 'teams', serviceUrl: SERVICE_URL, conversationId: q.convo, botId: `28:${APP_ID}` },
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  expect((await relayTurnQuestion(q.sessionId, questions as never, null, q.pendingId)).ok).toBe(true);
+  const posted = botCalls.filter((c) => c.method === 'POST').at(-1)!;
+  const target = { platform: 'teams' as const, workspaceId: TENANT, threadId: q.convo, projectId: project.project_id };
+  // A press that Teams sends without the card's id finds it by this.
+  expect(await rememberedQuestionRef(target, q.pendingId)).toBe(posted.id);
+  botCalls.length = 0;
+  return { id: posted.id, card: posted.body.attachments[0].content };
+}
+
 beforeAll(async () => {
   project = await seedProject('teams-question-answer');
   await db.insert(chatInstalls).values({ platform: 'teams', workspaceId: TENANT, projectId: project.project_id });
@@ -262,6 +285,38 @@ test("two people tap one card: each gets the stored answer on the invoke, everyo
   expect((rows[1]!.payload as { text: string }).text).toContain('You asked:\n> Deploy now?\n\nYes');
   expect(releases).toEqual([]);
   expect(created).toEqual([]);
+});
+
+test('a card the relay posts with its stored id: a tap on it answers with the stored option, and the stored card is the one updated', async () => {
+  const q = await asked();
+  const { id, card } = await relayed(q, [DEPLOY]);
+  expect(card.actions.map((a: { data: unknown }) => a.data)).toEqual([
+    { verb: 'teams_answer', answer: 'Yes', question: 'Deploy now?', kq: questionButtonData(q.pendingId, 0) },
+    { verb: 'teams_answer', answer: 'No', question: 'Deploy now?', kq: questionButtonData(q.pendingId, 1) },
+  ]);
+
+  const { id: invoke } = await press({ convo: q.convo, aad: AAD.owner, data: card.actions[1].data });
+  expect(cardUpdates(id)).toEqual(['**Deploy now?**\n\n✅ Answered: No — Owner']);
+  const [row] = await followUps(q.sessionId);
+  expect(row!.key).toBe(`teams:${TENANT}:${q.convo}:kq:${invoke}`);
+  expect((row!.payload as { text: string }).text).toContain('You asked:\n> Deploy now?\n\nNo');
+  expect(created).toEqual([]);
+});
+
+test('a form the relay posts with its stored id: its submit answers each question with the stored options and its own text', async () => {
+  const q = await asked({ questions: FORM });
+  const { id, card } = await relayed(q, FORM);
+  const inputs = card.body.filter((b: { type: string }) => b.type.startsWith('Input.'));
+  expect(inputs.map((i: { id: string }) => i.id)).toEqual(['kq0', 'kq1.text']);
+  expect(card.actions[0].data).toEqual({ verb: 'teams_form', fieldIds: 'kq0,kq1.text', kq: q.pendingId });
+
+  // Teams sends each input's value beside the action's data: a multi-select joins its choices' values.
+  const picked = inputs[0].choices.filter((c: { title: string }) => c.title !== 'us-east').map((c: { value: string }) => c.value);
+  await press({ convo: q.convo, aad: AAD.owner, form: true, data: { ...card.actions[0].data, kq0: picked.join(','), 'kq1.text': 'ship it friday' } });
+  const answered = '**Which regions?**\n\n**Anything else?**\n\n✅ Answered: eu-west, primary, ap-south, ship it friday — Owner';
+  expect(cardUpdates(id)).toEqual([answered]);
+  const [row] = await followUps(q.sessionId);
+  expect((row!.payload as { text: string }).text).toContain('You asked:\n> Which regions?\neu-west, primary, ap-south\n\n> Anything else?\nship it friday');
 });
 
 test('a question still blocking the turn is answered there; the card kept at post time is the one updated', async () => {
