@@ -903,12 +903,12 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/backend',
-        destination: '/docs#start-sessions-from-your-server',
+        destination: '/docs#start-sessions-for-your-users',
         permanent: true,
       },
       {
         source: '/docs/sdk/example',
-        destination: '/docs#a-complete-script',
+        destination: '/docs#your-first-session',
         permanent: true,
       },
       {

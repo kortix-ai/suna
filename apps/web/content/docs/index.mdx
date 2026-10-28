@@ -2928,7 +2928,7 @@ An OAuth token without the `kortix` scope reaches only `/v1/accounts/me`,
 `/v1/oauth/userinfo`, and `/v1/oauth/revoke`. Other routes answer `403`, and
 `message` starts with `insufficient_scope`.
 
-A person's access token from [headless sign-in](/docs/#headless-sign-in)
+A person's access token from [headless sign-in](/docs/#sign-users-in-headlessly)
 also works as a bearer token. It acts as that person.
 
 A missing or invalid token returns `401`. A `401` with
@@ -2993,7 +2993,7 @@ These are the codes clients branch on most. The linked page explains each fix.
 | `INVALID_IDEMPOTENCY_KEY` | `400` | The `Idempotency-Key` header is not 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
-| `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/#session-errors) |
+| `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/#session-create-errors) |
 | `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Sessions](/docs/#computers) |
 | `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Sessions](/docs/#computers) |
 | `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Sessions](/docs/#computers) |
@@ -4148,7 +4148,7 @@ longer carry a flag). React hooks in `@kortix/sdk/react`:
 `useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
 types: [SDK reference](/docs/#the-project-handle) and
-[React hooks](/docs/#hooks).
+[React hooks](/docs/#react-hooks).
 
 ### Permissions and CLI reference
 
