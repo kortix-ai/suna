@@ -2,9 +2,10 @@ import { defineConfig } from 'blume';
 
 // The docs are ONE page (content/docs/index.mdx, founder 2026-10-28):
 // everything from the first project to the SDK reference, top to bottom.
-// This sidebar is that page's outline, one link per top-level section, and
-// it replaces Blume's right-hand "On this page" (toc: false below). Blume
-// prefixes each href with the /docs base. Kortix Capture's pages and the
+// This sidebar is that page's outline, one link per top-level section.
+// blume-components/OutlineSidebar.astro (components.ts) renders it on the
+// left as "On this page" with Blume's scrollspy; the right-hand outline is
+// off (toc: false below). Kortix Capture's pages and the
 // generated audit-actions reference stay built but unlisted: the app links
 // to them.
 const sidebar = [
@@ -91,7 +92,7 @@ export default defineConfig({
     site: 'https://kortix.com',
   },
 
-  // No right-hand "On this page": the sidebar is the page's outline.
+  // No right-hand "On this page": it is on the left (OutlineSidebar.astro).
   toc: false,
 
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see

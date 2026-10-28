@@ -1,0 +1,50 @@
+---
+// The left column of the one-page docs: the page's outline, "On this page",
+// grouped as the sidebar config groups it (blume.config.ts). Each entry is an
+// in-page `#anchor`, and <blume-toc> (registered by Blume's RootLayout) marks
+// the section in view with aria-current="location", the same scrollspy as
+// Blume's right-hand outline, which is off (toc: false).
+interface Node {
+  kind?: string;
+  label: string;
+  route?: string;
+  href?: string;
+  children?: Node[];
+}
+interface Props {
+  items: Node[];
+  currentRoute: string;
+}
+const { items } = Astro.props;
+const anchor = (node: Node) => {
+  const target = node.href ?? node.route ?? '';
+  const hash = target.indexOf('#');
+  return hash === -1 ? null : target.slice(hash);
+};
+---
+
+<p class="mb-3 px-2.5 font-semibold text-foreground text-sm">On this page</p>
+<blume-toc class="block">
+  {
+    items.map((group) => (
+      <div class="mb-5">
+        <p class="mb-1 px-2.5 font-medium text-muted-foreground text-xs">{group.label}</p>
+        <ul class="m-0 list-none p-0">
+          {(group.children ?? []).map((node) => {
+            const href = anchor(node);
+            return href ? (
+              <li>
+                <a
+                  class="block rounded-[0.65rem] px-2.5 py-1.5 text-muted-foreground text-sm transition-colors hover:text-foreground aria-[current=location]:bg-muted aria-[current=location]:font-medium aria-[current=location]:text-foreground"
+                  href={href}
+                >
+                  {node.label}
+                </a>
+              </li>
+            ) : null;
+          })}
+        </ul>
+      </div>
+    ))
+  }
+</blume-toc>
