@@ -290,8 +290,9 @@ const envSchema = z.object({
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
-  // of blobs (~125 screenshots of 500 kB). Above it the claim still happens and the answer is 413 without messages:
-  // the box boots with the D3 note alone. A pi restore peaks at about 38x the log in the daemon's
+  // of blobs (~125 screenshots of 500 kB). Above it the claim still happens and the answer is 413 with the part
+  // that fits (`kept`): what the model sees, else the newest turns, else no message and the D3 note alone
+  // (`sessionLogRestorePlan`). A pi restore peaks at about 38x the log in the daemon's
   // memory (a 38.5 MB log: +1.45 GB on a 4 GB box) and about 9x in the API (+330 MB). 24 MiB keeps the
   // daemon peak under 1 GB and is 1.6x the p99.9 session (15 MB; p99 3.7 MB).
   SESSION_LOG_RESTORE_MAX_BYTES: optInt(24 * 1024 * 1024),

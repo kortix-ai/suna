@@ -112,6 +112,14 @@ describe('kortix tools ls', () => {
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout)).toMatchObject({ tools_key: false, removed: [] });
   }, SPAWN_TEST_MS);
 
+  test('kortix tools ls shows image_gen for a list that does not name it', () => {
+    const cwd = project({ 'kortix.yaml': HEAD + STARTER_TOOLS });
+    const result = kortix(cwd, 'tools', 'ls');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('image_gen       kortix  kortix:image_gen\n');
+    expect(result.stdout).not.toContain('Removed Kortix tools');
+  }, SPAWN_TEST_MS);
+
   test('lists kind and source per tool, the removed Kortix tools, and reads imported files', () => {
     const cwd = project({
       'kortix.yaml': `${HEAD}imports: [team/kortix.yaml]\ntools:\n  web_search: kortix:web_search\n  memory: tools/memory.ts\n`,
@@ -123,6 +131,7 @@ describe('kortix tools ls', () => {
       [
         'NAME          KIND                 SOURCE',
         'web_search    kortix               kortix:web_search',
+        'image_gen     kortix               kortix:image_gen',
         'memory        kortix (overridden)  tools/memory.ts',
         'show          kortix               kortix:show',
         'lookup_order  project              team/tools/lookup_order.ts',
@@ -137,6 +146,7 @@ describe('kortix tools ls', () => {
       tools_key: true,
       tools: [
         { name: 'web_search', kind: 'kortix', source: 'kortix:web_search' },
+        { name: 'image_gen', kind: 'kortix', source: 'kortix:image_gen' },
         { name: 'memory', kind: 'kortix (overridden)', source: 'tools/memory.ts' },
         { name: 'show', kind: 'kortix', source: 'kortix:show' },
         { name: 'lookup_order', kind: 'project', source: 'team/tools/lookup_order.ts' },
@@ -170,11 +180,11 @@ describe('kortix tools eject', () => {
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout).tools[0]).toEqual({ name: 'web_search', kind: 'kortix (overridden)', source: 'tools/web_search.ts' });
   }, SPAWN_TEST_MS);
 
-  test('with no tools key, it lists the other four Kortix tools so the eject removes nothing', () => {
+  test('with no tools key, it lists the other Kortix tools so the eject removes nothing', () => {
     const cwd = project({ 'kortix.yaml': `${HEAD}# the end\n` });
     expect(kortix(cwd, 'tools', 'eject', 'show').code).toBe(0);
     expect(read(cwd, 'kortix.yaml')).toBe(
-      `${HEAD}# the end\n\ntools:\n  web_search: kortix:web_search\n  image_search: kortix:image_search\n  scrape_webpage: kortix:scrape_webpage\n  memory: kortix:memory\n  show: tools/show.ts  # ejected from kortix:show\n`,
+      `${HEAD}# the end\n\ntools:\n  web_search: kortix:web_search\n  image_search: kortix:image_search\n  image_gen: kortix:image_gen\n  scrape_webpage: kortix:scrape_webpage\n  memory: kortix:memory\n  show: tools/show.ts  # ejected from kortix:show\n`,
     );
     expect(JSON.parse(kortix(cwd, 'tools', 'ls', '--json').stdout).removed).toEqual([]);
     expect(issues(cwd)).toEqual([]);
@@ -202,7 +212,7 @@ describe('kortix tools eject', () => {
     const unknown = kortix(cwd, 'tools', 'eject', 'lookup_order');
     expect(unknown.code).toBe(2);
     expect(unknown.stderr).toContain('"lookup_order" is not a Kortix tool.');
-    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, scrape_webpage, memory, show.');
+    expect(unknown.stderr).toContain('Eject one of: web_search, image_search, image_gen, scrape_webpage, memory, show.');
     expect(existsSync(join(cwd, 'tools/lookup_order.ts'))).toBe(false);
   }, SPAWN_TEST_MS);
 });

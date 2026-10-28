@@ -21207,6 +21207,18 @@
     "emailHeroLede": "Resend アカウントを接続し、自分のドメインのアドレスを選びます。そのアドレスにメールが届くと、エージェントがスレッドを読みそのまま返信します。",
     "telegramHeroTitle": "エージェントを Telegram に",
     "telegramHeroLede": "BotFather で作ったボットを接続します。ボットにメッセージすると、エージェントがチャットで答えます。",
+    "telegramUsersDescription": "ボットと話せるのはこれらのユーザーだけです。ほかの人がボットに個別メッセージを送ると、ここに表示されます。",
+    "telegramRequestsTitle": "アクセスを希望",
+    "telegramAllowedTitle": "許可済み",
+    "telegramUsersEmptyTitle": "許可したユーザーがここに表示されます",
+    "telegramUsersEmptyDescription": "ボットにメッセージを送ってもらい、そのリクエストを許可するか、ユーザー ID を追加します。",
+    "telegramUsersLoadError": "Telegram ユーザーを読み込めませんでした。",
+    "telegramAddByIdLabel": "ユーザー ID で追加",
+    "telegramAddByIdHint": "ボットは知らない相手に、その人のユーザー ID を返信します。",
+    "telegramAddByIdInvalid": "Telegram のユーザー ID は数字です（例: 123456789）。",
+    "telegramAllowAria": "{name} を許可",
+    "telegramRemoveTitle": "{name} を削除しますか？",
+    "telegramRemoveDescription": "{name} はボットと話せなくなります。再び許可するには、ユーザー ID を追加するか、次のリクエストを許可します。",
     "otherWaysToConnect": "その他の接続方法",
     "computerHeroTitle": "エージェントをあなたのコンピューターに",
     "computerConnectedTitle": "{count, plural, other {# 台のコンピューターが接続済み}}",
@@ -23372,5 +23384,20 @@
       "unarchivedToast": "#{name} のアーカイブを解除しました",
       "failed": "#{name} を更新できませんでした。もう一度お試しください。"
     }
+  },
+  "imageGen": {
+    "generating": "画像を生成中",
+    "editing": "画像を編集中",
+    "generatingCount": "{count, plural, other {#枚の画像を生成中}}",
+    "editingCount": "{count, plural, other {#枚の画像を編集中}}",
+    "openFullScreen": "全画面で開く",
+    "openFullScreenPrompt": "全画面で開く: {prompt}",
+    "loading": "画像を読み込み中",
+    "stopped": "停止しました",
+    "failed": "画像は生成されませんでした。",
+    "retry": "{when}に再試行してください。",
+    "unavailable": "画像を表示できません",
+    "tryAgain": "再試行",
+    "details": "画像の詳細"
   }
 }

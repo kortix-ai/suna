@@ -86,7 +86,7 @@ customers. A signed Order keeps the Terms version it names.
 `runTermsNoticeSweep` (`apps/api/src/billing/services/terms-notices.ts`) runs
 hourly in the billing worker, on prod only. It emails every signed-up user
 once, free or paid (`auth.users` with an email, not deleted, not anonymous),
-at most 2,000 per sweep. Reply-To is legal@kortix.com. Each sent email leaves
+at most 10,000 per sweep. Reply-To is legal@kortix.com. Each sent email leaves
 an audit event `legal.terms_notice.sent` (`resource_id` = `TERMS_VERSION`,
 `output_summary.user_id`). legal@kortix.com gets one report when every user
 has the notice, and one per sweep while it runs late: "Terms notice gave only

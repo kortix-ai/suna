@@ -7,8 +7,7 @@ import { TYPE_SECTIONS } from './marketplace-meta';
  *  into a taller single virtual row on mobile's 1-column layout). */
 export const MARKETPLACE_GRID_COLUMNS = 3;
 
-export type MarketplaceGridRow =
-  { kind: 'header'; label: string; count: number } | { kind: 'items'; items: MarketplaceItem[] };
+export type MarketplaceGridRow = { kind: 'items'; items: MarketplaceItem[] };
 
 function chunk<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -57,33 +56,18 @@ export function groupMarketplaceItemsByType(
     .map(([label, list]) => ({ label, items: list }));
 }
 
-/** Flattens items (grouped or not) into virtualizer rows: a header row per
- *  type section (when `grouped`) followed by fixed-size item chunks, or a
- *  flat chunked list when not grouped (active search/type/source filter).
- *  This is the row set fed to `useVirtualizer({ count: rows.length })` so
- *  only a bounded window of DOM nodes is ever mounted regardless of how many
- *  pages have loaded. */
+/** Flattens items into fixed-size virtualizer rows. */
 export function buildMarketplaceGridRows(params: {
   items: MarketplaceItem[];
-  grouped: boolean;
   columns?: number;
 }): MarketplaceGridRow[] {
   const columns = params.columns ?? MARKETPLACE_GRID_COLUMNS;
-  if (!params.grouped) {
-    return chunk(params.items, columns).map((items) => ({ kind: 'items', items }) as const);
-  }
-  const rows: MarketplaceGridRow[] = [];
-  for (const section of groupMarketplaceItemsByType(params.items)) {
-    rows.push({ kind: 'header', label: section.label, count: section.items.length });
-    for (const items of chunk(section.items, columns)) rows.push({ kind: 'items', items });
-  }
-  return rows;
+  return chunk(params.items, columns).map((items) => ({ kind: 'items', items }) as const);
 }
 
 /** Stable virtualizer key for a grid row — content-based so appended pages
  *  (which only grow the tail) don't force React to re-key unrelated rows. */
 export function marketplaceGridRowKey(row: MarketplaceGridRow, index: number): string {
-  if (row.kind === 'header') return `header:${row.label}`;
   return `items:${row.items.map((i) => i.id).join(',') || index}`;
 }
 
@@ -98,22 +82,6 @@ export function shouldFetchNextMarketplacePage(
   return isIntersecting && query.hasNextPage && !query.isFetchingNextPage;
 }
 
-/** Sums a `MarketplaceSummary[]`'s per-type counts across all sources into a
- *  single map, keyed by the short type name (`skill`, not `registry:skill`)
- *  as the summaries report them. Used to size the "See all N" affordance
- *  from cheap, already-fetched summary counts instead of the SSR-bounded
- *  item page (A4) — the bounded page alone can't say whether a type has more
- *  items than made it into that page. */
-export function sumMarketplaceTypeCounts(
-  marketplaces: { types?: Record<string, number> }[],
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const m of marketplaces) {
-    for (const [k, v] of Object.entries(m.types ?? {})) counts[k] = (counts[k] ?? 0) + v;
-  }
-  return counts;
-}
-
 /** Whether the paged grid (A4's `MarketplacePagedGrid`) should render its
  *  windowed/virtualized layout instead of a plain grid of the current items.
  *  Only true once more than one page has actually loaded client-side —
@@ -124,17 +92,4 @@ export function sumMarketplaceTypeCounts(
  *  configured page size) to mount directly without windowing. */
 export function shouldVirtualizeMarketplacePagedGrid(pageCount: number): boolean {
   return pageCount > 1;
-}
-
-/** Resolves a type section's true item total from the summed type counts
- *  (stripping the `registry:` prefix to match their short keys), falling
- *  back to the SSR-bounded local count when the type is absent from the
- *  summary (e.g. no marketplaces loaded yet). */
-export function resolveMarketplaceTypeSectionTotal(
-  type: string,
-  typeCounts: Record<string, number>,
-  localCount: number,
-): number {
-  const total = typeCounts[type.replace(/^registry:/, '')];
-  return typeof total === 'number' ? total : localCount;
 }

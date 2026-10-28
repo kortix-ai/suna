@@ -38,9 +38,15 @@ import { downloadSandboxFileToCache } from '@/lib/files/hooks';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
-import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
+import { DownloadSimpleIcon, InfoIcon, PlusIcon } from '@/lib/icons';
+import { useTranslation } from 'react-i18next';
 import { previewsInline, sessionFileKindLabel, type SessionFileKind } from '@/lib/session/session-files';
-import { THEME } from '@/lib/utils/theme';
+import { MOTION, THEME } from '@/lib/utils/theme';
+import type { FileCaption } from '@/stores/tool-file-preview-store';
+import { FilePreviewCaption } from '@/components/files/file-preview-caption';
+import { DisclosureContent } from '@/components/session/chain-of-thought';
+import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-motion';
+import { Easing } from 'react-native-reanimated';
 
 /** What the sheet needs of a file. A tool path knows only its name and path. */
 export interface PreviewFile {
@@ -48,11 +54,18 @@ export interface PreviewFile {
   path: string;
   /** Set by Recent files; a tool path leaves it out and the card names the type from the extension. */
   kind?: SessionFileKind;
+  /** A generated image's prompt and model, shown under it; only the image card's open sets it. */
+  caption?: FileCaption;
 }
 
 const SNAP_POINTS = ['100%'];
 /** `Button` default height: the pinned bar's row. */
 const BAR_CONTROL_HEIGHT = 40;
+/** kortix-brand motion: a disclosure enters at `moderate` and leaves faster at `normal`, ease-out. */
+const CAPTION_TIMING = {
+  open: { duration: MOTION.duration.moderate, easing: Easing.bezier(...MOTION.easing.out) },
+  close: { duration: MOTION.duration.normal, easing: Easing.bezier(...MOTION.easing.out) },
+};
 
 /** Sandbox paths are absolute; a relative one is workspace-relative. */
 function toSandboxFile(file: PreviewFile): SandboxFile {
@@ -130,7 +143,7 @@ export const FilePreviewSheet = React.forwardRef<SheetRef, FilePreviewSheetProps
 );
 FilePreviewSheet.displayName = 'FilePreviewSheet';
 
-function FilePreviewBody({
+export function FilePreviewBody({
   file,
   sandboxUrl,
   onCopyTextChange,
@@ -145,7 +158,15 @@ function FilePreviewBody({
 }) {
   const { colorScheme } = useColorScheme();
   const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
-  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  const barInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  // A generated image's caption (prompt + model) is hidden until the bar's ⓘ
+  // toggle opens it, as on web; open, it sits above the bar and the preview ends at it.
+  const { t } = useTranslation();
+  const [captionOpen, setCaptionOpen] = React.useState(false);
+  const reduceMotion = useReduceMotion();
+  // With a caption, the preview always ends at the caption band above the bar,
+  // so only the caption's own height moves when it opens or closes.
+  const contentInset = file.caption ? 0 : barInset;
   const toast = useToast();
   const sandboxFile = React.useMemo(() => toSandboxFile(file), [file]);
   // A PDF, an Office file, an archive or media is not rendered here and nothing
@@ -245,9 +266,24 @@ function FilePreviewBody({
             filePath={sandboxFile.path}
             sandboxUrl={sandboxUrl}
             size={preview.size}
+            imageSource={preview.imageSource}
+            imageRatio={preview.imageRatio}
+            onImageSourceError={preview.dropImageSource}
           />
         )}
       </FilePreviewBottomInsetContext.Provider>
+      {file.caption ? (
+        // The web viewer's caption disclosure: height + opacity, 200ms in and
+        // 150ms out on the brand ease-out; none under Reduce Motion. The
+        // preview above is `flex-1`, so it gives the caption its room as it grows.
+        <View style={{ paddingBottom: barInset }}>
+          <DisclosureContent open={captionOpen} timing={CAPTION_TIMING} still={reduceMotion}>
+            <View testID="file-caption-section">
+              <FilePreviewCaption caption={file.caption} />
+            </View>
+          </DisclosureContent>
+        </View>
+      ) : null}
 
       {/* The project drawer's pinned bar: equal cells, default button size,
           floating over a fade of the surface. Download · Add to chat. */}
@@ -269,6 +305,22 @@ function FilePreviewBody({
           <Button className="flex-1 rounded-full" disabled={failed} onPress={onAdd}>
             <Icon as={PlusIcon} size={18} />
             <Text>Add to chat</Text>
+          </Button>
+        ) : null}
+        {file.caption ? (
+          <Button
+            testID="file-caption-toggle"
+            variant={captionOpen ? 'default' : 'secondary'}
+            size="icon"
+            className="rounded-full"
+            accessibilityRole="togglebutton"
+            accessibilityState={{ checked: captionOpen }}
+            accessibilityLabel={t('imageGen.details')}
+            onPress={() => {
+              haptics.tap();
+              setCaptionOpen((open) => !open);
+            }}>
+            <Icon as={InfoIcon} size={18} />
           </Button>
         ) : null}
       </PinnedBar>

@@ -246,6 +246,7 @@ SessionLogRestoreTooLargeSchema = {
   bytes: number(int)(min0)
   limit: number(int)(min0)
   messages: number(int)(min0)
+  kept: enum(model_view | newest) | absent
 }
 
 SessionLogSchema = {

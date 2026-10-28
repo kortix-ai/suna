@@ -46,6 +46,11 @@ export interface GatewayRouteResolverOptions {
    * its canonical id and must get the same fallback chain.
    */
   canonicalModel?: (model: string) => string;
+  /**
+   * The route of an `/images/*` request (`requires.imageOutput`). Image
+   * requests never take the chat policies above; chat requests never call this.
+   */
+  imageRoute?: (principal: AuthedPrincipal, requestedModel: string) => Promise<ModelRoutePlan>;
 }
 
 export type GatewayRouteResolver = (
@@ -81,6 +86,7 @@ export function createGatewayRouteResolver(
   const catalogModelFor = options.catalogModelFor ?? (() => undefined);
 
   return async (principal, input) => {
+    if (input.requires.imageOutput && options.imageRoute) return options.imageRoute(principal, input.requestedModel);
     const fallbackPolicies = createModelFallbackPolicyEngine(valueOf(options.policies));
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)

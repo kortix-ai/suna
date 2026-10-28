@@ -76,11 +76,6 @@ export async function discoverFlows(): Promise<void> {
   discovered = true;
 }
 
-/** Test-only: allow a fresh discovery in a process that already discovered. */
-export function __resetDiscoveryForTest(): void {
-  discovered = false;
-}
-
 function selected(f: RegisteredFlow, o: RunOptions): boolean {
   if (o.ids?.length && !o.ids.includes(f.id)) return false;
   if (o.domains?.length && !o.domains.includes(f.meta.domain)) return false;

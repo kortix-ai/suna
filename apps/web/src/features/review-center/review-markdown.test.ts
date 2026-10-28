@@ -1,7 +1,7 @@
 import type { ApiReviewItem } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { looksLikeMarkdown } from '@/lib/markdown-detect';
+import { looksLikeMarkdown } from '@kortix/shared/tool-output';
 import { mapApiReviewItem } from '@kortix/ui/workspace/review/map';
 import type { ChangeDetail } from '@kortix/ui/workspace/review/types';
 

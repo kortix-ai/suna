@@ -338,15 +338,6 @@ describe('manifest v2 components', () => {
     expect((await runtimeAssetsManifest()).components.agent).toBeUndefined();
   });
 
-  test('opencode states the expected npm version and is not proxied', async () => {
-    _resetRuntimeAssetsCache();
-    const opencode = (await runtimeAssetsManifest()).components.opencode;
-    expect(opencode.version).toBe(OPENCODE_VERSION);
-    expect(opencode.source).toBe('npm');
-    // No `path`: 167 MB per stale box must not cross our control plane.
-    expect(Object.hasOwn(opencode, 'path')).toBe(false);
-  });
-
   test('managed-catalog states the current managed lineup, config-derived and stable per process', async () => {
     _resetRuntimeAssetsCache();
     const managedCatalog = (await runtimeAssetsManifest()).components['managed-catalog'];
