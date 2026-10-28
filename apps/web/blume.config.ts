@@ -9,7 +9,7 @@ import { defineConfig } from 'blume';
 // off (toc: false below). Kortix Capture's pages and the
 // generated audit-actions reference stay built but unlisted: the app links
 // to them.
-const sidebar = [
+const guide = [
   {
     label: 'Start',
     items: [
@@ -42,6 +42,9 @@ const sidebar = [
       { label: 'Billing', href: '/guide#billing' },
     ],
   },
+];
+
+const developers = [
   {
     label: 'Developers',
     items: [
@@ -67,6 +70,14 @@ const sidebar = [
       { label: 'SDK reference', href: '/developers#sdk-reference' },
     ],
   },
+];
+
+// One group per header tab, rooted at the tab's page: Blume scopes the sidebar
+// to the group whose route is the active tab's path and shows nothing when no
+// group has it.
+const sidebar = [
+  { label: 'Guide', root: '/guide', items: guide },
+  { label: 'Developers', root: '/developers', items: developers },
 ];
 
 // The docs render through Blume, not through the Next app. Nothing in
