@@ -28,7 +28,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | --- | --- | --- |
 | Agents | Assistants with a job description, a model and a set of permissions. | [Agents](/docs/guide#agents) |
 | Skills | Written playbooks an agent follows for a specific task. | [Skills](/docs/guide#skills) |
-| Memory and Drive | What the project knows about itself, plus files your team shares with agents. | [Memory & Drive](/docs/guide#memory-and-drive) |
+| Drive | Shared folders for people and agents, including the company's memory. | [Drive](/docs/guide#drive) |
 | Connectors | Governed access to the apps, APIs and services your team uses. | [Connectors](/docs/guide#connectors) |
 | Automations | Schedules, webhooks and app events that start agents, plus reminders. | [Automations](/docs/guide#automations) |
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
@@ -342,39 +342,39 @@ Set who may open it, for example the whole project or a group. Then send people 
 
 To add a tool that runs somewhere else, select **Add app** on the Apps page and enter its address.
 
-## Memory and Drive
+## Drive
 
 <video src="/media/guide/drive.mp4" aria-label="Drive in Kortix: My files, the Company folder and the New menu" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-**Memory** is a set of files in the project that agents read and update: facts about the company, its conventions and its decisions. **Drive** is a set of shared folders that people and agents use for documents.
+Drive is the project's shared folders, for people and agents. Sessions open the folders they may use, so the files an agent writes land where your team looks. What the company knows lives here too, as Markdown files in Memory folders.
 
-### Company memory
-
-Memory lives in the `memory/` folder of your project. One file, `MEMORY.md`, is the index. It has one line for each memory file.
-
-#### How agents use it
-
-- **Reading.** Kortix does not paste memory into every prompt. A built-in skill tells each agent to read the index at the start of a task, then open the files the index points to.
-- **Writing.** Agents create and edit memory files as they work. They can view, create, edit, rename and delete files in `memory/` only.
-- **Reviewing.** A memory edit is an ordinary change on the session's own branch. Other sessions see it only after someone merges it into your project.
-- **Cleaning up.** Every new project includes a reflection agent. When you turn on its daily schedule, it reviews recent sessions and tidies memory, skills and prompts. It opens a change for you to review and never merges on its own.
-
-<Callout type="warning">
-Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.
-</Callout>
-
-### Kortix Drive
-
-Drive holds shared folders for the whole project, kept in sync with sessions.
-
-#### How folders work
+### Folders
 
 - **Your own folder.** Every person has a private folder. In a private session you started, it opens as `/drives/me`.
+- **Company.** One folder every project member can open.
 - **Shared folders.** Any folder can be shared with people, groups and agents.
 - **What a session sees.** A new session opens the folders that its agent, or the whole project, has access to. In a private session that you started, it also opens your own folder and every folder shared with you or your groups.
 - **Where to manage them.** Open **Drive** in the sidebar: **My files** (only you), **Company** (everyone) and, for admins, **All files**.
 
 Drive is on by default. It is experimental. Its folders are stored on Platinum, where sessions run.
+
+### Memory
+
+Memory is Markdown files in Drive: facts about the company, its people, its conventions and its decisions. Each Memory folder is read with the rights of the folder it sits in.
+
+| Memory folder | Who reads it |
+| --- | --- |
+| `Memory` in **Company** | Every project member |
+| `Memory` in your own folder | Only you. Each agent keeps its notes in its own subfolder. |
+| `Memory` in a channel's folder | The channel's members. Only when the **Channels** feature is on. |
+
+Agents read and write Memory files through the folders their session opens. Kortix does not paste memory into every prompt: a built-in skill tells each agent to read memory at the start of a task.
+
+The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index. The built-in `memory` tool edits it, and every edit lands through a change request. The reflection agent that ships with every project tidies it when you turn on its daily schedule.
+
+<Callout type="warning">
+Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.
+</Callout>
 
 ### Where else your files live
 
@@ -720,7 +720,7 @@ Each goal is a folder in Kortix Drive, in your own folder or in a shared company
 - notes: your original request, the constraints and one thread per person;
 - `docs/` for material, and `evidence/` for proof.
 
-You can open and edit these files. Your edits win. See [Memory and Drive](/docs/guide#memory-and-drive).
+You can open and edit these files. Your edits win. See [Drive](/docs/guide#drive).
 
 #### Plan
 

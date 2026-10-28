@@ -24,7 +24,7 @@ const sidebar = [
       { label: 'Agents', href: '/guide#agents' },
       { label: 'Skills', href: '/guide#skills' },
       { label: 'Apps', href: '/guide#apps' },
-      { label: 'Drive', href: '/guide#memory-and-drive' },
+      { label: 'Drive', href: '/guide#drive' },
       { label: 'Connectors', href: '/guide#connectors' },
       { label: 'Automations', href: '/guide#automations' },
       { label: 'Computers', href: '/guide#computers' },

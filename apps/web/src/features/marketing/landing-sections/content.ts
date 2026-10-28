@@ -3,7 +3,7 @@
  *
  * Every claim below is a sentence from `kortix-brand` verbal/claims.md
  * (section 2), shortened by deletion only, or a fact from the project docs
- * (`content/docs/developers.mdx` "Git", `content/docs/guide.mdx` "Memory and Drive"). The
+ * (`content/docs/developers.mdx` "Git", `content/docs/guide.mdx` "Drive"). The
  * FAQ is not here: it is imported from `faq/content.ts`, whose accuracy gate
  * and translations stay where they are.
  *

@@ -97,7 +97,7 @@ The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A t
 | --- | --- | --- |
 | **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs/guide#agents) |
 | **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs/guide#skills) |
-| **Memory and Drive** | What the company knows, as files agents read, plus shared folders for people and agents. | [Memory and Drive](https://kortix.com/docs/guide#memory-and-drive) |
+| **Drive** | Shared folders for people and agents, including the company's memory as Markdown files. | [Drive](https://kortix.com/docs/guide#drive) |
 | **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs/guide#connectors) |
 | **Automations** | Schedules, signed webhooks and app events that start agents with nobody at the keyboard. | [Automations](https://kortix.com/docs/guide#automations) |
 | **Outcomes** | An agent owns an objective until a separate check confirms it is met. | [Outcomes](https://kortix.com/docs/guide#outcomes) |

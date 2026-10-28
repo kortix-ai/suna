@@ -51,7 +51,7 @@ export const MEGA_MENUS: MegaMenu[] = [
           // functions and realtime).
           { label: 'Apps', href: '/docs/guide#apps' },
           // Drive: shared folders for people and agents (the Files feature).
-          { label: 'Drive', href: '/docs/guide#memory-and-drive' },
+          { label: 'Drive', href: '/docs/guide#drive' },
           { label: 'Connectors', href: '/docs/guide#connectors' },
           { label: 'Automations', href: '/docs/guide#automations' },
           { label: 'Computers', href: '/docs/guide#computers' },

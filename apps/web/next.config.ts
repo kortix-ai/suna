@@ -678,7 +678,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/guide/memory-and-drive',
-        destination: '/docs/guide#memory-and-drive',
+        destination: '/docs/guide#drive',
         permanent: true,
       },
       {
