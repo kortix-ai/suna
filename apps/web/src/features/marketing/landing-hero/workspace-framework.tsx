@@ -19,8 +19,8 @@ const DWELL = 9000;
 /**
  * One Northwind project, two views, switched on a timer: the workspace people
  * use, then the same project as code. A step's bar fills while it shows;
- * clicking a step jumps to it, and Pause holds the current one. With reduced
- * motion nothing advances on its own.
+ * clicking a step jumps to it, and Pause (or opening a file in the framework
+ * view) holds the current one. With reduced motion nothing advances on its own.
  */
 export function WorkspaceFramework() {
   const [step, setStep] = useState(0);
@@ -54,7 +54,7 @@ export function WorkspaceFramework() {
             step === 1 ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
         >
-          <FrameworkWindow />
+          <FrameworkWindow onInteract={() => setPaused(true)} />
         </div>
       </div>
 
