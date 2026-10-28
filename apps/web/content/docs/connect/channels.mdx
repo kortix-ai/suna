@@ -42,7 +42,7 @@ A Slack or Teams message carries no Kortix credential. Each person links a Korti
 3. Sign in, or create an account.
 
 - The link works once and expires after 10 minutes.
-- A message you sent while unlinked runs when you link within 10 minutes.
+- A message you sent while unlinked runs when you link within 10 minutes. A question button you pressed while unlinked does not: press it again.
 - One Slack or Teams identity links to one Kortix account. To link another account, send `/kortix logout` (Slack) or `/logout` (Teams) first.
 - When an account you belong to requires two-factor authentication, Kortix asks for your second factor before it links you. A link made without it counts as unlinked in that account: you get the connect prompt and link again. See [Sign-in, SSO & API keys](/docs/accounts/identity#two-factor-and-mfa-enforcement).
 - An unlinked sender gets a prompt to connect instead of a run.
@@ -192,6 +192,14 @@ Send `/kortix <command>`. The bare `/kortix` opens the channel panel: project, a
 
 **Link a bot.** A bot cannot link an account, so its mentions of Kortix do nothing. `/kortix link-bot <bot>` links that bot to your own Kortix account. Its mentions in this workspace then run as you. Pass the bot's exact name or its member ID (the bot's profile → **⋮** → **Copy member ID**). Kortix refuses a person's ID and a bot that is linked to someone else.
 
+### Questions
+
+When the agent asks a question, Kortix posts it in the thread with one button per option. You can also mention the bot in the thread with your own answer.
+
+- Every click reaches the agent, also when several people click or one message asks several questions.
+- After a click, the message shows the answer and who clicked it in place of that question's buttons.
+- A click on a question whose session was deleted, or whose thread now runs another session, answers nothing and starts no session. The message says that the question is from an earlier conversation.
+
 ## Microsoft Teams
 
 ### Connect with the Kortix app
@@ -285,6 +293,8 @@ Teams deletes a private reply after 24 hours.
 
 - The agent answers in one card: its steps while it works, then the reply. A reply too long for one Teams message is cut and links to the full session.
 - A question with up to 6 options shows one button per option. Several questions, a multi-select question or a longer list shows one form. A date, time, number or on/off question uses the matching input. You can type your answer instead.
+- Every tap and every form submit reaches the agent. The card then shows the answer and who gave it, with no buttons, for everyone. A form submitted with only some answers sends those. Answer the rest in the chat.
+- A tap on a card from before `/new` answers nothing and starts no session. The card says that the question is from an earlier conversation.
 - The agent shows an image inline in every chat and channel. A personal chat gets other files as a file-consent card, and the file lands in your OneDrive when you accept. A team channel gets other files in the team's SharePoint files. A group chat receives images only.
 - The agent can download inbound files and pasted images in chats it may read.
 

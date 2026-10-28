@@ -803,10 +803,12 @@ export function buildQuestionCard(questions: TeamsQuestion[], pendingId?: string
     return card(
       body,
       // The question rides along with the answer. `Action.Execute` REPLACES
-      // the card, so without it the conversation is left showing a bare
-      // "Answer received: Yes" — no context for anyone reading the channel
-      // later, and a bare label for the agent. Truncated because action data
-      // travels on every tap.
+      // the card with the invoke's reply, so without it the card would show a
+      // bare "Answer received: Yes", and the agent would get a bare label.
+      // Unverified on a real tenant: whether that reply replaces the card for
+      // everyone or for the presser alone (`handleStop` in interactivity.ts
+      // assumes the presser alone). Truncated because action data travels on
+      // every tap.
       options.map((o) =>
         executeAction(o.label, 'teams_answer', {
           answer: o.label,

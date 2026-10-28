@@ -170,8 +170,10 @@ async function handleSetModel(
  * The invoke carries the session id the card was drawn with; nothing about the
  * activity itself names a turn. `stopTeamsTurn` decides whether this person may
  * end it and settles the card, so the reply here is only what the presser is
- * told — and a refusal reads the same to them as to anyone watching, because an
- * `Action.Execute` response is shown to the presser alone.
+ * told, and a refusal reads the same to them as to anyone watching. That holds
+ * only if an `Action.Execute` response is shown to the presser alone. That is
+ * unverified on a real tenant; see the same note in `buildQuestionCard`
+ * (cards.ts).
  */
 async function handleStop(
   activity: TeamsActivity,
