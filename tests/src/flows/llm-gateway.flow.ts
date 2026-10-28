@@ -226,6 +226,46 @@ flow(
   },
 );
 
+// GW-3c — a mistyped field is a 400 that names it, on all three ingresses
+// (KRTX-3410). `stream: "true"` used to answer a buffered JSON body, so an SSE
+// client waited forever; `max_tokens: -1` was dropped in silence.
+flow(
+  'GW-3c',
+  {
+    domain: 'llm-gateway',
+    routes: ['POST /v1/projects/:projectId/gateway/keys', 'POST /v1/chat/completions', 'POST /v1/messages', 'POST /v1/responses'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const minted = await ctx.client.as(ctx.P.OWNER).post(
+      '/v1/projects/:projectId/gateway/keys',
+      { name: 'ke2e field types' },
+      { params: { projectId: project.id } },
+    );
+    minted.status(200);
+    const as = new Client(ctx.env.gatewayUrl).withBearer(minted.json<{ secret_key: string }>().secret_key, 'GATEWAY_KEY');
+    const chat = { model: 'gpt-5.5', messages: [{ role: 'user', content: 'ping' }] };
+    const cases = [
+      ['/v1/chat/completions', { ...chat, stream: 'true' }, '`stream` must be true or false'],
+      ['/v1/chat/completions', { ...chat, stream: 1 }, '`stream` must be true or false'],
+      ['/v1/chat/completions', { ...chat, max_tokens: -1 }, '`max_tokens` must be a positive integer'],
+      ['/v1/messages', { ...chat, max_tokens: 16, stream: 'true' }, '`stream` must be true or false'],
+      ['/v1/responses', { model: 'gpt-5.5', input: 'ping', max_output_tokens: 0 }, '`max_output_tokens` must be a positive integer'],
+    ] as const;
+    await ctx.step('a non-boolean stream or a non-positive token cap → 400 naming the field, on chat, messages and responses', async () => {
+      const wrong: string[] = [];
+      for (const [path, body, message] of cases) {
+        const r = await as.post(path, body);
+        if (r.statusCode !== 400 || !r.text().includes(message)) wrong.push(`${path} ${JSON.stringify(body)} → ${r.statusCode} ${r.text().slice(0, 160)}`);
+      }
+      if (wrong.length) throw new Error(wrong.join('\n'));
+    });
+    await ctx.step('the chat ingress names the refusal invalid_request', async () => {
+      (await as.post('/v1/chat/completions', { ...chat, stream: 'true' })).status(400).body().has('$.code', 'invalid_request');
+    });
+  },
+);
+
 flow(
   'GW-6',
   {
