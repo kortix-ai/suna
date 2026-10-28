@@ -702,10 +702,12 @@ An open reads the session log (`GET …/log`), on every host, with no project fl
 `useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
 with `savedChild`, and `loadSessionExportMessages`. The host applies a page it reads itself to
 the session store and renders `useSessionLogThread`. No hook and no SDK read sends
-`GET …/transcript`, whatever the log answers. An answer without a page (a new session's 404
-with `code: 'session_log_missing'`, a 404 with no `code`, a failed read, an invalid page) keeps
-the session on the log with nothing in it: no saved copy shows, the runtime's rows are the
-history, and the log is read again at the next turn end and after a stream reconnect. An export
+`GET …/transcript`, whatever the log answers. A new session's 404 with
+`code: 'session_log_missing'` keeps the session on the log with nothing in it: the runtime's rows
+are the history. A failed read (a 5xx, the network, a 404 with no `code`, an invalid page) keeps
+the copy already on screen and reads the page again after 2 s, 10 s and 30 s, or after the API's
+`Retry-After` (at most 60 s). Either is read again at the next turn end and after a stream
+reconnect. Without a log in the store, `useSession().loadOlder` pages the runtime. An export
 with no page reads the runtime, and fails when the runtime has nothing. The session-open
 snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`). The v1 reads
 (`getSessionTranscript`, `getSessionTranscriptSync`, `transcript`, `transcriptSync`) are

@@ -73,16 +73,47 @@ export const SESSION_LOG_OLDER_PAGE_LIMIT = 100;
 
 export type SessionLogDialect = 'v1' | 'v2';
 
-/** `useSessionLogSync`'s answer: a dialect, or `'missing'` (v2, and the last read answered no page: the API holds no log for the session yet, or the read failed). */
+/** `useSessionLogSync`'s answer: a dialect, or `'missing'` (v2, and the last read answered no page: the API holds no log for the session yet, or the read failed; a copy painted from the device stays). */
 export type SessionLogSyncState = SessionLogDialect | 'missing';
 
 /** The code of the API's 404 for a session with no stored log yet. An API without the route answers 404 with no code. */
 const SESSION_LOG_MISSING_CODE = 'session_log_missing';
 
+/** {@link readSessionLog}'s answer, and how long a failed read asks a client to wait. */
+export interface SessionLogRead {
+  answer: SessionLogPage | 'missing' | null;
+  /** A failed read's `Retry-After` (503 `session_log_converting` sends 60 s), in ms; null without one. */
+  retryAfterMs: number | null;
+}
+
+/** The `Retry-After` seconds of a failed read's response, in ms; null when absent or not a number. */
+function retryAfterMs(error: unknown): number | null {
+  const header = (error as { response?: { headers?: { get?: (name: string) => string | null } } } | null)?.response?.headers?.get?.('retry-after');
+  const seconds = header == null || header === '' ? Number.NaN : Number(header);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null;
+}
+
+/** {@link readSessionLogAnswer}, with the failed read's `Retry-After`. Never throws. */
+export async function readSessionLog(
+  load: LoadSessionLogPage,
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery,
+  signal?: AbortSignal,
+): Promise<SessionLogRead> {
+  try {
+    const page = await load(projectId, sessionId, query, signal);
+    return { answer: isSessionLogPage(page) ? page : null, retryAfterMs: null };
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === SESSION_LOG_MISSING_CODE) return { answer: 'missing', retryAfterMs: null };
+    return { answer: null, retryAfterMs: retryAfterMs(error) };
+  }
+}
+
 /**
  * One page, validated. `'missing'`: the API serves the session log and this session has none
- * yet (a new session). Null on any other failure (a 404 without that code, an invalid page, the
- * network); never throws. A client reads no v1 copy for either.
+ * yet (a new session). Null on any other failure (a 404 without that code, a 5xx, an invalid
+ * page, the network); never throws. A client reads no v1 copy for either.
  */
 export async function readSessionLogAnswer(
   load: LoadSessionLogPage,
@@ -91,12 +122,7 @@ export async function readSessionLogAnswer(
   query: SessionLogPageQuery,
   signal?: AbortSignal,
 ): Promise<SessionLogPage | 'missing' | null> {
-  try {
-    const page = await load(projectId, sessionId, query, signal);
-    return isSessionLogPage(page) ? page : null;
-  } catch (error) {
-    return (error as { code?: unknown } | null)?.code === SESSION_LOG_MISSING_CODE ? 'missing' : null;
-  }
+  return (await readSessionLog(load, projectId, sessionId, query, signal)).answer;
 }
 
 /** One page, validated. Null on any failure; never throws. */

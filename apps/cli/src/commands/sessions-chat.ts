@@ -637,25 +637,23 @@ running session.
 The messages come from the session log (kortix.session/2) the server stores
 at the end of every turn, so a stopped session is never woken up just to be
 read. A running session adds the messages of the turn it runs now, read live
-from its sandbox. A session with no stored log yet, or a credential the log
-does not answer (a session-bound token, as inside a sandbox), is read from the
-v1 transcript: live while the session runs, else the copy the server saved. With the
-project flag session_log on, the stored log is the only saved copy: a session with no
-stored log yet is read live while it runs, else nothing. The source is noted on stderr
-when the session is not read live.
+from its sandbox. A session with no stored log yet is read live while it runs,
+else nothing: the stored log is the only saved copy, and the v1 transcript route
+is not read. The source is noted on stderr when the session is not read live.
 
   --limit, -n <N>   How many recent messages to show, per thread (default 10).
   --json            Emit the session log as JSON for scripting: the session
                     record with "schema": "kortix.session/2", "source" ("log",
-                    or "v1" for a session with no stored log, converted), and
+                    or "v1" for a running session with no stored log, read
+                    live and converted), and
                     "threads" (root and sub-agents), each with its newest
                     messages and "has_more". A running turn's messages
                     the log does not hold yet carry
                     "ext": {"kortix": {"data": {"provisional": true}}}
                     (their seq is not stored yet).
   --schema v1       Deprecated: emit the old JSON (role / text / parts per
-                    root message) from the v1 transcript. Goes in the next
-                    release.
+                    root message) of a running session, read live from its
+                    sandbox. Goes in the next release.
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -672,11 +670,10 @@ them is currently doing. Aliases: \`messages\`, \`history\`.`;
  * SOURCES. The stored session log (`GET …/log`) first: it answers while the box
  * is stopped, and holds every thread. It is journaled at each turn end, so a
  * running session appends the messages of its open turn from the live read. A
- * session with no stored log (404) reads v1 as before — live while running,
- * else the server's saved transcript (not with `session_log` on: the log is
- * the only saved copy then) — converted to the same records
- * (`sessionLogOfV1Rows`), so `--json` has one shape. `--schema v1` keeps the old
- * v1 JSON for one release.
+ * session with no stored log is read live while it runs, converted to the same
+ * records (`sessionLogOfV1Rows`), so `--json` has one shape; stopped, it has
+ * nothing to print. The v1 transcript route is not read (P8.3). `--schema v1`
+ * keeps the old v1 JSON of a live read for one release.
  */
 export async function runSessionsLog(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -796,7 +793,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       // The stored session log is the only saved copy: no v1 transcript (`GET …/transcript`, P8.3).
       if (liveError !== null) return surfaceApiError(liveError);
       if (schema === 'v1') {
-        process.stderr.write(`${status.err('--schema v1 reads the v1 transcript, which the API no longer serves. Drop --schema v1.')}\n`);
+        process.stderr.write(`${status.err(`--schema v1 reads only a running session's sandbox, and session ${session.session_id} is not running. Drop --schema v1 to read its stored session log.`)}\n`);
         return 1;
       }
       process.stderr.write(
@@ -900,7 +897,7 @@ export async function readStoredSessionLog(
   try {
     root = await readThread();
   } catch (error) {
-    // An API before P4.2b refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: read v1 then, as without a stored log.
+    // An API before P4.2b refuses a session-bound token (the sandbox's KORTIX_TOKEN) with 403: no stored log then.
     if ((error as { status?: unknown } | null)?.status === 403) return null;
     throw error;
   }

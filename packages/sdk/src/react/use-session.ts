@@ -1402,6 +1402,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     return root?.empty ? root.runtimeSessionId : null;
   });
   const logOlder = useSessionLogOlder({ projectId, sessionId }, undefined, { enabled: logOwned });
+  // The log pages older history only while the store holds it. Without one (no page yet, a
+  // failed read) the runtime pages its own older messages.
+  const logPages = useSyncStore((state) => logOwned && state.sessionLogs[sessionId] !== undefined);
 
   // 1b. ONE read for the rest of the open.
   //
@@ -2112,10 +2115,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     permissions,
     diffs: sync.diffs,
     todos: sync.todos,
-    // On v2 older history is the session log's (`GET …/log?before_seq=`).
-    hasOlder: logOwned ? logOlder.hasOlder : sync.hasOlder,
-    isLoadingOlder: logOwned ? logOlder.isLoadingOlder : sync.isLoadingOlder,
-    loadOlder: logOwned ? logOlder.loadOlder : sync.loadOlder,
+    // While the store holds the log, older history is the log's (`GET …/log?before_seq=`).
+    hasOlder: logPages ? logOlder.hasOlder : sync.hasOlder,
+    isLoadingOlder: logPages ? logOlder.isLoadingOlder : sync.isLoadingOlder,
+    loadOlder: logPages ? logOlder.loadOlder : sync.loadOlder,
 
     // lifecycle
     phase,
