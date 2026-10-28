@@ -44,4 +44,11 @@ describe('the mobile channel card', () => {
     expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
     expect(userMessage).toContain("Teams: 'Microsoft Teams'");
   });
+
+  // Any platform but Teams and Slack drew the Telegram plane.
+  test('draws Telegram only for Telegram: Email is an envelope, an unknown platform a neutral chat glyph', () => {
+    expect(userMessage).toMatch(/platform === 'Telegram'\)? (\?|return) <TelegramIcon size=\{size\} \/>/);
+    expect(userMessage).toContain("platform === 'Email' ? EnvelopeIcon : ChatCircleIcon");
+    expect(userMessage).toContain("Email: 'Email'");
+  });
 });

@@ -115,6 +115,14 @@ export function AppsView({ projectId }: { projectId: string }) {
   // opens one on arrival: the links the CLI prints and the retired
   // `/backends/<id>` routes land here.
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
+  // A link to `?app=<id>` followed while this page is open (the sidebar Apps
+  // card) does not remount it, so the initializer above never sees it. Only a
+  // new id opens: the mirror below writes the same key back, and removing it
+  // on close is not a request to open anything.
+  const requestedAppId = searchParams.get('app');
+  useEffect(() => {
+    if (requestedAppId) setOpenAppId(requestedAppId);
+  }, [requestedAppId]);
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const [adding, setAdding] = useState(false);
   const triggers = useProjectTriggers(projectId);

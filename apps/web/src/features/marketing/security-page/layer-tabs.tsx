@@ -1,9 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import { useRef, useState, type KeyboardEvent } from 'react';
 
 import { LAYER_PANELS } from './layer-panels';
-import { layers } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 
 /**
  * One tab per layer of the model, in the home page's HowItWorksTabs shape:
@@ -11,6 +13,9 @@ import { layers } from './model';
  * two short sentences over one visual. One layer at a time, never all.
  */
 export function LayerTabs() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { layers } = localizeModel(tMarketing);
+
   const [selected, setSelected] = useState(0);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs = layers.tabs;
@@ -26,6 +31,7 @@ export function LayerTabs() {
 
   const tab = tabs[selected];
 
+  const Panel = LAYER_PANELS[tab.id];
   return (
     <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
@@ -38,7 +44,7 @@ export function LayerTabs() {
 
             <div
               role="tablist"
-              aria-label="Layers of the security model"
+              aria-label={tMarketing('text6fcd4c9752b5')}
               aria-orientation="vertical"
               onKeyDown={onKeyDown}
               className="mt-10 flex flex-col gap-6"
@@ -58,8 +64,12 @@ export function LayerTabs() {
                   onClick={() => setSelected(i)}
                   className="outline-ring duration-moderate w-full rounded-sm text-left opacity-50 transition-opacity ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
                 >
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
-                  <p className="text-muted-foreground mt-1 text-sm text-balance">{item.description}</p>
+                  <h3 className="text-foreground text-base font-medium text-pretty">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-1 text-sm text-balance">
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </div>
@@ -83,7 +93,7 @@ export function LayerTabs() {
                   </p>
                 ))}
               </div>
-              {LAYER_PANELS[tab.id]?.()}
+              {Panel ? <Panel /> : null}
             </div>
           </div>
         </div>

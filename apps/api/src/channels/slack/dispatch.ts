@@ -108,26 +108,35 @@ export async function resolveOauthProject(
   channelId: string | undefined,
   threadTs?: string,
 ): Promise<ProjectResolution> {
+  // A deleted project resolves nothing. Its tombstone keeps the threads, and a
+  // project deleted before the delete released its channels also keeps its
+  // binding and install rows.
   // A reply in a thread bound to a session runs in that session's project,
   // before the channel decides: a web session that DMs someone, or posts in a
   // channel no project owns, must get the reply back, not a project picker.
   if (threadTs) {
     const thread = await findChatThread({ platform: 'slack', workspaceId: teamId, threadId: threadTs });
-    if (thread) return { kind: 'project', projectId: thread.projectId };
+    if (thread) {
+      const [project] = await db.select({ status: projects.status }).from(projects).where(eq(projects.projectId, thread.projectId));
+      return project?.status === 'archived' ? { kind: 'none' } : { kind: 'project', projectId: thread.projectId };
+    }
   }
   if (channelId) {
+    const where = and(
+      eq(chatChannelBindings.platform, 'slack'),
+      eq(chatChannelBindings.workspaceId, teamId),
+      eq(chatChannelBindings.channelId, channelId),
+    );
     const [binding] = await db
-      .select({ projectId: chatChannelBindings.projectId })
+      .select({ projectId: chatChannelBindings.projectId, status: projects.status })
       .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
-          eq(chatChannelBindings.channelId, channelId),
-        ),
-      )
+      .leftJoin(projects, eq(projects.projectId, chatChannelBindings.projectId))
+      .where(where)
       .limit(1);
-    if (binding) {
+    if (binding?.status === 'archived') {
+      // Drop it, so the channel resolves afresh: an auto-bind or a picker.
+      await db.delete(chatChannelBindings).where(and(where, eq(chatChannelBindings.projectId, binding.projectId!)));
+    } else if (binding) {
       return binding.projectId
         ? { kind: 'project', projectId: binding.projectId }
         : { kind: 'pending' };
@@ -137,6 +146,7 @@ export async function resolveOauthProject(
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
+    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
   if (installs.length === 0) return { kind: 'none' };
   if (installs.length === 1) {

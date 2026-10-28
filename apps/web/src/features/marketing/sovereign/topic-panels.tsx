@@ -1,7 +1,10 @@
 import { CodePanel } from '@/features/marketing/code-panel';
+
+import { useTranslations } from '@/i18n/use-translations';
+
 import type { ReactNode } from 'react';
 
-import { filesLines, installLines, modelOrder, secretsYaml, updateTracks, whereRows, type TopicId } from './content';
+import { localizeMarketingContent as localizeContent, type TopicId } from './content';
 import { Terminal, Window } from './parts';
 
 /*
@@ -12,19 +15,22 @@ import { Terminal, Window } from './parts';
 const caption = 'text-muted-foreground font-mono text-xs tracking-wide uppercase';
 
 function WherePanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { whereRows } = localizeContent(tMarketing);
+
   return (
     <table className="bg-background w-full table-fixed border-separate border-spacing-0 rounded-lg border text-left text-sm">
-      <caption className="sr-only">What runs where</caption>
+      <caption className="sr-only">{tMarketing('text2ec67e173f1e')}</caption>
       <thead>
         <tr>
           <th scope="col" className="w-5/12 border-b p-3 font-normal">
-            <span className="sr-only">Part</span>
+            <span className="sr-only">{tMarketing('text8570a2e1669f')}</span>
           </th>
           <th scope="col" className={`border-b p-3 font-normal ${caption}`}>
-            Kortix Cloud
+            {tMarketing('text493bdb7154e4')}
           </th>
           <th scope="col" className={`border-b p-3 font-normal ${caption}`}>
-            Self-hosted
+            {tMarketing('textbeafec79ffdd')}
           </th>
         </tr>
       </thead>
@@ -47,6 +53,9 @@ function WherePanel() {
 }
 
 function UpdatesPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { updateTracks } = localizeContent(tMarketing);
+
   return (
     <ul className="bg-background flex flex-col divide-y rounded-lg border">
       {updateTracks.map((track) => (
@@ -63,18 +72,23 @@ function UpdatesPanel() {
 }
 
 function ModelsPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { modelOrder } = localizeContent(tMarketing);
+
   return (
     <div className="flex flex-col gap-3">
-      <span className={caption}>Which model a session uses</span>
+      <span className={caption}>{tMarketing('text0661a8cc9ef3')}</span>
       <ol className="bg-background flex flex-col divide-y rounded-lg border">
         {modelOrder.map((item, i) => (
           <li key={item} className="flex items-center gap-4 px-4 py-3">
-            <span className="text-muted-foreground w-4 shrink-0 font-mono text-xs tabular-nums">{i + 1}</span>
+            <span className="text-muted-foreground w-4 shrink-0 font-mono text-xs tabular-nums">
+              {i + 1}
+            </span>
             <span className="text-foreground text-base">{item}</span>
           </li>
         ))}
       </ol>
-      <span className="text-muted-foreground text-sm">The first one that is set wins.</span>
+      <span className="text-muted-foreground text-sm">{tMarketing('text3f6dbbaa3aa4')}</span>
     </div>
   );
 }
@@ -87,9 +101,24 @@ const terminal = (title: string, lines: readonly string[]) => (
 
 export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
   where: () => <WherePanel />,
-  install: () => terminal('Terminal: your server', installLines),
+  install: function InstallPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
+    const { installLines } = localizeContent(tMarketing);
+    return terminal('Terminal: your server', installLines);
+  },
   updates: () => <UpdatesPanel />,
   models: () => <ModelsPanel />,
-  files: () => terminal('Terminal: your laptop', filesLines),
-  secrets: () => <CodePanel title={secretsYaml.title} lines={secretsYaml.lines} lang="yaml" />,
+  files: function FilesPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
+    const { filesLines } = localizeContent(tMarketing);
+    return terminal('Terminal: your laptop', filesLines);
+  },
+  secrets: function SecretsPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
+    const { secretsYaml } = localizeContent(tMarketing);
+    return <CodePanel title={secretsYaml.title} lines={secretsYaml.lines} lang="yaml" />;
+  },
 };
