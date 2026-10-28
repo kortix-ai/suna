@@ -79,7 +79,7 @@ import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { type DriveUpload, useDriveUploads } from '../store/upload-store';
 import {
-  DRIVE_ACTION_ROW_CLASS,
+  DriveActionRow,
   DriveNewMenu,
   DriveNewMenuItems,
   DrivePathBar,
@@ -1320,9 +1320,9 @@ export function DriveExplorer({
       onDragOver={handlePageDragOver}
       onDrop={handlePageDrop}
     >
-      <div className={DRIVE_ACTION_ROW_CLASS}>
-        {leading}
-        {(() => {
+      <DriveActionRow
+        leading={leading}
+        actions={(() => {
           const newMenu = (
             <DriveNewMenu
               compact={embedded}
@@ -1354,14 +1354,14 @@ export function DriveExplorer({
           );
           // One secondary group whether or not the host adds actions.
           return (
-            <ButtonGroup className="ml-auto shrink-0">
+            <>
               {newMenu}
               {viewMenu}
               {trailing}
-            </ButtonGroup>
+            </>
           );
         })()}
-      </div>
+      />
 
       <DrivePathBar as="row" rootLabel={rootLabel} rootIcon={rootIcon} base={pathBase} />
 

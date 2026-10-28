@@ -259,6 +259,8 @@ From the CLI, run `kortix projects rm [<project_id>]`. It acts on the linked pro
 
 Kortix deletes a managed repository with the project. A repository you connected yourself is left untouched.
 
+Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
+
 | Way in | After the delete |
 | --- | --- |
 | LLM gateway keys (`kortix_gw_…`) | Refused with `401`. |
