@@ -126,7 +126,6 @@ import {
   ACCESS_VIEWS,
   AGENT_TABS,
   type AgentLocation,
-  type AgentRailKey,
   type AgentTab,
   agentLocationHref,
   changedItems,
@@ -467,17 +466,18 @@ function useSaveShortcut(dirty: boolean, onSave: () => void) {
 /**
  * The rail's rows, in the shape of `agents.<name>` in `kortix.yaml`:
  * Overview, Model and Workspace (the agent's own settings), Triggers, then
- * one Access row per grant key with its state (`countOf`). `modelLabel` is
- * the Model row's value.
+ * one Access row per grant key with its state (`countOf`). Model and
+ * Workspace show their value, or "Project default" when the block sets none.
  */
 function useRailItems(
   pathname: string,
   views: readonly AgentConfigSectionKey[],
   counts: { triggerCount?: number },
   countOf?: (view: AgentConfigSectionKey) => string | null,
-  modelLabel?: string,
+  values: { model?: string; workspace?: string } = {},
 ): AgentRailItem[] {
   const t = useI18nTranslations('agentEditor.tabs');
+  const tPage = useI18nTranslations('agentEditor.page');
   const catalog = useLocalizedAgentConfigCatalog();
   const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
   const viewRow = (view: AgentConfigSectionKey, count?: string) => ({
@@ -488,8 +488,8 @@ function useRailItems(
   });
   return [
     { key: 'overview', label: t('tabOverview'), href: agentLocationHref(pathname, 'overview') },
-    ...(views.includes('model') ? [viewRow('model', modelLabel)] : []),
-    ...(views.includes('workspace') ? [viewRow('workspace')] : []),
+    ...(views.includes('model') ? [viewRow('model', values.model ?? tPage('projectDefault'))] : []),
+    ...(views.includes('workspace') ? [viewRow('workspace', values.workspace ?? tPage('projectDefault'))] : []),
     {
       key: 'triggers',
       label: t('tabTriggers'),
@@ -736,7 +736,6 @@ function EditableAgentPage({
   );
   const location = useAgentLocation(AGENT_TABS, views);
   const share = useShareDialog(location.open === 'share');
-  const canManageMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const registryOptions = useMemo(
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
@@ -808,7 +807,10 @@ function EditableAgentPage({
       registryOptions[view].length > 0 ||
       grantedAny(draft[view]),
   );
-  const railItems = useRailItems(pathname, railViews, facts, countOf, modelName(editor.oc.model));
+  const railItems = useRailItems(pathname, railViews, facts, countOf, {
+    model: modelName(editor.oc.model),
+    workspace: draft.sandbox,
+  });
   const dirtyItems = useMemo(() => changedItems(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
   const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
     dirtyItems.map((key) => railItems.find((item) => item.key === key)?.label ?? key),
@@ -852,16 +854,9 @@ function EditableAgentPage({
               block={draft}
               prompt={editor.oc.prompt ?? ''}
               views={overviewViews}
-              facts={facts}
               editor={editor}
               hrefFor={viewHref}
-              hrefs={{
-                model: viewHref('model'),
-                workspace: viewHref('workspace'),
-                triggers: agentLocationHref(pathname, 'triggers'),
-              }}
               sourcePath={sourcePath}
-              onOpenShare={canManageMembers ? () => share.setOpen(true) : undefined}
               onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
               focusInstructions={location.open === 'instructions'}
             />
@@ -1059,10 +1054,12 @@ function ReadOnlyAgentPage({
   }, []);
   const location = useAgentLocation(AGENT_TABS, READ_ONLY_VIEWS);
   const share = useShareDialog(location.open === 'share');
-  const canManageMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const facts = useOverviewFacts(projectId, agent.name, config, block);
   const headerFacts = useHeaderFacts(agent, config, block, false);
-  const railItems = useRailItems(pathname, READ_ONLY_VIEWS, facts);
+  const railItems = useRailItems(pathname, READ_ONLY_VIEWS, facts, undefined, {
+    model: modelName(block.behavior?.model),
+    workspace: block.sandbox,
+  });
   const name = agentDisplayName(agent.name);
   // A reader has a page for Kortix permissions and Model only. Every other
   // Access row shows its grant by name on the Overview and links nowhere.
@@ -1094,15 +1091,8 @@ function ReadOnlyAgentPage({
               block={block}
               prompt={prompt}
               views={views}
-              facts={facts}
               hrefFor={viewHref}
-              hrefs={{
-                model: sectionLocationHref(pathname, 'model'),
-                workspace: sectionLocationHref(pathname, 'model'),
-                triggers: agentLocationHref(pathname, 'triggers'),
-              }}
               sourcePath={sourcePath}
-              onOpenShare={canManageMembers ? () => share.setOpen(true) : undefined}
             />
           </AgentTabBody>
         );

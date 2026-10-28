@@ -5,12 +5,12 @@
  *
  * Main column, in reading order: who it is (the description and one generated
  * sentence whose nouns link to their Access view), what it does (its
- * instructions, edited in place as a formatted document), and what it may
- * touch (one row per grant, each opening its Access view). The description
- * and the instructions write the page's draft in place; there is no
- * separate editor. The 20rem aside holds the switches a person flips most
- * (Availability) and the facts about how it runs, who starts it and who may
- * use it. Below `lg` the aside stacks under the main column.
+ * instructions, edited in place as a formatted document). What it may touch,
+ * its model, workspace and triggers are rail rows, and who may use it is the
+ * header's Share: the Overview repeats none of them. The description and the
+ * instructions write the page's draft in place; there is no separate editor.
+ * The 20rem aside holds the switches a person flips most (Availability).
+ * Below `lg` the aside stacks under the main column.
  *
  * One component for the editable and the read-only page. With `editor` the
  * aside's switches and selects write the shared draft; without it they show
@@ -20,7 +20,6 @@
 import type { AgentCapabilityGrant, AgentConfigBlock, ProjectConfigSummary } from '@kortix/sdk';
 import {
   BookOpenTextIcon,
-  CaretRightIcon,
   CommandIcon,
   CpuIcon,
   CubeIcon,
@@ -345,60 +344,18 @@ function AsideRow({ label, help, children }: { label: string; help?: string; chi
   );
 }
 
-const ASIDE_LINK =
-  'hover:bg-hover focus-visible:bg-hover flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors duration-fast focus-visible:outline-none';
-
-/** A row that opens another tab (`href`) or a dialog (`onClick`): its value, then a caret. */
-function AsideLink({
-  label,
-  value,
-  href,
-  onClick,
-}: {
-  label: string;
-  value: ReactNode;
-  href?: string;
-  onClick?: () => void;
-}) {
-  const content = (
-    <>
-      <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
-      <span className="text-foreground flex min-w-0 items-center gap-1.5 text-sm">
-        <span className="truncate">{value}</span>
-        <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-      </span>
-    </>
-  );
-  return href ? (
-    <Link href={href} className={ASIDE_LINK}>
-      {content}
-    </Link>
-  ) : (
-    <button type="button" onClick={onClick} className={ASIDE_LINK}>
-      {content}
-    </button>
-  );
-}
-
 function OverviewAside({
   agent,
   config,
   block,
   editor,
-  facts,
-  hrefs,
-  onOpenShare,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
   block: AgentConfigBlock;
   editor?: AgentDraft;
-  facts: OverviewFacts;
-  hrefs: { model: string; workspace: string; triggers: string };
-  onOpenShare?: () => void;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
-  const tPage = useI18nTranslations('agentEditor.page');
   const behavior = block.behavior ?? {};
   const enabled = block.enabled !== false;
   const shown = !behavior.hidden;
@@ -506,29 +463,6 @@ function OverviewAside({
         </div>
       </AsideSection>
 
-      <AsideSection title={tPage('runtime')}>
-        <AsideLink
-          label={t('model')}
-          href={hrefs.model}
-          value={behavior.model ? (behavior.model.split('/').pop() ?? behavior.model) : tPage('projectDefault')}
-        />
-        <AsideLink label={t('workspace')} href={hrefs.workspace} value={block.sandbox ?? tPage('projectDefault')} />
-      </AsideSection>
-
-      <AsideSection title={t('use')}>
-        <AsideLink
-          label={t('triggers')}
-          href={hrefs.triggers}
-          value={facts.triggerCount === undefined ? '—' : facts.triggerCount > 0 ? tPage('triggers', { count: facts.triggerCount }) : tPage('none')}
-        />
-        {onOpenShare ? (
-          <AsideLink
-            label={t('people')}
-            onClick={onOpenShare}
-            value={facts.peopleCount === undefined ? t('manage') : facts.peopleCount > 0 ? tPage('granted', { count: facts.peopleCount }) : tPage('none')}
-          />
-        ) : null}
-      </AsideSection>
     </div>
   );
 }
@@ -541,12 +475,9 @@ export function AgentOverview({
   block,
   prompt,
   views,
-  facts,
   editor,
   hrefFor,
-  hrefs,
   sourcePath,
-  onOpenShare,
   onAskMyKortix,
   focusInstructions = false,
 }: {
@@ -557,13 +488,9 @@ export function AgentOverview({
   /** The instructions; null while a reader's source file loads. */
   prompt: string | null;
   views: readonly AgentConfigSectionKey[];
-  facts: OverviewFacts;
   editor?: AgentDraft;
   hrefFor: (view: AgentConfigSectionKey) => string | null;
-  hrefs: { model: string; workspace: string; triggers: string };
   sourcePath: string;
-  /** Opens the header's Share dialog; absent for a viewer who cannot manage people. */
-  onOpenShare?: () => void;
   onAskMyKortix?: () => void;
   /** Unfold the instructions with the cursor in them (the old Instructions tab link). */
   focusInstructions?: boolean;
@@ -597,9 +524,6 @@ export function AgentOverview({
           config={config}
           block={block}
           editor={editor}
-          facts={facts}
-          hrefs={hrefs}
-          onOpenShare={onOpenShare}
         />
         <p className="text-muted-foreground px-1 text-xs text-pretty">
           {t.rich('savedIn', {
