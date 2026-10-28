@@ -22872,7 +22872,17 @@
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "Colore",
+      "colorHelp": "Il colore dell’agente nei selettori. Salvato in kortix.yaml; il runtime pi non lo usa ancora.",
+      "providerOptions": "Opzioni del provider",
+      "providerOptionsHelp": "Impostazioni extra per il provider del modello, in JSON. Salvate in kortix.yaml; il runtime pi non le applica ancora.",
+      "providerOptionsInvalid": "JSON non valido. Il valore salvato resta finché non è valido.",
+      "networkEgress": "Traffico di rete in uscita",
+      "networkEgressDeclared": "Nega tutto, dichiarato in kortix.yaml. Non ancora applicato: le sessioni raggiungono ancora la rete.",
+      "networkEgressNone": "Non dichiarato",
+      "requiredConnectors": "Connettori richiesti",
+      "requiredConnectorsHelp": "Elencati in kortix.yaml (connectors_required). Non applicato: le sessioni partono senza di essi."
     },
     "myKortix": {
       "allowed": "Consentito",

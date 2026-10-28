@@ -18,20 +18,22 @@
  * the Share dialog open (`open`).
  */
 
+import type { AGENT_BLOCK_KEYS_V3 } from '@kortix/manifest-schema';
+
 import type { AgentConfigSectionKey } from '../sections/view/agent-editor';
 
 export const AGENT_TABS = ['overview', 'access', 'runtime', 'triggers'] as const;
 export type AgentTab = (typeof AGENT_TABS)[number];
 
-/** Access views, in the order the segmented control lists them. */
+/** Access views, in the order of an `agents.<name>` block in kortix.yaml. */
 export const ACCESS_VIEWS = [
-  'connectors',
-  'secrets',
-  'skills',
   'tools',
-  'extensions',
+  'skills',
   'subagents',
   'commands',
+  'extensions',
+  'connectors',
+  'secrets',
   'apps',
   'actions',
   // Last: the one row that is not an `agents.<name>` key (Files folder grants).
@@ -115,30 +117,51 @@ export function sectionLocationHref(pathname: string, section: AgentConfigSectio
   return agentLocationHref(pathname, tab, tab === 'access' || tab === 'runtime' ? section : null);
 }
 
-const OVERVIEW_FIELDS = new Set([
-  'enabled',
-  'space',
-  'behavior.hidden',
-  'behavior.mode',
-  'behavior.prompt',
-  'behavior.description',
-]);
-/** The Access view that edits each field. */
-const ACCESS_FIELDS: Record<string, AccessView> = {
+/**
+ * Where every `agents.<name>` key in kortix.yaml is edited: one rail row per
+ * key. `agent-tabs.test.ts` fails when the manifest schema gains a key this
+ * map lacks, so no key is ever invisible on the agent page.
+ */
+export const YAML_KEY_ROW = {
+  description: 'overview',
+  prompt: 'overview',
+  prompt_file: 'overview',
+  enabled: 'overview',
+  hidden: 'overview',
+  mode: 'overview',
+  space: 'overview',
+  color: 'overview',
+  model: 'model',
+  variant: 'model',
+  temperature: 'model',
+  top_p: 'model',
+  steps: 'model',
+  options: 'model',
   tools: 'tools',
-  'behavior.permission': 'tools',
+  codemode: 'tools',
+  permission: 'tools',
   skills: 'skills',
-  connectors: 'connectors',
-  connectors_required: 'connectors',
-  secrets: 'secrets',
-  apps: 'apps',
-  kortix_permissions: 'actions',
-  kortix_cli: 'actions',
   subagents: 'subagents',
   commands: 'commands',
   extensions: 'extensions',
+  connectors: 'connectors',
+  connectors_required: 'connectors',
+  policy_sets: 'connectors',
+  secrets: 'secrets',
+  apps: 'apps',
+  kortix_permissions: 'actions',
+  workspace: 'workspace',
+  sandbox: 'workspace',
+  network_egress: 'workspace',
+} as const satisfies Record<(typeof AGENT_BLOCK_KEYS_V3)[number], AgentRailKey>;
+
+/** The editor draft's wire names for a kortix.yaml key (v2 aliases included). */
+const WIRE_KEY: Record<string, string> = {
+  file: 'prompt_file',
+  repository_access: 'workspace',
+  kortix_cli: 'kortix_permissions',
+  connectors_personal: 'connectors_required',
 };
-const WORKSPACE_FIELDS = new Set(['sandbox', 'workspace', 'repository_access']);
 
 function fields(block: Record<string, unknown>): Map<string, string> {
   const out = new Map<string, string>();
@@ -160,8 +183,8 @@ export function railKeyOf(location: AgentLocation): AgentRailKey {
 
 /**
  * The rail rows that hold an unsaved edit: each changed field of the draft,
- * mapped to the row that edits it. A field no other row owns (model,
- * temperature, the prompt's runtime knobs) belongs to Model.
+ * mapped to the row that edits it (`YAML_KEY_ROW`). An unknown field lands
+ * on Model, the row for the agent's runtime knobs.
  */
 export function changedItems(draft: object, baseline: object): AgentRailKey[] {
   const a = fields(draft as Record<string, unknown>);
@@ -169,11 +192,8 @@ export function changedItems(draft: object, baseline: object): AgentRailKey[] {
   const changed = new Set<AgentRailKey>();
   for (const key of new Set([...a.keys(), ...b.keys()])) {
     if (a.get(key) === b.get(key)) continue;
-    changed.add(
-      OVERVIEW_FIELDS.has(key)
-        ? 'overview'
-        : (ACCESS_FIELDS[key] ?? (WORKSPACE_FIELDS.has(key) ? 'workspace' : 'model')),
-    );
+    const yamlKey = WIRE_KEY[key] ?? key.replace(/^behavior\./, '');
+    changed.add((YAML_KEY_ROW as Record<string, AgentRailKey>)[yamlKey] ?? 'model');
   }
   return [...changed];
 }

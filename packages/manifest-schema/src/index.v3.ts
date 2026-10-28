@@ -282,7 +282,8 @@ const BEHAVIOR_KEYS_V3 = [
   'permission',
 ] as const;
 
-const AGENT_KEYS_V3 = new Set<string>([
+/** Every key an `agents.<name>` block may hold (kortix_version 3). The agent page maps each to a row. */
+export const AGENT_BLOCK_KEYS_V3 = [
   ...BEHAVIOR_KEYS_V3,
   'prompt',
   'prompt_file',
@@ -303,7 +304,8 @@ const AGENT_KEYS_V3 = new Set<string>([
   'sandbox',
   'space',
   'network_egress',
-]);
+] as const;
+const AGENT_KEYS_V3 = new Set<string>(AGENT_BLOCK_KEYS_V3);
 
 /** Agent keys of earlier versions, with what replaces each in v3. */
 const RETIRED_AGENT_KEYS_V3: Record<string, string> = {

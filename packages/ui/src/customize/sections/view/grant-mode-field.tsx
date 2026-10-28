@@ -3,17 +3,15 @@
 import type { UiTranslator } from '../../../i18n';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 /**
- * All · Pick · None — the one governance grant-mode machine, parameterized so
- * both a flat checklist (skills/connectors/secrets) and a grouped catalog
- * (kortix_permissions) share the same state transitions instead of re-implementing
- * them twice.
+ * The grant fields of the agent editor: the grant sentence (`GrantModeTabs`)
+ * over a list that is always shown, flat (skills, connectors, the registry
+ * grants) or grouped (kortix_permissions).
  */
 
-import { Tabs, TabsList, TabsTrigger } from '../../../primitives/tabs';
 import { Badge } from '../../../primitives/badge';
 import { Checkbox } from '../../../primitives/checkbox';
 import type { AgentGrantSetV2 } from '@kortix/sdk';
-import { type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
 import { useUiParams } from '../../../providers/ui-provider';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
@@ -41,76 +39,6 @@ export function grantSummary(
   };
 }
 
-const GRANT_MODES: { value: GrantMode; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'pick', label: 'Pick' },
-  { value: 'none', label: 'None' },
-];
-
-export function GrantModeField({
-  value,
-  onChange,
-  alwaysRender = false,
-  children,
-}: {
-  value: AgentGrantSetV2 | undefined;
-  onChange: (v: AgentGrantSetV2) => void;
-  /** Render `children` in every mode, not only Pick — for a catalog that
-   *  stays on screen and shows each card as included / excluded. */
-  alwaysRender?: boolean;
-  children: (ctx: {
-    selected: Set<string>;
-    toggle: (id: string) => void;
-    mode: GrantMode;
-  }) => React.ReactNode;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const mode: GrantMode =
-    value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
-  const [wantPick, setWantPick] = useState(() => Array.isArray(value) && value.length > 0);
-  const effectiveMode: GrantMode =
-    value === 'all'
-      ? 'all'
-      : Array.isArray(value) && (value.length > 0 || wantPick)
-        ? 'pick'
-        : mode;
-  const selected = new Set(Array.isArray(value) ? value : []);
-
-  const pick = (m: GrantMode) => {
-    setWantPick(m === 'pick');
-    if (m === 'all') return onChange('all');
-    if (m === 'none') return onChange('none');
-    onChange(Array.isArray(value) ? value : []);
-  };
-  const toggle = (id: string) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onChange([...next]);
-  };
-
-  return (
-    <div className="space-y-3">
-      {/* The segmented control alone (Jay, 2026-10-20): the list below shows
-          what each mode means, so no label or help line sits beside it. */}
-      <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)}>
-        <TabsList aria-label={tI18nComplete.raw('text74009e6664f5')}>
-          {GRANT_MODES.map((m) => (
-            <TabsTrigger key={m.value} value={m.value}>
-              {m.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-      {effectiveMode === 'pick' || alwaysRender
-        ? children({ selected, toggle, mode: effectiveMode })
-        : null}
-    </div>
-  );
-}
-
-/** All · Pick · None, with a checklist of the project's declared items when
- *  in Pick mode. The one governance control reused for skills/connectors/secrets. */
 /** One pickable row: the id the grant stores, and what a person needs to
  *  recognise it — a name, a second line, a status chip. */
 export interface GrantOption {
@@ -135,65 +63,57 @@ export function GrantSetField({
   options: GrantOption[];
   emptyLabel: string;
   /** Optional control rendered BESIDE each granted row (e.g. the connectors
-   *  field's "personal" toggle). The row itself is a `<button>`, so an
-   *  interactive accessory cannot be nested inside it — when this returns a
-   *  node the row is wrapped in a flex container and the accessory becomes a
-   *  sibling. Fields that pass nothing render exactly as before. */
+   *  field's "personal" toggle). The row itself is a checkbox, so an
+   *  interactive accessory is a sibling, never nested. */
   rowAccessory?: (id: string, isSelected: boolean) => ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  // The same grant sentence and always-listed rows as every other Access view:
+  // All checks every row, None none, Specific the granted ones. A row turned
+  // off under All keeps the rest (`plainGrantSwitch`).
+  const grant = useAgentGrant(value, onChange);
+  const ids = options.map((o) => o.id);
+  const box = plainGrantSwitch(value, ids, onChange);
+  const optionIds = new Set(ids);
+  const orphans: GrantOption[] = (Array.isArray(value) ? value : [])
+    .filter((id) => !optionIds.has(id))
+    .map((id) => ({ id, label: id }));
+  const rows = [...options, ...orphans];
   return (
-    <GrantModeField
-      value={value}
-      onChange={onChange}
-    >
-      {({ selected, toggle }) => {
-        const optionIds = new Set(options.map((o) => o.id));
-        const orphans: GrantOption[] = [];
-        for (const id of selected) {
-          if (!optionIds.has(id)) orphans.push({ id, label: id });
-        }
-        const rows = [...options, ...orphans];
-        return rows.length === 0 ? (
-          <p className="text-muted-foreground text-xs">{emptyLabel}</p>
-        ) : (
-          <ul className="bg-popover divide-border max-h-96 divide-y overflow-y-auto rounded-md border">
-            {rows.map((o) => {
-              const isSel = selected.has(o.id);
-              const isOrphan = !optionIds.has(o.id);
-              const accessory = rowAccessory?.(o.id, isSel);
-              return (
-                <li key={o.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <Checkbox
-                    variant="black"
-                    checked={isSel}
-                    onCheckedChange={() => toggle(o.id)}
-                    aria-label={o.label}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate font-mono text-sm">
-                      {o.label}
-                    </span>
-                    {o.description ? (
-                      <span className="text-muted-foreground block truncate text-xs">
-                        {o.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  {isOrphan ? (
-                    <Badge variant="warning" size="xs">
-                      {tI18nComplete.raw('textffa63583dfa6')}
-                    </Badge>
+    <div className="space-y-3">
+      <GrantModeTabs grant={withCatalog(grant, ids)} label={tI18nComplete.raw('text74009e6664f5')} />
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground text-xs">{emptyLabel}</p>
+      ) : (
+        <ul className="bg-popover divide-border max-h-96 divide-y overflow-y-auto rounded-md border">
+          {rows.map((o) => {
+            const isOrphan = !optionIds.has(o.id);
+            const control = isOrphan
+              ? { checked: true, onCheckedChange: () => onChange((value as string[]).filter((id) => id !== o.id)) }
+              : box(o.id);
+            const accessory = rowAccessory?.(o.id, control.checked);
+            return (
+              <li key={o.id} className="flex items-center gap-3 px-4 py-2.5">
+                <Checkbox variant="black" {...control} aria-label={o.label} />
+                <span className="min-w-0 flex-1">
+                  <span className="text-foreground block truncate font-mono text-sm">{o.label}</span>
+                  {o.description ? (
+                    <span className="text-muted-foreground block truncate text-xs">{o.description}</span>
                   ) : null}
-                  {o.trailing}
-                  {accessory}
-                </li>
-              );
-            })}
-          </ul>
-        );
-      }}
-    </GrantModeField>
+                </span>
+                {isOrphan ? (
+                  <Badge variant="warning" size="xs">
+                    {tI18nComplete.raw('textffa63583dfa6')}
+                  </Badge>
+                ) : null}
+                {o.trailing}
+                {accessory}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

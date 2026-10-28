@@ -22872,7 +22872,17 @@
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "Farbe",
+      "colorHelp": "Die Farbe des Agenten in Auswahllisten. In kortix.yaml gespeichert; die pi-Laufzeit nutzt sie noch nicht.",
+      "providerOptions": "Provider-Optionen",
+      "providerOptionsHelp": "Zusätzliche Einstellungen für den Modell-Provider als JSON. In kortix.yaml gespeichert; die pi-Laufzeit wendet sie noch nicht an.",
+      "providerOptionsInvalid": "Kein gültiges JSON. Der gespeicherte Wert bleibt, bis es gültig ist.",
+      "networkEgress": "Netzwerkzugriff nach außen",
+      "networkEgressDeclared": "Alles verweigern, in kortix.yaml deklariert. Noch nicht durchgesetzt: Sitzungen erreichen das Netzwerk weiterhin.",
+      "networkEgressNone": "Nicht deklariert",
+      "requiredConnectors": "Erforderliche Konnektoren",
+      "requiredConnectorsHelp": "In kortix.yaml aufgeführt (connectors_required). Nicht durchgesetzt: Sitzungen starten auch ohne sie."
     },
     "myKortix": {
       "allowed": "Erlaubt",

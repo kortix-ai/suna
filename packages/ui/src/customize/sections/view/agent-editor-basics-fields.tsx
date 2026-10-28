@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
 /**
  * The first two sections of the agent editor: what the agent IS (Basics) and
@@ -346,8 +347,53 @@ export function ModelSection({
             }
           />
         </SettingRow>
+        <ProviderOptionsRow value={oc.options} onChange={(next) => setOc('options', next)} />
       </EditorSection>
     </>
+  );
+}
+
+/**
+ * `options` (kortix.yaml): free-form provider settings as JSON. The draft
+ * changes only when the text parses to an object; an empty field clears it.
+ */
+function ProviderOptionsRow({
+  value,
+  onChange,
+}: {
+  value: Record<string, unknown> | undefined;
+  onChange: (next: Record<string, unknown> | undefined) => void;
+}) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  const [text, setText] = useState(() => (value ? JSON.stringify(value, null, 2) : ''));
+  const [invalid, setInvalid] = useState(false);
+  const commit = (next: string) => {
+    setText(next);
+    if (!next.trim()) {
+      setInvalid(false);
+      return onChange(undefined);
+    }
+    try {
+      const parsed: unknown = JSON.parse(next);
+      const ok = !!parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+      setInvalid(!ok);
+      if (ok) onChange(parsed as Record<string, unknown>);
+    } catch {
+      setInvalid(true);
+    }
+  };
+  return (
+    <SettingBlock label={t('providerOptions')} help={t('providerOptionsHelp')}>
+      <Textarea
+        aria-label={t('providerOptions')}
+        value={text}
+        placeholder='{ "reasoning": "high" }'
+        className="min-h-20 font-mono text-xs"
+        aria-invalid={invalid || undefined}
+        onChange={(e) => commit(e.target.value)}
+      />
+      {invalid ? <p className="text-destructive text-xs">{t('providerOptionsInvalid')}</p> : null}
+    </SettingBlock>
   );
 }
 

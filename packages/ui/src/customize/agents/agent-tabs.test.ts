@@ -60,8 +60,8 @@ describe('resolveAgentLocation', () => {
     expect(at({})).toEqual({ tab: 'overview', view: null });
   });
 
-  test('Access opens its first view, Connectors; Runtime opens Model', () => {
-    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'connectors' });
+  test('Access opens its first view, Tools (kortix.yaml order); Runtime opens Model', () => {
+    expect(at({ tab: 'access' })).toEqual({ tab: 'access', view: 'tools' });
     expect(at({ tab: 'runtime' })).toEqual({ tab: 'runtime', view: 'model' });
   });
 
@@ -104,7 +104,7 @@ describe('resolveAgentLocation', () => {
   test('a view the agent lacks falls back to the first one it has', () => {
     expect(at({ tab: 'access', view: 'drives' }, ['skills', 'connectors'])).toEqual({
       tab: 'access',
-      view: 'connectors',
+      view: 'skills',
     });
   });
 
@@ -124,5 +124,14 @@ describe('hrefs', () => {
     expect(agentLocationHref('/a', 'access', 'actions')).toBe('/a?tab=access&view=permissions');
     expect(sectionLocationHref('/a', 'basics')).toBe('/a');
     expect(sectionLocationHref('/a', 'model')).toBe('/a?tab=runtime&view=model');
+  });
+});
+
+describe('YAML_KEY_ROW', () => {
+  test('every agents.<name> key in kortix.yaml (v3) has a row on the agent page', async () => {
+    const { AGENT_BLOCK_KEYS_V3 } = await import('@kortix/manifest-schema');
+    const { YAML_KEY_ROW } = await import('./agent-tabs');
+    const missing = AGENT_BLOCK_KEYS_V3.filter((key) => !(key in YAML_KEY_ROW));
+    expect(missing).toEqual([]);
   });
 });

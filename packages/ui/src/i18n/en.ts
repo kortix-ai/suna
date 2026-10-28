@@ -7680,7 +7680,17 @@ const catalog = {
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "Color",
+      "colorHelp": "The agent's color in pickers. Saved in kortix.yaml; the pi runtime does not use it yet.",
+      "providerOptions": "Provider options",
+      "providerOptionsHelp": "Extra settings for the model provider, as JSON. Saved in kortix.yaml; the pi runtime does not apply them yet.",
+      "providerOptionsInvalid": "Not valid JSON. The saved value stays until it parses.",
+      "networkEgress": "Network egress",
+      "networkEgressDeclared": "Deny all, declared in kortix.yaml. Not enforced yet: sessions can still reach the network.",
+      "networkEgressNone": "Not declared",
+      "requiredConnectors": "Required connectors",
+      "requiredConnectorsHelp": "Listed in kortix.yaml (connectors_required). Not enforced: sessions start without them."
     },
     "myKortix": {
       "allowed": "Allowed",

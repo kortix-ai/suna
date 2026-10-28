@@ -22872,7 +22872,17 @@
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "颜色",
+      "colorHelp": "智能体在选择器中的颜色。保存在 kortix.yaml 中；pi 运行时暂不使用。",
+      "providerOptions": "提供方选项",
+      "providerOptionsHelp": "模型提供方的额外设置（JSON）。保存在 kortix.yaml 中；pi 运行时暂不应用。",
+      "providerOptionsInvalid": "不是有效的 JSON。在有效之前保留已保存的值。",
+      "networkEgress": "网络出站",
+      "networkEgressDeclared": "全部拒绝，已在 kortix.yaml 中声明。尚未强制执行：会话仍可访问网络。",
+      "networkEgressNone": "未声明",
+      "requiredConnectors": "必需的连接器",
+      "requiredConnectorsHelp": "已在 kortix.yaml 中列出（connectors_required）。不强制执行：会话在没有它们的情况下启动。"
     },
     "myKortix": {
       "allowed": "已允许",

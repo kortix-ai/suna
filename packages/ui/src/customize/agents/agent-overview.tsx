@@ -461,6 +461,21 @@ function OverviewAside({
             <p className="text-muted-foreground text-sm">{space ? `# ${space}` : t('projectWide')}</p>
           )}
         </div>
+        <div className="space-y-2 px-4 py-2.5">
+          <p className="text-foreground text-sm">{t('color')}</p>
+          {editor ? (
+            <Input
+              aria-label={t('color')}
+              value={behavior.color ?? ''}
+              placeholder="#3b82f6"
+              className="h-8 font-mono text-sm"
+              onChange={(e) => editor.setOc('color', e.target.value.trim() || undefined)}
+            />
+          ) : (
+            <p className="text-muted-foreground font-mono text-sm">{behavior.color ?? '—'}</p>
+          )}
+          <p className="text-muted-foreground text-xs text-pretty">{t('colorHelp')}</p>
+        </div>
       </AsideSection>
 
     </div>

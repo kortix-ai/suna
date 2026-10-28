@@ -22872,7 +22872,17 @@
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "Boja",
+      "colorHelp": "Boja agenta u izbornicima. Čuva se u kortix.yaml; pi okruženje je još ne koristi.",
+      "providerOptions": "Opcije provajdera",
+      "providerOptionsHelp": "Dodatna podešavanja za provajdera modela, kao JSON. Čuvaju se u kortix.yaml; pi okruženje ih još ne primenjuje.",
+      "providerOptionsInvalid": "Nije ispravan JSON. Sačuvana vrednost ostaje dok ne bude ispravan.",
+      "networkEgress": "Izlazni mrežni saobraćaj",
+      "networkEgressDeclared": "Zabrani sve, deklarisano u kortix.yaml. Još se ne primenjuje: sesije i dalje pristupaju mreži.",
+      "networkEgressNone": "Nije deklarisano",
+      "requiredConnectors": "Obavezni konektori",
+      "requiredConnectorsHelp": "Navedeni u kortix.yaml (connectors_required). Ne primenjuje se: sesije počinju bez njih."
     },
     "myKortix": {
       "allowed": "Дозвољено",

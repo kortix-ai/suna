@@ -95,7 +95,7 @@ import {
 import { EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
 import { ModelSection } from '../sections/view/agent-editor-basics-fields';
 import { ToolsSection } from '../sections/view/permission-editor';
-import { type AgentGrant, plainGrant, useAgentGrant } from '../shared/agent-resource-scope';
+import { type AgentGrant, useAgentGrant } from '../shared/agent-resource-scope';
 import { CapabilityShellEmbedProvider } from '../shared/capability-page-shell';
 import { LeaveGuardProvider, useUnsavedChangesGuard } from '../shared/leave-guard';
 import { toArray } from '../shared/utils';
@@ -464,9 +464,9 @@ function useSaveShortcut(dirty: boolean, onSave: () => void) {
 }
 
 /**
- * The rail's rows, in the shape of `agents.<name>` in `kortix.yaml`:
- * Overview, Model and Workspace (the agent's own settings), Triggers, then
- * one Access row per grant key with its state (`countOf`). Model and
+ * The rail's rows, one flat list in the order of `agents.<name>` in
+ * kortix.yaml: Overview, Model, every grant (`countOf` gives its state),
+ * Workspace, then Triggers and Drives, which live outside the block. Model and
  * Workspace show their value, or "Project default" when the block sets none.
  */
 function useRailItems(
@@ -480,26 +480,21 @@ function useRailItems(
   const tPage = useI18nTranslations('agentEditor.page');
   const catalog = useLocalizedAgentConfigCatalog();
   const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
-  const viewRow = (view: AgentConfigSectionKey, count?: string) => ({
-    key: view,
-    label: labelOf(view),
-    href: sectionLocationHref(pathname, view),
-    count,
-  });
+  const viewRow = (view: AgentConfigSectionKey, count?: string): AgentRailItem[] =>
+    views.includes(view) ? [{ key: view, label: labelOf(view), href: sectionLocationHref(pathname, view), count }] : [];
+  const grants = ACCESS_VIEWS.filter((view) => view !== 'drives').flatMap((view) => viewRow(view, countOf?.(view) ?? undefined));
   return [
     { key: 'overview', label: t('tabOverview'), href: agentLocationHref(pathname, 'overview') },
-    ...(views.includes('model') ? [viewRow('model', values.model ?? tPage('projectDefault'))] : []),
-    ...(views.includes('workspace') ? [viewRow('workspace', values.workspace ?? tPage('projectDefault'))] : []),
+    ...viewRow('model', values.model ?? tPage('projectDefault')),
+    ...grants,
+    ...viewRow('workspace', values.workspace ?? tPage('projectDefault')),
     {
       key: 'triggers',
       label: t('tabTriggers'),
       href: agentLocationHref(pathname, 'triggers'),
       count: counts.triggerCount || undefined,
     },
-    ...ACCESS_VIEWS.filter((view) => views.includes(view)).map((view) => ({
-      ...viewRow(view, countOf?.(view) ?? undefined),
-      group: 'access' as const,
-    })),
+    ...viewRow('drives'),
   ];
 }
 
@@ -711,7 +706,6 @@ function EditableAgentPage({
   schemaVersion: number;
   renderApps?: RenderAgentApps;
 }) {
-  const t = useI18nTranslations('agentEditor.tabs');
   const tCapabilities = useI18nTranslations('agentCapabilities');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
@@ -799,13 +793,7 @@ function EditableAgentPage({
       ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
       : grantLabel(value);
   };
-  // Agents (`subagents`) always lists: its empty state says how to make an
-  // agent callable. Commands lists only with a `commands:` entry to grant, or
-  // a grant already in the block.
-  const railViews = views.filter(
-    (view) => view !== 'commands' || registryOptions.commands.length > 0 || grantedAny(draft.commands),
-  );
-  const railItems = useRailItems(pathname, railViews, facts, countOf, {
+  const railItems = useRailItems(pathname, views, facts, countOf, {
     model: modelName(editor.oc.model),
     workspace: draft.sandbox,
   });
@@ -888,7 +876,12 @@ function EditableAgentPage({
                 projectId={projectId}
                 surface={surface}
                 grant={connectorsGrant}
-                agentPanel={<AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />}
+                agentPanel={
+                  <>
+                    <AgentPolicySetsPanel projectId={projectId} editor={editor} catalog={policySetOptions} />
+                    <RequiredConnectorsNote names={draft.connectors_required} />
+                  </>
+                }
               />
             </Embedded>
           );
@@ -963,7 +956,6 @@ function EditableAgentPage({
               items={railItems}
               active={railKeyOf(location)}
               dirty={dirtyItems}
-              groupLabels={{ access: t('tabAccess') }}
             />
           }
         >
@@ -1148,7 +1140,6 @@ function ReadOnlyAgentPage({
           <AgentRail
             items={railItems}
             active={railKeyOf(location)}
-            groupLabels={{ access: t('tabAccess') }}
           />
         }
       >
@@ -1214,14 +1205,23 @@ function grantsAppRead(grant: AgentGrantSetV2 | null | undefined): boolean {
   return grant === 'all' || (Array.isArray(grant) && grant.includes('project.app.read'));
 }
 
-/** Whether a grant names anything: `all`, `{ exclude }` or a non-empty list. */
-function grantedAny(grant: unknown): boolean {
-  if (grant === 'all') return true;
-  if (Array.isArray(grant)) return grant.length > 0;
-  return !!grant && typeof grant === 'object';
-}
-
 /** The Model row's value: the model id after its provider (`kortix/kimi-k2` → `kimi-k2`). */
 function modelName(model: string | undefined): string | undefined {
   return model ? model.slice(model.lastIndexOf('/') + 1) : undefined;
+}
+
+/**
+ * `connectors_required` (kortix.yaml), when the block sets it: read-only,
+ * because sessions no longer wait for these connectors.
+ */
+function RequiredConnectorsNote({ names }: { names: readonly string[] | undefined }) {
+  const t = useI18nTranslations('agentEditor.tabs');
+  if (!names || names.length === 0) return null;
+  return (
+    <section className="space-y-1">
+      <h2 className="text-sm font-medium">{t('requiredConnectors')}</h2>
+      <p className="text-foreground font-mono text-sm">{names.join(', ')}</p>
+      <p className="text-muted-foreground text-xs text-pretty">{t('requiredConnectorsHelp')}</p>
+    </section>
+  );
 }

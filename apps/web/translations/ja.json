@@ -22872,7 +22872,17 @@
         "actions": "all permissions"
       },
       "review": "Review",
-      "settings": "Settings"
+      "settings": "Settings",
+      "color": "色",
+      "colorHelp": "ピッカーでのエージェントの色。kortix.yaml に保存されます。pi ランタイムはまだ使用しません。",
+      "providerOptions": "プロバイダーオプション",
+      "providerOptionsHelp": "モデルプロバイダー向けの追加設定（JSON）。kortix.yaml に保存されます。pi ランタイムはまだ適用しません。",
+      "providerOptionsInvalid": "有効な JSON ではありません。有効になるまで保存済みの値が使われます。",
+      "networkEgress": "ネットワーク送信",
+      "networkEgressDeclared": "すべて拒否（kortix.yaml で宣言）。まだ適用されていません。セッションは引き続きネットワークに接続できます。",
+      "networkEgressNone": "未宣言",
+      "requiredConnectors": "必須コネクタ",
+      "requiredConnectorsHelp": "kortix.yaml に記載（connectors_required）。適用されません。セッションはこれらなしで開始します。"
     },
     "myKortix": {
       "allowed": "許可",

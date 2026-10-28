@@ -243,6 +243,7 @@ export {
 } from './constants';
 
 export {
+  AGENT_BLOCK_KEYS_V3,
   type AgentBlockV3,
   type AgentToolsV3,
   type CodemodeV3,

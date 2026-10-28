@@ -270,6 +270,7 @@ export function WorkspaceSection({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tRepository = useI18nTranslations('repositoryAccess');
+  const tTabs = useI18nTranslations('agentEditor.tabs');
   const pinned = draft.sandbox ? sandboxTemplates.find((t) => t.slug === draft.sandbox) : undefined;
   const projectDefault = defaultSandboxSlug
     ? sandboxTemplates.find((t) => t.slug === defaultSandboxSlug)
@@ -336,6 +337,15 @@ export function WorkspaceSection({
           checked={draft.repository_access ?? true}
           onCheckedChange={(enabled) => set('repository_access', enabled)}
         />
+      </SettingRow>
+
+      {/* `network_egress` (kortix.yaml): declared only, so it reads, never edits. */}
+      <SettingRow label={tTabs('networkEgress')}>
+        <span className="text-muted-foreground text-sm text-pretty sm:text-right">
+          {(draft as { network_egress?: unknown }).network_egress
+            ? tTabs('networkEgressDeclared')
+            : tTabs('networkEgressNone')}
+        </span>
       </SettingRow>
     </EditorSection>
   );

@@ -123,8 +123,6 @@ export interface AgentRailItem {
   label: string;
   href: string;
   count?: number | string;
-  /** `access` for a grant row; none for Overview, Model, Workspace and Triggers. */
-  group?: 'access';
 }
 
 /**
@@ -138,12 +136,10 @@ export function AgentRail({
   items,
   active,
   dirty,
-  groupLabels,
 }: {
   items: AgentRailItem[];
   active: AgentRailKey;
   dirty?: readonly AgentRailKey[];
-  groupLabels: Record<'access', string>;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const row = (item: AgentRailItem, horizontal: boolean) => (
@@ -167,17 +163,13 @@ export function AgentRail({
       </Link>
     </TabsTrigger>
   );
-  const groups: { label?: string; rows: AgentRailItem[] }[] = [
-    { rows: items.filter((item) => !item.group) },
-    { label: groupLabels.access, rows: items.filter((item) => item.group === 'access') },
-  ].filter((group) => group.rows.length > 0);
   return (
     <>
       <nav aria-label={t('tabsLabel')} className="shrink-0 border-b md:hidden">
         <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="py-2">
           <Tabs value={active} className="w-fit px-4">
             <TabsList orientation="horizontal" className="w-fit">
-              {groups.flatMap((group) => group.rows).map((item) => row(item, true))}
+              {items.map((item) => row(item, true))}
             </TabsList>
           </Tabs>
         </FadedScrollArea>
@@ -188,11 +180,7 @@ export function AgentRail({
           className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col overflow-y-auto px-2 pt-3 pb-24"
         >
           <Tabs value={active} orientation="vertical" className="gap-3">
-            {groups.map((group, index) => (
-              <RailGroup key={group.label ?? index} label={group.label}>
-                {group.rows.map((item) => row(item, false))}
-              </RailGroup>
-            ))}
+            <RailGroup>{items.map((item) => row(item, false))}</RailGroup>
           </Tabs>
         </nav>
       </aside>
