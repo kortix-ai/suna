@@ -23,6 +23,14 @@ This file is the single source of truth for the promotion flow. `AGENTS.md`
 `.agents/skills/testing/SKILL.md` state only their own slice — what CI runs on
 a PR into `dev` versus the release PR — and point here for the rest.
 
+## Daily scheduled releases
+
+The factory also runs the pinned daily staging-only path at midnight
+Europe/Belgrade. See [daily release](references/daily-release.md) for the durable
+ledger, strict admission, reviewed fix-only repairs, bounded resume and holds.
+Manual releases still use the procedure below. Release branches are immutable:
+a later candidate gets a new branch, never a force-push of tested evidence.
+
 ## 0. Golden rule — one dispatch, one suite, one gate
 
 **The only normal way to change prod is one Promote to Production dispatch.**

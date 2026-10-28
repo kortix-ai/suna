@@ -1,0 +1,55 @@
+name: Daily production release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+      timezone: Europe/Belgrade
+    - cron: '17,47 * * * *'
+      timezone: Europe/Belgrade
+  workflow_dispatch:
+    inputs:
+      repair_pr:
+        description: 'Merged, reviewed dev PR explicitly scoped to the active daily release (never snapshots a new candidate)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Read state and plan only; no dispatch, merge or write'
+        default: true
+        type: boolean
+
+# One controller writer across midnight, polling and manual resume. Held state
+# blocks the next date as well. Never cancel an in-flight production decision.
+concurrency:
+  group: daily-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Pin or resume release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT: ${{ github.event_name == 'schedule' && github.event.schedule == '0 0 * * *' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          REPAIR_PR: ${{ inputs.repair_pr }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          args=()
+          [ "$SNAPSHOT" != true ] || args+=(--snapshot)
+          [ "$DRY_RUN" != true ] || args+=(--dry-run)
+          [ -z "$REPAIR_PR" ] || args+=(--repair-pr "$REPAIR_PR")
+          python3 scripts/release/daily.py "${args[@]}"
