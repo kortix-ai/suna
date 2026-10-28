@@ -102,11 +102,11 @@ export function openAiSseFromFullStream(
   const base = { id, object: 'chat.completion.chunk', created, model: ctx.model };
 
   // Map AI SDK tool-call ids → dense OpenAI tool_call indices, and remember which
-  // ids already opened a streamed call so a terminal `tool-call` part for the same
-  // id doesn't re-emit the name/arguments.
+  // ids already streamed their arguments so a terminal `tool-call` part for the
+  // same id doesn't re-emit them.
   const toolIndex = new Map<string, number>();
   let nextToolIndex = 0;
-  const streamedTools = new Set<string>();
+  const streamedArgs = new Set<string>();
   let roleSent = false;
 
   const delta = (d: Record<string, unknown>, finishReason: string | null = null): Uint8Array =>
@@ -204,7 +204,6 @@ export function openAiSseFromFullStream(
             const tid = part.id as string;
             const index = nextToolIndex++;
             toolIndex.set(tid, index);
-            streamedTools.add(tid);
             emit(
               delta({
                 tool_calls: [
@@ -223,6 +222,7 @@ export function openAiSseFromFullStream(
             const tid = part.id as string;
             const index = toolIndex.get(tid);
             if (index === undefined) break;
+            if (part.delta) streamedArgs.add(tid);
             emit(
               delta({
                 tool_calls: [{ index, function: { arguments: (part.delta as string) ?? '' } }],
@@ -232,7 +232,18 @@ export function openAiSseFromFullStream(
           }
           case 'tool-call': {
             const tid = part.toolCallId as string;
-            if (streamedTools.has(tid)) break; // already streamed via input-start/delta
+            if (streamedArgs.has(tid)) break; // already streamed via input-delta
+            const opened = toolIndex.get(tid);
+            if (opened !== undefined) {
+              // Opened by input-start, but no argument delta came: the ChatGPT Codex
+              // backend sends a parallel call's arguments only in its final item.
+              emit(
+                delta({
+                  tool_calls: [{ index: opened, function: { arguments: JSON.stringify(part.input ?? {}) } }],
+                }),
+              );
+              break;
+            }
             if (!roleSent) {
               emit(delta({ role: 'assistant', content: '' }));
               roleSent = true;

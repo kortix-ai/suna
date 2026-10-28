@@ -1474,6 +1474,44 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       expect(json.choices[0].message.content).toBe('low-effort answer');
       expect(json.choices[0].message.tool_calls).toBeUndefined();
     });
+
+    // Captured from the ChatGPT Codex backend 2026-10-28: for parallel calls it
+    // sends no `function_call_arguments.delta` at all; each call's arguments
+    // arrive only in `function_call_arguments.done` and `output_item.done`.
+    // The chat stream used to open all three calls and then drop the terminal
+    // `tool-call`, so the agent received three calls with arguments `{}`.
+    it('streams the arguments of parallel calls whose upstream sent no argument deltas', async () => {
+      const cities = ['Paris', 'Tokyo', 'Lima'];
+      const events = cities.flatMap((city, i) => {
+        const call = { type: 'function_call', id: `fc_${i}`, call_id: `call_${i}`, name: 'get_weather' };
+        const args = JSON.stringify({ city });
+        return [
+          { type: 'response.output_item.added', output_index: i, item: { ...call, arguments: '' } },
+          { type: 'response.function_call_arguments.done', item_id: `fc_${i}`, output_index: i, arguments: args },
+          { type: 'response.output_item.done', output_index: i, item: { ...call, arguments: args, status: 'completed' } },
+        ];
+      });
+      const response = await callUpstreamViaAiSdk(
+        { stream: true, messages: [{ role: 'user', content: 'weather?' }], tools: [reasoningTool] },
+        codex,
+        { fetch: async () => responsesStream([created, ...events, completed(4, 6)]) },
+      );
+
+      // Assemble tool calls the way a chat-completions client does: by `index`.
+      const calls = new Map<number, { id?: string; name?: string; arguments: string }>();
+      for (const chunk of frames(await response.text())) {
+        for (const tc of (chunk as any).choices?.[0]?.delta?.tool_calls ?? []) {
+          const call = calls.get(tc.index) ?? { arguments: '' };
+          call.id ??= tc.id;
+          call.name ??= tc.function?.name;
+          call.arguments += tc.function?.arguments ?? '';
+          calls.set(tc.index, call);
+        }
+      }
+      expect([...calls.values()].map((c) => ({ ...c, arguments: JSON.parse(c.arguments) }))).toEqual(
+        cities.map((city, i) => ({ id: `call_${i}`, name: 'get_weather', arguments: { city } })),
+      );
+    });
   });
 
   // Codex OAuth cannot be driven live in this environment (no OAuth creds
