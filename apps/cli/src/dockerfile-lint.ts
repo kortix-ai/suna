@@ -220,7 +220,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
         `Platinum provider builds with buildah's classic imagebuilder, which parses the heredoc ` +
         `body's first line as a Dockerfile instruction and aborts the build ("Unknown ` +
         `instruction: …"). Use a single-line equivalent (e.g. \`python3 -c '…'\`) — heredocs and ` +
-        `BuildKit-only \`# syntax\` directives work on Daytona but break every Platinum build.`,
+        `BuildKit-only \`# syntax\` directives break every Platinum build.`,
     });
   }
 

@@ -1318,9 +1318,9 @@
       "oneOffDescription": "Descrivi invece una singola modifica. Una sessione la esegue, la convalida e apre una richiesta di modifica.",
       "oneOffPlaceholder": "es. Rinomina ovunque l’agente release-bot in deploy-bot",
       "runUpgrade": "Esegui aggiornamento",
-      "manifestV2": {
-        "title": "Migra il manifest a v2 (kortix.yaml)",
-        "description": "Converte kortix.toml v1 nel file kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
+      "manifestV3": {
+        "title": "Aggiorna il manifest alla v3 (kortix.yaml)",
+        "description": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
       },
       "agentEditorHint": "Questo progetto usa un manifest versione 1. Aggiornalo a <code>kortix.yaml</code> versione 3 per modificare qui le istruzioni, il modello, i permessi degli strumenti e gli accessi di questo agente."
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "Il tuo computer"
     },
     "manifestUpgrade": {
-      "title": "Aggiorna alla v2",
-      "description": "Questo progetto usa ancora <toml>kortix.toml</toml>. Un agente lo converte in <yaml>kortix.yaml</yaml>, aggiorna le skill gestite e apre una richiesta di modifica. Nulla cambia finché non la approvi.",
+      "title": "Aggiorna alla v3",
+      "description": "Questo progetto usa un manifest precedente. Un agente lo porta a <yaml>kortix.yaml</yaml> versione 3, aggiorna le skill gestite e apre una richiesta di modifica. Nulla cambia finché non la approvi.",
       "start": "Avvia l'aggiornamento"
     },
     "filter": {
@@ -16802,7 +16802,7 @@
       "textc3bf78fdd3b9": "Impossibile inviare la tua candidatura",
       "textc3c25857485f": "Fa",
       "textc3c709a999c1": "Lettura memoria…",
-      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
+      "text7823a1f3af93": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare.",
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
@@ -17537,7 +17537,7 @@
       "textd83a0d814c59": "API Status mostra \"Enabled\" in verde, il parametro \"SCIM Username\" è associato a Email e il provisioning è abilitato senza il blocco per l'approvazione dell'amministratore.",
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
-      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Aggiorna il manifest alla v3 (kortix.yaml)",
       "text848f54e89660": "Esecuzioni",
       "textb098a09c78aa": "Prova con payload",
       "text99733344956d": "Payload",

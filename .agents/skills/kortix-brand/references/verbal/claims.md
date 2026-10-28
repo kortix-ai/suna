@@ -48,7 +48,7 @@ Use these words. Do not invent others.
 | Compliance | SOC 2 Type I verified (the report has landed). Never mention SOC 2 Type II (D17). GDPR is a posture Kortix runs, not a certificate. | `security-page/content.ts:16-17,406-407` | 2026-10-01 |
 | Ways work runs | On demand, human-assisted, automated. | `concepts.md` section 3 | carried over |
 | Outcome loop | Hand it an outcome; agents plan the work, run it on their own computers at any hour, get it checked by a separate agent and a change request, and learn from it. Present it as working today (founder, 2026-10-27). | Triggers, One sandbox per session, Path to `main` and Agents edit themselves rows above; `packages/starter/templates/managed/skills/kortix-goals/SKILL.md` | 2026-10-27 |
-| Harness | Every new session runs pi, an open-source (MIT) agent harness. OpenCode serves only sessions that started on it. | `apps/kortix-sandbox-agent-server/src/harness/README.md` ("OpenCode sunset"); `@earendil-works/pi-coding-agent` 1.2.0, license MIT | 2026-10-27 |
+| Harness | Every session runs an open-source agent harness. Where a sentence needs the name: every new session runs pi, an open-source (MIT) agent harness. | `apps/kortix-sandbox-agent-server/src/harness/README.md:16-21` (every new box runs pi); `@earendil-works/pi-coding-agent` 1.2.0, license MIT | 2026-10-28 |
 
 **Rule.** Write the SOC 2 claim as "SOC 2 Type I verified" and say nothing about Type II. — *Why:* D17, founder 2026-10-27. Type I is verified; a Type II "in progress" line reads as a gap to a buyer. — *Where:* marketing | deck | email | sales. — *When silent:* "SOC 2 Type I verified". Never write "compliant", "certified" or "SOC 2 compliant".
 
@@ -110,7 +110,7 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 **Rule.** Name ChatGPT and the OpenCode Console as the subscription sign-ins. Do not name Claude or Cursor as a subscription you can bring. — *Why:* ChatGPT is real (Codex device-grant OAuth, `apps/api/src/projects/codex-device-auth.ts`). OpenCode Zen and Go sign-in is real (`opencode-console.ts`; `kortix providers login opencode-go`, `kortix providers login opencode`). No Claude or Cursor subscription path exists in code. The pre-kit copy said "Only ChatGPT is wired"; that is stale. — *Where:* marketing | docs | deck | sales. — *When silent:* "any provider, your own keys".
 
-**Rule.** Name no third-party harness other than OpenCode. — *Why:* OpenCode is the default harness of every project. pi, the second harness, is experimental and opt-in (`pi_harness` flag or `runtime: pi`), and what the copy says about it is OPEN (D9 in [decisions.md](../decisions.md)). No Claude Code or Codex harness exists in code. A careers line about candidate fluency in other tools must never read as Kortix support. — *Where:* marketing | deck | sales | careers. The product docs name both harnesses. — *When silent:* "OpenCode".
+**Rule.** Name no harness product in customer copy. Write "agents", "the agent harness" or "the agent runtime". Name pi only where the sentence needs the name. Never name OpenCode as a harness. — *Why:* Every new session runs pi, with no flag and no `runtime:` choice (`apps/kortix-sandbox-agent-server/src/harness/README.md:16-21`). OpenCode serves only boxes that booted it before, and it will be deleted. No Claude Code or Codex harness exists in code. A careers line about candidate fluency in other tools must never read as Kortix support. User decision, 2026-10-28. — *Where:* marketing | docs | deck | sales | careers. OpenCode Zen and OpenCode Go stay as model-provider names (the Models row). — *When silent:* "agents".
 
 **Rule.** Name a managed model lineup only from open-weight models. Never present OpenAI or Anthropic models as Kortix-managed. — *Why:* Standing founder decision from 2026-09. No code file states it; `decisions.md` records it so the rule has a home. — *Where:* marketing | docs | deck | pricing. — *When silent:* "any model, your keys".
 
@@ -126,7 +126,7 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 **Rule.** Do not write bare "one click" for a Slack install. — *Why:* One-click install needs the Slack app credentials on the server. Without them the UI falls back to a paste-your-manifest flow. In both cases the bot must be invited to a channel and @-mentioned. — *Where:* marketing | docs. — *When silent:* write what happens: "Add to Slack, invite the bot, mention it with a task."
 
-**Rule.** Do not write a `channels:` block in any `kortix.yaml` example, and do not say `kortix.yaml` declares channels. — *Why:* Schema version 2 rejects `channels:`. A connected channel is a connector with `provider: channel`. Routing is live project state (`company-as-code/content.ts` gate). — *Where:* marketing | docs | deck. — *When silent:* leave channels out of the YAML.
+**Rule.** Do not write a `channels:` block in any `kortix.yaml` example, and do not say `kortix.yaml` declares channels. — *Why:* Schema versions 2 and 3 reject `channels:`. A connected channel is a connector with `provider: channel`. Routing is live project state (`company-as-code/content.ts` gate). — *Where:* marketing | docs | deck. — *When silent:* leave channels out of the YAML.
 
 ### Product facts by page
 
@@ -134,8 +134,8 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 | Topic | Fact to hold | Gate source |
 | --- | --- | --- |
-| Agent | An agent is `agents/<name>.md` (behavior) plus an `agents.<name>` block in `kortix.yaml` (governance). The `.md` is a stock OpenCode agent file. The scoping field is `permission`, not `tools`. Behavior keys in `kortix.yaml` are a hard error. | agents-and-skills, step-harness, step-source-of-truth |
-| Frontmatter | `tools:` and `skills:` are not frontmatter keys. Do not show them. | step-harness |
+| Agent | An agent is one `agents.<name>` block in `kortix.yaml` (`kortix_version: 3`): its behavior (`prompt` or `prompt_file`, `model`, `permission`) and the registered skills, tools, commands and extensions it enables. `agents/<name>.md` holds the prompt alone. `permission` sets allow, ask or deny per tool. | agents-and-skills, step-harness, step-source-of-truth |
+| Frontmatter | A v3 prompt file has no frontmatter. Do not show one. | step-harness |
 | Triggers | Exactly two types: `cron` and `webhook`. `session_mode` has four values: `fresh`, `reuse`, `pinned`, `keyed`. The default is `fresh`. A trigger has no "post the result to a channel" field. | automations |
 | Connector policy | Actions are `always_run`, `require_approval`, `block`, shown as Allow, Ask, Block. Approval holds the call; the agent's turn pauses and resumes. | connectors |
 | Audit view | The per-session audit view is an Enterprise entitlement. Never write "full org-wide audit trail". Recording is never gated. | connectors, faq |

@@ -1,1012 +1,200 @@
-# `kortix.yaml` — in-depth reference
+# kortix.yaml, kortix_version 3: key reference
 
-`kortix.yaml` is the single source of truth for everything the
-Kortix platform reads about a project. It lives at the repo root.
-Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
-`kortix.toml`) at the root is a Kortix project.
+The example is in `SKILL.md` → `<manifest>`. This page lists the keys and
+rules. The schema is the authority: `kortix schema --version 3` prints it
+(https://kortix.com/schema/kortix.v3.schema.json). `kortix validate` also
+checks the cross-key rules. Unknown keys are errors.
 
-The platform parser is permissive: it never throws on a bad entry.
-Instead, bad triggers go into an `errors` list returned alongside the
-good ones, so a single typo doesn't break the whole file.
+## Top-level keys
 
-This page documents `kortix_version: 2`: a governance-only `agents:`
-name-to-block map, and a session harness (`runtime:`), OpenCode or pi.
-
-The authoritative structural spec is the public JSON Schema:
-`https://kortix.com/schema/kortix.v2.schema.json`, or
-`https://kortix.com/schema/kortix.schema.json` for all published versions.
-Use `kortix schema --version 2` offline.
-
-> **Legacy note — v1 used TOML.** Projects created before v2 shipped
-> may still have a `kortix.toml` at the root with `kortix_version: 1`
-> (or no `kortix_version` at all). The platform resolves the manifest
-> by trying `kortix.yaml`, then `kortix.yml`, then falling back to
-> `kortix.toml` — so a v1 TOML project keeps working as-is; nothing
-> breaks. To move a project onto v2, rename `kortix.toml` to
-> `kortix.yaml`, convert its contents to YAML, bump `kortix_version` to
-> `2`, add the now-required `default_agent`, and rework any `[[agents]]`
-> array into the `agents:` map described below (or run `kortix migrate`
-> once available). `kortix_version: 2` manifests must be YAML — TOML
-> only supports `kortix_version: 1`.
-
-## Version 2 example
-
-```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
-kortix_version: 2
-
-default_agent: kortix
-
-project:
-  name: my-project
-  description: What this project is.
-
-# Env vars the runtime needs. `required` is *advisory* — surfaced in
-# the dashboard so the user knows what to set, but not enforced at
-# session start.
-env:
-  required:
-    - DATABASE_URL
-  optional:
-    - STRIPE_API_KEY
-    - WEBHOOK_SLACK_SECRET
-
-# Named sandbox environments. Each template uses one image or Dockerfile.
-sandbox:
-  default: ml
-  templates:
-    - slug: ml
-      name: ML
-      dockerfile: Dockerfile.ml
-
-# The tools every session gets (references/kortix/tools.md). `kortix:<name>`
-# is a Kortix tool; a path is the project's own module. With this key, only
-# the listed Kortix tools load. Delete a line to remove that tool.
-tools:
-  web_search: kortix:web_search
-  image_search: kortix:image_search
-  scrape_webpage: kortix:scrape_webpage
-  memory: kortix:memory
-  show: kortix:show
-  lookup_order: tools/lookup_order.ts
-
-# Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
-# Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
-# when omitted. Deprecated with OpenCode: only a session that still runs
-# OpenCode reads it. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here. Agents and skills sit at the root;
-# Kortix-side launchability and grants live in the `agents:` map below.
-opencode:
-  config_dir: harnesses/opencode
-
-# Files only pi reads: extensions/, prompts/, skills/, settings.json.
-# Defaults to "harnesses/pi", then the legacy ".kortix/pi", when omitted.
-pi:
-  config_dir: harnesses/pi
-
-# pi packages (https://pi.dev/packages) every pi session of the project loads.
-harnesses:
-  pi:
-    packages:
-      - npm:pi-web-access@0.30.0
-
-# ─── Apps ─────────────────────────────────────────────────────────
-# kortix.yaml owns each App's settings: a push applies `resources`,
-# `idle_timeout_seconds`, `always_on`, `labels`, `display` and `uses` on sync,
-# without a deploy. The rest of a block is the App's release config: a deploy creates an immutable release of
-# its artifact and this config (processes, http_service, services, mounts, vm,
-# deploy). `kortix apps launch --template convex` writes the `backend` block
-# below (a self-hosted Convex backend: data, functions, realtime, files) plus
-# `backend-dashboard` (admins only, the Dashboard tab of `backend`, signed in by
-# the BACKEND_ADMIN_KEY secret).
-# `kortix apps deploy` with no arguments deploys every block that has a `path`
-# or `image`, used Apps first; a block with neither (settings only) is skipped.
-# Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
-# group by team or topic when that fits better). The backend's functions live in
-# apps/backend/convex (`npx convex deploy`); its image needs no `path`.
-# A static App (files, no machine) ignores run mode, resources, env
-# and secrets. A server App runs always on (default, billed 24/7) or on demand
-# (billed while awake). Apps have no budget:
-# `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
-apps:
-  backend:
-    type: oci_image
-    image: ghcr.io/convex/convex-backend@sha256:<digest>   # pinned by the template
-    command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
-    labels: [backend]          # tags only; no behavior depends on them
-    display: { preview: none } # not listed: in the Background list (listed: true makes it a card); preview: live | none; parent
-    always_on: true
-    vm: { cpu: 1, memory_gb: 1, disk_gb: 10 }
-    mounts:                    # a volume: outlives every release and machine
-      - { source: data, destination: /convex/data, initial_size_gb: 10 }
-    http_service:              # the App's own host
-      internal_port: 3210
-      access: public           # public | app (the App's policy) | admins
-      checks: [{ type: http, path: /version }]
-    services:                  # more ports, each on <App host>--<name>
-      - { name: site, internal_port: 3211, access: public }
-  backend-dashboard:           # Convex's dashboard is a second image, so a second App
-    path: apps/backend/dashboard # Dockerfile + start.js, written by `launch`
-    type: dockerfile
-    command: [node, /kortix/start.js]
-    display: { parent: backend } # the Dashboard tab of backend, not a card of its own
-    uses: [backend]
-    always_on: false           # sleeps when idle
-    http_service: { internal_port: 6791, access: admins }
-    secrets:                   # env name → project secret identifier
-      NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY # written by `launch`; the dashboard opens signed in
-  storefront:
-    path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
-    type: static
-    spa: true
-    display: { listed: true }  # people open it: a card on the Apps page
-    uses: [backend]            # may bind to backend and mint its sign-in tokens
-  api:
-    path: apps/api
-    type: dockerfile
-    command: ["node", "server.js"]
-    port: 3000
-    readiness_path: /health
-    always_on: false           # on demand: stops when idle, wakes on request
-    processes:                 # process groups; default: one group, `app`
-      app: ""                  # "" runs the image's own command
-      worker: "node worker.js" # no service: a worker, never idle-stopped
-    deploy:
-      strategy: bluegreen      # rolling | immediate | bluegreen | canary
-      release_command: "node migrate.js"   # once per release; a failure aborts it
-    idle_timeout_seconds: 300
-    resources:
-      cpu: 1
-      memory_gb: 2
-      disk_gb: 10
-    env:
-      NODE_ENVIRONMENT: production
-    secrets:
-      DATABASE_URL: database-primary
-
-# ─── Triggers ─────────────────────────────────────────────────────
-# Each entry says what fires it and what runs: an agent prompt in a session,
-# or (`target:` / `run: { app }`) a call to an App. This example uses the
-# flat form; `kortix triggers add` writes `on:`/`run:` (see `## triggers:`).
-# Slugs must be lowercase URL-safe and unique among triggers.
-triggers:
-  - slug: daily-digest
-    name: Daily digest
-    type: cron
-    agent: kortix
-    enabled: true
-    cron: "0 0 9 * * 1-5"            # 09:00 Mon–Fri
-    timezone: America/Los_Angeles
-    prompt: |
-      Summarize yesterday's commits across the repo. Save the result to
-      notes/digest-{{ cron.scheduled_date }}.md and open a CR against main.
-
-  - slug: slack-hook
-    name: Slack handler
-    type: webhook
-    agent: kortix
-    enabled: true
-    secret_env: WEBHOOK_SLACK_SECRET   # add value via Secrets Manager
-    prompt: |
-      Slack event from {{ headers.user_agent }}.
-      User said: {{ body.text }}
-
-# ─── Agents (governance only) ─────────────────────────────────────
-agents:
-  kortix:
-    file: agents/kortix.md
-    connectors: all
-    secrets: all
-    kortix_permissions: all
-    skills: all
-  release-bot:
-    file: agents/release-bot.md
-    sandbox: ml
-    connectors: [github]
-    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
-```
-
-## `agents:` in version 2
-
-Per-agent **governance overlay**. Agent behavior (prompt, mode, model,
-tools, permissions) stays in the agent's `.md` frontmatter and body, which
-both harnesses read; OpenCode-only settings stay in `opencode.jsonc`. The manifest's `agents:`
-map declares which agents Kortix should treat as platform-launchable and
-what server-side authority each one receives. Keyed by the agent's name.
-`file` names the agent's `.md`. Without `file`, Kortix reads
-`agents/<name>.md`, then the legacy `.kortix/opencode/agents/<name>.md`.
-Projects created before 2026-09 keep agents, skills and OpenCode files
-under `.kortix/opencode/`; both layouts work.
-
-`agents:` is **required** in v2 and is **deny-by-default**: an omitted
-`connectors`/`secrets`/`skills`/`kortix_permissions` on a declared agent
-resolves to `none`, not `all`. `default_agent` is also required and
-must name a declared, enabled agent.
-
-| Key          | Notes                                                                                           |
-| ------------ | ----------------------------------------------------------------------------------------------- |
-| `file`       | Repo-relative path of the agent's `.md` (frontmatter + prompt), e.g. `agents/release-bot.md`. Default: `agents/<name>.md`. |
-| `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
-| `sandbox`    | Sandbox template for this agent. Must name an available template or `default`.                  |
-| `connectors` | Connectors the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).           |
-| `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
-| `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
-| `kortix_permissions` | Kortix permissions: what it may do to the project (project-scoped iam actions), through the CLI, the API, or git. Same shape (default: `none`). `kortix_cli` is the deprecated spelling — still accepted with a validation warning. |
-| `workspace`  | `{ project_repository: true \| false }`. `true`: new sessions check out the project repository on their own branch. `false`: no checkout, no git variables, no repository access. Omitted: `true` in v2, `false` in v3. Write it explicitly on every agent. The strings `branch` / `runtime` are deprecated aliases of `true` / `false`. |
-| `policy_sets` | `{ <connector slug>: <set name> }`. The agent's calls on that connector use the set before the base rules. No entry = base rules. A change needs `project.agent.write` + `project.connector.write` (`kortix agents scope <agent> --policy-set <slug>=<name>`). An unknown set blocks that connector for the agent (`policy_set_missing`). |
-| `apps`       | Restricted or private Apps this agent may open, by slug. `["slug", …]` \| `"all"` \| `"none"` (default: `none`). The App gate also requires `project.app.read` in the agent's effective permissions. Editable from Customize → Agents → the agent → Apps, or `kortix agents scope <agent> --apps <slug,slug>`. |
-
-```yaml
-agents:
-  release-bot:
-    file: agents/release-bot.md
-    sandbox: ml
-    connectors: [github]
-    kortix_permissions: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
-```
-
-**Grantable `kortix_permissions`** (project-scoped only — account-level admin
-actions can never be granted to an agent; `project.members.manage`,
-`project.delete` and `project.credentials.issue` are HUMAN_ONLY and never
-effective for an agent; run `kortix validate --scopes`):
-`project.read|write|delete`, `project.cr.open|merge`,
-`project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
-`project.trigger.read|create|update|delete|fire`,
-`project.connector.read|write|connections.manage`
-(channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
-
-**Resolution at session start:** every agent must be declared under
-`agents:`; an undeclared or disabled agent cannot be launched by the
-platform. `default_agent` must resolve to a declared, enabled agent —
-give it `connectors: all`, `secrets: all`, `kortix_permissions: all`,
-`skills: all` explicitly if it should keep full access. The grant
-takes effect only once a CR is merged (read from the default branch).
-The agent is the acting principal: `kortix_permissions` ∩ its ceiling role
-(IAM, bound to the agent's service account; default = every grantable
-permission) − the HUMAN_ONLY set. The launcher's role is not an input; the
-launcher only needs "may run this agent".
-
-**Discovery direction:** declaring `agents:` is server-side, declarative
-agent discovery — it is not a rule that every agent file
-must be registered. Unregistered files can exist for local experiments
-or runtime internals. Kortix product UI (chat input, triggers, channels)
-fetches the server-side registered agent list rather than querying
-the sandbox runtime directly. Model pickers similarly come from the
-server/LLM-gateway catalog rather than a sandbox-local provider list.
-
-## `connectors:`
-
-An optional list of connector definitions — the external systems agents call
-as tools (Composio apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints,
-channels). Mirrors the dashboard's Customize → Connectors. Connectors are
-project-wide visible; the only access gate is which agents may call one
-(`agents.<name>.connectors` above).
-
-```yaml
-connectors:
-  # Managed SaaS app via Composio — OAuth/API handled by Composio
-  - slug: gmail
-    provider: composio
-    name: Gmail
-    app: gmail
-
-  # Generic REST API from an OpenAPI spec, shared API-key credential
-  - slug: smartlead
-    provider: openapi
-    name: SmartLead API
-    spec: .kortix/smartlead.openapi.json     # repo path or URL
-    credential: shared
-    auth:
-      type: custom                           # bearer|basic|api_key|custom|hmac|…
-      in: query
-      name: api_key
-    policies:
-      - match: "*"                           # action path or wildcard
-        action: always_run                   # always_run|require_approval|block
-
-  # Built-in channel connector (one-click install link, e.g. Slack)
-  - slug: kortix_slack
-    provider: channel
-    platform: slack
-```
-
-| Field                   | Required | Notes                                                                                              |
-| ----------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `slug`                  | yes      | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors (and apps).                                      |
-| `provider`              | yes      | `composio` \| `openapi` \| `mcp` \| `graphql` \| `http` \| `postman` \| `channel` \| `pipedream` (legacy rollback only — never select it automatically). |
-| `app`                   | composio | The Composio toolkit slug (e.g. `gmail`, `linear`). Find one: `kortix connectors apps <query>`.      |
-| `spec`                  | openapi/postman | URL or repo-relative path to the spec.                                                       |
-| `url` + `transport`     | mcp      | MCP server URL; transport `http` (default) or `sse`.                                                |
-| `endpoint`              | graphql  | GraphQL endpoint URL.                                                                               |
-| `base_url`              | http     | HTTP base URL.                                                                                      |
-| `name`                  | no       | Human display name (also set live with `kortix connectors rename`).                                  |
-| `platform`              | channel  | `slack` \| `teams` \| `email`.                                                                       |
-| `credential`            | no       | `shared` — one server-side credential for the connector. Set the value via `kortix connectors credential` or bind a project secret (`kortix connectors secret`). Never inline in the manifest. |
-| `auth`                  | no       | How the credential is applied: `type` plus placement (`in: header\|query` + `name`).                  |
-| `policies`              | no       | Base rules: `{ match, action, conditions? }`. `match` is an action path or wildcard. They apply to callers without a policy set, and after a set's rules. |
-| `policy_sets`           | no       | v2/v3. Named rule sets: `{ <name>: { description?, policies? } }`. Name `[a-z0-9][a-z0-9_-]{0,63}`, `base` reserved, ≤ 32 sets, ≤ 200 rules each. Not on `channel` or `computer`. An agent gets one with `agents.<name>.policy_sets`. One profile per way of connecting an app (MCP vs REST); different rules per agent = a set, never a duplicate profile. |
-| `authorization_strategy`| no       | **Deprecated — do not use.** Kept on the wire and in the parser, but nothing reads it server-side. Ownership is a per-CONNECTION property (see below), not a connector setting. |
-
-Adding/removing entries: `kortix connectors add <slug> --provider <p> …` /
-`kortix connectors rm <slug>` edit the local file (add `--apply` to commit to
-main + sync instantly, like the dashboard); plain edits need `kortix ship` then
-`kortix connectors sync`.
-
-### Connector accounts: project-shared vs member-private
-
-A connector is a project-wide TOOL, but the ACCOUNT it runs as is bound when
-the human authorizes it, and that account is either:
-
-- **Project-shared** (`owner: project`) — one identity the WHOLE project acts
-  as; every member's and every agent session's calls run as it (the default
-  account for unnamed calls). This is the right choice for shared company tools.
-- **Member-private** (`owner: me`) — bound to the one person who authorized it;
-  reachable only by that person inside a private session — never by a service
-  account or an unattended automation (the `--account me` selector).
-
-**The identity that completes the OAuth is the identity the connector acts
-as.** A project-shared account must therefore be authorized under the
-project's own shared identity (a team or service account the project owns)
-— **never a personal login**. A personal login in the shared slot means every
-agent session (support, sales, engineering) silently acts AS that person:
-their inbox, their calendar, their Linear identity, their files.
-
-Rules:
-
-- Shared company tool (company inbox / calendar / Linear / Docs) →
-  `kortix connectors connect <slug> --owner project`, and the human completes
-  the OAuth **signed in as the project identity**.
-- A person's own login → `kortix connectors connect <slug> --owner me`.
-- Ambiguous? Ask the human. Never silently default a personal login into the
-  shared slot.
-- With several accounts on one connector and none named or pinned, calls are
-  DENIED (`account_required`) rather than guessed — pin one explicitly:
-  `kortix connectors accounts <slug> --default <label>`.
-
-> **History note:** the manifest once had an `authorization_strategy:
-> project|user` field that made the two owner types mutually exclusive per
-> connector. It is retired (the manifest parser still accepts it, but nothing
-> reads it) — and it was itself the cause of this bug class: a `user`-strategy
-> connector had NO connect flow anywhere, because three call sites refused
-> anything that wasn't `project`, which pushed people into authorizing
-> personal logins into the shared slot. Ownership now lives on each
-> connection row; do not reach for the old field.
-
-**`connected_as` is how you catch a mis-scoped account without guessing.** A
-label is chosen before authorization, so `label: "Support inbox"` says nothing
-about which login actually completed the OAuth. `connected_as` does: Kortix
-reads the provider's own identity (the connected account's display name, or a
-per-toolkit "who am I" call) when authorization finalizes, and shows it as a
-`CONNECTED AS` column in `kortix connectors accounts <slug>` and
-`kortix connectors connections ls`. A generic default label is replaced by that
-identity automatically; a label a human chose is left alone (rename it without
-re-authorizing with `kortix connectors connections rename <connection-id>
-<label…>`). Read `connected_as` on the project-shared account before you trust
-it — if it shows a person's email instead of the project identity, that
-account is mis-scoped and needs the fix below.
-
-The invariant that matters, now enforced per row: **an unattended automation
-(trigger, cron, webhook, any service-account session) can NEVER run as a
-member-private account** — a `member`-owned connection is reachable only by
-its owner inside a private session, and never by a service account. So shared
-automations use the project-shared account, which is exactly why that slot
-must hold the project identity and not someone's personal login.
-
-**Fixing a connector mis-scoped to a personal login** (find it by reading
-`CONNECTED AS` in `kortix connectors accounts <slug>` and the manage-gated
-roster `kortix connectors connections ls --all`):
-
-1. Mint a fresh shared link — `kortix connectors connect <slug> --owner
-   project` — and have a human complete the OAuth **as the project identity**.
-2. Pin it: `kortix connectors accounts <slug> --default <label>`.
-3. Revoke the stray personal binding: `kortix connectors connections revoke
-   <connection-id>`.
-4. Optionally re-add the person's own account with `--owner me` so they keep
-   private access from their own sessions.
-
-There is no in-place owner change — an account's owner is fixed at
-authorization. Re-scoping always means: authorize-new → re-pin → revoke-old.
-
-## Schema versioning
-
-`kortix_version` is the schema version. Version 2 is YAML-only and requires
-`default_agent` and `agents`.
-
-A manifest declaring a version higher than
-the platform knows about is rejected outright — the platform won't
-silently misread future fields.
-
-When the platform writes the manifest back (after a dashboard edit),
-it ensures `kortix_version` is the first key, so the file is
-self-describing at a glance.
-
-## What's parsed where
-
-| Surface                | What it reads                                                       |
-| ---------------------- | ------------------------------------------------------------------- |
-| Trigger sweep          | `triggers:`                                                          |
-| Sandbox builder        | `sandbox:`                                                           |
-| Sandbox runtime        | v2 `runtime:`, `opencode:`, `pi:`, `harnesses:`                      |
-| Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
-| Apps (API sync + CLI)  | `apps:` (App settings apply on sync; release config at deploy)        |
-| Session token mint     | `agents:` (per-agent connectors/secrets/skills/apps/kortix_permissions scope) |
-| Connector catalog      | `connectors:` (definitions; account ownership is cloud-side)         |
-| Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
-| Dashboard UI           | All of the above + `project:` + the raw manifest                     |
-
-Every surface above reads the MERGED manifest when the root declares
-`imports:` (see below). `sandbox:`, `opencode:`, `env:`, `project:`,
-`default_agent`, and `runtime` are root-only keys.
-
-Unknown top-level keys are ignored — safe to add your own metadata,
-but the platform won't react to it.
-
-## `imports:` — split the manifest across files
-
-Use it when `kortix.yaml` outgrows one screen (many triggers with long
-prompts, one file per team or agent group). Do not dump 30 triggers into
-the root file.
-
-```yaml
-# kortix.yaml
-kortix_version: 2
-default_agent: kortix
-imports:
-  - triggers/                # a directory: every .yaml/.yml below it, any depth
-  - agents.yaml              # a single file
-agents:
-  kortix:
-    connectors: all
-```
-
-```yaml
-# triggers/reports/weekly.yaml
-triggers:
-  - slug: weekly-report
-    type: cron
-    agent: galileo
-    cron: "0 0 15 * * 0"
-    prompt: |-
-      Build the weekly report.
-```
-
-The platform merges the root and every import into one manifest before
-it validates, sweeps triggers, or mints agent grants. A trigger in one
-file can name an agent declared in another.
-
-Rules:
-
-- Paths are relative to the repository root. No `..`, no absolute
-  paths, no globs.
-- A directory import takes every `.yaml`/`.yml` below it, sorted by path.
-- An imported file declares only `triggers`, `connectors`, `agents`,
-  `apps`, and `imports` (nesting: max 8 levels, 200 files). Every other
-  key stays in `kortix.yaml`; an imported file that sets one is an error.
-- One name, one file. The same trigger/connector slug or agent/app name
-  in two files is an error naming both files. Nothing overrides silently.
-- A broken import fails the WHOLE manifest, like a YAML syntax error.
-  Run `kortix validate` before `kortix ship`; it checks the merged result.
-- Dashboard, API, and `kortix triggers enable|disable|rm` edits are
-  written to the file that declares the entry. A new entry created
-  through the API lands in `kortix.yaml`; move it by hand if you want it
-  in an imported file.
-
-## `project:`
-
-Project metadata for the dashboard.
-
-| Key           | Required | Notes                                |
-| ------------- | -------- | ------------------------------------ |
-| `name`        | yes      | Display name. Shown in the UI.       |
-| `description` | no       | One-liner shown beside the name.     |
-
-## `env:`
-
-Declares the env vars your sessions need. The values themselves live
-in the **Kortix Secrets Manager** — never inline.
-
-| Key         | Type        | Notes                                                                                    |
-| ----------- | ----------- | ---------------------------------------------------------------------------------------- |
-| `required`  | `string[]`  | Advisory list — surfaced in the dashboard. Not enforced at session-start today.          |
-| `optional`  | `string[]`  | Available to sessions if set; absence is fine.                                           |
-
-**Heads-up on enforcement:** the dashboard uses `required` to nag
-the user about secrets to set, but the session bootstrap doesn't
-currently block on missing values. Treat `required` as a contract
-with the user, not the platform.
-
-**Name validation in the manifest** is permissive: items must match
-`^[A-Z_][A-Z0-9_]*$` (no length cap). The Secrets Manager API
-itself caps secret names at 64 chars (`^[A-Z_][A-Z0-9_]{0,63}$`) —
-so a long name in the manifest will be accepted, but the user can't
-actually create the matching secret. Keep names ≤ 64 chars.
-
-**`KORTIX_*` is only reserved at the Secrets Manager surface**, not
-at manifest parse time. The dashboard rejects creating secrets with
-that prefix, but you can list `KORTIX_FOO` in `env:` without an
-error from the parser. Don't — it'll just never have a value.
-
-## `sandbox:`
-
-Sandbox templates and the project default. The whole section is optional.
-Omission selects the platform `default` template.
-
-| Key | Default | Notes |
-| --- | --- | --- |
-| `default` | `default` | Declared template slug or reserved platform `default`. |
-| `templates` | `[]` | Named image or Dockerfile templates. |
-
-### `sandbox.templates`
-
-Optional named alternate sandbox images/Dockerfiles a trigger or
-session can select instead of the project default.
-
-```yaml
-sandbox:
-  templates:
-    - slug: gpu-worker
-      name: GPU worker
-      dockerfile: Dockerfile.gpu
-      cpu: 4
-      memory: 16
-    - slug: browser-test
-      name: Browser testing
-      image: mcr.microsoft.com/playwright:v1.45.0
-```
-
-Each entry needs exactly one of `image` or `dockerfile`, never both.
-`slug` may not be `"default"` (that's reserved for the top-level
-`sandbox:` config).
-
-Session template precedence is explicit `sandbox_slug`, agent `sandbox`,
-project `sandbox.default`, then platform `default`. Triggers, schedules, and
-channels use the target agent's template.
-
-## `opencode:` in version 2
-
-Where the OpenCode runtime config lives. **Optional**, with a default.
-
-| Key          | Default              | Notes                                                                            |
-| ------------ | --------------------- | -------------------------------------------------------------------------------- |
-| `config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Repo-relative dir. When omitted, the first candidate that has an `opencode.json[c]` wins. |
-
-The agent daemon launches `opencode serve` with
-`OPENCODE_CONFIG_DIR=<config_dir>`. OpenCode reads its own files from that
-folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents,
-skills and harness-neutral tools (top-level `tools:`) do not live there. Kortix compiles agents from `agents/` and
-`kortix.yaml` and hands them to the harness. Every harness loads the
-skills in `skills/`.
-
-`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
-providers, model/provider settings, permissions, and default runtime behavior.
-Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
-Kortix-side decision of which agents are launchable/authorized by the platform.
-
-## `runtime:` in version 2
-
-**Deprecated.** Root-only. It selects nothing: every new session runs pi,
-inside the sandbox daemon process. `runtime: opencode` validates with a
-deprecation warning; any value other than `opencode` or `pi` fails
-`kortix validate`. Remove the line. `../pi/overview.md` lists what pi supports.
-
-## `pi:` in version 2
-
-Where the pi config lives. **Optional**, with a default.
-
-| Key          | Default                         | Notes |
-| ------------ | ------------------------------- | ----- |
-| `config_dir` | `harnesses/pi`, then `.kortix/pi` | Repo-relative dir. An absolute path or a `..` segment is ignored. |
-
-pi reads `extensions/`, `prompts/`, `skills/` and `settings.json` from that
-folder (`../pi/overview.md`). An OpenCode session does not read it.
-
-## `harnesses:` in version 2
-
-Per-harness packages. **Optional.**
-
-```yaml
-harnesses:
-  pi:
-    packages:
-      - npm:pi-web-access@0.30.0            # the pi.dev install line, with an exact version
-      - source: npm:pi-mcp-adapter@2.36.0
-        extensions: ["extensions/*.ts"]     # load only these files of the package
-        skills: []                          # load none of its skills
-      - ./extensions/audit.ts               # one extension file, anywhere in this repository
-agents:
-  researcher:
-    harnesses:
-      pi:
-        packages: [npm:@juicesharp/rpiv-todo@2.11.0]   # this agent only
-  reviewer:
-    harnesses:
-      pi:
-        exclude: [pi-web-access]                       # this agent does not load it
-```
-
-| Key | Where | Notes |
-| --- | --- | --- |
-| `harnesses.pi.packages` | top level | pi packages every pi session loads. At most 20 entries. |
-| `agents.<name>.harnesses.pi.packages` | agent | Packages for this agent, added to the top-level list. An entry for a package the top level also lists replaces it for this agent. |
-| `agents.<name>.harnesses.pi.exclude` | agent | Top-level packages this agent does not load: a package name (`pi-web-access`, `@scope/name`) or a `./` path as the top level writes it. Never a version. |
-| `harnesses.opencode.plugins` | top level and agent | File names in the OpenCode `plugins/` directory an agent loads. An agent drops one with `exclude`. With no selection, OpenCode discovers every plugin. |
-
-A `packages` entry is `npm:<name>@<x.y.z>` (an exact version), a `./<path>`
-in this repository, or `{ source, extensions, skills, prompts, themes }` with
-pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
-version range, a missing version or a Git source fails validation. Kortix
-builds each distinct package list once, when the change request merges.
-
-A `./` path to a `.ts` or `.js` file is one pi extension. It can live anywhere
-in the repository, so a project needs no `harnesses/pi/` folder. It loads from
-the session's config release, as a project tool does, and a release that
-changes a file in its folder restarts the pi runtime. The package list itself
-is read when the session starts: a running session keeps the list it started
-with.
-
-## `tools:` in version 2
-
-The tools a session gets, by name. **Optional.** `references/kortix/tools.md`
-has the module contract and one checklist per task.
-
-| Value | Meaning |
+| Key | Holds |
 | --- | --- |
-| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
-| A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
+| `kortix_version` | `3`. Required. |
+| `default_agent` | The agent a session or trigger runs when it names none. Required. A declared, enabled agent that is not `mode: subagent`. |
+| `project` | `name`, `description`: shown in the dashboard. |
+| `imports` | Repository paths of more YAML files or folders (below). |
+| `env` | `required` and `optional` secret names. Values live in Kortix, never here. |
+| `sandbox` | `default` template slug and `templates` (below). |
+| `skills` | Registry: name → folder that holds `<name>/SKILL.md`. |
+| `tools` | Registry: name → `.ts`/`.js` module (`tools.md`). |
+| `commands` | Registry: name → `{ description, prompt \| prompt_file }`. |
+| `extensions` | Registry: name → `{ pi: <npm pin or repo path> }` (`../pi.md`). |
+| `connectors` | List of connectors (the `kortix-connectors` skill). |
+| `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
+| `triggers` | List of triggers (below). |
+| `policy`, `policies`, `approvals` | Connector call policies and how long a held call waits (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). |
+| `agents` | Map of agent name → agent block. At least one. |
 
-- No `tools:` key in the root file or any imported file: every session gets
-  all five Kortix tools.
-- A `tools:` key, even an empty one: sessions get only the Kortix tools it
-  lists. Delete a `kortix:<name>` line to remove that tool from every agent.
-- `kortix tools ls` lists what a session gets; `kortix tools eject <name>`
-  copies a Kortix tool to `tools/<name>.ts` for the project to change.
-- `kortix validate` errors on `kortix:<name>` under another key or for an
-  unknown name, and warns when the key lists no Kortix tool or an agent's
-  `tools` names a Kortix tool the project does not load.
+## Agent block
 
-## kortix.yaml owns what it declares
+| Key | Value |
+| --- | --- |
+| `description` | What the agent does. The caller of `task` reads it. |
+| `mode` | `primary`, `subagent` or `all`. A subagent target needs `subagent` or `all`. |
+| `prompt` / `prompt_file` | The system prompt inline, or a repository `.md` path. Not both. |
+| `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
+| `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
+| `color`, `hidden`, `options` | Display color, hide from pickers, provider options. |
+| `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
+| `enabled` | `false`: no session can start with this agent. Default `true`. |
+| `codemode` | `on` (default), `only`, `off`. |
+| `tools` | `all` (default), `none`, a list, or `{ exclude: [names] }`. |
+| `skills`, `subagents`, `commands`, `extensions` | `all`, `none` (default) or registered names. Kortix skills count as registered. |
+| `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
+| `policy_sets` | Connector slug → policy set name for this agent. |
+| `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
+| `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
+| `sandbox` | A template slug, or `default`. |
 
-Every setting this file can declare is owned by it. The dashboard, the API,
-the SDK and the CLI commit their edits here (triggers, agents, skills,
-connectors including `auth.secret`, `default_agent`, `project.name`, and an
-App's `resources`, `idle_timeout_seconds`, `always_on`, `labels`, `display`,
-`uses`); a push that edits the file applies on the next sync, without a
-deploy. A sandbox template declared here can only be changed here (the API
-answers `409 template_declared_in_manifest`). So: to change a declared
-setting, edit kortix.yaml (or use the CLI/API, which commit to it) — never
-expect a database-only change to stick. Details:
+## Registries
 
-- An App write adds or updates the `apps.<slug>` block first; a refused
-  commit changes nothing. Deleting an App removes its block and every `uses`
-  or `display.parent` that names it.
-- A changed `project.name` renames the project on the next sync.
-- A declared sandbox template's `entrypoint` is applied by the sync.
-- An App's release config (`env`, `secrets`, `processes`, `http_service`,
-  `services`, `mounts`, `vm`, `deploy`) applies at the next deploy.
+- A name is lowercase words joined by `-`, 64 characters at most (tools:
+  snake_case). A `kortix-` skill name is reserved.
+- A skill folder must end in the skill's name: `skills: { triage: skills/triage }`.
+- A command sets exactly one of `prompt` or `prompt_file`. `$ARGUMENTS` and
+  `$1`, `$2`, … take the arguments. A command runs on the agent that
+  enables it.
+- An extension sets `pi`: `"npm:<package>@<x.y.z>"`, a repository path, or
+  `{ source, extensions, skills, prompts, themes }` to load part of a package.
+- A skill, command or extension reaches only the agents that grant it. A
+  tool reaches every agent whose `tools` allows it (default `all`).
 
-## `triggers:`
+## kortix_permissions
 
-A list. Each entry is a trigger: `on:` says what fires it, `run:` says what
-runs. By default `run:` prompts an agent in a fresh session. Triggers are
-sorted alphabetically by slug in the parsed output — UI ordering is stable,
-not authoring-order.
+What an agent may do to the project through the CLI, the API and Git.
+
+- `kortix validate --scopes` prints every grantable value. `all` or `"*"`
+  is every value. Account actions (`member.*`, `billing.*`) are never
+  grantable.
+- Your effective grant is your `kortix_permissions` within your ceiling role.
+  `project.read` in your own project is always granted.
+  `project.credentials.issue` is for people only.
+- Old names (`project.cr.*`, `project.customize.*`) still validate and are
+  rewritten to the current values. Write the current values.
+- You grant only what you hold, in the agent editor, a scope route or a
+  merged CR.
+
+| `403` code | Meaning | Do |
+| --- | --- | --- |
+| `agent_scope_insufficient` | The action is not in your `kortix_permissions`. | Propose a CR that adds it. |
+| `agent_ceiling_insufficient` | Your ceiling role does not allow it. | Ask an admin. |
+| `agent_human_only_action` | Only a person may do it. | Ask the user. |
+| `agent_not_accessible` | The person may not run that agent. | Ask the user. |
+| `agent_grant_escalation` | You tried to grant more than you hold. | Ask the user to grant it. |
+
+`kortix whoami --token-only` prints your grant. It says `none` right after a
+`kortix.yaml` change? The change broke your grant: revert it first.
+
+## imports
+
+```yaml
+imports:
+  - triggers/          # every .yaml/.yml below it, any depth, sorted by path
+  - agents.yaml        # one file
+```
+
+- Paths are relative to the repository root: no `..`, no absolute path, no
+  glob. At most 8 levels and 200 files.
+- An imported file declares only `triggers`, `connectors`, `agents`, `apps`,
+  `tools`, `skills`, `commands`, `extensions` and `imports`.
+- One name lives in one file. A duplicate fails the whole manifest.
+- A dashboard, CLI or API edit lands in the file that declares the entry;
+  a new entry lands in `kortix.yaml`.
+
+## env
+
+`required` and `optional` are lists of secret names (`^[A-Z_][A-Z0-9_]*$`,
+at most 64 characters, no `KORTIX_` prefix). `required` is advisory: a
+session starts without the value. Set a value with `kortix secrets set` or a
+link (`credentials-and-setup-links.md`).
+
+## sandbox
+
+```yaml
+sandbox:
+  default: python          # every agent; agents.<name>.sandbox overrides
+  templates:
+    - slug: python
+      name: Python 3.12
+      image: python:3.12-slim
+      cpu: 2               # cores
+      memory: 4            # GiB
+    - slug: ml
+      name: ML development
+      dockerfile: Dockerfile.ml
+      disk: 50             # GiB
+```
+
+- Each template sets exactly one of `image` or `dockerfile`. `default` is a
+  reserved slug: the platform image.
+- `kortix validate` lints each Dockerfile: no `COPY` from the repository, no
+  `RUN` heredoc, a Debian-family base.
+- A session uses the first that is set: an explicit template, the agent's
+  `sandbox`, `sandbox.default`, the platform `default`.
+- Put tools every session needs here. A package installed in a session can
+  be gone when the session reopens.
+
+## triggers
 
 ```yaml
 triggers:
   - slug: digest
-    on:  { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }   # or every: 5m, or at: <ISO-8601>
-    run: { agent: writer, prompt: "Write the digest" }
-  - slug: pr-review
-    on:  { event: GITHUB_PULL_REQUEST_EVENT, connector: github }   # a connector event
-    run: { prompt: "Review {{ event.data.pull_request.title }}" }
+    on: { cron: "0 0 9 * * 1-5", timezone: Europe/Berlin }
+    run: { agent: writer, prompt: "Write the digest." }
+  - slug: deploy-hook
+    on: { webhook: { secret: DEPLOY_HOOK_SECRET } }
+    run: { prompt: "Check the deploy {{ body.id }}." }
   - slug: nightly-sync
-    on:  { cron: "0 0 2 * * *" }
-    run: { app: crm-sync, path: /sync }          # calls an App: no agent, no session
+    on: { every: 24h }
+    run: { app: crm-sync, path: /sync }
   - slug: handle-reply
-    on:  { event: reply.received, app: inbox-poller }   # an App event, posted by your App
-    run: { prompt: "Answer {{ event.data.subject }}" }
+    on: { event: reply.received, app: inbox-poller }
+    run: { prompt: "Answer {{ event.data.subject }}." }
 ```
 
-The flat fields below (`type`, `cron`, `prompt`, …) are the same trigger in
-another form, and stay valid. `kortix triggers add`, the web app and the API
-write new triggers as `on:`/`run:`; an edit keeps the shape the entry has.
-`type` next to `on` is an error, an unknown key inside `on`/`run` is an error,
-and `run:` takes `app` or `prompt`, never both.
+| `on:` | Fires |
+| --- | --- |
+| `cron` (+ `timezone`, default UTC) | At each slot of a 6-field croner expression, at most once a minute. |
+| `every` | Each fixed period: `5m`, `2h`; at least `60s`. |
+| `at` | Once, at an ISO-8601 instant. |
+| `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/projects/<project_id>/<slug>`. |
+| `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → App events). |
 
-### `on:` and `run:` keys
+| `run:` | Does |
+| --- | --- |
+| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | Prompts an agent session. `agent` defaults to `default_agent`. |
+| `app` (+ `path` default `/`, `method` `POST` or `GET`, `payload`) | Calls the App. No session, no model. |
 
-| `on:` | Fires when | Flat equivalent |
-| --- | --- | --- |
-| `cron` + `timezone` | a 6-field schedule slot arrives | `type: cron`, `cron`, `timezone` |
-| `every: 5m` | a fixed period passes (at least `60s`) | `type: cron`, top-level `every` |
-| `at: <ISO-8601>` | once, at that instant | `type: cron`, `run_at` |
-| `webhook: { secret: <NAME> }` | a signed `POST` reaches the trigger URL | `type: webhook`, `secret_env` |
-| `event` + `connector` (+ `account`, `source`, `config`) | a connector event (Composio, or Kortix checks itself) | `type: event` |
-| `event: <name>` or `"*"` + `app: <slug>` | one of your Apps posts that event | `type: app`, `app` (a name becomes `filter: { event.name: <name> }`) |
+- Other fields: `slug` (required, `[a-z0-9][a-z0-9_-]{0,127}`, unique across
+  all files), `name`, `enabled` (default `true`), `filter` (dotted path →
+  value that must match).
+- `session`: `fresh` (default, a new session each fire), `reuse` (one
+  long-lived session), `keyed` (with `session_key`), `pinned` (with
+  `session_id`).
+- `run:` takes `prompt` or `app`, never both.
+- Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
+  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
+  secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
+  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) and sign
+  `<timestamp>.<body>` to stop replay. Answers: `202` queued, `200` skipped
+  (paused or capped), `401` for every miss before authentication (no such
+  enabled webhook trigger, bad signature), `402` no usable model.
+- `kortix triggers pause` stops every trigger of the project; `resume`
+  starts them again. `enabled: false` stops one.
 
-| `run:` | What a fire does | Flat equivalent |
-| --- | --- | --- |
-| `prompt` (+ `agent`, `model`, `session`, `session_key`, `session_id`) | prompts an agent session | top-level `prompt`, `agent`, `model`, `session_mode`, … |
-| `app` (+ `path`, `method`, `payload`) | calls one of your Apps; no session, no model | `target: { app, path, method, payload }` |
+Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 
-### Common fields
+| Fire | Variables |
+| --- | --- |
+| Every fire | `trigger.slug`, `trigger.type` |
+| Schedule | `cron.schedule`, `cron.timezone`, `cron.scheduled_for`, `cron.last_scheduled_for` (empty on the first fire). No `fired_at`. |
+| Webhook | `fired_at`, `body.*`, `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
+| App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
 
-| Field        | Required | Type    | Default     | Notes                                                          |
-| ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
-| `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
-| `type`       | yes (flat form) | string | — | `"cron"`, `"webhook"`, `"event"` (connector event) or `"app"` (App event). `type: monitor` is refused (`MONITOR_REMOVED`). |
-| `prompt`     | yes, unless `target` calls an App | string | — | Mustache-style template.                                      |
-| `name`       | no       | string  | `slug`      | Human label.                                                   |
-| `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
-| `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
-| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire), `"reuse"` (the same long-lived session), `"pinned"` (with `session_id`) or `"keyed"` (with `session_key`). In the `on:`/`run:` form it is `run.session`. See `<scheduling>` in this skill's SKILL.md for when to pick each. |
-| `model`      | no       | string  | the default model | A model id for this trigger's sessions.                 |
-| `filter`     | no       | map     | —           | Dotted path → value that must match (see Webhook-only fields). |
-| `target`     | no       | map     | —           | `{ app, path, method, payload }`: call an App instead of an agent (see App target below). |
+## Edits from the dashboard and the CLI
 
-The parser accepts only the canonical trigger field names in these tables.
-
-**Slug uniqueness is per-section.** A trigger and an app may share
-a slug; two triggers may not.
-
-### Cron-only fields
-
-| Field      | Required | Type    | Default | Notes                                                       |
-| ---------- | -------- | ------- | ------- | ----------------------------------------------------------- |
-| `cron`     | one of `cron`, `every`, `run_at` | string | — | 6-field croner expression: `second minute hour day month weekday`. |
-| `every`    | one of `cron`, `every`, `run_at` | string | — | Fixed period such as `5m` or `2h`; at least `60s`.          |
-| `run_at`   | one of `cron`, `every`, `run_at` | string | — | ISO-8601 instant: fires once.                               |
-| `timezone` | no       | string  | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`.                    |
-
-The platform polls every 60 s by default
-(`KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`), so sub-minute precision is
-best-effort.
-
-### Webhook-only fields
-
-| Field        | Required | Type    | Notes                                                                                  |
-| ------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
-| `secret_env` | yes      | string  | Name of a `project_secrets` entry holding the HMAC secret. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
-
-Webhooks fire on signed POSTs to:
-
-```
-POST /v1/webhooks/projects/<project_id>/<slug>
-```
-
-#### Signature
-
-- Primary header: `X-Kortix-Signature: sha256=<hmac>`. The `sha256=`
-  prefix is optional — the receiver strips it if present.
-- GitHub-compatible: `X-Hub-Signature-256` is also accepted, so
-  GitHub webhooks point straight at this URL with no adapter.
-- Algorithm: HMAC-SHA256 over the **raw** request body using the
-  secret named by `secret_env`.
-- Format: exactly 64 hex chars (mixed case accepted).
-- Compared with constant-time `timingSafeEqual`.
-
-#### Response codes
-
-| Status | Meaning                                                  |
-| ------ | -------------------------------------------------------- |
-| 200    | Signature valid, session queued.                          |
-| 401    | Signature missing or mismatched.                          |
-| 404    | Trigger not found, disabled, or not a webhook.           |
-| 409    | `secret_env` value is not configured in Secrets Manager. |
-
-### Event-only fields (connector events)
-
-An event trigger runs when something happens in a connected app. Kortix
-subscribes to the event for you: no `secret_env`, no signature. It needs the
-project flag `event_triggers` (**Composio event triggers**), off by default:
-ask the user to run `kortix projects features enable event_triggers`.
-
-| Field       | Required | Type   | Notes                                                                                           |
-| ----------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `connector` | yes      | string | Slug of a connector (profile) under `connectors:`.                                              |
-| `account`   | no       | string | Label of one shared account of that connector. Omit it to use the connector's default shared account. Set it only when the connector has several shared accounts. Valid on `type: event` only. An unknown label gives status `needs_connection`, not an error. |
-| `event`     | yes      | string | Provider event type, e.g. `GITHUB_PULL_REQUEST_CREATED`. List with `kortix triggers events --connector <slug>`. |
-| `config`    | no       | map    | Settings of the event (e.g. `repo`). Fields and descriptions: `kortix triggers events --connector <slug> --event <TYPE>`. |
-| `source`    | no       | string | `composio` (default: the connector's provider) or `mcp` (Kortix checks the app itself). |
-| `filter`    | no       | map    | Same guard a webhook uses, e.g. `"event.data.draft": "false"`. Every entry must match.          |
-
-```yaml
-triggers:
-  - slug: pr-review
-    type: event
-    connector: github-work # the connector profile
-    account: acme-bot # optional: a shared account of that profile
-    event: GITHUB_PULL_REQUEST_CREATED
-    config: { repo: acme/api }
-    session_mode: fresh
-    filter:
-      "event.data.draft": "false"
-    prompt: |
-      Review {{ event.data.html_url }}
-```
-
-An event trigger takes none of `cron`, `every`, `run_at`, `timezone`, `secret_env`.
-
-### App event fields
-
-An App event trigger runs when one of your Apps posts an event. No feature
-flag. `on: { event: <name> | "*", app: <slug> }`; flat: `type: app` + `app:`
-(a specific name becomes `filter: { event.name: <name> }`; `"*"` matches every
-name). The App posts with `KORTIX_APP_TOKEN` to `KORTIX_APP_EVENTS_URL`; the
-format, limits and errors are in `scheduling.md` → App events.
-
-```yaml
-triggers:
-  - slug: handle-reply
-    on:  { event: reply.received, app: inbox-poller }
-    run: { prompt: "Answer {{ event.data.subject }}" }
-```
-
-### App target
-
-`run: { app, path, method, payload }` (flat `target:`) calls an App instead
-of an agent: no session, no model. `path` defaults to `/`, `method` is `POST`
-(default) or `GET`. Kortix wakes an on-demand App and sends the request; a
-`POST` body is `payload`, else the fire's payload, as JSON. Headers:
-`x-kortix-trigger`, `x-kortix-trigger-source`, `x-kortix-delivery-id`. A `2xx`
-counts as fired; any other status fails the run with
-`App "<slug>" answered <status> on <METHOD> <path>` (`429` and `5xx` are
-retried); a `3xx` is never followed.
-
-```yaml
-triggers:
-  - slug: poll-inbox
-    on:  { every: 5m }
-    run: { app: inbox-poller, path: /tick }
-```
-
-**Subscription status** (`kortix triggers ls` / `info`):
-
-| Status | Word in the CLI | Meaning | Fix |
-| --- | --- | --- | --- |
-| `active` | `live` | The subscription exists. Events fire the trigger. | None. |
-| `pending` | `pending` | Declared; the subscription is not created yet. | Wait, then `kortix triggers info <slug>`. If it stays, save the trigger again. |
-| `needs_connection` | `needs connection` | The connector has no usable project-shared account. | A person opens the link from `kortix connectors connect <slug> --owner project`. |
-| `error` | `error` | The subscription failed or the provider disabled it. | Read the error text; fix with `kortix triggers set <slug> --config <k>=<v>`. |
-
-Common `error` texts: "This account is shared with specific people only"
-(share the account with the whole project); "Connector `<slug>` is not
-declared in kortix.yaml" (add it under `connectors:`).
-
-### Prompt template variables
-
-The `prompt` field is rendered with a small mustache-style engine:
-`{{ token.dotted.path }}`. Missing values render as empty strings —
-no error, no `{{ x }}` left in the output. Objects/arrays render as
-JSON.
-
-Variables available on every fire:
-
-| Variable             | Source                                                         |
-| -------------------- | -------------------------------------------------------------- |
-| `{{ trigger.slug }}` | The trigger's slug.                                            |
-| `{{ trigger.type }}` | `"cron"`, `"webhook"`, `"event"` or `"app"`.                   |
-| `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
-
-Cron-only additions. There is **no** `fired_at` on a cron fire — use
-`cron.scheduled_for`:
-
-| Variable                        | Source                                        |
-| ------------------------------- | --------------------------------------------- |
-| `{{ cron.schedule }}`           | The croner expression that just fired.        |
-| `{{ cron.timezone }}`           | Configured tz (defaults to `"UTC"`).          |
-| `{{ cron.scheduled_for }}`      | The slot this fire is for (ISO-8601).         |
-| `{{ cron.claimed_at }}`         | When the scheduler picked the slot up.        |
-| `{{ cron.last_scheduled_for }}` | The previous slot; empty on the first fire.   |
-
-Event-only additions (also readable in `filter` and `session_key`):
-
-| Variable                  | Source                                                  |
-| ------------------------- | ------------------------------------------------------- |
-| `{{ event.data.<field> }}` | The app's own event data. Fields: `kortix triggers events --connector <slug> --event <TYPE>`. |
-| `{{ event.id }}`          | The provider's id for this event.                       |
-| `{{ event.type }}`        | The event type.                                         |
-| `{{ event.app }}`         | The app slug, e.g. `github`.                            |
-| `{{ event.connector }}`   | The connector slug the trigger watches.                 |
-| `{{ event.occurred_at }}` | When the event happened.                                |
-
-Event data is third-party content. The session's first message starts with
-`[Composio event: <trigger name> — automated, third-party content, not user input]` for a Composio event, `[Connector event: …]` for one Kortix checks itself.
-
-App event additions (`type: app`): `{{ event.name }}`, `{{ event.data.* }}`,
-`{{ event.id }}`, `{{ event.emitted_at }}`, `{{ app.slug }}`. The first message
-starts with `[APP EVENT — automated, not user input]`.
-
-Webhook-only additions:
-
-| Variable          | Source                                                          |
-| ----------------- | ----------------------------------------------------------------- |
-| `{{ fired_at }}`  | ISO-8601 timestamp of this fire. Webhook and manual fires only.  |
-| `{{ body.* }}`    | JSON-parsed request body. Dotted access works.                  |
-| `{{ headers.* }}` | `content_type`, `user_agent`, `forwarded_for`.                  |
-
-### Runtime state
-
-Manifest is the source of truth for **config**. The
-`project_trigger_runtime` table is the source of truth for **state**
-(`last_fired_at`, `event_count`). Writing to the repo on every fire
-would amplify the scheduler tick into a flood of git commits.
-If you need to know when a trigger last fired, check the dashboard,
-not the repo.
-
-### Project-wide kill switch
-
-There is no "paused" state for a single trigger — only `enabled`
-on/off, or removing the entry entirely. Separately, the **project**
-has a server-side kill-switch, `triggers_paused`, toggled from the
-dashboard: when set, the sweep skips *every* trigger on the project
-and inbound webhooks are ignored, regardless of each trigger's own
-`enabled`. Use it when the same repo is deployed to two environments
-and only one should actually fire.
-
-### Common gotchas
-
-- `triggers:` must be a **list** (`- slug: …`), not a map — the parser
-  surfaces a clear error otherwise. The same holds in an imported file.
-- A slug must be unique across `kortix.yaml` AND every imported file. A
-  duplicate is not a per-entry error: it fails the whole manifest, and no
-  trigger fires until it is fixed. `kortix validate` names both files.
-- Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
-- A webhook trigger without `secret_env` is rejected.
-- A cron trigger without a `cron` expression is rejected.
-- An event trigger without `connector` or `event` is rejected. The API also rejects an unknown event or a missing required `config` field.
-- `type: monitor` is refused (`MONITOR_REMOVED`): replace a monitor with an
-  App that posts App events.
-- `type` next to `on`, an unknown key inside `on`/`run`, or a `run` with both
-  `app` and `prompt` is rejected.
-- Bad entries surface in `errors` next to the good ones — they don't
-  break the whole file.
-
-## Secrets
-
-Per-project, encrypted at rest. The platform uses **AES-256-GCM** with
-**HKDF-derived per-project keys** rooted in the platform's
-`API_KEY_SECRET`. Stored in the `project_secrets` table; **never
-inline in the repo**.
-
-### Flow
-
-1. Declare the secret name under `env:`:
-   ```yaml
-   env:
-     required:
-       - DATABASE_URL
-     optional:
-       - STRIPE_API_KEY
-       - WEBHOOK_SLACK_SECRET
-   ```
-2. Set the value in the Kortix Secrets Manager (dashboard).
-3. When a session boots, the platform decrypts every secret on the
-   project and injects them as plain env vars into the sandbox.
-4. Your agent code reads them like any other env var.
-
-### Rules
-
-- Names in the Secrets Manager match `^[A-Z_][A-Z0-9_]{0,63}$`.
-- `KORTIX_*` is reserved **at the Secrets Manager surface** — the
-  CRUD endpoint rejects it. The manifest parser does not enforce
-  this; declaring `KORTIX_FOO` in `env:` is accepted but no matching
-  secret can be created.
-- Webhook triggers reference signing secrets by env-var name only
-  (`secret_env: WEBHOOK_FOO_SECRET`). The value is resolved at
-  fire-time — the manifest never sees the plaintext.
-- Mid-session rotation: secrets come in at sandbox-create time.
-  Rotating a key in the dashboard takes effect on the **next**
-  session.
-
-## Editing the manifest
-
-The manifest round-trips through the dashboard. `kortix triggers add`, the
-web app and the API write new triggers as `on:`/`run:`; an edit keeps the
-shape the entry already has. Write new entries as `on:`/`run:`, and keep an
-existing flat entry flat when you edit it. This avoids needless diffs when
-the user later edits the same trigger from the UI.
-
-If you add a new trigger and don't yet have a value for `secret_env`,
-declare it in `env.optional` so it shows up in the Secrets Manager,
-and leave the trigger `enabled: false` until the user sets the value.
+`kortix.yaml` owns what it declares. The web app, the API and the CLI
+(`--apply`) commit their edits to it on the default branch. A push that
+edits the file applies on the next sync. To change a declared setting,
+change the file or use a command that commits to it. Keep an entry's shape
+when you edit it: an `on:`/`run:` entry stays `on:`/`run:`.

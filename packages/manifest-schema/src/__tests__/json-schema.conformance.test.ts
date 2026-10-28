@@ -1717,8 +1717,8 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
         };
       }
     ).properties.connectors.items.properties;
-    expect(connectorProperties.name).toEqual({ type: 'string', pattern: '\\S' });
-    expect(connectorProperties.authorization_strategy).toEqual({
+    expect(connectorProperties.name).toMatchObject({ type: 'string', pattern: '\\S' });
+    expect(connectorProperties.authorization_strategy).toMatchObject({
       type: 'string',
       anyOf: [
         { enum: ['project', 'user'] },

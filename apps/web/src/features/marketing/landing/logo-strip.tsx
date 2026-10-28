@@ -31,8 +31,8 @@ type IconKey = keyof typeof ROW_ICONS;
 
 /** Models Kortix can run, and a sample of the tools it connects to. These are
  *  capabilities we actually ship — not customer logos, which we neither name
- *  nor have permission to show. OpenCode is the agent harness, not a model, so
- *  it does not belong in this row. */
+ *  nor have permission to show. The agent harness is not a model, so it does
+ *  not belong in this row. */
 const MODELS: IconKey[] = ['Claude', 'OpenAI', 'Gemini'];
 const TOOLS: IconKey[] = ['Slack', 'MicrosoftTeams', 'Notion', 'Linear', 'Github', 'Gmail'];
 

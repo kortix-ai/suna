@@ -859,9 +859,9 @@ const catalog = {
       "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
       "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
       "runUpgrade": "Run upgrade",
-      "manifestV2": {
-        "title": "Migrate manifest to v2 (kortix.yaml)",
-        "description": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review."
+      "manifestV3": {
+        "title": "Upgrade manifest to v3 (kortix.yaml)",
+        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
       },
       "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
@@ -1164,8 +1164,8 @@ const catalog = {
       "localComputer": "Your computer"
     },
     "manifestUpgrade": {
-      "title": "Upgrade to v2",
-      "description": "This project still runs <toml>kortix.toml</toml>. An agent converts it to <yaml>kortix.yaml</yaml>, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
+      "title": "Upgrade to v3",
+      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
       "start": "Start upgrade"
     },
     "filter": {
@@ -4725,7 +4725,7 @@ const catalog = {
       "textc3b312278ee5": "Make this a default",
       "textc3bb47ef2fd9": "{value0} They keep the access they get via {value1}.",
       "textc3c709a999c1": "Reading memory…",
-      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
+      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -4979,7 +4979,7 @@ const catalog = {
       "textd83250185d41": "All connectors",
       "textd8348ec82718": "List Triggers",
       "textd84b8be91e7b": "Kortix — Presentations",
-      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
       "text848f54e89660": "Runs",
       "textb098a09c78aa": "Test with payload",
       "text99733344956d": "Payload",

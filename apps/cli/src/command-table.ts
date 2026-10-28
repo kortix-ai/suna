@@ -161,7 +161,7 @@ export const TIERS: readonly CommandTier[] = [
         commands: [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
-          { name: 'migrate', args: '[--write]', blurb: 'Convert kortix.yaml from kortix_version 2 to 3' },
+          { name: 'migrate', args: '[--write]', blurb: 'Convert the manifest from kortix_version 1 or 2 to 3' },
           {
             name: 'doctor',
             args: '[--no-session]',

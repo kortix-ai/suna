@@ -1,6 +1,6 @@
 ---
 name: kortix-artifacts
-description: "Share work from the project's Files as artifacts with the `kortix artifacts` CLI: a `doc` (a Markdown file people read and edit in place, exportable as PDF) or an `html` page (a slide deck, dashboard, mockup, tool or app). The files stay plain files in Files; every save is a version from the Files history; people open artifacts in the Kortix app under Artifacts and share them with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, plan, proposal, spec, decision record, comparison, deck, slides, presentation, dashboard, tracker, mockup, tool, page, or anything meant to be read, kept or shared; when a reply would run past a screen of structured content; or when the user names an artifact or an artifact link."
+description: "Share work from the project's Drive as artifacts with the `kortix artifacts` CLI: a `doc` (a Markdown file people read and edit in place, exportable as PDF) or an `html` page (a slide deck, dashboard, mockup, tool or app). The files stay plain files in Drive; every save is a version from the Drive history; people open artifacts in the Kortix app under Artifacts and share them with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, plan, proposal, spec, decision record, comparison, deck, slides, presentation, dashboard, tracker, mockup, tool, page, or anything meant to be read, kept or shared; when a reply would run past a screen of structured content; or when the user names an artifact or an artifact link."
 metadata:
   kortix-feature-flag: artifacts
 ---
@@ -25,10 +25,10 @@ Before every publish:
 </checklist>
 
 <overview>
-An artifact is a folder in the project's Files, shared. Its files are ordinary
+An artifact is a folder in the project's Drive, shared. Its files are ordinary
 files (`index.md` for a doc, `index.html` plus its images and scripts for a
 page). The artifact adds a place in the Artifacts gallery, a viewer, version
-history (the Files history of that folder) and share links. Keep a code change
+history (the Drive history of that folder) and share links. Keep a code change
 in the repository.
 
 Before you write one, read `references/design.md` (the page contract and the
@@ -142,12 +142,12 @@ pinned version (Chart.js for charts, Reveal.js for decks). It must work from
 <publish>
 Two ways, same result:
 
-    kortix artifacts publish report.md --title "Q3 churn report"   # uploads to your Artifacts folder in Files
+    kortix artifacts publish report.md --title "Q3 churn report"   # uploads to your Artifacts folder in Drive
     kortix artifacts publish ./deck                                 # a folder with index.html
-    kortix artifacts add /Company/Plans/roadmap                     # shares a folder already in Files (index.md or index.html)
+    kortix artifacts add /Company/Plans/roadmap                     # shares a folder already in Drive (index.md or index.html)
 
 A `.md` file is a doc; anything else is html. The command prints the artifact
-id, its path in Files and its app link. Hand it over with `show` (the app link
+id, its path in Drive and its app link. Hand it over with `show` (the app link
 as `url`) and one line on what it shows. Never paste the content into the chat.
 
 A new artifact is **private**: the person who runs this session (and you) can
@@ -165,7 +165,7 @@ secrets, tokens or customer data.
 </publish>
 
 <update>
-Change the artifact, never publish a second one. Edit its file in Files, or:
+Change the artifact, never publish a second one. Edit its file in Drive, or:
 
     kortix artifacts pull <id> ./work                       # prints the entry_version
     # edit ./work/<file>
@@ -173,9 +173,9 @@ Change the artifact, never publish a second one. Edit its file in Files, or:
 
 `--base-version` refuses the save (exit 3, `version_conflict`) when someone
 saved after you pulled, for example a person editing the doc: pull again,
-merge, save. `kortix artifacts versions <id>` lists every save from the Files
+merge, save. `kortix artifacts versions <id>` lists every save from the Drive
 history; `restore <id> <version-id>` writes one back as a new save.
-`kortix artifacts rm <id>` stops sharing; the files stay in Files.
+`kortix artifacts rm <id>` stops sharing; the files stay in Drive.
 If the request also asks to share ("so the team can review it"), share the
 artifact you saved: `kortix artifacts share <id> --visibility project`.
 </update>
@@ -195,7 +195,7 @@ artifact you saved: `kortix artifacts share <id> --visibility project`.
 |---|---|
 | `kortix artifacts types [<type>]` | types; one type's format and starter |
 | `kortix artifacts publish <file\|dir> [--title --description --visibility]` | upload and share |
-| `kortix artifacts add <folder> [--title --visibility]` | share a folder already in Files; an artifact is always a folder, so a lone file is refused (publish it instead) |
+| `kortix artifacts add <folder> [--title --visibility]` | share a folder already in Drive; an artifact is always a folder, so a lone file is refused (publish it instead) |
 | `kortix artifacts publish <file\|dir> --id <id> [--base-version v]` | save new content |
 | `kortix artifacts ls [--mine\|--shared\|--pinned] [--type t] [--search q]` | list |
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |
@@ -213,7 +213,7 @@ agent its `kortix_permissions` in kortix.yaml):
 | `project.artifact.manage` | rename, share or stop sharing anyone's |
 | `project.artifact.public` | give an artifact a public link |
 
-Saving also needs write access to the folder in Files. A refused public link
+Saving also needs write access to the folder in Drive. A refused public link
 answers 403 `public_link_forbidden`: share with the project instead and tell
 the user.
 </commands>

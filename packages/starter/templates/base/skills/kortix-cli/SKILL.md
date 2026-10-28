@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`, when the project's `reminders` feature flag is on), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -14,28 +14,26 @@ and `KORTIX_API_URL` are pre-injected, so `kortix …` just works with no setup.
 ## Start here
 
 This file is a **discovery stub, not the usage guide.** The full, always-current
-Kortix reference — every command, the manifest, change requests, the runtime — is
-served **live by the CLI**, so it never goes stale between releases:
+Kortix reference — the manifest, change requests, the runtime — is served
+**live by the CLI**, so it never goes stale between releases:
 
 ```bash
 kortix skills                    # list the Kortix system skills served live
-kortix skills get kortix-system  # THE reference + the paths of its 18 sub-docs
+kortix skills get kortix-system  # THE reference, then the paths of its reference files
 ```
 
 `get` prints the body and then **lists** the skill's reference files. Pull the
-one you need instead of the whole tree — `kortix-system` is ~230 KB in full:
+one you need with `file` instead of the whole tree with `--full`:
 
 ```bash
-kortix skills file kortix-system references/kortix/kortix-cli.md   # the FULL CLI reference
-kortix skills file kortix-system references/kortix/kortix-yaml.md  # the manifest
-kortix skills get kortix-system --full                             # everything, ~230 KB
+kortix skills file kortix-system <path>   # ONE reference file, a path that get listed
+kortix skills get kortix-system --full    # everything
 ```
 
 Load `kortix skills get kortix-system` before doing anything non-trivial with
 Kortix — the CLI serves version-matched content, which this static stub can't.
-The complete `kortix` command reference is
-`references/kortix/kortix-cli.md` inside `kortix-system` — **not** `kortix skills
-get kortix-cli`, which just returns this same stub.
+Every command prints its own flags and subcommands: `kortix <command> --help`.
+`kortix skills get kortix-cli` returns this same stub.
 
 ## The moves you'll reach for
 
@@ -47,7 +45,7 @@ kortix sessions status                          # every agent on the project + w
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
 kortix apps deploy apps/<slug> --slug <slug> --listed  # deploy an App's folder; --listed only for an App people open
-kortix tools ls                                 # the tools a session gets (kortix.yaml tools:), and removed Kortix tools
+kortix tools ls                                 # the tools this project's sessions get, and removed Kortix tools
 kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 kortix capture search "<words>"                # the Capture timeline of the person this session acts for (Capture on for the account)
@@ -87,9 +85,9 @@ kortix sessions ls --label worker --json          # only sessions carrying EVERY
 
 Every read command takes `--json` (clean payload on stdout), so the CLI is a
 100% scriptable surface. For anything beyond the above — flags, the token-scope
-model, host switching, orchestration patterns — read
-`kortix skills file kortix-system references/kortix/kortix-cli.md` (the full
-command reference), or `kortix skills get <name>` for another system skill.
+model, host switching, orchestration patterns — run `kortix <command> --help`,
+read `kortix skills get kortix-system`, or `kortix skills get <name>` for
+another system skill.
 
 ## Landing work on `main`
 

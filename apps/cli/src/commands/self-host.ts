@@ -66,7 +66,7 @@ const VPS_FIRST_NOTICE =
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run Kortix on your own VPS — a domain is the production path; a Cloudflare
-tunnel is for evaluation with no public domain. Docs: kortix.com/docs/host
+tunnel is for evaluation with no public domain. Docs: kortix.com/docs/#self-hosting
 
 Subcommands:
   init                    Create/refresh this instance's Compose + env config.
@@ -1901,11 +1901,6 @@ async function promptUpdatePolicyCompact(env: SelfHostEnv, flags: GlobalFlags): 
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-// Platinum is the reference provider. Daytona is a legacy fallback: its
-// removal is scheduled. E2B support is discontinued.
-const SANDBOX_PROVIDER_CHOICES = ['platinum', 'daytona'] as const;
-type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
-
 /**
  * The CLI's guided-connections step: the two things that genuinely cannot
  * be set any other way — the agent sandbox runtime (an env-only credential
@@ -1921,34 +1916,30 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
  */
 async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Agent sandbox runtime${C.reset}\n`);
-  const currentProvider = sandboxProviders(env)[0];
-  const defaultProvider = (SANDBOX_PROVIDER_CHOICES as readonly string[]).includes(currentProvider ?? '')
-    ? (currentProvider as SandboxProviderChoice)
-    : 'platinum';
-  let provider: SandboxProviderChoice = defaultProvider;
-  if (shouldPrompt(flags)) {
-    // Every choice, printed up front — a bare `selectFrom` prompt with no
-    // visible options left the non-default provider undiscoverable unless
-    // the operator already knew the exact name to type (a real reported
-    // bug: the prompt rendered as a bare `Sandbox provider [daytona]:`).
-    // Same one-provider-only shape as before (selectFrom, not selectMany) —
-    // an instance runs on exactly one sandbox provider.
+  // Platinum is the only provider offered. An instance whose env still names a
+  // legacy provider the API runs (a SANDBOX_PROVIDER_KEY entry) keeps it, and
+  // its old sandboxes, until the operator enters a Platinum key: a blank answer
+  // must never point a working instance at a provider with no key.
+  const current = sandboxProviders(env)[0];
+  const legacy = current && current !== 'platinum' && SANDBOX_PROVIDER_KEY[current] ? current : undefined;
+  if (!shouldPrompt(flags)) {
+    if (!legacy) env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
+  } else {
     process.stdout.write(
-      `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev (default, reference) — Kortix's own microVM sandbox provider; needs PLATINUM_API_KEY${C.reset}\n` +
-        `  ${C.cyan}daytona${C.reset}      ${C.dim}Daytona (legacy fallback, removal scheduled) — no new features, no support guarantee${C.reset}\n`,
+      `  ${C.cyan}platinum${C.reset}     ${C.dim}https://www.platinum.dev — Kortix's own microVM sandbox provider; needs PLATINUM_API_KEY${C.reset}\n`,
     );
-    provider = await selectFrom('Sandbox provider', SANDBOX_PROVIDER_CHOICES, defaultProvider);
-  }
-  env.ALLOWED_SANDBOX_PROVIDERS = provider;
-
-  if (provider === 'platinum') {
-    env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
-    env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
-    env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
-  } else if (provider === 'daytona') {
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key (legacy fallback)', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
+    if (legacy) {
+      process.stdout.write(
+        `  ${C.dim}This instance runs on "${legacy}". Enter a Platinum API key to move it to Platinum, or leave it blank to keep "${legacy}".${C.reset}\n`,
+      );
+    }
+    const key = await promptSecret('Platinum API key', legacy ? '' : env.PLATINUM_API_KEY);
+    if (key || !legacy) {
+      env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
+      env.PLATINUM_API_KEY = key;
+      env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
+      env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
+    }
   }
   // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
   // this instance serves. When configured, the bundled Caddy proxy adds a
@@ -2520,10 +2511,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    // Sandboxes run on a real provider, just like Kortix Cloud — Kortix's own
-    // Platinum (the reference) or the legacy Daytona fallback
-    // (SandboxProviderName in apps/api/src/config.ts); `kortix self-host
-    // configure` asks which one and collects only that provider's key(s).
+    // Sandboxes run on Platinum, just like Kortix Cloud; `kortix self-host
+    // configure` collects its key. DAYTONA_API_KEY stays for an instance whose
+    // env still names the legacy provider (SandboxProviderName in
+    // apps/api/src/config.ts).
     DAYTONA_API_KEY: '',
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',

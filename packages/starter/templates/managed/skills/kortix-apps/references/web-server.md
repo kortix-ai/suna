@@ -68,10 +68,6 @@ Change the mode later without a redeploy:
 `always_on` to the App's `kortix.yaml` block; editing `always_on` or
 `idle_timeout_seconds` in `kortix.yaml` applies on the next sync, with no deploy.
 
-On the legacy Daytona fallback (self-host), an always-on App can be unreachable for up to
-5 minutes when the provider stops its VM. On Kortix Cloud the VM is
-persistent.
-
 `stop` suspends compute immediately, and keep-alive leaves it stopped. The
 next authorized request, a trigger or scheduled run that calls the App, or
 `kortix apps start`, wakes it. A rollback starts

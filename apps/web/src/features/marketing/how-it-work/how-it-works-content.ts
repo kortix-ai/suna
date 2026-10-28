@@ -33,7 +33,8 @@
  *     config. The manifest declares the machine image, connectors and triggers.
  *   - "Open source", never a licence name. SOC 2: Type I verified, Type II never
  *     mentioned (D17).
- *   - OpenCode is the only harness that may be named.
+ *   - Name no harness product. Write "the harness" or "agents"; name pi only
+ *     where a sentence needs the name.
  *
  * Three claims that read fine but do not survive the code, so they are not here:
  *   - "the Cursor subscription you already pay for" — there is no Cursor auth,
@@ -125,12 +126,12 @@ export const LAYERS: Layer[] = [
     label: 'Agentic harness',
     title: 'The part that turns a model into an agent.',
     description:
-      'A model on its own answers. The harness gives it planning, tool use and multi-step runs it actually finishes — powered by OpenCode, configured by a file in the repo.',
+      'A model on its own answers. The harness gives it planning, tool use and multi-step runs it actually finishes — configured by a file in the repo.',
     bullets: [
-      // ACCURACY: markdown is the baseline, not the ceiling. An agent is an
-      // OpenCode agent — tools, plugins and model config sit beside it in the
+      // ACCURACY: markdown is the baseline, not the ceiling. An agent's prompt
+      // is markdown; the tools and extensions it enables sit beside it in the
       // same repo. Do not shorten this back to "an agent is markdown".
-      'An OpenCode agent: markdown, plus the tools and plugins beside it',
+      'An agent: markdown, plus the tools and extensions beside it',
       'Say allow, ask or deny per tool — down to a single shell command',
       'Open source, so the harness is never the thing you are locked into',
     ],

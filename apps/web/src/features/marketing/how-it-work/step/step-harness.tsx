@@ -1,6 +1,5 @@
 'use client';
 
-import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { cn } from '@kortix/ui';
 import { CheckIcon, ProhibitIcon } from '@phosphor-icons/react';
@@ -44,7 +43,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  *     showed both and neither would have parsed. Do not add them.
  *   - Opening a change request is real: `project.cr.open` is a `kortix_permissions`
  *     grant in the shipped starter manifest, and layer 06 is where it lands.
- *   - OpenCode is the only harness that may be named, and it is named plainly.
+ *   - Name no harness product. The right eyebrow says "With the harness" and
+ *     nothing else.
  *   - A denied step is not a failure and must never be coloured like one in the
  *     summary — the run did exactly what it was told to do.
  */
@@ -232,13 +232,7 @@ export function StepHarness(): ReactNode {
           {...band(1)}
           className="border-border bg-background/40 flex min-w-0 flex-col gap-3 border-l px-7 py-7"
         >
-          {eyebrow(
-            tI18nComplete.raw('text1e208e20a0eb'),
-            <span className="inline-flex items-center gap-1.5 align-middle">
-              <OpenCode className="size-3" />
-              {tI18nComplete.raw('text474d4126bce4')}
-            </span>,
-          )}
+          {eyebrow(tI18nComplete.raw('text1e208e20a0eb'), null)}
 
           <ul className="flex flex-col gap-2.5">
             {localizedSteps.map((step, index) => {
@@ -294,13 +288,7 @@ export function StepHarness(): ReactNode {
       {/* ── Below lg: the 256–304px frame cannot hold two columns — the
           harness half only, which is the half that carries the claim. ──── */}
       <div className="flex h-full flex-col justify-center gap-2.5 overflow-y-auto p-4 lg:hidden">
-        {eyebrow(
-          tI18nComplete.raw('text1e208e20a0eb'),
-          <span className="inline-flex items-center gap-1.5 align-middle">
-            <OpenCode className="size-3" />
-            {tI18nComplete.raw('text474d4126bce4')}
-          </span>,
-        )}
+        {eyebrow(tI18nComplete.raw('text1e208e20a0eb'), null)}
         <ul className="flex flex-col gap-2">
           {localizedSteps.map((step) => (
             <li key={step.id} className="flex items-center gap-2.5">

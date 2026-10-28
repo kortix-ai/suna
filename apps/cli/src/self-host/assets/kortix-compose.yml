@@ -309,7 +309,7 @@ services:
 
   # Cloudflare tunnel (opt-in): the "tunnel" reachability mode's zero-config
   # default for exposing kortix-api's public API routes to the internet with
-  # no domain/DNS/public IP at all — the laptop path for cloud (Daytona)
+  # no domain/DNS/public IP at all — the laptop path for cloud
   # sandboxes to call back to this instance. Only present in the rendered
   # Compose file when tunnel mode is selected — see renderFullDockerCompose()
   # in compose-assets.ts and reachabilityMode() in self-host/tunnel.ts.
