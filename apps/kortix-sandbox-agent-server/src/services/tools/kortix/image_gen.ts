@@ -13,7 +13,9 @@
  * Untrusted text can ask the model to misuse this tool, so the limits are
  * code: a call cap per turn and per session, reference images only from
  * inside the checkout and only real images, an output file name that is a
- * name and never overwrites.
+ * name and never overwrites. The turn cap keys on the run's abort signal: a
+ * subagent run or a transient-error retry counts afresh; the session cap
+ * bounds them all.
  *
  * The web UI renders a call from the output JSON. A changed copy must keep
  * that shape, or the UI shows the raw output.
@@ -36,6 +38,8 @@ const SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536']
 const QUALITIES = ['auto', 'low', 'medium', 'high']
 const MAX_REFERENCES = 5
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024
+/** 5 × 20 MiB as base64 is over the gateway's 128 MiB body cap. */
+const MAX_REFERENCE_TOTAL_BYTES = 50 * 1024 * 1024
 const TIMEOUT_MS = 300_000
 const IMAGE_EXTENSIONS: Record<string, 'png' | 'jpeg' | 'webp'> = { '.png': 'png', '.jpg': 'jpeg', '.jpeg': 'jpeg', '.webp': 'webp' }
 const OUTPUT_NAME = /^[a-z0-9._-]{1,80}\.png$/
@@ -52,23 +56,35 @@ function imageType(bytes: Buffer): 'png' | 'jpeg' | 'webp' | null {
   return null
 }
 
-/** A reference image as a data URL: a real png/jpeg/webp file inside the checkout, symlinks followed. */
-function referenceUrl(path: string, directory: string): string {
+/** A reference image: a png/jpeg/webp file inside the checkout (symlinks followed), at most 20 MiB. */
+function reference(path: string, root: string): { path: string; real: string; size: number; type: 'png' | 'jpeg' | 'webp' } {
   let real: string
   try {
-    real = realpathSync(resolve(directory, path))
+    real = realpathSync(resolve(root, path))
   } catch {
     throw new Error(`Reference image not found: ${path}`)
   }
-  const root = realpathSync(directory)
-  if (!real.startsWith(`${root}${sep}`)) throw new Error(`Reference image ${path} is outside the workspace.`)
-  const expected = IMAGE_EXTENSIONS[extname(real).toLowerCase()]
-  if (!expected) throw new Error(`Reference image ${path} is not a png, jpg, jpeg or webp file.`)
-  if (statSync(real).size > MAX_REFERENCE_BYTES) throw new Error(`Reference image ${path} is larger than 20 MiB.`)
+  if (!real.startsWith(`${realpathSync(root)}${sep}`)) throw new Error(`Reference image ${path} is outside the workspace.`)
+  const type = IMAGE_EXTENSIONS[extname(real).toLowerCase()]
+  if (!type) throw new Error(`Reference image ${path} is not a png, jpg, jpeg or webp file.`)
+  const size = statSync(real).size
+  if (size > MAX_REFERENCE_BYTES) throw new Error(`Reference image ${path} is larger than 20 MiB.`)
+  return { path, real, size, type }
+}
+
+/** The reference as a data URL, when its first bytes prove its extension. */
+function referenceUrl({ path, real, type }: ReturnType<typeof reference>): string {
   const bytes = readFileSync(real)
-  const type = imageType(bytes)
-  if (type !== expected) throw new Error(`Reference image ${path} is not a ${expected} image.`)
+  if (imageType(bytes) !== type) throw new Error(`Reference image ${path} is not a ${type} image.`)
   return `data:image/${type};base64,${bytes.toString('base64')}`
+}
+
+/** `<checkout>/output/images`, created, or a refusal when its real path leaves the checkout (a symlinked `output/`). */
+function outputDir(root: string): string {
+  const dir = join(root, 'output', 'images')
+  mkdirSync(dir, { recursive: true })
+  if (!realpathSync(dir).startsWith(`${realpathSync(root)}${sep}`)) throw new Error('output/images is outside the workspace.')
+  return dir
 }
 
 /** `<slug of the prompt>-<yyyymmdd-hhmmss>.png` */
@@ -80,7 +96,6 @@ function defaultName(prompt: string): string {
 
 /** Write to `dir/name`, or `name-2`, `name-3`…: an existing file is never replaced. */
 function writeNew(dir: string, name: string, bytes: Buffer): string {
-  mkdirSync(dir, { recursive: true })
   const base = name.slice(0, -'.png'.length)
   for (let n = 1; ; n++) {
     const path = join(dir, n === 1 ? name : `${base}-${n}.png`)
@@ -93,7 +108,10 @@ function writeNew(dir: string, name: string, bytes: Buffer): string {
   }
 }
 
-/** The gateway's refusal: `{ message, code, suggestion }` or `{ error: { message, code } }`. */
+/**
+ * The gateway's refusal: `{ message, code, suggestion }` or `{ error: { message, code } }`.
+ * The text ends with the stable code in brackets (`[provider_not_connected]`): clients key on it, not on the prose.
+ */
 async function refusal(response: Response): Promise<Error> {
   const text = await response.text()
   let body: { message?: string; code?: string; suggestion?: string; error?: { message?: string; code?: string } } = {}
@@ -101,10 +119,10 @@ async function refusal(response: Response): Promise<Error> {
     body = JSON.parse(text)
   } catch {}
   const code = body.code ?? body.error?.code
-  const message = body.message ?? body.error?.message ?? text.slice(0, 500)
+  const message = (body.message ?? body.error?.message ?? text).slice(0, 500)
   const retry = response.headers.get('retry-after')
-  const detail = [message, body.suggestion, retry ? `Retry after ${retry} s.` : ''].filter(Boolean).join(' ')
-  return new Error(`Image generation failed (${response.status}${code ? ` ${code}` : ''}): ${detail}`)
+  const detail = [message, body.suggestion?.slice(0, 500), retry ? `Retry after ${retry} s.` : '', code ? `[${code}]` : ''].filter(Boolean).join(' ')
+  return new Error(`Image generation failed (${response.status}): ${detail}`)
 }
 
 /** Count a call against the turn and session caps, or refuse it. */
@@ -127,7 +145,7 @@ export default {
       reference_images: {
         type: 'array',
         items: { type: 'string' },
-        description: 'For `edit`: 1–5 workspace paths of png, jpg, jpeg or webp images, each at most 20 MiB.',
+        description: 'For `edit`: 1–5 workspace paths of png, jpg, jpeg or webp images, each at most 20 MiB, 50 MiB in total.',
       },
       size: { type: 'string', enum: SIZES, description: 'Default: auto.' },
       quality: { type: 'string', enum: QUALITIES, description: 'Default: auto.' },
@@ -153,12 +171,15 @@ export default {
     if (action === 'edit' && references.length === 0) throw new Error("'reference_images' is required for action 'edit'.")
     if (action === 'generate' && references.length > 0) throw new Error("'reference_images' is only used with action 'edit'.")
     if (references.length > MAX_REFERENCES) throw new Error(`At most ${MAX_REFERENCES} reference images.`)
-    const images = references.map((path) => ({ image_url: referenceUrl(String(path), context.directory) }))
+    const checked = references.map((path) => reference(String(path), context.directory))
+    if (checked.reduce((sum, ref) => sum + ref.size, 0) > MAX_REFERENCE_TOTAL_BYTES) throw new Error('Reference images are larger than 50 MiB in total.')
+    const images = checked.map((ref) => ({ image_url: referenceUrl(ref) }))
 
     const base = context.env.KORTIX_LLM_BASE_URL?.trim().replace(/\/+$/, '')
     if (!base) throw new Error('KORTIX_LLM_BASE_URL is not set.')
     const token = context.env.KORTIX_TOKEN?.trim()
     if (!token) throw new Error('KORTIX_TOKEN is not set.')
+    const dir = outputDir(context.directory)
     admit(context)
 
     const response = await fetch(`${base}/images/${action === 'edit' ? 'edits' : 'generations'}`, {
@@ -179,7 +200,7 @@ export default {
     const data = (await response.json()) as { data?: Array<{ b64_json?: string }>; size?: string }
     const b64 = data.data?.[0]?.b64_json
     if (!b64) throw new Error('Image generation returned no image.')
-    const path = writeNew(join(context.directory, 'output', 'images'), args.output_name ?? defaultName(prompt), Buffer.from(b64, 'base64'))
+    const path = writeNew(dir, args.output_name ?? defaultName(prompt), Buffer.from(b64, 'base64'))
     return JSON.stringify({ path, action, size: data.size ?? size, model: MODEL })
   },
 }

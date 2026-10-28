@@ -38,7 +38,7 @@ import {
   HARNESS_TOOL_NAMES,
   HEX_COLOR_RE_V2,
   KORTIX_TOOL_NAMES,
-  DEFAULT_ON_KORTIX_TOOLS,
+  isDefaultOnKortixTool,
   RETIRED_KORTIX_TOOLS,
   kortixToolRef,
   PI_PACKAGE_NAME_RE,
@@ -1070,7 +1070,7 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
     }
   }
   // A default-on tool loads anyway; the warning is about the tools a list must name.
-  const optIn = KORTIX_TOOL_NAMES.filter((name) => !(DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name));
+  const optIn = KORTIX_TOOL_NAMES.filter((name) => !isDefaultOnKortixTool(name));
   if (!selectedKortixTools(value).some((name) => optIn.includes(name as (typeof optIn)[number]))) {
     issues.push({
       path,

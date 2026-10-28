@@ -45,7 +45,7 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   HARNESS_TOOL_NAMES,
-  DEFAULT_ON_KORTIX_TOOLS,
+  isDefaultOnKortixTool,
   KORTIX_TOOL_NAMES,
   kortixToolRef,
   parseManifestText,
@@ -289,8 +289,6 @@ export function compileAgentConfig(
  * does not name, only when the manifest has a `tools` key (even an empty one);
  * without it the daemon loads every Kortix tool.
  */
-const isDefaultOn = (name: string) => (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
-
 function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'kortix_tools'> {
   const map = tools && typeof tools === 'object' && !Array.isArray(tools) ? (tools as Record<string, unknown>) : {};
   const entries = Object.entries(map).flatMap(([name, file]) => {
@@ -301,7 +299,7 @@ function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'k
   return {
     ...(entries.length > 0 ? { project_tools: Object.fromEntries(entries) } : {}),
     ...(tools !== undefined
-      ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name || (isDefaultOn(name) && !Object.hasOwn(map, name))) }
+      ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name || (isDefaultOnKortixTool(name) && !Object.hasOwn(map, name))) }
       : {}),
   };
 }

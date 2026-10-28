@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
@@ -155,6 +155,11 @@ describe('image_gen', () => {
   const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46])
   const generated = { created: 1, data: [{ b64_json: PNG.toString('base64') }], size: '1254x1254', quality: 'low', background: 'opaque' }
   const imagesDir = () => join(dir, 'output', 'images')
+  const MiB = 1024 * 1024
+  // Each test is its own session: the session cap counts per sessionId in the module.
+  let session = 0
+  beforeEach(() => void session++)
+  const ictx = (): ToolContext => ({ ...ctx(), sessionId: `ses_image_gen_${session}` })
 
   /** The LLM gateway fake: the tool posts to `${KORTIX_LLM_BASE_URL}/images/*` with the session token. */
   function gateway(handle: (call: Call) => unknown | Response = () => generated): void {
@@ -166,7 +171,7 @@ describe('image_gen', () => {
 
   test('generate posts to the gateway images route with the session token and saves the PNG', async () => {
     gateway()
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'A red cube on a white table', size: '1024x1024' }, ctx())))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'A red cube on a white table', size: '1024x1024' }, ictx())))
     expect(calls).toHaveLength(1)
     expect(calls[0]!.path).toBe('/v1/llm/images/generations')
     expect(calls[0]!.headers.authorization).toBe('Bearer tok')
@@ -180,7 +185,7 @@ describe('image_gen', () => {
 
   test('the requested size is the output size when the gateway names none', async () => {
     gateway(() => ({ data: [{ b64_json: PNG.toString('base64') }] }))
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', size: '1536x1024', transparent_background: true }, ctx())))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', size: '1536x1024', transparent_background: true }, ictx())))
     expect(calls[0]!.body.background).toBe('transparent')
     expect(result.size).toBe('1536x1024')
   })
@@ -190,7 +195,7 @@ describe('image_gen', () => {
     writeFileSync(join(dir, 'a.png'), PNG)
     mkdirSync(join(dir, 'refs'))
     writeFileSync(join(dir, 'refs', 'b.jpg'), JPEG)
-    const result = JSON.parse(out(await imageGen.execute({ action: 'edit', prompt: 'merge them', reference_images: ['a.png', join(dir, 'refs/b.jpg')] }, ctx())))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'edit', prompt: 'merge them', reference_images: ['a.png', join(dir, 'refs/b.jpg')] }, ictx())))
     expect(calls[0]!.path).toBe('/v1/llm/images/edits')
     expect(calls[0]!.body.images).toEqual([{ image_url: `data:image/png;base64,${PNG.toString('base64')}` }, { image_url: `data:image/jpeg;base64,${JPEG.toString('base64')}` }])
     expect(calls[0]!.body.images[1].image_url).toStartWith('data:image/jpeg;base64,')
@@ -199,8 +204,8 @@ describe('image_gen', () => {
 
   test('a missing reference image is refused before any request', async () => {
     gateway()
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['nope.png'] }, ctx())).rejects.toThrow('nope.png')
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x' }, ctx())).rejects.toThrow('reference_images')
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['nope.png'] }, ictx())).rejects.toThrow('nope.png')
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x' }, ictx())).rejects.toThrow('reference_images')
     expect(calls).toHaveLength(0)
   })
 
@@ -210,50 +215,57 @@ describe('image_gen', () => {
       writeFileSync(join(dir, `${n}.png`), PNG)
       return `${n}.png`
     })
-    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: names }, ctx())).rejects.toThrow('At most 5 reference images')
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: names }, ictx())).rejects.toThrow('At most 5 reference images')
     expect(calls).toHaveLength(0)
   })
 
-  test('a gateway refusal surfaces its message and suggestion', async () => {
+  test('a gateway refusal surfaces its message, suggestion and code', async () => {
     gateway(() =>
       Response.json(
         { code: 'provider_not_connected', message: 'Connect Codex to use this model.', suggestion: 'Connect your ChatGPT account in Settings.', requestId: 'req_1' },
         { status: 400 },
       ),
     )
-    const error = await Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, ctx())).catch((err: Error) => err)
-    expect(error).toBeInstanceOf(Error)
-    expect((error as Error).message).toContain('Connect Codex to use this model.')
-    expect((error as Error).message).toContain('Connect your ChatGPT account in Settings.')
-    expect((error as Error).message).toContain('provider_not_connected')
-    expect(readdirSync(dir)).toEqual([])
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow(
+      'Image generation failed (400): Connect Codex to use this model. Connect your ChatGPT account in Settings. [provider_not_connected]',
+    )
+    expect(readdirSync(imagesDir())).toEqual([])
   })
 
-  test('an OpenAI-shaped error and a rate limit name their message and retry time', async () => {
+  test('an OpenAI-shaped error and a rate limit name their message, retry time and code', async () => {
     gateway(() => Response.json({ error: { message: 'Image limit reached.', code: 'rate_limited' } }, { status: 429, headers: { 'retry-after': '120' } }))
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ctx())).rejects.toThrow('(429 rate_limited): Image limit reached. Retry after 120 s.')
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('(429): Image limit reached. Retry after 120 s. [rate_limited]')
+  })
+
+  test('a long refusal message is cut at 500 characters; no code means no bracket', async () => {
+    gateway(() => Response.json({ message: 'm'.repeat(2000) }, { status: 500 }))
+    const error = (await Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).catch((err: Error) => err)) as Error
+    expect(error.message).toBe(`Image generation failed (500): ${'m'.repeat(500)}`)
   })
 
   test('no gateway env names what is missing', async () => {
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ctx())).rejects.toThrow('KORTIX_LLM_BASE_URL')
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('KORTIX_LLM_BASE_URL')
     process.env.KORTIX_LLM_BASE_URL = 'http://127.0.0.1:1/v1/llm'
-    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ctx())).rejects.toThrow('KORTIX_TOKEN')
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('KORTIX_TOKEN')
   })
 
   test('an aborted turn aborts the request and writes no file', async () => {
     const turn = new AbortController()
     let arrived!: () => void
     const received = new Promise<void>((resolve) => (arrived = resolve))
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
     gateway(async () => {
       arrived()
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      await held
       return generated
     })
-    const call = Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, { ...ctx(), signal: turn.signal }))
+    const call = Promise.resolve(imageGen.execute({ action: 'generate', prompt: 'x' }, { ...ictx(), signal: turn.signal }))
     await received
     turn.abort()
     await expect(call).rejects.toThrow()
-    expect(() => readdirSync(imagesDir())).toThrow()
+    release()
+    expect(readdirSync(imagesDir())).toEqual([])
   })
 
   test('the eleventh call in one turn is refused', async () => {
@@ -288,9 +300,54 @@ describe('image_gen', () => {
       writeFileSync(join(dir, 'text.png'), 'not an image at all')
       const relative = join('..', outside.split('/').pop()!, 'x.png')
       for (const path of ['.env', 'passwd.png', 'link.png', relative, join(outside, 'x.png'), 'text.png']) {
-        await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: [path] }, ctx())).rejects.toThrow(path)
+        await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: [path] }, ictx())).rejects.toThrow(path)
       }
       expect(calls).toHaveLength(0)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('a reference over 20 MiB is refused', async () => {
+    gateway()
+    writeFileSync(join(dir, 'big.png'), PNG)
+    truncateSync(join(dir, 'big.png'), 20 * MiB + 1)
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['big.png'] }, ictx())).rejects.toThrow('Reference image big.png is larger than 20 MiB.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('reference images over 50 MiB in total are refused', async () => {
+    gateway()
+    const names = ['a.png', 'b.png', 'c.png']
+    for (const name of names) {
+      writeFileSync(join(dir, name), PNG)
+      truncateSync(join(dir, name), 18 * MiB)
+    }
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: names }, ictx())).rejects.toThrow('Reference images are larger than 50 MiB in total.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a reference whose bytes do not match its extension is refused', async () => {
+    gateway()
+    writeFileSync(join(dir, 'photo.jpg'), PNG)
+    writeFileSync(join(dir, 'pic.webp'), JPEG)
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['photo.jpg'] }, ictx())).rejects.toThrow('Reference image photo.jpg is not a jpeg image.')
+    await expect(imageGen.execute({ action: 'edit', prompt: 'x', reference_images: ['pic.webp'] }, ictx())).rejects.toThrow('Reference image pic.webp is not a webp image.')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a symlinked output or output/images that leaves the workspace is refused before any request', async () => {
+    gateway()
+    const outside = mkdtempSync(join(tmpdir(), 'pi-kortix-outside-'))
+    try {
+      symlinkSync(outside, join(dir, 'output'))
+      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('output/images is outside the workspace.')
+      rmSync(join(dir, 'output'))
+      mkdirSync(join(dir, 'output'))
+      symlinkSync(outside, join(dir, 'output', 'images'))
+      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('output/images is outside the workspace.')
+      expect(calls).toHaveLength(0)
+      expect(readdirSync(outside).filter((name) => name.endsWith('.png'))).toEqual([])
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
@@ -299,20 +356,20 @@ describe('image_gen', () => {
   test('output_path cannot leave output/images or overwrite a file', async () => {
     gateway()
     for (const output_name of ['../kortix.yaml', '../../x.png', 'a/b.png', 'Upper.png', 'x.jpg']) {
-      await expect(imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ctx())).rejects.toThrow('output_name')
+      await expect(imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ictx())).rejects.toThrow('output_name')
     }
     expect(calls).toHaveLength(0)
     mkdirSync(imagesDir(), { recursive: true })
     writeFileSync(join(imagesDir(), 'cube.png'), 'mine')
-    const first = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ctx())))
-    const second = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ctx())))
+    const first = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ictx())))
+    const second = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ictx())))
     expect([first.path, second.path]).toEqual([join(imagesDir(), 'cube-2.png'), join(imagesDir(), 'cube-3.png')])
     expect(readFileSync(join(imagesDir(), 'cube.png'), 'utf8')).toBe('mine')
   })
 
   test('the output is a small JSON object with a path and never the image bytes', async () => {
     gateway()
-    const text = out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ctx()))
+    const text = out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ictx()))
     expect(text).not.toContain(PNG.toString('base64'))
     expect(Object.keys(JSON.parse(text)).sort()).toEqual(['action', 'model', 'path', 'size'])
   })

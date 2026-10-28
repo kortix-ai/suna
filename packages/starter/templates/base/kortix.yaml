@@ -79,14 +79,16 @@ opencode:
 # The tools every agent of this project gets, on every harness (OpenCode, pi).
 # `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
 # module, in any folder (https://kortix.com/docs/project/tools).
-#   - Delete a line to remove that tool from every agent.
+#   - Delete a line to remove that tool from every agent. Exception: image_gen
+#     loads without its line; turn it off with `image_gen: false` in an
+#     agent's `tools`, or `image_gen: deny` in its permission.
 #   - Run `kortix tools eject <name>` to own and change a Kortix tool.
 #   - Use `agents.<name>.tools` to limit one agent.
 # `kortix tools ls` lists what a session gets.
 tools:
   web_search: kortix:web_search      # maintained by Kortix, updated automatically
   image_search: kortix:image_search
-  image_gen: kortix:image_gen      # generates images with your ChatGPT plan
+  image_gen: kortix:image_gen        # generates images with your ChatGPT plan
   scrape_webpage: kortix:scrape_webpage
   memory: kortix:memory
   show: kortix:show

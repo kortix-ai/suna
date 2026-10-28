@@ -431,6 +431,10 @@ export const HARNESS_TOOL_NAMES = [
 export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show'] as const;
 /** Kortix tools a manifest's `tools:` list loads unless it names the key. */
 export const DEFAULT_ON_KORTIX_TOOLS = ['image_gen'] as const;
+/** True for a `DEFAULT_ON_KORTIX_TOOLS` name. */
+export function isDefaultOnKortixTool(name: string): boolean {
+  return (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
+}
 /**
  * Kortix tools that no longer exist. Manifests written while #9902 was live
  * still name them (the v2 starter, v3 agent excludes). Naming one is
@@ -455,7 +459,7 @@ export function kortixToolRef(value: unknown): string | null {
 export function selectedKortixTools(tools: unknown): string[] {
   if (tools === undefined) return [...KORTIX_TOOL_NAMES];
   const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
-  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name));
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name) || isDefaultOnKortixTool(name));
 }
 
 // ─── kortix_version 3 registries ────────────────────────────────────────────

@@ -8,8 +8,8 @@
  *
  * The selection rule is `selectedKortixTools` (@kortix/manifest-schema): no
  * `tools` key loads every Kortix tool; a `tools` key loads the Kortix tools it
- * lists plus `DEFAULT_ON_KORTIX_TOOLS` it does not name. The ejected source is the daemon's own module, embedded in
- * `kortix-tools.generated.json`.
+ * lists plus `DEFAULT_ON_KORTIX_TOOLS` it does not name. The ejected source
+ * is the daemon's own module, embedded in `kortix-tools.generated.json`.
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
@@ -17,6 +17,7 @@ import {
   DEFAULT_ON_KORTIX_TOOLS,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
+  isDefaultOnKortixTool,
   ManifestImportError,
   TOOL_NAME_RE,
   kortixToolRef,
@@ -75,7 +76,6 @@ interface ToolList {
 }
 
 const isKortixTool = (name: string) => (KORTIX_TOOL_NAMES as readonly string[]).includes(name);
-const isDefaultOn = (name: string) => (DEFAULT_ON_KORTIX_TOOLS as readonly string[]).includes(name);
 
 /**
  * What a session of this manifest loads, as the API compiles it
@@ -95,7 +95,7 @@ export function listTools(raw: Record<string, unknown>): ToolList {
     const value = map[name];
     const path = safeToolFile(value);
     if (path && (v3 || kortixToolRef(value) === null)) rows.push({ name, kind: 'kortix (overridden)', source: path });
-    else if (v3 || tools === undefined || kortixToolRef(value) === name || (isDefaultOn(name) && !Object.hasOwn(map, name))) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
+    else if (v3 || tools === undefined || kortixToolRef(value) === name || (isDefaultOnKortixTool(name) && !Object.hasOwn(map, name))) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
     else removed.push(name);
   }
   for (const [name, value] of Object.entries(map)) {

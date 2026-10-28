@@ -1016,6 +1016,15 @@ describe('project tools', () => {
     }
   });
 
+  test("an agent's tools switch turns image_gen off for that agent only", () => {
+    const manifest = { kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { image_gen: false } }, other: {} }, tools: { web_search: 'kortix:web_search' } };
+    const compiled = compileAgentConfig(manifest)!;
+    // The tool loads for the session; the agent's tool access refuses it (pi `toolAllowed`).
+    expect(compiled.kortix_tools).toEqual(['web_search', 'image_gen']);
+    expect(compiled.agent.worker.tools).toEqual({ image_gen: false });
+    expect(compiled.agent.other.tools).toBeUndefined();
+  });
+
   test('image_gen mapped to a project module compiles as a project tool', () => {
     const compiled = compileAgentConfig(v2({ web_search: 'kortix:web_search', image_gen: 'tools/img.ts' }))!;
     expect(compiled.project_tools?.image_gen).toBe('tools/img.ts');
