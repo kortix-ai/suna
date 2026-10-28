@@ -212,6 +212,11 @@ Credentials go in the Secrets Manager, never in the goal folder.
 When anyone asks how a goal is going: `kortix goals status <slug>` (or
 `kortix goals ls`). Answer with the state, the summary, what it waits on, and
 the next wake. People see the same on the Goals page and on the Goal page.
+
+When a person asks "what are my goals" or "what waits on me" (My Kortix gets
+this most): `kortix goals ls --json`, keep the goals whose `assigned_user` is
+that person, and list first the ones in `waiting_on_user` with their
+`waiting_on` question.
 </status>
 
 <gotchas>

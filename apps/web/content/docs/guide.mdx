@@ -728,65 +728,78 @@ The fallback list also takes over when the requested model is unknown or retired
 
 ## Outcomes
 
-An outcome in Kortix is a **Goal**: an objective an agent owns until a separate check confirms it is met. The agent plans the work, does it, follows up with people and waits when it must.
+An outcome in Kortix is a **Goal**: what you want plus a definition of done. The agent assigned to it works it, wake after wake, until a separate verifier session confirms it is done.
+
+Three things work together:
+
+| Thing | Answers |
+| --- | --- |
+| Agent | who works it. The agent's grants decide what the goal may touch. |
+| Loop or trigger | when work starts: the heartbeat, your answer, a merged change request. |
+| Goal | what done means: a folder in Files. |
 
 ### How it works
 
 #### The goal folder
 
-Each goal is a folder in Kortix Drive, in your own folder or in a shared company folder. The folder is the goal's memory. If a session ends, a new one continues from the folder alone. It holds:
+Each goal is a folder in Files, `Goals/<slug>/` in the company folder by default. Share it or keep it private with normal [Files sharing](/docs/guide#drive). The folder is the goal's memory and shared context: every session that works the goal reads it and adds to it. It holds:
 
-- the goal file: the objective, its success criteria, the open items and the status;
-- a log, with one line per action;
-- notes: your original request, the constraints and one thread per person;
-- `docs/` for material, and `evidence/` for proof.
+- `GOAL.md`: the goal, its done criteria, the person it is for (the assigned user), the assigned agent, the state, links to related files, artifacts, Apps, change requests and sessions, and the limits;
+- `log.md`: one line per action, each handover and each verifier finding;
+- `evidence/`: the proof for each criterion and the verifier's report.
 
-You can open and edit these files. Your edits win. See [Drive](/docs/guide#drive).
+You can open and edit these files. Your edits win.
 
-#### Plan
+#### States
 
-The agent writes 2 to 6 success criteria that someone else can check. Each one names its proof. It records your constraints, such as a spending limit. Anything outside a constraint becomes a question for you, not an action.
+A goal moves through: draft, active, waiting on you, verifying, done. A person can stop it from any state. It never ends because it is hard, slow or blocked.
 
-#### Work
+#### Work and wake
 
-The agent acts on the most useful open item on each turn. It can hand heavy or parallel work to worker sessions, each doing one item.
+One owner session works the goal at a time. Nothing runs between turns. These wake it:
 
-#### Chase
+- the heartbeat loop, every 4 hours while the goal is open;
+- your answer to the question it asked you;
+- a change request it opened, when it merges;
+- the verifier's verdict.
 
-- It asks once, precisely: what it needs, why, and how to send it.
-- It uses the channels your project already has, such as Slack. It keeps one thread per person and asks you to reply there.
-- It follows up when an answer is late, and each follow-up is firmer: a reminder, then the cost of the delay, then a short daily ping.
-- It chases outside parties, such as a vendor or a bank, the same way.
+When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues.
 
-#### Wake
+#### Ask
 
-Nothing runs between turns. Three things wake the goal: a daily heartbeat loop, a reply from a person, or a step the agent scheduled for itself. If the session's computer fails, the next heartbeat starts a new session that takes over.
+When only you can unblock it, the goal asks you and waits in **Waiting on you**. Answer on the Goal page or in the channel it used. Your answer wakes it.
 
 #### Check
 
-The agent never judges its own work. When every criterion has its proof, it starts a separate verifier session that did none of the work. The verifier checks each proof and writes PASS or FAIL. The goal is done only when everything passes. A FAIL sends the goal back to work.
+The agent never judges its own work. When every criterion has its proof, the goal starts a separate verifier session that did none of the work. The verifier checks each criterion, writes PASS or FAIL per criterion to `evidence/verification.md`, and gives the verdict. Only a PASS on every criterion makes the goal done. A FAIL sends it back to work, with the findings in `log.md`.
 
-A goal moves through these states: draft, active, waiting on a person, waiting on an outside event, verifying, then done. It ends early only when you say stop. It never ends because it is hard, slow or blocked. A blocked goal waits and chases.
+#### Permissions
+
+The goal decides nothing about access. An email, a Slack message or a connector call goes through the assigned agent's grants and the connector's approval rules, as in any session. When the agent lacks a grant, the goal asks you for it.
+
+#### Limits
+
+`GOAL.md` caps the work, so a stuck goal does not use up credits: at most 12 wakes per UTC day (then the heartbeat waits for the next day) and at most 10 sessions in total. You can change `heartbeat`, `max_wakes_per_day` and `max_sessions` in `GOAL.md`.
 
 ### Set it up
 
 <Steps>
 <Step title="Turn on the features">
-Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**.
+Goals is an experimental feature that needs Platinum. It is off by default: turn on **Goals** in **Customize** → **Settings** → **Feature flags**. It also needs Volumes and Loops.
 </Step>
 <Step title="State the outcome">
-In a chat, describe the outcome, for example "make sure…" or "keep at it until…". Say if it belongs to your team or company. Otherwise it goes in your own folder.
+In a chat, describe the outcome, for example "make sure…" or "keep at it until…". In a chat that is already under way, use **Make this a goal** in the session header.
 </Step>
 <Step title="Read the plan">
-The agent replies with the outcome, the success criteria, the first thing it needs from you, and where to watch it.
+The agent replies with the outcome, the done criteria, the first thing it needs from you, and where to watch it.
 </Step>
 <Step title="Watch it">
-Open the **Goals** page in the project sidebar for status, health, the next wake and what the goal waits on. In the session, the **Goal** button in the header shows the same.
+Open the **Goals** page in the project sidebar: state, the assigned user and agent, the last and next wake. **Assigned to me** shows the goals that are for you. A goal's page shows its definition, log, evidence, links, sessions, and the buttons to answer, share or stop it.
 </Step>
 </Steps>
 
 <Callout type="warning">
-Do not delete the session that coordinates an open goal. If you delete it, the goal stops waking.
+Do not delete the owner session of an open goal. If you delete it, the goal stops waking.
 </Callout>
 
 ## Channels
