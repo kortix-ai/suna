@@ -1174,7 +1174,7 @@ To continue, add credits or update the payment method. On Free, subscribe to Cre
 
 ## Quickstart
 
-This page takes you from a fresh terminal, or the web app, to a merged change request. Every step is a git operation on your project's repository:
+This section takes you from a fresh terminal, or the web app, to a merged change request. Every step is a git operation on your project's repository:
 
 | Step | Command | What happens in git |
 | --- | --- | --- |
@@ -3080,7 +3080,7 @@ tools:
 |---|---|
 | `https://kortix.com/llms.txt` | An index of every public page, docs included, with a link to its Markdown |
 | `https://kortix.com/llms-full.txt` | All public pages in one file |
-| `https://kortix.com/markdown/docs/<path>.md` | One page. For example, this page is `/markdown/docs/api.md`. |
+| `https://kortix.com/markdown/docs/<path>.md` | One page. For example, these docs are `/markdown/docs/index.md`. |
 | Any `/docs/<path>` URL, requested with `Accept: text/markdown` | The same page as Markdown |
 
 Point a coding agent at `https://kortix.com/llms.txt` for the concepts and at
@@ -5295,7 +5295,7 @@ To start sessions from such a server with session secrets and idempotency, see
 
 ## Sessions from code
 
-A session is one agent run in its own sandbox, on its own git branch. This page drives a session from TypeScript with `@kortix/sdk`, from a script or from a server that starts sessions for its own customers. For the concept, see [Sessions](/docs/#computers); to set up the client, see [SDK](/docs/#sdk).
+A session is one agent run in its own sandbox, on its own git branch. This section drives a session from TypeScript with `@kortix/sdk`, from a script or from a server that starts sessions for its own customers. For the concept, see [Sessions](/docs/#computers); to set up the client, see [SDK](/docs/#sdk).
 
 The shortest complete run:
 
@@ -7204,7 +7204,7 @@ UI cannot run tools or change state.
 
 ## SDK reference
 
-This page lists the public surface of `@kortix/sdk`: each entry point, each member of the client, each method of the project and session handles, and the framework-free modules. It is for developers who already have a client and need the exact method name and arguments. The client table gives the route prefix of each member. To install the package and run a first session, start at [SDK](/docs/#sdk).
+This section lists the public surface of `@kortix/sdk`: each entry point, each member of the client, each method of the project and session handles, and the framework-free modules. It is for developers who already have a client and need the exact method name and arguments. The client table gives the route prefix of each member. To install the package and run a first session, start at [SDK](/docs/#sdk).
 
 ```ts
 import { createKortix } from '@kortix/sdk';
@@ -7217,7 +7217,7 @@ await p.secrets.list();
 await s.send('Run the tests.');
 ```
 
-Each client method calls the Kortix API. Session runtime methods reach the session's sandbox through the API at `{backendUrl}/p/…`. Route paths on this page are relative to `backendUrl`, which ends in `/v1`. Each route is in the [REST reference](https://api.kortix.com/v1/docs). A failed call throws an `ApiError` with `status`, `code` and `details`.
+Each client method calls the Kortix API. Session runtime methods reach the session's sandbox through the API at `{backendUrl}/p/…`. Route paths in this section are relative to `backendUrl`, which ends in `/v1`. Each route is in the [REST reference](https://api.kortix.com/v1/docs). A failed call throws an `ApiError` with `status`, `code` and `details`.
 
 ### Entry points and stability
 
