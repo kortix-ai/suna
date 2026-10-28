@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { parseManifestText, validateManifest } from '@kortix/manifest-schema';
 
 /**
- * `kortix migrate`: a kortix_version 2 project becomes kortix_version 3, run as
- * a real process on a synthetic v2 checkout. Preview by default; `--write`
+ * `kortix migrate`: a kortix_version 1 or 2 project becomes kortix_version 3,
+ * run as a real process on a synthetic checkout. Preview by default; `--write`
  * applies it.
  */
 
@@ -208,14 +208,28 @@ describe('kortix migrate --write', () => {
     expect(again.stdout).toContain('already kortix_version 3');
   });
 
-  test('a v1 project is pointed at the v1 upgrade', () => {
-    rmSync(join(cwd, 'kortix.yaml'));
-    write({ 'kortix.toml': 'kortix_version = 1\n[project]\nname = "x"\n' });
+  test('a v1 kortix.toml becomes a valid v3 kortix.yaml: omitted grants are all, env is secrets', () => {
+    rmSync(cwd, { recursive: true, force: true });
+    mkdirSync(cwd);
+    write({
+      'kortix.toml': 'kortix_version = 1\n[project]\nname = "x"\n[env]\noptional = ["HELPDESK_TOKEN"]\n\n[[agents]]\nname = "ops"\nconnectors = "none"\nenv = ["HELPDESK_TOKEN"]\n',
+      '.kortix/opencode/opencode.jsonc': '{ "default_agent": "ops", "permission": { "bash": "ask" } }\n',
+      '.kortix/opencode/agents/ops.md': '---\nmode: primary\ndescription: Runs ops.\n---\nYou run ops.\n',
+      '.kortix/opencode/agents/helper.md': '---\nmode: subagent\n---\nYou help.\n',
+    });
 
-    const result = kortix('migrate');
+    const result = kortix('migrate', '--write');
 
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('kortix projects upgrade');
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('kortix_version 1 → 3');
+    expect(existsSync(join(cwd, 'kortix.toml'))).toBe(false);
+    const raw = parseManifestText(read('kortix.yaml'), 'yaml') as Record<string, unknown> & { agents: Record<string, Record<string, unknown>> };
+    expect(raw.kortix_version).toBe(3);
+    expect(raw.default_agent).toBe('ops');
+    expect(raw.agents.ops).toMatchObject({ mode: 'primary', description: 'Runs ops.', permission: { bash: 'ask' }, connectors: 'none', secrets: ['HELPDESK_TOKEN'], kortix_permissions: 'all', skills: 'all', workspace: { project_repository: true } });
+    expect(raw.agents.helper).toMatchObject({ mode: 'subagent', connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' });
+    expect(read(raw.agents.ops.prompt_file as string)).toBe('You run ops.\n');
+    expect(kortix('validate', '--json', '--no-dockerfile-lint').code).toBe(0);
   });
 });
 

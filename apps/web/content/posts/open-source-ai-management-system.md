@@ -88,7 +88,7 @@ That gate is what lets a company hand an agent real capabilities. The agent prop
 
 Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free, and [`kortix self-host start`](https://kortix.com/docs/host) brings the stack up on hardware you control. The offer has one limit worth stating plainly: the stack pulls its images from docker.io and the default sandbox provider is remote, so this is not an air-gapped deployment. Isolated topologies get scoped with us.
 
-The compliance facts are as plain as the limits. SOC 2 Type I is held and SOC 2 Type II is in progress; GDPR is a posture we run, not a certificate. On price, the Free plan costs $0 and includes 500 credits a month, every feature and 1 project, on your own provider keys or ChatGPT subscription. Paid plans start at $50 a month.
+The compliance facts are as plain as the limits. SOC 2 Type I is verified; GDPR is a posture we run, not a certificate. On price, the Free plan costs $0 and includes 500 credits a month, every feature and 1 project, on your own provider keys or ChatGPT subscription. Paid plans start at $50 a month.
 
 The point of the option is what it does to the relationship: the repository that ran on our cloud runs on yours, and the vendor becomes a hosting choice instead of the owner of the system.
 

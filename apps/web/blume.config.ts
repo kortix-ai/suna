@@ -1,28 +1,9 @@
 import { defineConfig } from 'blume';
 
-// The sidebar, in reading order. Each group is one reader goal: start, build
-// the project, run work, connect, ship Apps, administer, self-host, develop.
-// Every page id must exist under content/docs; Blume renders a group's items
-// in this exact order. This tree is the only nav source: content/docs has no
-// meta.ts files.
-const sidebar = [
-  { label: 'Get started', items: ['index', 'quickstart', 'clients'] },
-  {
-    label: 'Project',
-    items: ['project', 'project/manifest', 'project/agents', 'project/tools', 'project/models', 'project/secrets'],
-  },
-  { label: 'Run work', items: ['work/sessions', 'work/runtime'] },
-  {
-    label: 'Connect',
-    items: ['connect/connectors', 'connect/channels', 'connect/triggers', 'connect/computers', 'connect/mcp'],
-  },
-  { label: 'Kortix Capture', items: ['capture', 'capture/rollout'] },
-  { label: 'Ship', items: ['apps'] },
-  { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
-  { label: 'Self-host', items: ['host'] },
-  { label: 'Develop', items: ['git', 'cli', 'tui', 'api'] },
-  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/ui', 'sdk/genui', 'sdk/reference'] },
-];
+import { OUTLINE } from './blume-components/outline';
+
+// The two docs outlines: blume-components/outline.ts.
+const sidebar = OUTLINE;
 
 // The docs render through Blume, not through the Next app. Nothing in
 // content/docs may import an app component. Blume built-ins only.
@@ -49,6 +30,9 @@ export default defineConfig({
     site: 'https://kortix.com',
   },
 
+  // No right-hand "On this page": it is on the left (OutlineSidebar.astro).
+  toc: false,
+
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see
   // decision D3 in the spec. The accent is NOT set here: it is bound to the
   // foreground token in theme.css so it flips with the theme by itself.
@@ -60,18 +44,15 @@ export default defineConfig({
     href: '/docs',
     // 1.5.3 correction: light/dark/alt live under `image`, not top-level
     // `logo` — see task-4-report.md for the config-key corrections log.
+    // The full logo file (symbol and wordmark, from public/brandkit). Blume
+    // prints the site title beside the image unless `text` is "", and the
+    // wordmark is already in the file.
     image: {
-      // BOTH are symbol-only, the same 30x25 mark in black and white.
-      // Blume renders the logo image and then a <span> with the site title
-      // beside it, so the dark slot must NOT hold a full logomark: it used to
-      // point at kortix-logomark-white.svg (708x142), which already contains
-      // the wordmark, and dark mode printed "Kortix" twice while light was
-      // correct. Keep both slots symbol-only.
-      light: '/kortix-symbol.svg',
-      dark: '/kortix-symbol-white.svg',
-      // The adjacent site title names the link; the symbol is decorative.
-      alt: '',
+      light: '/kortix-logo.svg',
+      dark: '/kortix-logo-white.svg',
+      alt: 'Kortix',
     },
+    text: '',
   },
 
   // Search is the ONE surface Blume takes over, replacing /api/search and the
@@ -138,7 +119,8 @@ export default defineConfig({
     // active tab; `href` overrides where a tab actually sends the reader, which
     // is how a tab can point off-site.
     tabs: [
-      { label: 'Docs', path: '/' },
+      { label: 'Guide', path: '/guide' },
+      { label: 'Developers', path: '/developers' },
       {
         // The URL sits in `path`, not `href`. Blume validates every tab whose
         // path starts with "/" against the page tree and warns when nothing
