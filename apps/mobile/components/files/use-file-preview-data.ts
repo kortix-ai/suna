@@ -47,7 +47,9 @@ export function useFilePreviewData(
   // image store: its native source, no blob read and no data URL (R38). A
   // failed draw (an expired token) falls back to the blob read.
   const shared = useSharedImage(sandboxUrl, enabled && previewType === FilePreviewType.IMAGE ? file?.path : null);
-  const [sharedFailed, setSharedFailed] = useState(false);
+  // Per file: one failed draw sends only that file to the blob read.
+  const [failedPath, setFailedPath] = useState<string | null>(null);
+  const sharedFailed = !!file && failedPath === file.path;
   const imageSource: SharedImageSource | undefined = shared && !sharedFailed ? shared.source : undefined;
   const rendersBlob = kind === 'blob' && !imageSource;
   const shouldFetchText = enabled && !!file && !isBinaryFile && listingDecision !== 'too-large';
@@ -104,7 +106,7 @@ export function useFilePreviewData(
     imageSource,
     imageRatio: imageSource ? (shared?.ratio ?? null) : null,
     /** Called when `imageSource` fails to draw: read the file instead. */
-    dropImageSource: () => setSharedFailed(true),
+    dropImageSource: () => setFailedPath(file?.path ?? null),
     isLoading: isLoadingText || isLoadingBlob,
     /** Loads again after a failure (a sandbox that was asleep). */
     retry: () => {

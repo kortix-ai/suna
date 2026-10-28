@@ -408,7 +408,7 @@ export function showDrawnByImageGen(call: ToolCallBlock, paths: ReadonlySet<stri
  * patterns, in order: rows of three, or of four when that divides evenly, and
  * one or two rows of two for the rest (5 = 3+2, 7 = 3+2+2, 8 = 4+4).
  */
-export function imageGenGridRows(count: number): number[] {
+function imageGenGridRows(count: number): number[] {
   if (count <= 0) return [];
   if (count <= 4) return [count];
   const rows = (size: number, n: number) => Array.from({ length: n }, () => size);
@@ -427,7 +427,11 @@ export interface ImageGenGridTile {
 
 export interface ImageGenGrid {
   tiles: ImageGenGridTile[];
-  /** How many tiles each row holds, top to bottom (`imageGenGridRows`). */
+  /**
+   * How many tiles each row holds, top to bottom: up to four is one bento;
+   * five and more are rows of three, or of four when that divides evenly, and
+   * one or two rows of two for the rest (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4).
+   */
   rows: number[];
 }
 

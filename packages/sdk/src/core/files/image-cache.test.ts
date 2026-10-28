@@ -72,3 +72,35 @@ test('listeners hear every change and stop on unsubscribe; a natural size is kep
   cache.forget('a');
   expect(heard).toBe(3);
 });
+
+test('a lookup with a sha256 never returns the path entry of other bytes', () => {
+  const cache = createImageCache<string>({ maxEntries: 4 });
+  const OTHER = 'b'.repeat(64);
+  cache.put({ path: 'p|plot.png', sha256: SHA }, 'url-old');
+  // The path now names new bytes: the old entry is not them.
+  expect(cache.get({ path: 'p|plot.png', sha256: OTHER })).toBeUndefined();
+  // A path entry stored without a digest is not a match for one either.
+  cache.put({ path: 'p|chart.png' }, 'url-chart');
+  expect(cache.get({ path: 'p|chart.png', sha256: OTHER })).toBeUndefined();
+  // Without a digest, the path is the key.
+  expect(cache.get({ path: 'p|chart.png' })?.value).toBe('url-chart');
+});
+
+test('clear drops and disposes every entry nothing holds; a held one goes on its last release', () => {
+  const disposed: string[] = [];
+  const cache = createImageCache<string>({ maxEntries: 4, dispose: (url) => disposed.push(url) });
+  const held = cache.put({ path: 'a', sha256: SHA }, 'url-a');
+  const release = cache.retain(held);
+  cache.put({ path: 'b' }, 'url-b');
+  let heard = 0;
+  cache.subscribe(() => heard++);
+  cache.clear();
+  expect(cache.get({ path: 'a' })).toBeUndefined();
+  expect(cache.get({ sha256: SHA })).toBeUndefined();
+  expect(cache.get({ path: 'b' })).toBeUndefined();
+  expect(disposed).toEqual(['url-b']);
+  expect(heard).toBe(1);
+  release();
+  expect(disposed).toEqual(['url-b', 'url-a']);
+});
+

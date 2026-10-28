@@ -28,7 +28,11 @@ export interface ImageCacheEntry<V> {
 }
 
 export interface ImageCache<V> {
-  /** The entry for `ref`: by sha256 first, then by path. */
+  /**
+   * The entry for `ref`. With a sha256, only the entry of those bytes: a path
+   * entry of other (or unknown) bytes is never returned for it. Without one,
+   * the entry at the path.
+   */
   get(ref: ImageCacheRef): ImageCacheEntry<V> | undefined;
   /**
    * Stores `value` under the ref's path and sha256. When the sha256 is already
@@ -42,6 +46,8 @@ export interface ImageCache<V> {
   retain(entry: ImageCacheEntry<V>): () => void;
   /** Drops the entry at `path` (a manual refresh); a held entry is disposed on its last release. */
   forget(path: string): void;
+  /** Drops every entry (a sign-out or an account switch); a held entry is disposed on its last release. */
+  clear(): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -94,7 +100,7 @@ export function createImageCache<V>({ maxEntries, maxBytes = Number.POSITIVE_INF
   };
 
   return {
-    get: ({ path, sha256 }) => (sha256 && bySha.get(sha256)) || (path ? byPath.get(path) : undefined),
+    get: ({ path, sha256 }) => (sha256 ? bySha.get(sha256) : path ? byPath.get(path) : undefined),
     put({ path, sha256 }, value, bytes = 0) {
       const known = sha256 ? bySha.get(sha256) : undefined;
       if (known) {
@@ -146,6 +152,10 @@ export function createImageCache<V>({ maxEntries, maxBytes = Number.POSITIVE_INF
       const slot = byPath.get(path);
       if (!slot) return;
       drop(slot);
+      emit();
+    },
+    clear() {
+      for (const slot of [...slots]) drop(slot);
       emit();
     },
     subscribe(listener) {

@@ -11,7 +11,6 @@ import {
   imageGenView,
   imageDigestsShownByImageGen,
   imageGenGrid,
-  imageGenGridRows,
   imagePathsShownByImageGen,
   sessionLogImageGenRuns,
   showDrawnByImageGen,
@@ -561,13 +560,14 @@ describe('R38: digests, one grid per turn', () => {
   });
 
   test('grid rows: up to four is one bento; five and more are rows of the bento patterns', () => {
-    const rows = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, imageGenGridRows(n)]));
+    const rowsOf = (n: number) => imageGenGrid([imageGenView(gen('g', Array.from({ length: n }, (_, i) => `p${i}`)))]).rows;
+    const rows = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, rowsOf(n)]));
     expect(rows).toEqual({
       1: [1], 2: [2], 3: [3], 4: [4],
       5: [3, 2], 6: [3, 3], 7: [3, 2, 2], 8: [4, 4],
       9: [3, 3, 3], 10: [3, 3, 2, 2], 11: [3, 3, 3, 2], 12: [3, 3, 3, 3],
     });
-    expect(imageGenGridRows(0)).toEqual([]);
+    expect('imageGenGridRows' in root).toBe(false);
   });
 
   test('two consecutive image_gen calls render one grid of five', () => {

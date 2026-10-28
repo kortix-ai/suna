@@ -29,6 +29,29 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `showDrawnByImageGen(call, paths)`: a `show` of an image that an `image_gen` card of the same
   turn already drew (every image of a batch) is left out, and a `show` call whose every file is
   such an image draws nothing.
+- A frame's `sha256?`: the lowercase hex digest of the saved file's bytes, when the `image_gen`
+  output names it (kortixd adds it; older outputs have none; a malformed value is dropped).
+- `imageDigestsShownByImageGen(blocks)`: the digests of every image the turn's `image_gen` calls
+  drew. `withoutImageGenDuplicates(items, paths, digests?)` and `showDrawnByImageGen(call, paths,
+  digests?)` take it as an optional third argument: a `show` of the same bytes at another path (a
+  Drive copy) is left out too. Items carry their digest as `sha256?`.
+- `showItemDigest(call, path)`: the `sha256` a `show` call's output gives the file at `path` (its
+  single `entry` or one of its `items`), with or without the `/workspace/` prefix.
+  `sessionLogShowGroupCall` items carry it as `sha256` too.
+- `imageGenGrid(views)` and the `ImageGenGrid` / `ImageGenGridTile` types: the one grid of a run of
+  `image_gen` calls. `tiles` are in call order (`image`, `call`, `first`); a call that failed or
+  stopped as a whole keeps one slot per prompt. `rows` is each row's tile count: up to four is one
+  bento, five and more are rows of three (or of four when that divides evenly) and one or two rows
+  of two (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4).
+- `sessionLogImageGenRuns(segments, { paths, digests })`: the runs of `image_gen` calls that draw
+  as one grid, by block id: standalone calls with no visible non-image deliverable between them.
+  The host draws the grid at `run[0]` and nothing for the others, live and settled alike.
+- `createImageCache({ maxEntries, maxBytes?, dispose? })` and the `ImageCache`, `ImageCacheEntry`,
+  `ImageCacheOptions` and `ImageCacheRef` types: a framework-free store of loaded images, by path
+  key and by sha256. A lookup with a sha256 finds only those bytes, never a path entry of other
+  bytes. `retain` holds an entry against eviction; past the bounds the least recently used entry
+  nothing holds is evicted and handed to `dispose`. `link`, `setSize`, `forget`, `clear` and
+  `subscribe` complete it.
 - Narration counts the images of one `image_gen` call: "Made 3 images" (the images it made, else
   the prompts it asked for). `getToolInfo('image_gen', input).subtitle` is the first prompt.
 - `getToolPrimaryArg` reads an `image_gen` call as its first prompt (60 characters) and, for a batch,

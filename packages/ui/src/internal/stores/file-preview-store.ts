@@ -9,6 +9,11 @@ import { create } from 'zustand';
 export interface FileCaption {
   text: string;
   model?: string | null;
+  /**
+   * The sha256 of the image's bytes (R38): the viewer draws those bytes from
+   * the shared store at once, with no read.
+   */
+  sha256?: string;
 }
 
 /** One key per sandbox file, with or without the `/workspace/` prefix. */

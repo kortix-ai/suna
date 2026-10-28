@@ -622,12 +622,25 @@ What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sd
 | `ImageGenView['error']` | `message`, `suggestion?` (the text after the first sentence), `code?` (the gateway's trailing `[code]`, such as `provider_not_connected` or `image_rate_limited`), `retryAfterSeconds?` (from `Retry after N s.`), `connectModel` (true only for `image_model_unavailable`, `provider_not_connected` or `provider_reauth_required`: connecting a model in the project's settings fixes the call). On the view, `null` unless `phase` is `failed`; on a frame, `null` unless its `phase` is `failed`. |
 | `imageGenRetryDelay(seconds)` | `{ value, unit }`: whole seconds below 90 s (at least 1), minutes below 90 min, else hours, each rounded up. |
 | `formatImageGenElapsed(ms)` | The elapsed time as `m:ss`, such as `0:42` or `2:05`. |
+| `ImageGenView['images'][i].sha256` | Optional. The lowercase hex sha256 of the saved file's bytes, when the `image_gen` output names it. Older outputs have none; a malformed value is dropped. |
 | `imagePathsShownByImageGen(blocks)` | The image paths the `image_gen` calls among `blocks` drew (every `ready` frame of every call), each without its `/workspace/` prefix. |
-| `withoutImageGenDuplicates(items, paths)` | `items` without each item whose `path` is in `paths` (with or without the `/workspace/` prefix). Items without a `path` stay. |
-| `showDrawnByImageGen(call, paths)` | True when `call` is a `show` or `show_user` call and every file it names (`items`, else `path`) is in `paths`: the host renders nothing for it. |
+| `imageDigestsShownByImageGen(blocks)` | The `sha256` of every image the `image_gen` calls among `blocks` drew, when their output names it. |
+| `showItemDigest(call, path)` | The `sha256` a `show` call's output gives the file at `path` (its single `entry` or one of its `items`), matched with or without the `/workspace/` prefix; `undefined` when the output names none. `sessionLogShowGroupCall` items carry it as `sha256`. |
+| `withoutImageGenDuplicates(items, paths, digests?)` | `items` without each item whose `path` is in `paths` (with or without the `/workspace/` prefix) or whose `sha256` is in `digests` (the same bytes at another path, such as a Drive copy). Items without either stay. |
+| `showDrawnByImageGen(call, paths, digests?)` | True when `call` is a `show` or `show_user` call and every file it names (`items`, else `path`) is in `paths` or, by the digest its output gives it, in `digests`: the host renders nothing for it. |
+| `sessionLogImageGenRuns(segments, { paths, digests })` | The runs of `image_gen` calls that draw as one grid, as a `Map` from each member's block id to its run: two or more standalone `image_gen` calls with no visible non-image deliverable between them (a `show` the cards already drew, a burst or text does not split a run, since the settled turn hoists the deliverables together). The host draws the grid at `run[0]` and nothing for the others. |
+| `imageGenGrid(views)` | The one grid of a run as an `ImageGenGrid`: `tiles` (`ImageGenGridTile`: `image`, the `call` index in the run, `first` for each call's first tile) in call order, and `rows`, each row's tile count. Up to four tiles is one bento; five and more are rows of three, or of four when that divides evenly, and one or two rows of two (5 = 3+2, 6 = 3+3, 7 = 3+2+2, 8 = 4+4). A call that failed or stopped as a whole keeps one slot per prompt. |
+| `createImageCache({ maxEntries, maxBytes?, dispose? })` | A framework-free `ImageCache<V>` of loaded images (`V` is what the host draws from: an object URL, a native source). `get(ref)` (`ImageCacheRef`: `path?`, `sha256?`): with a `sha256`, only the entry of those bytes, never a path entry of other bytes; else the entry at `path`. `put(ref, value, bytes?)` (an existing entry for the digest wins and the new value is disposed), `link(path, entry)`, `setSize(entry, w, h)`, `retain(entry)` (held entries are never evicted; returns the release), `forget(path)`, `clear()`, `subscribe(listener)`. Past `maxEntries` or `maxBytes`, the least recently used entry nothing holds is evicted and handed to `dispose`. An `ImageCacheEntry` has `value`, `bytes`, `width`, `height`. |
 
 ```ts
-import { imageGenView, imagePathsShownByImageGen, showDrawnByImageGen } from '@kortix/sdk';
+import {
+  imageDigestsShownByImageGen,
+  imageGenGrid,
+  imageGenView,
+  imagePathsShownByImageGen,
+  sessionLogImageGenRuns,
+  showDrawnByImageGen,
+} from '@kortix/sdk';
 
 const drawn = imagePathsShownByImageGen(turn.blocks);
 const view = imageGenView(call, turn.live);
@@ -636,7 +649,12 @@ for (const image of view.images) {
   else if (image.phase === 'failed') renderNote(image.error?.message);
   else renderPlaceholder(image.aspectRatio, image.prompt);
 }
-if (showDrawnByImageGen(showCall, drawn)) skip(showCall); // the image card already shows it
+if (showDrawnByImageGen(showCall, drawn, imageDigestsShownByImageGen(turn.blocks))) skip(showCall); // the image card already shows it
+
+// Consecutive image_gen cards of a turn draw as one grid at the first call.
+const runs = sessionLogImageGenRuns(segments, { paths: drawn, digests: imageDigestsShownByImageGen(turn.blocks) });
+const run = runs.get(call.id);
+if (run && run[0] === call) renderGrid(imageGenGrid(run.map((one) => imageGenView(one, turn.live))));
 ```
 
 ### Block turns

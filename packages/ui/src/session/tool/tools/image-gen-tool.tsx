@@ -180,7 +180,9 @@ function ImageGenFrame({
   }
   const generating = image.phase === 'generating';
   const src = generating ? null : (image.directUrl ?? blobUrl);
-  const caption: FileCaption | undefined = image.prompt ? { text: image.prompt, model } : undefined;
+  const caption: FileCaption | undefined = image.prompt
+    ? { text: image.prompt, model, ...(image.sha256 && { sha256: image.sha256 }) }
+    : undefined;
   const openFullScreen =
     filePath && navigationEnabled
       ? () => {
@@ -261,7 +263,7 @@ const cappedWidth = (rect: number) => `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${re
 
 /**
  * Five or more images (R38): ONE grid of six columns whose rows are the
- * bento patterns (`imageGenGridRows`: 5 = 3+2, 8 = 4+4, …). Every tile sits
+ * bento patterns (`imageGenGrid().rows`: 5 = 3+2, 8 = 4+4, …). Every tile sits
  * in the same grid, placed by line numbers, so a tile is never re-parented.
  *
  * The grid is as wide as its tallest row allows under the cap (`width`), and

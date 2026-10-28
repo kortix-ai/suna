@@ -108,13 +108,14 @@ mock.module('../session/tool/shared/styles', () => ({
 }));
 
 let rememberSharedImage: typeof import('@/lib/files/shared-image').rememberSharedImage;
+let clearSharedImages: typeof import('@/lib/files/shared-image').clearSharedImages;
 let useFilePreviewData: typeof import('./use-file-preview-data').useFilePreviewData;
 let FilePreview: typeof import('./FilePreviewRenderers').FilePreview;
 let ShowContentRenderer: typeof import('../session/tool/tools/show-content-renderer').ShowContentRenderer;
 let FilePreviewBody: typeof import('./FilePreviewSheet').FilePreviewBody;
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  ({ rememberSharedImage } = await import('@/lib/files/shared-image'));
+  ({ rememberSharedImage, clearSharedImages } = await import('@/lib/files/shared-image'));
   ({ useFilePreviewData } = await import('./use-file-preview-data'));
   ({ FilePreview } = await import('./FilePreviewRenderers'));
   ({ ShowContentRenderer } = await import('../session/tool/tools/show-content-renderer'));
@@ -129,6 +130,8 @@ afterEach(async () => {
   probes.length = 0;
   timings.length = 0;
   reduceMotion = false;
+  // Order-independent: an empty store per test.
+  clearSharedImages();
 });
 
 const FOX = '/workspace/output/images/fox.png';

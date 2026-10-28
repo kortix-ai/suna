@@ -942,8 +942,14 @@ An `image_gen` card reads `imageGenView(call, live?)`: an `ImageGenView` with
 per call.
 `imageGenRetryDelay(seconds)` and `formatImageGenElapsed(ms)` format its retry wait
 and elapsed time. `imagePathsShownByImageGen(blocks)`,
-`withoutImageGenDuplicates(items, paths)` and `showDrawnByImageGen(call, paths)` keep
-a `show` from drawing an image the turn's `image_gen` card already drew. See the
+`withoutImageGenDuplicates(items, paths, digests?)` and `showDrawnByImageGen(call, paths, digests?)` keep
+a `show` from drawing an image the turn's `image_gen` card already drew, by path or by
+the bytes' sha256 (`imageDigestsShownByImageGen(blocks)`, a frame's `sha256?`,
+`showItemDigest(call, path)` for a `show` output). Consecutive `image_gen` cards of a turn
+draw as one grid: `sessionLogImageGenRuns(segments, drawn)` finds the runs and
+`imageGenGrid(views)` lays out their tiles and rows. `createImageCache(options)` is a
+framework-free store of loaded images by path and sha256, for a host that shares one
+loaded image across surfaces. See the
 [reference](https://kortix.com/docs/sdk/reference#the-image_gen-card).
 
 `getSessionLogPage(projectId, sessionId, query?)`, or `kortix.session(p, s).log(query?)`,

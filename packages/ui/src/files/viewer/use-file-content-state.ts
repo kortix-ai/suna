@@ -9,6 +9,7 @@ import { findDiagnosticsForFile, useDiagnosticsStore } from '../../internal/stor
 import { isRuntimeStartingError } from '@kortix/sdk';
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type SharedImageResult, useFileSource } from './file-source';
+import { useFileCaption } from '../../internal/stores/file-preview-store';
 import { getFileCategory, getLanguageFromExt, type FileCategory } from './preview-policy';
 import { usePreviewFit } from './preview-fit';
 import { useContentRevision } from './use-content-revision';
@@ -86,7 +87,9 @@ export function useFileContentState({
   // the file as bytes. Never the base64 text read, a second download of the
   // same picture under another cache key (R38).
   const sharedImagePath = source.useSharedImage && RASTER_IMAGE.test(fileName) ? filePath : null;
-  const sharedImage = (source.useSharedImage ?? noSharedImage)(sharedImagePath);
+  // An image the card opened names its bytes' sha256: drawn from the store with no read.
+  const sharedImageSha = useFileCaption(filePath)?.sha256;
+  const sharedImage = (source.useSharedImage ?? noSharedImage)(sharedImagePath, sharedImageSha);
   const {
     data: fileContent,
     isLoading,

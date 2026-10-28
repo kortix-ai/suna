@@ -34,8 +34,22 @@ export function rememberSharedImage(
 ): void {
   const ref = { path: pathKey(sandboxUrl, path), sha256 };
   const known = sharedImages.get(ref);
-  const entry = known && known.value.uri === source.uri ? known : sharedImages.put(ref, source);
+  // The same source with the current token is kept; a new token replaces it,
+  // so a later draw never sends an expired Authorization header.
+  const same = known && known.value.uri === source.uri && sameHeaders(known.value.headers, source.headers);
+  // Dropped by its path: the slot goes with its digest key, and the put stores both again.
+  if (known && !same) sharedImages.forget(ref.path);
+  const entry = same && known ? known : sharedImages.put(ref, source);
   if (size && (entry.width !== size.width || entry.height !== size.height)) sharedImages.setSize(entry, size.width, size.height);
+}
+
+function sameHeaders(a: Record<string, string> | undefined, b: Record<string, string> | undefined): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
+/** Drops every stored source (a sign-out or an account switch: they carry the old Authorization header). */
+export function clearSharedImages(): void {
+  sharedImages.clear();
 }
 
 export interface SharedImage {

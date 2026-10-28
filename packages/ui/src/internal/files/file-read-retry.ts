@@ -108,6 +108,27 @@ export function sandboxWakingRefetchInterval(error: unknown, parked: boolean): n
   return parked ? SANDBOX_PARKED_REFETCH_INTERVAL_MS : SANDBOX_WAKING_REFETCH_INTERVAL_MS;
 }
 
+/** The image wait's polls (R38): 1, 2, 4, 8 s, then every 10 s, about 2 min in all. */
+export const IMAGE_WAKING_ATTEMPTS = 15;
+
+/**
+ * The poll interval of an image read while the session runtime is still
+ * starting (`isRuntimeStartingError`), after its `failures`-th failed read:
+ * 1 s doubling to a 10 s cap; `false` (stop) after `IMAGE_WAKING_ATTEMPTS`,
+ * when the tile says the image is unavailable and offers Try again; `false`
+ * for any other error. A file viewer keeps `sandboxWakingRefetchInterval`
+ * (a parked box can take longer than an image tile should wait).
+ */
+export function imageWakingRefetchInterval(error: unknown, failures: number): number | false {
+  if (!isRuntimeStartingError(error) || failures > IMAGE_WAKING_ATTEMPTS) return false;
+  return Math.min(1000 * 2 ** Math.max(0, failures - 1), 10_000);
+}
+
+/** True once an image read gave up waiting for the runtime (`imageWakingRefetchInterval`). */
+export function imageWaitedOut(error: unknown, failures: number): boolean {
+  return isRuntimeStartingError(error) && failures > IMAGE_WAKING_ATTEMPTS;
+}
+
 export function shouldRetryFileRead(
   filePath: string | null | undefined,
   failureCount: number,

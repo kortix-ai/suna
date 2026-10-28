@@ -117,7 +117,7 @@ export interface FileSource {
    * card, a `show` card) already loaded, else is read once as bytes. A source
    * with other paths (a git ref, a Drive, a share) omits it.
    */
-  useSharedImage?: (filePath: string | null) => SharedImageResult;
+  useSharedImage?: (filePath: string | null, sha256?: string | null) => SharedImageResult;
 }
 
 export interface SharedImageResult {
