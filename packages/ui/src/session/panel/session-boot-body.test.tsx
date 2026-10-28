@@ -123,6 +123,11 @@ const button = (host: HTMLElement, label: string) =>
   );
 
 describe('tool cards while the session boots', () => {
+  test('no card open: the panel shows the wake status, never a blank panel', async () => {
+    const { host } = await render(panelValue({ booting: true }), <m.SessionDetailPanel />);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Starting your session');
+  });
+
   test('Terminal: the real card header, the wake status, a working Close, no shell', async () => {
     let closed = 0;
     const { host } = await render(
@@ -158,7 +163,23 @@ describe('tool cards while the session boots', () => {
     expect(closed).toBe(1);
   });
 
-  test('Files: tabs, New and View options drawn disabled; the card turns live without reopening', async () => {
+  test('Files on All files: tabs, New and View options drawn disabled', async () => {
+    const { host } = await render(
+      panelValue({ booting: true }),
+      <m.SessionFilesBooting mode="files">
+        <m.SessionBootStatus />
+      </m.SessionFilesBooting>,
+    );
+    const tabs = Array.from(host.querySelectorAll('[role="tab"]'));
+    expect(tabs.map((t) => t.textContent)).toEqual(['All files', 'Changes']);
+    expect(tabs.every((t) => (t as HTMLButtonElement).disabled)).toBe(true);
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    expect(button(host, 'New')?.disabled).toBe(true);
+    expect(button(host, 'View options')?.disabled).toBe(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Starting your session');
+  });
+
+  test('Files on Changes: only the disabled tabs, like the live Changes card; turns live without reopening', async () => {
     const body = (
       <m.SessionBootGate
         boot={
@@ -175,8 +196,8 @@ describe('tool cards while the session boots', () => {
     expect(tabs.map((t) => t.textContent)).toEqual(['All files', 'Changes']);
     expect(tabs.every((t) => (t as HTMLButtonElement).disabled)).toBe(true);
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
-    expect(button(host, 'New')?.disabled).toBe(true);
-    expect(button(host, 'View options')?.disabled).toBe(true);
+    expect(button(host, 'New')).toBeUndefined();
+    expect(button(host, 'View options')).toBeUndefined();
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Starting your session');
     expect(host.querySelector('[data-testid="live-explorer"]')).toBeNull();
 

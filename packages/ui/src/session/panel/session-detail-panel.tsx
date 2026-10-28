@@ -23,7 +23,7 @@ import { useTranslations } from '../../i18n';
 
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../primitives/drawer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
-import { SessionBootStatus, SessionStartingLoader } from '../status/session-starting-loader';
+import { SessionBootStatus } from '../status/session-starting-loader';
 import { useIsMobile } from '../../internal/hooks';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { CloseButton, DetailLayer, type PersistentLayer } from './easy/detail-view';
@@ -39,7 +39,7 @@ export function SessionDetailPanel() {
   const { detail, closeDetail, terminalOpen, terminalSwap, closeTerminal, sessionId } = panel;
   const { projectId, projectSessionId, booting } = panel;
   // While the computer boots, a card wears its real chrome over the wake status,
-  // and the panel with no card open shows that status alone.
+  // and the panel with no card open shows that status alone, never blank.
 
   const terminalLayer: PersistentLayer = {
     open: terminalOpen,
@@ -60,7 +60,7 @@ export function SessionDetailPanel() {
   };
 
   if (isMobile && booting) {
-    return <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />;
+    return <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />;
   }
 
   if (isMobile) {
@@ -109,7 +109,7 @@ export function SessionDetailPanel() {
         persistentLayer={terminalLayer}
       >
         {booting ? (
-          <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />
+          <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
         ) : null}
       </DetailLayer>
     </div>

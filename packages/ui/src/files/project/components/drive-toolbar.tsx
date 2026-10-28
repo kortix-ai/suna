@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '../../../primitives/button';
+import { ButtonGroup } from '../../../primitives/button-group';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -70,6 +71,20 @@ import { Download } from '../../../internal/icons/download';
  */
 export const DRIVE_ACTION_ROW_CLASS =
   'border-border/60 flex h-11 shrink-0 items-center gap-1 border-b px-4';
+
+/**
+ * The action row itself: the host's `leading` chrome, then the actions as one
+ * secondary button group at the trailing edge. The live explorer and the
+ * session panel's booting Files card both draw it, so the two cannot drift.
+ */
+export function DriveActionRow({ leading, actions }: { leading?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className={DRIVE_ACTION_ROW_CLASS}>
+      {leading}
+      {actions ? <ButtonGroup className="ml-auto shrink-0">{actions}</ButtonGroup> : null}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ *
  * Path bar

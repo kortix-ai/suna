@@ -7,9 +7,9 @@ import Loading from '../../primitives/loading';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { FilesStoreProvider, useFilesStore } from '../../files/runtime';
 import { SandboxFileExplorer } from '../../files/runtime/sandbox-file-explorer';
-import { ButtonGroup } from '../../primitives/button-group';
 import {
   DRIVE_ACTION_ROW_CLASS,
+  DriveActionRow,
   DriveNewMenu,
   DriveViewMenu,
 } from '../../files/project/components/drive-toolbar';
@@ -254,13 +254,19 @@ export function SessionFilesBooting({
 }) {
   return (
     <Tabs value={mode} className="bg-background flex h-full min-h-0 flex-col gap-0">
-      <div className={DRIVE_ACTION_ROW_CLASS}>
-        <PanelTabs changedCount={0} disabled />
-        <ButtonGroup className="ml-auto shrink-0">
-          <DriveNewMenu compact disabled />
-          <DriveViewMenu variant="secondary" disabled onRefresh={noop} onDownloadDir={noop} />
-        </ButtonGroup>
-      </div>
+      {/* The live row for each tab: All files carries New and View options,
+          Changes only the tabs (its change-request button needs changes). */}
+      <DriveActionRow
+        leading={<PanelTabs changedCount={0} disabled />}
+        actions={
+          mode === 'files' ? (
+            <>
+              <DriveNewMenu compact disabled />
+              <DriveViewMenu variant="secondary" disabled onRefresh={noop} onDownloadDir={noop} />
+            </>
+          ) : null
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </Tabs>
   );
