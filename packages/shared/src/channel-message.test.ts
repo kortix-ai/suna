@@ -601,6 +601,28 @@ describe('channelPromptText writes a prompt that parseChannelMessage reads back'
   });
 });
 
+describe('parseChannelMessage — Email', () => {
+  test('an email envelope reads as Email: the subject, the sender and the body, without the instructions', () => {
+    const body = 'Hi,\n\nthe numbers are below.\n\n— Sam';
+    const prompt = channelPromptText(envelope({ platform: 'Email', where: 'Q3 report', sender: 'a@b.example', text: body }));
+    expect(prompt.split('\n')[0]).toBe('[Email · Q3 report · message from a@b.example]');
+    expect(parseChannelMessage(prompt)).toEqual({
+      platform: 'Email',
+      context: 'Q3 report',
+      userName: 'a@b.example',
+      messageText: body,
+      followUp: false,
+    });
+  });
+
+  // Every deployed build reads an unknown word as Slack (`legacyParse`); this build does too.
+  test.each(['Discord', 'email'])('a platform word this build does not know (%s) still reads as Slack', (word) => {
+    const prompt = `[${word} · #general · message from sam]\nhello`;
+    expect(parseChannelMessage(prompt)?.platform).toBe('Slack');
+    expect(parseChannelMessage(prompt)).toEqual(legacyParse(prompt) as never);
+  });
+});
+
 describe('no channel message can freeze the tab that parses it, the envelope included', () => {
   within('an envelope whose 240k-character text holds 10k delimiters', () =>
     parseChannelMessage(channelPromptText(envelope({ platform: 'Teams', text: '\n\n── Teams instructions\n'.repeat(10_000) }))));
