@@ -167,6 +167,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
   retainSentAttachmentPreviews,
@@ -4227,11 +4228,13 @@ export function SessionChat({
   }
 
   return (
-    // Outcomes' cache coherence and the shareable `?cr=` link both hinge on
-    // ONE `ProjectFilesProvider`: `useChangeRequests` inside
-    // `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
-    // their project id from this context, which is what keeps them on the same
-    // React Query cache entry (see `outcomes/session-outcomes-provider.tsx`).
+    // A read-only view (the sub-session modal) offers no fix inside a tool card.
+    <ReadOnlySessionContext.Provider value={!!readOnly}>
+    {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
+        ONE `ProjectFilesProvider`: `useChangeRequests` inside
+        `SessionOutcomesProvider` and `ChangeRequestDetailDialog` below both read
+        their project id from this context, which is what keeps them on the same
+        React Query cache entry (see `outcomes/session-outcomes-provider.tsx`). */}
     <ProjectFilesProvider
       value={{ projectId: projectId ?? '', ref: outcomesBaseRef, defaultBranch: outcomesBaseRef }}
     >
@@ -4997,5 +5000,6 @@ export function SessionChat({
         </SessionBodyRow>
       </ComposerDropZone>
     </ProjectFilesProvider>
+    </ReadOnlySessionContext.Provider>
   );
 }

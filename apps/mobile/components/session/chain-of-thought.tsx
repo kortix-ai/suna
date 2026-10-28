@@ -30,17 +30,28 @@ import Animated, {
  * Web Motion's default tween for `height`/`opacity` is 0.3s; the nearest
  * MOTION tokens are `slow` (300ms) on the `default` curve.
  */
-const EXPAND_TIMING = {
+const EXPAND_TIMING: DisclosureTiming = {
   duration: MOTION.duration.slow,
   easing: Easing.bezier(...MOTION.easing.default),
 };
 
+export interface DisclosureTiming {
+  duration: number;
+  easing: ReturnType<typeof Easing.bezier>;
+}
+
 export function DisclosureContent({
   open,
   children,
+  timing,
+  still = false,
 }: {
   open: boolean;
   children: ReactNode;
+  /** The open and the close timing; both `EXPAND_TIMING` when unset. */
+  timing?: { open: DisclosureTiming; close: DisclosureTiming };
+  /** Reduce Motion: open and close with no transition. */
+  still?: boolean;
 }) {
   // The wrapper's `maxHeight` is `content height × progress` while it moves and
   // uncapped at rest (`disclosureBodyMaxHeight`). The decision runs on the UI
@@ -71,10 +82,18 @@ export function DisclosureContent({
       firstRun.current = false;
       return;
     }
-    progress.value = withTiming(open ? 1 : 0, EXPAND_TIMING, (finished) => {
+    if (still) {
+      progress.value = open ? 1 : 0;
+      if (!open) unmountIfClosed();
+      return;
+    }
+    const step = timing ? (open ? timing.open : timing.close) : EXPAND_TIMING;
+    progress.value = withTiming(open ? 1 : 0, step, (finished) => {
       if (finished && !open) runOnJS(unmountIfClosed)();
     });
-  }, [open, progress, unmountIfClosed]);
+    // `timing` is read when `open` changes; a new object per render must not restart the motion.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, progress, unmountIfClosed, still]);
 
   const onLayout = useCallback(
     (event: LayoutChangeEvent) => {

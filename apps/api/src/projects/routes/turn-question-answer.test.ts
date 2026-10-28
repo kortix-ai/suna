@@ -32,7 +32,9 @@ mock.module('../session-lifecycle/release-runtime-question', () => ({
     return release;
   },
 }));
+const realSessionLifecycle = await import('../session-lifecycle');
 mock.module('../session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async (input: { text: string }) => {
     queued.push(input.text);
     return 'queued';

@@ -33,7 +33,7 @@ import {
   familyForTool,
   narrationToolName as humanizeToolName,
 } from '@kortix/sdk';
-import { toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
+import { imageGenView, toolCallMetadata, toolKind, type ToolCallBlock } from '@kortix/sdk';
 
 export interface OutputItemBase {
   callID: string;
@@ -200,7 +200,7 @@ function createArtifactName(call: ToolCallBlock): { name: string; path?: string 
       const name = basename(imagePath);
       if (name) return { name, path: imagePath };
     }
-    const prompt = typeof input.prompt === 'string' ? input.prompt : '';
+    const prompt = imageGenView(call).prompts[0] ?? '';
     return { name: prompt ? truncate(prompt) : 'Image' };
   }
 
@@ -298,6 +298,12 @@ export function deriveOutputs(calls: ToolCallBlock[], opts?: { latestRun?: Set<s
       // every call to these tool names did.
       const kind = createArtifactKind(call);
       if (!kind) continue;
+      // One image_gen call makes up to four images: one row per file.
+      const images = kind === 'image' ? imageGenView(call).images.flatMap((image) => (image.imagePath ? [image.imagePath] : [])) : [];
+      if (images.length) {
+        for (const path of images) push({ callID: call.call_id, name: basename(path), path, kind });
+        continue;
+      }
       const { name, path } = createArtifactName(call);
       const presentationName =
         kind === 'presentation'

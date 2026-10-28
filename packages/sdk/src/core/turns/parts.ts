@@ -289,7 +289,7 @@ const TOOL_CARDS: Record<string, ToolCard> = {
   web_search: { icon: 'search', title: 'Web Search', subtitle: (input) => input.query },
   scrape_webpage: { icon: 'globe', title: 'Scrape', subtitle: (input) => input.urls?.split?.(',')[0] },
   image_search: { icon: 'image', title: 'Image Search', subtitle: (input) => input.query },
-  image_gen: { icon: 'image', title: 'Image Gen', subtitle: (input) => input.prompt?.slice?.(0, 40) },
+  image_gen: { icon: 'image', title: 'Image Gen', subtitle: (input) => (input.prompts?.[0] ?? input.prompt)?.slice?.(0, 40) },
   video_gen: { icon: 'cpu', title: 'Video Gen', subtitle: (input) => input.prompt?.slice?.(0, 40) },
   presentation_gen: {
     icon: 'presentation',

@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread, type ToolCallBlock } from '../types';
 import { classifyTurn, toToolView } from '../../turns/classify';
 import { sessionLogOfV1Rows } from '../v1-view';
+import { partOutcome } from '../../turns/tools/tool-outcome';
 import {
   classifySessionLogMessage,
   sessionLogAnsweredQuestionCall,
@@ -211,6 +212,19 @@ describe('sessionLogShowGroupCall', () => {
     const failed = sessionLogShowGroupCall([one, call('show4', 'show', { title: 'Chart' }, { status: 'error', result: { content: [{ type: 'text', text: 'gone' }], is_error: true, error: { message: 'gone' } } })]);
     expect((failed.input as { items: unknown[] }).items.at(-1)).toEqual({ status: 'error', type: 'error', title: 'Chart', content: 'gone' });
   });
+
+  test('each item keeps the sha256 its own call\'s output gives its file (R38)', () => {
+    const sha = 'b'.repeat(64);
+    const out = (path: string) => ({ result: { content: [{ type: 'text' as const, text: JSON.stringify({ entry: { path, sha256: sha } }) }], is_error: false } });
+    const merged = sessionLogShowGroupCall([
+      call('show1', 'show', { type: 'markdown', path: '/workspace/notes.md' }),
+      call('show2', 'show', { type: 'image', path: 'drives/a.png' }, out('/workspace/drives/a.png')),
+    ]);
+    expect((merged.input as { items: unknown[] }).items).toEqual([
+      { status: 'ready', type: 'markdown', path: '/workspace/notes.md' },
+      { status: 'ready', type: 'image', path: 'drives/a.png', sha256: sha },
+    ]);
+  });
 });
 
 describe('sessionLogAnsweredQuestionCall', () => {
@@ -280,4 +294,35 @@ test('compaction rides in the work burst between adjacent activity and leaves th
   const split = splitSessionLogTurnWork(segments, { working: false });
   expect(split?.work).toEqual([segments[0]!]);
   expect(split?.final).toEqual([segments[1]!]);
+});
+
+describe('a codemode script\'s nested call on v2 (a pi `nested_part` block)', () => {
+  const T = 1_700_000_100_000;
+  const nested = (n: number, tool: string, input: unknown, output: string, status = 'completed') => ({
+    type: 'harness' as const, id: `n${n}`, harness: 'pi', kind: 'nested_part', model_visible: false,
+    data: {
+      parent_call_id: 'call_code',
+      part: { type: 'tool', callID: `call_code/${n}`, tool, state: status === 'completed' ? { status, input, output, title: tool, metadata: {}, time: { start: T + n, end: T + n + 1 } } : { status, input, time: { start: T + n } } },
+    },
+  });
+  const image = nested(1, 'image_gen', { action: 'generate', prompts: ['cube'] }, '{"action":"generate","images":[{"path":"/workspace/output/images/cube.png","size":"1024x1024","prompt":"cube"}]}');
+
+  test('a v2 log with a nested_part segments as one tool_call image_gen', () => {
+    const turn = turnOf([call('code', 'codemode', { code: 'x' }), image, { type: 'text', id: 't1', text: 'Done.' }]);
+    const segments = sessionLogTurnSegments(turn.blocks);
+    const standalone = segments.filter((s) => s.kind === 'standalone').map((s) => (s as { block: ToolCallBlock }).block);
+    expect(standalone).toHaveLength(1);
+    expect(standalone[0]).toMatchObject({ type: 'tool_call', id: 'n1', call_id: 'call_code/1', name: 'image_gen', status: 'complete', input: { action: 'generate', prompts: ['cube'] } });
+    expect(partOutcome(standalone[0]!)).toBe('ok');
+    // The same call object on the next read: a memoized card keeps its state.
+    expect((sessionLogTurnSegments(turn.blocks).find((s) => s.kind === 'standalone') as { block: ToolCallBlock }).block).toBe(standalone[0]!);
+    // It is a deliverable: the settled turn hoists it out of the fold.
+    expect(splitSessionLogTurnWork(segments, { working: false })!.hoisted.map((s) => (s as { block: ToolCallBlock }).block.name)).toEqual(['image_gen']);
+  });
+
+  test('a nested_part still running stays an open call while its message streams', () => {
+    const turn = turnOf([call('code', 'codemode', { code: 'x' }, { status: 'running', result: undefined }), nested(1, 'image_gen', { prompts: ['cube'] }, '', 'running')], { status: 'streaming' });
+    const block = (sessionLogTurnSegments(turn.blocks).find((s) => s.kind === 'standalone') as { block: ToolCallBlock }).block;
+    expect(block).toMatchObject({ type: 'tool_call', name: 'image_gen', status: 'running' });
+  });
 });

@@ -260,12 +260,16 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       if (wire.timing) result.timing = wire.timing;
       return result;
     },
+    // `input` crosses verbatim, `requires.imageOutput` included. A refusal
+    // (an image request with no image model) comes back in a 200 body, as
+    // /resolve-upstream's does, and is thrown as the typed error.
     resolveRoute: async (principal, input) => {
-      const result = await post<{ route: ModelRoutePlan | null }>(
+      const result = await post<{ route: ModelRoutePlan | null; resolutionError?: ResolutionErrorBody }>(
         '/internal/gateway/resolve-route',
         { principal, input },
         RETRY_SLOW,
       );
+      if (result.resolutionError) throw resolutionError(result.resolutionError);
       return result.route ?? null;
     },
     resolveUpstream: async (principal, model) => {

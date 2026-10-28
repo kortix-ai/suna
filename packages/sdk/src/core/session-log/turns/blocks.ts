@@ -15,6 +15,7 @@ import { segmentTurn, type SegmentTurnOptions } from '../../turns/segments/segme
 import { isQuestionTool } from '../../turns/segments/session-activity-groups';
 import { groupShowSegments, showGroupItems, type ShowGroupItem, type ShowGroupedSegment } from '../../turns/segments/show-group';
 import { stepLabel } from '../../turns/segments/step-label';
+import { showItemDigest } from '../../turns/tools/image-gen-view';
 import { splitTurnWork } from '../../turns/segments/work-split';
 import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
@@ -34,7 +35,7 @@ export type SessionLogSegment =
 export interface SessionLogTurnWorkSplit {
   /** Folded behind the "Worked for" row. Never empty. */
   work: SessionLogSegment[];
-  /** The `show` deliverables, in call order. */
+  /** The deliverables (`show-group`, `show`, `show_user`, `image_gen`), in call order. */
   hoisted: SessionLogSegment[];
   /** The final text segment, or empty when the turn did not end on text. */
   final: SessionLogSegment[];
@@ -47,7 +48,7 @@ export type SessionLogBurstStep =
 
 const call = (p: object) => blockOf(p) as ToolCallBlock;
 
-/** The segments of a turn's blocks: a burst is a run of non-text blocks, closed by a text block; `show` and sub-agent calls stand alone. */
+/** The segments of a turn's blocks: a burst is a run of non-text blocks, closed by a text block; `show`, `image_gen` and sub-agent calls stand alone. */
 export function sessionLogTurnSegments(blocks: ReadonlyArray<SessionLogBlock>, options: SegmentTurnOptions = {}): SessionLogSegment[] {
   return groupShowSegments(segmentTurn(partsOf(blocks), options), options).map((s) =>
     s.kind === 'burst' ? { kind: s.kind, blocks: s.parts.map(blockOf) }
@@ -148,10 +149,15 @@ export function sessionLogOpenCall(call: ToolCallBlock): ToolCallBlock {
   return open;
 }
 
-/** A failed call keeps its slot as an `error` item whose `content` is the message. */
-function carouselItem(item: ShowGroupItem): Omit<ShowGroupItem, 'callID' | 'error'> {
+/**
+ * A failed call keeps its slot as an `error` item whose `content` is the message. An item
+ * whose own call's output gives its file a sha256 carries it (R38, `showItemDigest`).
+ */
+function carouselItem(item: ShowGroupItem, call: ToolCallBlock | undefined): Omit<ShowGroupItem, 'callID' | 'error'> & { sha256?: string } {
   const { callID: _callID, error, ...rest } = item;
-  return item.status === 'error' ? { ...rest, type: 'error', content: error || 'This output failed to load.' } : rest;
+  if (item.status === 'error') return { ...rest, type: 'error', content: error || 'This output failed to load.' };
+  const sha256 = call && showItemDigest(call, item.path);
+  return sha256 ? { ...rest, sha256 } : rest;
 }
 
 /**
@@ -163,7 +169,8 @@ export function sessionLogShowGroupCall(calls: ReadonlyArray<ToolCallBlock>): To
   const parts = calls.map(toolPartOf);
   const first = parts[0]!;
   const running = parts.some((p) => p.state.status === 'running' || p.state.status === 'pending');
-  const items = showGroupItems(parts).map(carouselItem);
+  const byCallId = new Map(calls.map((block) => [block.call_id, block]));
+  const items = showGroupItems(parts).map((item) => carouselItem(item, byCallId.get(item.callID)));
   return toolCallBlock({ ...first, state: { ...first.state, status: running ? 'running' : 'completed', input: { items } } } as ToolPart);
 }
 

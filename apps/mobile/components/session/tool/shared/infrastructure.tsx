@@ -81,7 +81,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Pressable, View } from 'react-native';
-import type { ToolOutcome } from '@kortix/sdk';
+import type { ToolCallBlock, ToolOutcome } from '@kortix/sdk';
 import { RunningLoader, TextShimmer, ToolMotionContext } from '@/components/kortix/text-shimmer';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
@@ -179,6 +179,12 @@ export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 export const StalePendingContext = createContext(false);
 /** The turn that owns this part is still working. */
 export const TurnLiveContext = createContext(false);
+/** The images this turn's `image_gen` calls already drew (`imagePathsShownByImageGen`): a `show` does not draw them again. */
+export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
+/** The sha256 of the images this turn's `image_gen` calls drew (`imageDigestsShownByImageGen`): a `show` of the same bytes elsewhere draws nothing (R38). */
+export const ImageGenDigestsContext = createContext<ReadonlySet<string>>(new Set());
+/** The turn's runs of `image_gen` calls drawn as one grid (`sessionLogImageGenRuns`), by block id (R38). */
+export const ImageGenRunsContext = createContext<ReadonlyMap<string, ToolCallBlock[]>>(new Map());
 /** Re-exported with the other row contexts: `false` in a finished turn (see `ToolMotionContext`). */
 export { RunningLoader, ToolMotionContext };
 export const ToolDurationContext = createContext<number | undefined>(undefined);

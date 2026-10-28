@@ -128,12 +128,12 @@ const EMPTY_USAGE: TokenCounts = {
   cacheWriteTokens: 0,
 };
 
-function bearer(header: string | undefined): string | null {
+export function bearer(header: string | undefined): string | null {
   const match = header?.match(/^Bearer\s+(\S.*)$/i);
   return match ? match[1].trim() : null;
 }
 
-function requestId(): string {
+export function requestId(): string {
   return `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -158,7 +158,7 @@ function hasImage(body: Record<string, unknown>): boolean {
 // one means "we could not find out".
 const ADMISSION_UNAVAILABLE = 'admission_unavailable';
 
-async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
+export async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeResult> {
   if (hooks.authorize) return hooks.authorize(token);
   const principal = await hooks.authenticate(token);
   if (!principal) {
@@ -179,7 +179,7 @@ async function authorize(hooks: GatewayHooks, token: string): Promise<AuthorizeR
   }
 }
 
-function identity(principal: AuthedPrincipal) {
+export function identity(principal: AuthedPrincipal) {
   return {
     accountId: principal.accountId,
     actorUserId: principal.userId,
@@ -189,7 +189,7 @@ function identity(principal: AuthedPrincipal) {
   };
 }
 
-function refundHold(
+export function refundHold(
   hooks: GatewayHooks,
   principal: AuthedPrincipal,
   logger: GatewayLogger,

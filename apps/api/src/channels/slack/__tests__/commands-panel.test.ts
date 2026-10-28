@@ -7,7 +7,9 @@ import { chatIdentityStub } from '../../../__tests__/helpers/chat-identity-stub'
 
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
+const realConfig = await import('../../../config');
 mock.module('../../../config', () => ({
+  ...realConfig,
   // Keep the managed catalog enabled because this file exercises the real model
   // picker. scripts/test.env sets it, but this config mock replaces that module.
   config: {
@@ -84,7 +86,11 @@ mock.module('../../core/identity', () =>
     resolveProjectChatActor: async () => ({ userId: 'user-1' }),
   }),
 );
-mock.module('../../../accounts/core/app', () => ({ lookupEmailsByUserIds: async () => new Map() }));
+const realApp = await import('../../../accounts/core/app');
+mock.module('../../../accounts/core/app', () => ({
+  ...realApp,
+  lookupEmailsByUserIds: async () => new Map(),
+}));
 
 const { handleSlashCommand } = await import('../commands');
 const { setChannelModel } = (await import('../selection')) as any;

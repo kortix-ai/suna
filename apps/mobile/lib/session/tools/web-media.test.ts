@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  imageGenTitle,
   imageSearchBadge,
   imageSearchTiles,
   parseImageOutput,
@@ -70,12 +69,6 @@ describe('image gen output (web image-output-path)', () => {
       directUrl: null,
     });
     expect(parseImageOutput('')).toEqual({ imagePath: null, directUrl: null });
-  });
-
-  test('the title follows the action, falling back to "Image Gen"', () => {
-    expect(imageGenTitle('edit')).toBe('Edit Image');
-    expect(imageGenTitle('remove_bg')).toBe('Remove Background');
-    expect(imageGenTitle(undefined)).toBe('Image Gen');
   });
 });
 

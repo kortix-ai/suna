@@ -24,6 +24,14 @@
  * is the author's choice.
  */
 
+/**
+ * The Kortix tools that write files in the checkout (`image_gen` under
+ * `output/images/`, `memory` under `memory/`). The `edit` permission governs
+ * them on every harness: pi (`toolCapability`) and OpenCode
+ * (`capabilityToolRules`) both read this list.
+ */
+export const KORTIX_EDIT_TOOLS: readonly string[] = ['image_gen', 'memory']
+
 /** What a running tool knows about its call. */
 export interface ToolContext {
   /** The Kortix session the call belongs to. */
@@ -40,6 +48,13 @@ export interface ToolContext {
   env: Record<string, string | undefined>
   /** Aborts when the turn stops. */
   signal: AbortSignal
+  /**
+   * The turn the call belongs to, when the harness names it (pi: the turn's message id). It is the
+   * same for every call of one turn: direct, parallel, from a codemode script, after a transient
+   * retry, and from a subagent the turn started. `signal` is not: pi gives each call a script
+   * makes its own. A per-turn limit keys on it. Optional: project tools may ignore it.
+   */
+  turnId?: string
 }
 
 export interface KortixTool {

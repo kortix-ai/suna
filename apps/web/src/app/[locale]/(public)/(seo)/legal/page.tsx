@@ -562,24 +562,24 @@ function LegalContent() {
     window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
   };
 
-  const tabs: { id: LegalTab; label: string }[] = [
-    { id: 'imprint', label: t.raw('i18nComplete.textd198ed30d09b') },
-    { id: 'terms', label: t.raw('i18nComplete.text4afa55bf7aec') },
-    { id: 'privacy', label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy') },
-  ];
-
-  const toc: TocItem[] = (
-    activeTab === 'imprint'
-      ? [
+  const documents: Record<LegalTab, { label: string; heading: string; updated: string | null; contents: string[][]; body: ReactNode }> = {
+    imprint: {
+      label: t.raw('i18nComplete.textd198ed30d09b'), heading: 'Imprint', updated: null,
+      contents: [
           ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
           ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
           ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
           ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
-        ]
-      : activeTab === 'terms'
-        ? TERMS.sections.map((section) => [section.id, section.title])
-        : Object.entries(PRIVACY_TITLES)
-  ).map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
+        ],
+      body: <Imprint /> },
+    terms: { label: t.raw('i18nComplete.text4afa55bf7aec'), heading: t.raw('i18nComplete.text4afa55bf7aec'), updated: TERMS_LAST_UPDATED,
+      contents: TERMS.sections.map((section) => [section.id, section.title]), body: <TermsOfService /> },
+    privacy: { label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'), heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'), updated: LEGAL_LAST_UPDATED,
+      contents: Object.entries(PRIVACY_TITLES), body: <PrivacyPolicy /> },
+  };
+  const selected = documents[activeTab];
+  const tabs: LegalTab[] = ['imprint', 'terms', 'privacy'];
+  const toc: TocItem[] = selected.contents.map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
 
   return (
     <PageFrame>
@@ -597,14 +597,14 @@ function LegalContent() {
             >
               {tabs.map((tab) => (
                 <button
-                  key={tab.id}
+                  key={tab}
                   type="button"
-                  onClick={() => handleTabChange(tab.id)}
-                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  onClick={() => handleTabChange(tab)}
+                  aria-current={activeTab === tab ? 'page' : undefined}
                   aria-controls="legal-document"
-                  className={railItem(activeTab === tab.id)}
+                  className={railItem(activeTab === tab)}
                 >
-                  {tab.label}
+                  {documents[tab].label}
                 </button>
               ))}
               <Link href="/legal/subprocessors" className={railItem(false)}>
@@ -618,27 +618,17 @@ function LegalContent() {
             >
               <div className="mb-10">
                 <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
-                  {activeTab === 'imprint'
-                    ? 'Imprint'
-                    : activeTab === 'terms'
-                      ? t.raw('i18nComplete.text4afa55bf7aec')
-                      : t.raw('appLegalPage.line1531JsxTextPrivacyPolicy')}
+                  {selected.heading}
                 </h2>
-                {activeTab === 'imprint' ? null : (
+                {selected.updated === null ? null : (
                   <p className="text-muted-foreground mt-2 text-sm tabular-nums">
                     {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
-                    {activeTab === 'terms' ? TERMS_LAST_UPDATED : LEGAL_LAST_UPDATED}
+                    {selected.updated}
                   </p>
                 )}
               </div>
 
-              {activeTab === 'imprint' ? (
-                <Imprint />
-              ) : activeTab === 'terms' ? (
-                <TermsOfService />
-              ) : (
-                <PrivacyPolicy />
-              )}
+              {selected.body}
             </article>
 
             {/* Keyed by document so the scroll-spy starts at its first section. */}

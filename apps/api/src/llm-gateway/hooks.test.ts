@@ -82,9 +82,10 @@ mock.module('../repositories/account-tokens', () => ({
 // The order of the trace row write and the budget checks, per test.
 let calls: string[] = [];
 
-// Settlement stops at the usage write.
+// Settlement stops at the usage write, after it names the row's route.
 mock.module('../shared/usage-events', () => ({
-  recordUsageEvent: async () => {
+  recordUsageEvent: async (row: { route: string }) => {
+    calls.push(`usage row ${row.route}`);
     throw new Error('usage write not under test');
   },
 }));
@@ -405,5 +406,59 @@ describe('warn budgets run after the trace row is written, not at admission', ()
   test('the usage write evaluates no budget: its trace row does not exist yet', async () => {
     await recordGatewayUsage(settled).catch(() => {});
     expect(budgetActions).toEqual([]);
+  });
+});
+
+// The usage event names the image operation; the usage row takes its route
+// at write time. A trace never touches the usage row.
+describe('the usage row names the gateway route that served the request', () => {
+  const usage = { promptTokens: 10, completionTokens: 5, cachedTokens: 0, cacheWriteTokens: 0 };
+  const usageEvent = {
+    ...usage, accountId: 'acct-1', actorUserId: 'user-1', provider: 'openai', model: 'gpt-5.5',
+    upstreamCost: 0, finalCost: 0, billingMode: 'none' as const, streaming: true, requestId: 'req-chat',
+  };
+  const trace = {
+    requestId: 'req-img',
+    startedAt: new Date(0).toISOString(),
+    accountId: 'acct-1',
+    actorUserId: 'user-1',
+    projectId: 'proj-1',
+    requestedModel: 'auto',
+    resolvedModel: 'xai/grok-imagine-image',
+    provider: 'xai',
+    billingMode: 'none' as const,
+    streaming: false,
+    status: 200,
+    ok: true,
+    latencyMs: 1,
+    attempts: 1,
+    candidatesTried: ['xai'],
+    usage,
+    upstreamCost: 0,
+    finalCost: 0,
+    request: null,
+    response: null,
+    metadata: {},
+  };
+
+  beforeEach(() => {
+    calls = [];
+  });
+
+  test('an image usage event is recorded with the images route', async () => {
+    await recordGatewayUsage({ ...usageEvent, requestId: 'req-img', operation: 'images.generations' }).catch(() => {});
+    await recordGatewayUsage({ ...usageEvent, requestId: 'req-edit', operation: 'images.edits' }).catch(() => {});
+    expect(calls).toEqual(['usage row /v1/llm/images/generations', 'usage row /v1/llm/images/edits']);
+  });
+
+  test('a chat usage event keeps the chat route', async () => {
+    await recordGatewayUsage(usageEvent).catch(() => {});
+    await persistGatewayTrace({ ...trace, requestId: 'req-chat', streaming: true });
+    expect(calls).toEqual(['usage row /v1/llm/chat/completions', 'trace row']);
+  });
+
+  test('an image trace writes only the trace row', async () => {
+    await persistGatewayTrace({ ...trace, metadata: { operation: 'images.generations' } });
+    expect(calls).toEqual(['trace row']);
   });
 });

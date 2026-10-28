@@ -225,6 +225,11 @@ describe('getToolInfo agent/session tool mappings', () => {
     expect(getToolInfo('agent-task-get', { task_id: 't-2' }).title).toBe('Task Details');
   });
 
+  test('an image_gen card names its first prompt, from a batch or a Phase 1 call', () => {
+    expect(getToolInfo('image_gen', { prompts: ['A fox in a shuttle', 'An owl'] }).subtitle).toBe('A fox in a shuttle');
+    expect(getToolInfo('image_gen', { prompt: 'A paper-cutout fox' }).subtitle).toBe('A paper-cutout fox');
+  });
+
   test('maps session_spawn variants to worker cards', () => {
     for (const tool of [
       'session_spawn',

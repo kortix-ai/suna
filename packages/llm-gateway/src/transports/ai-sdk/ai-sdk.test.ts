@@ -150,6 +150,62 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     expect((finishChunk as any).choices[0].finish_reason).toBe('tool_calls');
   });
 
+  // Each call's arguments arrive once: as deltas, or in its final `tool-call`
+  // part when no non-empty delta came. Assembled by `index`, as a chat client does.
+  describe('tool-call arguments reach the client exactly once', () => {
+    const assemble = async (...streamParts: Array<{ type: string; [k: string]: unknown }>) => {
+      const sse = await readAll(
+        openAiSseFromFullStream(
+          parts(...streamParts, { type: 'finish', finishReason: 'tool-calls', totalUsage: usage() }),
+          CTX,
+        ),
+      );
+      const calls = new Map<number, { id?: string; arguments: string }>();
+      for (const tc of frames(sse).flatMap((c: any) => c.choices?.[0]?.delta?.tool_calls ?? [])) {
+        const call = calls.get(tc.index) ?? { arguments: '' };
+        call.id ??= tc.id;
+        call.arguments += tc.function?.arguments ?? '';
+        calls.set(tc.index, call);
+      }
+      return [...calls.values()];
+    };
+
+    it('a step with one streamed call and one unstreamed call', async () => {
+      expect(
+        await assemble(
+          { type: 'tool-input-start', id: 'a', toolName: 'get_weather' },
+          { type: 'tool-input-start', id: 'b', toolName: 'get_weather' },
+          { type: 'tool-input-delta', id: 'a', delta: '{"city":"Paris"}' },
+          { type: 'tool-call', toolCallId: 'a', toolName: 'get_weather', input: { city: 'Paris' } },
+          { type: 'tool-call', toolCallId: 'b', toolName: 'get_weather', input: { city: 'Lima' } },
+        ),
+      ).toEqual([
+        { id: 'a', arguments: '{"city":"Paris"}' },
+        { id: 'b', arguments: '{"city":"Lima"}' },
+      ]);
+    });
+
+    it('an empty delta, then the final call', async () => {
+      expect(
+        await assemble(
+          { type: 'tool-input-start', id: 'a', toolName: 'get_weather' },
+          { type: 'tool-input-delta', id: 'a', delta: '' },
+          { type: 'tool-call', toolCallId: 'a', toolName: 'get_weather', input: { city: 'Paris' } },
+        ),
+      ).toEqual([{ id: 'a', arguments: '{"city":"Paris"}' }]);
+    });
+
+    it('a second tool-call part for the same id adds nothing', async () => {
+      const final = (id: string) => ({ type: 'tool-call', toolCallId: id, toolName: 'get_weather', input: { city: 'Paris' } });
+      expect(
+        await assemble({ type: 'tool-input-start', id: 'a', toolName: 'get_weather' }, final('a'), final('a'), final('b'), final('b')),
+      ).toEqual([
+        { id: 'a', arguments: '{"city":"Paris"}' },
+        { id: 'b', arguments: '{"city":"Paris"}' },
+      ]);
+    });
+  });
+
   it('emits a full tool_call when the provider gives no input-start/delta', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
@@ -1473,6 +1529,44 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       expect(json.choices[0].finish_reason).toBe('stop');
       expect(json.choices[0].message.content).toBe('low-effort answer');
       expect(json.choices[0].message.tool_calls).toBeUndefined();
+    });
+
+    // Captured from the ChatGPT Codex backend 2026-10-28: for parallel calls it
+    // sends no `function_call_arguments.delta` at all; each call's arguments
+    // arrive only in `function_call_arguments.done` and `output_item.done`.
+    // The chat stream used to open all three calls and then drop the terminal
+    // `tool-call`, so the agent received three calls with arguments `{}`.
+    it('streams the arguments of parallel calls whose upstream sent no argument deltas', async () => {
+      const cities = ['Paris', 'Tokyo', 'Lima'];
+      const events = cities.flatMap((city, i) => {
+        const call = { type: 'function_call', id: `fc_${i}`, call_id: `call_${i}`, name: 'get_weather' };
+        const args = JSON.stringify({ city });
+        return [
+          { type: 'response.output_item.added', output_index: i, item: { ...call, arguments: '' } },
+          { type: 'response.function_call_arguments.done', item_id: `fc_${i}`, output_index: i, arguments: args },
+          { type: 'response.output_item.done', output_index: i, item: { ...call, arguments: args, status: 'completed' } },
+        ];
+      });
+      const response = await callUpstreamViaAiSdk(
+        { stream: true, messages: [{ role: 'user', content: 'weather?' }], tools: [reasoningTool] },
+        codex,
+        { fetch: async () => responsesStream([created, ...events, completed(4, 6)]) },
+      );
+
+      // Assemble tool calls the way a chat-completions client does: by `index`.
+      const calls = new Map<number, { id?: string; name?: string; arguments: string }>();
+      for (const chunk of frames(await response.text())) {
+        for (const tc of (chunk as any).choices?.[0]?.delta?.tool_calls ?? []) {
+          const call = calls.get(tc.index) ?? { arguments: '' };
+          call.id ??= tc.id;
+          call.name ??= tc.function?.name;
+          call.arguments += tc.function?.arguments ?? '';
+          calls.set(tc.index, call);
+        }
+      }
+      expect([...calls.values()].map((c) => ({ ...c, arguments: JSON.parse(c.arguments) }))).toEqual(
+        cities.map((city, i) => ({ id: `call_${i}`, name: 'get_weather', arguments: { city } })),
+      );
     });
   });
 
