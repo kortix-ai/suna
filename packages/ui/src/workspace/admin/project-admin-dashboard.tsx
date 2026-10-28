@@ -8,7 +8,7 @@
  * groups:
  *
  *  - **Project resources**: the GLOBAL variant of every library page
- *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps, and Repo
+ *    (Connectors, Skills, Automations, Models, Secrets, Apps, and Repo
  *    with `drives` on), mounted with no props beyond `projectId`. This is
  *    their only home: Customize keeps Agents and Review (Marko, 2026-10-27).
  *    A page below a section (a connector, `/admin/connectors/<app>`) renders
@@ -33,8 +33,9 @@
  * that pushes its own route (ConnectorsPage opening a connector) still leaves
  * for that route: the resource pages take no base-path prop yet.
  *
- * Loops and Apps are pages of the host app, not of this package. The host
- * passes them in `hostSections`; a row without a page is not listed.
+ * Apps is a page of the host app, not of this package. The host passes it in
+ * `hostSections`; a row without a page is not listed. Loops were one until
+ * 2026-10-28: they are automations on the Automations page now.
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';

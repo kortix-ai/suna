@@ -408,6 +408,9 @@ reminders` turns it back on (the user's decision).
 | `kortix loops pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
 | `kortix loops run <id>` | Fire once now: retry a failed run. The schedule does not move. |
 | `kortix loops rm <id>` | Delete it. Do this as soon as its condition is met. |
+| `kortix automations ls [--json]` | Every automation of the project: `kortix.yaml` triggers and runtime ones (loops included), with source and target. |
+| `kortix automations add "<text>" --on cr-merged [--cr <id>] [--base <branch>]` | Wake this session when a change request merges. `--on webhook --secret-env <NAME>`, `--on event --connector <slug> --event <TYPE>`, `--on app --app <slug>` are the other sources; a schedule flag (`--every`, `--cron`, `--at`, `--in`) is the default. `--agent <name>` starts a new session of that agent instead. |
+| `kortix automations pause\|resume\|run\|rm <id>` | The same verbs for any runtime id (`reminder.<hex>`, `automation.<hex>`). A `kortix.yaml` slug goes to `kortix triggers`. |
 
 `--name <text>` labels a loop; `--session <id>` targets another session
 you can open. Each fire arrives as `[REMINDER <id> — …]` (the wire name)

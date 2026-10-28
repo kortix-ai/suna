@@ -4,10 +4,12 @@ Read this when you decide whether and how to schedule work. The decision
 table is in `SKILL.md` → `<scheduling>`; trigger fields are in
 `kortix/kortix-yaml.md` → triggers.
 
-A **trigger** is `on:` (what fires it) plus `run:` (what runs). A fire starts
+An **automation** is a source (what fires it) plus a target (what a fire
+does). A **trigger** is one in `kortix.yaml`: `on:` plus `run:`. A fire starts
 a session and prompts its agent as a teammate would, or calls one of the
-project's Apps (`run: { app, path }`: no session, no model). A **loop**
-re-prompts the session that set it.
+project's Apps (`run: { app, path }`: no session, no model). A **loop** is a
+runtime automation that re-prompts the session that set it. `kortix
+automations ls` lists both.
 
 Do not schedule work that finishes in this turn, and do not schedule a
 question: ask it now.
@@ -104,6 +106,12 @@ its whole conversation and workspace.
    `kortix loops rm <id>`. Every fire is a model turn.
 
 - `kortix loops ls|pause <id>|resume <id>|run <id>` (`run` fires once now).
+- Wake THIS session on an event instead of a time:
+  `kortix automations add "CR merged: verify the deploy" --on cr-merged --cr <id>`,
+  `--on webhook --secret-env <NAME>` (POST to the printed URL), `--on event
+  --connector <slug> --event <TYPE>`, or `--on app --app <slug>`. The fire
+  arrives as `[REMINDER automation.<id> — … automation (<source>) …]`.
+  `kortix automations rm <id>` removes it.
 - A loop lives in the database, not in `kortix.yaml`: no CR. It never
   starts a new session; it pauses itself when its session is deleted.
 - From a Slack or Teams thread, put the channel and thread ids in the

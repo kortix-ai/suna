@@ -1706,6 +1706,7 @@ Commands an agent uses:
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
 | `kortix loop "<prompt>" --in 24h` | Prompt this session again later (a loop). Loops are a project flag, on by default; `kortix projects features disable reminders` turns them off. `kortix remind` is an alias. |
+| `kortix automations add "<prompt>" --on cr-merged --cr <id>` | Wake this session when a change request merges. Other sources: `--on webhook --secret-env NAME`, `--on event`, `--on app`, or a schedule flag. `--agent <name>` starts a new session of that agent instead. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents](/docs/guide#agents). These commands are refused for an agent session's token, whatever the grant:
@@ -1802,8 +1803,9 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Drive](/docs/guide#drive) |
 | `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
-| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/guide#automations) |
-| `loops <subcommand>` | Prompt one session later or on repeat. `kortix loop "…" --in 24h` adds one. Alias: `reminders`. | [Automations](/docs/guide#automations) |
+| `automations <subcommand>` | Every automation, `kortix.yaml` and runtime: `ls`, `add`, `pause`, `resume`, `run`, `rm`. Any other subcommand runs `kortix triggers`. | [Automations](/docs/guide#automations) |
+| `triggers <subcommand>` | The `kortix.yaml` automations: list, add, fire, enable, disable, pause and resume. | [Automations](/docs/guide#automations) |
+| `loops <subcommand>` | A schedule into one session (a loop). `kortix loop "…" --in 24h` adds one. Alias: `reminders`. | [Automations](/docs/guide#automations) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**
@@ -7668,10 +7670,13 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `policies.list()` · `policies.set(policies)` | Project policies. |
 | `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets, connectors and policy sets to one agent. `scope.policy_sets` is `{ <slug>: <name> \| null }`, merged per connector; `null` or `'base'` removes the entry. |
 
-#### Triggers and loops
+#### Automations, triggers and loops
 
 | Method | What it does |
 | --- | --- |
+| `automations.list()` | Every automation the caller can see: `kortix.yaml` triggers (`origin: 'declared'`) and runtime ones (`origin: 'runtime'`: loops and `automations.create` rows). Each has a `source` (`schedule`, `webhook`, `event`, `app`, `change_request`) and a `target` (`agent`, `session` or `app`). Root export: `listProjectAutomations(projectId)`. |
+| `automations.create({ prompt, name?, source, target })` | A runtime automation, stored in the database. `target: { session_id }` wakes that session on each fire; `target: { agent }` starts a new session of that agent. `source: { type: 'change_request', cr_id?, base? }` fires when a change request merges. |
+| `automations.update(id, { enabled })` · `.run(id)` · `.remove(id)` | Pause or resume, fire once now, or delete a runtime automation. A `kortix.yaml` one changes through `triggers.*`. React: `useProjectAutomations(projectId)`. |
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
 | `triggers.create(input)` · `.update(slug, input)` · `.remove(slug)` | Write a trigger. `name` and `type` are required. `type` is `cron`, `webhook` or `app`. The API rejects `type: monitor` with `MONITOR_REMOVED` and names the replacement: an App and a `type: app` trigger. `prompt_template` is required unless `target` (`{ app, path?, method?, payload? }`) calls an App. A schedule takes `cron`, `every` or `run_at`. `type: 'app'` takes `app` and, optionally, `filter: { 'event.name': … }`. |
 | `triggers.fire(slug, { payload?, dryRun? }?)` | Runs one trigger now, also while triggers are paused. `payload` deep-merges over the manual payload. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult` (`rendered_prompt`, `filter_matches`, `session_key`, `payload`). A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
