@@ -1,0 +1,182 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`shipped marketing route composition home retains its rendered sections, links and visuals 1`] = `
+{
+  "glyphs": [
+    "--brand:var(--foreground);mask-image:url(/media/landing/logos/notion.svg);mask-size:contain;mask-repeat:no-repeat;mask-position:center",
+    "--brand:var(--foreground);mask-image:url(/media/landing/logos/notion.svg);mask-size:contain;mask-repeat:no-repeat;mask-position:center",
+  ],
+  "headings": [
+    "The open-source AI Operating Systemfor companies that own their agents",
+    "Northwind revenue dashboard",
+    "Models and apps Kortix works with",
+    "Your know-how is everywhere.Kortix keeps it in one repo.",
+    "Agents that forget your company.",
+    "Agents that work from your company.",
+    "How Kortix works.One repo, every tool, any model.",
+    "Keep one source of truth",
+    "Connect your tools",
+    "Run any model",
+    "Give every session a computer",
+    "Who it’s for,and what they get.",
+    "Does the books, not just the summary.",
+    "Built to survive a security review.Not to slip past one.",
+    "The questions people ask.Answered plainly.",
+  ],
+  "links": [
+    [
+      "Start for free",
+      "/auth",
+    ],
+    [
+      "Synthetic report",
+      "/use-cases/synthetic-report",
+    ],
+    [
+      "Security at Kortix",
+      "/security",
+    ],
+    [
+      "write to the team",
+      "/contact",
+    ],
+  ],
+  "sections": [
+    "hero",
+    "",
+    "works-with",
+    "why-kortix",
+    "how-it-works",
+    "use-cases",
+    "trust",
+    "faq",
+  ],
+  "securityContent": undefined,
+  "visuals": [
+    [
+      "/media/landing/logos/color/claude.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/claude.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/slack.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/slack.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/openai.svg",
+      "",
+      null,
+    ],
+    [
+      "/media/landing/logos/color/openai.svg",
+      "",
+      null,
+    ],
+    [
+      null,
+      null,
+      "SOC 2 Type I",
+    ],
+    [
+      null,
+      null,
+      "SOC 2 Type II In progress",
+    ],
+    [
+      null,
+      null,
+      "GDPR Operated",
+    ],
+  ],
+}
+`;
+
+exports[`shipped marketing route composition security retains its rendered sections, links and visuals 1`] = `
+{
+  "glyphs": [
+    "mask-image:url(/media/security/lock.svg);-webkit-mask-image:url(/media/security/lock.svg);mask-size:contain;-webkit-mask-size:contain;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;mask-position:center;-webkit-mask-position:center",
+  ],
+  "headings": [
+    "Built to survive a security review.The walls sit below the agent.",
+    "Nothing is shared.Each session gets a machine of its own.",
+    "One sandbox per session",
+    "A microVM on Platinum",
+    "One branch per session",
+    "Disposable",
+    "A key is granted, not pasted.Who holds which key is a decision.",
+    "Stored",
+    "Granted",
+    "Delivered",
+    "Used",
+    "Shredded",
+    "An agent is a principal.It carries policies of its own.",
+    "Principals",
+    "Built-in roles",
+    "SAML SSO and SCIM",
+    "Audit log",
+    "Decide what needs a human. The rules live in kortix.yaml.",
+    "Three actions",
+    "Gate the target",
+    "Approve each call",
+    "Set the default",
+    "Opening and merging are different powers.For agents, merge is default-deny.",
+    "Works on its branch",
+    "Opens a change request",
+    "A person reads the diff",
+    "Merge is default-deny",
+    "Run it where your policy says it has to run. Cloud, your VPC or on-prem.",
+    "Kortix Cloud",
+    "Self-hosted",
+    "Your VPC or on-prem",
+    "Where we actually stand",
+  ],
+  "links": [
+    [
+      "Talk to us",
+      "/contact",
+    ],
+    [
+      "Read the docs",
+      "/docs",
+    ],
+  ],
+  "sections": [
+    "hero",
+    "isolation",
+    "credentials",
+    "identity",
+    "control",
+    "change-requests",
+    "posture",
+  ],
+  "securityContent": "Built to survive a security review.The walls sit below the agent.An agent that can install anything, call anything and write anywhere is only safe if the walls are real. In Kortix they sit below the agent, in the platform, where a prompt cannot talk its way past them.Talk to usRead the docsIsolationOne sandbox per sessionSecretsAES-256-GCM, key per projectPrincipalsPeople and service accountsPath to mainChange request, default-deny mergeNothing is shared.Each session gets a machine of its own.A session is not a tab in a shared runtime. It is a machine of its own, and the database will not let two sessions share one.Every edit lands on a branch named after the session. Only what it commits survives the machine.One sandbox per sessionEnforced in the database, not by convention.A microVM on PlatinumCloud Hypervisor on Kortix compute. Daytona is a legacy fallback.One branch per sessionEvery edit and commit lives on that branch.DisposableA bad install goes away with the machine.Weekly revenue reportIts own machine · branch session/3f2aisolatedRenewal emailsIts own machine · branch session/91c7isolatedA key is granted, not pasted.Who holds which key is a decision.Project secrets are encrypted per project. A session receives only what both the person’s role and the agent’s grant allow.Connector credentials never enter the machine. A granted secret is a real environment value in that session, because that is how a tool uses it.Granted to this sessionSTRIPE_API_KEYOn tmpfs at mode 0600 · shredded on shutdowngrantedHeld on the serverSlack connectorThe machine calls through one scoped Kortix tokenbrokeredStoredAES-256-GCM, with a key per project.GrantedRole and agent grant must both allow it.DeliveredPlaced at boot on tmpfs, mode 0600.UsedRead from the environment, not the prompt.ShreddedWiped on shutdown with the machine.An agent is a principal.It carries policies of its own.An agent does not inherit whatever the person who started it can reach. Its identity carries its own policies, evaluated on their own.Every plan records every action. The plan decides who may read, export or stream that record.PrincipalsPeople, groups and service accounts.Built-in rolesOwner, Admin and Member, on every plan.SAML SSO and SCIMOn Enterprise, with group-claim mapping.Audit logEach gated tool call is a row, with its outcome.Decide what needs a human. The rules live in kortix.yaml.Approval is a versioned block in kortix.yaml, not a setting buried in an admin panel.Three actionsEvery rule is always_run, require_approval or block.Gate the targetConditions match the arguments, such as who an email goes to.Approve each callNo session-wide “allow always”: each gated call waits for you.Set the defaultdefault_mode: risk runs reads and sends writes to a person.kortix.yaml # reads run; writes and destructive calls stop for a human policy:   default_mode: risk  +policies:+  # a name-only rule cannot gate the target — conditions can+  - match: gmail.send_email+    action: require_approval+    conditions:+      - arg: to+        match: /@example\\.com$/  +  # anything else through this tool is refused outright−  - match: gmail.send_email−    action: block  +  # whole connectors can be gated with one glob+  - match: stripe.*+    action: require_approvalOpening and merging are different powers.For agents, merge is default-deny.An agent can write as much as it likes on its own branch. Landing that work on main is a capability it does not have unless an admin grants it.Works on its branchNothing reaches other sessions or main.Opens a change requestCommitting and opening one is the only door.A person reads the diffA prompt change is reviewed like code.Merge is default-denyRefused to every agent unless granted.YouFix the onboarding docs and open a change request.Change request opened against maindocs/onboarding.md · +24 −6 · merge needs a grantreviewRun it where your policy says it has to run. Cloud, your VPC or on-prem.The same product ships as managed cloud, as a stack inside your own network, and as an isolated deployment. Open source, so what you are trusting is code you can read.Kortix CloudThe managed service. We run the control plane and the compute; you run the company.Self-hostedOne Docker Compose stack on your box, from the same images the managed cloud runs. Your database and your files sit on disk you control.Your VPC or on-premA single-tenant deployment inside your own network. Isolated topologies are scoped with us rather than self-served.Where we actually standWe do not hold ISO 27001 or HIPAA, and we do not imply that we do. When a report lands, this line changes that day and not before.SOC 2Type ISOC 2Type IIIn progressGDPROperated",
+  "visuals": [
+    [
+      null,
+      null,
+      "SOC 2 Type I",
+    ],
+    [
+      null,
+      null,
+      "SOC 2 Type II In progress",
+    ],
+    [
+      null,
+      null,
+      "GDPR Operated",
+    ],
+  ],
+}
+`;
