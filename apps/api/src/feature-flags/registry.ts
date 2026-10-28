@@ -459,7 +459,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
       'attachment bytes (P2.13), so a restore keeps images and files. On by default only where the ' +
       'deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED (dev). A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
-      '(24 MiB) answers 413 and the box boots with the D3 note alone (harness/README.md).',
+      '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
   },
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
   // integrations.sh, Composio), Telegram as a channel connector, the Kortix

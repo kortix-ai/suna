@@ -25,6 +25,21 @@ export function bindProjectPlatformSecurity(projectId: string) {
         completeInstall: (input: Parameters<typeof P.completeTeamsInstall>[1]) =>
           P.completeTeamsInstall(projectId, input),
       },
+      telegram: {
+        installation: () => P.getTelegramInstallation(projectId),
+        connect: (input: Parameters<typeof P.connectTelegram>[1]) => P.connectTelegram(projectId, input),
+        /** Replace the whole allowed list. Prefer `allowUser` / `removeUser` for one person. */
+        setAllowedUsers: (userIds: string[]) => P.setTelegramAllowedUsers(projectId, userIds),
+        disconnect: () => P.disconnectTelegram(projectId),
+        /** The allowed users and the people who asked for access, with their Telegram names. */
+        users: () => P.listTelegramUsers(projectId),
+        allowUser: (userId: string) => P.allowTelegramUser(projectId, userId),
+        removeUser: (userId: string) => P.removeTelegramUser(projectId, userId),
+        dismissAccessRequest: (userId: string) => P.dismissTelegramAccessRequest(projectId, userId),
+        /** A user's profile photo through the Kortix API (the bot token stays server-side); null when none. */
+        userPhoto: (...a: DropFirst<Parameters<typeof P.getTelegramUserPhoto>>) =>
+          P.getTelegramUserPhoto(projectId, ...a),
+      },
       email: {
         installation: (connectorSlug?: string | null) =>
           P.getEmailInstallation(projectId, connectorSlug),
