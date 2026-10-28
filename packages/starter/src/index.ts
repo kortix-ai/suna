@@ -59,6 +59,7 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-channel-memory',
   'kortix-computer',
   'kortix-connectors',
+  'kortix-design',
   'kortix-drives',
   'kortix-genui',
   'kortix-goals',
