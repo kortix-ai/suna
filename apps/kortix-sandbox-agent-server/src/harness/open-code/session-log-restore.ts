@@ -83,6 +83,7 @@ import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
   toV1,
+  visibleMessageIds,
   type CompactionBlock,
   type ExportCursor,
   type ModelRef,
@@ -95,7 +96,7 @@ import {
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import type { SessionLogRestoreResult } from '../contract/session-log'
-import { attachmentBytes, visibleMessageIds, type BytesReader } from '../shared/session-log-restore'
+import { attachmentBytes, type BytesReader } from '../shared/session-log-restore'
 import { readOpencodeVersion } from './assets'
 import { OpencodeDb } from './opencode-db'
 import { writeOpenCodeSessionPin } from './runtime-state'
@@ -329,7 +330,7 @@ function compactionRows(m: SessionLogMessage, block: CompactionBlock, msgs: Sess
 /** One thread's rows in seq order, each message's rows in OpenCode's order with strictly increasing times. */
 function threadRows(log: SessionLog, t: SessionLogThread, ctx: Omit<Ctx, 'thread' | 'drop' | 'children' | 'model' | 'lastUser'>, drop: (kind: string) => void): Row[] {
   const msgs = [...t.messages].sort((a, b) => a.seq - b.seq)
-  const visible = visibleMessageIds(t)
+  const visible = visibleMessageIds(t.messages)
   let current = ''
   const children = new Map<string, string>()
   for (const child of log.threads) if (child.parent_thread_id === t.thread_id && child.spawned_by) children.set(child.spawned_by.call_id, child.thread_id)
