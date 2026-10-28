@@ -699,7 +699,7 @@
       "count": 2
     },
     "no-console": {
-      "count": 5
+      "count": 3
     }
   },
   "src/channels/teams/jwt.ts": {
