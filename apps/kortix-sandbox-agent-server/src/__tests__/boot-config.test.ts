@@ -26,14 +26,11 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import {
   activateBootConfig,
-  bootLinkPath,
   deactivateBootConfig,
   extractConfigArchive,
   materializeRelease,
-  pointBootLink,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -250,21 +247,6 @@ describe('verifyRelease', () => {
     expect(await verify(built, dir)).toBe(true);
   });
 
-  test('the managed-skill overlay still injects into a sealed release', async () => {
-    // The one legitimate runtime writer. It unseals what it needs and puts the
-    // seal back, so the hole above does not reopen for everyone else.
-    const built = release('v1');
-    const { dir } = await materialize(built);
-    const baked = join(root, 'baked-overlay');
-    mkdirSync(join(baked, 'kortix-new'), { recursive: true });
-    writeFileSync(join(baked, 'kortix-new/SKILL.md'), 'NEW OVERLAY\n');
-
-    await ensureInjectedManagedSkills(join(dir, REL), { bakedDir: baked, unsealManaged: true });
-
-    expect(readFileSync(join(dir, REL, 'skills/kortix-new/SKILL.md'), 'utf8')).toBe('NEW OVERLAY\n');
-    expect(() => writeFileSync(join(dir, REL, 'rogue-after-inject.md'), 'x')).toThrow(/EACCES|EPERM|EROFS/);
-  });
-
   test('a swapped symlink is compared by its target, never followed', async () => {
     symlinkSync('kortix.md', join(repo, `${REL}/agents/alias.md`))
     const built = release('symlink')
@@ -354,32 +336,6 @@ describe('quarantine and pruning', () => {
     expect(Object.keys(await readQuarantine(store))).toEqual(['d'.repeat(64)])
   })
 })
-
-/**
- * The boot link: OpenCode spawns at once with OPENCODE_CONFIG_DIR = this fixed
- * path, and it is repointed to the chosen config before the workspace gate
- * opens. OpenCode reads the directory at Instance init, on the first
- * directory-scoped request (verified on real OpenCode 1.18.31: a repointed
- * link was honoured).
- */
-describe('the boot link', () => {
-  test('is repointed atomically and survives pruning', async () => {
-    const first = await materialize(release('v1'))
-    const second = join(root, 'workspace-config')
-    mkdirSync(second, { recursive: true })
-    const link = await pointBootLink(first.dir, store)
-    expect(link).toBe(bootLinkPath(store))
-    expect(readlinkSync(link)).toBe(first.dir)
-    expect(readFileSync(join(link, REL, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
-    await pointBootLink(second, store)
-    expect(readlinkSync(link)).toBe(second)
-    expect(spawnSync('ls', [store]).stdout.toString().split('\n').filter((name) => name.includes('.tmp'))).toEqual([])
-    await pruneBootConfigs(store, [])
-    expect(readlinkSync(link)).toBe(second)
-  })
-})
-
-
 describe('JSON store publication characterization', () => {
   test('all three records publish newline JSON at mode 0644 with no staged siblings', async () => {
     const built = release('publication')

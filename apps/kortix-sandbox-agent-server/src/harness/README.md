@@ -494,7 +494,7 @@ reads them and fails when a pin leaves them:
   worker as `./src/extensions/codemode/worker.ts` (`getCodemodeWorkerSpecifier`).
   `@silvia-odwyer/photon-node` (pi's image resizer, "Images" below) is pinned the same way.
 - OpenCode: `opencode` in `packages/shared/src/runtime-versions.json` (the image
-  installs it; `opencode-db.test.ts` also gates its minor line).
+  installs it).
 - Both: `SESSION_LOG_MINOR` in `@kortix/api-contract/session-log`.
 
 To bump a harness or the minor:

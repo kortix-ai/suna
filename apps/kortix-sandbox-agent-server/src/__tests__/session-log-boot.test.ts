@@ -1,8 +1,7 @@
 /**
  * When the boot restores a session log (P6.4, `harness/shared/session-log-boot.ts`), against a
- * fake native store and a fake API (`Bun.serve`: manifest, restore, attachments). The real
- * harnesses run the same reconcile in `pi-session-log-restore.test.ts` and
- * `opencode-session-log-restore-boot-reconcile.test.ts`.
+ * fake native store and a fake API (`Bun.serve`: manifest, restore, attachments). pi runs
+ * the same reconcile in `pi-session-log-restore.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
