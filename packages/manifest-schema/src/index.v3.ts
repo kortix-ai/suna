@@ -400,6 +400,8 @@ function validateExtensionsV3(node: unknown, path: string, issues: ManifestIssue
     }
     if (entry.opencode !== undefined && !safeToolFile(entry.opencode)) {
       issues.push({ path: `${where}.opencode`, message: 'must be a repository path to a .ts or .js plugin module.', severity: 'error' });
+    } else if (entry.opencode !== undefined) {
+      issues.push({ path: `${where}.opencode`, message: 'opencode is deprecated and has no effect: every new session runs pi. Remove the line.', severity: 'warning' });
     }
     if (entry.pi !== undefined) validatePiSourceV3(entry.pi, `${where}.pi`, issues);
     names.add(name);

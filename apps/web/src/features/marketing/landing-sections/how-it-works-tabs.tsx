@@ -2,6 +2,7 @@
 
 import { StepComputer } from '@/features/marketing/how-it-work/step/step-computer';
 import { StepConnectors } from '@/features/marketing/how-it-work/step/step-connectors';
+import { StepApps } from '@/features/marketing/how-it-work/step/step-apps';
 import { StepModels } from '@/features/marketing/how-it-work/step/step-models';
 import { StepSourceOfTruth } from '@/features/marketing/how-it-work/step/step-source-of-truth';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -19,33 +20,36 @@ const TABS: {
   {
     id: 'source',
     title: 'Keep one source of truth',
-    description:
-      'Agents, skills, memory and triggers live in one repo you own.',
+    description: 'Agents, skills, memory and triggers live in one repo you own.',
     panel: () => <StepSourceOfTruth />,
     bare: true,
   },
   {
     id: 'context',
-    title: 'Connect your tools',
-    description:
-      'Connect your tools once and choose which agent may use each.',
+    title: 'Connect to everything',
+    description: '3,000+ apps, MCP servers and any API, scoped per agent.',
     panel: () => <StepConnectors />,
     bare: true,
   },
   {
     id: 'models',
     title: 'Run any model',
-    description:
-      'Pick the model per agent or session, with your key or ours.',
+    description: 'Pick the model per agent or session, with your key or ours.',
     panel: () => <StepModels />,
     bare: true,
   },
   {
     id: 'computer',
-    title: 'Give every session a computer',
-    description:
-      'Each session runs on its own isolated machine with your repo.',
+    title: 'Every agent gets its own computer',
+    description: 'Each session runs on its own computer, browser included.',
     panel: () => <StepComputer />,
+    bare: true,
+  },
+  {
+    id: 'apps',
+    title: 'Ask for an app, get one',
+    description: 'Ask for a dashboard or tracker, and an agent ships it as an App.',
+    panel: () => <StepApps />,
     bare: true,
   },
 ];
@@ -74,14 +78,16 @@ export function HowItWorksTabs() {
   const tab = TABS[selected];
 
   return (
-    <section id="how-it-works" className="scroll-mt-16 py-24 lg:py-32">
+    <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       {/* Band row: hairlines across the whole page, like the hero band. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
         <div className="grid grid-cols-1 lg:grid-cols-2">
           <div className="px-4 py-12 lg:px-11 lg:py-16 lg:pr-12">
             <h2 className="text-foreground text-xl font-medium tracking-tight text-balance md:text-2xl lg:text-3xl">
               How Kortix works.
-              <span className="text-muted-foreground block">One repo, every tool, any model.</span>
+              <span className="text-muted-foreground block">
+                One repo, every tool, any model, a computer per agent.
+              </span>
             </h2>
 
             <div
@@ -104,10 +110,14 @@ export function HowItWorksTabs() {
                   aria-selected={i === selected}
                   tabIndex={i === selected ? 0 : -1}
                   onClick={() => setSelected(i)}
-                  className="outline-ring w-full rounded-sm text-left opacity-50 transition-opacity duration-moderate ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
+                  className="outline-ring duration-moderate w-full rounded-sm text-left opacity-50 transition-opacity ease-out hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 aria-selected:opacity-100"
                 >
-                  <h3 className="text-foreground text-base font-medium text-pretty">{item.title}</h3>
-                  <p className="text-muted-foreground mt-2 text-sm text-balance">{item.description}</p>
+                  <h3 className="text-foreground text-base font-medium text-pretty">
+                    {item.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-2 text-sm text-balance">
+                    {item.description}
+                  </p>
                 </button>
               ))}
             </div>

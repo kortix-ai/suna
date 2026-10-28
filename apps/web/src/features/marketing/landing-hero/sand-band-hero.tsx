@@ -1,11 +1,39 @@
 'use client';
 
-import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-import { SessionWindow } from './session-window';
+import { WorkspaceFramework } from './workspace-framework';
 
+// The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
+const PILLAR_WORDS = ['sovereign', 'multiplayer', 'extensible', 'open'];
+
+/**
+ * "The <word> AI Operating System", the word changing every 2.5 s. The new
+ * word mounts and fades in (opacity only, so reduced motion needs no variant,
+ * motion.md); the line reflows to its width. Screen readers get one static
+ * sentence.
+ */
+function PillarWord() {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setShown((n) => (n + 1) % PILLAR_WORDS.length), 2500);
+    return () => clearInterval(timer);
+  }, []);
+  const word = PILLAR_WORDS.at(shown);
+
+  return (
+    <span
+      key={word}
+      aria-hidden
+      className="animate-in fade-in duration-slower whitespace-nowrap ease-out"
+    >
+      {word}
+    </span>
+  );
+}
 
 /**
  * Landing hero, Paper "Kortix 2" Hero D (Accrue layout): the two-tone
@@ -25,12 +53,16 @@ export function SandBandHero() {
             pattern): sits close under the title, muted, two lines at most. */}
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="text-foreground block">The open-source AI Operating System</span>
-            <span className="text-muted-foreground block">for companies that own their agents</span>
+            <span className="sr-only">
+              The sovereign, multiplayer, extensible and open AI Operating System
+            </span>
+            <span aria-hidden className="text-foreground block">
+              The <PillarWord /> AI Operating System
+            </span>
           </h1>
           <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
-            Agents, skills, memory and connectors live in one git repo you own. Any model, your
-            keys, in our cloud or self-hosted.
+            Hand it an outcome and agents run it 24/7. Multiplayer AI for your whole team, your
+            company as code, sovereign and open source on your infrastructure or ours.
           </p>
         </div>
 
@@ -53,13 +85,17 @@ export function SandBandHero() {
           between the rails. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
         <div className="bg-card relative flex flex-col items-center gap-7 overflow-hidden px-4 py-7 lg:gap-10 lg:px-0 lg:pt-17 lg:pb-10">
+          {/* The walkthrough keeps the hero's dev dimensions: max-w-304 wide,
+              a 1264 × 860 board, in the same band padding. */}
           <div id="demo" className="relative w-full max-w-304 scroll-mt-24">
-            <SessionWindow />
+            <WorkspaceFramework />
           </div>
-          {/* Leads into the works-with strip directly below the band. */}
+          {/* What the two views show, in one line. */}
           <p className="text-foreground px-4 text-center text-base font-medium text-balance">
-            Runs any model, connects every tool.{' '}
-            <span className="text-muted-foreground">Claude, GPT, Gemini and the apps you already use.</span>
+            A workspace and command center for people. A backend framework for agents underneath.{' '}
+            <span className="text-muted-foreground">
+              The same project, as files in a git repo you own.
+            </span>
           </p>
         </div>
       </div>

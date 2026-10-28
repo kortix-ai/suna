@@ -64,6 +64,12 @@ export const STATIC_PUBLIC_ROUTES = [
   '/pricing',
   '/security',
   '/self-hosted',
+  '/services',
+  '/case-studies',
+  '/framework',
+  '/multiplayer',
+  '/sovereign',
+  '/compliance',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -127,7 +133,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'careers',
     title: 'Careers',
     description:
-      'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+      'Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
     htmlPath: '/careers',
   },
   {
@@ -155,8 +161,9 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'enterprise',
-    title: 'Enterprise AI agents: SSO, SCIM, audit, your VPC',
-    description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
+    title: 'Kortix for Enterprise',
+    description:
+      'One AI Operating System for the whole company: every team’s agents, skills and memory in one place you own, on Kortix Cloud, your VPC or on-prem, with any model.',
     htmlPath: '/enterprise',
     markdownPath: '/markdown/enterprise.md',
   },
@@ -187,6 +194,55 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'How Kortix is built to survive a security review: an isolated machine per session, connector credentials brokered server-side that never enter that machine, permissions for people and agents, human approval gates, and a change request between an agent and main.',
     htmlPath: '/security',
     markdownPath: '/markdown/security.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'services',
+    // "AI Transformation" is allowed here only (kortix-brand decisions.md D15).
+    title: 'AI Transformation, done for you',
+    description:
+      'AI strategy, transformation and education: we map how your company works, unify your data, automate the work, build your software and train your team.',
+    htmlPath: '/services',
+  },
+  {
+    kind: 'marketing',
+    slug: 'case-studies',
+    title: 'Case studies',
+    description:
+      'What runs on Kortix today: a science agent at City University of Hong Kong, an AI-run hedge fund desk, a cloud company built by agents, Kortix itself and more.',
+    htmlPath: '/case-studies',
+  },
+  {
+    kind: 'marketing',
+    slug: 'framework',
+    title: 'The Kortix framework',
+    description:
+      'Kortix is a backend framework for AI agents: a project is a git repository, kortix.yaml declares the agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, and @kortix/sdk and @kortix/ui compose your own experience.',
+    htmlPath: '/framework',
+  },
+  {
+    kind: 'marketing',
+    slug: 'multiplayer',
+    title: 'Multiplayer AI',
+    description:
+      'One AI for the whole team: the same agents, skills, Drive and connectors for everyone, in the web, desktop and mobile apps, Slack and Microsoft Teams, with people reviewing and approving what agents do.',
+    htmlPath: '/multiplayer',
+  },
+  {
+    kind: 'marketing',
+    slug: 'sovereign',
+    title: 'Sovereign and open',
+    description:
+      'Kortix is open source. Run it on Kortix Cloud, in your VPC or on-prem, with any model and your own keys, and keep your agents, skills and files in a git repo you own.',
+    htmlPath: '/sovereign',
+  },
+  {
+    kind: 'marketing',
+    slug: 'compliance',
+    title: 'Compliance',
+    description:
+      'SAML 2.0 single sign-on, SCIM 2.0 directory sync, roles and groups, approval rules you set, and an audit log you can export or stream. SOC 2 Type I verified.',
+    htmlPath: '/compliance',
   },
   {
     kind: 'marketing',
@@ -235,7 +291,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'slack',
     title: 'Kortix in Slack: one thread, one session',
     description:
-      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts, as the person who asked.',
+      'Mention Kortix in a Slack thread. An agent runs the session on its own machine, streams progress into the thread, and asks for approval in the thread before it acts. Kortix checks the sender is a member; the agent acts with its own permissions.',
     htmlPath: '/slack',
   },
   {
@@ -498,6 +554,12 @@ export function renderPlainMarkdownFromMdx(source: string): string {
     ) {
       skippingModule = !/;\s*$/.test(line.trim());
       continue;
+    }
+
+    // An MDX comment ({/* … */}) is a note for editors and generators, never content.
+    if (line.includes('{/*')) {
+      line = line.replace(/\s*\{\/\*[\s\S]*?\*\/\}/g, '');
+      if (!line.trim()) continue;
     }
 
     const directiveClose = stack.length && stack[stack.length - 1].tag === 'directive';
