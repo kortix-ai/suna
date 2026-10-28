@@ -15,7 +15,9 @@ import {
   type ChatCompletionRequest,
   type GatewayDeps,
   type HandlerRuntime,
+  type ImageRequest,
   handleChatCompletions,
+  handleImageRequest,
 } from './pipeline';
 import { parseUpstreamErrorBody } from './http/parse-upstream-error';
 import { gatewayErrorResponse } from './pipeline/error-response';
@@ -257,5 +259,6 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     messages,
     responses,
     listModels,
+    images: (req: ImageRequest): Promise<Response> => handleImageRequest(runtime, req),
   };
 }

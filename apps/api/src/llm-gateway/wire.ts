@@ -239,6 +239,49 @@ function messagesRoute(path: string) {
   });
 }
 
+const ImageRequestSchema = z
+  .object({
+    model: z.string().optional().openapi({ example: 'codex/gpt-image-2' }),
+    prompt: z.string().min(1).openapi({ example: 'A red cube on a white table' }),
+    size: z.string().optional().openapi({ example: 'auto' }),
+    quality: z.string().optional().openapi({ example: 'auto' }),
+    background: z.string().optional().openapi({ example: 'auto' }),
+    images: z
+      .array(z.object({ image_url: z.string() }))
+      .min(1)
+      .max(5)
+      .optional()
+      .openapi({ description: 'Edits only: 1 to 5 reference images as `data:` URLs.' }),
+  })
+  .openapi('GatewayImageRequest');
+
+const ImageResponseSchema = z
+  .object({
+    created: z.number(),
+    data: z.array(z.object({ b64_json: z.string(), generation_id: z.string().optional() })),
+    size: z.string().optional(),
+    quality: z.string().optional(),
+    background: z.string().optional(),
+  })
+  .passthrough()
+  .openapi('GatewayImageResponse');
+
+function imagesRoute(path: string, operation: 'generations' | 'edits') {
+  return createRoute({
+    method: 'post' as const,
+    path,
+    tags: [GATEWAY_INFERENCE_TAG],
+    summary: operation === 'generations' ? 'Generate an image' : 'Edit an image',
+    description: `Image ${operation} through the project's connected ChatGPT account (\`codex/gpt-image-2\` only). The gateway forwards \`prompt\`, \`size\`, \`quality\`, \`background\` and, for edits, \`images\`; it sets \`n\` to 1 and drops every other field. The response carries the \`x-codex-primary-used-percent\`, \`x-codex-primary-reset-after-seconds\` and \`x-codex-primary-window-minutes\` headers on 200 and 429.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    ...auth,
+    request: { body: { required: true, content: { 'application/json': { schema: ImageRequestSchema } } } },
+    responses: {
+      200: json(ImageResponseSchema, 'One image as base64 PNG'),
+      ...errors(400, 401, 413, 429, 502, 503),
+    },
+  });
+}
+
 // The reasoning_options entry shape — three real forms models.dev emits
 // (effort/toggle/budget_tokens; see @kortix/llm-catalog's
 // CatalogReasoningOption for the full field-by-field rationale). All fields
@@ -506,6 +549,8 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   llm.openAPIRegistry.registerPath(chatCompletionsRoute('/v1/chat/completions'));
   llm.openAPIRegistry.registerPath(modelsRoute('/v1/models'));
   llm.openAPIRegistry.registerPath(messagesRoute('/v1/messages'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/generations', 'generations'));
+  llm.openAPIRegistry.registerPath(imagesRoute('/images/edits', 'edits'));
   llm.all('*', (c) => {
     const tail = c.req.path.slice('/v1/llm'.length) || '/';
     return proxy(c, tail);
