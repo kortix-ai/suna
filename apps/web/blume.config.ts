@@ -12,16 +12,32 @@ const sidebar = [
   // 2026-10-27); these entries jump to its sections. Blume prefixes them
   // with the /docs base.
   { label: 'Guide', items: ['index', { label: 'Get started', href: '/#get-started' }] },
+  // The building blocks, one section each, each opening with a short
+  // walkthrough video (founder, 2026-10-28: the docs revolve around them).
   {
-    label: 'Build your AI OS',
-    items: [{ label: 'Agents', href: '/#agents' }, { label: 'Skills', href: '/#skills' }, { label: 'Memory and Drive', href: '/#memory-and-drive' }, { label: 'Connectors', href: '/#connectors' }],
+    label: 'Building blocks',
+    items: [
+      { label: 'Agents', href: '/#agents' },
+      { label: 'Skills', href: '/#skills' },
+      { label: 'Apps', href: '/#apps' },
+      { label: 'Drive', href: '/#memory-and-drive' },
+      { label: 'Connectors', href: '/#connectors' },
+      { label: 'Automations', href: '/#automations' },
+      { label: 'Computers', href: '/#computers' },
+      { label: 'Models', href: '/#models' },
+    ],
   },
   {
-    label: 'Run it 24/7',
-    items: [{ label: 'Automations', href: '/#automations' }, { label: 'Outcomes', href: '/#outcomes' }, { label: 'Computers', href: '/#computers' }, { label: 'Apps', href: '/#apps' }],
+    label: 'Run it',
+    items: [
+      { label: 'Outcomes', href: '/#outcomes' },
+      { label: 'Channels', href: '/#channels' },
+      { label: 'Everywhere', href: '/#everywhere' },
+      { label: 'Teams', href: '/#teams' },
+      { label: 'Security', href: '/#security' },
+      { label: 'Billing', href: '/#billing' },
+    ],
   },
-  { label: 'Work where you are', items: [{ label: 'Channels', href: '/#channels' }, { label: 'Everywhere', href: '/#everywhere' }, { label: 'Models', href: '/#models' }] },
-  { label: 'Teams and trust', items: [{ label: 'Teams', href: '/#teams' }, { label: 'Security', href: '/#security' }, { label: 'Billing', href: '/#billing' }] },
   // Less is more (founder, 2026-10-27): the technical reference is the few
   // pages a developer needs. Removed pages redirect to their Guide page
   // (next.config.ts). Kortix Capture's pages and the generated audit-actions

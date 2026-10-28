@@ -60,8 +60,9 @@ When an agent changes the project itself, for example a skill or its memory, it 
 New to Kortix? Start with [Get started](/docs/#get-started). It takes you from sign-up to your first finished task.
 </Callout>
 
-
 ## Get started
+
+<video src="/media/guide/get-started.mp4" aria-label="Getting started in Kortix: open a project and its first chat" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *Create your first project, run your first chat, connect a tool, invite your team, and find your way around the web, desktop and mobile apps.*
 
@@ -186,8 +187,9 @@ More on each surface is on the [Everywhere](/docs/#everywhere) page.
 
 **For developers:** [Quickstart](/docs/quickstart) · [CLI](/docs/cli)
 
-
 ## Agents
+
+<video src="/media/guide/agents.mp4" aria-label="Agents in Kortix: the agent list, an agent's instructions, adding an agent" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *What an agent is, the built-in agent every project starts with, how to create your own, what it can access, and how it asks before risky actions.*
 
@@ -292,8 +294,9 @@ The built-in `kortix` agent is allowed to merge its own change requests. Its sta
 
 **For developers:** [kortix.yaml reference](/docs/project/manifest) · [Git and change requests](/docs/git) · [CLI](/docs/cli)
 
-
 ## Skills
+
+<video src="/media/guide/skills.mp4" aria-label="Skills in Kortix: the skill list and one skill opened" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *A skill is a written playbook an agent follows for a specific task: when to write one, how to add one, and how agents improve their own skills with your approval.*
 
@@ -386,8 +389,95 @@ No agent change to a skill reaches your team until a person approves it. You sta
 
 **For developers:** [Change requests](/docs/git#change-requests) · [kortix.yaml reference](/docs/project/manifest)
 
+## Apps
+
+<video src="/media/guide/apps.mp4" aria-label="Apps in Kortix: the Apps page and adding an App" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+
+*Build and host websites, internal tools and backends at a stable URL, with Kortix sign-in, access control and releases built in.*
+
+An App is a website, an internal tool or a backend that your project hosts on Kortix. Each App has one stable URL, a setting for who may open it, and numbered releases. Kortix signs people in before your App runs, so a tool for your team needs no login system of its own. You do not need to be a developer to get one: ask an agent to build and deploy it, then share the link.
+
+### What you can do
+
+- **Host a website or a page.** A static App is a set of files that Kortix serves directly, with no server to run.
+- **Run an internal tool.** A server App runs your code on machines that Kortix builds and keeps running.
+- **Keep data.** A backend App can hold a database with server functions, realtime updates, file storage, schedules and search, from a ready-made template.
+- **Decide who opens it.** Keep an App private, open it to the project, to chosen people and groups, to anyone with a password, or to the public.
+- **Know who is looking.** Kortix tells your App who the signed-in visitor is: name, email, role and groups.
+- **Ship safely.** Every deploy makes a new release. A failed release never replaces the live one, and you can roll back.
+- **Connect Apps to agents.** An App can ask an agent to start work, and an automation can call an App on a schedule.
+- **List tools you already use.** Add a dashboard or vendor tool that runs elsewhere, and Kortix shows it beside your own Apps.
+
+### How it works
+
+Every App you may open is listed at **Apps** in the project sidebar. The page shows each App's live state, a preview and its access controls. An App's detail lists its releases.
+
+You create and deploy Apps from an agent session, the command line or code. For most people, that means you describe the App to an agent. The agent builds it on its [cloud computer](/docs/#computers) and deploys it.
+
+#### Who can open an App
+
+| Access | Who can open the App |
+| --- | --- |
+| Private (the default) | Only the person who created it |
+| Project | Everyone who can read the project |
+| Restricted | The members and groups you list |
+| Password | Anyone with the password |
+| Public | Anyone. No sign-in. |
+
+Project managers, account owners and account admins can open every App in the project. A private App stays manageable after its creator leaves. When you change who can access an App, everyone signs in again.
+
+#### Always on or on demand
+
+A server App runs in one of two modes:
+
+- **Always on.** It runs around the clock, and Kortix restarts it when it stops. Use it for live updates, background work and databases.
+- **On demand.** It stops after a quiet period. The next visitor or automation wakes it. A stopped on-demand App uses no compute.
+
+A new App is always on. A static App has nothing to run, so neither mode applies.
+
+#### Releases and rollback
+
+Each deploy creates a new numbered release. A release never changes. If a new release fails its checks, visitors keep the previous one. A rollback creates a new release from an older one. An App's stored data stays when you roll back, because a rollback changes code and settings, never the data. Kortix also takes a daily snapshot of an App's stored data.
+
+### Set it up
+
+<Steps>
+<Step title="Describe the App to an agent">
+Start a session and say what you need: who uses it, what it shows, and what data it keeps.
+</Step>
+<Step title="Let the agent build and deploy it">
+The agent builds the App on its cloud computer and deploys it. A new App is private: only you can open it.
+</Step>
+<Step title="Open it and check it">
+Open the App from **Apps** in the project sidebar, in a browser where you are signed in to Kortix.
+</Step>
+<Step title="Share it">
+Set who may open it, for example the whole project or a group. Then send people the link.
+</Step>
+</Steps>
+
+To add a tool that runs somewhere else, select **Add app** on the Apps page and enter its address.
+
+### Examples
+
+- **An internal sales dashboard at Acme.** An agent builds a dashboard that reads the team's numbers and shares it with the Sales group. Each person sees it under their own Kortix login.
+- **A customer request form at Northwind.** A public page lets customers send a request. The App posts an event for each new request, and an [automation](/docs/#automations) hands it to an agent that drafts a reply.
+- **A small database-backed tool at Acme.** Operations tracks equipment loans in an App with its own database. The tool knows who is signed in, so it records who took what.
+- **A vendor tool in one place.** Northwind adds its analytics dashboard, which runs elsewhere, so the team opens it from the same Apps page.
+
+### Tips
+
+- Start private. Open the App to the project or a group once it works.
+- Never use **Public** for internal data. A public App does not know who the visitor is.
+- Choose on demand for a tool people open now and then. Choose always on for anything that must answer at once or keep running.
+- Running Apps use compute from your account's credits. When the balance runs out, Kortix stops the account's running Apps until credits are added. See [Billing](/docs/#billing).
+- An agent opens a private or restricted App only when that App is on the agent's list of Apps. See [Agents](/docs/#agents).
+
+**For developers:** [Apps reference](/docs/apps) · [CLI](/docs/cli)
 
 ## Memory and Drive
+
+<video src="/media/guide/drive.mp4" aria-label="Drive in Kortix: My files, the Company folder and the New menu" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *How your agents remember what your company knows, and how people and agents share files in Kortix Drive.*
 
@@ -477,8 +567,9 @@ When you delete a session, Kortix keeps its conversation and its stored files fo
 
 **For developers:** [Git and change requests](/docs/git) · [kortix.yaml reference](/docs/project/manifest)
 
-
 ## Connectors
+
+<video src="/media/guide/connectors.mp4" aria-label="Connectors in Kortix: the catalog and the approval rules" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *Connect the tools your company already uses, decide who may use each connection, and choose which actions run, ask first or are blocked.*
 
@@ -597,8 +688,9 @@ To remove access, open **Settings** → **Personal access keys** → **Connected
 
 **For developers:** [kortix.yaml reference](/docs/project/manifest) · [SDK](/docs/sdk) · [REST API](/docs/api)
 
-
 ## Automations
+
+<video src="/media/guide/automations.mp4" aria-label="Automations in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *Run agents around the clock on a schedule, when another system calls Kortix, or when something happens in a connected app.*
 
@@ -690,101 +782,9 @@ A reminder is different from a trigger. It does not start a new session. It send
 
 **For developers:** [kortix.yaml reference](/docs/project/manifest) · [CLI](/docs/cli) · [REST API](/docs/api)
 
-
-## Outcomes
-
-*Give Kortix an outcome, and an agent owns it until it is verifiably done: it plans, works, chases people, waits and has the result checked.*
-
-Most requests are tasks: do this once, now. Some are outcomes: "make sure our old bank account is fully closed", or "get the grant application submitted". An outcome can take days or months and depends on other people. In Kortix, an outcome is a **Goal**. You state the outcome once and walk away. An agent plans the work, does it, chases the people it needs, waits when it must, and stops only when a separate check confirms the result.
-
-### What you can do
-
-- Hand over an objective, not a list of steps.
-- Agree up front on how "done" will be proven.
-- Let the agent follow up with you and with others until it has what it needs.
-- Watch progress at any time, and edit the goal's files yourself.
-- Stop a goal whenever you choose.
-
-### How it works
-
-#### The goal folder
-
-Each goal is a folder in Kortix Drive, in your own folder or in a shared company folder. The folder is the goal's memory. If a session ends, a new one continues from the folder alone. It holds:
-
-- the goal file: the objective, its success criteria, the open items and the status;
-- a log, with one line per action;
-- notes: your original request, the constraints and one thread per person;
-- `docs/` for material, and `evidence/` for proof.
-
-You can open and edit these files. Your edits win. See [Memory and Drive](/docs/#memory-and-drive).
-
-#### Plan
-
-The agent writes 2 to 6 success criteria that someone else can check. Each one names its proof. It records your constraints, such as a spending limit. Anything outside a constraint becomes a question for you, not an action.
-
-#### Work
-
-The agent acts on the most useful open item on each turn. It can hand heavy or parallel work to worker sessions, each doing one item.
-
-#### Chase
-
-The agent depends on people, so it acts like a colleague who needs something to do the job.
-
-- It asks once, precisely: what it needs, why, and how to send it.
-- It uses the channels your project already has, such as Slack. It keeps one thread per person and asks you to reply there.
-- It follows up when an answer is late, and each follow-up is firmer: a reminder, then the cost of the delay, then a short daily ping.
-- It chases outside parties, such as a vendor or a bank, the same way.
-
-#### Wake
-
-Nothing runs between turns. Three things wake the goal: a daily heartbeat reminder, a reply from a person, or a step the agent scheduled for itself. If the session's computer fails, the next heartbeat starts a new session that takes over.
-
-#### Check
-
-The agent never judges its own work. When every criterion has its proof, it starts a separate verifier session that did none of the work. The verifier checks each proof and writes PASS or FAIL. The goal is done only when everything passes. A FAIL sends the goal back to work.
-
-A goal moves through these states: draft, active, waiting on a person, waiting on an outside event, verifying, then done. It ends early only when you say stop. It never ends because it is hard, slow or blocked. A blocked goal waits and chases.
-
-### Set it up
-
-<Steps>
-<Step title="Turn on the features">
-Goals is an experimental feature that needs Platinum. In **Customize** → **Settings** → **Feature flags**, turn on **Goals**, **Volumes** and **Reminders**.
-</Step>
-<Step title="State the outcome">
-In a chat, describe the outcome, for example "make sure…" or "keep at it until…". Say if it belongs to your team or company. Otherwise it goes in your own folder.
-</Step>
-<Step title="Read the plan">
-The agent replies with the outcome, the success criteria, the first thing it needs from you, and where to watch it.
-</Step>
-<Step title="Watch it">
-Open the **Goals** page in the project sidebar for status, health, the next wake and what the goal waits on. In the session, the **Goal** button in the header shows the same.
-</Step>
-</Steps>
-
-<Callout type="warning">
-Do not delete the session that coordinates an open goal. If you delete it, the goal stops waking.
-</Callout>
-
-### Examples
-
-- **Close an account.** Acme asks: "make sure our old business bank account is fully closed." The agent requests the closure, asks the finance lead to approve a sign-in prompt, waits for written confirmation, and checks for charges afterwards.
-- **Submit an application.** Northwind needs a funding application in before a deadline. The agent drafts it, chases each colleague for their figures, and raises the pressure as the deadline nears.
-- **Collect documents.** An agent gathers signed forms from five suppliers. It keeps one thread per supplier and marks each form received in the goal file.
-- **Fix a recurring problem.** Acme wants failed invoice emails to stop. The agent finds the cause, fixes it, and a verifier confirms that new invoices arrive.
-
-### Tips
-
-- Phrase the goal as a result that is true or false: "the account is closed", not "work on the account".
-- Name hard limits up front, such as budget or who may be contacted.
-- Answer in the thread the agent opened. That reply wakes the goal at once.
-- Keep passwords out of the goal folder. Store them as secrets.
-- For a simple recurring job, a [schedule](/docs/#automations) is enough. Use a goal when the work needs follow-through.
-
-**For developers:** [CLI](/docs/cli) · [kortix.yaml reference](/docs/project/manifest)
-
-
 ## Computers
+
+<video src="/media/guide/computers.mp4" aria-label="Computers in Kortix: connecting your own computer" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
 *Every session runs on its own cloud computer, and you can connect your own computer so agents can use its files, shell and screen under rules you set.*
 
@@ -894,91 +894,187 @@ Open **Customize → Connectors → Computers → Accounts** and select **Share*
 
 **For developers:** [SDK: sessions](/docs/sdk/sessions) · [CLI](/docs/cli) · [Git and change requests](/docs/git)
 
+## Models
 
-## Apps
+<video src="/media/guide/models.mp4" aria-label="Models in Kortix: providers, a custom endpoint and costs" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-*Build and host websites, internal tools and backends at a stable URL, with Kortix sign-in, access control and releases built in.*
+*Choose which AI models your agents use: Kortix-managed models, your own provider keys, or a ChatGPT subscription, per project, agent or session.*
 
-An App is a website, an internal tool or a backend that your project hosts on Kortix. Each App has one stable URL, a setting for who may open it, and numbered releases. Kortix signs people in before your App runs, so a tool for your team needs no login system of its own. You do not need to be a developer to get one: ask an agent to build and deploy it, then share the link.
+A model is the AI that an agent thinks with. Kortix does not lock you to one vendor. You can run on Kortix-managed models with no setup, connect your own provider keys, or use a ChatGPT subscription you already pay for. You choose a default for the project, a model per agent, or a different model for one session. Every model request goes through one Kortix gateway, so the same budgets, access rules and cost reports apply whichever model you pick.
 
 ### What you can do
 
-- **Host a website or a page.** A static App is a set of files that Kortix serves directly, with no server to run.
-- **Run an internal tool.** A server App runs your code on machines that Kortix builds and keeps running.
-- **Keep data.** A backend App can hold a database with server functions, realtime updates, file storage, schedules and search, from a ready-made template.
-- **Decide who opens it.** Keep an App private, open it to the project, to chosen people and groups, to anyone with a password, or to the public.
-- **Know who is looking.** Kortix tells your App who the signed-in visitor is: name, email, role and groups.
-- **Ship safely.** Every deploy makes a new release. A failed release never replaces the live one, and you can roll back.
-- **Connect Apps to agents.** An App can ask an agent to start work, and an automation can call an App on a schedule.
-- **List tools you already use.** Add a dashboard or vendor tool that runs elsewhere, and Kortix shows it beside your own Apps.
+- **Start with no setup.** On Kortix Cloud, a new session runs on the platform default model. You connect nothing.
+- **Bring your own provider.** Connect a key from a provider such as Anthropic, OpenAI, Google, Mistral or Amazon Bedrock.
+- **Use your ChatGPT subscription.** Connect a ChatGPT Plus or Pro account and run on your plan.
+- **Pick the right model for the work.** Choose a model per session, pin one to an agent, or set a project default.
+- **Set how hard the model thinks.** Use the thinking control in the composer when a model offers reasoning levels.
+- **Keep a backup.** Set a fallback list, so another model takes over when the first one fails.
+- **Cap spend.** Set a budget per project or per member, and get warned or blocked at the limit.
+- **Limit what people may use.** Hide models from the picker, or turn off a provider or a model completely.
 
 ### How it works
 
-Every App you may open is listed at **Apps** in the project sidebar. The page shows each App's live state, a preview and its access controls. An App's detail lists its releases.
+#### Kortix-managed models
 
-You create and deploy Apps from an agent session, the command line or code. For most people, that means you describe the App to an agent. The agent builds it on its [cloud computer](/docs/#computers) and deploys it.
+Kortix-managed models need no key. The model picker lists them under **Kortix**, with each model's context size and image support.
 
-#### Who can open an App
+- Managed models need the Credits plan or Enterprise. They are not available on Free.
+- Managed requests use credits from your account's wallet. See [Billing](/docs/#billing).
+- Managed models run only through inference providers with zero data retention.
+- The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for those.
+- A self-hosted Kortix has no managed models. Connect your own providers there.
 
-| Access | Who can open the App |
-| --- | --- |
-| Private (the default) | Only the person who created it |
-| Project | Everyone who can read the project |
-| Restricted | The members and groups you list |
-| Password | Anyone with the password |
-| Public | Anyone. No sign-in. |
+#### Your own keys and subscriptions
 
-Project managers, account owners and account admins can open every App in the project. A private App stays manageable after its creator leaves. When you change who can access an App, everyone signs in again.
+When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/#billing).
 
-#### Always on or on demand
+By default, a provider key belongs to the whole project. A project can turn on per-person keys with a feature flag. Then each member can add keys and ChatGPT accounts for their own use, and choose to share them.
 
-A server App runs in one of two modes:
+A shared session, an automation, or a Slack or Teams conversation uses only keys shared with the whole project. Your private keys stay in your private sessions.
 
-- **Always on.** It runs around the clock, and Kortix restarts it when it stops. Use it for live updates, background work and databases.
-- **On demand.** It stops after a quiet period. The next visitor or automation wakes it. A stopped on-demand App uses no compute.
+#### Which model a session uses
 
-A new App is always on. A static App has nothing to run, so neither mode applies.
+A session that names no model uses the first of these that is set:
 
-#### Releases and rollback
+1. The model chosen for the session, the [channel](/docs/#channels) or the [automation](/docs/#automations).
+2. The model pinned to the agent.
+3. The project default.
+4. The account default, for every project that has no default of its own.
+5. The platform default.
 
-Each deploy creates a new numbered release. A release never changes. If a new release fails its checks, visitors keep the previous one. A rollback creates a new release from an older one. An App's stored data stays when you roll back, because a rollback changes code and settings, never the data. Kortix also takes a daily snapshot of an App's stored data.
+A default that cannot run, for example after its key was removed, falls back to another connected provider, then to the platform default. A stale default never fails a session.
 
 ### Set it up
 
 <Steps>
-<Step title="Describe the App to an agent">
-Start a session and say what you need: who uses it, what it shows, and what data it keeps.
+<Step title="Run on the default">
+Start a session. On Kortix Cloud it runs on the platform default model.
 </Step>
-<Step title="Let the agent build and deploy it">
-The agent builds the App on its cloud computer and deploys it. A new App is private: only you can open it.
+<Step title="Pick another model">
+Choose a model in the composer's model picker. A stopped session uses the new model when it starts again. Switching a running session restarts the agent on its computer and ends the turn in progress.
 </Step>
-<Step title="Open it and check it">
-Open the App from **Apps** in the project sidebar, in a browser where you are signed in to Kortix.
+<Step title="Connect your own provider">
+Open **Customize → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
 </Step>
-<Step title="Share it">
-Set who may open it, for example the whole project or a group. Then send people the link.
+<Step title="Set a budget">
+Open **Customize → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
 </Step>
 </Steps>
 
-To add a tool that runs somewhere else, select **Add app** on the Apps page and enter its address.
+Account owners, admins and project managers get an email at 80% and at 100% of a budget.
+
+#### Fallback models
+
+Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
 ### Examples
 
-- **An internal sales dashboard at Acme.** An agent builds a dashboard that reads the team's numbers and shares it with the Sales group. Each person sees it under their own Kortix login.
-- **A customer request form at Northwind.** A public page lets customers send a request. The App posts an event for each new request, and an [automation](/docs/#automations) hands it to an agent that drafts a reply.
-- **A small database-backed tool at Acme.** Operations tracks equipment loans in an App with its own database. The tool knows who is signed in, so it records who took what.
-- **A vendor tool in one place.** Northwind adds its analytics dashboard, which runs elsewhere, so the team opens it from the same Apps page.
+- **Acme** runs everyday research and drafting on the Kortix-managed default, with a monthly project budget set to **Block**.
+- **Northwind's legal team** pins a model from its own Anthropic key to its contract-review agent, so every review runs on that model.
+- **A consultant at Acme** connects a personal ChatGPT subscription for private sessions. Shared sessions keep using the project's keys.
+- **Northwind** wants to run only on its own providers. It sets a project default on its own provider first, then disables the **Kortix** provider.
 
 ### Tips
 
-- Start private. Open the App to the project or a group once it works.
-- Never use **Public** for internal data. A public App does not know who the visitor is.
-- Choose on demand for a tool people open now and then. Choose always on for anything that must answer at once or keep running.
-- Running Apps use compute from your account's credits. When the balance runs out, Kortix stops the account's running Apps until credits are added. See [Billing](/docs/#billing).
-- An agent opens a private or restricted App only when that App is on the agent's list of Apps. See [Agents](/docs/#agents).
+- Match the model to the work: send easy tasks to a smaller model.
+- Stay in one session for related work. Repeated turns in one session reuse the prompt cache.
+- Set a budget before you open a project to a large team.
+- To stop a model being used, disable it. Hiding it from the picker only changes the list.
 
-**For developers:** [Apps reference](/docs/apps) · [CLI](/docs/cli)
+**For developers:** [kortix.yaml reference](/docs/project/manifest) · [REST API](/docs/api)
 
+## Outcomes
+
+*Give Kortix an outcome, and an agent owns it until it is verifiably done: it plans, works, chases people, waits and has the result checked.*
+
+Most requests are tasks: do this once, now. Some are outcomes: "make sure our old bank account is fully closed", or "get the grant application submitted". An outcome can take days or months and depends on other people. In Kortix, an outcome is a **Goal**. You state the outcome once and walk away. An agent plans the work, does it, chases the people it needs, waits when it must, and stops only when a separate check confirms the result.
+
+### What you can do
+
+- Hand over an objective, not a list of steps.
+- Agree up front on how "done" will be proven.
+- Let the agent follow up with you and with others until it has what it needs.
+- Watch progress at any time, and edit the goal's files yourself.
+- Stop a goal whenever you choose.
+
+### How it works
+
+#### The goal folder
+
+Each goal is a folder in Kortix Drive, in your own folder or in a shared company folder. The folder is the goal's memory. If a session ends, a new one continues from the folder alone. It holds:
+
+- the goal file: the objective, its success criteria, the open items and the status;
+- a log, with one line per action;
+- notes: your original request, the constraints and one thread per person;
+- `docs/` for material, and `evidence/` for proof.
+
+You can open and edit these files. Your edits win. See [Memory and Drive](/docs/#memory-and-drive).
+
+#### Plan
+
+The agent writes 2 to 6 success criteria that someone else can check. Each one names its proof. It records your constraints, such as a spending limit. Anything outside a constraint becomes a question for you, not an action.
+
+#### Work
+
+The agent acts on the most useful open item on each turn. It can hand heavy or parallel work to worker sessions, each doing one item.
+
+#### Chase
+
+The agent depends on people, so it acts like a colleague who needs something to do the job.
+
+- It asks once, precisely: what it needs, why, and how to send it.
+- It uses the channels your project already has, such as Slack. It keeps one thread per person and asks you to reply there.
+- It follows up when an answer is late, and each follow-up is firmer: a reminder, then the cost of the delay, then a short daily ping.
+- It chases outside parties, such as a vendor or a bank, the same way.
+
+#### Wake
+
+Nothing runs between turns. Three things wake the goal: a daily heartbeat reminder, a reply from a person, or a step the agent scheduled for itself. If the session's computer fails, the next heartbeat starts a new session that takes over.
+
+#### Check
+
+The agent never judges its own work. When every criterion has its proof, it starts a separate verifier session that did none of the work. The verifier checks each proof and writes PASS or FAIL. The goal is done only when everything passes. A FAIL sends the goal back to work.
+
+A goal moves through these states: draft, active, waiting on a person, waiting on an outside event, verifying, then done. It ends early only when you say stop. It never ends because it is hard, slow or blocked. A blocked goal waits and chases.
+
+### Set it up
+
+<Steps>
+<Step title="Turn on the features">
+Goals is an experimental feature that needs Platinum. In **Customize** → **Settings** → **Feature flags**, turn on **Goals**, **Volumes** and **Reminders**.
+</Step>
+<Step title="State the outcome">
+In a chat, describe the outcome, for example "make sure…" or "keep at it until…". Say if it belongs to your team or company. Otherwise it goes in your own folder.
+</Step>
+<Step title="Read the plan">
+The agent replies with the outcome, the success criteria, the first thing it needs from you, and where to watch it.
+</Step>
+<Step title="Watch it">
+Open the **Goals** page in the project sidebar for status, health, the next wake and what the goal waits on. In the session, the **Goal** button in the header shows the same.
+</Step>
+</Steps>
+
+<Callout type="warning">
+Do not delete the session that coordinates an open goal. If you delete it, the goal stops waking.
+</Callout>
+
+### Examples
+
+- **Close an account.** Acme asks: "make sure our old business bank account is fully closed." The agent requests the closure, asks the finance lead to approve a sign-in prompt, waits for written confirmation, and checks for charges afterwards.
+- **Submit an application.** Northwind needs a funding application in before a deadline. The agent drafts it, chases each colleague for their figures, and raises the pressure as the deadline nears.
+- **Collect documents.** An agent gathers signed forms from five suppliers. It keeps one thread per supplier and marks each form received in the goal file.
+- **Fix a recurring problem.** Acme wants failed invoice emails to stop. The agent finds the cause, fixes it, and a verifier confirms that new invoices arrive.
+
+### Tips
+
+- Phrase the goal as a result that is true or false: "the account is closed", not "work on the account".
+- Name hard limits up front, such as budget or who may be contacted.
+- Answer in the thread the agent opened. That reply wakes the goal at once.
+- Keep passwords out of the goal folder. Store them as secrets.
+- For a simple recurring job, a [schedule](/docs/#automations) is enough. Use a goal when the work needs follow-through.
+
+**For developers:** [CLI](/docs/cli) · [kortix.yaml reference](/docs/project/manifest)
 
 ## Channels
 
@@ -1073,7 +1169,6 @@ Email is experimental and off by default. Turn on the **Email channel** project 
 - Telegram is also available as an experimental channel. See the developer reference.
 
 **For developers:** [kortix.yaml reference](/docs/project/manifest) · [CLI](/docs/cli)
-
 
 ## Everywhere
 
@@ -1186,96 +1281,6 @@ To disconnect a tool, go to **Settings → Personal access keys → Connected ap
 
 **For developers:** [CLI](/docs/cli) · [SDK](/docs/sdk) · [REST API](/docs/api)
 
-
-## Models
-
-*Choose which AI models your agents use: Kortix-managed models, your own provider keys, or a ChatGPT subscription, per project, agent or session.*
-
-A model is the AI that an agent thinks with. Kortix does not lock you to one vendor. You can run on Kortix-managed models with no setup, connect your own provider keys, or use a ChatGPT subscription you already pay for. You choose a default for the project, a model per agent, or a different model for one session. Every model request goes through one Kortix gateway, so the same budgets, access rules and cost reports apply whichever model you pick.
-
-### What you can do
-
-- **Start with no setup.** On Kortix Cloud, a new session runs on the platform default model. You connect nothing.
-- **Bring your own provider.** Connect a key from a provider such as Anthropic, OpenAI, Google, Mistral or Amazon Bedrock.
-- **Use your ChatGPT subscription.** Connect a ChatGPT Plus or Pro account and run on your plan.
-- **Pick the right model for the work.** Choose a model per session, pin one to an agent, or set a project default.
-- **Set how hard the model thinks.** Use the thinking control in the composer when a model offers reasoning levels.
-- **Keep a backup.** Set a fallback list, so another model takes over when the first one fails.
-- **Cap spend.** Set a budget per project or per member, and get warned or blocked at the limit.
-- **Limit what people may use.** Hide models from the picker, or turn off a provider or a model completely.
-
-### How it works
-
-#### Kortix-managed models
-
-Kortix-managed models need no key. The model picker lists them under **Kortix**, with each model's context size and image support.
-
-- Managed models need the Credits plan or Enterprise. They are not available on Free.
-- Managed requests use credits from your account's wallet. See [Billing](/docs/#billing).
-- Managed models run only through inference providers with zero data retention.
-- The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for those.
-- A self-hosted Kortix has no managed models. Connect your own providers there.
-
-#### Your own keys and subscriptions
-
-When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/#billing).
-
-By default, a provider key belongs to the whole project. A project can turn on per-person keys with a feature flag. Then each member can add keys and ChatGPT accounts for their own use, and choose to share them.
-
-A shared session, an automation, or a Slack or Teams conversation uses only keys shared with the whole project. Your private keys stay in your private sessions.
-
-#### Which model a session uses
-
-A session that names no model uses the first of these that is set:
-
-1. The model chosen for the session, the [channel](/docs/#channels) or the [automation](/docs/#automations).
-2. The model pinned to the agent.
-3. The project default.
-4. The account default, for every project that has no default of its own.
-5. The platform default.
-
-A default that cannot run, for example after its key was removed, falls back to another connected provider, then to the platform default. A stale default never fails a session.
-
-### Set it up
-
-<Steps>
-<Step title="Run on the default">
-Start a session. On Kortix Cloud it runs on the platform default model.
-</Step>
-<Step title="Pick another model">
-Choose a model in the composer's model picker. A stopped session uses the new model when it starts again. Switching a running session restarts the agent on its computer and ends the turn in progress.
-</Step>
-<Step title="Connect your own provider">
-Open **Customize → Models → Providers** and paste a key. For a ChatGPT subscription, choose **Use your ChatGPT subscription** in the model picker, then **Connect ChatGPT**.
-</Step>
-<Step title="Set a budget">
-Open **Customize → Models → Costs**. Set a limit per day, week or month. Choose **Block** to refuse new requests at the limit, or **Warn only** to let them run.
-</Step>
-</Steps>
-
-Account owners, admins and project managers get an email at 80% and at 100% of a budget.
-
-#### Fallback models
-
-Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
-
-### Examples
-
-- **Acme** runs everyday research and drafting on the Kortix-managed default, with a monthly project budget set to **Block**.
-- **Northwind's legal team** pins a model from its own Anthropic key to its contract-review agent, so every review runs on that model.
-- **A consultant at Acme** connects a personal ChatGPT subscription for private sessions. Shared sessions keep using the project's keys.
-- **Northwind** wants to run only on its own providers. It sets a project default on its own provider first, then disables the **Kortix** provider.
-
-### Tips
-
-- Match the model to the work: send easy tasks to a smaller model.
-- Stay in one session for related work. Repeated turns in one session reuse the prompt cache.
-- Set a budget before you open a project to a large team.
-- To stop a model being used, disable it. Hiding it from the picker only changes the list.
-
-**For developers:** [kortix.yaml reference](/docs/project/manifest) · [REST API](/docs/api)
-
-
 ## Teams
 
 *Invite your team, decide who can do what in each project, share sessions, and approve agents' work before it reaches the company repository.*
@@ -1378,7 +1383,6 @@ An agent cannot merge its own change request unless you give it that permission 
 - When someone leaves, remove them from **Members**. Their personal keys and the tokens of their running sessions stop working at once.
 
 **For developers:** [Git and change requests](/docs/git) · [REST API](/docs/api)
-
 
 ## Security
 
@@ -1493,7 +1497,6 @@ A self-hosted instance has billing off by default. A Kortix Enterprise license t
 
 **For developers:** [Self-hosting](/docs/host) · [kortix.yaml reference](/docs/project/manifest) · [REST API](/docs/api)
 
-
 ## Billing
 
 *The Free and Credits plans, Enterprise, what uses credits, the account wallet, top-ups and plan changes.*
@@ -1597,7 +1600,6 @@ To continue, add credits or update the payment method. On Free, subscribe to Cre
 For a billing question, email [support@kortix.com](mailto:support@kortix.com).
 
 **For developers:** [REST API](/docs/api)
-
 
 ## For developers
 
