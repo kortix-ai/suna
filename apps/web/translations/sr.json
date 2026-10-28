@@ -2106,10 +2106,10 @@
     "customizeIcon": "Кликните да бисте прилагодили икону радника",
     "grants": {
       "subagents": {
-        "title": "Подагенти",
-        "description": "Агенти које овај агент може да покрене за подзадатак.",
+        "title": "Agenti",
+        "description": "Drugi agenti kojima ovaj može da preda posao alatom agent.",
         "all": "Сваки подагент у овом пројекту, укључујући оне додате касније.",
-        "empty": "У овом пројекту још нису декларисани подагенти."
+        "empty": "Još nijedan drugi agent ne može da se pozove. Postavi „Ko može da ga pokrene“ nekog agenta na Subagent ili Svi da bi se pojavio ovde."
       },
       "commands": {
         "title": "Команде",

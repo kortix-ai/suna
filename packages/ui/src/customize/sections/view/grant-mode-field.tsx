@@ -17,7 +17,7 @@ import { type ReactNode, useState } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
 import { useUiParams } from '../../../providers/ui-provider';
 import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
-import { GrantModeTabs, useAgentGrant } from '../../shared/agent-resource-scope';
+import { GrantModeTabs, plainGrantSwitch, useAgentGrant, withCatalog } from '../../shared/agent-resource-scope';
 
 export type GrantMode = 'all' | 'pick' | 'none';
 
@@ -197,7 +197,11 @@ export function GrantSetField({
   );
 }
 
-/** All · Pick · None over the grouped grantable Kortix permission catalog. */
+/**
+ * The grant sentence over the grouped Kortix permission catalog, listed in
+ * every mode like every other Access view: All checks every box, None none,
+ * Specific the granted ones. A box turned off under All keeps the rest.
+ */
 export function KortixPermissionsField({
   value,
   onChange,
@@ -209,37 +213,29 @@ export function KortixPermissionsField({
   const params = useUiParams();
   const { flags } = useProjectFeatureFlags(typeof params.id === 'string' ? params.id : null);
   const groups = KORTIX_PERMISSIONS_CATALOG.filter((grp) => !grp.featureFlag || flags[grp.featureFlag] === true);
-  // The same grant sentence as every other Access view (`GrantModeTabs`):
-  // "researcher can use [Specific]", then the catalog to pick from.
+  const ids = groups.flatMap((grp) => grp.actions);
   const grant = useAgentGrant(value, onChange);
-  const selected = new Set(Array.isArray(value) ? value : []);
+  const box = plainGrantSwitch(value, ids, onChange);
   return (
     <div className="space-y-5">
-      <GrantModeTabs grant={grant} label={tI18nComplete.raw('text74009e6664f5')} />
-      {grant.mode === 'specific' ? (
-        <div className="bg-popover divide-border divide-y rounded-md border">
-          {groups.map((grp) => (
-            <div key={grp.group} className="space-y-2.5 px-4 py-3">
-              <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
-              <div className="-mx-3 grid gap-x-2 gap-y-0.5 sm:grid-cols-2">
-                {grp.actions.map((action) => (
-                  <Checkbox
-                    key={action}
-                    variant="black"
-                    checked={selected.has(action)}
-                    onCheckedChange={() => grant.toggle(action)}
-                    label={
-                      <span className="font-mono text-xs">
-                        {action.replace(/^project\./, '')}
-                      </span>
-                    }
-                  />
-                ))}
-              </div>
+      <GrantModeTabs grant={withCatalog(grant, ids)} label={tI18nComplete.raw('text74009e6664f5')} />
+      <div className="bg-popover divide-border divide-y rounded-md border">
+        {groups.map((grp) => (
+          <div key={grp.group} className="space-y-2.5 px-4 py-3">
+            <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
+            <div className="-mx-3 grid gap-x-2 gap-y-0.5 sm:grid-cols-2">
+              {grp.actions.map((action) => (
+                <Checkbox
+                  key={action}
+                  variant="black"
+                  {...box(action)}
+                  label={<span className="font-mono text-xs">{action.replace(/^project\./, '')}</span>}
+                />
+              ))}
             </div>
-          ))}
-        </div>
-      ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

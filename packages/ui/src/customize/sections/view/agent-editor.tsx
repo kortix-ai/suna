@@ -326,7 +326,7 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'triggers', label: 'Triggers', group: 'General' },
   { key: 'basics', label: 'Basics', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
-  { key: 'subagents', label: 'Subagents', group: 'Access' },
+  { key: 'subagents', label: 'Agents', group: 'Access' },
   { key: 'tools', label: 'Tools', group: 'Access' },
   { key: 'commands', label: 'Commands', group: 'Access' },
   { key: 'extensions', label: 'Extensions', group: 'Access' },
@@ -433,7 +433,6 @@ export function AgentConfigSections({
   secrets,
   apps,
   drives,
-  authority,
   sectionStyle = 'panel',
 }: {
   section: AgentConfigSectionKey;
@@ -464,9 +463,6 @@ export function AgentConfigSections({
   apps?: React.ReactNode;
   /** Which shared drives the agent mounts. Page-owned, and only with Volumes on. */
   drives?: React.ReactNode;
-  /** What the agent can do once its Kortix permissions meet its IAM ceiling —
-   *  a page-owned card under the Kortix permissions checklist. */
-  authority?: React.ReactNode;
 }) {
   const { draft, oc, set, setOc } = editor;
   // Every pane opens with a `lead` section (the pane title) and stacks its
@@ -510,7 +506,6 @@ export function AgentConfigSections({
         return (
           <>
             <ProjectActionsSection draft={draft} set={set} />
-            {authority}
           </>
         );
       case 'triggers':

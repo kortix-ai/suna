@@ -2106,10 +2106,10 @@
     "customizeIcon": "点击自定义 Worker 图标",
     "grants": {
       "subagents": {
-        "title": "子代理",
-        "description": "此代理可为子任务启动的代理。",
+        "title": "智能体",
+        "description": "此智能体可通过 agent 工具交付工作的其他智能体。",
         "all": "此项目中的所有子代理，包括之后添加的。",
-        "empty": "此项目尚未声明子代理。"
+        "empty": "暂时没有可调用的其他智能体。将某个智能体的“谁可以启动”设为子智能体或全部，它就会出现在这里。"
       },
       "commands": {
         "title": "命令",

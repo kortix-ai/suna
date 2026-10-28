@@ -2106,10 +2106,10 @@
     "customizeIcon": "Click to customize Worker icon",
     "grants": {
       "subagents": {
-        "title": "Subagents",
-        "description": "Agents this agent can start for a subtask.",
+        "title": "Agents",
+        "description": "Other agents this one can hand work to, with the agent tool.",
         "all": "Every subagent in this project, including ones added later.",
-        "empty": "No subagents declared in this project yet."
+        "empty": "No other agent can be called yet. Set an agent's “Who can start it” to Subagent or All to list it here."
       },
       "commands": {
         "title": "Commands",

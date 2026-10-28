@@ -2106,10 +2106,10 @@
     "customizeIcon": "Klicke, um das Worker-Icon anzupassen",
     "grants": {
       "subagents": {
-        "title": "Subagenten",
-        "description": "Agenten, die dieser Agent für eine Teilaufgabe starten kann.",
+        "title": "Agenten",
+        "description": "Andere Agenten, an die dieser Agent mit dem Agent-Tool Arbeit abgeben kann.",
         "all": "Jeder Subagent in diesem Projekt, auch später hinzugefügte.",
-        "empty": "In diesem Projekt sind noch keine Subagenten deklariert."
+        "empty": "Noch kann kein anderer Agent aufgerufen werden. Setze bei einem Agenten „Wer kann ihn starten“ auf Subagent oder Alle, damit er hier erscheint."
       },
       "commands": {
         "title": "Befehle",

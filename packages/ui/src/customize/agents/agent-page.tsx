@@ -799,13 +799,11 @@ function EditableAgentPage({
       ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
       : grantLabel(value);
   };
-  // Subagents and Commands list only where there is something to grant (another
-  // subagent-mode agent, a `commands:` entry) or the block already grants one.
+  // Agents (`subagents`) always lists: its empty state says how to make an
+  // agent callable. Commands lists only with a `commands:` entry to grant, or
+  // a grant already in the block.
   const railViews = views.filter(
-    (view) =>
-      (view !== 'subagents' && view !== 'commands') ||
-      registryOptions[view].length > 0 ||
-      grantedAny(draft[view]),
+    (view) => view !== 'commands' || registryOptions.commands.length > 0 || grantedAny(draft.commands),
   );
   const railItems = useRailItems(pathname, railViews, facts, countOf, {
     model: modelName(editor.oc.model),
@@ -829,13 +827,6 @@ function EditableAgentPage({
           projectId={projectId}
           agentName={agent.name}
           repositoryAccess={draft.repository_access !== false}
-        />
-      }
-      authority={
-        <AgentAuthorityCard
-          projectId={projectId}
-          agentName={agent.name}
-          grant={draft.kortix_permissions ?? draft.kortix_cli}
         />
       }
       sectionStyle="tab"

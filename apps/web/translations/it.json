@@ -2106,10 +2106,10 @@
     "customizeIcon": "Clicca per personalizzare l'icona del worker",
     "grants": {
       "subagents": {
-        "title": "Subagenti",
-        "description": "Agenti che questo agente può avviare per un sottocompito.",
+        "title": "Agenti",
+        "description": "Altri agenti a cui questo può passare lavoro con lo strumento agent.",
         "all": "Ogni subagente di questo progetto, compresi quelli aggiunti in seguito.",
-        "empty": "Nessun subagente dichiarato in questo progetto."
+        "empty": "Nessun altro agente può ancora essere chiamato. Imposta «Chi può avviarlo» di un agente su Subagente o Tutti per vederlo qui."
       },
       "commands": {
         "title": "Comandi",
