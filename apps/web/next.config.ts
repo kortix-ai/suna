@@ -584,7 +584,7 @@ const nextConfig = (): NextConfig => ({
         permanent: false,
       },
       {
-        source: '/projects/:id/customize/apps',
+        source: '/projects/:id/:prefix(customize|admin)/apps',
         destination: '/projects/:id/apps',
         permanent: false,
       },

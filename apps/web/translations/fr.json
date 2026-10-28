@@ -22882,7 +22882,8 @@
       "networkEgressDeclared": "Tout refuser, déclaré dans kortix.yaml. Pas encore appliqué : les sessions accèdent toujours au réseau.",
       "networkEgressNone": "Non déclaré",
       "requiredConnectors": "Connecteurs requis",
-      "requiredConnectorsHelp": "Listés dans kortix.yaml (connectors_required). Non appliqué : les sessions démarrent sans eux."
+      "requiredConnectorsHelp": "Listés dans kortix.yaml (connectors_required). Non appliqué : les sessions démarrent sans eux.",
+      "models": "Modèles"
     },
     "myKortix": {
       "allowed": "Autorisé",

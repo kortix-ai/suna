@@ -22882,7 +22882,8 @@
       "networkEgressDeclared": "Alles verweigern, in kortix.yaml deklariert. Noch nicht durchgesetzt: Sitzungen erreichen das Netzwerk weiterhin.",
       "networkEgressNone": "Nicht deklariert",
       "requiredConnectors": "Erforderliche Konnektoren",
-      "requiredConnectorsHelp": "In kortix.yaml aufgeführt (connectors_required). Nicht durchgesetzt: Sitzungen starten auch ohne sie."
+      "requiredConnectorsHelp": "In kortix.yaml aufgeführt (connectors_required). Nicht durchgesetzt: Sitzungen starten auch ohne sie.",
+      "models": "Modelle"
     },
     "myKortix": {
       "allowed": "Erlaubt",

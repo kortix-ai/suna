@@ -22882,7 +22882,8 @@
       "networkEgressDeclared": "Забрани све, декларисано у kortix.yaml. Још се не примењује: сесије и даље приступају мрежи.",
       "networkEgressNone": "Није декларисано",
       "requiredConnectors": "Обавезни конектори",
-      "requiredConnectorsHelp": "Наведени у kortix.yaml (connectors_required). Не примењује се: сесије почињу без њих."
+      "requiredConnectorsHelp": "Наведени у kortix.yaml (connectors_required). Не примењује се: сесије почињу без њих.",
+      "models": "Модели"
     },
     "myKortix": {
       "allowed": "Дозвољено",

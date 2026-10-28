@@ -7690,7 +7690,8 @@ const catalog = {
       "networkEgressDeclared": "Deny all, declared in kortix.yaml. Not enforced yet: sessions can still reach the network.",
       "networkEgressNone": "Not declared",
       "requiredConnectors": "Required connectors",
-      "requiredConnectorsHelp": "Listed in kortix.yaml (connectors_required). Not enforced: sessions start without them."
+      "requiredConnectorsHelp": "Listed in kortix.yaml (connectors_required). Not enforced: sessions start without them.",
+      "models": "Models"
     },
     "myKortix": {
       "allowed": "Allowed",

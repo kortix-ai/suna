@@ -8,15 +8,16 @@ import {
   type ProjectAdminHostSections,
 } from '@kortix/ui/workspace/admin/project-admin-dashboard';
 
-/* The two Project admin sections whose pages live in this app, not in
-   `@kortix/ui`. Lazy, like every other section: only the open one loads. */
+/* The Project admin section whose page lives in this app, not in
+   `@kortix/ui`. Lazy, like every other section: only the open one loads.
+   Apps is not one: its page is the sidebar's Apps (`/projects/:id/apps`), and
+   `/admin/apps` redirects there, so the library has one home. */
 const HOST_SECTIONS: ProjectAdminHostSections = {
   loops: lazy(() =>
     import('@/features/workspace/project-reminders/project-reminders-view').then((m) => ({
       default: m.ProjectRemindersView,
     })),
   ),
-  apps: lazy(() => import('@/features/apps/apps-view').then((m) => ({ default: m.AppsView }))),
 };
 
 /**

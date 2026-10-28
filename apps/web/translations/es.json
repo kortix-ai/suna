@@ -22882,7 +22882,8 @@
       "networkEgressDeclared": "Denegar todo, declarado en kortix.yaml. Aún no se aplica: las sesiones siguen accediendo a la red.",
       "networkEgressNone": "No declarado",
       "requiredConnectors": "Conectores requeridos",
-      "requiredConnectorsHelp": "Listados en kortix.yaml (connectors_required). No se aplican: las sesiones empiezan sin ellos."
+      "requiredConnectorsHelp": "Listados en kortix.yaml (connectors_required). No se aplican: las sesiones empiezan sin ellos.",
+      "models": "Modelos"
     },
     "myKortix": {
       "allowed": "Permitido",

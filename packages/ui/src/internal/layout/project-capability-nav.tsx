@@ -8,6 +8,7 @@ import { isMetaAgentName } from '@kortix/shared';
 import {
   ArrowUpRightIcon,
   CheckCircleIcon,
+  CpuIcon,
   GearSixIcon,
   ListBulletsIcon,
   PlusIcon,
@@ -124,7 +125,11 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const hasReview = access.tabs.includes('review');
   const onReview = pathname ? activeCapabilityTab(pathname) === 'review' : false;
   const hasSettings = access.tabs.includes('config');
-  const onSettings = isProjectAdminPath(pathname);
+  // Models is the one Project admin section people open often enough to keep
+  // a row of its own here; Settings opens the rest.
+  const hasModels = access.tabs.includes('models');
+  const onModels = !!pathname && /\/admin\/models(\/|$)/.test(pathname);
+  const onSettings = isProjectAdminPath(pathname) && !onModels;
   const showMembers = canReadMembers && !!accountId;
   const close = () => isMobile && setOpenMobile(false);
 
@@ -203,6 +208,18 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
               <span className="truncate">{tI18nComplete.raw('text1044a4c056d0')}</span>
               <ArrowUpRightIcon aria-hidden className="text-muted-foreground ml-auto size-3 shrink-0" />
             </HubLink>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      ) : null}
+      {hasModels ? (
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton asChild isActive={onModels}>
+            <Link href={adminPath(projectId, 'models')} prefetch={false} onClick={close}>
+              <RowGlyph>
+                <CpuIcon className="size-3.5" />
+              </RowGlyph>
+              <span className="truncate">{tTabs('models')}</span>
+            </Link>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>
       ) : null}

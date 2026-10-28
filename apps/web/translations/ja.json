@@ -22882,7 +22882,8 @@
       "networkEgressDeclared": "すべて拒否（kortix.yaml で宣言）。まだ適用されていません。セッションは引き続きネットワークに接続できます。",
       "networkEgressNone": "未宣言",
       "requiredConnectors": "必須コネクタ",
-      "requiredConnectorsHelp": "kortix.yaml に記載（connectors_required）。適用されません。セッションはこれらなしで開始します。"
+      "requiredConnectorsHelp": "kortix.yaml に記載（connectors_required）。適用されません。セッションはこれらなしで開始します。",
+      "models": "モデル"
     },
     "myKortix": {
       "allowed": "許可",
