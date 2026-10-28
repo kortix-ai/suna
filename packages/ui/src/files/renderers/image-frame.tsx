@@ -15,6 +15,11 @@ export interface ImageFrameProps {
   /** Makes the image a button (open it in the file viewer). */
   onOpen?: () => void;
   className?: string;
+  /**
+   * Fill the parent's box (a tile of a layout) and crop the image to it
+   * (`object-cover`), in place of holding `aspectRatio` and fitting the image.
+   */
+  fill?: boolean;
 }
 
 /**
@@ -24,7 +29,7 @@ export interface ImageFrameProps {
  * The frame itself never moves: the busy signal is the label (one waiting
  * channel, kortix-brand `layout.md` States).
  */
-export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className }: ImageFrameProps) {
+export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className, fill = false }: ImageFrameProps) {
   const img = useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [natural, setNatural] = useState<string | null>(null);
@@ -52,7 +57,8 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
       alt={alt}
       onLoad={onLoad}
       className={cn(
-        'size-full object-contain transition-[opacity,filter] duration-moderate ease-out motion-reduce:blur-none',
+        'size-full transition-[opacity,filter] duration-moderate ease-out motion-reduce:blur-none',
+        fill ? 'object-cover' : 'object-contain',
         loaded ? 'opacity-100 blur-none' : 'opacity-0 blur-xs',
       )}
     />
@@ -61,8 +67,8 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
   return (
     <div
       aria-busy={pending}
-      className={cn('bg-muted relative w-full overflow-hidden rounded-md', className)}
-      style={{ aspectRatio: natural ?? aspectRatio }}
+      className={cn('bg-muted relative w-full overflow-hidden rounded-md', fill && 'h-full', className)}
+      style={fill ? undefined : { aspectRatio: natural ?? aspectRatio }}
     >
       {image && onOpen ? (
         <button

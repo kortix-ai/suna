@@ -9,7 +9,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `imageGenView(call, live?)` and the `ImageGenView` / `ImageGenPhase` types: what an `image_gen`
   card draws from its `ToolCallBlock`, for any image model and for one to four images per call.
   The call: `phase` (`generating`, `ready`, `failed` or `stopped`), `action`, `prompts` (the
-  call's `prompts`, or a Phase 1 call's one `prompt`), `startedAt`, `model` and `provider` (from
+  call's `prompts`, or a Phase 1 call's one `prompt`), `aspectRatio` (the requested ratio, the same in
+  every phase, for a layout of several images), `startedAt`, `model` and `provider` (from
   the tool output once the call completed, else `null`), `error` (the whole call's failure).
   `images` holds one frame per image: one per prompt while the call runs, then each image the call
   made and each prompt that failed, in prompt order; empty when the whole call failed or stopped.

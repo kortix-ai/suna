@@ -12,6 +12,7 @@ import * as uiProvider from '../../../providers/ui-provider';
 import { IntlTestProvider } from '../../../test-utils/intl';
 import * as sdkReact from '@kortix/sdk/react';
 import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
 import { InTranscriptTurnContext, ReadOnlySessionContext, TurnLiveContext } from '../shared/infrastructure';
 import { ImageGenTool } from './image-gen-tool';
 
@@ -62,8 +63,15 @@ function batch(images: [string, string, string][], failed: { prompt: string; err
 const FOX = '/workspace/output/images/fox.png';
 const THREE = ['A fox in a shuttle', 'An owl in a shuttle', 'A hare in a shuttle'];
 const count = (html: string, needle: string) => html.split(needle).length - 1;
-/** The masonry's two column stacks, as markup. */
-const columnsOf = (html: string) => html.split('data-image-gen-column=""').slice(1);
+/** The bento's rectangle: its tile count and its CSS aspect ratio. */
+function bentoOf(html: string): { count: number; ratio: string } | null {
+  const m = /data-image-gen-bento="(\d)"[^>]*style="aspect-ratio:([^";]+)/.exec(html);
+  return m ? { count: Number(m[1]), ratio: m[2]! } : null;
+}
+/** Each tile's opening tag (its slot classes) and its markup up to the next tile. */
+function tilesOf(html: string): { tag: string; body: string }[] {
+  return html.split(/(?=<div[^>]*data-image-gen-tile=)/).slice(1).map((part) => ({ tag: part.slice(0, part.indexOf('>') + 1), body: part }));
+}
 /** The text a reader sees: markup and attributes (an image's `alt`) removed. */
 const visibleText = (html: string) => html.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
 
@@ -142,11 +150,11 @@ describe('ImageGenTool', () => {
     expect(html).not.toContain('Generating image');
   });
 
-  test('a three-prompt call shows three generating frames, the busy glyph in each, one count and time', () => {
+  test('a three-prompt call shows three generating tiles, the busy glyph in each, one count and time', () => {
     const html = render({ status: 'running', input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' } });
-    expect(count(html, 'aspect-ratio:16 / 9')).toBe(3);
+    expect(tilesOf(html)).toHaveLength(3);
     expect(count(html, 'aria-busy="true"')).toBe(3);
-    // The first frame names the batch and its time; the others carry the glyph alone.
+    // The first tile names the batch and its time; the others carry the glyph alone.
     expect(count(html, 'Generating 3 images')).toBe(1);
     expect(count(html, '0:42')).toBe(1);
     expect(html).not.toContain('Generating image<');
@@ -163,51 +171,101 @@ describe('ImageGenTool', () => {
     });
   });
 
-  test('a frame never changes column when the batch finishes or a frame fails', () => {
-    const input = { action: 'generate', prompts: THREE, aspect_ratio: '16:9' };
-    const running = columnsOf(render({ status: 'running', input }));
-    expect(running.map((column) => count(column, 'aspect-ratio:16 / 9'))).toEqual([2, 1]);
-    // The middle prompt fails, the others land at other ratios: frames 0 and 2 stay left, 1 stays right.
-    const done = columnsOf(
-      render({
-        status: 'completed',
-        input,
-        output: batch(
-          [
-            [FOX, '1024x1024', THREE[0]!],
-            ['/workspace/output/images/hare.png', '1024x1536', THREE[2]!],
-          ],
-          [{ prompt: THREE[1]!, error: 'Image generation failed (500): Upstream error.' }],
-        ),
-      }),
-    );
-    expect(done[0]).toContain('aspect-ratio:1 / 1');
-    expect(done[0]).toContain('aspect-ratio:2 / 3');
-    expect(done[1]).toContain('Upstream error.');
-    expect(done[1]).not.toContain('aspect-ratio:');
+  test('three images render one large left tile and two stacked right tiles', () => {
+    const input = { action: 'generate', prompts: THREE, aspect_ratio: '3:2' };
+    const output = batch([
+      [FOX, '1024x1024', THREE[0]!],
+      ['/workspace/output/images/owl.png', '1024x1536', THREE[1]!],
+      ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
+    ]);
+    const html = render({ status: 'completed', input, output });
+    // One rectangle, full width, sized from the requested 3:2 (left tile 2/3 wide and two rows tall: 1.5 × 3/2).
+    expect(bentoOf(html)).toEqual({ count: 3, ratio: '9 / 4' });
+    expect(html).toMatch(/data-image-gen-bento="3"[^>]*class="[^"]*grid-cols-3[^"]*grid-rows-2/);
+    const tiles = tilesOf(html);
+    expect(tiles.map((tile) => /col-span-2 row-span-2/.test(tile.tag))).toEqual([true, false, false]);
+    // Tiles fill their slot and crop; they never take the image's own ratio.
+    expect(html).not.toMatch(/data-image-gen-tile[\s\S]*aspect-ratio:1 \/ 1/);
+    // The same slots while generating: nothing moves when the images land.
+    const running = render({ status: 'running', input });
+    expect(bentoOf(running)).toEqual({ count: 3, ratio: '9 / 4' });
+    expect(tilesOf(running).map((tile) => tile.tag)).toEqual(tiles.map((tile) => tile.tag));
   });
 
-  test('three images render as a masonry grid', () => {
+  test('two and four images fill the rectangle', () => {
+    const two = render({
+      status: 'completed',
+      input: { action: 'generate', prompts: ['a', 'b'], aspect_ratio: '3:2' },
+      output: batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1536', 'b']]),
+    });
+    // Side by side, equal width, one row: twice the tile ratio.
+    expect(bentoOf(two)).toEqual({ count: 2, ratio: '3 / 1' });
+    expect(two).toMatch(/data-image-gen-bento="2"[^>]*class="[^"]*grid-cols-2/);
+    expect(tilesOf(two).every((tile) => !/span/.test(tile.tag))).toBe(true);
+    const four = render({ status: 'running', input: { action: 'generate', prompts: ['a', 'b', 'c', 'd'], aspect_ratio: '1:1' } });
+    // 2×2 of the tile ratio.
+    expect(bentoOf(four)).toEqual({ count: 4, ratio: '1 / 1' });
+    expect(four).toMatch(/data-image-gen-bento="4"[^>]*class="[^"]*grid-cols-2[^"]*grid-rows-2/);
+    expect(tilesOf(four)).toHaveLength(4);
+    // One image is a single frame at its own ratio, no rectangle.
+    const one = render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) });
+    expect(bentoOf(one)).toBeNull();
+    expect(one).toContain('aspect-ratio:1 / 1');
+  });
+
+  test('a failed tile keeps its slot', () => {
     const html = render({
       status: 'completed',
-      input: { action: 'generate', prompts: THREE },
-      output: batch([
-        [FOX, '1024x1024', THREE[0]!],
-        ['/workspace/output/images/owl.png', '1024x1536', THREE[1]!],
-        ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
-      ]),
+      input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' },
+      output: batch(
+        [
+          [FOX, '1024x1024', THREE[0]!],
+          ['/workspace/output/images/hare.png', '1024x1536', THREE[2]!],
+        ],
+        [{ prompt: THREE[1]!, error: 'Image generation failed (500): Upstream error.' }],
+      ),
     });
-    // Two stacks, filled left, right, left; no bottom margin under the last frame.
-    const [left, right] = columnsOf(html);
-    expect(count(left!, 'aspect-ratio:')).toBe(2);
-    expect(count(right!, 'aspect-ratio:')).toBe(1);
-    expect(left!.indexOf('aspect-ratio:1 / 1')).toBeLessThan(left!.indexOf('aspect-ratio:3 / 2'));
-    expect(right).toContain('aspect-ratio:2 / 3');
-    expect(html).not.toContain('mb-2');
-    // Each image keeps its own ratio.
-    expect(['1 / 1', '2 / 3', '3 / 2'].map((ratio) => html.includes(`aspect-ratio:${ratio}`))).toEqual([true, true, true]);
-    // One image is a single frame, no columns.
-    expect(render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) })).not.toContain('data-image-gen-column');
+    const tiles = tilesOf(html);
+    expect(tiles[0]!.tag).toContain('col-span-2');
+    expect(tiles[1]!.body).toContain('Upstream error.');
+    expect(tiles[2]!.body).not.toContain('Upstream error.');
+  });
+
+  test('no action toolbar renders at rest', () => {
+    blob = { blobUrl: 'blob:fox', blob: null, isLoading: false, error: null };
+    try {
+      for (const html of [
+        render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) }),
+        render({ status: 'completed', input: { action: 'generate', prompts: ['a', 'b'] }, output: batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1024', 'b']]) }),
+      ]) {
+        expect(html).not.toContain('Preview<');
+        expect(html).not.toContain('aria-label="Refresh"');
+        expect(html).not.toContain('aria-label="Full screen"');
+        // The one corner hint shows on hover only.
+        expect(html).toMatch(/data-image-gen-expand=""[^>]*class="[^"]*opacity-0[^"]*group-hover:opacity-100/);
+      }
+    } finally {
+      blob = { blobUrl: null, blob: null, isLoading: true, error: null };
+    }
+  });
+
+  test('clicking a tile opens full screen', async () => {
+    blob = { blobUrl: 'blob:fox', blob: null, isLoading: false, error: null };
+    useKortixComputerStore.getState().setIsExpanded(false);
+    try {
+      const output = batch([[FOX, '1024x1024', 'a fox'], ['/workspace/output/images/b.png', '1024x1024', 'b owl']]);
+      await inDom({ status: 'completed', input: { action: 'generate', prompts: ['a fox', 'b owl'] }, output }, async (container) => {
+        const tile = container.querySelector('button[aria-label="a fox"]') as HTMLButtonElement | null;
+        expect(tile).not.toBeNull();
+        await act(async () => tile?.click());
+      });
+      expect(useFilePreviewStore.getState().filePath).toBe(FOX);
+      expect(useKortixComputerStore.getState().isExpanded).toBe(true);
+    } finally {
+      blob = { blobUrl: null, blob: null, isLoading: true, error: null };
+      useKortixComputerStore.getState().setIsExpanded(false);
+      useFilePreviewStore.setState({ isOpen: false, filePath: null, lineNumber: undefined, captions: {} });
+    }
   });
 
   test('the card renders no prompt or model text', () => {
@@ -248,7 +306,7 @@ describe('ImageGenTool', () => {
     }
   });
 
-  test('a batch with one failure shows two images and one error, each in its place', () => {
+  test('a batch with one failure shows two images and one error', () => {
     const html = render({
       status: 'completed',
       input: { action: 'generate', prompts: THREE, aspect_ratio: '1:1' },
@@ -260,17 +318,10 @@ describe('ImageGenTool', () => {
         [{ prompt: THREE[1]!, error: 'Image generation failed (400): The request was refused. Change the prompt, then retry. [content_policy]' }],
       ),
     });
-    expect(columnsOf(html)).toHaveLength(2);
-    expect(count(html, 'aspect-ratio:')).toBe(2);
-    expect(html).toContain('aspect-ratio:1 / 1');
-    expect(html).toContain('aspect-ratio:3 / 2');
+    expect(tilesOf(html)).toHaveLength(3);
     expect(count(html, 'The request was refused.')).toBe(1);
     expect(html).toContain('Change the prompt, then retry.');
     expect(html).not.toContain('content_policy');
-    // Each frame keeps its place: fox and hare (frames 0, 2) left, the failure (frame 1) right.
-    const [left, right] = columnsOf(html);
-    expect(left!.indexOf('aspect-ratio:1 / 1')).toBeLessThan(left!.indexOf('aspect-ratio:3 / 2'));
-    expect(right).toContain('The request was refused.');
   });
 
   test('a failed frame with a ChatGPT code offers the ChatGPT reconnect for its card', () => {
@@ -314,7 +365,7 @@ describe('ImageGenTool', () => {
     });
     expect(html).toContain('Loading image');
     expect(html).toContain('aspect-ratio:3 / 2');
-    expect(html).not.toContain('data-image-gen-column');
+    expect(bentoOf(html)).toBeNull();
   });
 
   test('a failure shows the gateway message and suggestion', () => {

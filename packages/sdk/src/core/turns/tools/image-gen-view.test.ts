@@ -65,6 +65,15 @@ describe('imageGenView', () => {
     );
   });
 
+  test('the card keeps the requested ratio after the images land, whatever their delivered size', () => {
+    const input = { action: 'generate', prompts: THREE, aspect_ratio: '3:2' };
+    expect(imageGenView(call({ status: 'running', input })).aspectRatio).toBe('3 / 2');
+    const out = JSON.stringify({ images: [{ path: '/workspace/output/images/a.png', size: '1024x1024', prompt: THREE[0] }] });
+    expect(imageGenView(call({ status: 'completed', input, output: out })).aspectRatio).toBe('3 / 2');
+    expect(imageGenView(call({ status: 'running', input: { prompts: ['x'], aspect_ratio: 'auto' } })).aspectRatio).toBe('1 / 1');
+    expect(imageGenView(call({ status: 'running', input: LEGACY_INPUT })).aspectRatio).toBe('3 / 2');
+  });
+
   test('a call whose arguments have not parsed yet holds one frame', () => {
     const view = imageGenView(call({ status: 'running', input: {} }));
     expect(view.prompts).toEqual([]);

@@ -109,6 +109,20 @@ function batch(images: [string, string, string][], failed: { prompt: string; err
   });
 }
 
+const bento = () => tree?.root.findAll((node) => node.type === 'view' && node.props.testID === 'image-gen-bento')[0];
+type Node = NonNullable<typeof tree>['root'];
+/** The nearest host `view` above a node (a mocked `View` is a component around its host element). */
+function hostParent(node: Node): Node | null {
+  let up = node.parent;
+  while (up && up.type !== 'view') up = up.parent;
+  return up;
+}
+/** The bento's tiles, by slot. */
+const tiles = () =>
+  (tree?.root.findAll((node) => node.type === 'view' && /^image-gen-tile-\d$/.test(String(node.props.testID ?? ''))) ?? []).sort(
+    (a, b) => String(a.props.testID).localeCompare(String(b.props.testID)),
+  );
+
 /** Every frame's `aspectRatio`, in render order. */
 function frameRatios(): number[] {
   return (tree?.root.findAll((node) => node.type === 'view' && (node.props.style as { aspectRatio?: number } | undefined)?.aspectRatio !== undefined) ?? [])
@@ -205,55 +219,68 @@ describe('ImageGenTool', () => {
     expect(images[0]!.props.source).toEqual({ uri: 'sandbox:/workspace/output/images/fox.jpg', headers: undefined });
   });
 
-  test('a three-prompt call shows three generating frames, one busy line in the first', async () => {
+  test('a three-prompt call shows three generating tiles, one busy line in the first', async () => {
     await render(call({ status: 'running', input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' } }), true);
-    const ratios = frameRatios();
-    expect(ratios).toHaveLength(3);
-    for (const ratio of ratios) expect(ratio).toBeCloseTo(16 / 9);
+    expect(tiles()).toHaveLength(3);
     expect(texts().filter((t) => t === 'Generating 3 images')).toHaveLength(1);
     expect(texts().filter((t) => t === '0:42')).toHaveLength(1);
     expect(texts()).not.toContain('Generating image');
   });
 
-  test('three images render as a masonry grid', async () => {
-    // Square, tall, wide: the wide one goes under the square, the shorter column.
+  test('three images render one large left tile and two stacked right tiles', async () => {
+    const input = { action: 'generate', prompts: THREE, aspect_ratio: '3:2' };
+    const shape = () => ({
+      ratio: (bento()!.props.style as { aspectRatio: number }).aspectRatio,
+      flex: tiles().map((tile) => (tile.props.style as { flex: number }).flex),
+      stacked: hostParent(tiles()[1]!) === hostParent(tiles()[2]!) && (hostParent(tiles()[1]!)!.props.style as { flexDirection?: string }).flexDirection !== 'row',
+    });
+    await render(call({ status: 'running', input }), true);
+    const running = shape();
+    // One rectangle from the requested 3:2: the left tile is 2/3 wide and two rows tall (1.5 × 3/2).
+    expect(running).toEqual({ ratio: 2.25, flex: [2, 1, 1], stacked: true });
+    await act(async () => tree?.unmount());
     const output = batch([
       [FOX, '1024x1024', THREE[0]!],
       ['/workspace/output/images/owl.png', '1024x1536', THREE[1]!],
       ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
     ]);
-    await render(call({ status: 'completed', input: { action: 'generate', prompts: THREE }, output }), false);
-    const columns = tree?.root.findAll((node) => node.type === 'view' && node.props.testID === 'image-gen-column') ?? [];
-    expect(columns).toHaveLength(2);
-    const uris = (column: (typeof columns)[number]) =>
-      column.findAll((node) => node.type === 'image').map((image) => (image.props.source as { uri: string }).uri);
-    expect(uris(columns[0]!)).toEqual([`sandbox:${FOX}`, 'sandbox:/workspace/output/images/hare.png']);
-    expect(uris(columns[1]!)).toEqual(['sandbox:/workspace/output/images/owl.png']);
-    // Each frame keeps its own ratio.
-    expect(frameRatios().map((r) => Number(r.toFixed(3)))).toEqual([1, 1.5, 0.667]);
+    await render(call({ status: 'completed', input, output }), false);
+    // The same slots once the images land; each image crops to its tile.
+    expect(shape()).toEqual(running);
+    expect(tiles()[0]!.findAll((node) => node.type === 'image').map((image) => (image.props.source as { uri: string }).uri)).toEqual([`sandbox:${FOX}`]);
+    expect(tree?.root.findAll((node) => node.type === 'image').every((image) => image.props.resizeMode === 'cover')).toBe(true);
   });
 
-  test('a frame never changes column when the batch finishes or a frame fails', async () => {
-    const input = { action: 'generate', prompts: THREE, aspect_ratio: '16:9' };
-    const columns = () => tree?.root.findAll((node) => node.type === 'view' && node.props.testID === 'image-gen-column') ?? [];
-    await render(call({ status: 'running', input }), true);
-    expect(columns().map((column) => column.findAll((node) => node.type === 'view' && node.props.accessibilityState?.busy === true).length)).toEqual([2, 1]);
+  test('two and four images fill the rectangle', async () => {
+    await render(call({ status: 'running', input: { action: 'generate', prompts: ['a', 'b'], aspect_ratio: '3:2' } }), true);
+    expect((bento()!.props.style as { aspectRatio: number }).aspectRatio).toBe(3);
+    expect(tiles().map((tile) => (tile.props.style as { flex: number }).flex)).toEqual([1, 1]);
     await act(async () => tree?.unmount());
-    const output = batch(
-      [
-        [FOX, '1024x1024', THREE[0]!],
-        ['/workspace/output/images/hare.png', '1024x1536', THREE[2]!],
-      ],
-      [{ prompt: THREE[1]!, error: 'Image generation failed (500): Upstream error.' }],
-    );
-    await render(call({ status: 'completed', input, output }), false);
-    const [left, right] = columns();
-    expect(left!.findAll((node) => node.type === 'image').map((image) => (image.props.source as { uri: string }).uri)).toEqual([
-      `sandbox:${FOX}`,
-      'sandbox:/workspace/output/images/hare.png',
-    ]);
-    expect(right!.findAll((node) => node.type === 'image')).toHaveLength(0);
-    expect(right!.findAll((node) => node.type === 'text').map((node) => ([] as unknown[]).concat(node.props.children).join(''))).toContain('Upstream error.');
+    await render(call({ status: 'running', input: { action: 'generate', prompts: ['a', 'b', 'c', 'd'], aspect_ratio: '1:1' } }), true);
+    expect((bento()!.props.style as { aspectRatio: number }).aspectRatio).toBe(1);
+    expect(tiles()).toHaveLength(4);
+    expect(hostParent(tiles()[0]!)).toBe(hostParent(tiles()[1]!));
+    expect(hostParent(tiles()[2]!)).toBe(hostParent(tiles()[3]!));
+    expect(hostParent(tiles()[0]!)).not.toBe(hostParent(tiles()[2]!));
+    await act(async () => tree?.unmount());
+    // One image is a single frame at its own ratio, no rectangle.
+    await render(call({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) }), false);
+    expect(bento()).toBeUndefined();
+  });
+
+  test('no action toolbar renders at rest', async () => {
+    const output = batch([[FOX, '1024x1024', 'a'], ['/workspace/output/images/b.png', '1024x1024', 'b']]);
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: ['a', 'b'] }, output }), false);
+    expect(tree?.root.findAll((node) => node.type === 'button')).toHaveLength(0);
+  });
+
+  test('clicking a tile opens full screen', async () => {
+    opened.length = 0;
+    const output = batch([[FOX, '1024x1024', 'a fox'], ['/workspace/output/images/b.png', '1024x1024', 'b owl']], [], 'codex/gpt-image-2');
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: ['a fox', 'b owl'] }, output }), false);
+    const tap = tiles()[1]!.findAll((node) => (node.type as string) === 'pressable')[0]!;
+    await act(async () => (tap.props.onPress as () => void)());
+    expect(opened).toEqual([['/workspace/output/images/b.png', undefined, { text: 'b owl', model: 'codex/gpt-image-2' }]]);
   });
 
   test('the busy line wraps in a half-width frame, and only the first frame is announced', async () => {
@@ -297,7 +324,7 @@ describe('ImageGenTool', () => {
     expect(opened).toEqual([[FOX, undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' }]]);
   });
 
-  test('a batch with one failure shows two images and one error, each in its place', async () => {
+  test('a batch with one failure shows two images and one error, each in its slot', async () => {
     const output = batch(
       [
         [FOX, '1024x1024', THREE[0]!],
@@ -316,6 +343,7 @@ describe('ImageGenTool', () => {
     expect(all).toContain('Change the prompt, then retry.');
     expect(all.some((t) => t.includes('content_policy'))).toBe(false);
     expect(all).not.toContain('codex/gpt-image-2');
+    expect(tiles()[1]!.findAll((node) => node.type === 'text').map((node) => ([] as unknown[]).concat(node.props.children).join(''))).toContain('The request was refused.');
   });
 
   test('a ready grid frame whose file is still loading shows its loading state', async () => {

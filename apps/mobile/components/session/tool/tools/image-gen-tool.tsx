@@ -99,8 +99,10 @@ function Overlay({ children }: { children: ReactNode }) {
 }
 
 /** Hidden until its bytes decode, then fades in; reports the image's own ratio. */
-function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress }: {
+function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress, cover = false }: {
   uri: string;
+  /** Crop to the box (a bento tile) in place of fitting the whole image. */
+  cover?: boolean;
   headers?: Record<string, string>;
   alt: string;
   onLoaded: (ratio: number | null) => void;
@@ -114,7 +116,7 @@ function FadeInImage({ uri, headers, alt, onLoaded, onError, onPress }: {
     <Image
       source={{ uri, headers }}
       accessibilityLabel={alt}
-      resizeMode="contain"
+      resizeMode={cover ? 'cover' : 'contain'}
       resizeMethod="resize"
       // Android fades every image in by itself; this fade is the only one.
       fadeDuration={0}
@@ -144,12 +146,13 @@ interface SandboxImageProps {
   path: string;
   alt: string;
   seed: string;
+  cover: boolean;
   onRatio: (ratio: number | null) => void;
   onPress: () => void;
 }
 
 /** One load of the sandbox file; a failure hands over to the next attempt after `WAKE_RETRY_MS`. */
-function SandboxImageAttempt({ path, alt, seed, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
+function SandboxImageAttempt({ path, alt, seed, cover, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
   const { t } = useTranslation();
   const image = useSandboxImage(path, true);
   const [loaded, setLoaded] = useState(false);
@@ -173,6 +176,7 @@ function SandboxImageAttempt({ path, alt, seed, onRatio, onPress, onFail }: Sand
       {image.phase === 'load' && image.source ? (
         <FadeInImage
           key={image.attempt}
+          cover={cover}
           uri={image.source.uri}
           headers={image.source.headers}
           alt={alt}
@@ -227,14 +231,15 @@ function usePlate() {
 }
 
 /** A failure in a quiet plate: the message, the suggestion and the retry wait. No error reads "Stopped". */
-function FailureNote({ error }: { error: ImageGenView['error'] }) {
+function FailureNote({ error, fill = false }: { error: ImageGenView['error']; fill?: boolean }) {
   const { t } = useTranslation();
   const palette = useTurnPalette();
   const plate = usePlate();
   const wait = error?.retryAfterSeconds !== undefined ? imageGenRetryDelay(error.retryAfterSeconds) : null;
   const xs = (color: string) => [TURN_TYPE.xs, { color }];
   return (
-    <View style={[plate, { alignItems: 'flex-start', gap: webSpace(1) }]}>
+    // In a tile the plate takes the slot's box and clips a long message.
+    <View style={[plate, { alignItems: 'flex-start', gap: webSpace(1) }, fill && { flex: 1, overflow: 'hidden' }]}>
       {error ? (
         <>
           <Text selectable style={xs(palette.foreground)}>
@@ -256,11 +261,13 @@ function FailureNote({ error }: { error: ImageGenView['error'] }) {
  * frame whose file is still on the way says "Loading image". The frame shows
  * no prompt: a tap hands its prompt and `model` to the file sheet.
  */
-function ImageGenFrame({ image, seed, busy, model }: {
+function ImageGenFrame({ image, seed, busy, model, fill }: {
   image: ImageGenImage;
   seed: string;
   busy: ReactNode;
   model: string | null;
+  /** A bento tile: fill the slot and crop the image to it. */
+  fill: boolean;
 }) {
   const { t } = useTranslation();
   const palette = useTurnPalette();
@@ -270,12 +277,12 @@ function ImageGenFrame({ image, seed, busy, model }: {
   const [urlLoaded, setUrlLoaded] = useState(false);
   const onRatio = useCallback((ratio: number | null) => setNatural(ratio), []);
 
-  if (image.phase === 'failed') return <FailureNote error={image.error} />;
+  if (image.phase === 'failed') return <FailureNote error={image.error} fill={fill} />;
   const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
   if (image.imagePath && !filePath && !image.directUrl) {
     // A path the file API cannot read: name it instead of loading forever.
     return (
-      <View style={plate}>
+      <View style={[plate, fill && { flex: 1, overflow: 'hidden' }]}>
         <Text selectable style={[TURN_TYPE.xs, { color: palette.mutedForeground, fontFamily: monoFont }]}>
           {image.imagePath}
         </Text>
@@ -292,6 +299,7 @@ function ImageGenFrame({ image, seed, busy, model }: {
     content = (
       <>
         <FadeInImage
+          cover={fill}
           uri={directUrl}
           alt={alt}
           onLoaded={(ratio) => {
@@ -309,7 +317,7 @@ function ImageGenFrame({ image, seed, busy, model }: {
     );
   } else if (filePath) {
     content = (
-      <SandboxImage path={filePath} alt={alt} seed={seed} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
+      <SandboxImage path={filePath} alt={alt} seed={seed} cover={fill} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
     );
   }
   return (
@@ -317,7 +325,7 @@ function ImageGenFrame({ image, seed, busy, model }: {
       accessibilityState={{ busy: image.phase === 'generating' }}
       style={{
         width: '100%',
-        aspectRatio: natural ?? aspectRatioValue(image.aspectRatio),
+        ...(fill ? { flex: 1 } : { aspectRatio: natural ?? aspectRatioValue(image.aspectRatio) }),
         backgroundColor: palette.muted,
         borderRadius: TURN_SPACE.radiusMd,
         overflow: 'hidden',
@@ -364,6 +372,7 @@ export function ImageGenTool({ call }: ToolProps) {
       image={view.images[i]!}
       seed={call.call_id}
       model={view.model}
+      fill={!solo}
       // The first frame carries the busy line, the one announced status; the
       // others show its glyph alone, hidden from assistive tech.
       busy={
@@ -377,23 +386,49 @@ export function ImageGenTool({ call }: ToolProps) {
       }
     />
   );
+  if (solo) return <View className="w-full">{frame(0)}</View>;
 
+  // The bento: one rectangle, the width of the message, its height fixed from
+  // the requested ratio `r` (`view.aspectRatio`), so nothing moves when the
+  // images land; tile i keeps slot i. Web draws the same slots.
+  const gap = webSpace(1);
+  const tile = (i: number, flex: number) => (
+    <View key={i} testID={`image-gen-tile-${i}`} style={{ flex }}>
+      {frame(i)}
+    </View>
+  );
+  const r = aspectRatioValue(view.aspectRatio);
+  const count = Math.min(view.images.length, 4);
+  // 2: side by side → 2r. 3: tile 0 takes 2/3 of the width and both rows,
+  // tiles 1 and 2 stack on the right → 1.5r. 4: 2×2 → r.
+  const ratio = count === 2 ? 2 * r : count === 3 ? 1.5 * r : r;
   return (
-    <View className="w-full max-w-md">
-      {solo ? (
-        frame(0)
+    <View
+      testID="image-gen-bento"
+      className="w-full"
+      style={{ aspectRatio: ratio, flexDirection: count === 4 ? 'column' : 'row', gap }}
+    >
+      {count === 2 ? (
+        [tile(0, 1), tile(1, 1)]
+      ) : count === 3 ? (
+        <>
+          {tile(0, 2)}
+          <View style={{ flex: 1, gap }}>
+            {tile(1, 1)}
+            {tile(2, 1)}
+          </View>
+        </>
       ) : (
-        // Masonry: two stacks, each image at its own ratio. Frame i goes to
-        // stack i % 2 — the shorter stack under the call's one requested
-        // ratio — once, from the prompt list, so a frame never changes stack
-        // when its image or its error lands. Web places the same way.
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2) }}>
-          {[0, 1].map((column) => (
-            <View key={column} testID="image-gen-column" style={{ flex: 1, gap: webSpace(2) }}>
-              {view.images.map((_, i) => (i % 2 === column ? frame(i) : null))}
-            </View>
-          ))}
-        </View>
+        <>
+          <View style={{ flex: 1, flexDirection: 'row', gap }}>
+            {tile(0, 1)}
+            {tile(1, 1)}
+          </View>
+          <View style={{ flex: 1, flexDirection: 'row', gap }}>
+            {tile(2, 1)}
+            {tile(3, 1)}
+          </View>
+        </>
       )}
     </View>
   );

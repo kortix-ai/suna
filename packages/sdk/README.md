@@ -936,7 +936,7 @@ else the result text) and, for a sub-agent row, `subAgentCalls(thread)`.
 
 An `image_gen` card reads `imageGenView(call, live?)`: an `ImageGenView` with
 `phase` (`ImageGenPhase`: `generating`, `ready`, `failed`, `stopped`), `action`,
-`prompts`, `startedAt`, `model`, `provider`, `error` (`message`, `suggestion?`,
+`prompts`, `aspectRatio` (the requested ratio, fixed across phases), `startedAt`, `model`, `provider`, `error` (`message`, `suggestion?`,
 `code?`, `retryAfterSeconds?`, `connectModel`) and `images`: one frame per image
 (`prompt`, `phase`, `aspectRatio`, `imagePath`, `directUrl`, `error`), one to four
 per call.

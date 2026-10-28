@@ -18,11 +18,13 @@ import {
   useToolNavigation,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { ShowFileActions } from '../shared/show-helpers';
+import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
+import { cn } from '../../../lib/utils';
 import type { ToolProps } from '../shared/types';
 import { useLocale, useTranslations } from '../../../i18n';
 import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView, isSandboxNotReadyError } from '@kortix/sdk';
 import { type FlatModel, useProjectSession } from '@kortix/sdk/react';
+import { ArrowsOutSimpleIcon } from '@phosphor-icons/react';
 import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 /** The one busy signal over the flat frame. Elapsed time counts from the call's start, so a reload keeps it. */
@@ -101,11 +103,17 @@ function ConnectAction({ code }: { code?: string }) {
 type ImageGenImage = ImageGenView['images'][number];
 
 /** A failure in a quiet plate: the message, the suggestion, the retry wait and `action`. No error reads "Stopped". */
-function FailureNote({ error, action }: { error: ImageGenView['error']; action?: ReactNode }) {
+function FailureNote({ error, action, fill = false }: { error: ImageGenView['error']; action?: ReactNode; fill?: boolean }) {
   const t = useTranslations('imageGen');
   const retryLine = useRetryLine(error?.retryAfterSeconds);
   return (
-    <div className="bg-muted flex flex-col items-start gap-1 rounded-md px-3 py-2.5 text-xs">
+    <div
+      className={cn(
+        'bg-muted flex flex-col items-start gap-1 rounded-md px-3 py-2.5 text-xs',
+        // In a tile: the slot's box, scrolling a long message inside it.
+        fill && 'h-full overflow-y-auto',
+      )}
+    >
       {error ? (
         <>
           <span className="text-foreground">{error.message || t('failed')}</span>
@@ -122,20 +130,24 @@ function FailureNote({ error, action }: { error: ImageGenView['error']; action?:
 
 /**
  * One image, from its generating frame to the file. `busy` is what the frame
- * shows while it generates (the busy line, or the glyph alone in a grid); a
- * frame whose file is still on the way says "Loading image". The frame shows
- * no prompt: opening the image hands its prompt and `model` to the viewer.
+ * shows while it generates (the busy line, or the glyph alone in a tile); a
+ * frame whose file is still on the way says "Loading image". `fill`: a tile
+ * of the bento, which fills its slot and crops the image (`object-cover`).
+ * The frame shows no prompt and no toolbar: the whole frame opens the image
+ * full screen, uncropped, with its prompt and `model` under it.
  */
 function ImageGenFrame({
   image,
   seed,
   busy,
   model,
+  fill,
 }: {
   image: ImageGenImage;
   seed: string;
   busy: ReactNode;
   model: string | null;
+  fill: boolean;
 }) {
   const t = useTranslations('imageGen');
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -145,11 +157,11 @@ function ImageGenFrame({
   // useBinaryBlob keeps polling while it lasts, so the image lands once the box is up.
   const blobError = rawBlobError && !isSandboxNotReadyError(rawBlobError) ? rawBlobError : null;
 
-  if (image.phase === 'failed') return <FailureNote error={image.error} />;
+  if (image.phase === 'failed') return <FailureNote error={image.error} fill={fill} />;
   if (image.imagePath && !filePath && !image.directUrl) {
     // A path the file API cannot read: name it, as the old card did, instead of loading forever.
     return (
-      <div className="bg-muted text-muted-foreground rounded-md px-3 py-2.5 font-mono text-xs break-all">
+      <div className={cn('bg-muted text-muted-foreground rounded-md px-3 py-2.5 font-mono text-xs break-all', fill && 'h-full overflow-y-auto')}>
         {image.imagePath}
       </div>
     );
@@ -157,10 +169,20 @@ function ImageGenFrame({
   const generating = image.phase === 'generating';
   const src = generating ? null : (image.directUrl ?? blobUrl);
   const caption: FileCaption | undefined = image.prompt ? { text: image.prompt, model } : undefined;
+  const openFullScreen =
+    filePath && navigationEnabled
+      ? () => {
+          useFilePreviewStore.getState().openPreview(filePath, undefined, caption);
+          // Expand after the open, as the file actions' Full screen does: the
+          // detail's own open resets the split, and `isExpanded` outranks it.
+          useKortixComputerStore.getState().setIsExpanded(true);
+        }
+      : undefined;
   return (
-    <div className="group relative">
+    <div className={cn('group relative', fill && 'h-full')}>
       <ImageFrame
         aspectRatio={image.aspectRatio}
+        fill={fill}
         src={src}
         alt={image.prompt || t('generating')}
         pending={generating || (!src && !blobError)}
@@ -173,20 +195,46 @@ function ImageGenFrame({
             <BusyLabel seed={seed} label={t('loading')} />
           ) : null
         }
-        onOpen={
-          filePath && navigationEnabled
-            ? () => useFilePreviewStore.getState().openPreview(filePath, undefined, caption)
-            : undefined
-        }
+        onOpen={openFullScreen}
       />
-      {!generating && filePath ? (
-        <div className="bg-popover pointer-events-none absolute top-1.5 right-1.5 rounded-md border opacity-0 shadow-xs transition-opacity duration-fast group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-          <ShowFileActions path={filePath} caption={caption} />
-        </div>
+      {src && openFullScreen ? (
+        // The one hint that the image opens full screen, on hover only; the whole frame is the button.
+        <span
+          data-image-gen-expand=""
+          aria-hidden="true"
+          className="bg-popover text-foreground pointer-events-none absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-md opacity-0 shadow-xs transition-opacity duration-fast group-focus-within:opacity-100 group-hover:opacity-100"
+        >
+          <ArrowsOutSimpleIcon className="size-3.5" />
+        </span>
       ) : null}
     </div>
   );
 }
+
+/** `'3 / 2'` scaled by `num / den` and reduced: the bento rectangle from one tile's ratio. */
+function scaledRatio(ratio: string, num: number, den: number): string {
+  const [w = 1, h = 1] = ratio.split('/').map((part) => Number(part.trim()) || 1);
+  const a = w * num;
+  const b = h * den;
+  const gcd = (x: number, y: number): number => (y ? gcd(y, x % y) : x);
+  const d = gcd(a, b);
+  return `${a / d} / ${b / d}`;
+}
+
+/**
+ * The bento: several images fill one rectangle, the width of the message, its
+ * height fixed from the requested ratio, so nothing moves when they land.
+ * Tile i keeps slot i. Every tile has the requested ratio `r`:
+ * - 2: side by side, one row → the rectangle is `2r`;
+ * - 3: tile 0 takes 2/3 of the width and both rows, tiles 1 and 2 stack on
+ *   the right third → `1.5r`;
+ * - 4: 2×2 → `r`.
+ */
+const BENTO: Record<number, { grid: string; ratio: [number, number]; first?: string }> = {
+  2: { grid: 'grid-cols-2', ratio: [2, 1] },
+  3: { grid: 'grid-cols-3 grid-rows-2', ratio: [3, 2], first: 'col-span-2 row-span-2' },
+  4: { grid: 'grid-cols-2 grid-rows-2', ratio: [1, 1] },
+};
 
 export function ImageGenTool({ call }: ToolProps) {
   const t = useTranslations('imageGen');
@@ -218,12 +266,14 @@ export function ImageGenTool({ call }: ToolProps) {
       startedAt={view.startedAt}
     />
   );
+  const bento = solo ? null : BENTO[Math.min(view.images.length, 4)]!;
   const frames = view.images.map((image, i) => (
     <ImageGenFrame
       key={i}
       image={image}
       seed={call.call_id}
       model={view.model}
+      fill={!solo}
       // The first frame carries the busy line, the one status region; the
       // others show its glyph alone, hidden from assistive tech.
       busy={
@@ -239,21 +289,21 @@ export function ImageGenTool({ call }: ToolProps) {
   ));
 
   return (
-    <figure className="flex w-full max-w-md flex-col gap-2">
-      {solo ? (
-        frames
-      ) : (
-        // Masonry: two stacks, each image at its own ratio. Frame i goes to
-        // stack i % 2 — the shorter stack under the call's one requested
-        // ratio — once, from the prompt list, so a frame never changes stack
-        // when its image or its error lands. Mobile places the same way.
-        <div className="grid grid-cols-2 items-start gap-2">
-          {[0, 1].map((column) => (
-            <div key={column} data-image-gen-column="" className="flex min-w-0 flex-col gap-2">
-              {frames.filter((_, i) => i % 2 === column)}
+    <figure className="flex w-full flex-col gap-2">
+      {bento ? (
+        <div
+          data-image-gen-bento={Math.min(view.images.length, 4)}
+          className={cn('grid w-full gap-1', bento.grid)}
+          style={{ aspectRatio: scaledRatio(view.aspectRatio, ...bento.ratio) }}
+        >
+          {frames.slice(0, 4).map((frame, i) => (
+            <div key={i} data-image-gen-tile={i} className={cn('min-h-0 min-w-0', i === 0 && bento.first)}>
+              {frame}
             </div>
           ))}
         </div>
+      ) : (
+        frames
       )}
       {/* Failed frames share one fix, under them. */}
       {action ? <div className="flex flex-col items-start">{action}</div> : null}

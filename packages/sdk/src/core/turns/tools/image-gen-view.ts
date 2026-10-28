@@ -29,6 +29,12 @@ export interface ImageGenView {
   action: 'generate' | 'edit';
   /** The prompts the call asked for; a Phase 1 call's one `prompt`. */
   prompts: string[];
+  /**
+   * `"<w> / <h>"`: the ratio the call asked for (`aspect_ratio`, else a legacy
+   * `size`, else `1 / 1`), the same in every phase. A layout of several
+   * images sizes its rectangle from it, so nothing moves when they land.
+   */
+  aspectRatio: string;
   /** The call's start (epoch ms), so the elapsed time survives a reload. */
   startedAt: number | null;
   /** The model that made the images (`codex/gpt-image-2`, `google/gemini-2.5-flash-image`); null until the call completed, or when the output names none. */
@@ -196,6 +202,7 @@ export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView 
     phase: 'generating',
     action: input.action === 'edit' ? 'edit' : 'generate',
     prompts,
+    aspectRatio: requested,
     startedAt: Number.isFinite(started) ? started : null,
     model: null,
     provider: null,

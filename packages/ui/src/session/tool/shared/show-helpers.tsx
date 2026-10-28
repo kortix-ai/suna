@@ -25,7 +25,7 @@ import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { enrichPreviewMetadata } from '../../../internal/lib/utils/session-context';
-import { type FileCaption, useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
 import { safeHttpUrl } from '@kortix/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -262,13 +262,10 @@ export function ShowFileActions({
   /** Fold Refresh and Full screen into one ⋯ menu, leaving Preview as the
    *  card's only visible action (the inline carousel header needs the room). */
   compact = false,
-  /** Shown under the file in the viewer these buttons open (a generated image's prompt and model). */
-  caption,
 }: {
   path: string;
   inPanel?: boolean;
   compact?: boolean;
-  caption?: FileCaption;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
@@ -295,16 +292,16 @@ export function ShowFileActions({
    * file-open in the app uses.
    */
   const openInPanel = useCallback(() => {
-    useFilePreviewStore.getState().openPreview(path, undefined, caption);
-  }, [path, caption]);
+    useFilePreviewStore.getState().openPreview(path);
+  }, [path]);
 
   const openFullScreen = useCallback(() => {
-    useFilePreviewStore.getState().openPreview(path, undefined, caption);
+    useFilePreviewStore.getState().openPreview(path);
     // Expand AFTER requesting the open: the detail's own `openDetail` resets
     // the panel split, and `isExpanded` outranks the split, so setting it here
     // survives that reset regardless of which lands first.
     useKortixComputerStore.getState().setIsExpanded(true);
-  }, [path, caption]);
+  }, [path]);
 
   const previewButton = !inPanel && (
     <Hint label={tI18nComplete.raw('textbb59775ca8ea')} side="top">
