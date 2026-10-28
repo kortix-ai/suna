@@ -249,7 +249,8 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ adopted_governance: true });
-    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: true } });
+    // The synthesized manifest is kortix_version 3: a new agent gets no checkout unless it asks for one.
+    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: false } });
   });
 
   test('a second grant on an already-governed project does NOT adopt governance', async () => {

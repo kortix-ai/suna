@@ -754,7 +754,7 @@ export const SessionChatInput = React.memo(SessionChatInputImpl);
 // ─── Slash Command Suggestions ───────────────────────────────────────────────
 
 /** `/` commands: the mention list's card and rows, the command's name only. */
-function SlashCommandSuggestions({
+export function SlashCommandSuggestions({
   commands,
   selectedIndex,
   onSelect,

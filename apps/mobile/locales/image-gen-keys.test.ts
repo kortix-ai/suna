@@ -6,7 +6,7 @@ import { SUPPORTED_LOCALES } from '@/lib/utils/locale-config';
 // The image card's states (generating, stopped, failed, the retry wait)
 // resolve in every locale from its own bundle, never an English copy.
 
-const KEYS = ['generating', 'editing', 'loading', 'stopped', 'failed', 'notLoaded', 'tapToLoad', 'openFullScreen', 'openFullScreenPrompt'].map((k) => `imageGen.${k}`);
+const KEYS = ['generating', 'editing', 'loading', 'stopped', 'failed', 'unavailable', 'details', 'tapToLoad', 'openFullScreen', 'openFullScreenPrompt'].map((k) => `imageGen.${k}`);
 const RETRY_KEYS = ['imageGen.retrySecond', 'imageGen.retryMinute', 'imageGen.retryHour'];
 // A batch's one busy line: "Generating 3 images".
 const COUNT_KEYS = ['imageGen.generatingCount', 'imageGen.editingCount'];

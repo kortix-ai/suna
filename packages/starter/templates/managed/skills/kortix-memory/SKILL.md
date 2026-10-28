@@ -11,13 +11,9 @@ folder of curated markdown files describing what this project is,
 which connections it uses, the conventions the team works by, and
 the decisions worth not re-litigating.
 
-Projects created before 2026-09 keep the brain at `.kortix/memory/`
-and agents at `.kortix/opencode/agents/`. Both layouts work. Use the
-folder your project has: if `memory/` exists, use it; if only
-`.kortix/memory/` exists, use that. The project's `memory` tool accepts
-paths under its own folder only, and its error message names that
-folder. This skill shows `memory/`; in a legacy project, read it as
-`.kortix/memory/`.
+The `memory` tool accepts paths under `memory/` only. A project that
+keeps its brain somewhere else (an older layout, `.kortix/memory/`) has
+no folder the tool reaches: read and edit those files with the file tools.
 
 `MEMORY.md` is the **index**. Memory is **not** auto-injected into the
 prompt — the **memory protocol** is: at the start of a task, `view`
@@ -26,15 +22,19 @@ prior context, then `view` the sub-files (`overview.md`,
 `connections.md`, etc.) the index points at when they're relevant.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `memory/` is lost.
-A project whose `kortix.yaml` `tools:` does not list `memory` has no `memory` tool: read and edit the files under `memory/` with the file tools, and `memory: kortix:memory` under `tools:` brings the tool back.
+Every agent has the `memory` tool unless its `agents.<name>.tools` in
+`kortix.yaml` leaves it out. Without it, read and edit the files under
+`memory/` with the file tools; adding `memory` back to that list brings
+the tool back.
 
 Memory is **continuously CRUD'd**:
 
 - Regular sessions add or update memory whenever they discover
   something durable worth keeping.
-- The `harness-reflector` agent (`agents/harness-reflector.md`)
-  runs on a cron, surveys recent activity, and curates the folder as the
-  memory pass of the `kortix-harness-refinement` protocol.
+- The `harness-reflector` agent runs from its cron trigger, surveys
+  recent activity, and curates the folder as the memory pass of the
+  `kortix-harness-refinement` protocol. The starter ships that trigger
+  with `enabled: false`.
 - Both consult this skill for the rubric.
 
 Memory is **team-shared**: it lives in the repo, every session sees the
@@ -169,7 +169,7 @@ Session branches die when sessions end. Memory edits reach `main`
 only via a Kortix change request — same path as any code change:
 
 ```sh
-git add -A -- $(ls -d memory .kortix/memory 2>/dev/null)
+git add -A -- memory
 git commit -m "memory: <one-line summary of what changed>"
 git push origin HEAD
 kortix cr open \
@@ -184,8 +184,7 @@ The user reviews and merges. Don't merge your own CR.
 <reflector>
 
 Scheduled memory curation is the fourth pass of the `harness-reflector`
-agent (`agents/harness-reflector.md`) — the
-continual-harness loop. On that pass it:
+agent — the continual-harness loop. On that pass it:
 
 1. Loads this skill.
 2. Surveys recent project activity (git log since last run, recent
@@ -195,13 +194,13 @@ continual-harness loop. On that pass it:
 5. Folds the memory edits into its single `harness: …` CR.
 6. Leaves memory untouched when nothing is worth changing.
 
-To change *what gets remembered*, edit the **rubric** section of this
-skill's project copy. The reflector reads it fresh every run, so a
-merged CR to this file takes effect on the next reflection.
+To change *what gets remembered*, add the project's own rule to the
+reflector's prompt file. Kortix manages this skill: an edit to it is
+replaced on the next update.
 
 To change *when the reflector runs*, edit the `triggers:` entry
-named `harness-reflector` in `kortix.yaml`. The cron sweep picks up
-changes within a few seconds of the CR merging.
+named `harness-reflector` in `kortix.yaml` (`enabled: true` turns it on).
+The cron sweep picks up changes within a few seconds of the CR merging.
 
 </reflector>
 
