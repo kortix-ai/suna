@@ -582,7 +582,8 @@ The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
 (the store is at rest: the stream gets the session and its threads before the
 first turn streams), at each turn end, when pi stores a compaction between
-turns, and at the daemon stop. The delta frames
+turns, at the daemon stop, and on pi at most 5 s after each `message.*` frame
+of a turn (below). The delta frames
 come from the v1 bus: both harnesses stream text with the v1 session, message
 and part ids, which are the thread, message and block ids of the records.
 
@@ -595,8 +596,9 @@ put replace the whole record.
 
 The journal folds the v1 frames of each message it has not collected. It
 publishes a live put of a message on the v2 bus only, never into the dirty
-set: apps/api receives the turn end's record alone (its `log_durable_at`
-reacts to a non-streaming assistant message or compaction). A live put is published:
+set: apps/api receives only the records a collection exports from the native
+store (its `log_durable_at` reacts to a non-streaming assistant message or
+compaction). A live put is published:
 - on the first `message.updated` of a message: the prompt (complete) and each
   assistant message (`streaming`, no blocks yet, `reply_to` the prompt);
 - on each `message.part.updated` of a part the message did not have: a new
@@ -637,6 +639,31 @@ the fields the frames do not carry, so a live put carries the `message_id`,
 
 The collection's put of a message has a higher rev than its live puts, and a
 message the journal has collected gets no live put again.
+
+#### Mid-turn collection (pi)
+
+A box can die mid-turn (the provider deletes it, the daemon crashes). Before
+2026-10-28 the journal collected only at turn end, so such a box lost the whole
+turn from the session log, the prompt included. On pi (`midTurnMs`,
+`JOURNAL_MID_TURN_MS` = 5 s, set in `pi/boot.ts`), each `message.*` frame on
+the v1 bus schedules one collection and send at most 5 s later. A box that
+dies mid-turn loses at most 5 s of what pi stored:
+- the prompt: pi appends its entry when the turn starts;
+- each finished step, with its call results: a `complete` record, and the first
+  one marks the turn `log_durable_at`;
+- the step whose calls run: pi exports it `streaming`, calls `running`, no
+  `completed_at`. This record goes to apps/api only: the journal marks its
+  cursor hash `~`, publishes no `log.message`, and its live puts go on, so the
+  stream keeps their v1 metadata (a running task's `sessionId`). A later record
+  has a higher rev and replaces it. A box that dies leaves it `streaming`, as
+  the stop path always did; a restore hands pi the open calls, and pi-ai sends
+  "No result provided" for each.
+
+The reply pi streams has no entry before its `message_end` and is not sent: its
+text lives on the stream only. An idle session has no frames and sends nothing.
+A collection that finds nothing changed sends nothing. OpenCode stays at turn
+end only: its `fromV1` closes open calls at rest, so a mid-turn collection
+would mark running calls interrupted.
 
 A live message the harness removes before the journal collects it (pi
 retracts a queued prompt, OpenCode reverts) leaves no ghost: on

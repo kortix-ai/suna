@@ -56,7 +56,7 @@
  * then `log.message` for each put (`{ rev, message }`) and each tombstone
  * (`{ message_id, rev }`, as the journal posts it), with the revs the API receives. The
  * journal collects when it starts (the native store is at rest), at each turn
- * end and at the daemon stop. A journal the API turned off (404, 409)
+ * end, at the daemon stop and, on pi, while a turn runs (below). A journal the API turned off (404, 409)
  * collects and publishes nothing more, deltas included. While it runs, every `message.part.delta` text
  * frame on the v1 bus is published as `log.block.delta`: both harnesses use the
  * v1 session id, message id and part id as the thread, message and block id.
@@ -73,9 +73,22 @@
  * is built in the bus listener, before the next frame, so its text is exactly
  * the deltas published before it. A message whose seq the adapter cannot know
  * yet waits for the next live frame. The collection's put of the message has
- * a higher rev and ends its live puts. A live message the harness removes
+ * a higher rev and ends its live puts, unless it is a mid-turn streaming record (below). A live message the harness removes
  * before the collection (`message.removed`) gets the journal-form tombstone
  * if a put of it went out; a removed part (`message.part.removed`) a fresh put.
+ *
+ * Mid-turn (pi only: `midTurnMs`, `JOURNAL_MID_TURN_MS` = 5 s). A `message.*` frame on the v1 bus
+ * schedules one collection and send at most `midTurnMs` later, so a box that dies mid-turn loses at
+ * most that much of what pi stored: the prompt (stored when the turn starts), each finished step
+ * with its results, and the step whose calls run. An idle session has no frames and sends nothing;
+ * a collection that finds nothing changed sends nothing. pi exports a reply whose calls run as
+ * `streaming`, its calls open. That record goes to the API only (its cursor hash is marked `~`):
+ * no `log.message`, and its live puts go on, so the stream keeps their v1 metadata (a running
+ * task's `sessionId`). The API keeps the highest rev, so a later record replaces it. A box that
+ * dies leaves it `streaming`, as the stop path always did; a restore gives pi the open calls, and
+ * pi-ai sends "No result provided" for them. The reply pi streams has no entry before its
+ * `message_end` and stays out. The first finished step marks the turn `log_durable_at` (apps/api
+ * `markDurableTurns`). OpenCode's `fromV1` closes open calls at rest: it collects at turn end only.
  *
  * Attachment bytes (P2.13). An adapter exports an image or file as `ref: blob:<sha256>`; its
  * bytes are only in the native store. A collection starts one attachment pass over the sha256s
@@ -155,6 +168,8 @@ export const JOURNAL_BLOB_ATTEMPTS = 3
 const JOURNAL_BLOB_CONCURRENCY = 4
 /** How long a collection waits for its attachment pass before its records go on; the pass continues. */
 export const JOURNAL_BLOB_BUDGET_MS = 10_000
+/** pi's mid-turn collection: what a box that dies mid-turn loses, at most (see the header). */
+export const JOURNAL_MID_TURN_MS = 5_000
 /** Ends a string the journal cut to fit the route's cap (see the header). */
 export const JOURNAL_TRUNCATION_MARK = '[Kortix: the session log keeps the first 16 kB of this text; the whole text is in the sandbox only]'
 
@@ -177,6 +192,11 @@ export interface SessionLogJournalOptions {
   harness?: HarnessCarry
   /** Per thread, what this box adds to a native seq (a 422 re-sequenced it, see the header). */
   seq_offsets?: Record<string, number>
+  /**
+   * Collect and send at most this long after a turn's message frame (see the header). Off when
+   * absent: an adapter whose export closes open calls (OpenCode's `fromV1` at rest) must not run mid-turn.
+   */
+  midTurnMs?: number
   /** Test seams. */
   blobBudgetMs?: number
   maxBatchBytes?: number
@@ -224,9 +244,18 @@ export class SessionLogJournal {
   private readonly live = new Map<string, LiveRow>()
   private readonly seqOffsets: Map<string, number>
   private maxBatch: number
+  /** The mid-turn collection a message frame scheduled, at most one. */
+  private tick: ReturnType<typeof setTimeout> | null = null
   /** The v1 bus until `stop`: text deltas republished as `log.block.delta`, and the live turn's puts. */
   private readonly offDeltas = kortixEventBus().tap((event) => {
     if (this.off) return
+    const ms = this.options.midTurnMs
+    if (ms && event.type.startsWith('message.')) {
+      this.tick ??= setTimeout(() => {
+        this.tick = null
+        void this.flush(0)
+      }, ms)
+    }
     const p = event.payload as Record<string, any> | null
     if (event.type === 'message.updated') return this.liveMessage(p?.info)
     if (event.type === 'message.part.updated') return this.livePart(p?.part)
@@ -318,8 +347,9 @@ export class SessionLogJournal {
     return this.collecting
   }
 
+  /** The stream has the collection's record of `id`, which ends its live puts. A streaming record (`~`) went to the API only. */
   private collected(id: string): boolean {
-    for (const cursor of this.cursors.values()) if (id in cursor.native_hashes) return true
+    for (const cursor of this.cursors.values()) if (cursor.native_hashes[id]?.startsWith('~') === false) return true
     return false
   }
 
@@ -392,13 +422,16 @@ export class SessionLogJournal {
       const id = message.message_id
       let cursor = this.cursors.get(message.thread_id)
       if (!cursor) this.cursors.set(message.thread_id, (cursor = { thread_id: message.thread_id, last_seq: -1, native_hashes: {} }))
-      if (cursor.native_hashes[id] === native_hash) continue
-      // An attachment not stored yet: '' makes the next collection export the message again.
-      cursor.native_hashes[id] = this.withStoredRefs(message) ? native_hash : ''
+      // A streaming record (pi: a reply whose calls run) goes to the API only, marked `~` (see the header).
+      const streaming = message.status === 'streaming' ? '~' : ''
+      if (cursor.native_hashes[id] === streaming + native_hash) continue
+      // An attachment not stored yet: no hash makes the next collection export the message again.
+      cursor.native_hashes[id] = streaming + (this.withStoredRefs(message) ? native_hash : '')
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
       const entry = { id, rev: nextRev(), message: this.shifted(message) }
       this.dirty.set(id, entry)
+      if (streaming) continue
       this.live.delete(id)
       messages.push({ rev: entry.rev, message: entry.message })
     }
