@@ -17,20 +17,20 @@ const TABS: readonly CodeTab[] = [
   {
     id: 'agents',
     k: 'Declare your agents',
-    v: 'Each agent is a Markdown file for its behavior, and an entry in kortix.yaml for what it may reach: connectors, secrets and skills. Access is deny-by-default.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [14, 24] },
-  },
-  {
-    id: 'tools',
-    k: 'Give them tools',
-    v: 'Kortix tools update themselves. Your own tool is a TypeScript module in the repository.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [9, 13] },
+    v: 'Each agent is a Markdown file for its behavior, and one entry in kortix.yaml for what it may reach: connectors, secrets and skills. Access is deny-by-default.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [9, 14] },
   },
   {
     id: 'triggers',
-    k: 'Run them on a schedule',
+    k: 'Run them 24/7',
     v: 'A trigger is what fires it and what runs: a cron schedule, a signed webhook or an app event, then an agent and a prompt.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [25, MANIFEST.length] },
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [15, MANIFEST.length] },
+  },
+  {
+    id: 'secrets',
+    k: 'Keep secrets out of the repo',
+    v: 'kortix.yaml names the secrets a project needs. The values live encrypted in Kortix, and only the agents granted a secret can read it.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [6, 8] },
   },
   {
     id: 'ship',

@@ -82,10 +82,10 @@ export function SandBandHero() {
           <div id="demo" className="relative w-full max-w-304 scroll-mt-24">
             <WorkspaceFramework />
           </div>
-          {/* What the slider shows, in one line. */}
+          {/* What the two views show, in one line. */}
           <p className="text-foreground px-4 text-center text-base font-medium text-balance">
             A workspace for your team. Everything underneath is code.{' '}
-            <span className="text-muted-foreground">Drag to see the same project as files in git.</span>
+            <span className="text-muted-foreground">The same project, as files in a git repo you own.</span>
           </p>
         </div>
       </div>

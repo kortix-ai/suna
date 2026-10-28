@@ -57,9 +57,9 @@ export function FrameworkWindow({ className }: { className?: string }) {
                 main
               </span>
             </div>
-            {/* Two halves of the board, so the code fills whichever side the
-                slider reveals: the repository on the left, kortix.yaml on the right. */}
-            <div className="grid min-h-0 flex-1 grid-cols-2">
+            {/* The repository and one agent file on the left, kortix.yaml wide
+                on the right so every agent fits on one line. */}
+            <div className="grid min-h-0 flex-1 grid-cols-[22rem_1fr]">
               <div className="flex min-h-0 flex-col border-r">
                 <ul className="bg-sidebar border-b py-3 text-sm">
                   {TREE.map((node) => (
