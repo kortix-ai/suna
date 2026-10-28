@@ -112,5 +112,8 @@ describe('telegram question text', () => {
     );
     expect(long.length).toBeLessThanOrEqual(4096);
     expect(long).toEndWith('f'.repeat(190));
+    // An emoji across the limit is dropped whole: a lone surrogate fails the Bot API call.
+    const emoji = telegramQuestionText([{ header: '', question: `${'q'.repeat(3_899)}😀`, options: [] }], `${'f'.repeat(189)}😀`);
+    expect(emoji).toBe(`${'q'.repeat(3_899)}\n\n${'f'.repeat(189)}`);
   });
 });

@@ -1153,15 +1153,32 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
     expect(replies().at(-1)).toContain('/new');
   });
 
-  test('a question still blocking its turn is answered there first: the press closes it with the label', async () => {
+  test('a question still blocking its turn is answered there first; an unreachable runtime is retried, then followed up', async () => {
     const sessionId = await bindChat(979);
     const id = await pending(sessionId, { open: true });
-    await handleTelegramPress(press(`kq:${id}:1`, { chat: 979 }));
+    const event = press(`kq:${id}:1`, { chat: 979 });
+    // No runtime to release it to here (no sandbox): the job retries instead of
+    // queueing the answer behind the turn the question blocks.
+    await expect(handleTelegramPress(event)).rejects.toThrow('telegram question release unreachable');
     const [row] = await db.select().from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id));
     expect(row!.answeredAt).not.toBeNull();
     expect(row!.answers).toEqual([['SQLite']]);
-    // No runtime to release it to here (no sandbox): the answer follows up instead.
+    expect(delivered).toHaveLength(0);
+    // The retry finds its own answer stored and tries the release again.
+    await expect(handleTelegramPress(event)).rejects.toThrow('telegram question release unreachable');
+    await handleTelegramPress(event, { finalAttempt: true });
     expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('You asked:\n> Which database?\n\nSQLite');
+  });
+
+  test('a question someone else answered differently is not answered in its turn again: the press follows up', async () => {
+    const sessionId = await bindChat(982);
+    const id = await pending(sessionId, { open: true });
+    await db.update(sessionPendingQuestions).set({ answeredAt: new Date().toISOString(), answers: [['Postgres']] }).where(eq(sessionPendingQuestions.id, id));
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 982 }));
+    expect(delivered).toHaveLength(1);
+    const [row] = await db.select().from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id));
+    expect(row!.answers).toEqual([['Postgres']]);
   });
 
   test('the webhook stores a message and a press, and the job worker runs each through its handler', async () => {

@@ -136,6 +136,12 @@ const QUESTION_BODY_MAX = 3900;
  */
 const QUESTION_BUTTON = /^kq:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d)$/;
 
+/** At most `max` UTF-16 units, never half an emoji: Telegram refuses a lone surrogate. */
+function clip(text: string, max: number): string {
+  const cut = text.slice(0, max);
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
 /** Questions as chat text: each question with its numbered options, then the footer. */
 export function telegramQuestionText(questions: RuntimeQuestion[], footer: string): string {
   const body = questions
@@ -146,7 +152,7 @@ export function telegramQuestionText(questions: RuntimeQuestion[], footer: strin
       ].join('\n'),
     )
     .join('\n\n');
-  return `${body.slice(0, QUESTION_BODY_MAX)}\n\n${footer.slice(0, 190)}`;
+  return `${clip(body, QUESTION_BODY_MAX)}\n\n${clip(footer, 190)}`;
 }
 
 /** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
@@ -199,7 +205,7 @@ export const telegramPort: ChannelPort = {
           ? {
               reply_markup: {
                 inline_keyboard: q!.options.map((o, i) => [
-                  { text: (o.label.trim() || String(i + 1)).slice(0, 60), callback_data: `kq:${pendingId}:${i}` },
+                  { text: clip(o.label.trim() || String(i + 1), 60), callback_data: `kq:${pendingId}:${i}` },
                 ]),
               },
             }
@@ -383,7 +389,7 @@ export async function handleTelegramPress(
   const answer = (text = '', alert = false) =>
     telegramCall(token, 'answerCallbackQuery', {
       callback_query_id: press.id,
-      ...(text ? { text: text.slice(0, 200) } : {}),
+      ...(text ? { text: clip(text, 200) } : {}),
       ...(alert ? { show_alert: true } : {}),
     }).catch(() => undefined);
 
@@ -423,14 +429,18 @@ export async function handleTelegramPress(
   await edit(telegramQuestionText(asked.questions, `Answered: ${option.label}`));
   // The server could not release the question when it was posted, so it still
   // blocks the turn: answer it there, as the web does (routes/turn-questions.ts).
+  // A retry finds its own answer stored and tries the release again.
   // ponytail: a crash after this release and before the job settles also sends
   // the follow-up once on the retry.
-  if (
-    !asked.answeredAt &&
-    (await resolvePendingQuestion({ sessionId: asked.sessionId, requestId: asked.requestId, answers })) &&
-    (await releaseRuntimeQuestion(asked.sessionId, asked.requestId, answers)) === 'released'
-  ) {
-    return;
+  const inTurn = asked.answeredAt
+    ? JSON.stringify(asked.answers) === JSON.stringify(answers)
+    : await resolvePendingQuestion({ sessionId: asked.sessionId, requestId: asked.requestId, answers });
+  if (inTurn) {
+    const released = await releaseRuntimeQuestion(asked.sessionId, asked.requestId, answers);
+    if (released === 'released') return;
+    // A follow-up would wait behind the turn the question blocks (up to the
+    // waiting-turn bound). Retry; the last attempt delivers it as a follow-up.
+    if (released === 'unreachable' && !run.finalAttempt) throw new Error('telegram question release unreachable');
   }
 
   const [, topicId] = threadId.split(':');

@@ -137,13 +137,20 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
 export async function getPendingQuestion(
   projectId: string,
   id: string,
-): Promise<{ sessionId: string; requestId: string; questions: RuntimeQuestion[]; answeredAt: string | null } | null> {
+): Promise<{
+  sessionId: string;
+  requestId: string;
+  questions: RuntimeQuestion[];
+  answeredAt: string | null;
+  answers: unknown;
+} | null> {
   const [row] = await db
     .select({
       sessionId: sessionPendingQuestions.sessionId,
       requestId: sessionPendingQuestions.requestId,
       questions: sessionPendingQuestions.questions,
       answeredAt: sessionPendingQuestions.answeredAt,
+      answers: sessionPendingQuestions.answers,
     })
     .from(sessionPendingQuestions)
     .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
