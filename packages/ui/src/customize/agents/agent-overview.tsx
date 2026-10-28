@@ -349,11 +349,14 @@ function OverviewAside({
   config,
   block,
   editor,
+  showSpace,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
   block: AgentConfigBlock;
   editor?: AgentDraft;
+  /** The Space row: only with spaces on (`project_channels`, Work in progress). */
+  showSpace: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const behavior = block.behavior ?? {};
@@ -421,6 +424,7 @@ function OverviewAside({
             <p className="text-muted-foreground text-sm">{modeLabel}</p>
           )}
         </div>
+        {showSpace ? (
         <div className="space-y-2 px-4 py-2.5">
           <p className="text-foreground text-sm">{t('space')}</p>
           {editor ? (
@@ -461,6 +465,7 @@ function OverviewAside({
             <p className="text-muted-foreground text-sm">{space ? `# ${space}` : t('projectWide')}</p>
           )}
         </div>
+        ) : null}
         <div className="space-y-2 px-4 py-2.5">
           <p className="text-foreground text-sm">{t('color')}</p>
           {editor ? (
@@ -495,6 +500,7 @@ export function AgentOverview({
   sourcePath,
   onAskMyKortix,
   focusInstructions = false,
+  showSpace = false,
 }: {
   agent: Agent;
   config: ProjectConfigSummary;
@@ -509,6 +515,8 @@ export function AgentOverview({
   onAskMyKortix?: () => void;
   /** Unfold the instructions with the cursor in them (the old Instructions tab link). */
   focusInstructions?: boolean;
+  /** Show the Space row. Spaces are Work in progress: pass `useSpacesEnabled(projectId)`. */
+  showSpace?: boolean;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
   const name = agentDisplayName(agent.name);
@@ -539,6 +547,7 @@ export function AgentOverview({
           config={config}
           block={block}
           editor={editor}
+          showSpace={showSpace}
         />
         <p className="text-muted-foreground px-1 text-xs text-pretty">
           {t.rich('savedIn', {

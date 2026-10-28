@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { useSpacesEnabled } from '../lib/space-scope';
 import { createSafeJSONStorage } from '../lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from './persisted-store-registry';
 
@@ -41,9 +42,15 @@ export const useActiveSpaceStore = create<ActiveSpaceState>()(
 
 registerPersistedStore(STORAGE_KEY, () => resetPersistedStore(useActiveSpaceStore));
 
-/** The active space for a project (`null` = All), and a setter for it. */
+/**
+ * The active space for a project (`null` = All), and a setter for it. Spaces
+ * are Work in progress under the `project_channels` flag (`SPACES_FLAG` in
+ * internal/lib/space-scope.ts): off, a stored space reads as `null`, so no
+ * surface scopes to a space. The stored value stays for when the flag is on.
+ */
 export function useActiveSpace(projectId: string): [string | null, (space: string | null) => void] {
+  const spacesOn = useSpacesEnabled(projectId || null);
   const space = useActiveSpaceStore((state) => state.byProject[projectId] ?? null);
   const setSpace = useActiveSpaceStore((state) => state.setSpace);
-  return [space, (next) => setSpace(projectId, next)];
+  return [spacesOn ? space : null, (next) => setSpace(projectId, next)];
 }

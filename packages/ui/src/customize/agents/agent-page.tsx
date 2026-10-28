@@ -135,6 +135,7 @@ import {
   sectionLocationHref,
 } from './agent-tabs';
 import { PlatformAgentOverview } from './platform-agent-overview';
+import { useSpacesEnabled } from '../../internal/lib/space-scope';
 import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPolicySetsPanel } from './agent-policy-sets-section';
 import { useDefaultAgent } from './use-default-agent';
@@ -396,8 +397,9 @@ function useOverviewFacts(
   };
 }
 
-/** The header's meta line: status, space, who starts it, default. */
+/** The header's meta line: status, space (only with spaces on), who starts it, default. */
 function useHeaderFacts(
+  projectId: string,
   agent: Agent,
   config: ProjectConfigSummary,
   block: AgentConfigBlock,
@@ -411,9 +413,11 @@ function useHeaderFacts(
   const space = (editable ? block.space : (block.space ?? agent.space)) || null;
   const mode = (block.behavior?.mode ?? agent.mode ?? 'primary').toLowerCase();
   const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  // Spaces are Work in progress (`project_channels`): off, no Space fact.
+  const spacesOn = useSpacesEnabled(projectId);
   return [
     { label: enabled ? t('enabled') : t('off'), tone: enabled ? 'success' : 'neutral' },
-    { label: space ? t('spaceValue', { space }) : t('projectWide') },
+    ...(spacesOn ? [{ label: space ? t('spaceValue', { space }) : t('projectWide') }] : []),
     { label: mode === 'subagent' ? t('startSubagent') : mode === 'all' ? t('startBoth') : t('startPrimary') },
     ...(isDefault ? [{ label: tPage('default') }] : []),
   ];
@@ -759,7 +763,8 @@ function EditableAgentPage({
   const appsGrant = useAgentGrant(draft.apps, (v) => set('apps', v));
 
   const facts = useOverviewFacts(projectId, agent.name, config, draft);
-  const headerFacts = useHeaderFacts(agent, config, draft, true);
+  const headerFacts = useHeaderFacts(projectId, agent, config, draft, true);
+  const spacesOn = useSpacesEnabled(projectId);
 
   const onSave = useCallback(async (): Promise<boolean> => {
     if (!editor.isDirty || update.isPending) return !editor.isDirty;
@@ -836,6 +841,7 @@ function EditableAgentPage({
               editor={editor}
               hrefFor={viewHref}
               sourcePath={sourcePath}
+              showSpace={spacesOn}
               onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
               focusInstructions={location.open === 'instructions'}
             />
@@ -1038,7 +1044,8 @@ function ReadOnlyAgentPage({
   const location = useAgentLocation(AGENT_TABS, READ_ONLY_VIEWS);
   const share = useShareDialog(location.open === 'share');
   const facts = useOverviewFacts(projectId, agent.name, config, block);
-  const headerFacts = useHeaderFacts(agent, config, block, false);
+  const headerFacts = useHeaderFacts(projectId, agent, config, block, false);
+  const spacesOn = useSpacesEnabled(projectId);
   const railItems = useRailItems(pathname, READ_ONLY_VIEWS, facts, undefined, {
     model: modelName(block.behavior?.model),
     workspace: block.sandbox,
@@ -1076,6 +1083,7 @@ function ReadOnlyAgentPage({
               views={views}
               hrefFor={viewHref}
               sourcePath={sourcePath}
+              showSpace={spacesOn}
             />
           </AgentTabBody>
         );

@@ -40,6 +40,7 @@ import { agentHref } from '../../internal/lib/capability-tab-routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { useActiveSpace } from '../../internal/stores/active-space-store';
+import { useSpacesEnabled } from '../../internal/lib/space-scope';
 import { Button } from '../../primitives/button';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
@@ -64,6 +65,8 @@ import { CreateAgentModal } from './create-agent-modal';
 type Agent = ProjectConfigSummary['agents'][number];
 
 const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.6fr)_7rem_5rem_8rem]';
+/** The same rows without the Space column: spaces are Work in progress (`project_channels`). */
+const ROW_GRID_NO_SPACE = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_5rem_8rem]';
 
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -158,7 +161,10 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ),
     [filtered, defaultAgent],
   );
-  const groups = useMemo(() => groupBySpace(work, config?.spaces), [work, config?.spaces]);
+  // Spaces are Work in progress: with `project_channels` off, no space filter and no Space column.
+  const spacesOn = useSpacesEnabled(projectId);
+  const rowGrid = spacesOn ? ROW_GRID : ROW_GRID_NO_SPACE;
+  const groups = useMemo(() => (spacesOn ? groupBySpace(work, config?.spaces) : []), [spacesOn, work, config?.spaces]);
   const [activeSpace, setActiveSpace] = useActiveSpace(projectId);
   const spaceFilter = activeSpace ?? ALL_SPACES;
   const shown = spaceFilter === ALL_SPACES ? work : (groups.find((g) => g.name === spaceFilter)?.items ?? work);
@@ -255,9 +261,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
               <CatalogSpaceTabs groups={groups} value={spaceFilter} onValueChange={(v) => setActiveSpace(v === ALL_SPACES ? null : v)} />
             </div>
             <div className="bg-background overflow-hidden rounded-md border">
-              <div className={`${ROW_GRID} text-muted-foreground hidden border-b px-4 py-2 text-xs md:grid`}>
+              <div className={`${rowGrid} text-muted-foreground hidden border-b px-4 py-2 text-xs md:grid`}>
                 <span>{t('colAgent')}</span>
-                <span>{t('space')}</span>
+                {spacesOn ? <span>{t('space')}</span> : null}
                 <span>{t('tabAccess')}</span>
                 <span>{t('people')}</span>
                 <span>{t('triggers')}</span>
@@ -275,7 +281,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                         prefetch
                         onPointerEnter={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
                         onFocus={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
-                        className={`${ROW_GRID} hover:bg-hover focus-visible:bg-hover px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none`}
+                        className={`${rowGrid} hover:bg-hover focus-visible:bg-hover px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none`}
                       >
                         <span className="flex min-w-0 items-center gap-3">
                           <AgentMark slug={agent.name} size={21} />
@@ -294,9 +300,11 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                             ) : null}
                           </span>
                         </span>
-                        <span className="text-muted-foreground hidden truncate text-sm md:block">
-                          {agent.space ? `# ${agent.space}` : t('projectWide')}
-                        </span>
+                        {spacesOn ? (
+                          <span className="text-muted-foreground hidden truncate text-sm md:block">
+                            {agent.space ? `# ${agent.space}` : t('projectWide')}
+                          </span>
+                        ) : null}
                         <span className="text-muted-foreground hidden truncate text-sm md:block">
                           <AgentAccessText agent={agent} />
                         </span>

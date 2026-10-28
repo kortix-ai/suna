@@ -86,3 +86,4 @@ export { useActiveSpace } from '../internal/stores/active-space-store';
 export { ALL_SPACES } from '../customize/shared/catalog/catalog-space-tabs';
 export { SpaceFilterTabs, spaceFilterLabel } from './space/space-filter-tabs';
 export { useSpaceFilter } from './space/use-space-filter';
+export { SPACES_FLAG, spaceScope, useSpacesEnabled } from '../internal/lib/space-scope';

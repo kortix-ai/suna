@@ -1,10 +1,7 @@
 'use client';
 
 import {
-  bindingSpace,
   PROJECT_WIDE_SPACE,
-  groupBySpace,
-  listSpaces,
   type Artifact,
   type ArtifactListScope,
   type ManifestSpace,
@@ -31,7 +28,15 @@ import { Input } from '@kortix/ui/input';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { ALL_SPACES, ProjectPageHeader, SpaceFilterTabs, spaceFilterLabel, useSpaceFilter } from '@kortix/ui/workspace';
+import {
+  ALL_SPACES,
+  ProjectPageHeader,
+  SpaceFilterTabs,
+  spaceFilterLabel,
+  spaceScope,
+  useSpaceFilter,
+  useSpacesEnabled,
+} from '@kortix/ui/workspace';
 import {
   ArrowSquareOutIcon,
   DotsThreeIcon,
@@ -77,13 +82,13 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
   };
   const list = useArtifacts(projectId, { scope, q: q.trim() || undefined });
   // An artifact sits in its bound space, else its agent's space, else Project-wide.
+  // Spaces are Work in progress: with `project_channels` off every artifact is
+  // project-wide, and the page shows no filter, chip or "Move to space".
   const config = useProjectConfig(projectId);
-  const agents = config?.agents ?? [];
-  const spaceOf = (artifact: Artifact) => bindingSpace(artifact, agents) ?? PROJECT_WIDE_SPACE;
-  const groups = groupBySpace(list.data ?? [], config?.spaces, spaceOf);
+  const spacesOn = useSpacesEnabled(projectId);
+  const { spaces, groups, spaceOf } = spaceScope(list.data ?? [], config, spacesOn, (artifact) => artifact);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
   const [space, setSpace] = useSpaceFilter(projectId);
-  const spaces = listSpaces(config);
   const items = (list.data ?? []).filter((artifact) => space === ALL_SPACES || spaceOf(artifact) === space);
 
   return (
@@ -155,7 +160,7 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
                     key={artifact.artifact_id}
                     projectId={projectId}
                     artifact={artifact}
-                    space={space === ALL_SPACES ? labels.get(spaceOf(artifact)) : undefined}
+                    space={spacesOn && space === ALL_SPACES ? labels.get(spaceOf(artifact)) : undefined}
                     current={spaceOf(artifact)}
                     spaces={spaces}
                   />
@@ -182,7 +187,7 @@ function ArtifactCard({
   space?: string;
   /** The space the artifact resolves to now (`PROJECT_WIDE_SPACE`: project-wide). */
   current: string;
-  /** Where "Move to space" can bind it. */
+  /** Where "Move to space" can bind it. Empty (spaces off, or none): no menu. */
   spaces: ManifestSpace[];
 }) {
   const t = useTranslations('artifacts');

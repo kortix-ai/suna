@@ -18,10 +18,12 @@ import {
   spaceFilterLabel,
   useGoalClock,
   useGoalIssueText,
+  spaceScope,
   useSpaceFilter,
+  useSpacesEnabled,
 } from '@kortix/ui/workspace';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { bindingSpace, PROJECT_WIDE_SPACE, groupBySpace, listSpaces, type ProjectGoal } from '@kortix/sdk';
+import type { ProjectGoal } from '@kortix/sdk';
 import { useProjectConfig, useProjectGoals } from '@kortix/sdk/react';
 import Link from 'next/link';
 
@@ -37,15 +39,14 @@ export function GoalsPage({ projectId }: { projectId: string }) {
   const tSpaces = useTranslations('spaces');
   const goals = useProjectGoals(projectId);
   const config = useProjectConfig(projectId);
-  const agents = config?.agents ?? [];
   // A goal sits in its bound space, else its agent's space, else Project-wide.
-  const spaceOf = (goal: ProjectGoal) => bindingSpace(goal.goal, agents) ?? PROJECT_WIDE_SPACE;
-  const groups = groupBySpace(goals.data ?? [], config?.spaces, spaceOf);
+  // Spaces are Work in progress: with `project_channels` off every goal is project-wide.
+  const spacesOn = useSpacesEnabled(projectId);
+  const { spaces, groups, spaceOf } = spaceScope(goals.data ?? [], config, spacesOn, (goal: ProjectGoal) => goal.goal);
   const labels = new Map(groups.map((group) => [group.name, group.label]));
-  const spaces = listSpaces(config);
   const [space, setSpace] = useSpaceFilter(projectId);
   const all = (goals.data ?? []).filter((goal) => space === ALL_SPACES || spaceOf(goal) === space);
-  const spaceLabel = (goal: ProjectGoal) => (space === ALL_SPACES ? labels.get(spaceOf(goal)) : undefined);
+  const spaceLabel = (goal: ProjectGoal) => (spacesOn && space === ALL_SPACES ? labels.get(spaceOf(goal)) : undefined);
   const needsYou = all.filter(goalNeedsYou);
   const open = all.filter((g) => g.health.state !== 'closed' && !goalNeedsYou(g));
   const closed = all.filter((g) => g.health.state === 'closed');

@@ -14,9 +14,15 @@ const config = {
 };
 let active: string | null = null;
 let param: string | null = null;
+// Spaces are Work in progress under `project_channels`.
+let spacesOn = true;
 
 const sdkReact = await import('@kortix/sdk/react');
-mock.module('@kortix/sdk/react', () => ({ ...sdkReact, useProjectConfig: () => config }));
+mock.module('@kortix/sdk/react', () => ({
+  ...sdkReact,
+  useProjectConfig: () => config,
+  useFeatureFlag: () => ({ enabled: spacesOn, isLoading: false }),
+}));
 const store = await import('../../internal/stores/active-space-store');
 mock.module('../../internal/stores/active-space-store', () => ({
   ...store,
@@ -57,6 +63,7 @@ function filterValue(): string {
 beforeEach(() => {
   active = null;
   param = null;
+  spacesOn = true;
 });
 
 test('the selected space has a tab with 0 when nothing is bound to it', () => {
@@ -78,5 +85,12 @@ test('the filter reads ?space=, then the active space; a removed space falls bac
   expect(filterValue()).toBe(PROJECT_WIDE_SPACE);
   param = null;
   active = 'removed-space';
+  expect(filterValue()).toBe(ALL_SPACES);
+});
+
+test('with the spaces flag off the filter is always All, whatever ?space= says', () => {
+  spacesOn = false;
+  active = 'sales';
+  param = 'sales';
   expect(filterValue()).toBe(ALL_SPACES);
 });
