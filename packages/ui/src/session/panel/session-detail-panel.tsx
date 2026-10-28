@@ -108,7 +108,8 @@ export function SessionDetailPanel() {
         isMobile={false}
         persistentLayer={terminalLayer}
       >
-        {booting ? (
+        {/* Only while nothing covers the home: one wake status mounted at a time. */}
+        {booting && !detail && !terminalOpen ? (
           <SessionBootStatus projectId={projectId} sessionId={projectSessionId} />
         ) : null}
       </DetailLayer>

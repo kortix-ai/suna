@@ -135,6 +135,8 @@ describe('tool cards while the session boots', () => {
       <m.SessionDetailPanel />,
     );
     expect(host.textContent).toContain('Terminal');
+    // One wake status: the home's is not mounted under the open card.
+    expect(host.querySelectorAll('[role="status"]').length).toBe(1);
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Starting your session');
     expect(host.querySelector('.xterm')).toBeNull();
     const close = button(host, 'Close');

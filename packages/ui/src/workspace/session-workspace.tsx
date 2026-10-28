@@ -88,7 +88,9 @@ export const SessionLayout = memo(function SessionLayout({
     sessionId,
     projectId,
     projectSessionId,
-    isEasy,
+    // Boot draws the Easy body (the detail shell, gated inside on `booting`)
+    // whatever the mode: Advanced's tabs mount the PTY, browser and explorer.
+    isEasy: isEasy || booting,
     effectiveView,
   });
   const surfaces = useSessionPanelSurfaces({
@@ -192,11 +194,12 @@ function useSessionPanelSurfaces({
     />
   );
 
-  // While booting there is no header bar, and the body is the detail shell in
-  // its boot state (`SessionDetailPanel` reads `booting` from the provider): a
-  // Terminal/Browser/Files card wears its real chrome over the wake status, and
-  // with no card open the panel is the wake status alone. The runtime-coupled
-  // bodies (PTY, preview frame, file listing) mount only once booted.
+  // While booting there is no header bar. The body is the same `panelBody`
+  // tree as when ready, so the boot→ready flip never remounts the detail shell;
+  // `SessionDetailPanel` reads `booting` from the provider: a Terminal/Browser/
+  // Files card wears its real chrome over the wake status, and with no card
+  // open the panel is the wake status alone. The runtime-coupled bodies (PTY,
+  // preview frame, file listing) mount only once booted.
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
@@ -206,7 +209,7 @@ function useSessionPanelSurfaces({
   // own close DISCARDS the detail (it is done with), while ⌘I only puts it
   // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
-  const effectivePanelBody = booting ? <SessionDetailPanel /> : panelBody;
+  const effectivePanelBody = panelBody;
 
   return { effectivePanelHeader, effectivePanelBody };
 }
