@@ -1221,7 +1221,7 @@
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix, једини агент са којим разговарате. Покреће ваше агенте, циљеве и просторе уместо вас, са вашим дозволама. Подешавање пројекта је `builtin_agents.my_kortix` у kortix.yaml; овај прекидач важи само када тај кључ није постављен."
+          "description": "My Kortix, једини агент са којим разговарате. Сваки задатак прослеђује агенту направљеном за њега и извршава га с вашим дозволама. Подешавање пројекта је `builtin_agents.my_kortix` у kortix.yaml; овај прекидач важи само када тај кључ није постављен."
         },
         "warm_sessions": {
           "name": "Загрејане сесије",
@@ -2106,10 +2106,10 @@
     "customizeIcon": "Кликните да бисте прилагодили икону радника",
     "grants": {
       "subagents": {
-        "title": "Agenti",
-        "description": "Drugi agenti kojima ovaj može da preda posao alatom agent.",
+        "title": "Агенти",
+        "description": "Други агенти којима овај може да преда посао алатом agent.",
         "all": "Сваки подагент у овом пројекту, укључујући оне додате касније.",
-        "empty": "Još nijedan drugi agent ne može da se pozove. Postavi „Ko može da ga pokrene“ nekog agenta na Subagent ili Svi da bi se pojavio ovde."
+        "empty": "Још ниједан други агент не може да се позове. Поставите „Ко може да га покрене“ неког агента на Подагент или Сви да би се појавио овде."
       },
       "commands": {
         "title": "Команде",
@@ -22827,7 +22827,7 @@
       "askToEdit": "Ask My Kortix to edit",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
-      "myKortixPromise": "The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.",
+      "myKortixPromise": "Једини агент са којим разговарате. Сваки задатак прослеђује агенту направљеном за њега и извршава га с вашим дозволама.",
       "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
       "composerLabel": "Ask My Kortix",
       "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",
@@ -22873,16 +22873,16 @@
       },
       "review": "Review",
       "settings": "Settings",
-      "color": "Boja",
-      "colorHelp": "Boja agenta u izbornicima. Čuva se u kortix.yaml; pi okruženje je još ne koristi.",
-      "providerOptions": "Opcije provajdera",
-      "providerOptionsHelp": "Dodatna podešavanja za provajdera modela, kao JSON. Čuvaju se u kortix.yaml; pi okruženje ih još ne primenjuje.",
-      "providerOptionsInvalid": "Nije ispravan JSON. Sačuvana vrednost ostaje dok ne bude ispravan.",
-      "networkEgress": "Izlazni mrežni saobraćaj",
-      "networkEgressDeclared": "Zabrani sve, deklarisano u kortix.yaml. Još se ne primenjuje: sesije i dalje pristupaju mreži.",
-      "networkEgressNone": "Nije deklarisano",
-      "requiredConnectors": "Obavezni konektori",
-      "requiredConnectorsHelp": "Navedeni u kortix.yaml (connectors_required). Ne primenjuje se: sesije počinju bez njih."
+      "color": "Боја",
+      "colorHelp": "Боја агента у изборницима. Чува се у kortix.yaml; pi окружење је још не користи.",
+      "providerOptions": "Опције провајдера",
+      "providerOptionsHelp": "Додатна подешавања за провајдера модела, као JSON. Чувају се у kortix.yaml; pi окружење их још не примењује.",
+      "providerOptionsInvalid": "Није исправан JSON. Сачувана вредност остаје док не буде исправан.",
+      "networkEgress": "Излазни мрежни саобраћај",
+      "networkEgressDeclared": "Забрани све, декларисано у kortix.yaml. Још се не примењује: сесије и даље приступају мрежи.",
+      "networkEgressNone": "Није декларисано",
+      "requiredConnectors": "Обавезни конектори",
+      "requiredConnectorsHelp": "Наведени у kortix.yaml (connectors_required). Не примењује се: сесије почињу без њих."
     },
     "myKortix": {
       "allowed": "Дозвољено",

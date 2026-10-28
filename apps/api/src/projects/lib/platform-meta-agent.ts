@@ -23,7 +23,7 @@ import type { ProjectConfigSummary } from '../git/types';
 
 /** My Kortix's one-line description, the same in the agent list and the compiled config. */
 export const MY_KORTIX_DESCRIPTION =
-  'The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.';
+  'The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.';
 
 /**
  * The `builtin_agents` values a manifest sets explicitly. Only booleans count;

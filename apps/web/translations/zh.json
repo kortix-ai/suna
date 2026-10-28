@@ -1221,7 +1221,7 @@
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix 是你唯一需要对话的智能体。它以你的权限替你运行智能体、目标和空间。项目设置是 kortix.yaml 中的 `builtin_agents.my_kortix`；只有该键未设置时，此开关才生效。"
+          "description": "My Kortix 是你唯一需要对话的智能体。它把每个任务交给最适合的智能体，并以你的权限运行。项目设置是 kortix.yaml 中的 `builtin_agents.my_kortix`；只有该键未设置时，此开关才生效。"
         },
         "warm_sessions": {
           "name": "预热会话",
@@ -22827,7 +22827,7 @@
       "askToEdit": "Ask My Kortix to edit",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
-      "myKortixPromise": "The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.",
+      "myKortixPromise": "你唯一需要对话的智能体。它把每个任务交给最适合的智能体，并以你的权限运行。",
       "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
       "composerLabel": "Ask My Kortix",
       "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",

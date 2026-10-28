@@ -1221,7 +1221,7 @@
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix は、あなたが話しかける唯一のエージェントです。あなたの権限で、エージェント、目標、スペースを代わりに実行します。プロジェクトの設定は kortix.yaml の `builtin_agents.my_kortix` です。このスイッチは、そのキーが未設定のときだけ適用されます。"
+          "description": "My Kortix はあなたが話す唯一のエージェントです。各タスクを適したエージェントに振り分け、あなたの権限で実行します。プロジェクトの設定は kortix.yaml の `builtin_agents.my_kortix` です。このスイッチは、そのキーが未設定のときだけ適用されます。"
         },
         "warm_sessions": {
           "name": "ウォームセッション",
@@ -22827,7 +22827,7 @@
       "askToEdit": "Ask My Kortix to edit",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
-      "myKortixPromise": "The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.",
+      "myKortixPromise": "あなたが話す唯一のエージェント。各タスクを適したエージェントに振り分け、あなたの権限で実行します。",
       "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
       "composerLabel": "Ask My Kortix",
       "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",

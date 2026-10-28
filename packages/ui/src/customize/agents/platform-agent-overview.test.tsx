@@ -33,39 +33,23 @@ function render(goals: boolean) {
 }
 
 describe('PlatformAgentOverview (My Kortix)', () => {
-  test('lists the agents it runs, never itself, and links each one', () => {
+  test('says what it does and how, in a few lines, with the project switch', () => {
     const markup = render(true);
-    expect(markup).toContain('>Agents <span');
-    expect(markup).toContain(`/projects/${PROJECT}/customize/agents/kortix`);
-    expect(markup).toContain(`/projects/${PROJECT}/customize/agents/researcher`);
-    expect(markup).not.toContain(`/customize/agents/meta`);
-    expect(markup).toContain('Researcher');
-  });
-
-  test('states what it can never do and the project switch', () => {
-    const markup = render(true);
-    for (const line of ['Access', 'New tokens', 'Project secrets', 'Direct connector calls', 'Project setting']) {
-      expect(markup).toContain(line);
-    }
+    expect(markup).toContain('It routes each task to the agent made for it');
+    expect(markup.match(/<li>/g)?.length).toBe(3);
     expect(markup).toContain('<span class="font-mono">builtin_agents.my_kortix: false</span>');
   });
 
-  test('capability state follows the viewer and the project', () => {
+  test('lists no agents, capabilities or access table', () => {
+    const markup = render(true);
+    expect(markup).not.toContain('/customize/agents/');
+    for (const gone of ['Capabilities', 'Run goals', 'Build spaces', 'New tokens']) expect(markup).not.toContain(gone);
+  });
+
+  test('the composer shows only to a viewer who may start a session', () => {
     canWrite = false;
-    const readOnly = render(false);
-    expect(readOnly).toContain('Not allowed');
-    expect(readOnly).not.toContain('>Allowed<');
-    // Each refused capability names its grant once, in mono.
-    for (const grant of ['project.agent.write', 'project.session.start', 'project.gitops.merge']) {
-      expect(readOnly).toContain(`<span class="font-mono">${grant}</span>`);
-    }
-    expect(readOnly).toContain('Anyone who manages this project can grant it.');
-    expect(readOnly).toContain('Goals off');
+    expect(render(false)).not.toContain('<textarea');
     canWrite = true;
-    const manager = render(true);
-    expect(manager).toContain('>Allowed<');
-    expect(manager).not.toContain('Not allowed');
-    expect(manager).not.toContain('Goals off');
-    expect(manager).toContain('goal coordinator session');
+    expect(render(false)).toContain('<textarea');
   });
 });

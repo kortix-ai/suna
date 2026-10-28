@@ -1221,7 +1221,7 @@
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix, el único agente con el que hablas. Ejecuta tus agentes, objetivos y espacios por ti, con tus permisos. La configuración del proyecto es `builtin_agents.my_kortix` en kortix.yaml; este interruptor solo se aplica cuando esa clave no está definida."
+          "description": "My Kortix, el único agente con el que hablas. Envía cada tarea al agente hecho para ella y la ejecuta con tus permisos. La configuración del proyecto es `builtin_agents.my_kortix` en kortix.yaml; este interruptor solo se aplica cuando esa clave no está definida."
         },
         "warm_sessions": {
           "name": "Sesiones preparadas",
@@ -22827,7 +22827,7 @@
       "askToEdit": "Ask My Kortix to edit",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
-      "myKortixPromise": "The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.",
+      "myKortixPromise": "El único agente con el que hablas. Envía cada tarea al agente hecho para ella y la ejecuta con tus permisos.",
       "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
       "composerLabel": "Ask My Kortix",
       "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",

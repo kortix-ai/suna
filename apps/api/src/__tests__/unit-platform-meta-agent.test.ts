@@ -69,12 +69,13 @@ describe('platform meta agent', () => {
           mode: 'primary',
           prompt:
             "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.\n\n" +
+            'When you hand a task to another agent (an AI employee) with the `agent` tool, leave `session` at its default (separate): the agent gets its own session the user can open. Use `session: "same"` only for quick sub-steps.\n\n' +
             'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
         },
       },
     });
     expect(MY_KORTIX_DESCRIPTION).toBe(
-      'The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.',
+      'The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.',
     );
   });
 

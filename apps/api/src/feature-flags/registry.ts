@@ -200,7 +200,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'meta_agent',
     name: 'My Kortix',
     description:
-      'My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set.',
+      'My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set.',
     stability: 'experimental',
     available: () => true,
     // On by default (Marko, 2026-10-24): My Kortix is the default cloud

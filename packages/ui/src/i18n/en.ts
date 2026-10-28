@@ -762,7 +762,7 @@ const catalog = {
         },
         "meta_agent": {
           "name": "My Kortix",
-          "description": "My Kortix, the one agent you talk to. It runs your agents, goals and spaces for you, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
+          "description": "My Kortix, the one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions. The project setting is `builtin_agents.my_kortix` in kortix.yaml; this switch applies only when that key is not set."
         },
         "warm_sessions": {
           "name": "Warm Sessions",
@@ -7635,7 +7635,7 @@ const catalog = {
       "askToEdit": "Ask My Kortix to edit",
       "fullScreen": "Full screen",
       "exitFullScreen": "Exit full screen",
-      "myKortixPromise": "The one agent you talk to. It runs your agents, goals and spaces for you, with your permissions.",
+      "myKortixPromise": "The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.",
       "myKortixNoInstructions": "My Kortix is built in, so it has no instructions to edit here. To change how work gets done, change the agents it runs.",
       "composerLabel": "Ask My Kortix",
       "composerPlaceholder": "Ask My Kortix to create an agent, or to change what one may do",
