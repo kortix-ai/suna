@@ -153,7 +153,20 @@ describe('image_search', () => {
 describe('image_gen', () => {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
   const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46])
-  const generated = { created: 1, data: [{ b64_json: PNG.toString('base64') }], size: '1254x1254', quality: 'low', background: 'opaque' }
+  const generated = { created: 1, model: 'codex/gpt-image-2', provider: 'openai-codex', data: [{ b64_json: PNG.toString('base64'), mime_type: 'image/png' }], size: '1254x1254' }
+  const answer = (bytes: Buffer, mime_type: string, extra: Record<string, unknown> = {}) => ({ ...generated, data: [{ b64_json: bytes.toString('base64'), mime_type }], ...extra })
+  const u16be = (n: number) => Buffer.from([n >> 8, n & 0xff])
+  const u32be = (n: number) => Buffer.from([n >>> 24, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff])
+  const u32le = (n: number) => Buffer.from([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, n >>> 24])
+  /** Image headers as each encoder writes them: just enough bytes for the size. */
+  const pngOf = (w: number, h: number) => Buffer.concat([PNG.subarray(0, 8), u32be(13), Buffer.from('IHDR'), u32be(w), u32be(h), Buffer.from([8, 6, 0, 0, 0])])
+  const jpegOf = (sof: number, w: number, h: number) =>
+    Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), u16be(16), Buffer.alloc(14), Buffer.from([0xff, 0xdb]), u16be(4), Buffer.alloc(2), Buffer.from([0xff, sof]), u16be(17), Buffer.from([8]), u16be(h), u16be(w), Buffer.alloc(10)])
+  const webpOf = (chunk: string, body: Buffer) => Buffer.concat([Buffer.from('RIFF'), u32le(4 + 8 + body.length), Buffer.from('WEBP'), Buffer.from(chunk), u32le(body.length), body])
+  const vp8 = (w: number, h: number) => webpOf('VP8 ', Buffer.concat([Buffer.from([0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a]), Buffer.from([w & 0xff, w >> 8, h & 0xff, h >> 8])]))
+  const vp8l = (w: number, h: number) => webpOf('VP8L', Buffer.concat([Buffer.from([0x2f]), u32le((w - 1) | ((h - 1) << 14)), Buffer.alloc(3)]))
+  const vp8x = (w: number, h: number) =>
+    webpOf('VP8X', Buffer.from([0x10, 0, 0, 0, (w - 1) & 0xff, ((w - 1) >> 8) & 0xff, (w - 1) >> 16, (h - 1) & 0xff, ((h - 1) >> 8) & 0xff, (h - 1) >> 16]))
   const imagesDir = () => join(dir, 'output', 'images')
   const MiB = 1024 * 1024
   // Each test is its own session: the session cap counts per sessionId in the module.
@@ -171,22 +184,82 @@ describe('image_gen', () => {
 
   test('generate posts to the gateway images route with the session token and saves the PNG', async () => {
     gateway()
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'A red cube on a white table', size: '1024x1024' }, ictx())))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'A red cube on a white table' }, ictx())))
     expect(calls).toHaveLength(1)
     expect(calls[0]!.path).toBe('/v1/llm/images/generations')
     expect(calls[0]!.headers.authorization).toBe('Bearer tok')
-    expect(calls[0]!.body).toEqual({ model: 'codex/gpt-image-2', prompt: 'A red cube on a white table', size: '1024x1024', quality: 'auto', background: 'auto', n: 1 })
-    // The delivered size, not the requested one (Ruling R2).
-    expect(result).toEqual({ path: expect.any(String), action: 'generate', size: '1254x1254', model: 'gpt-image-2' })
+    expect(calls[0]!.body).toEqual({ model: 'auto', prompt: 'A red cube on a white table', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 })
+    // The header holds no size here, so the answer's size is the output size (Ruling R2).
+    expect(result).toEqual({ path: expect.any(String), action: 'generate', model: 'codex/gpt-image-2', provider: 'openai-codex', size: '1254x1254' })
     expect(result.path).toStartWith(`${imagesDir()}/a-red-cube-on-a-white-table-`)
     expect(result.path).toMatch(/-\d{8}-\d{6}\.png$/)
     expect(readFileSync(result.path).subarray(0, 8)).toEqual(PNG.subarray(0, 8))
   })
 
-  test('the requested size is the output size when the gateway names none', async () => {
-    gateway(() => ({ data: [{ b64_json: PNG.toString('base64') }] }))
-    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', size: '1536x1024', transparent_background: true }, ictx())))
-    expect(calls[0]!.body.background).toBe('transparent')
+  test('model and aspect_ratio are forwarded; absent model sends auto', async () => {
+    gateway()
+    await imageGen.execute({ action: 'generate', prompt: 'x', model: ' google/gemini-2.5-flash-image ', aspect_ratio: '16:9', quality: 'low', transparent_background: true }, ictx())
+    await imageGen.execute({ action: 'generate', prompt: 'y', model: '' }, ictx())
+    expect(calls.map((call) => call.body)).toEqual([
+      { model: 'google/gemini-2.5-flash-image', prompt: 'x', aspect_ratio: '16:9', quality: 'low', background: 'transparent', n: 1 },
+      { model: 'auto', prompt: 'y', aspect_ratio: 'auto', quality: 'auto', background: 'auto', n: 1 },
+    ])
+  })
+
+  test('a bad aspect_ratio or model is refused before any request; size is no longer a parameter', async () => {
+    gateway()
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x', aspect_ratio: '1024x1024' }, ictx())).rejects.toThrow("'aspect_ratio' must be one of auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4.")
+    await expect(imageGen.execute({ action: 'generate', prompt: 'x', model: 42 }, ictx())).rejects.toThrow("'model' must be a model id.")
+    expect(calls).toHaveLength(0)
+    expect(Object.keys(imageGen.parameters.properties).sort()).toEqual(['action', 'aspect_ratio', 'model', 'output_name', 'prompt', 'quality', 'reference_images', 'transparent_background'])
+  })
+
+  test('a jpeg answer is saved as .jpg and size is read from the image header', async () => {
+    gateway(() => answer(jpegOf(0xc0, 1536, 1024), 'image/jpeg', { size: '1024x1024' }))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'a cat' }, ictx())))
+    expect(result.path).toMatch(/\/a-cat-\d{8}-\d{6}\.jpg$/)
+    // The saved bytes win over the answer's size.
+    expect(result.size).toBe('1536x1024')
+    expect(readFileSync(result.path).subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
+  })
+
+  test('each image type is saved with its extension and its header size', async () => {
+    const cases: Array<[Buffer, string, string]> = [
+      [pngOf(1254, 1254), 'image/png', '1254x1254.png'],
+      [jpegOf(0xc0, 1024, 1536), 'image/jpeg', '1024x1536.jpg'],
+      [jpegOf(0xc2, 1376, 768), 'image/jpeg', '1376x768.jpg'],
+      [vp8(1024, 1024), 'image/webp', '1024x1024.webp'],
+      [vp8l(1536, 1024), 'image/webp', '1536x1024.webp'],
+      [vp8x(1184, 864), 'image/webp', '1184x864.webp'],
+    ]
+    let next = 0
+    gateway(() => answer(cases[next]![0], cases[next++]![1], { size: '1x1' }))
+    for (const [, , expected] of cases) {
+      const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())))
+      expect(`${result.size}.${result.path.split('.').pop()}`).toBe(expected)
+    }
+  })
+
+  test('an answer that is not a png, jpeg or webp image is refused and writes no file', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    const gif = Buffer.from('GIF89a\x01\x00\x01\x00')
+    let next = 0
+    gateway(() => [answer(svg, 'image/svg+xml'), answer(gif, 'image/gif'), answer(svg, 'image/png')][next++])
+    for (let i = 0; i < 3; i++) {
+      await expect(imageGen.execute({ action: 'generate', prompt: 'x' }, ictx())).rejects.toThrow('Image generation returned an image that is not png, jpeg or webp.')
+    }
+    expect(readdirSync(imagesDir())).toEqual([])
+  })
+
+  test('the output names the model and provider that answered', async () => {
+    gateway(() => answer(pngOf(1024, 1024), 'image/png', { model: 'openrouter/google/gemini-2.5-flash-image', provider: 'openrouter', size: undefined }))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', model: 'auto' }, ictx())))
+    expect(result).toEqual({ path: expect.any(String), action: 'generate', model: 'openrouter/google/gemini-2.5-flash-image', provider: 'openrouter', size: '1024x1024' })
+  })
+
+  test('the size falls back to the answer when the header has none', async () => {
+    gateway(() => answer(PNG, 'image/png', { size: '1536x1024' }))
+    const result = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', aspect_ratio: '3:2' }, ictx())))
     expect(result.size).toBe('1536x1024')
   })
 
@@ -355,23 +428,33 @@ describe('image_gen', () => {
 
   test('output_path cannot leave output/images or overwrite a file', async () => {
     gateway()
-    for (const output_name of ['../kortix.yaml', '../../x.png', 'a/b.png', 'Upper.png', 'x.jpg']) {
+    for (const output_name of ['../kortix.yaml', '../../x.png', 'a/b.png', 'Upper.png', '.png', 'x'.repeat(81), '']) {
       await expect(imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ictx())).rejects.toThrow('output_name')
     }
     expect(calls).toHaveLength(0)
     mkdirSync(imagesDir(), { recursive: true })
     writeFileSync(join(imagesDir(), 'cube.png'), 'mine')
     const first = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ictx())))
-    const second = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube.png' }, ictx())))
+    const second = JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name: 'cube' }, ictx())))
     expect([first.path, second.path]).toEqual([join(imagesDir(), 'cube-2.png'), join(imagesDir(), 'cube-3.png')])
     expect(readFileSync(join(imagesDir(), 'cube.png'), 'utf8')).toBe('mine')
+  })
+
+  test('output_name replaces a given extension', async () => {
+    let next = 0
+    gateway(() => [answer(PNG, 'image/png'), answer(jpegOf(0xc0, 8, 8), 'image/jpeg'), answer(vp8(8, 8), 'image/webp'), answer(PNG, 'image/png')][next++])
+    const paths: string[] = []
+    for (const output_name of ['hero.jpg', 'hero.png', 'logo.v2', 'cover.jpeg']) {
+      paths.push(JSON.parse(out(await imageGen.execute({ action: 'generate', prompt: 'x', output_name }, ictx()))).path)
+    }
+    expect(paths).toEqual([join(imagesDir(), 'hero.png'), join(imagesDir(), 'hero.jpg'), join(imagesDir(), 'logo.v2.webp'), join(imagesDir(), 'cover.png')])
   })
 
   test('the output is a small JSON object with a path and never the image bytes', async () => {
     gateway()
     const text = out(await imageGen.execute({ action: 'generate', prompt: 'x' }, ictx()))
     expect(text).not.toContain(PNG.toString('base64'))
-    expect(Object.keys(JSON.parse(text)).sort()).toEqual(['action', 'model', 'path', 'size'])
+    expect(Object.keys(JSON.parse(text)).sort()).toEqual(['action', 'model', 'path', 'provider', 'size'])
   })
 })
 
