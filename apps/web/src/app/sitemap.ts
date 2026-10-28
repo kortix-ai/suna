@@ -33,6 +33,8 @@ export const LOCALIZED_ROUTES = [
   '/services',
   '/case-studies',
   '/framework',
+  '/multiplayer',
+  '/sovereign',
   '/white-label',
   '/cli',
   '/desktop',

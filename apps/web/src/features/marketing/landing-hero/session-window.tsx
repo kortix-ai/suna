@@ -1,59 +1,67 @@
 'use client';
 
+import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
 import { CountBadge } from '@kortix/ui/count-badge';
 import Hint from '@kortix/ui/hint';
 import { ProgressRing } from '@kortix/ui/progress-ring';
-import { CustomizeGlyph } from './customize-glyph';
 import { SidebarToggle } from '@kortix/ui/workspace';
-import { cn } from '@kortix/ui';
 import {
   ArrowUpIcon,
   CaretDownIcon,
   CaretUpDownIcon,
-  GaugeIcon,
-  PaperclipIcon,
-  FolderSimpleIcon,
-  GlobeSimpleIcon,
-  ShareIcon,
-  TerminalIcon,
   DotsThreeIcon,
+  FolderSimpleIcon,
+  GaugeIcon,
+  GlobeSimpleIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
+  PaperclipIcon,
+  ShareIcon,
   SquaresFourIcon,
+  TerminalIcon,
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { CustomizeGlyph } from './customize-glyph';
 
 import { SessionStatusMark } from './session-status-mark';
 
 /**
  * The Kortix session screen, rebuilt as live DOM for the landing hero (Paper
- * "Kortix 2", HVL-0). It is drawn once at the board's size, 1264 × 860, and
- * scaled to the column, so it reads as the product at every width instead of
- * reflowing into something the product never shows.
+ * "Kortix 2", HVL-0). It is drawn once at the board's size, 1280 × 720 (16:9,
+ * a video frame), and scaled to the column, so it reads as the product at
+ * every width instead of reflowing into something the product never shows.
  *
- * Every name and number is a synthetic "Northwind" fixture. It plays once when
- * it scrolls into view: the prompt is typed and sent, the turn works, then the
- * reply lands block by block and rests on the exact board state. Reduced
- * motion skips straight to that state.
+ * Every name and number is a synthetic "Arcadia" fixture. The script plays
+ * when `play` turns true (or, without `play`, when it scrolls into view): the
+ * prompt is typed and sent, the turn works, then the reply lands block by
+ * block and rests on the exact board state. Reduced motion skips straight to
+ * that state.
  */
 
-export const W = 1264;
-export const H = 860;
+export const W = 1280;
+export const H = 720;
 
 const PROMPT =
-  'Build a revenue dashboard for Northwind from the warehouse data for the last five months.';
+  'Build a revenue dashboard for Arcadia from the warehouse data for the last five months.';
 const PROMPT_MORE =
   'Track revenue, new accounts, churn and renewals by month. Include charts, a top-accounts table and what changed this week.';
 
-const TODAY = ['Monday revenue report', 'Triage support tickets', 'Review change request', 'Q4 board deck'];
+const TODAY = [
+  'Monday revenue report',
+  'Triage support tickets',
+  'Review change request',
+  'Q4 board deck',
+];
 
 // Mostly live work, in the sidebar's own glyphs (session-status-mark.tsx):
 //   running      the agent is working: green arc with a fading trail
 //   done         the agent is idle, ready for a prompt: green dot ring
 //   needs-you    waiting on you: blue question (answer) or diff (review)
 //   stopped      asleep: gray ring
-type RowStatus = { status: 'running' | 'done' | 'stopped' } | { status: 'needs-you'; waitingOn: 'answer' | 'review' };
+type RowStatus =
+  | { status: 'running' | 'done' | 'stopped' }
+  | { status: 'needs-you'; waitingOn: 'answer' | 'review' };
 const STATUS: Record<string, RowStatus> = {
   'Monday revenue report': { status: 'running' },
   'Triage support tickets': { status: 'running' },
@@ -109,9 +117,15 @@ const BEAT = {
 /** Reply blocks after the "Worked for" row, in reading order. */
 const BLOCKS = 7;
 
-type Stage = { typed: number; sent: boolean; worked: number; done: boolean; shown: number };
+export type Stage = { typed: number; sent: boolean; worked: number; done: boolean; shown: number };
 
-const FINAL: Stage = { typed: 0, sent: true, worked: WORKED_SECONDS, done: true, shown: BLOCKS };
+export const FINAL: Stage = {
+  typed: 0,
+  sent: true,
+  worked: WORKED_SECONDS,
+  done: true,
+  shown: BLOCKS,
+};
 const START: Stage = { typed: 0, sent: false, worked: 0, done: false, shown: 0 };
 
 function formatWorked(s: number) {
@@ -119,12 +133,12 @@ function formatWorked(s: number) {
   return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-function useScript(target: React.RefObject<HTMLElement | null>) {
+function useScript(target: React.RefObject<HTMLElement | null>, play: boolean | undefined) {
   const [stage, setStage] = useState<Stage>(START);
 
   useEffect(() => {
     const el = target.current;
-    if (!el) return;
+    if (!el || play === false) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setStage(FINAL);
       return;
@@ -134,7 +148,7 @@ function useScript(target: React.RefObject<HTMLElement | null>) {
     let raf = 0;
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
 
-    const play = () => {
+    const run = () => {
       for (let i = 1; i <= PROMPT.length; i++) {
         at(BEAT.typeStart + i * BEAT.charMs, () => setStage((s) => ({ ...s, typed: i })));
       }
@@ -157,21 +171,24 @@ function useScript(target: React.RefObject<HTMLElement | null>) {
       }
     };
 
+    // A host that says when to play owns the timing; on its own the window
+    // plays the first time it is a third in view.
     const io = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
         io.disconnect();
-        play();
+        run();
       },
       { threshold: 0.35 },
     );
-    io.observe(el);
+    if (play) run();
+    else io.observe(el);
     return () => {
       io.disconnect();
       timers.forEach(clearTimeout);
       cancelAnimationFrame(raf);
     };
-  }, [target]);
+  }, [target, play]);
 
   return stage;
 }
@@ -192,11 +209,19 @@ export function useFitScale(frame: React.RefObject<HTMLElement | null>) {
 }
 
 /** One reply block: in the DOM from the first frame, raised when its beat lands. */
-function Reveal({ on, children, className }: { on: boolean; children: ReactNode; className?: string }) {
+function Reveal({
+  on,
+  children,
+  className,
+}: {
+  on: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        'duration-moderate ease-out transition-[opacity,translate] motion-reduce:transition-none',
+        'duration-moderate transition-[opacity,translate] ease-out motion-reduce:transition-none',
         on ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
         className,
       )}
@@ -260,9 +285,9 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
       <div className="flex h-15 shrink-0 items-center justify-between pr-4 pl-4">
         <div className="flex items-center gap-2">
           <span className="bg-foreground text-background flex size-6 items-center justify-center rounded-sm text-xs font-semibold">
-            N
+            A
           </span>
-          <span className="text-sm font-medium">Northwind</span>
+          <span className="text-sm font-medium">Arcadia</span>
           <CaretUpDownIcon className="text-muted-foreground size-3.5 shrink-0" />
         </div>
         <div className="flex gap-3">
@@ -276,7 +301,12 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
           <NavigationArrowIcon className="size-4 shrink-0 rotate-90" />
           <span className="text-sm">New session</span>
         </div>
-        <div className={cn('flex h-9 items-center justify-between rounded-md px-2', nav === 'customize' && 'bg-active')}>
+        <div
+          className={cn(
+            'flex h-9 items-center justify-between rounded-md px-2',
+            nav === 'customize' && 'bg-active',
+          )}
+        >
           <span className="flex items-center gap-2.5">
             <CustomizeGlyph className="size-4 shrink-0" />
             <span className="text-sm">Customize</span>
@@ -310,10 +340,14 @@ function Sidebar({ nav }: { nav?: 'customize' }) {
         ))}
         <p className="text-muted-foreground h-8 px-2 pt-2.5 text-sm">This week</p>
         {THIS_WEEK.map((label) => (
-          <SessionRow key={label} label={label} active={active === label} onSelect={() => setActive(label)} />
+          <SessionRow
+            key={label}
+            label={label}
+            active={active === label}
+            onSelect={() => setActive(label)}
+          />
         ))}
       </nav>
-
     </aside>
   );
 }
@@ -333,19 +367,34 @@ function Composer({ typed }: { typed: number }) {
             {text ? (
               <p className="text-foreground">
                 {text}
-                <span aria-hidden className="bg-foreground ml-px inline-block h-4 w-px align-middle" />
+                <span
+                  aria-hidden
+                  className="bg-foreground ml-px inline-block h-4 w-px align-middle"
+                />
               </p>
             ) : (
-              <p className="text-muted-foreground truncate">Type / for skills, commands, and files</p>
+              <p className="text-muted-foreground truncate">
+                Type / for skills, commands, and files
+              </p>
             )}
           </div>
           <div className="flex items-center justify-between gap-1">
             <div className="flex min-w-0 items-center gap-1">
-              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground rounded-lg">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground rounded-lg"
+              >
                 <span className="max-w-30 truncate">Sonnet 5.5</span>
                 <CaretDownIcon className="size-3" />
               </Button>
-              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground gap-1.5 rounded-lg">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground gap-1.5 rounded-lg"
+              >
                 <GaugeIcon className="size-4 shrink-0" />
                 <span>Auto</span>
                 <CaretDownIcon className="size-3 opacity-50" />
@@ -356,7 +405,7 @@ function Composer({ typed }: { typed: number }) {
               size="icon-base"
               aria-label="Send message"
               disabled={!text}
-              className="shrink-0 rounded-full p-0 transition-[color,background-color,opacity,scale] duration-slow ease-out active:scale-[0.96]"
+              className="duration-slow shrink-0 rounded-full p-0 transition-[color,background-color,opacity,scale] ease-out active:scale-[0.96]"
             >
               <ArrowUpIcon className="size-4" />
             </Button>
@@ -365,10 +414,21 @@ function Composer({ typed }: { typed: number }) {
       </div>
       <div className="flex items-center justify-between gap-2 px-px pt-1.5 pb-2">
         <div className="flex min-w-0 items-center gap-1">
-          <Button type="button" variant="ghost" size="icon-base" aria-label="Attach files" className="text-muted-foreground rounded-lg">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-base"
+            aria-label="Attach files"
+            className="text-muted-foreground rounded-lg"
+          >
             <PaperclipIcon className="size-4 shrink-0" />
           </Button>
-          <Button type="button" variant="ghost" size="sm" className="text-muted-foreground rounded-lg">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground rounded-lg"
+          >
             <span className="max-w-[100px] truncate">Kortix</span>
             <CaretDownIcon className="size-3" />
           </Button>
@@ -387,7 +447,10 @@ function Thread({ stage }: { stage: Stage }) {
 
   return (
     <div className="mx-auto flex w-152 flex-col pt-2.5">
-      <Reveal on={stage.sent} className="bg-secondary flex w-122 flex-col gap-2.5 self-end rounded-lg px-4 py-3">
+      <Reveal
+        on={stage.sent}
+        className="bg-secondary flex w-122 flex-col gap-2.5 self-end rounded-lg px-4 py-3"
+      >
         <p className="text-sm leading-relaxed">{PROMPT}</p>
         <p className="text-sm leading-relaxed">{PROMPT_MORE}</p>
         <p className="text-muted-foreground text-sm leading-relaxed">Show more</p>
@@ -402,8 +465,12 @@ function Thread({ stage }: { stage: Stage }) {
             aria-expanded={open}
             className="text-muted-foreground hover:text-foreground focus-visible:ring-kortix-base flex items-center gap-1.5 rounded-sm text-sm outline-none focus-visible:ring-1"
           >
-            {stage.done ? `Worked for ${formatWorked(stage.worked)}` : `Working for ${formatWorked(stage.worked)}`}
-            <span className={cn('duration-moderate transition-transform ease-out', open && 'rotate-90')}>
+            {stage.done
+              ? `Worked for ${formatWorked(stage.worked)}`
+              : `Working for ${formatWorked(stage.worked)}`}
+            <span
+              className={cn('duration-moderate transition-transform ease-out', open && 'rotate-90')}
+            >
               <Icon size={10} d="M6 3l5 5-5 5" />
             </span>
           </button>
@@ -417,18 +484,19 @@ function Thread({ stage }: { stage: Stage }) {
         </Reveal>
 
         <Reveal on={shown(1)}>
-          <h3 className="text-xl font-semibold tracking-tight">Northwind revenue dashboard</h3>
+          <h3 className="text-xl font-semibold tracking-tight">Arcadia revenue dashboard</h3>
         </Reveal>
         <Reveal on={shown(2)}>
           <p className="text-sm leading-relaxed">
-            Verified warehouse data for May 1 to October 16, 2026, five months across six monthly buckets.
-            Switch tabs below for revenue, accounts, churn and renewals; links open the underlying queries.
+            Verified warehouse data for May 1 to October 16, 2026, five months across six monthly
+            buckets. Switch tabs below for revenue, accounts, churn and renewals; links open the
+            underlying queries.
           </p>
         </Reveal>
         <Reveal on={shown(3)}>
           <p className="text-sm leading-relaxed">
-            Coverage: revenue comes from the finance schema, including refunds. This is a fetched snapshot,
-            not a live-connected dashboard.
+            Coverage: revenue comes from the finance schema, including refunds. This is a fetched
+            snapshot, not a live-connected dashboard.
           </p>
         </Reveal>
         <Reveal on={shown(4)} className="pt-2.5">
@@ -436,8 +504,8 @@ function Thread({ stage }: { stage: Stage }) {
         </Reveal>
         <Reveal on={shown(5)}>
           <p className="text-sm leading-relaxed">
-            Net revenue is up 4.1% week over week. May and October are partial months and should not be
-            compared directly with full-month totals.
+            Net revenue is up 4.1% week over week. May and October are partial months and should not
+            be compared directly with full-month totals.
           </p>
         </Reveal>
         <Reveal on={shown(6)}>
@@ -445,7 +513,10 @@ function Thread({ stage }: { stage: Stage }) {
             {STATS.map((s, i) => (
               <div
                 key={s.label}
-                className={cn('flex flex-1 flex-col gap-1 px-4 py-3', i < STATS.length - 1 && 'border-border border-r')}
+                className={cn(
+                  'flex flex-1 flex-col gap-1 px-4 py-3',
+                  i < STATS.length - 1 && 'border-border border-r',
+                )}
               >
                 <dt className="text-muted-foreground text-xs">{s.label}</dt>
                 <dd className="text-lg tabular-nums">{s.value}</dd>
@@ -472,8 +543,9 @@ const DEV_TOOLS = [
  * buttons with a tooltip, then Share. Here a click marks the tool open (the
  * window has no panel to show), so the controls answer like the real ones.
  */
-function HeaderTools() {
-  const [open, setOpen] = useState<string | null>(null);
+function HeaderTools({ sharing }: { sharing: boolean }) {
+  const [picked, setOpen] = useState<string | null>(null);
+  const open = sharing ? 'share' : picked;
   const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
   return (
     <div className="flex items-center gap-1.5">
@@ -505,17 +577,20 @@ function HeaderTools() {
   );
 }
 
-function Session({ stage }: { stage: Stage }) {
+export function Session({ stage, sharing = false }: { stage: Stage; sharing?: boolean }) {
   return (
-    <section aria-label="Session" className="bg-background relative flex flex-1 flex-col overflow-hidden">
+    <section
+      aria-label="Session"
+      className="bg-background relative flex flex-1 flex-col overflow-hidden"
+    >
       <header className="flex h-14 shrink-0 items-center justify-between pr-5 pl-6">
         <div className="flex items-center gap-2.5">
-          <span className="text-sm">Northwind revenue dashboard</span>
+          <span className="text-sm">Arcadia revenue dashboard</span>
           <span className="text-muted-foreground">
             <Icon size={12} d="M4 6l4 4 4-4" />
           </span>
         </div>
-        <HeaderTools />
+        <HeaderTools sharing={sharing} />
       </header>
       <span aria-hidden className="text-muted-foreground absolute top-16 right-6 text-sm">
         «
@@ -531,9 +606,33 @@ function Session({ stage }: { stage: Stage }) {
  * sidebar, then the page. The session window and the hero's Customize pages
  * share it, so a step change swaps only the page.
  */
-export function AppBoard({ nav, children }: { nav?: 'customize'; children: ReactNode }) {
+export function AppBoard({
+  nav,
+  framed = true,
+  overlay,
+  children,
+}: {
+  nav?: 'customize';
+  /** false: no glass ring or border, for a host that draws the frame itself. */
+  framed?: boolean;
+  /** Drawn over the whole app, sidebar included, like a modal. */
+  overlay?: ReactNode;
+  children: ReactNode;
+}) {
   const frame = useRef<HTMLDivElement>(null);
   const scale = useFitScale(frame);
+  const app = (
+    <div
+      className={cn(
+        'bg-background text-foreground relative flex size-full overflow-hidden',
+        framed && 'rounded-xl border',
+      )}
+    >
+      <Sidebar nav={nav} />
+      {children}
+      {overlay}
+    </div>
+  );
   return (
     <div ref={frame} className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
       <div
@@ -541,23 +640,33 @@ export function AppBoard({ nav, children }: { nav?: 'customize'; children: React
         style={{ width: W, height: H, transform: `scale(${scale})` }}
       >
         {/* Glass ring: an 8px lip of the band showing through, then the app. */}
-        <div className="bg-background/20 ring-border flex size-full rounded-2xl p-2 ring-1">
-          <div className="bg-background text-foreground flex size-full overflow-hidden rounded-xl border">
-            <Sidebar nav={nav} />
-            {children}
+        {framed ? (
+          <div className="bg-background/20 ring-border flex size-full rounded-2xl p-2 ring-1">
+            {app}
           </div>
-        </div>
+        ) : (
+          app
+        )}
       </div>
     </div>
   );
 }
 
-export function SessionWindow({ className }: { className?: string }) {
+export function SessionWindow({
+  className,
+  framed,
+  play,
+}: {
+  className?: string;
+  framed?: boolean;
+  /** Plays the script when true. Omitted: plays once when scrolled into view. */
+  play?: boolean;
+}) {
   const target = useRef<HTMLDivElement>(null);
-  const stage = useScript(target);
+  const stage = useScript(target, play);
   return (
     <div ref={target} className={className}>
-      <AppBoard>
+      <AppBoard framed={framed}>
         <Session stage={stage} />
       </AppBoard>
     </div>

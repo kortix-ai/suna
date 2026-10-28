@@ -1,5 +1,7 @@
 import { Band, Heading } from '@/features/marketing/kit/page-frame';
+import Link from 'next/link';
 import {
+  ArrowRightIcon,
   CheckIcon,
   CodeIcon,
   ShieldCheckIcon,
@@ -14,6 +16,7 @@ import {
 const PILLARS = [
   {
     id: 'multiplayer',
+    href: '/multiplayer',
     icon: UsersThreeIcon,
     name: 'Multiplayer AI',
     line: 'One AI for the whole team.',
@@ -27,6 +30,7 @@ const PILLARS = [
   },
   {
     id: 'company-as-code',
+    href: '/framework',
     icon: CodeIcon,
     name: 'Company as code',
     line: 'Extensible to the core.',
@@ -40,6 +44,7 @@ const PILLARS = [
   },
   {
     id: 'sovereign',
+    href: '/sovereign',
     icon: ShieldCheckIcon,
     name: 'Sovereign and open',
     line: 'Own your data and your infrastructure.',
@@ -63,7 +68,7 @@ export function PillarsBand() {
       />
       <Band className="mt-12">
         <ul className="bg-border grid grid-cols-1 gap-px lg:grid-cols-3">
-          {PILLARS.map(({ id, icon: Icon, name, line, body, facts }) => (
+          {PILLARS.map(({ id, href, icon: Icon, name, line, body, facts }) => (
             <li
               key={id}
               id={id}
@@ -83,6 +88,14 @@ export function PillarsBand() {
                   </li>
                 ))}
               </ul>
+              <Link
+                href={href}
+                className="text-foreground hover:text-muted-foreground outline-ring duration-normal inline-flex w-fit items-center gap-1.5 rounded-sm text-sm font-medium transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                Learn more
+                <ArrowRightIcon className="size-3.5" aria-hidden />
+                <span className="sr-only">about {name}</span>
+              </Link>
             </li>
           ))}
         </ul>

@@ -1,11 +1,10 @@
 'use client';
 
-import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { H, W } from './session-window';
 import { WorkspaceFramework } from './workspace-framework';
 
 // The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
@@ -26,7 +25,11 @@ function PillarWord() {
   const word = PILLAR_WORDS.at(shown);
 
   return (
-    <span key={word} aria-hidden className="animate-in fade-in duration-slower ease-out whitespace-nowrap">
+    <span
+      key={word}
+      aria-hidden
+      className="animate-in fade-in duration-slower whitespace-nowrap ease-out"
+    >
       {word}
     </span>
   );
@@ -50,7 +53,9 @@ export function SandBandHero() {
             pattern): sits close under the title, muted, two lines at most. */}
         <div className="flex flex-col gap-4 lg:gap-5">
           <h1 className="max-w-261 text-3xl font-medium tracking-tight text-balance sm:text-4xl lg:text-[44px] lg:leading-13">
-            <span className="sr-only">The sovereign, multiplayer, extensible and open AI Operating System</span>
+            <span className="sr-only">
+              The sovereign, multiplayer, extensible and open AI Operating System
+            </span>
             <span aria-hidden className="text-foreground block">
               The <PillarWord /> AI Operating System
             </span>
@@ -79,20 +84,18 @@ export function SandBandHero() {
       {/* Band row: hairlines top and bottom across the page, a plain band
           between the rails. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
-        <div className="bg-card relative flex flex-col items-center gap-7 overflow-hidden px-4 py-7 lg:gap-10 lg:px-0 lg:pt-17 lg:pb-10">
-          {/* Width follows the screen height too, so the switch, the window
-              (1264 × 860) and the step strip fit one viewport under the navbar. */}
-          <div
-            id="demo"
-            className="relative w-full max-w-304 scroll-mt-24"
-            style={{ maxWidth: `min(100%, calc((100svh - 16rem) * ${W} / ${H}))` }}
-          >
+        <div className="bg-card relative flex flex-col items-center gap-5 overflow-hidden px-3 py-5 sm:px-6 lg:gap-6 lg:px-8 lg:py-7">
+          {/* The player (16:9 stage plus control bar) keeps the window width
+              the hero has always had, max-w-304. */}
+          <div id="demo" className="relative w-full max-w-304 scroll-mt-16">
             <WorkspaceFramework />
           </div>
           {/* What the two views show, in one line. */}
           <p className="text-foreground px-4 text-center text-base font-medium text-balance">
             A workspace and command center for people. A backend framework for agents underneath.{' '}
-            <span className="text-muted-foreground">The same project, as files in a git repo you own.</span>
+            <span className="text-muted-foreground">
+              The same project, as files in a git repo you own.
+            </span>
           </p>
         </div>
       </div>

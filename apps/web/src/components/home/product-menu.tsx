@@ -28,16 +28,16 @@ export const MEGA_MENUS: MegaMenu[] = [
     id: 'product',
     label: 'Product',
     // What the product is and what it is made of. Pricing lives in the bar
-    // only. The pillar links land on the home page's pillar cells (ids in
-    // landing-sections/pillars-band.tsx); the building blocks open their docs.
+    // only. Each pillar has its own page (/multiplayer, /framework for company
+    // as code, /sovereign); Outcomes lands on the home section; the building
+    // blocks open their Guide sections.
     groups: [
       {
         title: 'The AI OS',
         links: [
-          { label: 'Multiplayer AI', href: '/#multiplayer' },
-          { label: 'Company as code', href: '/#company-as-code' },
-          { label: 'Framework', href: '/framework' },
-          { label: 'Sovereign and open', href: '/#sovereign' },
+          { label: 'Multiplayer AI', href: '/multiplayer' },
+          { label: 'Company as code', href: '/framework' },
+          { label: 'Sovereign and open', href: '/sovereign' },
           { label: 'Outcomes, 24/7', href: '/#use-cases' },
         ],
       },

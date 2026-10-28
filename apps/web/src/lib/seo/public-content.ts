@@ -67,6 +67,8 @@ export const STATIC_PUBLIC_ROUTES = [
   '/services',
   '/case-studies',
   '/framework',
+  '/multiplayer',
+  '/sovereign',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -215,6 +217,22 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'Kortix is a backend framework for AI agents: a project is a git repository, kortix.yaml declares the agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, and @kortix/sdk and @kortix/ui compose your own experience.',
     htmlPath: '/framework',
+  },
+  {
+    kind: 'marketing',
+    slug: 'multiplayer',
+    title: 'Multiplayer AI',
+    description:
+      'One AI for the whole team: the same agents, skills, Drive and connectors for everyone, in the web, desktop and mobile apps, Slack and Microsoft Teams, with people reviewing and approving what agents do.',
+    htmlPath: '/multiplayer',
+  },
+  {
+    kind: 'marketing',
+    slug: 'sovereign',
+    title: 'Sovereign and open',
+    description:
+      'Kortix is open source. Run it on Kortix Cloud, in your VPC or on-prem, with any model and your own keys, and keep your agents, skills and files in a git repo you own.',
+    htmlPath: '/sovereign',
   },
   {
     kind: 'marketing',

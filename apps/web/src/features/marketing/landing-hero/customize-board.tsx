@@ -3,12 +3,12 @@
 import { BrandGlyph } from '@/features/marketing/kit/brand-glyph';
 import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import { Switch } from '@kortix/ui/switch';
 import {
   ArrowUpRightIcon,
   ClockIcon,
   EnvelopeSimpleIcon,
-  GitPullRequestIcon,
   PlusIcon,
   ShieldCheckIcon,
   WebhooksLogoIcon,
@@ -18,18 +18,29 @@ import type { ReactNode } from 'react';
 
 import { SessionStatusMark } from './session-status-mark';
 import { AppBoard } from './session-window';
+import { useBeats } from './use-beats';
 
 /**
- * The Customize page of the Northwind project, drawn like the app's
+ * The Customize page of the Arcadia project, drawn like the app's
  * (capability-tabs.tsx + capability-page-shell.tsx) inside the session
- * window's chrome. The hero's Workspace steps 2 to 4 show its Connectors,
- * Triggers and Review tabs. Every name is a synthetic Northwind fixture.
+ * window's chrome. The hero's Workspace steps 2 and 3 play its Connectors
+ * and Triggers tabs as short scenes. Every name is a synthetic Arcadia fixture.
  */
 
-export type CustomizeTab = 'Connectors' | 'Triggers' | 'Review';
+export type CustomizeTab = 'Connectors' | 'Triggers';
 
 /** CAPABILITY_TABS in packages/ui/src/internal/lib/capability-tab-routes.ts; Members is a link. */
-const TABS = ['Agents', 'Skills', 'Connectors', 'Triggers', 'Reminders', 'Models', 'Secrets', 'Repo', 'Review'];
+const TABS = [
+  'Agents',
+  'Skills',
+  'Connectors',
+  'Triggers',
+  'Reminders',
+  'Models',
+  'Secrets',
+  'Repo',
+  'Review',
+];
 
 function TabBar({ tab }: { tab: CustomizeTab }) {
   const item = (label: string) => (
@@ -112,24 +123,69 @@ const CONNECTORS: { name: string; mark: ReactNode; detail: string }[] = [
   { name: 'HubSpot', mark: <BrandGlyph slug="hubspot" />, detail: 'sales-inbound' },
   {
     name: 'Slack',
-    mark: <Image src={`${COLOR}/slack.svg`} alt="" width={20} height={20} unoptimized className="size-5" />,
+    mark: (
+      <Image
+        src={`${COLOR}/slack.svg`}
+        alt=""
+        width={20}
+        height={20}
+        unoptimized
+        className="size-5"
+      />
+    ),
     detail: 'Built in',
   },
-  { name: 'Email', mark: <EnvelopeSimpleIcon className="size-5" aria-hidden />, detail: 'Built in' },
+  {
+    name: 'Email',
+    mark: <EnvelopeSimpleIcon className="size-5" aria-hidden />,
+    detail: 'Built in',
+  },
   { name: 'Notion', mark: <BrandGlyph slug="notion" />, detail: 'kortix' },
 ];
 
+/** The connector this step connects on screen. */
+const CONNECTING = 'HubSpot';
+
 const POLICY = ['Allow', 'Ask', 'Block'] as const;
+type Policy = (typeof POLICY)[number];
 
 /** LinkedIn's rules, as kortix.yaml sets them: `linkedin.create_*` asks first. */
-const RULES: { tool: string; does: string; policy: (typeof POLICY)[number] }[] = [
+const RULES: { tool: string; does: string; policy: Policy; from?: Policy }[] = [
   { tool: 'linkedin.get_profile', does: 'Reads a profile', policy: 'Allow' },
-  { tool: 'linkedin.create_post', does: 'Publishes a post', policy: 'Ask' },
+  { tool: 'linkedin.create_post', does: 'Publishes a post', policy: 'Ask', from: 'Allow' },
   { tool: 'linkedin.create_comment', does: 'Comments on a post', policy: 'Ask' },
   { tool: 'linkedin.delete_post', does: 'Deletes a post', policy: 'Block' },
 ];
 
-function ConnectorsPage() {
+/** Connectors beats: HubSpot connecting, connected, then one rule moves Allow → Ask. */
+const CONNECTOR_BEATS = [900, 2100, 3600] as const;
+
+/** A segmented Allow / Ask / Block control whose thumb slides to `value`. */
+function PolicySwitch({ value }: { value: Policy }) {
+  return (
+    <span className="bg-muted relative ml-auto grid grid-cols-3 rounded-md p-0.5">
+      <span
+        aria-hidden
+        className="bg-background duration-slower absolute inset-y-0.5 left-0.5 w-14 rounded-sm shadow-xs transition-transform ease-out motion-reduce:transition-none"
+        style={{ transform: `translateX(${POLICY.indexOf(value) * 100}%)` }}
+      />
+      {POLICY.map((p) => (
+        <span
+          key={p}
+          className={cn(
+            'duration-slower relative flex h-6 w-14 items-center justify-center text-xs font-medium transition-colors',
+            p === value ? 'text-foreground' : 'text-muted-foreground',
+          )}
+        >
+          {p}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ConnectorsPage({ play }: { play: boolean }) {
+  const beat = useBeats(play, CONNECTOR_BEATS);
   return (
     <Shell
       title="Connectors"
@@ -143,58 +199,97 @@ function ConnectorsPage() {
       filters={<Filters items={['Connected', 'All', 'Discovery']} />}
     >
       <ul className="grid grid-cols-3 gap-3">
-        {CONNECTORS.map((c) => (
-          <li key={c.name} className="bg-card flex items-center gap-3 rounded-lg border px-4 py-3.5">
-            <span className="bg-background flex size-9 items-center justify-center rounded-md border">{c.mark}</span>
-            <span className="flex min-w-0 flex-col">
-              <span className="text-sm font-medium">{c.name}</span>
-              <span className="text-muted-foreground truncate text-xs">{c.detail}</span>
-            </span>
-            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs">
-              <span className="bg-kortix-green size-1.5 rounded-full" aria-hidden />
-              Connected
-            </span>
-          </li>
-        ))}
+        {CONNECTORS.map((c) => {
+          const state =
+            c.name !== CONNECTING || beat >= 2 ? 'connected' : beat >= 1 ? 'connecting' : 'idle';
+          return (
+            <li
+              key={c.name}
+              className={cn(
+                'duration-slower flex items-center gap-3 rounded-lg border px-4 py-3.5 transition-colors ease-out',
+                c.name === CONNECTING && beat >= 1 && beat < 3 ? 'bg-muted' : 'bg-card',
+              )}
+            >
+              <span className="bg-background flex size-9 items-center justify-center rounded-md border">
+                {c.mark}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="text-sm font-medium">{c.name}</span>
+                <span className="text-muted-foreground truncate text-xs">{c.detail}</span>
+              </span>
+              {state === 'idle' ? (
+                <Button size="xs" variant="outline" tabIndex={-1} className="ml-auto">
+                  Connect
+                </Button>
+              ) : (
+                <span
+                  key={state}
+                  className="text-muted-foreground animate-in fade-in duration-slower ml-auto flex items-center gap-1.5 text-xs ease-out"
+                >
+                  {state === 'connecting' ? (
+                    <Loading className="size-3" />
+                  ) : (
+                    <span className="bg-kortix-green size-1.5 rounded-full" aria-hidden />
+                  )}
+                  {state === 'connecting' ? 'Connecting' : 'Connected'}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
       <div className="flex flex-col gap-2 pt-3">
         <p className="text-sm font-medium">LinkedIn rules</p>
         <ul className="divide-y rounded-lg border">
-          {RULES.map((rule) => (
-            <li key={rule.tool} className="flex items-center gap-4 px-4 py-2.5">
-              <span className="w-60 font-mono text-xs">{rule.tool}</span>
-              <span className="text-muted-foreground text-sm">{rule.does}</span>
-              <span className="bg-muted ml-auto flex items-center rounded-md p-0.5">
-                {POLICY.map((p) => (
-                  <span
-                    key={p}
-                    className={cn(
-                      'flex h-6 items-center rounded-sm px-2.5 text-xs font-medium',
-                      p === rule.policy ? 'bg-background text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {p}
-                  </span>
-                ))}
-              </span>
-            </li>
-          ))}
+          {RULES.map((rule) => {
+            const moving = rule.from !== undefined;
+            return (
+              <li
+                key={rule.tool}
+                className={cn(
+                  'duration-slower flex items-center gap-4 px-4 py-2.5 transition-colors ease-out',
+                  moving && beat >= 3 && 'bg-muted',
+                )}
+              >
+                <span className="w-60 font-mono text-xs">{rule.tool}</span>
+                <span className="text-muted-foreground text-sm">{rule.does}</span>
+                <PolicySwitch value={moving && beat < 3 ? rule.from! : rule.policy} />
+              </li>
+            );
+          })}
         </ul>
       </div>
     </Shell>
   );
 }
 
-/** The three triggers in kortix.yaml, then two schedules set in the app. */
-const TRIGGERS: { name: string; on: string; webhook?: boolean; agent: string; last: string; running?: boolean }[] = [
-  { name: 'New GitHub issue', on: 'Webhook', webhook: true, agent: 'eng-triage', last: 'Running now', running: true },
+/** The three triggers in kortix.yaml, plus two schedules set in the app. The last one is added on screen. */
+const TRIGGERS: { name: string; on: string; webhook?: boolean; agent: string; last: string }[] = [
+  { name: 'New GitHub issue', on: 'Webhook', webhook: true, agent: 'eng-triage', last: '2h ago' },
   { name: 'Inbound lead', on: 'Webhook', webhook: true, agent: 'sales-inbound', last: '22m ago' },
-  { name: 'Weekly LinkedIn post', on: 'Tuesdays at 10:00', agent: 'marketing', last: 'Tue 10:00' },
   { name: 'Monday revenue report', on: 'Mondays at 08:00', agent: 'kortix', last: 'Mon 08:00' },
-  { name: 'Month-end close', on: '1st of the month at 08:00', agent: 'kortix', last: 'Oct 1, 08:00' },
+  {
+    name: 'Month-end close',
+    on: '1st of the month at 08:00',
+    agent: 'kortix',
+    last: 'Oct 1, 08:00',
+  },
+  {
+    name: 'Weekly LinkedIn post',
+    on: 'Tuesdays at 10:00',
+    agent: 'marketing',
+    last: 'Next: Tue 10:00',
+  },
 ];
 
-function TriggersPage() {
+const ADDED = 'Weekly LinkedIn post';
+const FIRES = 'New GitHub issue';
+
+/** Triggers beats: the new schedule lands, then a webhook fires and its run starts. */
+const TRIGGER_BEATS = [900, 3000] as const;
+
+function TriggersPage({ play }: { play: boolean }) {
+  const beat = useBeats(play, TRIGGER_BEATS);
   return (
     <Shell
       title="Triggers"
@@ -205,116 +300,64 @@ function TriggersPage() {
           New trigger
         </Button>
       }
-      filters={<Filters items={['All', 'Schedules', 'Connector events', 'App events', 'Webhooks']} />}
+      filters={
+        <Filters items={['All', 'Schedules', 'Connector events', 'App events', 'Webhooks']} />
+      }
     >
       <ul className="divide-y rounded-lg border">
-        {TRIGGERS.map((t) => (
-          <li key={t.name} className="flex items-center gap-4 px-4 py-3.5">
-            <span className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-md">
-              {t.webhook ? <WebhooksLogoIcon className="size-4" /> : <ClockIcon className="size-4" />}
-            </span>
-            <span className="flex w-64 flex-col">
-              <span className="text-sm font-medium">{t.name}</span>
-              <span className="text-muted-foreground text-xs">{t.on}</span>
-            </span>
-            <span className="text-muted-foreground font-mono text-xs">→ {t.agent}</span>
-            <span className="text-muted-foreground ml-auto flex items-center gap-2 text-xs">
-              {t.running ? <SessionStatusMark status="running" /> : null}
-              {t.last}
-            </span>
-            <Switch checked aria-label={`${t.name} is on`} tabIndex={-1} />
-          </li>
-        ))}
+        {TRIGGERS.map((t) => {
+          const added = t.name === ADDED;
+          const fired = t.name === FIRES && beat >= 2;
+          return (
+            <li
+              key={t.name}
+              className={cn(
+                'duration-slower flex items-center gap-4 px-4 py-3.5 transition-[opacity,background-color] ease-out',
+                added && beat < 1 && 'opacity-0',
+                ((added && beat === 1) || fired) && 'bg-muted',
+              )}
+            >
+              <span className="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-md">
+                {t.webhook ? (
+                  <WebhooksLogoIcon className="size-4" />
+                ) : (
+                  <ClockIcon className="size-4" />
+                )}
+              </span>
+              <span className="flex w-64 flex-col">
+                <span className="text-sm font-medium">{t.name}</span>
+                <span className="text-muted-foreground text-xs">{t.on}</span>
+              </span>
+              <span className="text-muted-foreground font-mono text-xs">→ {t.agent}</span>
+              <span
+                key={fired ? 'run' : 'idle'}
+                className="text-muted-foreground animate-in fade-in duration-slower ml-auto flex items-center gap-2 text-xs ease-out"
+              >
+                {fired ? <SessionStatusMark status="running" /> : null}
+                {fired ? 'Running now' : t.last}
+              </span>
+              <Switch checked aria-label={`${t.name} is on`} tabIndex={-1} />
+            </li>
+          );
+        })}
       </ul>
     </Shell>
   );
 }
 
-const QUEUE: { icon: ReactNode; title: string; meta: string; actions: [string, string] }[] = [
-  {
-    icon: <GitPullRequestIcon className="size-4" />,
-    title: 'Add the weekly LinkedIn post',
-    meta: '#12 · marketing · weekly-post → main',
-    actions: ['Request changes', 'Merge'],
-  },
-  {
-    icon: <ShieldCheckIcon className="size-4" />,
-    title: 'linkedin.create_post: "CSV export streams large files"',
-    meta: 'marketing · asks first',
-    actions: ['Deny', 'Approve'],
-  },
-  {
-    icon: <GitPullRequestIcon className="size-4" />,
-    title: 'Qualify leads from Switzerland too',
-    meta: '#11 · sales-inbound · qualify-ch → main',
-    actions: ['Request changes', 'Merge'],
-  },
-];
-
-const MEMBERS = [
-  { name: 'Owner 1', role: 'Owner' },
-  { name: 'Member 2', role: 'Admin' },
-  { name: 'Member 3', role: 'Member' },
-  { name: 'Member 4', role: 'Member' },
-];
-
-function ReviewPage() {
-  return (
-    <Shell
-      title="Review"
-      description="Changes your agents propose and actions that wait for a person."
-      filters={<Filters items={['Pending', 'Merged', 'Closed']} />}
-    >
-      <div className="grid grid-cols-[1fr_15rem] gap-5">
-        <ul className="divide-y self-start rounded-lg border">
-          {QUEUE.map((item) => (
-            <li key={item.title} className="flex items-center gap-3 px-4 py-3.5">
-              <span className="text-muted-foreground">{item.icon}</span>
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-sm font-medium">{item.title}</span>
-                <span className="text-muted-foreground font-mono text-xs">{item.meta}</span>
-              </span>
-              <span className="ml-auto flex shrink-0 gap-2">
-                <Button size="xs" variant="ghost" tabIndex={-1}>
-                  {item.actions[0]}
-                </Button>
-                <Button size="xs" tabIndex={-1}>
-                  {item.actions[1]}
-                </Button>
-              </span>
-            </li>
-          ))}
-        </ul>
-        <div className="flex flex-col gap-1 rounded-lg border p-3">
-          <p className="text-muted-foreground px-1 pb-1 text-xs">Members</p>
-          {MEMBERS.map((m) => (
-            <div key={m.name} className="flex items-center gap-2.5 px-1 py-1.5">
-              <span className="bg-muted flex size-7 items-center justify-center rounded-full text-xs font-medium">
-                {m.name.split(' ').map((w) => w[0]).join('')}
-              </span>
-              <span className="text-sm">{m.name}</span>
-              <span className="text-muted-foreground ml-auto text-xs">{m.role}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-const PAGES: Record<CustomizeTab, () => ReactNode> = {
+const PAGES: Record<CustomizeTab, (props: { play: boolean }) => ReactNode> = {
   Connectors: ConnectorsPage,
   Triggers: TriggersPage,
-  Review: ReviewPage,
 };
 
-export function CustomizeBoard({ tab }: { tab: CustomizeTab }) {
+/** `play` starts the open tab's scene; a new tab mounts a new scene. */
+export function CustomizeBoard({ tab, play }: { tab: CustomizeTab; play: boolean }) {
   const Page = PAGES[tab];
   return (
-    <AppBoard nav="customize">
+    <AppBoard nav="customize" framed={false}>
       <section aria-label="Customize" className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TabBar tab={tab} />
-        <Page key={tab} />
+        <Page key={tab} play={play} />
       </section>
     </AppBoard>
   );

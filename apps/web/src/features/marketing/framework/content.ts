@@ -11,7 +11,7 @@
  * when a registered skill folder is missing. Every new session runs the
  * open-source pi coding agent (@earendil-works/pi-coding-agent) inside kortixd
  * (apps/kortix-sandbox-agent-server/src/harness/README.md). Sample data:
- * Northwind.
+ * Arcadia.
  */
 
 export const MANIFEST = [
@@ -19,8 +19,8 @@ export const MANIFEST = [
   "default_agent: kortix",
   "",
   "project:",
-  "  name: northwind",
-  "  description: Northwind runs engineering, marketing and sales on Kortix.",
+  "  name: arcadia",
+  "  description: Arcadia runs engineering, marketing and sales on Kortix.",
   "",
   "env:",
   "  required: [GITHUB_WEBHOOK_SECRET, LEADS_WEBHOOK_SECRET]",
@@ -108,16 +108,16 @@ export const MANIFEST = [
 export const FILES: Record<string, readonly string[]> = {
   'kortix.yaml': MANIFEST,
   'agents/kortix.md': [
-    'You are the general agent for Northwind.',
+    'You are the general agent for Arcadia.',
     'Read the company memory in Drive before you start.',
   ],
   'agents/engineering/triage.md': [
-    'You triage new GitHub issues for Northwind engineering.',
+    'You triage new GitHub issues for Arcadia engineering.',
     'Follow the triage-issue skill. Label, size and route each issue.',
     'Post a one-line summary in #eng. Never close an issue yourself.',
   ],
   'agents/marketing/content.md': [
-    'You write Northwind LinkedIn posts from work the team shipped.',
+    'You write Arcadia LinkedIn posts from work the team shipped.',
     'Follow the write-post skill and the tone in the company memory.',
     'Every post waits for a person to approve it.',
   ],
@@ -180,27 +180,27 @@ export const FILES: Record<string, readonly string[]> = {
     '};',
   ],
   'README.md': [
-    '# Northwind Operations',
+    '# Arcadia',
     '',
-    'The Kortix project that runs Northwind support,',
+    'The Kortix project that runs Arcadia support,',
     'finance and sales. Agents read memory/ first.',
     'Every change lands through a change request.',
   ],
   'memory/MEMORY.md': [
     '# Project Memory',
     '',
-    '- [company.md](company.md) — what Northwind sells and to whom',
+    '- [company.md](company.md) — what Arcadia sells and to whom',
     '- [customers.md](customers.md) — top accounts and their owners',
     '- [decisions.md](decisions.md) — decisions, newest first',
-    '- [glossary.md](glossary.md) — the words Northwind uses',
+    '- [glossary.md](glossary.md) — the words Arcadia uses',
   ],
   'memory/company.md': [
-    '# Northwind',
+    '# Arcadia',
     '',
-    'Northwind sells office supplies to small businesses',
+    'Arcadia sells office supplies to small businesses',
     'in Germany and Austria. Orders ship from Berlin.',
     '',
-    'Tone: short, friendly, no jargon. Sign as "Northwind Support".',
+    'Tone: short, friendly, no jargon. Sign as "Arcadia Support".',
     'Prices are in EUR, invoices go out on the 1st.',
   ],
   'memory/customers.md': [
