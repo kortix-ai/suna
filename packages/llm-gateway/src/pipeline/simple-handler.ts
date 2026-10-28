@@ -1003,6 +1003,17 @@ export async function handleChatCompletions(
     return new Response(providerClientErrorBody(upstream.status, upstreamText), { status: upstream.status, headers });
   }
 
+  // KRTX-3369: an answer names the model the client asked for and the model
+  // that served it. A project chain that stood in for the requested model
+  // (an unknown or retired name, a resting pool) is otherwise invisible.
+  // A name a header cannot carry is left out rather than failing the answer.
+  const nameModels = (headers: Headers): Headers => {
+    for (const [name, value] of [['x-kortix-requested-model', requestedModel], ['x-kortix-model', routedModel]] as const) {
+      if (/^[\x20-\x7e]{1,200}$/.test(value)) headers.set(name, value);
+    }
+    return headers;
+  };
+
   if (streaming && upstream.body) {
     return new Response(
       relayStream({
@@ -1026,9 +1037,9 @@ export async function handleChatCompletions(
       }),
       {
         status: upstream.status,
-        headers: served.publicProvider
+        headers: nameModels(served.publicProvider
           ? publicResponseHeaders(upstream.headers)
-          : passthroughHeaders(upstream.headers),
+          : passthroughHeaders(upstream.headers)),
       },
     );
   }
@@ -1070,12 +1081,12 @@ export async function handleChatCompletions(
     return new Response(publicText, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: publicResponseHeaders(upstream.headers),
+      headers: nameModels(publicResponseHeaders(upstream.headers)),
     });
   }
   return new Response(responseText, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: passthroughHeaders(upstream.headers),
+    headers: nameModels(passthroughHeaders(upstream.headers)),
   });
 }

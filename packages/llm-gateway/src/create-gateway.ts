@@ -88,6 +88,15 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
   const jsonResponse = (data: unknown, status = 200): Response =>
     new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
+  /** An ingress that builds its own answer keeps the chat answer's model names (KRTX-3369). */
+  const withModelNames = (chat: Response, answer: Response): Response => {
+    for (const name of ['x-kortix-requested-model', 'x-kortix-model']) {
+      const value = chat.headers.get(name);
+      if (value) answer.headers.set(name, value);
+    }
+    return answer;
+  };
+
   const bearer = (header: string | undefined): string | null => {
     const match = header?.match(/^Bearer\s+(\S.*)$/i);
     return match ? match[1].trim() : null;
@@ -183,19 +192,19 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
       const anthropicStream = chatSseToAnthropicSse(upstream.body, { model });
-      return new Response(anthropicStream, {
+      return withModelNames(upstream, new Response(anthropicStream, {
         status: 200,
         headers: {
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         },
-      });
+      }));
     }
 
     const data = await upstream.json().catch(() => null);
     if (!data) return anthropicErrorResponse(502, 'Invalid upstream response');
-    return jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>));
+    return withModelNames(upstream, jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>)));
   };
 
   // OpenAI Responses API ingress (`POST /responses`): Codex CLI >=0.157 only
@@ -236,19 +245,19 @@ export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
       const responsesStream = chatSseToResponsesSse(upstream.body, { model });
-      return new Response(responsesStream, {
+      return withModelNames(upstream, new Response(responsesStream, {
         status: 200,
         headers: {
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         },
-      });
+      }));
     }
 
     const data = await upstream.json().catch(() => null);
     if (!data) return responsesErrorResponse(502, 'Invalid upstream response');
-    return jsonResponse(chatJsonToResponsesObject(data as Record<string, unknown>));
+    return withModelNames(upstream, jsonResponse(chatJsonToResponsesObject(data as Record<string, unknown>)));
   };
 
   return {
