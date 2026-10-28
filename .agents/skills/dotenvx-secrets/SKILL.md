@@ -65,7 +65,7 @@ There are **four environments**, each a separate encrypted file with its **own k
   synthetic test accounts, so dev is not customer data. It is still not safe
   for people without production clearance until every prod-shared vendor key
   in `scripts/secrets-shared-with-prod.allowlist` is split (dev/staging carry
-  the prod AWS IAM user, Daytona key, and Pipedream client today).
+  the prod AWS IAM user, a retired Daytona key, and Pipedream client today).
 - **`.env.dev` / `.env.staging` / `.env.prod` mirror the deployed env 1:1.**
   Runtime truth for a deployed env is the AWS Secrets Manager blob
   `kortix-<env>-env` (ECS injects it as `KORTIX_ENV_JSON`; dev in us-east-2,

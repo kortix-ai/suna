@@ -356,7 +356,7 @@ flow(
     );
 
     await ctx.step(
-      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      "a deployment that names the removed daytona provider → 400 sandbox_provider_deprecated",
       async () => {
         const response = await owner.post(
           "/v1/projects/:projectId/apps/:appId/deployments",

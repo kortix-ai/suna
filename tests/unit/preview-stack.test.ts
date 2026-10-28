@@ -161,7 +161,7 @@ describe('ephemeral self-host preview stack', () => {
         DEV_DATABASE_URL: 'forbidden',
       }),
     ).toThrow('DEV_DATABASE_URL');
-    // Daytona is a legacy fallback: a preview never receives its key.
+    // Daytona support was removed on 2026-10-28: a preview never receives its key.
     expect(() => validatePreviewRuntimeSecrets({ DAYTONA_API_KEY: 'legacy' })).toThrow('DAYTONA_API_KEY');
   });
 

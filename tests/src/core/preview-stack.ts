@@ -384,8 +384,7 @@ function buildPreviewRuntimeEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    // Preview sessions run on Platinum, the reference provider. Daytona is a
-    // legacy fallback and never runs in a preview.
+    // Preview sessions run on Platinum, the only sandbox provider.
     ALLOWED_SANDBOX_PROVIDERS: 'platinum',
     PLATINUM_API_URL: input.platinumApiUrl?.trim() || 'https://api.platinum.dev',
     PLATINUM_API_KEY: platinumApiKey,

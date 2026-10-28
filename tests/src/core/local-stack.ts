@@ -698,12 +698,9 @@ export function localApiEnvironment(options: {
     // `queued`, so APP-7 is deterministic.
     KORTIX_APPS_WORKER_ENABLED: "static",
     KORTIX_BILLING_INTERNAL_ENABLED: "true",
-    ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
+    ALLOWED_SANDBOX_PROVIDERS: "platinum",
     PLATINUM_API_KEY: "local-test-provider-disabled",
     PLATINUM_API_URL: "http://127.0.0.1:1",
-    DAYTONA_API_KEY: "local-test-provider-disabled",
-    DAYTONA_SERVER_URL: "http://127.0.0.1:1",
-    DAYTONA_TARGET: "local-test-provider-disabled",
     STRIPE_SECRET_KEY: "sk_test_local_flow_runner_disabled",
     STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
     PIPEDREAM_WEBHOOK_SECRET: "local-flow-runner-disabled",

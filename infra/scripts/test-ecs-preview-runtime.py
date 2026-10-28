@@ -19,8 +19,8 @@ sandbox that boots the full self-host distribution:
 
 fad008f63c (#7482, 2026-09-22) made previews Platinum only, host and sessions.
 It deleted the Daytona deploy and the Daytona fallback. The legacy Daytona
-preview teardown and sweep were deleted on 2026-10-19: Platinum is the
-reference provider and previews hold no Daytona credential.
+preview teardown and sweep were deleted on 2026-10-19, and Daytona support
+was removed on 2026-10-28: previews hold no Daytona credential.
 
 The gate structure is unchanged: an approval job resolves exactly one head SHA,
 three credential-free jobs build it, and one default-branch job holds the
@@ -274,8 +274,8 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # ...and cleanup deletes only a sandbox this run CREATED. Deleting a
         # reused one discards the stable origin the environment exists to hold.
         self.assertIn("if (sandboxId && !reusedSandboxId) await deletePlatinum(", PREVIEW_PROVIDERS)
-        # Previews run on Platinum, the reference provider. No preview code
-        # touches Daytona, the legacy fallback, at all.
+        # Previews run on Platinum, the only sandbox provider. No preview code
+        # touches Daytona (support removed on 2026-10-28) at all.
         self.assertNotIn("daytona", (PREVIEW_PROVIDERS + PREVIEW_CLI).lower())
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
         # back. A sandbox is disposable, so a redeploy deletes and recreates it.

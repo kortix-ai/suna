@@ -103,8 +103,8 @@ id map.
 
 ## 4. Stay compliant
 
-- Never configure Daytona (the legacy fallback) or any other sandbox provider
-  for a white-label instance. Platinum is the only one.
+- Platinum is the only sandbox provider for a white-label instance. Never
+  configure another one.
 - When Kortix gives notice of a new Platinum service that the instance uses, move
   that work to Platinum within 90 days.
 - Keep every copyright and license notice in the source code. The UI does not

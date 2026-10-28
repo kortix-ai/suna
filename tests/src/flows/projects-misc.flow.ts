@@ -1076,8 +1076,8 @@ flow(
     });
     if (ctx.env.target !== 'local') {
       // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
-      // API key): dev/staging/prod enable Platinum and the legacy Daytona
-      // fallback, a PR preview enables Platinum only. Read it from the project instead of assuming a
+      // API key): every deployment enables Platinum, the only sandbox
+      // provider. Read it from the project instead of assuming a
       // provider, then prove a concrete pin works and a known-but-disabled
       // provider is refused.
       let enabled: string[] = [];
@@ -1110,7 +1110,7 @@ flow(
           throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
         }
       });
-      const disabled = ['platinum', 'daytona'].find((name) => !enabled.includes(name));
+      const disabled = ['platinum'].find((name) => !enabled.includes(name));
       if (disabled) {
         await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
@@ -1167,10 +1167,10 @@ flow(
   },
 );
 
-// PROJ-44 — Daytona is deprecated: no customer may choose it. It runs on the
-// local profile (no managed Git, no sandbox): every refusal happens before a
-// repository or a sandbox is read. The local stack lists `daytona` among the
-// allowed providers, so the refusal is proven where Daytona is still configured.
+// PROJ-44 — Daytona support was removed on 2026-10-28: no customer may choose
+// it. It runs on the local profile (no managed Git, no sandbox): every refusal
+// happens before a repository or a sandbox is read. A legacy project row may
+// still store a `daytona` pin; it reads as unpinned.
 flow(
   'PROJ-44',
   {
@@ -1200,9 +1200,13 @@ flow(
         throw new Error(`daytona is offered: ${JSON.stringify(project.available_sandbox_providers)}`);
       }
     });
-    await ctx.step('pin to daytona → 400 with the deprecation message; the project stays unpinned', async () => {
+    await ctx.step('pin to daytona → 400 with a message that names Daytona; the project stays unpinned', async () => {
       const r = await owner.patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
-      r.status(400).body().has('$.error', 'Daytona is deprecated. New sandboxes run on Platinum.');
+      r.status(400);
+      const error = r.json<{ error?: unknown }>().error;
+      if (typeof error !== 'string' || !error.includes('Daytona')) {
+        throw new Error(`expected an error that names Daytona, got ${JSON.stringify(error)}`);
+      }
       const project = await readProject();
       if (project.default_sandbox_provider !== null) {
         throw new Error(`a refused pin changed the project: ${project.default_sandbox_provider}`);

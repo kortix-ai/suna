@@ -74,9 +74,9 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 ### Isolation and network
 
-**Rule.** Do not write blanket "microVM isolation". Write "its own isolated machine", and name the provider when the boundary matters. — *Why:* Platinum, the reference provider (`ALLOWED_SANDBOX_PROVIDERS` defaults to `platinum`, `apps/api/src/config.ts:760`), is a Cloud Hypervisor microVM. Legacy Daytona sessions still exist, and Daytona is not. The always-on monitor box is a persistent microVM (`apps/web/content/docs/connect/triggers.mdx:104`). — *Where:* marketing | deck | sales | docs. — *When silent:* "sandbox" or "cloud computer".
+**Rule.** Do not write blanket "microVM isolation". Write "its own isolated machine", and name the provider when the boundary matters. — *Why:* Platinum, the reference provider (`ALLOWED_SANDBOX_PROVIDERS` defaults to `platinum`, `apps/api/src/config.ts:760`), is a Cloud Hypervisor microVM. The always-on monitor box is a persistent microVM (`apps/web/content/docs/connect/triggers.mdx:104`). — *Where:* marketing | deck | sales | docs. — *When silent:* "sandbox" or "cloud computer".
 
-**Rule.** Name Platinum as the compute provider. Do not list Daytona or E2B as supported compute. — *Why:* Platinum is the reference provider and every new session lands there. Daytona is a legacy fallback with its removal scheduled and no support guarantee. E2B support is discontinued. — *Where:* every surface. — *When silent:* "sandbox" or "cloud computer".
+**Rule.** Name Platinum as the compute provider. Do not list Daytona or E2B as supported compute. — *Why:* Platinum is the only sandbox provider and every session lands there. Daytona support was removed on 2026-10-28. E2B support is discontinued. — *Where:* every surface. — *When silent:* "sandbox" or "cloud computer".
 
 **Rule.** Do not write "container" in external copy. — *Why:* The sanctioned nouns are "cloud computer" and "sandbox". "Container" reads as shared-kernel and invites the isolation question. — *Where:* marketing | deck | store listing. — *When silent:* "sandbox".
 

@@ -437,7 +437,7 @@ describe('provider-neutral preview lifecycle', () => {
   });
 
   it('runs on Platinum only: an infrastructure failure fails the preview, never falls back', async () => {
-    // Previews never fall back to Daytona, the legacy provider.
+    // Previews never fall back to another provider (Daytona support was removed).
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
     await expect(runSandboxPreview(input, { platinum })).rejects.toThrow('restore timeout');
     expect(platinum).toHaveBeenCalledOnce();
@@ -459,7 +459,7 @@ describe('provider-neutral preview lifecycle', () => {
     });
   });
 
-  it('rejects a request for the legacy Daytona provider', async () => {
+  it('rejects a request for the removed Daytona provider', async () => {
     const platinum = vi.fn();
     await expect(
       runSandboxPreview({ ...input, provider: 'daytona' as never }, { platinum }),

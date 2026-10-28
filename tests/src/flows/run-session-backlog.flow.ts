@@ -844,7 +844,7 @@ flow(
         },
         {
           until: (body) => {
-            // GET /snapshots returns { templates: [{ ready, daytona_state, … }], builds: [] }.
+            // GET /snapshots returns { templates: [{ ready, … }], builds: [] }.
             // A template is usable when ready===true (or its provider state is active).
             const templates =
               body?.templates ?? (Array.isArray(body) ? body : (body?.snapshots ?? []));

@@ -562,12 +562,12 @@ flow(
   {
     domain: 'sandboxes',
     tags: ['deployed'],
-    routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
+    routes: ['POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {
-    await ctx.step('the legacy Daytona sandbox webhook rejects an unsigned payload', async () => {
+    await ctx.step('the removed Daytona sandbox webhook route → 404', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/daytona', {});
-      r.status([400, 401, 403, 503]);
+      r.status(404);
     });
     await ctx.step('Platinum ingress is absent or rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/platinum', {});

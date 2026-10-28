@@ -223,7 +223,7 @@ against deployed staging (`tests-release.yml`, two Playwright workers).
   run in the `core-db` lane.
 - Keep the guard step and the artifact upload `if: always()`.
 - Do not reintroduce a cloud-sandbox worker for these lanes. The
-  Platinum/Daytona path (`tests/bin/sandbox-ci.ts`) was removed on 2026-08-26
+  cloud-sandbox path (`tests/bin/sandbox-ci.ts`) was removed on 2026-08-26
   after the provider chain failed on its own on about every third lane.
   `deploy-preview.yml` keeps a sandbox because a preview needs a public HTTPS
   origin.
@@ -248,11 +248,11 @@ the rare explicit request.
 - Build the API, gateway, and frontend without credentials in separate jobs.
 - Run the trusted preview controller from the default branch (`dev`).
 - Run on Platinum only: the preview host and every session inside it. A
-  Platinum failure fails the preview. Never fall back to Daytona.
+  Platinum failure fails the preview. There is no fallback provider.
 - Live-sandbox flows declare `requires: ['sandbox']` (`KE2E_CAP_SANDBOX`). The
   capability means a real Platinum sandbox, the reference provider; a preview
-  enables it from `PLATINUM_API_KEY`. Daytona is a legacy fallback and E2B
-  support is discontinued: never make either a test default.
+  enables it from `PLATINUM_API_KEY`. Platinum is the only sandbox provider:
+  Daytona support was removed on 2026-10-28 and E2B support is discontinued.
 - Generate the regular `kortix self-host` Compose distribution in the sandbox.
 - Give each preview a fresh PostgreSQL and Supabase data plane.
 - On a dispatch, run `pnpm test -- --target-full` against the sandbox HTTPS origin.
@@ -267,7 +267,7 @@ the rare explicit request.
   that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`). A suite
   stops the session boxes it created when it ends, on a branch environment too.
 - Reconcile stale previews each hour. It stops hosts of closed pull requests
-  and hosts idle over 1 hour. Previews hold no Daytona credential.
+  and hosts idle over 1 hour. Previews hold no credential for another sandbox provider.
 
 The preview warm image can contain dependencies and Docker layers. It must not
 contain a database or runtime secret. Keep the runtime secret allowlist in

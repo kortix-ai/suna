@@ -676,7 +676,7 @@ flow(
     // THE SECRETS-GATE PARITY HALF, on a real box.
     //
     // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
-    // rewrites 4096 → 8000 upstream and the legacy Daytona provider passes it through. Before this
+    // rewrites 4096 → 8000 upstream. Before this
     // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
     // DIFFERENT port variables for that one request, so the prompt got the
     // config convergence and the undeclared-agent drop but no secret refresh and

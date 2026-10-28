@@ -526,7 +526,7 @@ DB `project_session_groups`: a project's named folders of sessions, in one `posi
 ## 8. Sandbox lifecycle + snapshots
 
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
-`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image: `202` with the started providers, or `409 SNAPSHOT_IN_USE` with `in_use > 0` when running sandboxes still use the image (Platinum refuses that delete; the legacy Daytona provider does not). Any other provider failure is `503` and fails the flow. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
+`SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image: `202` with the started providers, or `409 SNAPSHOT_IN_USE` with `in_use > 0` when running sandboxes still use the image (Platinum refuses that delete). Any other provider failure is `503` and fails the flow. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
 **No standalone sandbox create/stop routes exist.** Sandbox create/start is implicit
 on session create (`provisionSessionSandbox`), asserted transitively by `RUN-1` /
 `GOLD-1`. Manual stop = `SESS-12` (pauses in place, resumable); destructive teardown =
@@ -1382,7 +1382,7 @@ awaiting archive. Access policy — `GET/PATCH …/:appId/access` read and persi
 mode; `restricted` without any member or group → 400; `project` persists and
 reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
 member. `POST …/:appId/deployments` requires a ready artifact and an
-exact source-kind match, and refuses `provider: "daytona"` with 400
+exact source-kind match, and refuses `provider: "daytona"` (support removed on 2026-10-28) with 400
 `sandbox_provider_deprecated` (no deployment is created). Deployment list/detail/logs expose durable state.
 Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active
@@ -1580,7 +1580,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected. A body with a wrong-typed field → 400, with or without a JSON content-type.
 `MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
 `PROJ-20` An authenticated user reads whether managed Git is configured.
-`PROJ-44` Daytona is deprecated and no customer may choose it, even where a deployment still configures it. A project whose stored pin is `daytona` reads as unpinned (`default_sandbox_provider: null`) and never lists `daytona` in `available_sandbox_providers`. `PATCH /projects/:id/sandbox-provider {"provider":"daytona"}` → 400 "Daytona is deprecated. New sandboxes run on Platinum." and the project stays unpinned. `POST /projects/:id/sessions {"provider":"daytona"}` → 400 `sandbox_provider_deprecated` before any repository read, and no session exists afterwards. A nonmember gets 403/404.
+`PROJ-44` Daytona support was removed on 2026-10-28 and no customer may choose it. A project whose stored pin is `daytona` reads as unpinned (`default_sandbox_provider: null`) and never lists `daytona` in `available_sandbox_providers`. `PATCH /projects/:id/sandbox-provider {"provider":"daytona"}` → 400 with an error that names Daytona, and the project stays unpinned. `POST /projects/:id/sessions {"provider":"daytona"}` → 400 `sandbox_provider_deprecated` before any repository read, and no session exists afterwards. A nonmember gets 403/404.
 `PROJ-43` An authenticated user reads the project-cap state of an account: `ANON` → 401; a member of the account → 200 `{capped, limit, count, message}` where `count` is a number only when the plan caps and `message` is non-null exactly when `capped`; an explicit `account_id` outside the caller's memberships → 403 and a malformed one → 400. The pre-check the /new form uses to show the cap before a create fails.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.
@@ -1594,7 +1594,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `PROJ-40` **Deleting a workspace closes its side doors** — after `DELETE /projects/:id` a project `kgw_` key gets 401 from `POST /v1/llm/chat/completions` and a public share link gets 410 from `GET /p/public-share/:token` (the token edge answers 200-or-503 for a live link, never an auth error); both worked before the delete. The same delete refuses new sessions (`project_archived`) and stops messages to existing ones in every channel, and stops serving the project's Apps (proven against real Postgres in `apps/api/src/__tests__/integration-archived-project-doors.test.ts`).
 `PROJ-45` `PUT /projects/:id/default-reasoning-effort {effort}` sets the project default effort (Settings → General). `null` and `''` clear it; a value must be an effort label the model catalog publishes, else 400 `unknown_effort`. Returns the serialized project with the field re-validated on read, and the value persists on a later `GET /projects/:id`. Non-members and archived projects are rejected like every project-settings write.
 `SBX-5` A project member reads the project sandbox inventory. Non-members are rejected.
-`SBX-6` Platinum and legacy Daytona webhooks reject unsigned provider payloads.
+`SBX-6` The Platinum webhook rejects unsigned provider payloads. The Daytona webhook route is removed and answers 404.
 `SCIM-5` SCIM resource-type, schema, and user-replacement routes preserve tenant and bearer-token boundaries.
 `SCIM-6` Entra deactivation accepts string `"False"`, case-insensitive `Active`, and RFC pathless attribute objects. Each returns `active:false`, removes access, and preserves an inactive user on read-back. The last owner remains protected with `409`; pending invitations also deactivate.
 

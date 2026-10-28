@@ -27,10 +27,8 @@ CVE-2026-85393
 AVD-DS-0010
 
 # CVE-2026-93687 (braces 3.0.3, DoS on deeply nested patterns): no fixed release
-# exists. The one runtime path is @daytonaio/sdk -> fast-glob, used only by
-# Image.extractCopySources (Dockerfile COPY globbing); apps/api never builds a
-# Daytona Image from a Dockerfile or local files. Every other path is lint, dev,
-# or build tooling. Remove when a fixed braces ships.
+# exists. No runtime path reaches it: every path is lint, dev, or build
+# tooling. Remove when a fixed braces ships.
 CVE-2026-93687
 
 # CVE-2026-93748 (http-cache-semantics 4.2.0, max-stale disclosure): no fixed

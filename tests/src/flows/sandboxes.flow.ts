@@ -74,8 +74,8 @@ flow(
           .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
         // 202: every enabled provider dropped the image and a rebuild started.
         // 409 SNAPSHOT_IN_USE: the provider refuses to delete an image that
-        // running sandboxes still use. Platinum does this (`template_in_use`);
-        // the legacy Daytona provider does not. The shared default image is in use whenever
+        // running sandboxes still use. Platinum does this (`template_in_use`).
+        // The shared default image is in use whenever
         // another flow's session is alive, so both answers are the product
         // contract. A generic 503/502 is a provider failure and fails here.
         // Never wait on the build.
