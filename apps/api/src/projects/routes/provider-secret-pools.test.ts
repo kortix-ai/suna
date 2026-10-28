@@ -66,7 +66,9 @@ app.use('*', async (c, next) => {
   await next();
 });
 mock.module('../lib/app', () => ({ projectsApp: app }));
+const realAccess = await import('../lib/access');
 mock.module('../lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async () => ({
     userId: callerId,
     row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },

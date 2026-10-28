@@ -16,6 +16,7 @@ import {
   type ResourceScope,
 } from '@kortix/ui/customize/shared/agent-resource-scope';
 import { CapabilityPageShell } from '@kortix/ui/customize/shared/capability-page-shell';
+import { Hint } from '@kortix/ui/hint';
 
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
@@ -28,7 +29,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps, useProjectTriggers } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
+import { HardDrivesIcon, InfoIcon, PlusIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -79,16 +80,6 @@ function AppsControls({
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
         </div>
       ) : null}
-      <Link
-        href="/docs/apps"
-        target="_blank"
-        rel="noopener noreferrer"
-        prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
-      >
-        {tI18nComplete.raw('text7af023c43013')}
-        <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
-      </Link>
       {onAdd ? (
         <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
           <PlusIcon className="size-3.5 shrink-0" aria-hidden />
@@ -354,7 +345,25 @@ export function AppsView({
     // assumes mobile browser chrome is visible, so the bar can never be pushed
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
-      <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')}>{controls}</ProjectPageHeader>
+      <ProjectPageHeader
+        title={tI18nComplete.raw('text89dd748442c1')}
+        titleAccessory={
+          <Hint label={tI18nComplete.raw('text7af023c43013')}>
+            <Link
+              href="/docs/apps"
+              target="_blank"
+              rel="noopener noreferrer"
+              prefetch={false}
+              aria-label={tI18nComplete.raw('text7af023c43013')}
+              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center transition-colors"
+            >
+              <InfoIcon className="size-3.5" aria-hidden />
+            </Link>
+          </Hint>
+        }
+      >
+        {controls}
+      </ProjectPageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
