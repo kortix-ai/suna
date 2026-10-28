@@ -144,19 +144,25 @@ function writeNew(dir: string, base: string, ext: string, bytes: Buffer): string
 }
 
 /**
- * The gateway's refusal: `{ message, code, suggestion }` or `{ error: { message, code } }`.
+ * The gateway's refusal: `{ message, code, suggestion, provider }` or `{ error: { message, code, provider } }`.
  * The text ends with the stable code in brackets (`[provider_not_connected]`): clients key on it, not on the prose.
+ * When the gateway names the provider that failed, `[provider:<id>]` comes right before the code
+ * (`… [provider:openai] [provider_reauth_required]`), so the code stays the last token (R11, R37).
  */
 async function refusal(response: Response): Promise<Error> {
   const text = await response.text()
-  let body: { message?: string; code?: string; suggestion?: string; error?: { message?: string; code?: string } } = {}
+  type Envelope = { message?: string; code?: string; suggestion?: string; provider?: string }
+  let body: Envelope & { error?: Envelope } = {}
   try {
     body = JSON.parse(text)
   } catch {}
   const code = body.code ?? body.error?.code
+  const provider = body.provider || body.error?.provider
   const message = (body.message ?? body.error?.message ?? text).slice(0, 500)
   const retry = response.headers.get('retry-after')
-  const detail = [message, body.suggestion?.slice(0, 500), retry ? `Retry after ${retry} s.` : '', code ? `[${code}]` : ''].filter(Boolean).join(' ')
+  const detail = [message, body.suggestion?.slice(0, 500), retry ? `Retry after ${retry} s.` : '', provider ? `[provider:${provider}]` : '', code ? `[${code}]` : '']
+    .filter(Boolean)
+    .join(' ')
   return new Error(`Image generation failed (${response.status}): ${detail}`)
 }
 

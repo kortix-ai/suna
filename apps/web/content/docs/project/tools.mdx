@@ -129,7 +129,7 @@ The tool enforces these limits in code. A prompt, a file, or a web page that the
 
 ### Errors
 
-When the gateway refuses a prompt, its error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code. The tool reports three failures itself: `Image generation returned no image.`, an image that is not png, jpeg, or webp, and its own 300-second timeout. The tool's timeout starts before the gateway's, so a slow request usually ends with the tool's timeout, not `image_timeout`.
+When the gateway refuses a prompt, its error is `Image generation failed (<status>): <message> <suggestion> [<code>]`. A rate limit adds `Retry after <n> s.` before the code. When the gateway names the provider that failed, `[provider:<id>]` comes right before the code, for example `[provider:openai] [provider_reauth_required]`. `openai-codex` is ChatGPT. The tool reports three failures itself: `Image generation returned no image.`, an image that is not png, jpeg, or webp, and its own 300-second timeout. The tool's timeout starts before the gateway's, so a slow request usually ends with the tool's timeout, not `image_timeout`.
 
 | Code | Cause |
 | --- | --- |

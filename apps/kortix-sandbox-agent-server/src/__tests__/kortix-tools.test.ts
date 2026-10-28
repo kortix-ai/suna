@@ -385,6 +385,18 @@ describe('image_gen', () => {
     expect(readdirSync(imagesDir())).toEqual([])
   })
 
+  test('a refusal that names its provider keeps it in a [provider:<id>] token before the trailing code (R37)', async () => {
+    gateway(() => Response.json({ code: 'provider_reauth_required', provider: 'openai', message: 'openai refused the credential.', suggestion: 'Check the openai key in project settings, then retry.' }, { status: 401 }))
+    await expect(gen()).rejects.toThrow(
+      new Error('Image generation failed (401): openai refused the credential. Check the openai key in project settings, then retry. [provider:openai] [provider_reauth_required]'),
+    )
+    // The chat-shaped envelope nests it; an empty provider (no model resolved) adds no token.
+    gateway(() => Response.json({ error: { message: 'ChatGPT is limited.', code: 'image_rate_limited', provider: 'openai-codex' } }, { status: 429, headers: { 'retry-after': '60' } }))
+    await expect(gen()).rejects.toThrow(new Error('Image generation failed (429): ChatGPT is limited. Retry after 60 s. [provider:openai-codex] [image_rate_limited]'))
+    gateway(() => Response.json({ code: 'image_model_unavailable', provider: '', message: 'No image model is available.' }, { status: 400 }))
+    await expect(gen()).rejects.toThrow(new Error('Image generation failed (400): No image model is available. [image_model_unavailable]'))
+  })
+
   test('an OpenAI-shaped error and a rate limit name their message, retry time and code', async () => {
     gateway(() => Response.json({ error: { message: 'Image limit reached.', code: 'rate_limited' } }, { status: 429, headers: { 'retry-after': '120' } }))
     await expect(gen()).rejects.toThrow('(429): Image limit reached. Retry after 120 s. [rate_limited]')
@@ -706,6 +718,16 @@ describe('memory', () => {
     expect(await memory({ command: 'create', path: 'memory/a.md' })).toBe('Error: `file_text` is required for create.')
     expect(await memory({ command: 'str_replace', path: 'memory/a.md', old_str: 'a' })).toBe('Error: `new_str` is required for str_replace.')
     expect(await memory({ command: 'rename', old_path: 'memory/a.md' })).toBe('Error: `new_path` is required for rename.')
+  })
+
+  test('view_range is exactly two integers; any other shape is refused before the file is read', async () => {
+    // A model once streamed a 36,678-number view_range for 714 s: the schema caps the length.
+    expect(memoryTool.parameters.properties.view_range).toMatchObject({ type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2 })
+    await memory({ command: 'create', path: 'memory/a.md', file_text: 'one\ntwo\nthree' })
+    expect(await memory({ command: 'view', path: 'memory/a.md', view_range: [2, -1] })).toBe("Here's the content of memory/a.md with line numbers:\n     2\ttwo\n     3\tthree")
+    const refused = 'Error: `view_range` must be two integers [start, end].'
+    for (const view_range of [[], [1], [1, 2, 3], Array.from({ length: 36_678 }, (_, i) => i), [1.5, 2], ['1', '2'], 'all'])
+      expect(await memory({ command: 'view', path: 'memory/a.md', view_range })).toBe(refused)
   })
 })
 

@@ -460,6 +460,33 @@ describe('handleImageRequest', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('a provider refusal names the failing provider by its public id (R37)', async () => {
+    // At resolution there is no descriptor: the routed model id names the provider; codex/* is ChatGPT.
+    const notConnected = (model: string) => async () => {
+      throw new GatewayResolutionError('provider_not_connected', `Connect ${model}.`, 'Connect it.');
+    };
+    for (const [model, provider] of [
+      ['codex/gpt-image-2', 'openai-codex'],
+      ['openai/gpt-image-1', 'openai'],
+      ['google/gemini-2.5-flash-image', 'google'],
+      ['xai/grok-imagine-image', 'xai'],
+      ['openrouter/google/gemini-2.5-flash-image', 'openrouter'],
+    ] as const) {
+      const { run } = setup({ resolveUpstream: notConnected(model) });
+      const body = (await (await run({ model, prompt: 'a red cube' })).json()) as ErrorBody & { provider: string };
+      expect([body.code, body.provider]).toEqual(['provider_not_connected', provider]);
+    }
+    // At dispatch the descriptor names it: a refused OpenAI key is OpenAI, not ChatGPT.
+    for (const [descriptor, provider] of [[openai, 'openai'], [codex, 'openai-codex']] as const) {
+      const { run } = setup(
+        { resolveUpstream: async () => [descriptor], refreshCredential: async () => null },
+        async () => new Response('bad key', { status: 401 }),
+      );
+      const body = (await (await run({ model: 'some/image-model', prompt: 'a red cube' })).json()) as ErrorBody & { provider: string };
+      expect([body.code, body.provider]).toEqual(['provider_reauth_required', provider]);
+    }
+  });
+
   test('anthropic descriptor is skipped as image_model_unsupported', async () => {
     const alone = setup({ resolveUpstream: async () => [anthropic] });
     const refused = await alone.run({ model: 'anthropic/claude-sonnet-x', prompt: 'a red cube' });

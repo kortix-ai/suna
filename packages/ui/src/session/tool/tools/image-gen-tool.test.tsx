@@ -512,6 +512,25 @@ describe('ImageGenTool', () => {
     expect(reauth).not.toContain('Connect model');
   });
 
+  test('the ChatGPT fix shows only when ChatGPT failed; another provider\'s key failure shows Connect model (R37)', () => {
+    const refused = (provider: string, code: string) =>
+      render({ status: 'error', error: `Image generation failed (401): ${provider} refused the credential. Check the ${provider} key in project settings, then retry. [provider:${provider}] [${code}]` });
+    for (const provider of ['openai', 'google', 'xai', 'openrouter']) {
+      for (const code of ['provider_reauth_required', 'provider_not_connected']) {
+        const html = refused(provider, code);
+        expect(html).not.toContain('data-chatgpt-slot');
+        expect(count(html, 'Connect model')).toBe(1);
+      }
+    }
+    expect(refused('openai-codex', 'provider_reauth_required')).toContain('data-chatgpt-slot="reconnect"');
+    expect(refused('openai-codex', 'provider_not_connected')).toContain('data-chatgpt-slot="connect"');
+    expect(refused('openai-codex', 'provider_not_connected')).not.toContain('Connect model');
+    // A text from before the provider token: ChatGPT only when it names ChatGPT or Codex.
+    const legacyKey = render({ status: 'error', error: 'Image generation failed (401): openai refused the credential. Check the openai key in project settings, then retry. [provider_reauth_required]' });
+    expect(legacyKey).not.toContain('data-chatgpt-slot');
+    expect(count(legacyKey, 'Connect model')).toBe(1);
+  });
+
   test('a read-only view offers no fix at all', () => {
     readOnly = true;
     try {

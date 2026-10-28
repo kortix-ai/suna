@@ -87,16 +87,18 @@ function ConnectModelAction() {
 }
 
 /**
- * The fix for a failure a connection can repair, by code, as the session error
- * banner routes it: the member's own ChatGPT login (`ChatGptConnectionSlot`,
- * which applies `chatGptActionApplies`) for the two ChatGPT codes, the
- * project's model settings for `image_model_unavailable`. None in a read-only view.
+ * The fix for a failure a connection can repair, as the session error banner
+ * routes it: the member's own ChatGPT login (`ChatGptConnectionSlot`, which
+ * applies `chatGptActionApplies`) when ChatGPT (`openai-codex`) is the provider
+ * that failed with `provider_not_connected` or `provider_reauth_required`; the
+ * project's model settings for any other provider and for
+ * `image_model_unavailable` (R37). None in a read-only view.
  */
-function ConnectAction({ code }: { code?: string }) {
+function ConnectAction({ code, provider }: { code?: string; provider?: string }) {
   const readOnly = useContext(ReadOnlySessionContext);
   if (readOnly) return null;
-  if (code === 'provider_not_connected') return <ChatGptConnectionSlot action="connect" className="mt-1" />;
-  if (code === 'provider_reauth_required') return <ChatGptConnectionSlot action="reconnect" className="mt-1" />;
+  if (provider === 'openai-codex' && code === 'provider_not_connected') return <ChatGptConnectionSlot action="connect" className="mt-1" />;
+  if (provider === 'openai-codex' && code === 'provider_reauth_required') return <ChatGptConnectionSlot action="reconnect" className="mt-1" />;
   return <ConnectModelAction />;
 }
 
@@ -252,7 +254,7 @@ export function ImageGenTool({ call }: ToolProps) {
   const solo = view.images.length === 1;
   // One fix per card, even when several frames failed for the same reason.
   const repairable = view.error?.connectModel ? view.error : view.images.find((image) => image.error?.connectModel)?.error;
-  const action = repairable ? <ConnectAction code={repairable.code} /> : null;
+  const action = repairable ? <ConnectAction code={repairable.code} provider={repairable.provider} /> : null;
 
   // The card carries no prompt and no model (R29): the frames are the content,
   // their status (busy, loading, an error) the only text.

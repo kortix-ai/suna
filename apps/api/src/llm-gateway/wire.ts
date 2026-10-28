@@ -275,17 +275,21 @@ const ImageResponseSchema = z
   })
   .openapi('GatewayImageResponse');
 
+// No 502 or 504 reaches a client: the gateway's `cloudflareSafe` (apps/llm-gateway/src/server.ts,
+// applied to every inference answer in routes.ts `inference`) sends both as 503 with
+// `x-kortix-upstream-status` and the body's `upstream_status`; the API's `EDGE_REWRITTEN_STATUSES`
+// middleware (http-middleware.ts) does the same for any 502, 504 or 520-524 it relays.
 const IMAGE_ERROR_CODES = [
   '- `400`: `invalid_request`, `image_model_unavailable` (no image model is reachable), `not_an_image_model`, `image_model_unsupported`, `image_model_unpriced`, `provider_not_connected`, `model_unavailable`.',
   '- `401`: `missing_token`, a refused gateway credential, `provider_reauth_required`.',
   '- `402`: a budget limit, or the wallet refused a Kortix-billed model.',
   '- `403`: the credential has no access to the project.',
-  '- `413`: the request body is over the gateway limit.',
-  '- `429`: `image_rate_limited`, with `retry-after`.',
+  '- `413`: `request_too_large`: the request body is over the gateway limit.',
+  '- `429`: `image_rate_limited`, or `provider_pool_rate_limited` (every pooled ChatGPT account rests), with `retry-after`.',
   '- `499`: `client_aborted`: the client cancelled the request.',
-  '- `502`: `image_upstream_error`, `image_response_too_large`, `routing_unavailable`.',
-  '- `503`: `admission_unavailable`.',
-  '- `504`: `image_timeout`: the request ran out of its 300 s budget.',
+  '- `502`, sent as `503`: `image_upstream_error`, `image_upstream_unreachable` (the provider could not be reached), `image_response_too_large`, `routing_unavailable`.',
+  '- `503`: `admission_unavailable`, `gateway_overloaded` (the gateway is at capacity), `gateway_unavailable` (no gateway is configured), `gateway_proxy_error` and `gateway_proxy_unreachable` (the API could not relay the gateway).',
+  '- `504`, sent as `503`: `image_timeout`: the request ran out of its 300 s budget.',
   'Any other upstream 4xx answers with that status and `image_upstream_error`.',
 ].join('\n');
 
@@ -295,12 +299,12 @@ function imagesRoute(path: string, operation: 'generations' | 'edits') {
     path,
     tags: [GATEWAY_INFERENCE_TAG],
     summary: operation === 'generations' ? 'Generate an image' : 'Edit an image',
-    description: `${operation === 'generations' ? 'Makes one image from a prompt' : 'Makes one image from a prompt and reference images'}; \`n\` is always 1. \`model\` names any image model the project can reach (the project's ChatGPT login, or an OpenAI, Google, xAI or OpenRouter key). With \`auto\` or no \`model\`, the gateway picks a reachable image model and tries the next planned model when one fails. The gateway reads \`prompt\`, \`aspect_ratio\`, \`quality\`, \`background\` and, for edits, \`images\`. A legacy \`size\` (\`1024x1024\`, \`1536x1024\`, \`1024x1536\`) maps to its aspect ratio; every other field is dropped. The response is the same shape for every provider. A ChatGPT image carries the \`x-codex-primary-used-percent\`, \`x-codex-primary-reset-after-seconds\` and \`x-codex-primary-window-minutes\` headers on 200 and 429.\n\nError codes (the body's \`code\`):\n${IMAGE_ERROR_CODES}\n\nBehind the hosted edge a 502 or 504 arrives as 503, with the original status in \`x-kortix-upstream-status\`.\n\nAuth: ${AUTH_DESCRIPTION}`,
+    description: `${operation === 'generations' ? 'Makes one image from a prompt' : 'Makes one image from a prompt and reference images'}; \`n\` is always 1. \`model\` names any image model the project can reach (the project's ChatGPT login, or an OpenAI, Google, xAI or OpenRouter key). With \`auto\` or no \`model\`, the gateway picks a reachable image model and tries the next planned model when one fails. The gateway reads \`prompt\`, \`aspect_ratio\`, \`quality\`, \`background\` and, for edits, \`images\`. A legacy \`size\` (\`1024x1024\`, \`1536x1024\`, \`1024x1536\`) maps to its aspect ratio; every other field is dropped. The response is the same shape for every provider. A ChatGPT image carries the \`x-codex-primary-used-percent\`, \`x-codex-primary-reset-after-seconds\` and \`x-codex-primary-window-minutes\` headers on 200 and 429.\n\nError codes (the body's \`code\`):\n${IMAGE_ERROR_CODES}\n\nThe body's \`provider\` names the provider that failed by its public id (\`openai-codex\` is ChatGPT); it is empty or absent when no model resolved.\n\nA client never receives 502 or 504. The gateway sends every 502 and 504 as 503, with the original status in the \`x-kortix-upstream-status\` header and in the JSON body's \`upstream_status\`. The API sends any 502 or 504 it relays as 503 with the same header. The \`code\` stays the one listed above.\n\nAuth: ${AUTH_DESCRIPTION}`,
     ...auth,
     request: { body: { required: true, content: { 'application/json': { schema: ImageRequestSchema } } } },
     responses: {
       200: json(ImageResponseSchema, 'One image, base64-encoded'),
-      ...errors(400, 401, 402, 403, 413, 429, 502, 503, 504),
+      ...errors(400, 401, 402, 403, 413, 429, 503),
       499: { description: 'The client cancelled the request (`client_aborted`).' },
     },
   });

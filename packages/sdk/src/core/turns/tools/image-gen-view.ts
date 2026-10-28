@@ -9,9 +9,11 @@
  * `.png`, `.jpg` or `.webp`. Older calls returned one image as
  * `{"path", …}`, a Replicate URL, or a bare path. A gateway refusal, of the
  * whole call or of one prompt, reads `Image generation failed (<status>):
- * <message> <suggestion> [Retry after N s.] [<code>]`; the code is the last
- * bracketed token, present only when the gateway sent one (kortixd
- * `image_gen.ts`, `refusal`).
+ * <message> <suggestion> [Retry after N s.] [[provider:<id>]] [<code>]`; the
+ * code is the last bracketed token, present only when the gateway sent one;
+ * `[provider:<id>]` right before it names the provider that failed (the
+ * gateway's public id: `openai-codex` is ChatGPT), present only when the
+ * gateway named one (kortixd `image_gen.ts`, `refusal`).
  */
 import type { SessionLogBlock, ToolCallBlock } from '../../session-log/types';
 import { safeHttpUrl } from '../safe-url';
@@ -68,6 +70,15 @@ export interface ImageGenView {
     suggestion?: string;
     /** The gateway's stable code (`provider_not_connected`, `image_rate_limited`, …). */
     code?: string;
+    /**
+     * The provider that failed, by the gateway's public id (`openai-codex` is
+     * ChatGPT; `openai`, `google`, `xai`, `openrouter`, …): the
+     * `[provider:<id>]` token. A text from before the token existed with a
+     * `provider_not_connected` or `provider_reauth_required` code is
+     * `openai-codex` when it names ChatGPT or Codex (those texts no longer
+     * change), else absent.
+     */
+    provider?: string;
     /** Seconds until the image limit resets (`retry-after`). */
     retryAfterSeconds?: number;
     /**
@@ -84,6 +95,10 @@ type ImageGenFrame = ImageGenView['images'][number];
 const SQUARE = '1 / 1';
 const CONNECT_CODES = new Set(['image_model_unavailable', 'provider_not_connected', 'provider_reauth_required']);
 const TRAILING_CODE = /\s*\[([a-z][a-z0-9_]*)\]\s*$/;
+const TRAILING_PROVIDER = /\s*\[provider:([^\]\s]+)\]\s*$/;
+/** Before the provider token: only ChatGPT's own texts named ChatGPT or Codex for these codes. */
+const LEGACY_CHATGPT_CODES = new Set(['provider_not_connected', 'provider_reauth_required']);
+const NAMES_CHATGPT = /\b(ChatGPT|Codex)\b/;
 const TRAILING_RETRY = /\s*Retry after (\d+) s\.\s*$/;
 const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
 /**
@@ -160,13 +175,21 @@ function failure(text: string): NonNullable<ImageGenView['error']> {
   let rest = text.trim();
   const code = TRAILING_CODE.exec(rest);
   if (code) rest = rest.slice(0, code.index);
+  const named = code && TRAILING_PROVIDER.exec(rest);
+  if (named) rest = rest.slice(0, named.index);
   const retry = TRAILING_RETRY.exec(rest);
   if (retry) rest = rest.slice(0, retry.index);
   rest = rest.replace(REFUSAL_PREFIX, '').trim();
+  const provider = named
+    ? named[1]
+    : code && LEGACY_CHATGPT_CODES.has(code[1]!) && NAMES_CHATGPT.test(rest)
+      ? 'openai-codex'
+      : undefined;
   const error: NonNullable<ImageGenView['error']> = {
     message: rest,
     connectModel: !!code && CONNECT_CODES.has(code[1]!),
     ...(code && { code: code[1] }),
+    ...(provider && { provider }),
     ...(retry && { retryAfterSeconds: Number(retry[1]) }),
   };
   // The tool joins the gateway's message and suggestion with a space: split after the first sentence.

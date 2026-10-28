@@ -245,8 +245,50 @@ describe('imageGenView', () => {
       message: 'Connect Codex to use this model.',
       suggestion: 'Connect your ChatGPT account in Models, then retry.',
       code: 'provider_not_connected',
+      // A text without a provider token that names ChatGPT or Codex is ChatGPT's (R37, legacy).
+      provider: 'openai-codex',
       connectModel: true,
     });
+  });
+
+  test('the [provider:<id>] token before the code names the failing provider (R37)', () => {
+    const refused = (provider: string, code = 'provider_reauth_required') =>
+      imageGenView(call({
+        status: 'error',
+        input: INPUT,
+        error: `Image generation failed (401): ${provider} refused the credential. Check the ${provider} key in project settings, then retry. [provider:${provider}] [${code}]`,
+      })).error;
+    for (const provider of ['openai', 'google', 'xai', 'openrouter', 'openai-codex']) {
+      expect(refused(provider)).toEqual({
+        message: `${provider} refused the credential.`,
+        suggestion: `Check the ${provider} key in project settings, then retry.`,
+        code: 'provider_reauth_required',
+        provider,
+        connectModel: true,
+      });
+    }
+    // With a retry time: the token sits between it and the code.
+    expect(imageGenView(call({
+      status: 'error',
+      input: INPUT,
+      error: 'Image generation failed (429): The ChatGPT image limit is reached. Retry after 60 s. [provider:openai-codex] [image_rate_limited]',
+    })).error).toEqual({ message: 'The ChatGPT image limit is reached.', code: 'image_rate_limited', provider: 'openai-codex', retryAfterSeconds: 60, connectModel: false });
+    // A per-prompt failure in a batch reads the same token.
+    const batch = imageGenView(call({
+      status: 'completed',
+      input: { action: 'generate', prompts: ['a'] },
+      output: JSON.stringify({ action: 'generate', images: [], failed: [{ prompt: 'a', error: 'Image generation failed (400): No google API key is connected for this project. [provider:google] [provider_not_connected]' }] }),
+    }));
+    expect(batch.images[0]!.error).toMatchObject({ code: 'provider_not_connected', provider: 'google', connectModel: true });
+  });
+
+  test('a legacy connect refusal without a provider token is ChatGPT only when its text names ChatGPT or Codex', () => {
+    const legacy = (text: string) => imageGenView(call({ status: 'error', input: INPUT, error: text })).error;
+    expect(legacy('Image generation failed (401): Your Codex session has expired or was revoked. Reconnect Codex in project settings, then retry. [provider_reauth_required]')?.provider).toBe('openai-codex');
+    expect(legacy('Image generation failed (401): openai refused the credential. Check the openai key in project settings, then retry. [provider_reauth_required]')?.provider).toBeUndefined();
+    expect(legacy('Image generation failed (400): No openai API key is connected for this project. [provider_not_connected]')?.provider).toBeUndefined();
+    // Only the two connection codes infer it: a plan-wide refusal names no one provider.
+    expect(legacy('Image generation failed (400): No image model is available. Connect ChatGPT, or add a key. [image_model_unavailable]')?.provider).toBeUndefined();
   });
 
   test('the reauth code also offers the connect action', () => {

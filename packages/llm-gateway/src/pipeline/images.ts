@@ -416,7 +416,11 @@ function admitCharge(run: Run): Promise<Refusal | null> {
 /** Step 3, one model: its candidates in order. Null: the model failed (recorded in `run.last`). */
 async function tryModel(run: Run, model: string): Promise<Response | null> {
   run.resolvedModel = model;
-  run.provider = '';
+  // Before a descriptor exists, the routed model id names the provider (R37): a resolution
+  // refusal says whose connection is missing. `codex/*` is ChatGPT, whose descriptor id is
+  // `openai-codex`. The id is already public: `resolved_model` carries the same prefix.
+  const prefix = model.split('/')[0]!;
+  run.provider = model.includes('/') ? (prefix === 'codex' ? 'openai-codex' : prefix) : '';
   let candidates: UpstreamDescriptor[];
   try {
     candidates = await run.hooks.resolveUpstream(run.principal, model);
