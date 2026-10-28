@@ -108,7 +108,6 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Tier Grant': 'text16a2a5617354',
   Tokens: 'texta039dfb9628b',
   Triggers: 'texte62f2148a64d',
-  Automations: 'textad1fb9ec0cb3',
   Tu: 'text62afcc74654d',
   'Turns a prompt and your latest data into board decks and polished presentations.':
     'texte6b142b8b04d',

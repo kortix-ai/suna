@@ -20,14 +20,6 @@ export function bindProjectOperationsAdmin(projectId: string) {
       removeMany: (...a: DropFirst<Parameters<typeof P.deleteSessionReminders>>) =>
         P.deleteSessionReminders(projectId, ...a),
     },
-    /** Triggers and loops as one list; runtime ones change here — see `listProjectAutomations`. */
-    automations: {
-      list: () => P.listProjectAutomations(projectId),
-      create: (...a: DropFirst<Parameters<typeof P.createProjectAutomation>>) => P.createProjectAutomation(projectId, ...a),
-      update: (...a: DropFirst<Parameters<typeof P.updateProjectAutomation>>) => P.updateProjectAutomation(projectId, ...a),
-      run: (...a: DropFirst<Parameters<typeof P.runProjectAutomation>>) => P.runProjectAutomation(projectId, ...a),
-      remove: (...a: DropFirst<Parameters<typeof P.deleteProjectAutomation>>) => P.deleteProjectAutomation(projectId, ...a),
-    },
     /** Conversations between sessions and people (flag `agent_rooms`) — see `listRooms`. */
     rooms: {
       list: (...a: DropFirst<Parameters<typeof P.listRooms>>) => P.listRooms(projectId, ...a),
@@ -45,6 +37,13 @@ export function bindProjectOperationsAdmin(projectId: string) {
     },
     triggers: {
       list: () => P.listProjectTriggers(projectId),
+      /** kortix.yaml and runtime triggers (loops included) in one list — see `listUnifiedTriggers`. */
+      all: () => P.listUnifiedTriggers(projectId),
+      /** A runtime trigger: no kortix.yaml commit — see `createRuntimeTrigger`. */
+      createRuntime: (...a: DropFirst<Parameters<typeof P.createRuntimeTrigger>>) => P.createRuntimeTrigger(projectId, ...a),
+      updateRuntime: (...a: DropFirst<Parameters<typeof P.updateRuntimeTrigger>>) => P.updateRuntimeTrigger(projectId, ...a),
+      runRuntime: (...a: DropFirst<Parameters<typeof P.runRuntimeTrigger>>) => P.runRuntimeTrigger(projectId, ...a),
+      removeRuntime: (...a: DropFirst<Parameters<typeof P.deleteRuntimeTrigger>>) => P.deleteRuntimeTrigger(projectId, ...a),
       eventApps: () => P.listProjectTriggerEventApps(projectId),
       eventTypes: (...a: DropFirst<Parameters<typeof P.listProjectTriggerEventTypes>>) =>
         P.listProjectTriggerEventTypes(projectId, ...a),

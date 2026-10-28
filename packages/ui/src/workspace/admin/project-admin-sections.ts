@@ -82,7 +82,7 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'extensions', icon: PuzzlePieceIcon, capability: 'agent', host: false },
   { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
   { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
-  // Automations: kortix.yaml triggers and runtime automations (loops) on one page.
+  // Triggers: kortix.yaml triggers and runtime triggers (loops) on one page.
   // The key stays `triggers`: it is the URL segment, and live links name it.
   { key: 'triggers', icon: TimerIcon, capability: 'triggers', host: false },
   { key: 'models', icon: CpuIcon, capability: 'models', host: false },
@@ -100,7 +100,7 @@ export function parseProjectAdminSection(
   raw: string | null | undefined,
 ): ProjectAdminSectionKey | null {
   if (!raw) return null;
-  // `/admin/loops` was the Loops page until 2026-10-28: loops are automations now.
+  // `/admin/loops` was the Loops page until 2026-10-28: loops are triggers now.
   if (raw === 'loops') return 'triggers';
   const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === raw);
   if (resource) return resource.key;

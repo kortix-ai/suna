@@ -48,8 +48,8 @@ const reminderParams = sessionParams.extend({ reminderId: z.string() });
 
 /**
  * Resolve the caller's right to schedule prompts into this session, or an error
- * response. `sessionId` overrides the path's: `/automations/:id` names a
- * session-target automation, not its session.
+ * response. `sessionId` overrides the path's: `/triggers/runtime/:id` names a
+ * session-target trigger, not its session.
  */
 export async function authorizeReminderSession(c: Context<AppEnv>, sessionIdOverride?: string) {
   const projectId = c.req.param('projectId') ?? '';
@@ -87,7 +87,7 @@ type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>
 type ReminderAccess = Extract<Awaited<ReturnType<typeof authorizeReminderSession>>, { response: null }>;
 
 /**
- * Every loop (session-target automation) on a session the caller can open, with
+ * Every loop (session-target trigger) on a session the caller can open, with
  * that session's name. Visibility runs through `loadVisibleSessionsForList`: one
  * batched read for every distinct session (KRTX-532), so the list can never show
  * a row whose session the caller could not open, and never saturates the
@@ -107,8 +107,8 @@ export async function listVisibleProjectReminders(c: Context<AppEnv>, loaded: Lo
   return { rows: all.filter((row) => names.has(row.sessionId as string)), names };
 }
 
-/** Store a session-target automation (a loop, or any other source) within the caps, and follow it. */
-export async function createSessionAutomation(
+/** Store a session-target trigger (a loop, or any other source) within the caps, and follow it. */
+export async function createSessionTrigger(
   c: Context<AppEnv>,
   access: ReminderAccess,
   spec: GitTriggerSpec,
@@ -145,7 +145,7 @@ export async function createSessionAutomation(
   return { row: inserted.row };
 }
 
-/** Pause or resume one session-target automation. */
+/** Pause or resume one session-target trigger. */
 export async function setReminderEnabledResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string, enabled: boolean) {
   const row = await getSessionReminder(access.projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
@@ -164,7 +164,7 @@ export async function setReminderEnabledResponse(c: Context<AppEnv>, access: Rem
 }
 
 /**
- * Fire one session-target automation once now — the Retry of a failed run.
+ * Fire one session-target trigger once now — the Retry of a failed run.
  * The schedule does not move. A person's run is their prompt, so it acts as them.
  */
 export async function runReminderResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string) {
@@ -315,7 +315,7 @@ export function registerSessionRemindersRoutes(): void {
         // A person's reminder is their deferred prompt: the fire acts as them.
         promptAuthorUserId: agentCaller ? null : loaded.userId,
       });
-      const inserted = await createSessionAutomation(c, access, spec, draft.firstFireAt, now);
+      const inserted = await createSessionTrigger(c, access, spec, draft.firstFireAt, now);
       if (!('row' in inserted)) return inserted;
       return c.json(serializeSessionReminder(inserted.row), 201);
     },

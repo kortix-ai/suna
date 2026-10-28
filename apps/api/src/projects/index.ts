@@ -84,7 +84,7 @@ import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerRoomsRoutes } from './routes/rooms';
 import { registerArtifactRoutes } from './routes/artifacts';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
-import { registerAutomationsRoutes } from './routes/automations';
+import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
@@ -180,7 +180,7 @@ export function registerAllProjectRoutes(): void {
   registerRoomsRoutes();
   registerArtifactRoutes();
   registerSessionRemindersRoutes();
-  registerAutomationsRoutes();
+  registerRuntimeTriggersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();
   registerChangeRequestsRoutes();

@@ -36,8 +36,8 @@ export function pushBodyFor(kind: NotificationKindName, detail: string): string 
   const fixed = FIXED_BODIES[kind];
   if (fixed) return fixed;
   if (kind === 'question') return detail ? `Kortix has a question: ${detail}` : 'Kortix has a question.';
-  if (kind === 'automation_failed') return detail ? `Failing: ${detail}` : 'This automation is failing.';
-  if (kind === 'automation_recovered') return 'This automation works again.';
+  if (kind === 'automation_failed') return detail ? `Failing: ${detail}` : 'This trigger is failing.';
+  if (kind === 'automation_recovered') return 'This trigger works again.';
   if (kind === 'capture_device_down' || kind === 'capture_device_recovered') return detail || 'Open Kortix Capture to see it.';
   return detail || 'Open Kortix to see it.';
 }
@@ -74,7 +74,7 @@ export function notificationUrl(input: {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
   }
   if (input.projectId && input.triggerSlug) {
-    // One Automations page lists kortix.yaml and runtime automations (loops included).
+    // One Triggers page lists kortix.yaml and runtime triggers (loops included).
     return `/projects/${encodeURIComponent(input.projectId)}/admin/triggers${query}`;
   }
   if (input.projectId) return `/projects/${encodeURIComponent(input.projectId)}${query}`;

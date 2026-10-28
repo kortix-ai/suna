@@ -44,7 +44,7 @@ function render() {
   return JSON.stringify(mounted?.toJSON());
 }
 // The Loops page and its `reminders` flag gate were removed on 2026-10-28: a
-// bookmarked `/admin/loops` is the Automations page, which Project admin gates
+// bookmarked `/admin/loops` is the Triggers page, which Project admin gates
 // on the Triggers rule (`project-admin-sections.ts`), not on this gate.
 describe('bookmarked Loops address', () => {
   test('is not gated on the reminders flag any more', () => {

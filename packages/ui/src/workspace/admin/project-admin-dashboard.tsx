@@ -8,7 +8,7 @@
  * groups:
  *
  *  - **Project resources**: the GLOBAL variant of every library page
- *    (Connectors, Skills, Automations, Models, Secrets, Apps, and Repo
+ *    (Connectors, Skills, Triggers, Models, Secrets, Apps, and Repo
  *    with `drives` on), mounted with no props beyond `projectId`. This is
  *    their only home: Customize keeps Agents and Review (Marko, 2026-10-27).
  *    A page below a section (a connector, `/admin/connectors/<app>`) renders
@@ -35,7 +35,7 @@
  *
  * Apps is a page of the host app, not of this package. The host passes it in
  * `hostSections`; a row without a page is not listed. Loops were one until
- * 2026-10-28: they are automations on the Automations page now.
+ * 2026-10-28: they are triggers on the Triggers page now.
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
@@ -122,8 +122,8 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
 const RESOURCE_LABEL_KEYS: Partial<Record<ProjectAdminResourceKey, string>> = {
   connectors: 'textc3d2e79ebdd0',
   skills: 'text66d0f523a379',
-  // "Automations": triggers and loops are one page (2026-10-28).
-  triggers: 'textad1fb9ec0cb3',
+  // "Triggers": kortix.yaml triggers and loops are one page (2026-10-28).
+  triggers: 'texte62f2148a64d',
   models: 'textd17d2d78d76e',
   secrets: 'textd8707d411d99',
   apps: 'text89dd748442c1',

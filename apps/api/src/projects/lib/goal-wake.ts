@@ -8,12 +8,12 @@
  * loop path already resolves the current owner, starts a successor when the
  * owner's session failed, and applies the run caps.
  *
- * SEAM (Automations): `wakeGoal` is the one entry point for every event that
+ * SEAM (Triggers): `wakeGoal` is the one entry point for every event that
  * targets a goal. Today one source calls it: a merged change request whose
  * origin session carries the session metadata `goal: <folder>`
  * (`wakeGoalForMergedChangeRequest`, from the CR merge route). When
- * Automations lands (source + target), the "change request merged" source and
- * any automation with a goal target call `wakeGoal` here instead.
+ * Triggers land as source + target, the "change request merged" source and
+ * any trigger with a goal target call `wakeGoal` here instead.
  */
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';

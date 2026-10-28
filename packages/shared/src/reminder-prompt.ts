@@ -11,7 +11,7 @@
  */
 
 export interface ReminderPromptInfo {
-  /** `reminder.<12 hex>` (a loop) or `automation.<12 hex>` (an automation created through `/automations`). */
+  /** `reminder.<12 hex>` (a loop) or `trigger.<12 hex>` (a runtime trigger). Rows made before the rename carry `automation.<12 hex>`. */
   id: string;
   recurring: boolean;
   /** The reminder text, without the header. */
@@ -25,9 +25,9 @@ export interface ReminderPromptInfo {
 export function reminderPromptText(input: ReminderPromptInfo & { source?: string }): string {
   if (input.source) {
     const stop = input.recurring
-      ? ` When it is no longer needed, run \`kortix automations rm ${input.id}\`.`
+      ? ` When it is no longer needed, run \`kortix triggers rm ${input.id}\`.`
       : '';
-    const header = `[REMINDER ${input.id} — ${input.recurring ? 'recurring' : 'one-time'} automation (${input.source}) on this session, not a new user message.${stop}]`;
+    const header = `[REMINDER ${input.id} — ${input.recurring ? 'recurring' : 'one-time'} trigger (${input.source}) on this session, not a new user message.${stop}]`;
     return `${header}\n\n${input.prompt}`;
   }
   const header = input.recurring
@@ -36,7 +36,7 @@ export function reminderPromptText(input: ReminderPromptInfo & { source?: string
   return `${header}\n\n${input.prompt}`;
 }
 
-const HEAD = /^\[REMINDER ((?:reminder|automation)\.[0-9a-f]{12}) — (one-time|recurring) /;
+const HEAD = /^\[REMINDER ((?:reminder|trigger|automation)\.[0-9a-f]{12}) — (one-time|recurring) /;
 
 /** The reminder a prompt carries, or undefined for any other text. Linear time. */
 export function parseReminderPrompt(rawText: string | null | undefined): ReminderPromptInfo | undefined {

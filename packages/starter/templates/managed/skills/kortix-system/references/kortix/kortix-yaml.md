@@ -173,6 +173,11 @@ triggers:
   - slug: handle-reply
     on: { event: reply.received, app: inbox-poller }
     run: { prompt: "Answer {{ event.data.subject }}." }
+  - slug: verify-prod          # flat form: a merged change request has no on: shape
+    type: change_request
+    filter: { base: main }     # optional: merges into main only
+    agent: writer
+    prompt: "CR #{{ change_request.number }} merged. Verify prod."
 ```
 
 | `on:` | Fires |
@@ -195,6 +200,9 @@ triggers:
   long-lived session), `keyed` (with `session_key`), `pinned` (with
   `session_id`).
 - `run:` takes `prompt` or `app`, never both.
+- `type: change_request` fires once per merged change request of the
+  project. `filter.base` is the branch it must merge into (any when absent);
+  other `filter` keys match the payload as on any trigger.
 - Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
   `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
   secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
@@ -213,6 +221,7 @@ Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 | Schedule | `cron.schedule`, `cron.timezone`, `cron.scheduled_for`, `cron.last_scheduled_for` (empty on the first fire). No `fired_at`. |
 | Webhook | `fired_at`, `body.*`, `headers.content_type`, `headers.user_agent`, `headers.forwarded_for` |
 | App event | `event.name`, `event.data.*`, `event.id`, `event.emitted_at`, `app.slug` |
+| Change request merged | `fired_at`, `change_request.cr_id`, `.number`, `.title`, `.base_ref`, `.head_ref`, `.merge_commit_sha` |
 
 ## Edits from the dashboard and the CLI
 

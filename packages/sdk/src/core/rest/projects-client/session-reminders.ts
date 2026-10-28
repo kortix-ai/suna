@@ -19,7 +19,7 @@ export interface SessionReminder {
   /** `reminder.<hex>` — pass it to update/remove. */
   id: string;
   session_id: string | null;
-  /** What fires it: `schedule` (a loop) or another automation source. Absent on an older API. */
+  /** What fires it: `schedule` (a loop) or another trigger source. Absent on an older API. */
   source_type?: 'schedule' | 'webhook' | 'event' | 'app' | 'change_request';
   name: string | null;
   prompt: string;

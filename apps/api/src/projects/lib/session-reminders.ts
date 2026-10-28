@@ -169,7 +169,7 @@ export function reminderSpec(input: {
   };
 }
 
-/** Header words for a session-target automation whose source is not a schedule. */
+/** Header words for a session-target trigger whose source is not a schedule. */
 const SOURCE_WORDS: Partial<Record<GitTriggerSpec['type'], string>> = {
   webhook: 'webhook',
   event: 'connector event',
@@ -206,14 +206,14 @@ export function serializeSessionReminder(row: RuntimeRow) {
   // A one-shot that fired is done for good: pausing it afterwards (an agent
   // cleaning up) or a failed fire switching it off does not make it resumable.
   const fired = Boolean(spec.runAt && row.lastScheduledFor);
-  // Only a schedule has a next fire: a webhook, event or merge automation waits with none.
+  // Only a schedule has a next fire: a webhook, event or merge trigger waits with none.
   const scheduled = spec.type === 'cron';
   const state: ReminderState =
     fired || (scheduled && row.enabled && !row.nextFireAt) ? 'done' : row.enabled ? 'active' : 'paused';
   return {
     id: row.slug,
     session_id: row.sessionId,
-    // What fires it (`lib/automations.ts`): a loop is `schedule`.
+    // What fires it (`lib/runtime-triggers.ts`): a loop is `schedule`.
     source_type: spec.type === 'cron' ? 'schedule' : spec.type,
     name: spec.name === row.slug ? null : spec.name,
     prompt: spec.promptTemplate,
@@ -364,7 +364,7 @@ export async function insertSessionReminder(input: {
       slug: spec.slug,
       sessionId: spec.pinnedSessionId,
       ownerUserId: input.createdBy,
-      // A loop is `cron`; a session-target automation keeps its own source type.
+      // A loop is `cron`; a session-target trigger keeps its own source type.
       triggerType: spec.type,
       enabled: true,
       scheduleCron: spec.cron,

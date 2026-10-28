@@ -13,7 +13,7 @@ import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
-import { automationTargetOf } from './automations';
+import { triggerTargetOf } from './runtime-triggers';
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
@@ -391,8 +391,8 @@ export async function fireGitTrigger(input: {
       if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
-  // Dispatch on the target (lib/automations.ts), never on the slug or the source.
-  const target = automationTargetOf(spec);
+  // Dispatch on the target (lib/runtime-triggers.ts), never on the slug or the source.
+  const target = triggerTargetOf(spec);
   // An App target is a call to the App, not a session: no actor, model or prompt.
   if (target.kind === 'app') return fireAppTarget(input, spec.target!);
   // The session's owning identity (created_by / billing / audit). Automated runs

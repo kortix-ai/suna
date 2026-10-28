@@ -240,7 +240,8 @@
                         "cron",
                         "webhook",
                         "event",
-                        "app"
+                        "app",
+                        "change_request"
                       ],
                       "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },
@@ -3254,7 +3255,8 @@
                         "cron",
                         "webhook",
                         "event",
-                        "app"
+                        "app",
+                        "change_request"
                       ],
                       "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },
@@ -5844,7 +5846,8 @@
                         "cron",
                         "webhook",
                         "event",
-                        "app"
+                        "app",
+                        "change_request"
                       ],
                       "description": "Required in the flat form: the trigger without `on` and `run`. `type` next to `on` is an error."
                     },

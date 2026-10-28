@@ -212,7 +212,7 @@ export const PROJECT_TRIGGERS_PAUSED_REASON = 'project triggers are paused';
 
 /**
  * Why no automatic fire of this project may run now: its own pause, then its
- * account's Pause all automations (KRTX-1721, `accounts/automation-pause.ts`).
+ * account's Pause all triggers (KRTX-1721, `accounts/automation-pause.ts`).
  * Null while they run. A manual fire never asks.
  */
 export async function automaticFirePauseReason(project: { accountId: string; metadata: unknown }): Promise<string | null> {

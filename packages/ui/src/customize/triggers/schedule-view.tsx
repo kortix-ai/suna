@@ -76,7 +76,7 @@ import {
   contract,
   qk,
   useProjectApps,
-  useProjectAutomations,
+  useUnifiedTriggers,
   useProjectTriggerEventApps,
   useTriggerRuns,
 } from '@kortix/sdk/react';
@@ -121,7 +121,7 @@ import {
   triggersForAgent,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
-import { RuntimeAutomations, runtimeRowsFor } from './runtime-automations';
+import { RuntimeTriggers, runtimeRowsFor } from './runtime-triggers';
 import { runsInFlight } from './schedule/trigger-runs-logic';
 import { runsOf } from './schedule/trigger-runs-panel';
 import {
@@ -143,6 +143,7 @@ const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
   event: 'text0ba357fa63f8',
   app: 'text4b4847a6fb87',
   webhook: 'text45808d75bf89',
+  change_request: 'text5ffd973e20ed',
 };
 
 /**
@@ -348,7 +349,7 @@ export function ScheduleView({
   const router = useUiRouter();
   const pathname = useUiPathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tAutomations = useTranslations('automationsPause');
+  const tPauseAll = useTranslations('automationsPause');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
@@ -367,8 +368,8 @@ export function ScheduleView({
     refetchInterval: 10_000,
   });
 
-  // Runtime automations (loops included) list below the kortix.yaml ones (`RuntimeAutomations`).
-  const hasRuntime = runtimeRowsFor(useProjectAutomations(projectId).data?.automations ?? [], agentName).length > 0;
+  // Runtime triggers (loops included) list below the kortix.yaml ones (`RuntimeTriggers`).
+  const hasRuntime = runtimeRowsFor(useUnifiedTriggers(projectId).data?.triggers ?? [], agentName).length > 0;
 
   const [query, setQuery] = useState('');
   // The input shows every keystroke; the list filters 200 ms after the last one.
@@ -723,12 +724,12 @@ export function ScheduleView({
             because a project that runs nothing on its own is something a
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
-            {/* The account's Pause all automations (KRTX-1721): it stops this
+            {/* The account's Pause all triggers (KRTX-1721): it stops this
                 project too, and it is changed in account settings. */}
             {accountPaused && showContent && (
               <Alert variant="warning">
-                <AlertTitle>{tAutomations('bannerTitle')}</AlertTitle>
-                <AlertDescription>{tAutomations('bannerDescription')}</AlertDescription>
+                <AlertTitle>{tPauseAll('bannerTitle')}</AlertTitle>
+                <AlertDescription>{tPauseAll('bannerDescription')}</AlertDescription>
               </Alert>
             )}
             {paused && showContent && (
@@ -862,7 +863,7 @@ export function ScheduleView({
             )}
 
 
-            {showContent && filter === 'all' ? <RuntimeAutomations projectId={projectId} agentName={agentName} /> : null}
+            {showContent && filter === 'all' ? <RuntimeTriggers projectId={projectId} agentName={agentName} /> : null}
 
             {showContent && eventsOn && filter === 'event' ? (
               <EventAppsStrip

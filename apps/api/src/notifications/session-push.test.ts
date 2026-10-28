@@ -92,7 +92,7 @@ describe('sessionEventAudience — who is told (design §3.1)', () => {
     expect(out.recipients).toEqual([]);
   });
 
-  test('unattended turn end: the prompter only, with push (run failures are automation alerts)', () => {
+  test('unattended turn end: the prompter only, with push (run failures are trigger alerts)', () => {
     const out = sessionEventAudience(
       event({ type: 'error', originClass: 'unattended', triggerWatcherIds: [WATCHER] }),
       watchers([CREATOR]),
@@ -504,13 +504,13 @@ describe('Expo copy of the session kinds (Spec §4)', () => {
   });
 });
 
-// One Automations page lists kortix.yaml and runtime automations (2026-10-28):
+// One Triggers page lists kortix.yaml and runtime triggers (2026-10-28):
 // a loop's alert and a kortix.yaml trigger's alert open the same page.
-describe('the page an automation alert opens', () => {
+describe('the page a trigger alert opens', () => {
   const alertUrl = (kind: 'automation_failed' | 'automation_recovered', triggerSlug: string) =>
     buildPushContent({ notificationId: 'n1', kind, title: 'Daily check', body: '', projectId: PROJECT, sessionId: null, triggerSlug }).payload.url;
 
-  test('a loop alert and a kortix.yaml trigger alert both open Automations', () => {
+  test('a loop alert and a kortix.yaml trigger alert both open Triggers', () => {
     for (const kind of ['automation_failed', 'automation_recovered'] as const) {
       expect(alertUrl(kind, 'reminder.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);
       expect(alertUrl(kind, 'automation.0a1b2c3d4e5f')).toBe(`/projects/${PROJECT}/admin/triggers?notification=n1`);

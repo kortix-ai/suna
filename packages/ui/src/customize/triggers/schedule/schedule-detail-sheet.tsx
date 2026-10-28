@@ -101,6 +101,7 @@ import { TriggerTestDialog } from './trigger-test-dialog';
 import { TriggerTile } from './trigger-tile';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenApp } from './when-app';
+import { WhenChangeRequest } from './when-change-request';
 import { WhenEvent } from './when-event';
 import { WhenEventSummary } from './when-event-summary';
 import { WhenSchedule } from './when-schedule';
@@ -678,6 +679,8 @@ function SheetForm({
               <WhenWebhookAddress trigger={trigger} draft={draft} patch={patch} canWrite />
             ) : draft.kind === 'app' ? (
               <WhenApp apps={kortixApps} draft={draft} patch={patch} error={blockError('when')} />
+            ) : draft.kind === 'change_request' ? (
+              <WhenChangeRequest draft={draft} patch={patch} />
             ) : app || (!draft.appSlug && !draft.profile) ? (
               <WhenEvent
                 projectId={projectId}

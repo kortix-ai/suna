@@ -300,7 +300,7 @@ export async function reconcileEventSubscriptions(
 }
 
 /**
- * `specs` plus the project's runtime event automations (`lib/automations.ts`).
+ * `specs` plus the project's runtime event triggers (`lib/runtime-triggers.ts`).
  * Callers pass the manifest's triggers; a runtime row is never in that list, so
  * without this its subscription read as stale and was removed. Rows the caller
  * already passed (a catalog read) are not added twice. The row's `enabled`

@@ -73,7 +73,7 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
-        // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
+        // Pause all triggers (KRTX-1721): the slot stays due and unclaimed,
         // so resuming fires a missed slot once.
         accountAutomationsRunSql(projects.accountId),
         // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.

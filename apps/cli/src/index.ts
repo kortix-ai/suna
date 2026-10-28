@@ -36,7 +36,6 @@ import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
-import { runAutomations } from './commands/automations.ts';
 import { runGoals } from './commands/goals.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
@@ -249,7 +248,8 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   drive: (rest) => runDrive(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
-  automations: (rest) => runAutomations(rest),
+  // Hidden alias, not in the command table: the name `automations` had before Triggers won. Its `add` was runtime.
+  automations: (rest) => runTriggers(rest[0] === 'add' || rest[0] === 'create' ? [...rest, '--runtime'] : rest),
   triggers: (rest) => runTriggers(rest),
   loops: (rest) => runReminders(rest),
   reminders: (rest) => runReminders(rest),
