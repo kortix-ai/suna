@@ -8,17 +8,25 @@
  *   `/new`          → forget the chat's session; the next message starts a new one
  *   anything else   → the core: a follow-up into the chat's session, or a new
  *                     project-visible session bound to the chat
+ *   a button press  → the answer to the agent's question (`handleTelegramPress`)
  *
  * The agent answers through the `kortix_telegram` connector (connectors/channels.ts);
  * the bot token never enters the sandbox.
  */
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
+import { chatThreads, projects } from '@kortix/db';
+import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
+import {
+  getPendingQuestion,
+  releaseRuntimeQuestion,
+  renderAnswerPrompt,
+  resolvePendingQuestion,
+} from '../../projects/surface';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
 import { registerSessionPort } from '../core/session-notice';
 import { classifyTurnError } from '../slack/errors';
@@ -40,10 +48,20 @@ export interface TelegramMessage {
   is_topic_message?: boolean;
 }
 
+/** A tap on an inline button. */
+export interface TelegramCallbackQuery {
+  id: string;
+  from: { id: number; username?: string };
+  /** The message with the button. Absent for an inline-mode message, which Kortix never sends. */
+  message?: Pick<TelegramMessage, 'message_id' | 'chat' | 'message_thread_id' | 'is_topic_message'>;
+  data?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 /** A forum topic is its own conversation; otherwise the whole chat is one. */
@@ -70,6 +88,61 @@ export function telegramMessageEvent(
     projectId,
     data: { message: message as unknown as Record<string, unknown> },
   };
+}
+
+export const TELEGRAM_PRESS_EVENT = 'telegram.callback_query.created';
+
+/** The inbox envelope for a button press, or null for an update without one. */
+export function telegramPressEvent(projectId: string, botId: string, update: TelegramUpdate): IntegrationEvent | null {
+  const press = update.callback_query;
+  if (!press?.id || !press.from) return null;
+  const message = press.message;
+  const stored: TelegramCallbackQuery = {
+    id: press.id,
+    from: { id: press.from.id, ...(press.from.username ? { username: press.from.username } : {}) },
+    ...(press.data ? { data: press.data } : {}),
+    ...(message
+      ? {
+          message: {
+            message_id: message.message_id,
+            chat: { id: message.chat.id, type: message.chat.type },
+            ...(message.message_thread_id ? { message_thread_id: message.message_thread_id } : {}),
+            ...(message.is_topic_message ? { is_topic_message: true } : {}),
+          },
+        }
+      : {}),
+  };
+  return {
+    id: String(update.update_id),
+    source: `telegram:${botId}`,
+    type: TELEGRAM_PRESS_EVENT,
+    time: new Date().toISOString(),
+    subject: message ? String(message.chat.id) : null,
+    projectId,
+    // Only what the press handler reads: no names, no question text.
+    data: { callback_query: stored as unknown as Record<string, unknown> },
+  };
+}
+
+/** A message holds 4096 characters (connectors/channels.ts); the footer gets 190 of them. */
+const QUESTION_BODY_MAX = 3900;
+/**
+ * A question button's `callback_data`: `kq:<question row id>:<option index>`,
+ * 41 bytes (Telegram allows 64). Persisted in chats: never change the format.
+ */
+const QUESTION_BUTTON = /^kq:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d)$/;
+
+/** Questions as chat text: each question with its numbered options, then the footer. */
+export function telegramQuestionText(questions: RuntimeQuestion[], footer: string): string {
+  const body = questions
+    .map((q, i) =>
+      [
+        `${questions.length > 1 ? `${i + 1}) ` : ''}${q.header ? `${q.header}: ` : ''}${q.question}${q.multiple ? ' (pick one or more)' : ''}`,
+        ...q.options.map((o, j) => `${j + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`),
+      ].join('\n'),
+    )
+    .join('\n\n');
+  return `${body.slice(0, QUESTION_BODY_MAX)}\n\n${footer.slice(0, 190)}`;
 }
 
 /** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
@@ -212,6 +285,120 @@ export async function handleTelegramEvent(
 }
 
 /**
+ * A tap on a question button. From an allowed user, in a chat of the question's
+ * session, it answers the question: in the turn it still blocks (the server
+ * could not release it when it was posted), else as a follow-up that quotes it.
+ * A tap from anyone else, or on a question from before `/new`, answers nothing.
+ */
+export async function handleTelegramPress(
+  event: IntegrationEvent,
+  run: { finalAttempt: boolean } = { finalAttempt: false },
+): Promise<void> {
+  const press = event.data.callback_query as unknown as TelegramCallbackQuery;
+  const [install, token] = await Promise.all([loadTelegramInstall(event.projectId), loadTelegramBotToken(event.projectId)]);
+  if (!install || !token) return;
+  // Telegram shows a spinner until the press is answered.
+  const answer = (text = '', alert = false) =>
+    telegramCall(token, 'answerCallbackQuery', {
+      callback_query_id: press.id,
+      ...(text ? { text: text.slice(0, 200) } : {}),
+      ...(alert ? { show_alert: true } : {}),
+    }).catch(() => undefined);
+
+  // The same gate as a typed message. An alert, never a chat message: in a group
+  // the pairing reply would reach everyone.
+  if (!install.allowedUserIds.includes(String(press.from.id))) {
+    await answer(`Your Telegram account is not allowed to use this bot. Ask a project admin to allow user id ${press.from.id} under Channels → Telegram.`, true);
+    return;
+  }
+  const button = QUESTION_BUTTON.exec(press.data ?? '');
+  const message = press.message;
+  // A button Kortix did not post (the agent may post its own keyboards).
+  if (!button || !message) return void (await answer());
+
+  const asked = await getPendingQuestion(event.projectId, button[1]!);
+  const option = asked?.questions[0]?.options[Number(button[2])];
+  const threadId = asked && option ? await telegramThreadOfSession(asked.sessionId, install.botId, message.chat.id) : null;
+  const edit = (text: string) =>
+    telegramCall(token, 'editMessageText', {
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      text,
+      reply_markup: { inline_keyboard: [] },
+    }).catch((error) => logger.warn('[telegram] question message not edited', { error: String(error) }));
+  if (!asked || !option || !threadId) {
+    await answer('This question is from an earlier conversation. Send your answer as a message.');
+    await telegramCall(token, 'editMessageReplyMarkup', {
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      reply_markup: { inline_keyboard: [] },
+    }).catch(() => undefined);
+    return;
+  }
+
+  const answers = [[option.label]];
+  await answer(`Answered: ${option.label}`);
+  await edit(telegramQuestionText(asked.questions, `Answered: ${option.label}`));
+  // The server could not release the question when it was posted, so it still
+  // blocks the turn: answer it there, as the web does (routes/turn-questions.ts).
+  // ponytail: a crash after this release and before the job settles also sends
+  // the follow-up once on the retry.
+  if (
+    !asked.answeredAt &&
+    (await resolvePendingQuestion({ sessionId: asked.sessionId, requestId: asked.requestId, answers })) &&
+    (await releaseRuntimeQuestion(asked.sessionId, asked.requestId, answers)) === 'released'
+  ) {
+    return;
+  }
+
+  const [, topicId] = threadId.split(':');
+  const reply: TelegramMessage = {
+    message_id: message.message_id,
+    chat: message.chat,
+    from: press.from,
+    text: renderAnswerPrompt(asked.questions, answers),
+    ...(topicId ? { is_topic_message: true, message_thread_id: Number(topicId) } : {}),
+  };
+  await routeChannelMessage(
+    // Only into the question's own session: a chat that moved on (`/new`, then a
+    // new message) since the check refuses it.
+    {
+      ...telegramPort,
+      prepareFollowUp: async (_target, thread) => (thread.sessionId === asked.sessionId ? 'deliver' : 'refuse'),
+    },
+    {
+      target: { platform: 'telegram', workspaceId: install.botId, threadId, projectId: event.projectId, messageId: String(message.message_id) },
+      keys: {
+        followUp: `telegram:${install.botId}:${event.id}`,
+        create: `telegram:create:${install.botId}:${event.id}`,
+        createClaim: `telegram:threadcreate:${event.projectId}:${install.botId}:${threadId}`,
+      },
+      followUp: { text: renderTelegramPrompt(reply, 'follow-up') },
+      // A press never starts a session.
+      plan: async () => null,
+    },
+    run,
+  );
+}
+
+/** The session's thread in this chat (the chat itself, or one of its forum topics), on this bot. */
+async function telegramThreadOfSession(sessionId: string, botId: string, chatId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ threadId: chatThreads.threadId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.platform, 'telegram'),
+        eq(chatThreads.workspaceId, botId),
+        eq(chatThreads.sessionId, sessionId),
+        or(eq(chatThreads.threadId, String(chatId)), like(chatThreads.threadId, `${chatId}:%`)),
+      ),
+    )
+    .limit(1);
+  return row?.threadId ?? null;
+}
+
+/**
  * One reply path for commands and notices: the chat and topic come from the
  * target's thread id. A target found from a session has no message to answer,
  * so its notice is posted unanchored.
@@ -256,5 +443,8 @@ export function renderTelegramPrompt(message: TelegramMessage, kind: 'new' | 'fo
   ].join('\n');
 }
 
-registerEventConsumer('telegram.', handleTelegramEvent);
+// One queue for every Telegram update: a replica on older code fails a press
+// (it has no message), and the retry reaches a replica that knows it.
+registerEventConsumer('telegram.', (event, run) =>
+  event.type === TELEGRAM_PRESS_EVENT ? handleTelegramPress(event, run) : handleTelegramEvent(event, run));
 registerSessionPort('telegram', telegramPort);

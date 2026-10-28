@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { readSecret } from './install-store';
 import { emitIntegrationEvent } from '../integrations/event-inbox';
 import { loadTelegramInstall } from './telegram/installs';
-import { type TelegramUpdate, telegramMessageEvent } from './telegram/session';
+import { type TelegramUpdate, telegramMessageEvent, telegramPressEvent } from './telegram/session';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 
@@ -64,7 +64,7 @@ telegramWebhookApp.openapi(
     // crash after the ack loses nothing (channels/telegram/session.ts).
     const botId = (await loadTelegramInstall(projectId))?.botId;
     if (botId) {
-      const event = telegramMessageEvent(projectId, botId, update);
+      const event = telegramMessageEvent(projectId, botId, update) ?? telegramPressEvent(projectId, botId, update);
       if (event) await emitIntegrationEvent(event, { maxAttempts: 4 });
     }
     return c.json({ ok: true });

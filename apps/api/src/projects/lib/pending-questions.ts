@@ -133,6 +133,24 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
   };
 }
 
+/** A stored question by its row id, in its project: a chat button names it. */
+export async function getPendingQuestion(
+  projectId: string,
+  id: string,
+): Promise<{ sessionId: string; requestId: string; questions: RuntimeQuestion[]; answeredAt: string | null } | null> {
+  const [row] = await db
+    .select({
+      sessionId: sessionPendingQuestions.sessionId,
+      requestId: sessionPendingQuestions.requestId,
+      questions: sessionPendingQuestions.questions,
+      answeredAt: sessionPendingQuestions.answeredAt,
+    })
+    .from(sessionPendingQuestions)
+    .where(and(eq(sessionPendingQuestions.id, id), eq(sessionPendingQuestions.projectId, projectId)))
+    .limit(1);
+  return row ? { ...row, questions: row.questions as RuntimeQuestion[] } : null;
+}
+
 /**
  * Mark a question answered.
  *
