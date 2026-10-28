@@ -17,14 +17,14 @@ const TABS: readonly CodeTab[] = [
   {
     id: 'agents',
     k: 'Declare your agents',
-    v: 'Each agent is a Markdown file for its behavior, and one entry in kortix.yaml for what it may reach: connectors, secrets and skills. Access is deny-by-default.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [9, 14] },
+    v: 'Each agent is a Markdown prompt, and one entry in kortix.yaml for what it may reach: connectors, secrets and skills. Access is deny-by-default.',
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [9, 19] },
   },
   {
     id: 'triggers',
     k: 'Run them 24/7',
     v: 'A trigger is what fires it and what runs: a cron schedule, a signed webhook or an app event, then an agent and a prompt.',
-    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [15, MANIFEST.length] },
+    panel: { title: 'kortix.yaml', lines: MANIFEST, lang: 'yaml', focus: [20, MANIFEST.length] },
   },
   {
     id: 'secrets',

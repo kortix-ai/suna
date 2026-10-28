@@ -528,6 +528,12 @@ export function renderPlainMarkdownFromMdx(source: string): string {
       continue;
     }
 
+    // An MDX comment ({/* … */}) is a note for editors and generators, never content.
+    if (line.includes('{/*')) {
+      line = line.replace(/\s*\{\/\*[\s\S]*?\*\/\}/g, '');
+      if (!line.trim()) continue;
+    }
+
     const directiveClose = stack.length && stack[stack.length - 1].tag === 'directive';
     if (directiveClose && DIRECTIVE_CLOSE.test(line)) {
       stack.pop();

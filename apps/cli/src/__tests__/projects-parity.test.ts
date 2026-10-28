@@ -518,7 +518,7 @@ describe('kortix projects upgrade', () => {
     expect(body.initial_prompt).toContain('kortix cr open');
     expect(body.initial_prompt).toContain('Do **not** run `kortix cr merge`');
     expect(r.stdout).toContain('sess_upgrade');
-    expect(r.stdout).toContain('kortix connect sess_upgrade');
+    expect(r.stdout).toContain(`/projects/${PROJECT}/sessions/sess_upgrade`);
   });
 
   test('the seeded prompt is byte-identical to the dashboard\'s', async () => {

@@ -14,8 +14,10 @@ Two paths, one skill:
 
 Both paths share the design guidelines below.
 
+`presentation.ts` sits next to this `SKILL.md`. Point `SCRIPT` at it:
+
 ```
-SCRIPT=~/.opencode/skills/presentations/presentation.ts
+SCRIPT=<this skill's folder>/presentation.ts
 ```
 
 ## Commands (HTML deck path)

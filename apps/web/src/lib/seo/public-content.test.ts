@@ -35,6 +35,7 @@ function expectCleanAgentMarkdown(markdown: string, label: string): void {
   expect(prose, label).not.toMatch(/^\s*(?:import|export)\s/m);
   expect(prose, label).not.toMatch(UNRESOLVED_MDX_COMPONENT);
   expect(prose, label).not.toMatch(LINE_START_UNRESOLVED_JSX);
+  expect(prose, label).not.toContain('{/*');
 }
 
 beforeEach(() => {
@@ -157,6 +158,9 @@ Do not drop this meaningful content.
   <Stat value="3 systems" label="One agent" />
 </StatGrid>
 
+{/* generated:sample:start */}
+Keep the line {/* VERIFY: an editor note */} without the note.
+
 <Tabs>
 <Tab title="Claude Code">
 Run the add command.
@@ -169,6 +173,7 @@ Run the add command.
     expect(markdown).toContain('> Figure: A truthful diagram');
     expect(markdown).toContain('- **3 systems:** One agent');
     expect(markdown).toContain('**Claude Code**\nRun the add command.');
+    expect(markdown).toContain('Keep the line without the note.');
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 

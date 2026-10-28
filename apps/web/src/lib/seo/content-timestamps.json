@@ -1,5 +1,5 @@
 {
-  "marketing:index": "2026-10-27T23:06:42.000Z",
+  "marketing:index": "2026-10-28T12:07:47.000Z",
   "marketing:about": "2026-10-20T13:30:41.000Z",
   "marketing:contact": "2026-10-27T19:16:25.000Z",
   "marketing:developers": "2026-10-02T13:38:34.000Z",
@@ -9,9 +9,9 @@
   "marketing:legal": "2026-10-26T13:42:04.000Z",
   "marketing:security": "2026-10-27T19:16:25.000Z",
   "marketing:self-hosted": "2026-10-26T13:42:04.000Z",
-  "marketing:services": "2026-10-28T04:18:14.000Z",
+  "marketing:services": "2026-10-28T11:57:22.000Z",
   "marketing:case-studies": "2026-10-27T16:44:34.000Z",
-  "marketing:framework": "2026-10-28T12:33:30.683Z",
+  "marketing:framework": "2026-10-28T12:27:58.000Z",
   "marketing:white-label": "2026-10-19T10:12:35.000Z",
   "marketing:careers": "2026-10-28T02:11:19.000Z",
   "marketing:changelog": "2026-10-23T11:58:25.000Z",
@@ -25,5 +25,5 @@
   "docs:audit-actions": "2026-10-28T12:33:20.000Z",
   "docs:capture": "2026-10-17T23:25:54.000Z",
   "docs:capture/rollout": "2026-10-19T16:40:22.000Z",
-  "docs:index": "2026-10-28T12:33:20.000Z"
+  "docs:index": "2026-10-28T12:34:01.000Z"
 }

@@ -1,13 +1,14 @@
 const PLATE = '/media/landing/plate-config.svg';
 
-// A real manifest: every key is in docs/project/manifest.mdx. Triggers are
-// keyed by `slug` (the board said `name`, which the schema rejects).
-const KORTIX_YAML = `kortix_version: 2
+// A real kortix_version 3 manifest: every key is in the docs "kortix.yaml
+// reference" section, and `kortix validate` passes it. Triggers are keyed by
+// `slug` (the board said `name`, which the schema rejects).
+const KORTIX_YAML = `kortix_version: 3
 default_agent: kortix
 
 agents:
   kortix:
-    file: agents/kortix.md
+    prompt_file: agents/kortix.md
     connectors: all
     skills: all
 
@@ -16,7 +17,8 @@ triggers:
     type: cron
     agent: kortix
     cron: "0 0 8 * * 1"
-    timezone: UTC`;
+    timezone: UTC
+    prompt: Write the weekly report.`;
 
 const FACTS = [
   { label: 'Version every change', tag: 'Git' },

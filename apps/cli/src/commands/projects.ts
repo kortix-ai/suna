@@ -37,7 +37,7 @@ import {
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
-import { projectWebUrl } from '../web-url.ts';
+import { projectWebUrl, sessionWebUrl } from '../web-url.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -845,7 +845,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
   );
   process.stdout.write(`  ${C.dim}upgrade   ${C.reset}manifest-v3 (kortix_version ${version ?? '1 or 2'} → 3)\n`);
   process.stdout.write(
-    `\n  ${C.dim}Watch it:${C.reset} ${C.cyan}kortix connect ${session.session_id}${C.reset}\n`,
+    `\n  ${C.dim}Watch it:${C.reset} ${C.cyan}${sessionWebUrl(ctx.auth.api_base, ctx.projectId, session.session_id)}${C.reset}\n`,
   );
   return 0;
 }
