@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowSquareOutIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Button } from '@kortix/ui/button';
@@ -13,9 +13,10 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@kortix/ui/modal';
-import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
+
+import { CopyBlock } from '../copy-block';
 
 /** `<api origin>/v1/accounts/<accountId>/capture`. */
 export function captureApiBase(backendUrl: string | undefined, accountId: string): string {
@@ -51,6 +52,7 @@ export function CaptureApiModal({
   own: boolean;
 }) {
   const t = useTranslations('capture.api');
+  const tCopy = useTranslations('connectMcp');
   const base = captureApiBase(getEnv().BACKEND_URL, accountId);
   const example = `curl -H "Authorization: Bearer $KORTIX_API_KEY" \\\n  "${base}/search?q=invoice"`;
   return (
@@ -63,7 +65,7 @@ export function CaptureApiModal({
         <ModalBody className="max-h-[70vh] space-y-5 overflow-y-auto">
           <section className="space-y-2">
             <h3 className="text-sm font-medium">{t('baseUrl')}</h3>
-            <CommandBlock text={base} />
+            <CopyBlock text={base} copyLabel={tCopy('copy')} />
           </section>
           <section className="space-y-1">
             <h3 className="text-sm font-medium">{t('auth')}</h3>
@@ -99,7 +101,7 @@ export function CaptureApiModal({
           </section>
           <section className="space-y-2">
             <h3 className="text-sm font-medium">{t('example')}</h3>
-            <CommandBlock text={example} />
+            <CopyBlock text={example} copyLabel={tCopy('copy')} />
           </section>
           <p className="text-muted-foreground text-xs text-pretty">
             {own ? t('scopeOwn') : t('scopeAll')}
@@ -118,21 +120,5 @@ export function CaptureApiModal({
         </ModalFooter>
       </ModalContent>
     </Modal>
-  );
-}
-
-/** A copyable block of text: the base URL or the example request. */
-function CommandBlock({ text }: { text: string }) {
-  const t = useTranslations('connectMcp');
-  const { copy, copied } = useCopy();
-  return (
-    <div className="bg-muted flex items-start rounded-md border">
-      <pre className="scrollbar-hide min-w-0 flex-1 overflow-x-auto py-2.5 pl-3 font-mono text-xs leading-relaxed">
-        <code>{text}</code>
-      </pre>
-      <Button type="button" variant="ghost" size="icon" onClick={() => copy(text)} aria-label={t('copy')} className="m-1 size-7 shrink-0">
-        {copied ? <CheckIcon className="text-kortix-green size-3.5" /> : <CopyIcon className="size-3.5" />}
-      </Button>
-    </div>
   );
 }
