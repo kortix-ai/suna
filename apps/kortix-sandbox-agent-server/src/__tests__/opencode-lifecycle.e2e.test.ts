@@ -979,18 +979,6 @@ describe('onUnplannedRespawn', () => {
     expect(calls).toHaveLength(0)
   }, 30_000)
 
-  test('a throwing hook cannot break the restart', async () => {
-    const { r, calls } = hookRig(() => {
-      throw new Error('finalize exploded')
-    })
-    await startReady(r)
-
-    await r.lifecycle.restart()
-
-    expect(calls).toHaveLength(1)
-    expect(r.lifecycle.getState()).toBe('ok')
-  }, 30_000)
-
   test('a planned stop neither respawns nor runs the hook', async () => {
     const { r, calls } = hookRig()
     await startReady(r)

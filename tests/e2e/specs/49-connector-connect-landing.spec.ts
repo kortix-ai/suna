@@ -271,11 +271,12 @@ test.describe("49 — Connector connect lands on the connector page", () => {
     await createBearerHttp(slug);
     await openConnectorPage(page, slug);
 
-    // No account exists, so nothing reads "Everyone".
-    const notice = page.getByRole("alert").filter({ hasText: "has no account" });
-    await expect(notice).toBeVisible({ timeout: 60_000 });
+    // No account exists, so nothing reads "Everyone". The page opens on the
+    // Accounts tab, which carries the one Add account (its no-account notice hides there).
+    const addAccount = page.getByRole("button", { name: /Add account/ }).first();
+    await expect(addAccount).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText(/^Everyone in /)).toHaveCount(0);
-    await notice.getByRole("button", { name: /Add account/ }).click();
+    await addAccount.click();
 
     const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     await expect(addDialog).toBeVisible();

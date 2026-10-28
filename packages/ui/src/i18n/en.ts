@@ -1631,6 +1631,7 @@ const catalog = {
     "signInWithEmail": "Sign in with email",
     "createNewAccount": "Create new account",
     "byContinuingYouAgreeSimple": "By continuing, you agree to our",
+    "customerLogoNotice": "Kortix may show your organization's name and logo as a customer, on any plan. Opt out anytime at legal@kortix.com.",
     "phoneVerification": {
       "title": "Verify Your Phone Number",
       "titleOtp": "Enter Verification Code",
@@ -6176,7 +6177,14 @@ const catalog = {
     "sessionModel": "Model {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "No cap · spend is unlimited",
-    "tokensSub": "{in} in · {out} out"
+    "tokensSub": "{in} in · {out} out",
+    "unknownValue": "Unknown",
+    "estimateCoverageUnavailable": "Estimate coverage unavailable.",
+    "estimatesSeparate": "Actual spend above is separate. Estimates are never added to charges.",
+    "estimatedUsageValueLabel": "LLM estimated usage value (not a bill):",
+    "pricedRequests": "{count} priced requests",
+    "unpricedRequests": "{count} unpriced requests",
+    "llmEstimateLabel": "LLM estimate:"
   },
   "triggerComposer": {
     "every": "Every",

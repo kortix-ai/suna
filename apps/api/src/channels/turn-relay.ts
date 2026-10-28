@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { chatTurnStreams, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
+import type { ConnectorPrincipal } from '../connectors/router-contract';
 import { postSessionQuestion } from './core/session-notice';
 import { channelOfSessionMetadata, questionReleaseSentinel } from './question-release';
 import type { TurnErrorInfo } from './slack/errors';
@@ -101,12 +102,12 @@ export async function relayTurnEnd(
 export async function relayTurnQuestion(
   sessionId: string,
   questions: QuestionInfo[],
-  /** Post into the session's chat when no live turn renders it. Null: only a live turn may. */
-  chat: { pendingId: string } | null = null,
+  /** Post into the session's chat when no live turn renders it, as the agent `principal` would. Null: only a live turn may. */
+  chat: { pendingId: string; principal: ConnectorPrincipal } | null = null,
 ): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
   const platform = await platformFor(sessionId);
   if (!platform) {
-    const posted = chat ? await postSessionQuestion({ sessionId, pendingId: chat.pendingId, questions }) : null;
+    const posted = chat ? await postSessionQuestion({ sessionId, questions, ...chat }) : null;
     return posted
       ? { ok: true, answers: questions.map(() => [questionReleaseSentinel(posted, true)]) }
       : { ok: false, error: 'not_relayed' };

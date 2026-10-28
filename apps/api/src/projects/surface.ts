@@ -125,9 +125,6 @@ export { clearOpenQuestions } from './lib/pending-questions';
 // follow-up (consumed by channels/telegram).
 export { getPendingQuestion, renderAnswerPrompt, resolvePendingQuestion } from './lib/pending-questions';
 export { releaseRuntimeQuestion } from './session-lifecycle/release-runtime-question';
-// The grant the gateway decides a session's connector calls with (consumed by
-// channels/telegram: a question the server posts for the agent).
-export { reconcileStoredSessionAgentGrant } from './lib/session-token-grant';
 
 // The stored transcript (`toV1` of the session log), consumed by the public share route.
 export { readStoredTranscriptWindow } from './session-log-read';
