@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Canales",
           "description": "Organiza el trabajo en canales. Cada mensaje nuevo en un canal o en un mensaje directo con un agente inicia un hilo. Sustituye la lista de sesiones en la barra lateral."
+        },
+        "session_groups": {
+          "name": "Grupos de sesiones",
+          "description": "Agrupa las sesiones de la barra lateral en carpetas con nombre que comparte todo el proyecto, por ejemplo una por tienda o cliente. Mueve una sesión a un grupo desde su menú o arrastrándola; reordena y contrae los grupos."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {No se pudo cambiar # sesión} other {No se pudieron cambiar # sesiones}}",
       "showArchived": "Sesiones archivadas",
       "pinnedMark": "Fijada"
+    },
+    "sessionGroups": {
+      "newGroup": "Nuevo grupo",
+      "newGroupFromMenu": "Nuevo grupo…",
+      "createTitle": "Nuevo grupo",
+      "createDescription": "Todos en este proyecto ven el grupo. Mueve una sesión al grupo desde su menú o arrástrala sobre él.",
+      "namePlaceholder": "Nombre del grupo",
+      "create": "Crear grupo",
+      "created": "Grupo creado",
+      "createFailed": "No se pudo crear el grupo",
+      "rename": "Renombrar grupo",
+      "save": "Guardar",
+      "renamed": "Grupo renombrado",
+      "renameFailed": "No se pudo renombrar el grupo",
+      "nameTaken": "Otro grupo de este proyecto ya tiene ese nombre.",
+      "limit": "Un proyecto tiene como máximo 50 grupos.",
+      "cancel": "Cancelar",
+      "delete": "Eliminar grupo",
+      "deleteTitle": "¿Eliminar este grupo?",
+      "deleteDescription": "{name} se elimina para todos en este proyecto. Sus sesiones se conservan, sin grupo. Esto no se puede deshacer.",
+      "deleted": "Grupo eliminado",
+      "deleteFailed": "No se pudo eliminar el grupo",
+      "moveUp": "Subir",
+      "moveDown": "Bajar",
+      "reorderFailed": "No se pudieron reordenar los grupos",
+      "moveTo": "Mover a un grupo",
+      "removeFromGroup": "Quitar del grupo",
+      "moved": "Sesión movida",
+      "noGroup": "Sin grupo",
+      "moveFailed": "No se pudo mover la sesión",
+      "empty": "Las sesiones que muevas aquí aparecerán aquí.",
+      "groupOptions": "Opciones del grupo"
     },
     "recentlyDeleted": {
       "view": "Eliminadas recientemente",
@@ -20428,7 +20464,9 @@
       "text7c0a91e5b3d2": "Herramientas sin clasificar",
       "text9d2b6f0c41ae": "Herramientas y reglas",
       "openThreadAction": "Abrir hilo",
-      "untitledThread": "Hilo sin título"
+      "untitledThread": "Hilo sin título",
+      "text314ae71b8c8d": "Artefactos",
+      "textfe204b549282": "artefactos documentos documento diapositivas presentación pizarra diseño panel página publicado compartir"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -23309,6 +23347,22 @@
       "agentsFailedPeopleAdded": "Se añadieron {what} a #{name}. No se pudieron añadir los agentes: siguen seleccionados.",
       "allAdded": "Todos los del proyecto ya están aquí.",
       "noMatches": "Nada coincide con «{query}»."
+    },
+    "privateNotIn": {
+      "row": "Canales privados en los que no estás",
+      "title": "Canales privados en los que no estás",
+      "description": "Puedes renombrar, archivar y añadir personas. Solo los miembros leen lo que hay en un canal, así que no puedes añadirte a ti mismo.",
+      "meta": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}} · creado por {name}",
+      "metaNoCreator": "{count, plural, =0 {Sin miembros} one {# miembro} other {# miembros}}",
+      "archived": "Archivado",
+      "menu": "Opciones de #{name}",
+      "addPeople": "Añadir personas",
+      "rename": "Renombrar",
+      "archive": "Archivar",
+      "unarchive": "Desarchivar",
+      "archivedToast": "#{name} archivado",
+      "unarchivedToast": "#{name} desarchivado",
+      "failed": "No se pudo actualizar #{name}. Inténtalo de nuevo."
     }
   }
 }

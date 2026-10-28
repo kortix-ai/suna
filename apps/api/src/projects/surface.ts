@@ -29,6 +29,7 @@ export {
 } from './lib/sessions';
 
 export {
+  createCommandStatus,
   createSession,
   startSession,
   continueSession,

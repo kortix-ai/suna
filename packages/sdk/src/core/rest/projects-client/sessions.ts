@@ -69,6 +69,8 @@ export interface ProjectSession {
   model?: string | null;
   /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */
   space_id?: string | null;
+  /** The session group it is filed in (`session_groups`); null in no group. Absent on older APIs. */
+  group_id?: string | null;
   /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. Absent on older APIs. */
   first_prompt?: string | null;
   /**
@@ -406,6 +408,12 @@ export interface ListProjectSessionsOptions {
   view?: 'pinned' | 'archived' | 'deleted';
   /** Only the sessions filed in this space (`ProjectSession.space_id`). Sent as `space_id`. */
   spaceId?: string;
+  /**
+   * Only the sessions filed in this session group (`ProjectSession.group_id`),
+   * or `'none'` for the sessions in no group. Ignored by the API while the
+   * project's `session_groups` flag is off.
+   */
+  group?: string;
   /** Only the sessions this person started (a user id; `startedBy: 'me'` for the caller). Sent as `created_by`. */
   createdBy?: string;
   /** Only the sessions that run this agent (its slug, `ProjectSession.agent_name`). */
@@ -433,6 +441,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   for (const label of options?.labels ?? []) params.append('label', label);
   if (options?.view) params.set(options.view, 'only');
   if (options?.spaceId) params.set('space_id', options.spaceId);
+  if (options?.group) params.set('group', options.group);
   if (options?.createdBy) params.set('created_by', options.createdBy);
   if (options?.agent) params.set('agent', options.agent);
   if (options?.updatedAfter) params.set('updated_after', options.updatedAfter);

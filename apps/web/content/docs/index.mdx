@@ -132,7 +132,7 @@ Roles and groups are on the [Teams](/docs/#teams) page.
 | **Customize** | Project settings, one tab each: **Agents**, **Skills**, **Connectors**, **Triggers**, **Reminders**, **Models**, **Secrets**, **Repo**, **Review**, **Members** and **Settings**. |
 | **Drive** | Shared folders: **My files**, **Company**, and **All files** for admins. |
 | **Apps** | The project's Apps. |
-| **Sessions** | Your sessions. |
+| **Sessions** | Your sessions. With the experimental **Session groups** flag (off by default), group them into named folders everyone in the project shares: move a session in from its menu or by dragging it. See [Session groups](/docs/#session-groups-experimental). |
 | Search | The command palette: `Cmd+K` on a Mac, `Ctrl+K` elsewhere. |
 | Project menu (top left) | Switch project, **Account settings**, your personal **Settings** and **Log out**. |
 
@@ -690,6 +690,25 @@ Open **Customize → Models → Costs**. Set a limit per day, week or month. Cho
 
 Account owners, admins and project managers get an email at 80% and at 100% of a budget.
 
+#### Charges and estimated LLM usage value
+
+Gateway usage reports keep actual recorded spend separate from estimated retail
+usage value. An estimate is not a bill and is never added to charges or budgets.
+OAuth or subscription requests can have zero per-request charges and a nonzero
+usage estimate. Source and session reporting use the same request ledger.
+
+Rate version `models.dev:2026-10-27:v1` covers exact `gpt-6.1-sol` requests from
+`openai` and `openai-codex`, using the [models.dev OpenAI catalog](https://models.dev/api.json).
+Prices are USD per million tokens: input 2, output 10, cached input 0.1, cache
+write 2.5. Above 272,000 input tokens these rates are 4, 15, 0.2, and 5.
+Input totals include cache tokens; cache reads and writes replace plain input,
+not add to it. Rates apply per request, before aggregation.
+
+Unsupported models, invalid counts, and estimated rather than provider-reported
+token counts have unknown value. Reports show priced and unpriced request counts;
+a partial estimate covers only priced requests. Subscription fees are unknown
+without a verified invoice amount. No subscription fee is inferred or allocated
+
 #### Fallback models
 
 Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
@@ -820,6 +839,8 @@ Email is experimental and off by default. Turn on the **Email channel** project 
 
 - **One email thread is one session.** A reply in the thread continues it.
 - **When the agent has a question, it asks in its reply.** Your answer in the thread reaches it.
+- **Each email is stored before Kortix acknowledges it.** A restart or a deploy loses no mail, and the same email sent twice never starts a second session.
+- **A failed run sends no mail.** The session in Kortix shows the error.
 - **Email has no account link.** Choose **Who can email the agent** instead. Kortix drops mail from anyone else.
 - **An inbox is private or shared.** A private inbox starts sessions as you. A shared inbox starts project sessions.
 
@@ -5429,6 +5450,38 @@ A `visibility` that a server-side caller sets (a trigger, a chat integration) wi
 
 Turning `project_channels` on files every session that is in no space into `#general`. Turning it off deletes nothing: the spaces and every `space_id` stay, and come back when the flag is on again. In React, use `useProjectSpaces`, `useProjectSpaceApps`, `useProjectSpaceLinks`, `useAddProjectSpaceLink`, `usePinProjectSpaceLink`, `useRemoveProjectSpaceLink`, `useProjectSpaceMembers`, `useAddProjectSpaceMembers`, `useRemoveProjectSpaceMember`, `useJoinProjectSpace`, `useLeaveProjectSpace`, `useProjectSpaceGeneralNotice`, `useChannelsOnboarding`, `useMarkChannelsOnboarding` and `useProjectSessions(projectId, { spaceId })` ([Hooks](/docs/#hooks)).
 
+### Session groups (experimental)
+
+<Callout type="warning">
+Experimental. Every call in this section needs the project's `session_groups` flag, which is off by default. While it is off, every `sessionGroups` call returns `403` `feature_disabled`, and `listPage({ group })` ignores `group`.
+</Callout>
+
+A session group is a named folder of the project's sessions, for example one per store or client. Every project member sees the same groups in the same order. A session is in at most one group of its project (`ProjectSession.group_id`).
+
+```ts
+const p = kortix.project(projectId);
+
+const storeA = await p.sessionGroups.create({ name: 'Store A' }); // last in the order
+const storeB = await p.sessionGroups.create({ name: 'Store B' });
+await p.sessionGroups.file(sessionId, storeA.group_id); // null takes it out again
+await p.sessionGroups.reorder([storeB.group_id, storeA.group_id]); // every group id, once
+
+const { items } = await p.sessions.listPage({ group: storeA.group_id }); // that group's sessions
+const loose = await p.sessions.listPage({ group: 'none', parent: 'root' }); // the sessions in no group
+```
+
+| Call | Behavior |
+| --- | --- |
+| `sessionGroups.list()` | The groups in order, as `ProjectSessionGroup[]` (`group_id`, `name`, `position`, `created_by`, `created_at`, `updated_at`). Needs read access to the project's sessions. |
+| `sessionGroups.create({ name })` | A group, last in the order. `name` is 1 to 80 characters after trimming. A name another group of the project has, in any case, rejects with `ApiError` `409` `group_name_taken`. A project holds at most 50 groups (`409` `group_limit`). |
+| `sessionGroups.rename(groupId, name)` | The same name rules. An unknown group returns `404` `group_not_found`. |
+| `sessionGroups.reorder(groupIds)` | Every group id of the project, each once, in the new order. A list that is out of date (a group missing, added or foreign) changes nothing and returns `409` `group_order_stale`: read the list again. A repeated id returns `400`. |
+| `sessionGroups.delete(groupId)` | Its sessions stay, in no group. The groups after it move up one place. |
+| `sessionGroups.file(sessionId, groupId)` | Files the session into that group of its project; `null` takes it out. The session keeps its `updated_at`, so it keeps its place in every list. A session the caller cannot see returns `404`; a group of another project or an unknown id returns `404` `group_not_found`. |
+| `sessions.listPage({ group })` | `group` is a group id (that group's sessions, any starter and any depth) or `'none'` (the sessions in no group). A value that is neither returns `400`. |
+
+Creating, renaming, reordering, deleting and filing need the access that changes a session's labels: any member who works in the project. Turning `session_groups` off deletes nothing: the groups and every `group_id` stay, and the sidebar lists every session again until the flag is on again. In React, use `useProjectSessionGroups`, `useCreateProjectSessionGroup`, `useRenameProjectSessionGroup`, `useReorderProjectSessionGroups`, `useDeleteProjectSessionGroup`, `useSetProjectSessionGroup` and `useProjectSessions(projectId, { group })` ([Hooks](/docs/#hooks)).
+
 ### Memory (experimental)
 
 Experimental. Every call in this section needs the project's Files (the `drives` flag): while Files are off, every `memory` route returns `403` `feature_disabled`, and without Drive storage `503` `drive_storage_unavailable`. The Memory UI is a Channels surface (`project_channels`); these calls do not need that flag.
@@ -6277,7 +6330,8 @@ Most hooks below are React Query hooks. Unless the row names another return valu
 | --- | --- |
 | `useAccounts({ userId, enabled })` | The caller's accounts. Pass the signed-in person's `userId` in any host where the person can change without a reload. |
 | `useProjects(accountId?, options?)` | The projects in one account. |
-| `useProjectSessions(projectId, { scope, parent, startedBy, q, labels, limit, spaceId, createdBy, agent, updatedAfter, keepPreviousData, refetchInterval, pollFirstPageOnly })` | One project's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. `parent: 'root'` returns top-level sessions with `child_count`. `startedBy` is `'me'`, `'others'` or `'automated'`. `q` searches every session the caller can open. `scope: 'project'` is the manager inventory. `spaceId` (experimental, `project_channels` flag) lists one channel or DM, with `first_prompt` and `reply_count` on each row. `createdBy` (a user id) keeps the sessions that person started, `agent` (a slug) the ones that run that agent, `updatedAfter` (ISO 8601) the ones with activity at or after that time. `keepPreviousData: true` keeps the previous filter's rows (`isPlaceholderData`) while a changed filter loads, so a search field does not blank the list. `refetchInterval` (ms, or a function of the loaded sessions) polls every loaded page; add `pollFirstPageOnly: true` (experimental) to poll page one only and keep older loaded pages as they are. |
+| `useProjectSessions(projectId, { scope, parent, startedBy, q, labels, limit, spaceId, group, createdBy, agent, updatedAfter, keepPreviousData, refetchInterval, pollFirstPageOnly })` | One project's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. `parent: 'root'` returns top-level sessions with `child_count`. `startedBy` is `'me'`, `'others'` or `'automated'`. `q` searches every session the caller can open. `scope: 'project'` is the manager inventory. `spaceId` (experimental, `project_channels` flag) lists one channel or DM, with `first_prompt` and `reply_count` on each row. `createdBy` (a user id) keeps the sessions that person started, `agent` (a slug) the ones that run that agent, `updatedAfter` (ISO 8601) the ones with activity at or after that time. `keepPreviousData: true` keeps the previous filter's rows (`isPlaceholderData`) while a changed filter loads, so a search field does not blank the list. `refetchInterval` (ms, or a function of the loaded sessions) polls every loaded page; add `pollFirstPageOnly: true` (experimental) to poll page one only and keep older loaded pages as they are. |
+| `useProjectSessionGroups(projectId, { enabled })`, `useCreateProjectSessionGroup(projectId)`, `useRenameProjectSessionGroup(projectId)`, `useReorderProjectSessionGroups(projectId)`, `useDeleteProjectSessionGroup(projectId)`, `useSetProjectSessionGroup(projectId)` | Experimental, `session_groups` flag only: keep `enabled: false` while the flag is off (the route returns `403`). The groups in order as `ProjectSessionGroup[]`. `reorder.mutate(groupIds)` shows the new order at once and puts the old one back on a refusal. Filing (`mutate({ sessionId, groupId })`) shows the new `group_id` at once and moves the row between the cached group lists (`useProjectSessions(projectId, { group })`) before the refetch. A refusal rejects the call and never reaches the client's default mutation `onError`: show it yourself. See [Session groups](/docs/#session-groups-experimental). |
 | `useProjectSpaces(projectId, { enabled })`, `useCreateProjectSpace(projectId)`, `useUpdateProjectSpace(projectId)`, `useOpenProjectDm(projectId)` | Experimental, `project_channels` flag only: keep `enabled: false` while the flag is off (the route returns `403`). The channels and the caller's DMs as `ProjectSpace[]`. `create.mutate({ name, description? })`, `update.mutate({ spaceId, input })` and `openDm.mutate(agentName)` refresh the list. Creating a channel and opening a DM also refresh the onboarding state. See [Channels and DMs](/docs/#channels-and-dms-experimental). |
 | `useProjectSpaceGeneralNotice(projectId, { enabled })`, `useChannelsOnboarding(projectId, { enabled })`, `useMarkChannelsOnboarding(projectId)` | Experimental, `project_channels` flag only. `#general`'s "turned on again" line (`{ kind, at, count }` or `null`); its key sits under the spaces key, so a spaces refresh refreshes it. The caller's onboarding state (`intro_seen`, `get_started`). `mark.mutate('channels_intro')` records a mark and refreshes the onboarding state. Every memory write refreshes it too. |
 | `useProjectSpaceApps(projectId, spaceId)`, `useProjectSpaceLinks(projectId, spaceId)`, `useAddProjectSpaceLink(projectId, spaceId)`, `usePinProjectSpaceLink(projectId, spaceId)`, `useRemoveProjectSpaceLink(projectId, spaceId)` | Experimental, `project_channels` flag only. One channel's Apps (`App[]`), and links (`ProjectSpaceLink[]`, pinned and shared in its threads). Each link carries `display_title`, `site_name` and `icon_url` (null until the server fetched the page). Disabled until both ids are set. `add.mutate({ url, title? })`, `pin.mutate({ linkId, pinned })` and `remove.mutate(linkId)` refresh the links. |

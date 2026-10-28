@@ -41,3 +41,11 @@ describe('newWorkspaceReturnPath', () => {
     expect(readSourceParam(new URLSearchParams(query))).toBe('github-import');
   });
 });
+
+
+test('GitHub setup round trip preserves computer pairing intent', () => {
+  expect(newWorkspaceReturnPath('github-import', 'acct-1', true)).toBe(
+    '/new?source=github-import&account=acct-1&connect=computer',
+  );
+  expect(newWorkspaceReturnPath('managed', 'acct-1', false)).toBe('/new?account=acct-1');
+});

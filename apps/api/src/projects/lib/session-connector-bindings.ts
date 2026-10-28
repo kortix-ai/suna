@@ -249,13 +249,19 @@ export async function loadEmailInstallConnectionId(
   );
 }
 
+/**
+ * Bind a session to its inbox's account, once. `bound`: the session uses the
+ * inbox's active account. `stale`: it is bound to an account of the inbox that
+ * was revoked (the inbox was removed and added again), so it can never answer.
+ * `refused`: anything else (no account, another account, another session).
+ */
 export async function ensureEmailSessionBinding(input: {
   projectId: string;
   sessionId: string;
   inboxId: string;
-}): Promise<boolean> {
+}): Promise<'bound' | 'stale' | 'refused'> {
   const connectionId = await loadEmailInstallConnectionId(input.projectId, input.inboxId);
-  if (!connectionId) return false;
+  if (!connectionId) return 'refused';
   const [connection] = await db
     .select({
       accountId: connectorConnections.accountId,
@@ -274,7 +280,7 @@ export async function ensureEmailSessionBinding(input: {
       ),
     )
     .limit(1);
-  if (!connection || !session || connection.accountId !== session.accountId) return false;
+  if (!connection || !session || connection.accountId !== session.accountId) return 'refused';
   try {
     await db.insert(projectSessionConnectorBindings).values({
       sessionId: input.sessionId,
@@ -299,7 +305,14 @@ export async function ensureEmailSessionBinding(input: {
       ),
     )
     .limit(1);
-  return binding?.connectionId === connectionId;
+  if (!binding) return 'refused';
+  if (binding.connectionId === connectionId) return 'bound';
+  const [bound] = await db
+    .select({ status: connectorConnections.status, inboxId: sql<unknown>`${connectorConnections.metadata}->>'inbox_id'` })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, binding.connectionId))
+    .limit(1);
+  return bound?.status === 'revoked' && bound.inboxId === input.inboxId ? 'stale' : 'refused';
 }
 
 export function parseSessionConnectorBindings(

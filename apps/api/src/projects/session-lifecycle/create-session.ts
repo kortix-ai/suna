@@ -4,9 +4,9 @@
  */
 
 import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
-import { projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { projectSessions, projects, serviceAccounts, sessionLifecycleCommands } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { adoptChatThreads, bindChatThread } from '../../channels/core/threads';
+import { adoptChatThreads, bindChatThread, releaseCreateClaims } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
@@ -36,6 +36,29 @@ import type {
 } from './types';
 import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
+
+/**
+ * The status of the `create_session` command under this key in this project, or
+ * null when none exists. Keys are global and a client may choose one, so the
+ * project scopes the answer to this project's own create.
+ */
+export async function createCommandStatus(
+  idempotencyKey: string,
+  projectId: string,
+): Promise<SessionLifecycleCommandRow['status'] | null> {
+  const [row] = await db
+    .select({ status: sessionLifecycleCommands.status })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.idempotencyKey, idempotencyKey),
+        eq(sessionLifecycleCommands.projectId, projectId),
+        eq(sessionLifecycleCommands.commandType, 'create_session'),
+      ),
+    )
+    .limit(1);
+  return row?.status ?? null;
+}
 
 export async function createSession(
   command: CreateSessionCommand,
@@ -428,6 +451,8 @@ export async function applyPostCreateActions(input: {
           threadId: action.threadId,
           sessionId: input.sessionId,
         });
+        // Later messages find the thread now; the claim is spent.
+        await releaseCreateClaims([action]);
       } else if (action.type === 'deliver_prompt') {
         // One initial prompt per session: a retried create dedupes on the key.
         const outcome = await deliverThroughQueue({

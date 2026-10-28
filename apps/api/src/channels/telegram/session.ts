@@ -16,9 +16,12 @@ import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { type ChannelNotice, type ChannelPort, type ChannelTarget, forgetChatThread, routeChannelMessage } from '../core/conversation';
+import { classifyTurnError } from '../slack/errors';
+import { sessionWebUrl } from '../slack/util';
 import { startErrorMessage, TELEGRAM_START_ERROR_COMMANDS } from '../start-error';
 import { telegramCall } from './api';
 import { loadTelegramBotToken, loadTelegramInstall } from './installs';
@@ -68,14 +71,32 @@ export function telegramMessageEvent(
   };
 }
 
-const telegramPort: ChannelPort = {
+/** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
+const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
+  'Out of credits': 'A workspace admin can top up credits in Kortix. Then send your message again.',
+  'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
+  'Response too long': 'Ask the agent to continue, or narrow the request.',
+  'Conversation too long': 'Send /new to start a new conversation.',
+  'Agent unavailable': 'A project admin can fix the agent in Kortix. Then send /new and your message again.',
+  'Model unavailable': 'A project admin can pick another model in Kortix. Then send /new and your message again.',
+  'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
+  'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
+  'Provider unavailable': 'Send your message again to retry.',
+  'Request blocked': 'Rephrase the request, then send it again.',
+};
+const RUN_ERROR_FALLBACK_ADVICE = 'Send your message again, or send /new to start a new conversation.';
+
+export const telegramPort: ChannelPort = {
   async notify(target, notice) {
+    const text = telegramNotice(target, notice);
+    if (!text) return;
     const token = await loadTelegramBotToken(target.projectId);
-    if (token) await sendTelegramReply(token, target, telegramNotice(notice));
+    if (token) await sendTelegramReply(token, target, text);
   },
 };
 
-function telegramNotice(notice: ChannelNotice): string {
+/** The chat's words for a notice; null says nothing. */
+export function telegramNotice(target: ChannelTarget, notice: ChannelNotice): string | null {
   switch (notice.kind) {
     case 'create_pending':
       return 'Kortix is still starting a session for this chat. The agent replies here when it is ready.';
@@ -85,6 +106,28 @@ function telegramNotice(notice: ChannelNotice): string {
       return startErrorMessage(notice.error.status, notice.error.body, TELEGRAM_START_ERROR_COMMANDS);
     case 'follow_up_failed':
       return "This chat's Kortix session cannot take new messages. Send /new to start a new conversation, then send your message again.";
+    case 'run_failed': {
+      const { title, aborted } = classifyTurnError(notice.error);
+      // A stop is not a failure; the push skips it too (notifications/session-push.ts).
+      if (aborted) return null;
+      // The title comes from a closed set: the provider's own message never reaches the chat.
+      return [
+        `Kortix could not finish this run: ${title}.`,
+        RUN_ERROR_ADVICE[title] ?? RUN_ERROR_FALLBACK_ADVICE,
+        `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
+      ].join('\n');
+    }
+    case 'start_retrying':
+      return [
+        `Kortix could not start this chat's session yet. ${notice.reason}`,
+        'Kortix tries again automatically for a few minutes. If the agent does not reply, send /new, then send your message again.',
+      ].join('\n');
+    case 'start_failed':
+      return [
+        `Kortix could not start this chat's session, so the agent did not run.${notice.reason ? ` ${notice.reason}` : ''}`,
+        'Send /new, then send your message again. If it fails again, a project admin can check the session in Kortix.',
+        `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
+      ].join('\n');
   }
 }
 
@@ -167,13 +210,19 @@ export async function handleTelegramEvent(
   );
 }
 
-/** One reply path for commands and notices: the chat and topic come from the target's thread id. */
+/**
+ * One reply path for commands and notices: the chat and topic come from the
+ * target's thread id. A target found from a session has no message to answer,
+ * so its notice is posted unanchored.
+ */
 async function sendTelegramReply(token: string, target: ChannelTarget, text: string): Promise<void> {
   const [chatId, topicId] = target.threadId.split(':');
   await telegramCall(token, 'sendMessage', {
     chat_id: Number(chatId),
     text,
-    reply_parameters: { message_id: Number(target.messageId), allow_sending_without_reply: true },
+    ...(target.messageId
+      ? { reply_parameters: { message_id: Number(target.messageId), allow_sending_without_reply: true } }
+      : {}),
     ...(topicId ? { message_thread_id: Number(topicId) } : {}),
   }).catch((error) => logger.warn('[telegram] reply failed', { error: String(error) }));
 }

@@ -1290,6 +1290,10 @@
         "project_channels": {
           "name": "Canais",
           "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
+        },
+        "session_groups": {
+          "name": "Grupos de sessões",
+          "description": "Agrupe as sessões da barra lateral em pastas com nome compartilhadas por todo o projeto, por exemplo uma por loja ou cliente. Mova uma sessão para um grupo pelo menu dela ou arrastando; reordene e recolha os grupos."
         }
       },
       "channelsSwitch": {
@@ -1768,6 +1772,38 @@
       "bulkFailed": "{count, plural, one {Não foi possível alterar # sessão} other {Não foi possível alterar # sessões}}",
       "showArchived": "Sessões arquivadas",
       "pinnedMark": "Fixada"
+    },
+    "sessionGroups": {
+      "newGroup": "Novo grupo",
+      "newGroupFromMenu": "Novo grupo…",
+      "createTitle": "Novo grupo",
+      "createDescription": "Todos neste projeto veem o grupo. Mova uma sessão para o grupo pelo menu dela ou arraste-a até ele.",
+      "namePlaceholder": "Nome do grupo",
+      "create": "Criar grupo",
+      "created": "Grupo criado",
+      "createFailed": "Não foi possível criar o grupo",
+      "rename": "Renomear grupo",
+      "save": "Salvar",
+      "renamed": "Grupo renomeado",
+      "renameFailed": "Não foi possível renomear o grupo",
+      "nameTaken": "Outro grupo deste projeto já tem esse nome.",
+      "limit": "Um projeto tem no máximo 50 grupos.",
+      "cancel": "Cancelar",
+      "delete": "Excluir grupo",
+      "deleteTitle": "Excluir este grupo?",
+      "deleteDescription": "{name} será excluído para todos neste projeto. As sessões dele continuam, sem grupo. Esta ação não pode ser desfeita.",
+      "deleted": "Grupo excluído",
+      "deleteFailed": "Não foi possível excluir o grupo",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "reorderFailed": "Não foi possível reordenar os grupos",
+      "moveTo": "Mover para um grupo",
+      "removeFromGroup": "Remover do grupo",
+      "moved": "Sessão movida",
+      "noGroup": "Sem grupo",
+      "moveFailed": "Não foi possível mover a sessão",
+      "empty": "As sessões que você mover para cá aparecerão aqui.",
+      "groupOptions": "Opções do grupo"
     },
     "recentlyDeleted": {
       "view": "Excluídas recentemente",
@@ -20428,7 +20464,9 @@
       "text7c0a91e5b3d2": "Ferramentas não classificadas",
       "text9d2b6f0c41ae": "Ferramentas e regras",
       "openThreadAction": "Abrir thread",
-      "untitledThread": "Thread sem título"
+      "untitledThread": "Thread sem título",
+      "text314ae71b8c8d": "Artefatos",
+      "textfe204b549282": "artefatos documentos documento slides apresentação quadro design painel página publicado compartilhar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -23309,6 +23347,22 @@
       "agentsFailedPeopleAdded": "{what} adicionados a #{name}. Não foi possível adicionar os agentes: continuam selecionados.",
       "allAdded": "Todos do projeto já estão aqui.",
       "noMatches": "Nada corresponde a “{query}”."
+    },
+    "privateNotIn": {
+      "row": "Canais privados dos quais você não participa",
+      "title": "Canais privados dos quais você não participa",
+      "description": "Você pode renomear, arquivar e adicionar pessoas. Só os membros leem o que há em um canal, então você não pode se adicionar.",
+      "meta": "{count, plural, =0 {Nenhum membro} one {# membro} other {# membros}} · criado por {name}",
+      "metaNoCreator": "{count, plural, =0 {Nenhum membro} one {# membro} other {# membros}}",
+      "archived": "Arquivado",
+      "menu": "Opções de #{name}",
+      "addPeople": "Adicionar pessoas",
+      "rename": "Renomear",
+      "archive": "Arquivar",
+      "unarchive": "Desarquivar",
+      "archivedToast": "#{name} arquivado",
+      "unarchivedToast": "#{name} desarquivado",
+      "failed": "Não foi possível atualizar #{name}. Tente de novo."
     }
   }
 }

@@ -294,6 +294,15 @@ export default {
     const url = new URL(request.url);
     const isGateway = url.hostname.includes('gateway');
 
+    if (url.protocol === 'https:' && url.pathname === '/.well-known/security.txt' &&
+        (request.method === 'GET' || request.method === 'HEAD')) {
+      return addSecurityHeaders(new Response(request.method === 'HEAD' ? null :
+        `Contact: mailto:security@kortix.com\nExpires: 2027-04-25T00:00:00Z\nPreferred-Languages: en\nCanonical: ${url.origin}/.well-known/security.txt\n`, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      }));
+    }
+
+
     const active =
       (isGateway ? env.GATEWAY_ACTIVE_BACKEND : env.ACTIVE_BACKEND) || 'ecs-fargate';
     const backends = isGateway

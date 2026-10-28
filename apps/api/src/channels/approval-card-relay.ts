@@ -7,11 +7,12 @@
  * (`connector_calls.result_summary.chat_card`), so the decision path needs no
  * lookup to find it.
  */
-import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { connectorCalls, projectSessions } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
 import { approvalPreviewReviewable, isPlainRecord } from '../connectors/args-preview';
 import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
 import { db } from '../shared/db';
+import { lookupChatUserForKortixUser } from './core/identity';
 import { loadSlackTokenForProject } from './install-store';
 import { postBlocks, updateBlocks } from './slack-api';
 import { buildApprovalCardBlocks, buildApprovalOutcomeBlocks, slackUserIdsIn } from './slack/approval-card';
@@ -137,19 +138,8 @@ function cardRefOf(resultSummary: Record<string, unknown>): ChatApprovalCardRef 
 
 /** `<@U…>` when the Kortix user linked a Slack identity in that workspace. */
 async function decidedByLabel(userId: string, teamId: string): Promise<string> {
-  const [link] = await db
-    .select({ platformUserId: chatUserIdentities.platformUserId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.userId, userId),
-        eq(chatUserIdentities.platform, 'slack'),
-        eq(chatUserIdentities.workspaceId, teamId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  return link ? `<@${link.platformUserId}>` : 'a teammate in Kortix';
+  const platformUserId = await lookupChatUserForKortixUser('slack', teamId, userId);
+  return platformUserId !== null ? `<@${platformUserId}>` : 'a teammate in Kortix';
 }
 
 const OUTCOME_LABEL = { approve: 'Approved', deny: 'Denied', expired: 'Expired' } as const;

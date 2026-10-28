@@ -53,6 +53,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
+COPY patches/undici@8.12.2.patch /repo/patches/undici@8.12.2.patch
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract

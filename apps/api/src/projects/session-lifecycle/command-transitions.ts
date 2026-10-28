@@ -1,5 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { releaseCreateClaims } from '../../channels/core/threads';
 import { deadLetterCause } from './dead-letter-cause';
 import { logger } from '../../lib/logger';
 import { extendSandboxDeadline } from '../sandbox-deadline';
@@ -456,6 +457,12 @@ export async function markCommandFailed(
   const triggerSlug = commandTriggerSlug(row);
   if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
+  }
+
+  // A channel create given up frees its thread: the next message starts at
+  // once instead of waiting out the claim.
+  if (row.commandType === 'create_session' && Array.isArray(payload.postCreate)) {
+    await releaseCreateClaims(payload.postCreate);
   }
 
   // A dead-lettered head opens no turn, so no turn end wakes the prompt behind

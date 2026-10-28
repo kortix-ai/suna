@@ -27,7 +27,7 @@ export function catalogSlug(name: string): string {
 }
 
 /** The way to install: `way` by id, else the recommended one. */
-export function catalogWay(detail: ConnectorCatalogDetail, requestedWay?: string): ConnectorSurfaceVariant {
+function catalogWay(detail: ConnectorCatalogDetail, requestedWay?: string): ConnectorSurfaceVariant {
   const way = requestedWay ? canonicalCatalogId(requestedWay) : undefined;
   const installable = detail.variants.filter((variant) => variant.connector || variant.kind === 'composio');
   const recommended = detail.variants.find((variant) => variant.recommended);
@@ -126,7 +126,7 @@ function normalizeEndpoint(value: string): string {
 }
 
 /** The identity of a catalogue way, as it would install. */
-export function wayIdentity(way: ConnectorSurfaceVariant): string | null {
+function wayIdentity(way: ConnectorSurfaceVariant): string | null {
   if (way.kind === 'composio') return connectorIdentity({ provider: 'composio', app: way.composio?.slug });
   return way.connector ? connectorIdentity(way.connector) : null;
 }

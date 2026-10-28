@@ -968,6 +968,7 @@ export async function handleChatCompletions(
       attemptFailures,
       servedModel: routedModel,
       ...(routedModel !== routeModel ? { fallbackFrom: routeModel } : {}),
+      metadata: { usageEstimated: estimated || !reported },
       usage: counts,
       upstreamCost,
       finalCost,
