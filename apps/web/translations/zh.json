@@ -22822,6 +22822,7 @@
       "people": "People",
       "manage": "Manage",
       "savedIn": "Saved in <file></file> under <key></key>. Instructions live in <source></source>.",
+      "builtinNote": "内置。此智能体由 Kortix 维护；在 kortix.yaml 中设置 <code>builtin_agents.my_kortix: false</code> 即可关闭。",
       "instructionsHint": "The system prompt for every session of {name}.",
       "instructionsPlaceholder": "Describe the agent's role, how it works and what it never does.",
       "editorView": "Editor view",

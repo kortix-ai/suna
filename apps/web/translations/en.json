@@ -22829,6 +22829,7 @@
       "people": "People",
       "manage": "Manage",
       "savedIn": "Saved in <file></file> under <key></key>. Instructions live in <source></source>.",
+      "builtinNote": "Built in. Kortix maintains this agent; turn it off with <code>builtin_agents.my_kortix: false</code> in kortix.yaml.",
       "instructionsHint": "The system prompt for every session of {name}.",
       "instructionsPlaceholder": "Describe the agent's role, how it works and what it never does.",
       "editorView": "Editor view",

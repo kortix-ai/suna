@@ -134,8 +134,6 @@ import {
   railKeyOf,
   sectionLocationHref,
 } from './agent-tabs';
-import { PlatformAgentOverview } from './platform-agent-overview';
-import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useSpacesEnabled } from '../../internal/lib/space-scope';
 import { connectorPolicySetOptions } from './agent-policy-sets';
 import { AgentPolicySetsPanel } from './agent-policy-sets-section';
@@ -183,7 +181,7 @@ export function AgentPage({
     ),
   });
 
-  if (detailQuery.isLoading || (agent && !isPlatform && configQuery.isLoading)) {
+  if (detailQuery.isLoading || (agent && configQuery.isLoading)) {
     return <AgentPageSkeleton />;
   }
 
@@ -249,7 +247,7 @@ export function AgentPage({
 
   // A writer whose agent-config read failed would otherwise land on the
   // read-only page with no word on why: say what failed, offer the retry.
-  if (!isPlatform && canWrite && configQuery.isError) {
+  if ((isPlatform || canWrite) && configQuery.isError) {
     return (
       <AgentStatePage title={agentDisplayName(agent.name)}>
         <ErrorState
@@ -266,7 +264,22 @@ export function AgentPage({
     );
   }
 
-  if (isPlatform) return <PlatformAgentPage projectId={projectId} agent={agent} config={config} canWrite={canWrite} />;
+  // My Kortix is an ordinary v3 agent whose block comes from the server: the
+  // same page, every control disabled, no save bar.
+  if (isPlatform) {
+    return (
+      <EditableAgentPage
+        projectId={projectId}
+        agent={agent}
+        config={config}
+        initial={configQuery.data?.block ?? blockFromScope(agent)}
+        schemaVersion={configQuery.data?.schema_version ?? 3}
+        renderApps={renderApps}
+        readOnly
+        canWrite={canWrite}
+      />
+    );
+  }
 
   const editable = canWrite && configQuery.data?.editable === true;
   return editable ? (
@@ -702,6 +715,8 @@ function EditableAgentPage({
   initial,
   schemaVersion,
   renderApps,
+  readOnly = false,
+  canWrite = true,
 }: {
   projectId: string;
   agent: Agent;
@@ -710,6 +725,14 @@ function EditableAgentPage({
   /** The manifest version: v3 adds the subagent, command and extension grants. */
   schemaVersion: number;
   renderApps?: RenderAgentApps;
+  /**
+   * A built-in agent (My Kortix): every row shows its value, every control is
+   * disabled, there is no save bar. Triggers stays live: a trigger is project
+   * config that names the agent, not the agent's own.
+   */
+  readOnly?: boolean;
+  /** `project.agent.write`: the ⋯ menu (Make default) of a read-only page. */
+  canWrite?: boolean;
 }) {
   const tCapabilities = useI18nTranslations('agentCapabilities');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -783,8 +806,9 @@ function EditableAgentPage({
 
   // Tab links change only the query on this path: the draft survives them, so
   // the guard lets them through.
-  const leaveGuard = useUnsavedChangesGuard(editor.isDirty, pathname);
-  useSaveShortcut(editor.isDirty, saveNow);
+  const dirty = !readOnly && editor.isDirty;
+  const leaveGuard = useUnsavedChangesGuard(dirty, pathname);
+  useSaveShortcut(dirty, saveNow);
 
   const viewHref = (view: AgentConfigSectionKey) => sectionLocationHref(pathname, view);
   const grantLabel = useGrantLabel();
@@ -839,12 +863,12 @@ function EditableAgentPage({
               block={draft}
               prompt={editor.oc.prompt ?? ''}
               views={overviewViews}
-              editor={editor}
+              editor={readOnly ? undefined : editor}
               hrefFor={viewHref}
               sourcePath={sourcePath}
               showSpace={spacesOn}
-              onAskMyKortix={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
-              focusInstructions={location.open === 'instructions'}
+              onAskMyKortix={readOnly ? undefined : () => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
+              focusInstructions={!readOnly && location.open === 'instructions'}
             />
           </AgentTabBody>
         );
@@ -937,6 +961,16 @@ function EditableAgentPage({
         );
     }
   })();
+  // `disabled` on a fieldset disables every form control inside it; `contents`
+  // keeps the body's own layout.
+  const lockedBody =
+    readOnly && location.tab !== 'triggers' ? (
+      <fieldset disabled className="contents">
+        {body}
+      </fieldset>
+    ) : (
+      body
+    );
 
   return (
     // Embedded screens leave through the router too (a configure session):
@@ -952,7 +986,7 @@ function EditableAgentPage({
               projectId={projectId}
               agent={agent}
               config={config}
-              canWrite
+              canWrite={canWrite}
               share={share}
             />
           }
@@ -962,42 +996,46 @@ function EditableAgentPage({
             <AgentRail
               items={railItems}
               active={railKeyOf(location)}
-              dirty={dirtyItems}
+              dirty={readOnly ? [] : dirtyItems}
             />
           }
         >
-          {body}
+          {lockedBody}
         </RailLayout>
-        <SaveBar
-          dirty={editor.isDirty}
-          pending={update.isPending}
-          changed={changed}
-          onDiscard={() => setConfirmDiscard(true)}
-          onSave={saveNow}
-        />
-        <ConfirmDialog
-          open={confirmDiscard}
-          onOpenChange={setConfirmDiscard}
-          title={tI18nComplete.raw('text3b13192b9d88')}
-          description={tI18nComplete('text8a36cce34f68', { value0: name })}
-          confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
-          cancelLabel={tI18nComplete.raw('texte76fd2add010')}
-          confirmVariant="destructive"
-          onConfirm={() => {
-            setConfirmDiscard(false);
-            editor.discard();
-          }}
-        />
-        <LeaveDialog
-          open={leaveGuard.asking}
-          changed={changed}
-          pending={update.isPending}
-          onStay={leaveGuard.stay}
-          onLeave={leaveGuard.leave}
-          onSaveAndLeave={async () => {
-            if (await onSave()) leaveGuard.leave();
-          }}
-        />
+        {readOnly ? null : (
+          <>
+            <SaveBar
+              dirty={editor.isDirty}
+              pending={update.isPending}
+              changed={changed}
+              onDiscard={() => setConfirmDiscard(true)}
+              onSave={saveNow}
+            />
+            <ConfirmDialog
+              open={confirmDiscard}
+              onOpenChange={setConfirmDiscard}
+              title={tI18nComplete.raw('text3b13192b9d88')}
+              description={tI18nComplete('text8a36cce34f68', { value0: name })}
+              confirmLabel={tI18nComplete.raw('texteb1a70e39274')}
+              cancelLabel={tI18nComplete.raw('texte76fd2add010')}
+              confirmVariant="destructive"
+              onConfirm={() => {
+                setConfirmDiscard(false);
+                editor.discard();
+              }}
+            />
+            <LeaveDialog
+              open={leaveGuard.asking}
+              changed={changed}
+              pending={update.isPending}
+              onStay={leaveGuard.stay}
+              onLeave={leaveGuard.leave}
+              onSaveAndLeave={async () => {
+                if (await onSave()) leaveGuard.leave();
+              }}
+            />
+          </>
+        )}
       </div>
     </LeaveGuardProvider>
   );
@@ -1161,31 +1199,6 @@ function ReadOnlyAgentPage({
 /** A markdown file's body without its frontmatter. */
 function stripFrontmatter(content: string): string {
   return content.replace(/^---\n[\s\S]*?\n---\n?/, '');
-}
-
-// ─── My Kortix ───────────────────────────────────────────────────────────────
-
-/**
- * My Kortix: no header and no tabs, one centred block (Marko, 2026-10-28).
- * The floating opener keeps the collapsed sidebar reachable.
- */
-function PlatformAgentPage({
-  projectId,
-  config,
-}: {
-  projectId: string;
-  agent: Agent;
-  config: ProjectConfigSummary;
-  canWrite: boolean;
-}) {
-  return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col">
-      <SidebarToggle placement="floating" />
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
-        <PlatformAgentOverview projectId={projectId} config={config} />
-      </div>
-    </div>
-  );
 }
 
 /** Whether a Kortix permissions grant lets the agent open project Apps. */
