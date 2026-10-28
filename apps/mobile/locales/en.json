@@ -1264,5 +1264,20 @@
     "waitingManagers": "Anyone who manages this project can approve or deny it.",
     "waitingTitle": "Waiting on approval",
     "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
+  },
+  "imageGen": {
+    "generating": "Generating image",
+    "editing": "Editing image",
+    "loading": "Loading image",
+    "stopped": "Stopped",
+    "failed": "The image was not generated.",
+    "notLoaded": "The image did not load.",
+    "tapToLoad": "Tap to load ({{size}})",
+    "retrySecond_one": "Try again in {{count}} second.",
+    "retrySecond_other": "Try again in {{count}} seconds.",
+    "retryMinute_one": "Try again in {{count}} minute.",
+    "retryMinute_other": "Try again in {{count}} minutes.",
+    "retryHour_one": "Try again in {{count}} hour.",
+    "retryHour_other": "Try again in {{count}} hours."
   }
 }

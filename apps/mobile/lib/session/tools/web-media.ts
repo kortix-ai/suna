@@ -1,11 +1,11 @@
 /**
  * Pure logic behind the media tool renderers: `image-search-tool.tsx`,
- * `image-gen-tool.tsx`, `video-gen-tool.tsx`, `presentation-gen-tool.tsx`.
+ * `video-gen-tool.tsx`, `presentation-gen-tool.tsx`. `image-gen-tool.tsx`
+ * reads `image-gen-view.ts`, which uses `parseImageOutput` from here.
  *
  * Ported from apps/web:
  * - `tool/tools/image-search-tool.tsx` output parsing, tiles, badge;
  * - `features/session/image-output-path.ts` `parseImageOutput`;
- * - `tool/tools/image-gen-tool.tsx` `TITLE_BY_ACTION`;
  * - `tool/tools/presentation-gen-tool.tsx` labels, subtitle, success-line set.
  *
  * `parseVideoOutput` is mobile-only: web prints the video tool's output as a
@@ -140,19 +140,6 @@ export function parseVideoOutput(output: string | null | undefined): ParsedVideo
   }
 
   return { videoPath: sandboxMediaPath(trimmed, SANDBOX_FS_ROOTS, 'video'), directUrl: null };
-}
-
-// ─── Image gen ───────────────────────────────────────────────────────────────
-
-const IMAGE_GEN_TITLE_BY_ACTION: Record<string, string> = {
-  generate: 'Generate Image',
-  edit: 'Edit Image',
-  upscale: 'Upscale Image',
-  remove_bg: 'Remove Background',
-};
-
-export function imageGenTitle(action: string | undefined): string {
-  return IMAGE_GEN_TITLE_BY_ACTION[action ?? ''] || 'Image Gen';
 }
 
 // ─── Presentation gen ────────────────────────────────────────────────────────

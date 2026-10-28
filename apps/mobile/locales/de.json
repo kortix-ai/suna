@@ -1262,5 +1262,20 @@
     "waitingManagers": "Eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen.",
     "waitingTitle": "Wartet auf Genehmigung",
     "waitingWho": "Die Person, die diese Sitzung gestartet hat, oder eine Person, die dieses Projekt verwaltet, kann den Aufruf genehmigen oder ablehnen."
+  },
+  "imageGen": {
+    "generating": "Bild wird erstellt",
+    "editing": "Bild wird bearbeitet",
+    "loading": "Bild wird geladen",
+    "stopped": "Gestoppt",
+    "failed": "Das Bild wurde nicht erstellt.",
+    "notLoaded": "Das Bild wurde nicht geladen.",
+    "tapToLoad": "Zum Laden tippen ({{size}})",
+    "retrySecond_one": "Versuchen Sie es in {{count}} Sekunde erneut.",
+    "retrySecond_other": "Versuchen Sie es in {{count}} Sekunden erneut.",
+    "retryMinute_one": "Versuchen Sie es in {{count}} Minute erneut.",
+    "retryMinute_other": "Versuchen Sie es in {{count}} Minuten erneut.",
+    "retryHour_one": "Versuchen Sie es in {{count}} Stunde erneut.",
+    "retryHour_other": "Versuchen Sie es in {{count}} Stunden erneut."
   }
 }

@@ -190,7 +190,8 @@ function ToolPartRendererImpl({
 
   if (call.name === 'todoread') return null;
 
-  if (partStatus(call) === 'error') {
+  // The image card draws its own failure and a stop in place of the image.
+  if (partStatus(call) === 'error' && call.name !== 'image_gen') {
     const { display, server } = toolDisplayName(call.name);
     return (
       <RowAmbient running={false} stale={false} turnLive={turnLive} outcome={outcome} durationMs={durationMs}>

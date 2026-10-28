@@ -150,6 +150,7 @@ beforeAll(async () => {
   ({ ToolRegistry: registry } = await import('./shared/registry'));
   registry.register('bash', RegisteredBashRow);
   registry.register('probe', ProbeRow);
+  registry.register('image-gen', ({ call }: { call: ToolCallBlock }) => <text>{`REGISTERED-IMAGE-ROW:${call.status}`}</text>);
   ({ ToolPartRenderer } = await import('./tool-part-renderer'));
 });
 
@@ -228,6 +229,18 @@ describe('ToolPartRenderer dispatch', () => {
     expect(texts()).toContain('Bash · failed');
     expect(texts()).toContain('ERROR·boom');
     expect(texts().some((t) => t.startsWith('REGISTERED-'))).toBe(false);
+  });
+
+  test('a failed image_gen call renders the image card, which draws its own failure', async () => {
+    await renderPart({
+      type: 'tool',
+      id: 'part-img',
+      callID: 'call-img',
+      tool: 'image_gen',
+      state: { status: 'error', input: { prompt: 'a fox' }, error: 'Image generation failed (400): Nope. [provider_not_connected]' },
+    });
+    expect(texts()).toContain('REGISTERED-IMAGE-ROW:error');
+    expect(texts().some((t) => t.endsWith('· failed'))).toBe(false);
   });
 
   test('a pending permission surfaces the inline prompt under the registered row', async () => {

@@ -179,6 +179,8 @@ export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 export const StalePendingContext = createContext(false);
 /** The turn that owns this part is still working. */
 export const TurnLiveContext = createContext(false);
+/** The images this turn's `image_gen` calls already drew (`imagePathsShownByImageGen`): a `show` does not draw them again. */
+export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
 /** Re-exported with the other row contexts: `false` in a finished turn (see `ToolMotionContext`). */
 export { RunningLoader, ToolMotionContext };
 export const ToolDurationContext = createContext<number | undefined>(undefined);

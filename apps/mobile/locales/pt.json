@@ -1262,5 +1262,20 @@
     "waitingManagers": "Alguém que gerencia este projeto pode aprovar ou negar a chamada.",
     "waitingTitle": "Aguardando aprovação",
     "waitingWho": "A pessoa que iniciou esta sessão ou alguém que gerencia este projeto pode aprovar ou negar a chamada."
+  },
+  "imageGen": {
+    "generating": "Gerando imagem",
+    "editing": "Editando imagem",
+    "loading": "Carregando imagem",
+    "stopped": "Interrompido",
+    "failed": "A imagem não foi gerada.",
+    "notLoaded": "A imagem não foi carregada.",
+    "tapToLoad": "Toque para carregar ({{size}})",
+    "retrySecond_one": "Tente novamente em {{count}} segundo.",
+    "retrySecond_other": "Tente novamente em {{count}} segundos.",
+    "retryMinute_one": "Tente novamente em {{count}} minuto.",
+    "retryMinute_other": "Tente novamente em {{count}} minutos.",
+    "retryHour_one": "Tente novamente em {{count}} hora.",
+    "retryHour_other": "Tente novamente em {{count}} horas."
   }
 }

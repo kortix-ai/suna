@@ -48,6 +48,7 @@ import {
   showRowModel,
   showUnavailableLabel,
 } from '@/lib/session/tools/web-show';
+import { withoutImageGenDuplicates } from '@/lib/session/tools/image-gen-view';
 import { webSpace } from '@/lib/session/user-message';
 import { THEME } from '@/lib/utils/theme';
 import {
@@ -60,6 +61,7 @@ import {
   ToolRunningContext,
   ToolDetailContext,
   ToolEmptyState,
+  ImageGenPathsContext,
   partInput,
   useServicePreview,
   useToolNavigation,
@@ -103,7 +105,13 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   const aspectRatio = str(input.aspect_ratio);
   const language = str(input.language);
 
-  const items = useMemo(() => parseShowItems(input.items), [input.items]);
+  // Images an `image_gen` card of this turn already drew are not drawn twice.
+  const drawnByImageGen = useContext(ImageGenPathsContext);
+  const items = useMemo(() => {
+    const parsed = parseShowItems(input.items);
+    const rest = parsed && withoutImageGenDuplicates(parsed, drawnByImageGen);
+    return rest?.length ? rest : null;
+  }, [input.items, drawnByImageGen]);
   const isCarousel = !!items && items.length > 0;
   const [carouselIndex, setCarouselIndex] = useState(0);
   const currentItem = isCarousel ? items[carouselIndex] || items[0] : null;

@@ -73,13 +73,15 @@ import {
   type TurnSegment,
 } from '@/lib/session/turn-body';
 import { turnDurationMs } from '@/lib/session/turn-meta';
+import { partInput } from '@/lib/session/tool-part-accessors';
+import { imagePathsShownByImageGen, showDrawnByImageGen } from '@/lib/session/tools/image-gen-view';
 import type { ChangeItem } from '@/lib/session/session-change-requests';
 import { BUSY_RETRY_LABEL } from '@/lib/session/busy-status';
 import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/session/user-message';
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
 import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-display';
 import { TurnErrorDisplay } from './SessionErrorBanner';
-import { TurnLiveContext } from './tool/shared/infrastructure';
+import { ImageGenPathsContext, TurnLiveContext } from './tool/shared/infrastructure';
 import { ToolPartRenderer, type PermissionReply } from './tool/tool-part-renderer';
 import './tool/tools/register';
 import { ActivityBurst } from './turn/activity-burst';
@@ -98,6 +100,8 @@ const TURN_STACK_GAP = webSpace(2.5);
 const SEGMENT_STACK_GAP = webSpace(3);
 /** Web busy slot / answered-question list `space-y-2`. */
 const SMALL_STACK_GAP = webSpace(2);
+/** The tool names the `show` card renders. */
+const SHOW_TOOLS = new Set(['show', 'show_user', 'show-user']);
 
 /** One stable reference for every burst (`ActivityBurst` memo compares it). */
 const displayPath = (path: string) => toDisplayPath(path);
@@ -233,6 +237,13 @@ function SessionTurnImpl({
   const streamingTextId = useMemo(
     () => (working ? liveTextBlockId(turn.assistant, segments) : undefined),
     [working, turn.assistant, segments],
+  );
+  // A `show` of an image this turn's `image_gen` already drew does not draw it again.
+  // Keyed by its content so the context keeps one identity across stream frames.
+  const imageGenPathsKey = useMemo(() => [...imagePathsShownByImageGen(blocks)].join('\n'), [blocks]);
+  const imageGenPaths = useMemo(
+    () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
+    [imageGenPathsKey],
   );
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
@@ -386,6 +397,8 @@ function SessionTurnImpl({
       }
       if (segment.kind === 'standalone') {
         if (!shouldShowToolPart(segment.block)) return null;
+        // A `show` whose every file is an image drawn above renders nothing, not even the row.
+        if (SHOW_TOOLS.has(segment.block.name) && showDrawnByImageGen(partInput(segment.block), imageGenPaths)) return null;
         return (
           <LoopMotionContext.Provider key={segment.block.id} value={shimmerSegment}>
             <ToolPartRenderer
@@ -419,6 +432,7 @@ function SessionTurnImpl({
     const split = layout.text === 'segments' ? workSplit : null;
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
+       <ImageGenPathsContext.Provider value={imageGenPaths}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {split
             ? [
@@ -429,6 +443,7 @@ function SessionTurnImpl({
               ]
             : segments.map((segment) => renderSegment(segment))}
         </View>
+       </ImageGenPathsContext.Provider>
       </TurnLiveContext.Provider>,
     );
   }
