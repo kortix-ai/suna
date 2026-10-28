@@ -1,4 +1,13 @@
-import type { AuthorizeResult, GatewayAttemptFailure, ModelRoutePlan, UpstreamDescriptor } from '../domain';
+import type {
+  AuthedPrincipal,
+  BillingMode,
+  GatewayAttemptFailure,
+  GatewayHooks,
+  GatewayLogger,
+  ModelRoutePlan,
+  UpstreamDescriptor,
+} from '../domain';
+import type { FetchImpl } from '../http';
 import { GatewayResolutionError } from '../errors';
 import { upstreamFetch } from '../upstream-fetch';
 import { calculateCost } from '../usage/pricing';
@@ -10,11 +19,13 @@ import {
   type ImageAttempt,
   type ImageFailure,
   type ImageInput,
+  type ImageResult,
+  MAX_IMAGE_RESPONSE_BYTES,
   imageAdapterFor,
 } from './image-adapters';
 import { shownModel, shownProvider } from './public-identity';
 import { type HandlerRuntime, authorize, bearer, identity, refundHold, requestId } from './simple-handler';
-import { createTraceEmitter } from './trace';
+import { type TraceEmitter, createTraceEmitter } from './trace';
 
 export type ImageOperation = 'generations' | 'edits';
 
@@ -23,6 +34,8 @@ export interface ImageRequest {
   rawBody: string;
   operation: ImageOperation;
   signal?: AbortSignal;
+  /** Test seam: the whole request's budget. Default 300 s. */
+  timeoutMs?: number;
 }
 
 const MAX_REFERENCE_IMAGES = 5;
@@ -33,6 +46,13 @@ const LIMIT_HEADERS = [
   'x-codex-primary-reset-after-seconds',
   'x-codex-primary-window-minutes',
 ];
+/** A Phase 1 kortixd sends `size`; it maps to the matching ratio during rollout. */
+const ASPECT_FOR_SIZE = new Map<unknown, AspectRatio>([
+  ['auto', 'auto'],
+  ['1024x1024', '1:1'],
+  ['1536x1024', '3:2'],
+  ['1024x1536', '2:3'],
+]);
 const NO_IMAGE_MODEL_SUGGESTION = 'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.';
 
 /** Why one candidate did not answer. The last one is the request's answer. */
@@ -64,6 +84,8 @@ function imageInput(raw: string, operation: ImageOperation): { input: ImageInput
       return `\`aspect_ratio\` must be one of ${ASPECT_RATIOS.join(', ')}.`;
     }
     input.aspectRatio = parsed.aspect_ratio as AspectRatio;
+  } else if (ASPECT_FOR_SIZE.has(parsed.size)) {
+    input.aspectRatio = ASPECT_FOR_SIZE.get(parsed.size);
   }
   if (typeof parsed.quality === 'string') input.quality = parsed.quality;
   if (typeof parsed.background === 'string') input.background = parsed.background;
@@ -118,6 +140,18 @@ function refusalFor(failure: ImageFailure, descriptor: UpstreamDescriptor, model
       headers: limitHeaders(failure.headers),
     };
   }
+  if (failure.code === 'image_response_too_large') {
+    return {
+      status: 502,
+      code: 'image_response_too_large',
+      message: `${model} answered with more than ${MAX_IMAGE_RESPONSE_BYTES / 1024 / 1024} MiB.`,
+      suggestion: 'Retry, or choose another image model.',
+    };
+  }
+  if (failure.status === 401 && descriptor.publicProvider) {
+    // A managed model's key is Kortix's own: there is nothing for the user to reconnect.
+    return { status: 502, code: 'image_upstream_error', message: `${model} is unavailable right now.`, suggestion: 'Retry, or choose another image model.' };
+  }
   if (failure.status === 401) {
     return descriptor.provider === 'openai-codex'
       ? { status: 401, code: 'provider_reauth_required', message: 'The ChatGPT login expired.', suggestion: 'Reconnect ChatGPT in Models, then retry.' }
@@ -145,58 +179,130 @@ function plannedModels(route: ModelRoutePlan | null, requestedModel: string): st
   return requestedModel === 'auto' ? [] : [requestedModel];
 }
 
-export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequest): Promise<Response> {
-  const { hooks, logger } = runtime;
-  const fetchImpl = runtime.fetchImpl ?? upstreamFetch;
-  const id = requestId();
-  const startedMs = Date.now();
-  const emit = createTraceEmitter(hooks, logger, id, new Date().toISOString(), startedMs);
-  const operation = `images.${req.operation}`;
-  let requestedModel = '';
-  let resolvedModel = '';
-  let provider = '';
-  let attempts = 0;
-  const candidatesTried: string[] = [];
-  const attemptFailures: GatewayAttemptFailure[] = [];
+/** One request's state, shared by its steps. */
+interface Run {
+  hooks: GatewayHooks;
+  logger: GatewayLogger;
+  fetchImpl: FetchImpl;
+  req: ImageRequest;
+  id: string;
+  emit: TraceEmitter;
+  operation: string;
+  principal: AuthedPrincipal;
+  input: ImageInput;
+  requestedModel: string;
+  models: string[];
+  /** The candidate tried last: what error bodies and traces name. */
+  resolvedModel: string;
+  provider: string;
+  billingMode: BillingMode;
+  attempts: number;
+  candidatesTried: string[];
+  attemptFailures: GatewayAttemptFailure[];
+  refreshed: boolean;
+  charge: Promise<Refusal | null> | null;
+  signal: AbortSignal;
+  last?: Refusal;
+}
 
-  const fail = (refusal: Refusal): Response => {
-    const { status, retryAfter } = refusal;
-    const body = gatewayErrorBody({
-      message: refusal.message,
-      code: refusal.code,
-      provider,
-      requestedModel,
-      resolvedModel,
-      requestId: id,
-      suggestion: refusal.suggestion,
-      responseStatus: status,
-    });
-    return new Response(JSON.stringify(retryAfter !== undefined ? { ...body, retry_after: retryAfter } : body), {
-      status,
-      headers: {
-        'content-type': 'application/json',
-        ...(retryAfter !== undefined ? { 'retry-after': String(retryAfter) } : {}),
-        ...refusal.headers,
-      },
-    });
-  };
+type Named = Pick<Run, 'id' | 'provider' | 'requestedModel' | 'resolvedModel'>;
+
+function errorResponse(at: Named, refusal: Refusal): Response {
+  const { status, retryAfter } = refusal;
+  const body = gatewayErrorBody({
+    message: refusal.message,
+    code: refusal.code,
+    provider: at.provider,
+    requestedModel: at.requestedModel,
+    resolvedModel: at.resolvedModel,
+    requestId: at.id,
+    suggestion: refusal.suggestion,
+    responseStatus: status,
+  });
+  return new Response(JSON.stringify(retryAfter !== undefined ? { ...body, retry_after: retryAfter } : body), {
+    status,
+    headers: {
+      'content-type': 'application/json',
+      ...(retryAfter !== undefined ? { 'retry-after': String(retryAfter) } : {}),
+      ...refusal.headers,
+    },
+  });
+}
+
+function trace(run: Run, fields: { status: number; ok: boolean; errorCode?: string; errorMessage?: string }, extra = {}): void {
+  run.emit({
+    ...identity(run.principal),
+    requestedModel: run.requestedModel,
+    resolvedModel: run.resolvedModel,
+    provider: run.provider,
+    billingMode: run.billingMode,
+    attempts: run.attempts,
+    candidatesTried: run.candidatesTried,
+    ...(run.attemptFailures.length ? { attemptFailures: run.attemptFailures } : {}),
+    ...fields,
+    ...extra,
+    // Never the prompt or the image bytes.
+    request: null,
+    response: null,
+    metadata: { operation: run.operation },
+  });
+}
+
+/** Every unanswered exit after admission: return any wallet hold, trace, answer. */
+function refuse(run: Run, refusal: Refusal): Response {
+  refundHold(run.hooks, run.principal, run.logger);
+  trace(run, { status: refusal.status, ok: false, errorCode: refusal.code, errorMessage: refusal.message });
+  return errorResponse(run, refusal);
+}
+
+function failed(run: Run, model: string, refusal: Refusal, stage: GatewayAttemptFailure['stage'] = 'dispatch'): void {
+  run.last = refusal;
+  run.attemptFailures.push({
+    attempt: run.attemptFailures.length + 1,
+    provider: run.provider,
+    routeModel: model,
+    resolvedModel: run.resolvedModel,
+    stage,
+    status: refusal.status,
+    code: refusal.code,
+    message: refusal.message,
+  });
+}
+
+/** A stopped client or the request's time budget ends it; no other model is tried. */
+function stopped(run: Run): Refusal | null {
+  if (run.req.signal?.aborted) {
+    return { status: 499, code: 'client_aborted', message: 'The client cancelled the request.', suggestion: 'Retry the request.' };
+  }
+  if (run.signal.aborted) {
+    return { status: 504, code: 'image_timeout', message: 'Image generation timed out.', suggestion: 'Retry the request.' };
+  }
+  return null;
+}
+
+/** Step 1, admission: the bearer token, the account, and a valid body. */
+async function admit(runtime: HandlerRuntime, req: ImageRequest): Promise<Run | Response> {
+  const { hooks, logger } = runtime;
+  const id = requestId();
+  const emit = createTraceEmitter(hooks, logger, id, new Date().toISOString(), Date.now());
+  const operation = `images.${req.operation}`;
+  const unnamed: Named = { id, provider: '', requestedModel: '', resolvedModel: '' };
 
   const token = bearer(req.authorization);
   if (!token) {
-    return fail({
+    return errorResponse(unnamed, {
       status: 401,
       code: 'missing_token',
       message: 'Missing bearer token',
       suggestion: 'Provide a valid gateway key or account token.',
     });
   }
-
-  let admission: AuthorizeResult;
+  let admission;
   try {
     admission = await authorize(hooks, token);
   } catch (error) {
     logger.error(`[gateway] ${id}: admission control unavailable — ${error instanceof Error ? error.message : String(error)}`);
-    return fail({
+    return errorResponse(unnamed, {
       status: 503,
       code: 'admission_unavailable',
       message: 'Gateway admission control is unavailable',
@@ -204,7 +310,6 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
       retryAfter: 5,
     });
   }
-
   if (!admission.ok) {
     const message = admission.message ?? 'Request not allowed';
     if (admission.principal) {
@@ -219,282 +324,275 @@ export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequ
         metadata: { operation },
       });
     }
-    return fail({ status: admission.status, code: admission.errorCode, message, suggestion: 'Sign in again or check the account, then retry.' });
+    return errorResponse(unnamed, { status: admission.status, code: admission.errorCode, message, suggestion: 'Sign in again or check the account, then retry.' });
   }
-  let principal = admission.principal;
 
-  const trace = (fields: { status: number; ok: boolean; errorCode?: string; errorMessage?: string }, extra = {}) =>
-    emit({
-      ...identity(principal),
-      requestedModel,
-      resolvedModel,
-      provider,
-      billingMode: 'none',
-      attempts,
-      candidatesTried,
-      ...(attemptFailures.length ? { attemptFailures } : {}),
-      ...fields,
-      ...extra,
-      // Never the prompt or the image bytes.
-      request: null,
-      response: null,
-      metadata: { operation },
-    });
-  /** Every unanswered exit after admission: return any wallet hold, trace, answer. */
-  const refuse = (refusal: Refusal): Response => {
-    refundHold(hooks, principal, logger);
-    trace({ status: refusal.status, ok: false, errorCode: refusal.code, errorMessage: refusal.message });
-    return fail(refusal);
+  const timeoutMs = req.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
+  const run: Run = {
+    hooks,
+    logger,
+    fetchImpl: runtime.fetchImpl ?? upstreamFetch,
+    req,
+    id,
+    emit,
+    operation,
+    principal: admission.principal,
+    input: { operation: req.operation, prompt: '' },
+    requestedModel: '',
+    models: [],
+    resolvedModel: '',
+    provider: '',
+    billingMode: 'none',
+    attempts: 0,
+    candidatesTried: [],
+    attemptFailures: [],
+    refreshed: false,
+    charge: null,
+    signal: req.signal
+      ? AbortSignal.any([req.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs),
   };
-
   const parsed = imageInput(req.rawBody, req.operation);
   req.rawBody = '';
   if (typeof parsed === 'string') {
-    return refuse({ status: 400, code: 'invalid_request', message: parsed, suggestion: 'Fix the request body and retry.' });
+    return refuse(run, { status: 400, code: 'invalid_request', message: parsed, suggestion: 'Fix the request body and retry.' });
   }
-  const { input } = parsed;
-  requestedModel = parsed.model;
+  run.input = parsed.input;
+  run.requestedModel = parsed.model;
+  return run;
+}
 
+/** Step 2, plan: the models to try, from the host's image route. */
+async function plan(run: Run): Promise<Refusal | null> {
   let route: ModelRoutePlan | null;
   try {
-    route = (await hooks.resolveRoute?.(principal, {
-      requestedModel,
-      requires: { imageInput: req.operation === 'edits', imageOutput: true },
+    route = (await run.hooks.resolveRoute?.(run.principal, {
+      requestedModel: run.requestedModel,
+      requires: { imageInput: run.req.operation === 'edits', imageOutput: true },
     })) ?? null;
-    emit.mark('routed');
+    run.emit.mark('routed');
   } catch (error) {
     if (error instanceof GatewayResolutionError) {
-      return refuse({ status: 400, code: error.code, message: error.message, suggestion: error.suggestion });
+      return { status: 400, code: error.code, message: error.message, suggestion: error.suggestion };
     }
-    logger.error(`[gateway] ${id}: image routing unavailable — ${error instanceof Error ? error.message : String(error)}`);
-    return refuse({ status: 502, code: 'routing_unavailable', message: 'Model routing is unavailable', suggestion: 'Retry the request.' });
+    run.logger.error(`[gateway] ${run.id}: image routing unavailable — ${error instanceof Error ? error.message : String(error)}`);
+    return { status: 502, code: 'routing_unavailable', message: 'Model routing is unavailable', suggestion: 'Retry the request.' };
   }
-  const models = plannedModels(route, requestedModel);
-  if (!models.length) {
-    return refuse({
-      status: 400,
-      code: 'image_model_unavailable',
-      message: 'No image model is available for this project.',
-      suggestion: NO_IMAGE_MODEL_SUGGESTION,
-    });
-  }
-
-  // One wallet admission per request, before the first Kortix-billed
-  // candidate, exactly as chat takes it. A hold is settled with the usage
-  // event or returned by `refuse`.
-  let charge: Promise<Refusal | null> | null = null;
-  const admitCharge = () =>
-    (charge ??= (async () => {
-      if (principal.billingHold) return null;
-      try {
-        const billing = await hooks.assertBillingActive(principal.accountId);
-        if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
-        return null;
-      } catch (error) {
-        const reason = (error as { reason?: unknown })?.reason;
-        return {
-          status: 402,
-          code: typeof reason === 'string' ? reason : 'subscription_required',
-          message: error instanceof Error ? error.message : 'Billing inactive',
-          suggestion: 'Check your subscription or add credits, then retry.',
-        };
-      }
-    })());
-
-  const signal = req.signal
-    ? AbortSignal.any([req.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)])
-    : AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
-  /** A stopped client or the 300 s budget ends the request; no other model is tried. */
-  const stopped = (): Refusal | null => {
-    if (req.signal?.aborted) {
-      return { status: 499, code: 'client_aborted', message: 'The client cancelled the request.', suggestion: 'Retry the request.' };
-    }
-    if (signal.aborted) {
-      return { status: 504, code: 'image_timeout', message: 'Image generation timed out.', suggestion: 'Retry the request.' };
-    }
-    return null;
+  run.models = plannedModels(route, run.requestedModel);
+  if (run.models.length) return null;
+  return {
+    status: 400,
+    code: 'image_model_unavailable',
+    message: 'No image model is available for this project.',
+    suggestion: NO_IMAGE_MODEL_SUGGESTION,
   };
-  let refreshed = false;
-  let last: Refusal | undefined;
-  const failed = (model: string, refusal: Refusal, stage: GatewayAttemptFailure['stage'] = 'dispatch') => {
-    last = refusal;
-    attemptFailures.push({
-      attempt: attemptFailures.length + 1,
-      provider,
-      routeModel: model,
-      resolvedModel,
-      stage,
-      status: refusal.status,
-      code: refusal.code,
-      message: refusal.message,
-    });
-  };
+}
 
-  emit.mark('dispatch');
-  for (const model of models) {
-    resolvedModel = model;
-    provider = '';
-    let candidates: UpstreamDescriptor[];
+/**
+ * One wallet admission per request, before the first Kortix-billed
+ * candidate, exactly as chat takes it. A hold is settled with the usage event
+ * or returned by `refuse`.
+ */
+function admitCharge(run: Run): Promise<Refusal | null> {
+  run.charge ??= (async () => {
+    if (run.principal.billingHold) return null;
     try {
-      candidates = await hooks.resolveUpstream(principal, model);
+      const billing = await run.hooks.assertBillingActive(run.principal.accountId);
+      if (billing?.holdUsd) run.principal = { ...run.principal, billingHold: { amountUsd: billing.holdUsd } };
+      return null;
     } catch (error) {
-      const resolution = error instanceof GatewayResolutionError ? error : null;
-      failed(model, {
-        status: resolution?.code === 'provider_pool_rate_limited' ? 429 : 400,
-        code: resolution?.code ?? 'model_unavailable',
-        message: resolution?.message ?? `No provider is configured for model "${model}"`,
-        suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
-        retryAfter: resolution?.retryAfterSeconds,
-      }, 'resolve');
-      continue;
-    }
-    if (!candidates.length) {
-      failed(model, {
-        status: 400,
-        code: 'model_unavailable',
-        message: `No provider is configured for model "${model}"`,
-        suggestion: 'Connect the provider or choose another model.',
-      }, 'resolve');
-      continue;
-    }
-
-    // Pooled accounts of one model: only a 429 moves to the next one (R6).
-    for (let descriptor of candidates) {
-      provider = shownProvider(descriptor);
-      resolvedModel = shownModel(descriptor, model);
-      const adapter = imageAdapterFor(descriptor);
-      if (!adapter) {
-        failed(model, {
-          status: 400,
-          code: 'image_model_unsupported',
-          message: `${model} cannot generate images through Kortix.`,
-          suggestion: 'Choose an image model, or use auto.',
-        });
-        break;
-      }
-      if (descriptor.billingMode !== 'none') {
-        // Kortix never serves a managed image it cannot charge.
-        if (!descriptor.pricing) {
-          failed(model, {
-            status: 400,
-            code: 'image_model_unpriced',
-            message: `${model} has no image price.`,
-            suggestion: 'Choose another image model, or use auto.',
-          });
-          break;
-        }
-        const denied = await admitCharge();
-        if (denied) {
-          failed(model, denied);
-          break;
-        }
-      }
-
-      const send = (target: UpstreamDescriptor) => {
-        attempts += 1;
-        candidatesTried.push(`${provider}:${model}`);
-        return adapter(target, input, { fetchImpl, signal, requestId: id });
+      const reason = (error as { reason?: unknown })?.reason;
+      return {
+        status: 402,
+        code: typeof reason === 'string' ? reason : 'subscription_required',
+        message: error instanceof Error ? error.message : 'Billing inactive',
+        suggestion: 'Check your subscription or add credits, then retry.',
       };
-      let attempt: ImageAttempt;
-      try {
-        attempt = await send(descriptor);
-        if (!attempt.ok && attempt.status === 401 && descriptor.refreshableCredential && hooks.refreshCredential && !refreshed) {
-          refreshed = true;
-          const fresh = await hooks.refreshCredential(principal, descriptor);
-          if (fresh) {
-            descriptor = fresh;
-            attempt = await send(descriptor);
-          }
-        }
-      } catch (error) {
-        const stop = stopped();
-        if (stop) return refuse(stop);
-        logger.warn(`[gateway] ${id}: ${descriptor.provider} image upstream unreachable — ${error instanceof Error ? error.message : String(error)}`);
-        failed(model, {
-          status: 502,
-          code: 'image_upstream_unreachable',
-          message: `${descriptor.provider === 'openai-codex' ? 'ChatGPT' : provider} could not be reached.`,
-          suggestion: 'Retry the request.',
-        });
-        break;
-      }
-      emit.mark('upstream_response');
+    }
+  })();
+  return run.charge;
+}
 
-      if (attempt.ok) {
-        const counts = attempt.usage;
-        const free = descriptor.billingMode === 'none';
-        const { upstreamCost, finalCost } = calculateCost(
-          descriptor.resolvedModel ?? model,
-          counts,
-          free ? 0 : descriptor.markup,
-          attempt.upstreamCostUsd,
-          descriptor.pricing,
-        );
-        const upstream = descriptor.publicProvider
-          ? { upstream: { provider: descriptor.provider, model: descriptor.resolvedModel ?? model } }
-          : {};
-        const tokens = counts.promptTokens + counts.completionTokens;
-        const body = JSON.stringify({
-          created: attempt.created ?? Math.floor(Date.now() / 1000),
-          model,
-          provider,
-          data: [{ b64_json: attempt.b64, mime_type: attempt.mimeType }],
-          ...(attempt.size ? { size: attempt.size } : {}),
-          ...(tokens > 0
-            ? { usage: { input_tokens: counts.promptTokens, output_tokens: counts.completionTokens, total_tokens: tokens } }
-            : {}),
-        });
-        const headers = { 'content-type': 'application/json', ...limitHeaders(attempt.headers) };
-        // The response body is now the only copy of the image.
-        attempt.b64 = '';
-        try {
-          await hooks.recordUsage({
-            ...counts,
-            ...identity(principal),
-            provider,
-            model: resolvedModel,
-            ...upstream,
-            upstreamCost,
-            finalCost,
-            billingMode: descriptor.billingMode,
-            streaming: false,
-            requestId: id,
-            ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
-          });
-        } catch (error) {
-          logger.error(`[gateway] ${id}: image usage was not recorded — ${error instanceof Error ? error.message : String(error)}`);
-        }
-        trace(
-          { status: 200, ok: true },
-          {
-            ...upstream,
-            billingMode: descriptor.billingMode,
-            servedModel: model,
-            ...(model !== models[0] ? { fallbackFrom: models[0] } : {}),
-            usage: counts,
-            upstreamCost,
-            finalCost,
-          },
-        );
-        return new Response(body, { status: 200, headers });
-      }
+/** Step 3, one model: its candidates in order. Null: the model failed (recorded in `run.last`). */
+async function tryModel(run: Run, model: string): Promise<Response | null> {
+  run.resolvedModel = model;
+  run.provider = '';
+  let candidates: UpstreamDescriptor[];
+  try {
+    candidates = await run.hooks.resolveUpstream(run.principal, model);
+  } catch (error) {
+    const resolution = error instanceof GatewayResolutionError ? error : null;
+    failed(run, model, {
+      status: resolution?.code === 'provider_pool_rate_limited' ? 429 : 400,
+      code: resolution?.code ?? 'model_unavailable',
+      message: resolution?.message ?? `No provider is configured for model "${model}"`,
+      suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
+      retryAfter: resolution?.retryAfterSeconds,
+    }, 'resolve');
+    return null;
+  }
+  if (!candidates.length) {
+    failed(run, model, {
+      status: 400,
+      code: 'model_unavailable',
+      message: `No provider is configured for model "${model}"`,
+      suggestion: 'Connect the provider or choose another model.',
+    }, 'resolve');
+    return null;
+  }
+  // Pooled accounts of one model: only a 429 moves to the next one (R6).
+  for (const descriptor of candidates) {
+    const outcome = await tryCandidate(run, descriptor, model);
+    if (outcome !== 'next-account') return outcome;
+  }
+  return null;
+}
 
-      // An abort while the answer was read leaves an unreadable 200.
-      const stop = stopped();
-      if (stop) return refuse(stop);
-      // Server log only: the upstream's own text and identity.
-      if (attempt.detail) {
-        logger.warn(`[gateway] ${id}: ${descriptor.provider} image ${attempt.status} for ${descriptor.resolvedModel ?? model}: ${attempt.detail.slice(0, 300)}`);
-      }
-      failed(model, refusalFor(attempt, descriptor, model, provider));
-      // The image quota is separate from chat, and the pool cooldown is keyed
-      // per secret: noting it here would block chat on this login (R6). A 429
-      // tries the next pooled account within this request only.
-      if (attempt.status === 429) continue;
-      break;
+/** Step 4, one candidate: checks, the upstream call, one refresh on a 401. */
+async function tryCandidate(run: Run, candidate: UpstreamDescriptor, model: string): Promise<Response | 'next-account' | null> {
+  let descriptor = candidate;
+  run.provider = shownProvider(descriptor);
+  run.resolvedModel = shownModel(descriptor, model);
+  run.billingMode = descriptor.billingMode;
+  const adapter = imageAdapterFor(descriptor);
+  if (!adapter) {
+    failed(run, model, {
+      status: 400,
+      code: 'image_model_unsupported',
+      message: `${model} cannot generate images through Kortix.`,
+      suggestion: 'Choose an image model, or use auto.',
+    });
+    return null;
+  }
+  if (descriptor.billingMode !== 'none') {
+    // Kortix never serves a managed image it cannot charge.
+    if (!descriptor.pricing) {
+      failed(run, model, {
+        status: 400,
+        code: 'image_model_unpriced',
+        message: `${model} has no image price.`,
+        suggestion: 'Choose another image model, or use auto.',
+      });
+      return null;
+    }
+    const denied = await admitCharge(run);
+    if (denied) {
+      failed(run, model, denied);
+      return null;
     }
   }
 
+  const send = (target: UpstreamDescriptor) => {
+    run.attempts += 1;
+    run.candidatesTried.push(`${run.provider}:${model}`);
+    return adapter(target, run.input, { fetchImpl: run.fetchImpl, signal: run.signal, requestId: run.id });
+  };
+  let attempt: ImageAttempt;
+  try {
+    attempt = await send(descriptor);
+    if (!attempt.ok && attempt.status === 401 && descriptor.refreshableCredential && run.hooks.refreshCredential && !run.refreshed) {
+      run.refreshed = true;
+      const fresh = await run.hooks.refreshCredential(run.principal, descriptor);
+      if (fresh) {
+        descriptor = fresh;
+        attempt = await send(descriptor);
+      }
+    }
+  } catch (error) {
+    const stop = stopped(run);
+    if (stop) return refuse(run, stop);
+    run.logger.warn(`[gateway] ${run.id}: ${descriptor.provider} image upstream unreachable — ${error instanceof Error ? error.message : String(error)}`);
+    failed(run, model, {
+      status: 502,
+      code: 'image_upstream_unreachable',
+      message: `${descriptor.provider === 'openai-codex' ? 'ChatGPT' : run.provider} could not be reached.`,
+      suggestion: 'Retry the request.',
+    });
+    return null;
+  }
+  run.emit.mark('upstream_response');
+  if (attempt.ok) return settle(run, descriptor, model, attempt);
+
+  // An abort while the answer was read leaves an unreadable 200.
+  const stop = stopped(run);
+  if (stop) return refuse(run, stop);
+  // Server log only: the upstream's own text and identity.
+  if (attempt.detail) {
+    run.logger.warn(`[gateway] ${run.id}: ${descriptor.provider} image ${attempt.status} for ${descriptor.resolvedModel ?? model}: ${attempt.detail.slice(0, 300)}`);
+  }
+  failed(run, model, refusalFor(attempt, descriptor, model, run.provider));
+  // The image quota is separate from chat, and the pool cooldown is keyed per
+  // secret: noting it here would block chat on this login (R6). A 429 tries
+  // the next pooled account within this request only.
+  return attempt.status === 429 ? 'next-account' : null;
+}
+
+/** Step 5, settle and respond: cost, one usage event, the trace, the normalized answer (U-D1). */
+async function settle(run: Run, descriptor: UpstreamDescriptor, model: string, result: ImageResult): Promise<Response> {
+  const counts = result.usage;
+  const { upstreamCost, finalCost } = calculateCost(
+    descriptor.resolvedModel ?? model,
+    counts,
+    descriptor.billingMode === 'none' ? 0 : descriptor.markup,
+    result.upstreamCostUsd,
+    descriptor.pricing,
+  );
+  const upstream = descriptor.publicProvider
+    ? { upstream: { provider: descriptor.provider, model: descriptor.resolvedModel ?? model } }
+    : {};
+  const tokens = counts.promptTokens + counts.completionTokens;
+  const body = JSON.stringify({
+    created: result.created ?? Math.floor(Date.now() / 1000),
+    model,
+    provider: run.provider,
+    data: [{ b64_json: result.b64, mime_type: result.mimeType }],
+    ...(result.size ? { size: result.size } : {}),
+    ...(tokens > 0
+      ? { usage: { input_tokens: counts.promptTokens, output_tokens: counts.completionTokens, total_tokens: tokens } }
+      : {}),
+  });
+  const headers = { 'content-type': 'application/json', ...limitHeaders(result.headers) };
+  // The response body is now the only copy of the image.
+  result.b64 = '';
+  const { principal } = run;
+  try {
+    await run.hooks.recordUsage({
+      ...counts,
+      ...identity(principal),
+      provider: run.provider,
+      model: run.resolvedModel,
+      ...upstream,
+      upstreamCost,
+      finalCost,
+      billingMode: descriptor.billingMode,
+      streaming: false,
+      requestId: run.id,
+      ...(principal.billingHold ? { billingHoldUsd: principal.billingHold.amountUsd } : {}),
+    });
+  } catch (error) {
+    run.logger.error(`[gateway] ${run.id}: image usage was not recorded — ${error instanceof Error ? error.message : String(error)}`);
+  }
+  trace(run, { status: 200, ok: true }, {
+    ...upstream,
+    servedModel: model,
+    ...(model !== run.models[0] ? { fallbackFrom: run.models[0] } : {}),
+    usage: counts,
+    upstreamCost,
+    finalCost,
+  });
+  return new Response(body, { status: 200, headers });
+}
+
+export async function handleImageRequest(runtime: HandlerRuntime, req: ImageRequest): Promise<Response> {
+  const run = await admit(runtime, req);
+  if (run instanceof Response) return run;
+  const unplanned = await plan(run);
+  if (unplanned) return refuse(run, unplanned);
+  run.emit.mark('dispatch');
+  for (const model of run.models) {
+    const answered = await tryModel(run, model);
+    if (answered) return answered;
+  }
   // Every planned model failed: the last failure is the answer.
-  return refuse(last!);
+  return refuse(run, run.last!);
 }

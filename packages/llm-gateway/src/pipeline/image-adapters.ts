@@ -1,5 +1,6 @@
 import type { TokenCounts, UpstreamDescriptor } from '../domain';
 import { type FetchImpl, callUpstream } from '../http';
+import { upstreamHeaders } from '../http/call-upstream';
 import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import { trimTrailingSlash } from '../transports/ai-sdk/model';
 import { isGenuineOpenAiUpstream } from '../transports/route-kind';
@@ -101,15 +102,36 @@ function dataUrl(url: string): { mimeType: string; b64: string } | null {
   return head ? { mimeType: head[1], b64: url.slice(head[0].length) } : null;
 }
 
-/** Bearer auth and descriptor headers, as the chat path sends them (http/call-upstream.ts). */
-function bearerHeaders(descriptor: UpstreamDescriptor, requestId: string): Record<string, string> {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (!descriptor.omitAuthorization) headers.authorization = `Bearer ${descriptor.apiKey}`;
-  if (descriptor.appName) headers['x-title'] = descriptor.appName;
-  if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
-  Object.assign(headers, descriptor.headers);
-  headers['x-request-id'] = requestId;
-  return headers;
+/** A parsed image answer is at most this big (R25): ~4–5 MB is a normal one. */
+export const MAX_IMAGE_RESPONSE_BYTES = 48 * 1024 * 1024;
+/** Only the first 500 characters of an error body are used. */
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+
+/**
+ * The body as text, read through a byte count: a declared `content-length`
+ * over `max` is not read at all, and a longer body is cut at `max`.
+ */
+async function readCapped(response: Response, max: number): Promise<{ text: string; over: boolean }> {
+  if (Number(response.headers.get('content-length')) > max) {
+    await response.body?.cancel().catch(() => {});
+    return { text: '', over: true };
+  }
+  if (!response.body) return { text: '', over: false };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (bytes + value.byteLength > max) {
+      chunks.push(value.subarray(0, max - bytes));
+      await reader.cancel().catch(() => {});
+      return { text: await new Blob(chunks as BlobPart[]).text(), over: true };
+    }
+    chunks.push(value);
+    bytes += value.byteLength;
+  }
+  return { text: await new Blob(chunks as BlobPart[]).text(), over: false };
 }
 
 /**
@@ -120,11 +142,21 @@ function bearerHeaders(descriptor: UpstreamDescriptor, requestId: string): Recor
 async function answer<T>(response: Response, read: (body: T) => Parsed | null): Promise<ImageAttempt> {
   const { headers, status } = response;
   if (!response.ok) {
-    const detail = await response.text().catch(() => '');
+    const { text: detail } = await readCapped(response, MAX_ERROR_BODY_BYTES);
     const { message, code } = parseUpstreamErrorBody(detail, '');
     return { ok: false, status, message, code, detail: detail.slice(0, 500), headers };
   }
-  const body: unknown = await response.json().catch(() => null);
+  const raw = await readCapped(response, MAX_IMAGE_RESPONSE_BYTES);
+  if (raw.over) {
+    return { ok: false, status: 502, code: 'image_response_too_large', message: '', detail: `${status} over ${MAX_IMAGE_RESPONSE_BYTES} bytes`, headers };
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw.text);
+  } catch {
+    // An unreadable 200 is an answer without an image.
+  }
+  raw.text = '';
   const parsed = body && typeof body === 'object' ? read(body as T) : null;
   if (!parsed?.b64) return { ok: false, status: 502, code: 'no_image', message: '', detail: `${status} without an image`, headers };
   return { ok: true, ...parsed, headers };
@@ -146,7 +178,7 @@ const openaiImages: ImageAdapter = async (descriptor, input, ctx) => {
   if (input.images) body.images = input.images.map((image_url) => ({ image_url }));
   const response = await ctx.fetchImpl(`${trimTrailingSlash(descriptor.baseUrl)}/images/${input.operation}`, {
     method: 'POST',
-    headers: bearerHeaders(descriptor, ctx.requestId),
+    headers: upstreamHeaders(descriptor, ctx.requestId),
     body: JSON.stringify(body),
     signal: ctx.signal,
   });

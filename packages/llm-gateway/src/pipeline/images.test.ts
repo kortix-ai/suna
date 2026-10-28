@@ -742,6 +742,143 @@ describe('handleImageRequest', () => {
     expect(calls).toHaveLength(1);
   });
 
+  test('the 300 s budget ends the request as 504 and tries no other model', async () => {
+    const { calls, usage, run } = setup(
+      {
+        resolveRoute: async () => plan('kortix-image', 'openai/gpt-image-1-mini'),
+        resolveUpstream: connected({ 'kortix-image': managed, 'openai/gpt-image-1-mini': openai }),
+        assertBillingActive: async () => ({ holdUsd: 0.5 }),
+      },
+      (_url, init) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+      }),
+    );
+    const response = await run({ prompt: 'a red cube' }, { timeoutMs: 5 });
+    expect(response.status).toBe(504);
+    expect(((await response.json()) as ErrorBody).code).toBe('image_timeout');
+    expect(calls).toHaveLength(1);
+    expect(usage).toEqual([expect.objectContaining({ billingHoldUsd: 0.5, finalCost: 0 })]);
+  });
+
+  test('a 200 without an image moves to the next model, refunds the hold, and charges nothing (R24)', async () => {
+    const textOnly = () => json({ choices: [{ message: { role: 'assistant', content: 'I cannot draw that.' } }], usage: { prompt_tokens: 9, completion_tokens: 6, cost: 0.0001 } });
+    const alone = setup({ resolveUpstream: async () => [managed], assertBillingActive: async () => ({ holdUsd: 0.5 }) }, async () => textOnly());
+    const refused = await alone.run({ model: 'kortix-image', prompt: 'a red cube' });
+    expect(refused.status).toBe(502);
+    const body = (await refused.json()) as ErrorBody;
+    expect(body.code).toBe('image_upstream_error');
+    expect(body.message).toBe('kortix-image returned no image.');
+    expect(alone.usage).toEqual([expect.objectContaining({ billingHoldUsd: 0.5, finalCost: 0, upstreamCost: 0 })]);
+  });
+
+  test('a managed hold is settled by an own-key model that answers after a fallback', async () => {
+    let billed = 0;
+    const { calls, usage, run } = setup(
+      {
+        resolveRoute: async () => plan('kortix-image', 'openai/gpt-image-1-mini'),
+        resolveUpstream: connected({ 'kortix-image': managed, 'openai/gpt-image-1-mini': openai }),
+        assertBillingActive: async () => { billed += 1; return { holdUsd: 0.5 }; },
+      },
+      async (url) =>
+        url.includes('inference.example.test')
+          ? json({ choices: [{ message: { role: 'assistant', content: 'no image' } }] })
+          : openAiImage(),
+    );
+    const response = await run({ prompt: 'a red cube' });
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(2);
+    expect(billed).toBe(1);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ billingMode: 'none', provider: 'openai', billingHoldUsd: 0.5, finalCost: 0 });
+  });
+
+  test('a managed 401 says the model is unavailable, not to check a key, and the trace names the billing mode', async () => {
+    const { traces, run } = setup(
+      { resolveUpstream: async () => [managed], assertBillingActive: async () => ({ holdUsd: 0.5 }) },
+      async () => new Response('{"error":{"message":"bad key"}}', { status: 401 }),
+    );
+    const response = await run({ model: 'kortix-image', prompt: 'a red cube' });
+    const body = (await response.json()) as ErrorBody;
+    expect(response.status).toBe(502);
+    expect(body.code).toBe('image_upstream_error');
+    expect(body.message).toBe('kortix-image is unavailable right now.');
+    expect(body.suggestion).toBe('Retry, or choose another image model.');
+    expect(JSON.stringify(body)).not.toContain('key');
+    expect(traces[0]).toMatchObject({ ok: false, billingMode: 'credits', provider: 'kortix' });
+  });
+
+  test('a Phase 1 size without aspect_ratio maps to the matching aspect ratio', async () => {
+    for (const [size, aspect] of [['1536x1024', '3:2'], ['1024x1536', '2:3'], ['1024x1024', '1:1'], ['auto', 'auto']] as const) {
+      const codexRun = setup();
+      await codexRun.run({ model: 'codex/gpt-image-2', prompt: 'a red cube', size });
+      expect(sent(codexRun.calls[0]).size).toBe(size);
+      const chat = setup({ resolveUpstream: async () => [openrouter] }, async () => chatImage());
+      await chat.run({ model: 'openrouter/x', prompt: 'a red cube', size });
+      expect(sent(chat.calls[0]).image_config).toEqual(aspect === 'auto' ? undefined : { aspect_ratio: aspect });
+    }
+    const both = setup();
+    await both.run({ model: 'codex/gpt-image-2', prompt: 'a red cube', size: '1536x1024', aspect_ratio: '1:1' });
+    expect(sent(both.calls[0]).size).toBe('1024x1024');
+  });
+
+  test('a declared answer over 48 MiB is refused unread and moves to the next model', async () => {
+    let pulled = false;
+    const { calls, traces, run } = setup(
+      {
+        resolveRoute: async () => plan('openrouter/x', 'openai/gpt-image-1-mini'),
+        resolveUpstream: connected({ 'openrouter/x': openrouter, 'openai/gpt-image-1-mini': openai }),
+      },
+      async (url) =>
+        url.includes('openrouter')
+          ? new Response(new ReadableStream({ pull(c) { pulled = true; c.enqueue(new Uint8Array(1024)); c.close(); } }, { highWaterMark: 0 }), {
+              status: 200,
+              headers: { 'content-length': String(49 * 1024 * 1024) },
+            })
+          : openAiImage(),
+    );
+    const response = await run({ prompt: 'a red cube' });
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(2);
+    expect(pulled).toBe(false);
+    expect(traces[0].attemptFailures?.[0]).toMatchObject({ code: 'image_response_too_large' });
+  });
+
+  test('a chunked answer is cut at 48 MiB as image_response_too_large', async () => {
+    const MiB = 1024 * 1024;
+    let sentBytes = 0;
+    const { run } = setup({ resolveUpstream: async () => [openrouter] }, async () =>
+      new Response(new ReadableStream({
+        pull(c) {
+          if (sentBytes >= 64 * MiB) return c.close();
+          sentBytes += MiB;
+          c.enqueue(new Uint8Array(MiB));
+        },
+      }), { status: 200 }),
+    );
+    const response = await run({ model: 'openrouter/x', prompt: 'a red cube' });
+    expect(response.status).toBe(502);
+    expect(((await response.json()) as ErrorBody).code).toBe('image_response_too_large');
+    expect(sentBytes).toBeLessThan(52 * MiB);
+  });
+
+  test('an error body is read at most 64 KiB', async () => {
+    const KiB = 1024;
+    let sentBytes = 0;
+    const { run } = setup({ resolveUpstream: async () => [openai] }, async () =>
+      new Response(new ReadableStream({
+        pull(c) {
+          if (sentBytes >= 10 * 1024 * KiB) return c.close();
+          sentBytes += 16 * KiB;
+          c.enqueue(new TextEncoder().encode('x'.repeat(16 * KiB)));
+        },
+      }), { status: 400 }),
+    );
+    const response = await run({ model: 'openai/gpt-image-1-mini', prompt: 'a red cube' });
+    expect(response.status).toBe(400);
+    expect(sentBytes).toBeLessThanOrEqual(128 * KiB);
+    expect(((await response.json()) as ErrorBody).message.length).toBeLessThanOrEqual(64 * KiB);
+  });
+
   test('unknown fields are not forwarded and n is always 1', async () => {
     const { calls, run } = setup();
     const ok = await run({
