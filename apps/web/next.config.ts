@@ -663,77 +663,77 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/guide/get-started',
-        destination: '/docs#get-started',
+        destination: '/docs/guide#get-started',
         permanent: true,
       },
       {
         source: '/docs/guide/agents',
-        destination: '/docs#agents',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/guide/skills',
-        destination: '/docs#skills',
+        destination: '/docs/guide#skills',
         permanent: true,
       },
       {
         source: '/docs/guide/memory-and-drive',
-        destination: '/docs#memory-and-drive',
+        destination: '/docs/guide#memory-and-drive',
         permanent: true,
       },
       {
         source: '/docs/guide/connectors',
-        destination: '/docs#connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       {
         source: '/docs/guide/automations',
-        destination: '/docs#automations',
+        destination: '/docs/guide#automations',
         permanent: true,
       },
       {
         source: '/docs/guide/outcomes',
-        destination: '/docs#outcomes',
+        destination: '/docs/guide#outcomes',
         permanent: true,
       },
       {
         source: '/docs/guide/computers',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/guide/apps',
-        destination: '/docs#apps',
+        destination: '/docs/guide#apps',
         permanent: true,
       },
       {
         source: '/docs/guide/channels',
-        destination: '/docs#channels',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/guide/everywhere',
-        destination: '/docs#everywhere',
+        destination: '/docs/guide#everywhere',
         permanent: true,
       },
       {
         source: '/docs/guide/models',
-        destination: '/docs#models',
+        destination: '/docs/guide#models',
         permanent: true,
       },
       {
         source: '/docs/guide/teams',
-        destination: '/docs#teams',
+        destination: '/docs/guide#teams',
         permanent: true,
       },
       {
         source: '/docs/guide/security',
-        destination: '/docs#security',
+        destination: '/docs/guide#security',
         permanent: true,
       },
       {
         source: '/docs/guide/billing',
-        destination: '/docs#billing',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       // The 2026-10-27 Guide rewrite (founder: "less is more"): the technical
@@ -741,47 +741,47 @@ const nextConfig = (): NextConfig => ({
       // page that now explains it; the remaining reference is under Developers.
       {
         source: '/docs/accounts',
-        destination: '/docs#teams',
+        destination: '/docs/guide#teams',
         permanent: true,
       },
       {
         source: '/docs/accounts/identity',
-        destination: '/docs#security',
+        destination: '/docs/guide#security',
         permanent: true,
       },
       {
         source: '/docs/clients',
-        destination: '/docs#everywhere',
+        destination: '/docs/guide#everywhere',
         permanent: true,
       },
       {
         source: '/docs/connect/channels',
-        destination: '/docs#channels',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/connect/computers',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/connect/connectors',
-        destination: '/docs#connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       {
         source: '/docs/connect/mcp',
-        destination: '/docs#connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       {
         source: '/docs/connect/triggers',
-        destination: '/docs#automations',
+        destination: '/docs/guide#automations',
         permanent: true,
       },
       {
         source: '/docs/credits',
-        destination: '/docs#billing',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       {
@@ -791,37 +791,37 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/agents',
-        destination: '/docs#agents',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/project/models',
-        destination: '/docs#models',
+        destination: '/docs/guide#models',
         permanent: true,
       },
       {
         source: '/docs/project/secrets',
-        destination: '/docs#security',
+        destination: '/docs/guide#security',
         permanent: true,
       },
       {
         source: '/docs/project/tools',
-        destination: '/docs#agents',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/tui',
-        destination: '/docs#everywhere',
+        destination: '/docs/guide#everywhere',
         permanent: true,
       },
       {
         source: '/docs/work/runtime',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/work/sessions',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       // The 2026-10 docs rewrite folded 45 pages into 31. Every removed page
@@ -843,17 +843,17 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/project/permissions',
-        destination: '/docs#agents',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/work',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
         source: '/docs/work/notifications',
-        destination: '/docs#computers',
+        destination: '/docs/guide#computers',
         permanent: true,
       },
       {
@@ -863,27 +863,27 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/work/harnesses',
-        destination: '/docs#agents',
+        destination: '/docs/guide#agents',
         permanent: true,
       },
       {
         source: '/docs/connect',
-        destination: '/docs#connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       {
         source: '/docs/connect/slack',
-        destination: '/docs#channels',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/connect/teams',
-        destination: '/docs#channels',
+        destination: '/docs/guide#channels',
         permanent: true,
       },
       {
         source: '/docs/connect/reminders',
-        destination: '/docs#automations',
+        destination: '/docs/guide#automations',
         permanent: true,
       },
       {
@@ -923,7 +923,7 @@ const nextConfig = (): NextConfig => ({
       },
       {
         source: '/docs/sdk/connectors',
-        destination: '/docs#connectors',
+        destination: '/docs/guide#connectors',
         permanent: true,
       },
       // The help centre merged into /support, and /support was removed
@@ -931,7 +931,7 @@ const nextConfig = (): NextConfig => ({
       // /help/credits, which has a counterpart in the docs tree.
       {
         source: '/help/credits',
-        destination: '/docs#billing',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       {
@@ -950,7 +950,7 @@ const nextConfig = (): NextConfig => ({
       // for preview links and review references, not for search indexes.
       {
         source: '/support/credits',
-        destination: '/docs#billing',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       // Marketing pages removed on 2026-10-26. They are indexed public URLs,
@@ -984,7 +984,7 @@ const nextConfig = (): NextConfig => ({
       // /compare section was retired with no direct replacement.
       {
         source: '/credits-explained',
-        destination: '/docs#billing',
+        destination: '/docs/guide#billing',
         permanent: true,
       },
       {

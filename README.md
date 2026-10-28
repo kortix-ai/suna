@@ -14,10 +14,10 @@ Hand it an outcome and agents run it 24/7.
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
 [![Release](https://img.shields.io/github/v/release/kortix-ai/suna?style=flat&color=111111&label=Release)](https://github.com/kortix-ai/suna/releases/latest)
-[![Guide](https://img.shields.io/badge/Guide-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
+[![Guide](https://img.shields.io/badge/Guide-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs/guide)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
-[Website](https://kortix.com) · [Guide](https://kortix.com/docs) · [Cloud](https://kortix.com/auth) · [AI Transformation](https://kortix.com/services) · [Manifesto](MANIFESTO.md)
+[Website](https://kortix.com) · [Guide](https://kortix.com/docs/guide) · [Cloud](https://kortix.com/auth) · [AI Transformation](https://kortix.com/services) · [Manifesto](MANIFESTO.md)
 
 <br />
 
@@ -59,7 +59,7 @@ Outcome ──> Plan ──> Work ──> Verify ──> Learn ──┐
 4. **Verify.** A separate agent checks the result, and changes land through a change request you approve.
 5. **Learn.** What the agents learned goes back into company memory and skills. Every run makes the next one better.
 
-Thousands of agents can run in parallel on one config. [How outcomes work →](https://kortix.com/docs#outcomes)
+Thousands of agents can run in parallel on one config. [How outcomes work →](https://kortix.com/docs/guide#outcomes)
 
 ---
 
@@ -87,7 +87,7 @@ kortix chat           # talk to a session's agent from your terminal
 ```
 
 No setup: sign up at **[kortix.com](https://kortix.com)**, create a project and start a session.
-The **[Guide](https://kortix.com/docs)** walks you through Kortix from A to Z.
+The **[Guide](https://kortix.com/docs/guide)** walks you through Kortix from A to Z.
 
 ---
 
@@ -95,16 +95,16 @@ The **[Guide](https://kortix.com/docs)** walks you through Kortix from A to Z.
 
 | | | Guide |
 | --- | --- | --- |
-| **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs#agents) |
-| **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs#skills) |
-| **Memory and Drive** | What the company knows, as files agents read, plus shared folders for people and agents. | [Memory and Drive](https://kortix.com/docs#memory-and-drive) |
-| **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs#connectors) |
-| **Automations** | Schedules, signed webhooks and app events that start agents with nobody at the keyboard. | [Automations](https://kortix.com/docs#automations) |
-| **Outcomes** | An agent owns an objective until a separate check confirms it is met. | [Outcomes](https://kortix.com/docs#outcomes) |
-| **Computers** | Every session gets its own isolated machine and branch. You can also connect your own computer. | [Computers](https://kortix.com/docs#computers) |
-| **Apps** | The compute platform: sites, internal tools and backends with data, functions and realtime, at a stable URL. | [Apps](https://kortix.com/docs#apps) |
-| **Channels** | Start and continue work from Slack, Microsoft Teams and email. | [Channels](https://kortix.com/docs#channels) |
-| **Models** | Any provider with your own keys, the ChatGPT plan you already pay for, or Kortix-managed models. | [Models](https://kortix.com/docs#models) |
+| **Agents** | Assistants with a job, a model and a set of permissions. An agent can propose changes to its own configuration; a person approves them. | [Agents](https://kortix.com/docs/guide#agents) |
+| **Skills** | Written playbooks for how your company does a job, shared by every agent. | [Skills](https://kortix.com/docs/guide#skills) |
+| **Memory and Drive** | What the company knows, as files agents read, plus shared folders for people and agents. | [Memory and Drive](https://kortix.com/docs/guide#memory-and-drive) |
+| **Connectors** | 3,000+ apps, plus MCP, OpenAPI, GraphQL and raw HTTP. Allow, Ask or Block per tool. Credentials stay on the server and never enter the machine. | [Connectors](https://kortix.com/docs/guide#connectors) |
+| **Automations** | Schedules, signed webhooks and app events that start agents with nobody at the keyboard. | [Automations](https://kortix.com/docs/guide#automations) |
+| **Outcomes** | An agent owns an objective until a separate check confirms it is met. | [Outcomes](https://kortix.com/docs/guide#outcomes) |
+| **Computers** | Every session gets its own isolated machine and branch. You can also connect your own computer. | [Computers](https://kortix.com/docs/guide#computers) |
+| **Apps** | The compute platform: sites, internal tools and backends with data, functions and realtime, at a stable URL. | [Apps](https://kortix.com/docs/guide#apps) |
+| **Channels** | Start and continue work from Slack, Microsoft Teams and email. | [Channels](https://kortix.com/docs/guide#channels) |
+| **Models** | Any provider with your own keys, the ChatGPT plan you already pay for, or Kortix-managed models. | [Models](https://kortix.com/docs/guide#models) |
 
 ---
 

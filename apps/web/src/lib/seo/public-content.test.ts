@@ -137,13 +137,13 @@ describe('public SEO/AEO content coverage', () => {
   });
 
   test('renders MDX source documents as clean agent-readable Markdown', () => {
-    const resolved = resolvePublicMarkdown(['docs', 'index.md']);
+    const resolved = resolvePublicMarkdown(['docs', 'guide.md']);
     expect(resolved?.markdown).toContain(
       'A plain-language guide to Kortix',
     );
     // The developer reference is its own page, apart from the Guide.
     expect(resolvePublicMarkdown(['docs', 'developers.md'])?.markdown).toContain('## Quickstart');
-    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
+    expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/guide.md');
 
     const mdx = `---
 title: Sample

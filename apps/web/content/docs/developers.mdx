@@ -3,7 +3,7 @@ title: Developers
 description: "Build on Kortix: the CLI, git and change requests, the kortix.yaml reference, the REST API, Apps, self-hosting and the @kortix/sdk."
 ---
 
-Everything a developer needs to build on Kortix, on one page: the CLI and git workflow, the `kortix.yaml` reference, the REST API, Apps, self-hosting, and the TypeScript SDK with its React hooks and UI components. For what Kortix is and how people use it, read the [Guide](/docs).
+Everything a developer needs to build on Kortix, on one page: the CLI and git workflow, the `kortix.yaml` reference, the REST API, Apps, self-hosting, and the TypeScript SDK with its React hooks and UI components. For what Kortix is and how people use it, read the [Guide](/docs/guide).
 
 ## Quickstart
 
@@ -70,7 +70,7 @@ cd my-agent
 
 `kortix projects clone` clones the repository with your Kortix login. The directory name defaults to the project ID, so pass a name. The CLI writes `.kortix/link.json` in the clone and installs a credential helper, so plain `git pull` and `git push` work.
 
-Cloning needs `project.gitops.push`, which the project **Manager** role holds. A **Member** cannot clone. A Member starts sessions in the web app, or from any folder after `kortix projects use <project_id>`. A Member also needs access to an agent: see [Teams](/docs/#teams).
+Cloning needs `project.gitops.push`, which the project **Manager** role holds. A **Member** cannot clone. A Member starts sessions in the web app, or from any folder after `kortix projects use <project_id>`. A Member also needs access to an agent: see [Teams](/docs/guide#teams).
 
 Run the next commands from inside the clone. Outside it, commands use your default project.
 
@@ -122,7 +122,7 @@ kortix sessions new --prompt "Add a skill that drafts the weekly status report"
 
 The session runs the project's default agent, `kortix`. `--agent <name>` and `--model <id>` override the agent and the model. In a terminal, the CLI then prints the `kortix sessions chat` command for the new session. In the web app, type the prompt on the project page.
 
-On the Credits plan or Enterprise, a session runs on the platform default model. On Free, connect your own provider key or a ChatGPT subscription first. See [Models](/docs/#models).
+On the Credits plan or Enterprise, a session runs on the platform default model. On Free, connect your own provider key or a ChatGPT subscription first. See [Models](/docs/guide#models).
 
 | Task | Command |
 | --- | --- |
@@ -214,7 +214,7 @@ Clone `git_origin_url`, not `repo_url`. `repo_url` is the upstream repository th
 
 - The origin speaks git over HTTPS only.
 - You authenticate with a Kortix token. Kortix adds the upstream credential on the server. No GitHub or other provider credential reaches your computer or a sandbox.
-- The audit log records each clone and fetch as `git.clone` and each push as `git.push`. See [Audit log](/docs/#audit-log).
+- The audit log records each clone and fetch as `git.clone` and each push as `git.push`. See [Audit log](/docs/guide#audit-log).
 
 ### Clone a project
 
@@ -273,7 +273,7 @@ git -c http.extraHeader="Authorization: Bearer $KORTIX_GIT_TOKEN" clone https://
 | Session token, `KORTIX_TOKEN` inside a sandbox | Reads the repository and pushes the session's own branch. See [Who can clone and push](#who-can-clone-and-push). |
 | Service account key (`kortix_sa_…`), OAuth token, gateway key, browser sign-in token | Refused with `401`. |
 
-[Security](/docs/#security) explains how to create and revoke keys.
+[Security](/docs/guide#security) explains how to create and revoke keys.
 
 #### Wire the helper by hand
 
@@ -362,7 +362,7 @@ A project **Member** holds `project.gitops.read` only. A Member reads the branch
 
 A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch. A Member cannot clone from their own git client. A Member's sessions still clone and push their own branch.
 
-A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Teams](/docs/#teams).
+A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Teams](/docs/guide#teams).
 
 **People** with push access:
 
@@ -377,9 +377,9 @@ IP allowlist and MFA policies of the account apply to git requests too.
 - A session pushes only its own branch, the branch named after its `session_id`.
 - Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
 - A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
-- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/#agents).
+- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
 
-By default, agents land work through [change requests](#change-requests). [Agents](/docs/#agents) shows how to grant permissions.
+By default, agents land work through [change requests](#change-requests). [Agents](/docs/guide#agents) shows how to grant permissions.
 
 Kortix does not block a force-push. On a GitHub repository, add a ruleset that blocks force-pushes and deletions on the default branch. The ruleset does not block change-request merges, because a merge is a fast-forward or a merge commit.
 
@@ -408,7 +408,7 @@ A session gets the branch and a checkout in `/workspace` only when its agent set
 
 Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Inside a session sandbox](/docs/developers#inside-a-session-sandbox) lists the other variables.
 
-A pushed branch stays in the repository after the session stops and after the session is deleted. `/workspace` holds this session's files, kept for the life of the session. Work the agent did not push is gone when the session is deleted. See [Computers](/docs/#computers).
+A pushed branch stays in the repository after the session stops and after the session is deleted. `/workspace` holds this session's files, kept for the life of the session. Work the agent did not push is gone when the session is deleted. See [Computers](/docs/guide#computers).
 
 Get an agent's work on your computer:
 
@@ -538,7 +538,7 @@ The Review page is the project's inbox for everything that waits on a person. Op
 | Item | Id | Comes from |
 | --- | --- | --- |
 | Change | `cr:<id>` | A change request. |
-| Approval | `call:<id>` | A connector call that a policy holds for approval. See [Connectors](/docs/#connectors). |
+| Approval | `call:<id>` | A connector call that a policy holds for approval. See [Connectors](/docs/guide#connectors). |
 | Output (`output`), question (`decision`), finished batch (`batch`) | its own id | An agent submits it with `kortix review submit`. |
 
 The lists are **Needs you**, **Waiting** and **Done**. The filters are **All**, **Changes**, **Approvals**, **Outputs**, **Questions** and **Finished**. Keys: `j` and `k` move, `Enter` opens, `a` approves, `e` asks for changes, `d` dismisses, `1` `2` `3` switch lists, `/` searches, `?` shows help.
@@ -684,7 +684,7 @@ For a repository on another git host, `kortix sessions new` run in a checkout wh
 | `kortix files diff <sha> [--path <p>]` | Prints a commit's patch. |
 | `kortix files download -o <file.zip> [--path <p>]` | Downloads the repository or a subtree as a zip. |
 
-For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>:<path> <dst>`. See [Computers](/docs/#computers).
+For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>:<path> <dst>`. See [Computers](/docs/guide#computers).
 
 #### Delete
 
@@ -930,8 +930,8 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `project` | map | — | `name`: the project's name. A push that changes it renames the project, and a rename in Kortix commits it here. `description`: text for people who read the repository. |
 | `env` | map | — | The secret names the project expects. Values live in Secrets, never in this file. See [env keys](#env-keys). |
 | `sandbox` | map | the platform image | Sandbox templates and the project's default template. See [sandbox keys](#sandbox-keys). |
-| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Automations](/docs/#automations). |
-| `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/#connectors). |
+| `triggers` | list | — | Schedules, webhooks and App events that start agent work. See [triggers keys](#triggers-keys) and [Automations](/docs/guide#automations). |
+| `connectors` | list | — | Apps and APIs agents can call. See [connectors keys](#connectors-keys) and [Connectors](/docs/guide#connectors). |
 | `apps` | map | — | App slug → App block. See [apps keys](#apps-keys). |
 | `skills` | map | the Kortix skills | Skill name → repository folder. The Kortix skills (`kortix-*`) are always registered. See [skills entries](#skills-entries). |
 | `tools` | map | the Kortix tools | Tool name → repository module. The Kortix tools are always registered. See [tools entries](#tools-entries). |
@@ -947,7 +947,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `description` | string | — | What the agent does. An agent that may start it as a subagent reads it to choose. |
-| `model` | string | the project default | `provider/model`. See [Models](/docs/#models). |
+| `model` | string | the project default | `provider/model`. See [Models](/docs/guide#models). |
 | `mode` | `primary`, `subagent`, `all` | `all` | `primary`: people and triggers run it; no agent starts it. `subagent`: only another agent starts it; agent pickers hide it. `all`: both. |
 | `variant` | string | — | The model's reasoning level: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, when the model offers it. |
 | `temperature` | number | the model's | Sampling temperature. A model that refuses a custom temperature ignores it. |
@@ -971,7 +971,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
 | `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
-| `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/#agents). |
+| `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
 | `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |
 | `workspace.project_repository` | boolean | `false` | `true`: new sessions check out the project repository in `/workspace`, on their own session branch. `false`: no checkout, and repository calls answer `403` `session_repository_access_denied`. Project tools still load. |
 | `sandbox` | string | `sandbox.default` | A template slug, or `default` for the platform image. |
@@ -1133,7 +1133,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 
 ### Permission rules
 
-`agents.<name>.permission` decides which tool calls run, wait for a person, or never run. What a person sees when an agent asks is on [Agents](/docs/#how-an-agent-asks-before-risky-actions).
+`agents.<name>.permission` decides which tool calls run, wait for a person, or never run. What a person sees when an agent asks is on [Agents](/docs/guide#how-an-agent-asks-before-risky-actions).
 
 ```yaml
 permission:
@@ -1185,7 +1185,7 @@ approvals:
 
 - An agent `policy_sets` entry that names a set the connector does not define is an error. An entry for a connector the agent is not granted, or that `connectors` does not declare, is a warning: it does nothing.
 - `kortix validate` does not check `policy` or `policies`. When Kortix syncs connectors, it skips a malformed rule and reports it as a connector sync error.
-- A held call that nobody decides within `approvals.ttl` expires. Approving one is on [Connectors](/docs/#approving-a-held-action).
+- A held call that nobody decides within `approvals.ttl` expires. Approving one is on [Connectors](/docs/guide#approving-a-held-action).
 
 ### Sandbox templates
 
@@ -1315,7 +1315,7 @@ The install script supports macOS and Linux on x86_64 and arm64. On Windows, run
 1. Downloads the release binary for your system from GitHub Releases.
 2. Checks it against the release's `SHA256SUMS`. A missing or wrong checksum stops the install. When `cosign` is installed, it also checks the Sigstore signature of `SHA256SUMS`.
 3. Puts the binary in `~/.kortix/kortix`.
-4. Links `kortix` and `kortixt` (the [TUI](/docs/#everywhere)) into `/usr/local/bin`. If that directory is not writable, it uses `~/.local/bin` when it exists, else `sudo`.
+4. Links `kortix` and `kortixt` (the [TUI](/docs/guide#everywhere)) into `/usr/local/bin`. If that directory is not writable, it uses `~/.local/bin` when it exists, else `sudo`.
 
 | Variable | Effect |
 | --- | --- |
@@ -1354,7 +1354,7 @@ You sign in to a host and pick an account in it. Then you pick a project in that
 | `--host <name>` | Sign in to this host instead of the active one. |
 | `--api <url>` | The API URL for the host. |
 
-To create a token for `--token`, see [Security](/docs/#security).
+To create a token for `--token`, see [Security](/docs/guide#security).
 
 #### Hosts
 
@@ -1467,7 +1467,7 @@ jobs:
           kortix sessions log "$id" --limit 1
 ```
 
-Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Automations](/docs/#automations).
+Pipe `--json` output into `jq`. Update checks are off when `CI` is set or stdout is not a terminal. To start sessions on a schedule inside Kortix itself, use [Automations](/docs/guide#automations).
 
 ### Use Kortix from your coding agent
 
@@ -1526,7 +1526,7 @@ Exit `3` means the agent waits on a question or a permission. Answer it with `ko
 </Step>
 </Steps>
 
-An MCP client can use Kortix without the CLI. See [Everywhere](/docs/#everywhere).
+An MCP client can use Kortix without the CLI. See [Everywhere](/docs/guide#everywhere).
 
 ### Inside a session sandbox
 
@@ -1536,7 +1536,7 @@ Commands an agent uses:
 
 | Command | Purpose |
 | --- | --- |
-| `kortix connectors call <slug> <action> [json]` | Call a connector action. See [Connectors](/docs/#connectors). |
+| `kortix connectors call <slug> <action> [json]` | Call a connector action. See [Connectors](/docs/guide#connectors). |
 | `kortix secrets request <NAME>` | Mint a link, valid for 7 days, for a person to enter a secret value. |
 | `kortix secrets sync` | Pull this session's secrets and grants now. |
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
@@ -1544,7 +1544,7 @@ Commands an agent uses:
 | `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
-What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents](/docs/#agents). These commands are refused for an agent session's token, whatever the grant:
+What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents](/docs/guide#agents). These commands are refused for an agent session's token, whatever the grant:
 
 - `kortix projects cli-tokens new` and `rm`
 - `kortix gateway keys` (`ls`, `new`, `rm`)
@@ -1582,11 +1582,11 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `accounts <subcommand>` | List and switch accounts. | [Teams](/docs/#teams) |
-| `members <subcommand>` | Invite and remove people, and change their roles. | [Teams](/docs/#teams) |
-| `groups <subcommand>` | Groups of people that share a role. | [Teams](/docs/#teams) |
-| `tokens <subcommand>` | Personal access keys, service accounts and connected apps. | [Security](/docs/#security) |
-| `billing <subcommand>` | The plan, credits, transactions, and costs per project and per session. | [Billing](/docs/#billing) |
+| `accounts <subcommand>` | List and switch accounts. | [Teams](/docs/guide#teams) |
+| `members <subcommand>` | Invite and remove people, and change their roles. | [Teams](/docs/guide#teams) |
+| `groups <subcommand>` | Groups of people that share a role. | [Teams](/docs/guide#teams) |
+| `tokens <subcommand>` | Personal access keys, service accounts and connected apps. | [Security](/docs/guide#security) |
+| `billing <subcommand>` | The plan, credits, transactions, and costs per project and per session. | [Billing](/docs/guide#billing) |
 
 **Project, within the account**
 
@@ -1601,7 +1601,7 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | --- | --- | --- |
 | `sessions <subcommand>` | Start, talk to, follow, stop and delete sessions. | [Session commands](#session-commands) |
 | `chat [session-id]` | Talk to a session's agent: a line chat, or one prompt with `-p`. Same as `kortix sessions chat`. | [Session commands](#session-commands) |
-| `tui [options]` | The whole product as a terminal app. `kortix t` and `kortixt` start it too. Experimental. | [Everywhere](/docs/#everywhere) |
+| `tui [options]` | The whole product as a terminal app. `kortix t` and `kortixt` start it too. Experimental. | [Everywhere](/docs/guide#everywhere) |
 
 **Author and ship**
 
@@ -1617,40 +1617,40 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `agents <subcommand>` | The default agent, model pins, scope and the full agent config. | [Agents](/docs/#agents) |
-| `tools <subcommand>` | List the tools sessions get; `eject` copies a Kortix tool into the project so you can change it. | [Agents](/docs/#agents) |
-| `models <subcommand>` | The models the project offers, and its default model. | [Models](/docs/#models) |
-| `gateway <subcommand>` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs/#models) |
-| `connectors <subcommand>` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/#connectors) |
-| `secrets <subcommand>` | Project secrets, their exposure and who can use them. | [Security](/docs/#security) |
-| `providers <subcommand>` | Connect model providers with an API key or OAuth. | [Models](/docs/#models) |
-| `env <subcommand>` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Security](/docs/#security) |
-| `channels <subcommand>` | Slack and Microsoft Teams connections, and the agent each channel runs. | [Channels](/docs/#channels) |
-| `sandboxes <subcommand>` | Sandbox templates, their builds and their health. | [Computers](/docs/#computers) |
+| `agents <subcommand>` | The default agent, model pins, scope and the full agent config. | [Agents](/docs/guide#agents) |
+| `tools <subcommand>` | List the tools sessions get; `eject` copies a Kortix tool into the project so you can change it. | [Agents](/docs/guide#agents) |
+| `models <subcommand>` | The models the project offers, and its default model. | [Models](/docs/guide#models) |
+| `gateway <subcommand>` | LLM gateway routing, budgets, keys, usage, logs and tests. | [Models](/docs/guide#models) |
+| `connectors <subcommand>` | Add, connect, call and govern connectors. `moves` and `move` move Pipedream and Composio connectors to Kortix. | [Connectors](/docs/guide#connectors) |
+| `secrets <subcommand>` | Project secrets, their exposure and who can use them. | [Security](/docs/guide#security) |
+| `providers <subcommand>` | Connect model providers with an API key or OAuth. | [Models](/docs/guide#models) |
+| `env <subcommand>` | Pull secret names into a `.env` file, or push a `.env` file as secrets. | [Security](/docs/guide#security) |
+| `channels <subcommand>` | Slack and Microsoft Teams connections, and the agent each channel runs. | [Channels](/docs/guide#channels) |
+| `sandboxes <subcommand>` | Sandbox templates, their builds and their health. | [Computers](/docs/guide#computers) |
 | `apps <subcommand>` | Deploy and manage Apps: sites and servers with stable Kortix URLs. | [Apps reference](/docs/developers#apps-reference) |
-| `marketplace <subcommand>` | Search, show, install and uninstall marketplace skills. | [Skills](/docs/#skills) |
+| `marketplace <subcommand>` | Search, show, install and uninstall marketplace skills. | [Skills](/docs/guide#skills) |
 
 **Files, changes and triggers**
 
 | Command | What it does | See |
 | --- | --- | --- |
 | `files <subcommand>` | Read the committed repository: files, history, branches, commits, diffs and a zip download. | [Git](/docs/developers#git) |
-| `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Memory and Drive](/docs/#memory-and-drive) |
+| `drive <subcommand>` | The project's Drive: list, read, upload, move and delete files, and share folders. | [Memory and Drive](/docs/guide#memory-and-drive) |
 | `cr <subcommand>` | Change requests: list, show, diff, open, merge, request changes, close and reopen. | [Git](/docs/developers#git) |
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
-| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/#automations) |
-| `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/#automations) |
+| `triggers <subcommand>` | List, add, fire, enable, disable, pause and resume triggers. | [Automations](/docs/guide#automations) |
+| `reminders <subcommand>` | Prompt one session later or on repeat. `kortix remind "…" --in 24h` adds one. | [Automations](/docs/guide#automations) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**
 
 | Command | What it does | See |
 | --- | --- | --- |
-| `access <subcommand>` | Grant, list and revoke role assignments for people, groups and agents. | [Teams](/docs/#teams) |
-| `roles <subcommand>` | System and custom roles, and what each one permits. | [Teams](/docs/#teams) |
-| `permissions <subcommand>` | The permission catalog roles are built from. `kortix perms` is the same command. | [Teams](/docs/#teams) |
-| `audit <subcommand>` | Read the account audit log. | [Teams](/docs/#teams) |
-| `grants <subcommand>` | Assign agents to members or groups. | [Teams](/docs/#teams) |
+| `access <subcommand>` | Grant, list and revoke role assignments for people, groups and agents. | [Teams](/docs/guide#teams) |
+| `roles <subcommand>` | System and custom roles, and what each one permits. | [Teams](/docs/guide#teams) |
+| `permissions <subcommand>` | The permission catalog roles are built from. `kortix perms` is the same command. | [Teams](/docs/guide#teams) |
+| `audit <subcommand>` | Read the account audit log. | [Teams](/docs/guide#teams) |
+| `grants <subcommand>` | Assign agents to members or groups. | [Teams](/docs/guide#teams) |
 
 **The CLI itself**
 
@@ -1666,7 +1666,7 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 
 ### Session commands
 
-The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` lists every flag. The behavior behind them is on [Computers](/docs/#computers).
+The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` lists every flag. The behavior behind them is on [Computers](/docs/guide#computers).
 
 #### Start and list
 
@@ -1860,7 +1860,7 @@ All four surfaces reach the same API with the same permissions.
 | REST API | Any language. Integrations, scripts, and servers that are not TypeScript. | A bearer token from [Authenticate](#authenticate) |
 | [SDK](/docs/developers#sdk) (`@kortix/sdk`) | TypeScript and React. Sessions with live streaming, typed errors, automatic retries, and the session runtime. | `getToken` returns a bearer token |
 | [CLI](/docs/developers#cli) (`kortix`) | Terminals, CI jobs, and agents inside a session sandbox. | `kortix login`, or a token in CI |
-| [Kortix MCP server](/docs/#everywhere) | Claude, Cursor, ChatGPT, and other MCP clients that act as you. Its `search_api`, `describe_api`, and `call_api` tools read and call this API. | OAuth sign-in from the client |
+| [Kortix MCP server](/docs/guide#everywhere) | Claude, Cursor, ChatGPT, and other MCP clients that act as you. Its `search_api`, `describe_api`, and `call_api` tools read and call this API. | OAuth sign-in from the client |
 
 Prefer the SDK for anything that drives a session. It owns the start, the
 readiness wait, the event stream, and the runtime routes. The REST reference
@@ -1898,14 +1898,14 @@ Authorization: Bearer <token>
 
 The token decides who the request acts as. Every Kortix credential starts with
 a prefix that names its kind. Create and manage them on
-[Security](/docs/#security).
+[Security](/docs/guide#security).
 
 | Prefix | Credential | Acts as |
 |---|---|---|
 | `kortix_pat_` | Personal access key (**Settings → Personal access keys**, `kortix tokens new`, `kortix login`) | You, with your roles. A key bound to one project gets `403` everywhere else. |
 | `kortix_sa_` | Service account key (**Account settings → API keys**) | The service account. It has no access until someone assigns it a role. |
 | `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/developers#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The person who approved the app. |
-| `kortix_gw_` | Project gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one project, and nothing else. See [Models](/docs/#models). |
+| `kortix_gw_` | Project gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one project, and nothing else. See [Models](/docs/guide#models). |
 | `kortix_scim_` | SCIM token (**Account settings → Identity**) | Directory sync under `/scim/v2` for one account. |
 | `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The agent of that one session, limited to its project. It ends with the session. |
 
@@ -1967,23 +1967,23 @@ These are the codes clients branch on most. The linked section explains each fix
 
 | `code` | Status | Cause | Fix on |
 |---|---|---|---|
-| `session_token_revoked` | `401` | The credential can never work again. | [Security](/docs/#security) |
-| `insufficient_credits` | `402` | The account's credit balance is empty. | [Billing](/docs/#billing) |
-| `subscription_required` | `402` | The account has no plan for Kortix-billed usage. | [Billing](/docs/#billing) |
-| `no_account` | `402` | The account has no credit account yet. Its setup is not complete. | [Billing](/docs/#billing) |
-| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Security](/docs/#security) |
-| `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs/#models) |
+| `session_token_revoked` | `401` | The credential can never work again. | [Security](/docs/guide#security) |
+| `insufficient_credits` | `402` | The account's credit balance is empty. | [Billing](/docs/guide#billing) |
+| `subscription_required` | `402` | The account has no plan for Kortix-billed usage. | [Billing](/docs/guide#billing) |
+| `no_account` | `402` | The account has no credit account yet. Its setup is not complete. | [Billing](/docs/guide#billing) |
+| `entitlement_required` | `402` | The plan lacks `sso`, `scim`, `rbac`, `auditAccess`, or `branding`. The body names `entitlement`. | [Security](/docs/guide#security) |
+| `budget_exceeded` | `402` | A model budget set to block reached its limit. | [Models](/docs/guide#models) |
 | `feature_disabled` | `403` | The project has this feature flag off. The body names `feature`. | **Customize → Settings → Feature flags** |
 | `feature_operator_only` | `403` | Only Kortix (a platform admin) may change this flag. | Ask a platform admin. |
-| `account_mfa_required` | `403` | The account requires two-factor, and this sign-in did not use it. | [Security](/docs/#security) |
-| `expiry_required`, `expiry_too_far` | `400` | A new key breaks the account's key rules. | [Security](/docs/#security) |
+| `account_mfa_required` | `403` | The account requires two-factor, and this sign-in did not use it. | [Security](/docs/guide#security) |
+| `expiry_required`, `expiry_too_far` | `400` | A new key breaks the account's key rules. | [Security](/docs/guide#security) |
 | `INVALID_IDEMPOTENCY_KEY` | `400` | The `Idempotency-Key` header is not 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_CONFLICT`, `IDEMPOTENCY_*_CONFLICT` | `409` | The key is in use for another request, or for this one with different `connector_bindings`, `secrets`, `runtime_context`, or `provider_secret_pools`. | [Retries and idempotency](#retries-and-idempotency) |
 | `IDEMPOTENCY_KEY_SESSION_DELETED` | `409` | The key belongs to a session that was deleted. | Use a new key. |
 | `INVALID_SESSION_RUNTIME_CONTEXT`, `INVALID_SESSION_CONNECTOR_BINDINGS`, `INVALID_SESSION_SECRETS` | `400` | A session create field is malformed. | [Sessions from code](/docs/developers#session-create-errors) |
-| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Computers](/docs/#computers) |
-| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Computers](/docs/#computers) |
-| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Computers](/docs/#computers) |
+| `session_not_deleted` | `409` | A restore named a session that is not deleted. | [Computers](/docs/guide#computers) |
+| `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Computers](/docs/guide#computers) |
+| `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Computers](/docs/guide#computers) |
 | `project_archived` | `404` | The project was deleted. | Use another project. |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The project repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/developers#git) |
@@ -1991,16 +1991,16 @@ These are the codes clients branch on most. The linked section explains each fix
 | `CR_HEAD_NOT_AHEAD` | `422` | The change request branch has no commits ahead of its base. | [Git](/docs/developers#change-requests) |
 | `CR_SELF_MERGE_REFUSED` | `403` | A session tried to merge its own change request without a `project.gitops.merge` grant. | [Git](/docs/developers#change-requests) |
 | `MANIFEST_INVALID` | `422` | The change request makes `kortix.yaml` invalid. The merge is blocked. `issues` lists the errors. | [kortix.yaml reference](/docs/developers#kortixyaml-reference) |
-| `PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | `409` | You tried to share a session that holds a secret shared only with you. | [Security](/docs/#security) |
-| `project_secret_write_limit` | `429` | The project wrote secrets more than 100 times in one hour. | [Security](/docs/#security) |
+| `PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION` | `409` | You tried to share a session that holds a secret shared only with you. | [Security](/docs/guide#security) |
+| `project_secret_write_limit` | `429` | The project wrote secrets more than 100 times in one hour. | [Security](/docs/guide#security) |
 | `app_config_invalid` | `400` | An App release config is not valid. `issues` lists the errors. | [Apps reference](/docs/developers#apps-reference) |
 | `app_auth_required` | `401` | An App URL needs a viewer that may open it. | [App access](/docs/developers#app-access) |
 
 A connector call reports its outcome in `reason`, not `code`, inside
 `{ ok: false, status: "denied" | "error", reason }`. The reasons, such as
 `connector_not_connected` and `policy_block`, are on
-[Connectors](/docs/#connectors). LLM provider and model failures
-are on [Models](/docs/#models).
+[Connectors](/docs/guide#connectors). LLM provider and model failures
+are on [Models](/docs/guide#models).
 
 ### Retries and idempotency
 
@@ -2075,10 +2075,10 @@ take a different credential or protocol than a plain bearer call:
 | Surface | Use instead |
 |---|---|
 | The session runtime under `/v1/p/<external_id>/8000/kortix/runtime/*`: prompts, the event stream, files, and the transcript of a running session. The path takes the sandbox's external id at the provider, not the `session_id`. Read it from `sandbox_url` in `kortix sessions info <session_id> --json` (after `/v1/p/`), or from `sandboxId` in the SDK's `ensureReady()`. | The SDK session handle, `kortix.session(projectId, sessionId)`. See [Sessions from code](/docs/developers#sessions-from-code). |
-| SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [Single sign-on and directory sync](/docs/#single-sign-on-and-directory-sync) |
-| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/#automations) |
-| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/#automations) |
-| The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/#models) |
+| SCIM 2.0 under `/scim/v2/accounts/<account_id>`. It takes a `kortix_scim_` token, not a personal key. | [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync) |
+| Inbound trigger webhooks, `POST /v1/webhooks/projects/<project_id>/<slug>`. They authenticate with the trigger secret, not a Kortix token: send an HMAC signature (`X-Kortix-Signature` or `X-Hub-Signature-256`), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. | [Webhooks](/docs/guide#automations) |
+| App events and App runs: `POST …/apps/<app_id>/events`, `POST` and `DELETE …/apps/<app_id>/runs`. They take the App's `KORTIX_APP_TOKEN`, not a Kortix token. | [App events](/docs/guide#automations) |
+| The LLM gateway's OpenAI- and Anthropic-compatible endpoints. They take a `kortix_gw_` key. | [Models](/docs/guide#models) |
 | The project git origin, `https://api.kortix.com/v1/git/<project_id>.git`. | [Git](/docs/developers#git) |
 
 ### Machine-readable docs
@@ -2095,7 +2095,7 @@ tools:
 
 Point a coding agent at `https://kortix.com/llms.txt` for the concepts and at
 `https://api.kortix.com/v1/openapi.json` for the exact routes. An MCP client that uses the
-[Kortix MCP server](/docs/#everywhere) reads the route reference itself through
+[Kortix MCP server](/docs/guide#everywhere) reads the route reference itself through
 `search_api` and `describe_api`.
 
 ## Apps reference
@@ -2337,7 +2337,7 @@ sits in the **Background** list under the grid.
 Each row shows the App's
 status, how it runs, the trigger that calls it and its last activity. Opening
 a background App shows what it does: how it runs, the triggers that call it
-and the agents its [events](/docs/#automations) start. In the
+and the agents its [events](/docs/guide#automations) start. In the
 web app, **Settings → Show on Apps page** moves an App between the grid and
 the list. Like every App setting kortix.yaml can declare, the switch commits
 `display.listed` to `apps.<slug>` in kortix.yaml; a push that edits it applies
@@ -2760,7 +2760,7 @@ agents:
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
 (also `all` and `none`), or in **Customize → Agents →** the agent **→ Apps**.
 The App's access dialog lists the agents granted to it. From code, call `apps.access.agents(appId)`. See
-[Agents](/docs/#agents).
+[Agents](/docs/guide#agents).
 
 A script, a CI job or a service account calls a non-public App with a personal access
 key (`kortix_pat_`) or a service account key (`kortix_sa_`). Send it in
@@ -2770,7 +2770,7 @@ never accepts a Kortix credential.
 
 An `openapi` or `http` connector whose base URL is an App of the same project
 needs no Kortix credential. The connector gateway adds a signed, 60-second
-assertion for the calling session. See [Connectors](/docs/#connectors).
+assertion for the calling session. See [Connectors](/docs/guide#connectors).
 
 ### Triggers and App events
 
@@ -2778,9 +2778,9 @@ An App can start agents, and triggers can call it.
 
 | You want | Use |
 |---|---|
-| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/#automations). |
-| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/#automations). |
-| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/#automations). |
+| An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/guide#automations). |
+| The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#automations). |
+| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#automations). |
 
 To react to the outside world, try a webhook first, then a schedule. Post App
 events only when neither works. An App never starts an agent itself: it posts
@@ -2806,7 +2806,7 @@ Kortix sets these variables in every machine:
 | `KORTIX_APP_VIEWER_SECRET` | The key that verifies the signed viewer header |
 | `KORTIX_APP_ACCOUNT_ID` | The account that owns the App |
 | `KORTIX_APP_ID` | The App's id |
-| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/#automations) and scheduled runs. A secret. |
+| `KORTIX_APP_TOKEN` | The App's token for [App events](/docs/guide#automations) and scheduled runs. A secret. |
 | `KORTIX_APP_EVENTS_URL` | Where the App posts App events |
 
 Your own values come from `env` and `secrets` in the `kortix.yaml` block:
@@ -2823,7 +2823,7 @@ Your own values come from `env` and `secrets` in the `kortix.yaml` block:
 - A name cannot be in both `env` and `secrets`.
 - `secrets` maps a runtime name to a project secret identifier. The secret must
   have the `environment` exposure. Kortix resolves it when it creates the
-  machine and never writes it into the image. See [Security](/docs/#security).
+  machine and never writes it into the image. See [Security](/docs/guide#security).
 
 ### URLs and what visitors see
 
@@ -3147,7 +3147,7 @@ types: [SDK reference](/docs/developers#the-project-handle) and
 `project.app.write` and `project.app.deploy` include `project.app.read`.
 `project.app.admin` includes `project.app.write`, not `project.app.deploy`.
 Account owners and admins act as Managers on every project. See
-[Teams](/docs/#teams) for roles and custom roles.
+[Teams](/docs/guide#teams) for roles and custom roles.
 
 `<app>` is an App id or slug. Every subcommand takes `--project <id>`,
 `--host <name>` and `--json`.
@@ -3316,10 +3316,10 @@ kortix self-host start
 | Platinum | `PLATINUM_API_KEY`, `PLATINUM_API_URL` (default `https://api.platinum.dev`) and `PLATINUM_TEMPLATE` (optional). |
 | Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
 | Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, suggested `p.<domain>`, which needs a `*.p.<domain>` record. In domain mode the default answer is configure. |
-| Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/#connectors). |
+| Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/guide#connectors). |
 | Update policy | Auto-update on or off, channel, daily time and timezone. |
 
-SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/#single-sign-on-and-directory-sync).
+SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
 
 ### First sign-in and setup
 
@@ -3327,7 +3327,7 @@ SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` on
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/developers#git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
-5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. A project can connect **Platinum** as its provider with a Platinum API key. See [Connect your own provider](/docs/#models).
+5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. A project can connect **Platinum** as its provider with a Platinum API key. See [Connect your own provider](/docs/guide#models).
 6. **Turn on email.** Set one connection string:
 
    ```sh
@@ -3373,7 +3373,7 @@ What the stack does by itself:
 
 - Only Caddy publishes public ports, 80 and 443. Every other published port binds `127.0.0.1`.
 - `.env` and `docker-compose.yml` are written with mode `0600`.
-- [Connectors](/docs/#connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
+- [Connectors](/docs/guide#connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
 - `kortix-updater` holds the Docker socket, so its image is pinned by digest.
 
 Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login.
@@ -3412,7 +3412,7 @@ Platform admins open `/admin`. On a self-hosted instance, a platform admin is a 
 
 ### Connect your clients
 
-`kortix self-host start` registers the CLI host `selfhost` on the server. To point the web, CLI, TUI, desktop and mobile clients at the instance, see [Connect to a self-hosted instance](/docs/#everywhere).
+`kortix self-host start` registers the CLI host `selfhost` on the server. To point the web, CLI, TUI, desktop and mobile clients at the instance, see [Connect to a self-hosted instance](/docs/guide#everywhere).
 
 ### Integrations
 
@@ -3421,11 +3421,11 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | Variables | Effect |
 |---|---|
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
-| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/#channels). |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/guide#channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `RESEND_API_KEY` | Transactional email through Resend. |
-| `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/#computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
+| `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/guide#computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
 | `PLATINUM_API_KEY` | Required. Sessions, App machines and volumes, and Drive (`/drives`). |
 
 OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
@@ -3526,7 +3526,7 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 | `KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES` | `720` | Platinum's own idle stop, a backstop for sandboxes the API cannot reach. |
 | `KORTIX_DEFAULT_SANDBOX_CPU`, `_MEMORY_GB`, `_DISK_GB` | `2`, `4`, `20` | The sandbox size when a template sets none. |
 
-People see the effect of these values in [Computers](/docs/#computers).
+People see the effect of these values in [Computers](/docs/guide#computers).
 
 #### App hosting
 
@@ -3846,10 +3846,10 @@ it a role. Create one under **Account settings → API keys**, or with
 `KORTIX_API_URL` inside a session sandbox. They act as the session's agent,
 limited to that project and session. Their permissions are the agent's
 `kortix_permissions`, capped by its ceiling role (see
-[What an agent may do](/docs/#agents)).
+[What an agent may do](/docs/guide#agents)).
 Creation, expiry, project binding and key rules for every credential are in
-[Security](/docs/#security). A valid credential without the needed permission
-gets `403`. Grant the role in [Teams](/docs/#teams).
+[Security](/docs/guide#security). A valid credential without the needed permission
+gets `403`. Grant the role in [Teams](/docs/guide#teams).
 
 <Callout type="warning">
   A `kortix_pat_` or `kortix_sa_` key never ships to a browser. Keep it on a
@@ -3981,7 +3981,7 @@ re-points the one process-wide config.
 | Password | `auth.signInWithPassword({ email, password })` |
 | Magic link or code | `auth.sendMagicLink({ email, create_user?, redirect_to?, data? })`, then `auth.verifyOtp({ email, token, type: 'magiclink' })` with the code from the email |
 | Social login (PKCE) | `auth.signInWithProvider({ provider, redirect_to, scopes? })` returns `{ url, code_verifier }`. Keep `code_verifier`. Send the browser to `url`. Then call `auth.exchangeCode({ code, code_verifier })` with the `code` from the redirect. `provider` is one the instance has configured, for example `google` or `github`. |
-| Enterprise SSO | `auth.signInWithSso({ domain, redirect_to? })` returns `{ url }`. A `404` means the domain has no identity provider. See [Security](/docs/#security). |
+| Enterprise SSO | `auth.signInWithSso({ domain, redirect_to? })` returns `{ url }`. A `404` means the domain has no identity provider. See [Security](/docs/guide#security). |
 | Password reset | `auth.resetPassword({ email, redirect_to? })`, then `auth.verifyOtp({ email, token, type: 'recovery' })`, then `auth.updatePassword({ password }, accessToken)` with the access token from that session. The password is 8 to 256 characters. |
 
 Every flow that returns a session returns `{ session, user }`. Pass both to
@@ -4221,7 +4221,7 @@ The first sign-in shows a Kortix consent screen with your app's name and
 scopes. Kortix remembers the approval per person and app. Later sign-ins
 return straight to your app. A person revokes an app with
 `kortix.accounts.connectedApps.list()` and `.revoke(clientId)`, or on the web
-and in the CLI as [Security](/docs/#security) describes. After a revoke, the
+and in the CLI as [Security](/docs/guide#security) describes. After a revoke, the
 app's tokens stop working and the app must ask again.
 
 #### Discovery for other OAuth clients
@@ -4517,7 +4517,7 @@ Every field is optional. With no input, the session runs the project's default a
 | --- | --- |
 | `initial_prompt` | The first prompt. The server delivers it when the runtime is up. You do not call `send()` for it. |
 | `agent_name` | The agent to run. Default: the project's default agent. |
-| `model` | The model id (see [Models](/docs/#models)). A model the account cannot use returns `400`. |
+| `model` | The model id (see [Models](/docs/guide#models)). A model the account cannot use returns `400`. |
 | `name` | The session title. Without it, the server makes a title from the first prompt. |
 | `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
 | `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. A server-managed key, for example `source`, `trigger_kind` or `trigger_slug`, returns `400`. Prefix your keys, for example `app_`. |
@@ -4895,13 +4895,13 @@ const direct = s.sandboxPortUrl(3000); // the authenticated API proxy URL, for a
 const ports = await s.previews(); // the ports the runtime exposes
 ```
 
-See [Computers](/docs/#computers) for ports and previews.
+See [Computers](/docs/guide#computers) for ports and previews.
 
 ### Start sessions for your users
 
 Your server holds one Kortix credential and starts sessions for its own customers. Your customers never sign in to Kortix.
 
-1. Use a personal access key (`kortix_pat_…`, acts as you) or a service account key (`kortix_sa_…`, acts as itself and needs a project role first). See [Security](/docs/#security).
+1. Use a personal access key (`kortix_pat_…`, acts as you) or a service account key (`kortix_sa_…`, acts as itself and needs a project role first). See [Security](/docs/guide#security).
 2. Create the client with `createScopedKortix` from `@kortix/sdk/server`. It never writes the process-global config, so one request never reads the config of another. See [SDK authentication](/docs/developers#sdk-authentication).
 
 ```ts
@@ -4962,9 +4962,9 @@ curl -X POST "https://api.kortix.com/v1/projects/<project_id>/sessions" \
 - When you set it, an alias you did not bind gets no account. `inherit_unbound: true` lets unbound aliases use the project default.
 - A shared (`project`) account works for both credential types.
 - A private (`member`) account works only for its owner, and only in a private session. A new session is private. A service account never uses a private account.
-- The credential never enters the sandbox. Kortix resolves it on every connector call. See [Connectors](/docs/#connectors).
+- The credential never enters the sandbox. Kortix resolves it on every connector call. See [Connectors](/docs/guide#connectors).
 
-`secrets` narrows the project secrets the sandbox receives, from the agent's grant down to the identifiers you list. It never widens the grant. `[]` delivers no project secrets. Only a `backend`-origin caller may set it. See [Security](/docs/#security).
+`secrets` narrows the project secrets the sandbox receives, from the agent's grant down to the identifiers you list. It never widens the grant. `[]` delivers no project secrets. Only a `backend`-origin caller may set it. See [Security](/docs/guide#security).
 
 #### Change the scope of a running session
 
@@ -5013,7 +5013,7 @@ const page = await kortix.billing.sessionCosts.list({
 });
 ```
 
-`sessionCosts.list` covers every session of the account in the half-open UTC window `[from, to)`. The default window is the last 30 days. Filter by `accountId`, `projectId` or `ownerId`. See [Billing](/docs/#billing).
+`sessionCosts.list` covers every session of the account in the half-open UTC window `[from, to)`. The default window is the last 30 days. Filter by `accountId`, `projectId` or `ownerId`. See [Billing](/docs/guide#billing).
 
 ### Errors and retries
 
@@ -5289,7 +5289,7 @@ await p.connectors.policies.set('gmail', [
 ]);
 ```
 
-How project rules, policy sets and base rules combine is in [Connectors](/docs/#connectors).
+How project rules, policy sets and base rules combine is in [Connectors](/docs/guide#connectors).
 
 ### Store secrets
 
@@ -5310,7 +5310,7 @@ for (const secret of items) {
 | `value` | Omit it to keep the stored value. |
 | `identifier` | Unique per project. Defaults to `name`. Set it to store a second secret under the same `name`. |
 | `strategy` | `runtime` (environment variable), `egress` (enforced at the network boundary), `broker` (the value stays out of the session) or `denied`. |
-| `consumer` · `egress_policy` · `handle_prefix` | Delivery settings for `egress` and `broker`. See [Security](/docs/#security). |
+| `consumer` · `egress_policy` · `handle_prefix` | Delivery settings for `egress` and `broker`. See [Security](/docs/guide#security). |
 | `shared_with` | People, groups and agents that may use the shared value. `[]` means everyone in the project. Omit it to keep the current list. |
 
 `list()` returns `{ items, required, optional }`. `required` and `optional` are the environment keys `kortix.yaml` declares. A secret with `status: 'undecryptable'` must be set again with `upsert`. `mine` describes the caller's own value, which `setPersonal(name, { value })` sets.
@@ -5350,7 +5350,7 @@ console.log(run.status, run.session_id, run.run_id);
 | `target` | `{ app, path?, method?, payload? }`: call an App instead of an agent. |
 | `agent` · `model` | The agent (default `default`) and a `provider/model` override. |
 
-Every field, including session reuse and rate caps, is in [Automations](/docs/#automations).
+Every field, including session reuse and rate caps, is in [Automations](/docs/guide#automations).
 
 | Call | What it does |
 | --- | --- |
@@ -7147,7 +7147,7 @@ createRoot(document.getElementById('root')!).render(
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, report it as an SDK gap.
 - Three white-label examples follow this structure ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
   - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin): the Kortix workspace under its own theme, with direct mode (the browser holds the credential) or wrapper mode (its own server holds it).
-  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console): a static [Kortix App](/docs/#apps) over one account, signed in as the viewer.
+  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console): a static [Kortix App](/docs/guide#apps) over one account, signed in as the viewer.
   - [Lumen](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen): a product with its own users, data and billing, with Kortix as the agent backend.
 
 ### For agents
@@ -7510,7 +7510,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 | `triggers.setActivation(paused)` | Pauses or resumes every trigger of the project. |
 | `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session the caller can open. One session's reminders are `s.reminders`. |
 
-All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Automations](/docs/#automations).
+All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Automations](/docs/guide#automations).
 
 #### Apps
 
@@ -7543,7 +7543,7 @@ Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/de
 | `modelDefaults.get()` · `.set(input)` · `.clear(params)` | Default models per account, agent and project. |
 | `setDefaultAgent(agentName)` | Sets `default_agent` in `kortix.yaml`. The agent must be declared and enabled. |
 
-See [Models](/docs/#models).
+See [Models](/docs/guide#models).
 
 #### Channels
 
@@ -7553,7 +7553,7 @@ See [Models](/docs/#models).
 | `channels.slack.getFile(url)` · `.uploadFile(input)` | Download or upload a Slack file through the server. The bot token stays on the server. |
 | `channels.teams.completeInstall(input)` | Finishes a Microsoft Teams install as the signed-in user. |
 
-See [Channels](/docs/#channels).
+See [Channels](/docs/guide#channels).
 
 #### Access
 
@@ -7565,7 +7565,7 @@ See [Channels](/docs/#channels).
 | `access.groupGrants()` · `.attachGroupGrant(…)` · `.updateGroupGrant(…)` · `.detachGroupGrant(groupId)` | Groups with project access. |
 | `access.resourceGrants.list()` · `.create(input)` · `.remove(grantId)` | Access to one object, such as one agent or skill, for a member or a group. |
 
-See [Teams](/docs/#teams).
+See [Teams](/docs/guide#teams).
 
 #### Sandbox
 
@@ -7576,7 +7576,7 @@ See [Teams](/docs/#teams).
 | `sandbox.createTemplate(input)` · `.updateTemplate(…)` · `.removeTemplate(templateId)` · `.buildTemplate(templateId)` | Sandbox templates. |
 | `sandbox.setProvider(provider \| null)` | Pins the sandbox provider, or `null` for the platform default. Returns `kind: 'project'` when the change applies at once, or `kind: 'preparation'` while the new provider's image builds. |
 
-See [Computers](/docs/#computers).
+See [Computers](/docs/guide#computers).
 
 ### The session handle
 
