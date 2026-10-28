@@ -1,4 +1,4 @@
-// Organization branding — an Enterprise entitlement (`branding`).
+// Organization branding — on every plan (the `branding` plan entitlement).
 //
 // An account can replace the Kortix marks its members see in the web app: the
 // wide brandmark (`logo`), the square symbol (`icon`), and the browser-tab
@@ -10,20 +10,21 @@
 // Clients never write a URL — so the stored value can never point outside our
 // storage origin, and nothing needs URL validation downstream.
 //
-// Gating, in the same shape as the other enterprise surfaces (audit, SSO):
-//   - writes (`PUT`, `POST …/assets/:kind`) need `account.write` AND the
-//     `branding` entitlement — `requireEntitlement` 402s otherwise;
-//   - reads and the two removal routes stay ungated (permission only) so a
-//     downgraded account can still see and unwind what it set;
-//   - SERVING is entitlement-checked: `effectiveBranding` (used by
-//     `GET /accounts` and `GET /accounts/:id`) returns `null` the moment the
-//     entitlement lapses, so members fall back to Kortix without any write.
+// Branding is not an Enterprise feature: Kortix is Apache 2.0 and anyone may
+// rebrand it. The `branding` plan entitlement is on for every plan; a Kortix
+// operator can turn it off for one account (an override, e.g. for abuse):
+//   - writes (`PUT`, `POST …/assets/:kind`) need `account.write`, and answer
+//     403 `branding_disabled` while it is off;
+//   - reads and the two removal routes need only the permission, so the
+//     account can still see and unwind what it set;
+//   - SERVING follows it: `effectiveBranding` (used by `GET /accounts` and
+//     `GET /accounts/:id`) returns `null` while it is off.
 
 import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { type AccountBrandingRecord, accounts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { accountHasEntitlement } from '../billing/services/entitlements';
+import { resolveAccountBilling } from '../billing/services/billing-cache';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { auth, errors, json } from '../openapi';
@@ -33,7 +34,7 @@ import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
-import { auditIam, requireEntitlement } from './iam/http-helpers';
+import { auditIam } from './iam/http-helpers';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */
@@ -105,21 +106,25 @@ export function normalizeBranding(record: AccountBrandingRecord | null | undefin
   };
 }
 
+/** Whether the account may show its own branding (the `branding` plan entitlement). */
+export async function brandingAllowed(accountId: string): Promise<boolean> {
+  return (await resolveAccountBilling(accountId)).entitlements.branding;
+}
+
 export function isBrandingEmpty(branding: AccountBranding): boolean {
   return Object.values(branding).every((v) => v === null);
 }
 
 /**
- * The branding members should SEE: the stored record when the account is
- * entitled, `null` when nothing is set or the entitlement has lapsed. The
+ * The branding members should SEE: the stored record, or `null` when nothing
+ * is set or an operator turned branding off for the account. The
  * entitlement read only happens for accounts that actually carry branding, so
  * `GET /accounts` costs nothing extra for the overwhelming majority.
  */
 export async function effectiveBranding(
   accountId: string,
   record: AccountBrandingRecord | null | undefined,
-  hasEntitlement: (accountId: string) => Promise<boolean> = (id) =>
-    accountHasEntitlement(id, 'branding'),
+  hasEntitlement: (accountId: string) => Promise<boolean> = brandingAllowed,
 ): Promise<AccountBranding | null> {
   const branding = normalizeBranding(record);
   if (isBrandingEmpty(branding)) return null;
@@ -352,7 +357,7 @@ export function registerBrandingRoutes(): void {
       if (!row) return c.json({ error: 'Not found' }, 404);
       return c.json({
         branding: normalizeBranding(row.branding),
-        entitled: await accountHasEntitlement(accountId, 'branding'),
+        entitled: await brandingAllowed(accountId),
       });
     },
   );
@@ -380,7 +385,7 @@ export function registerBrandingRoutes(): void {
       },
       responses: {
         200: json(AccountBrandingStateSchema, 'Updated branding'),
-        ...errors(400, 401, 402, 403, 404),
+        ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
@@ -388,8 +393,9 @@ export function registerBrandingRoutes(): void {
       const accountId = c.req.param('accountId');
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-      const denied = await requireEntitlement(c, accountId, 'branding');
-      if (denied) return denied;
+      if (!(await brandingAllowed(accountId))) {
+        return c.json({ error: 'Organization branding is turned off for this account.', code: 'branding_disabled' }, 403);
+      }
 
       const body = await readJsonObject(c);
       if (!('app_name' in body)) return c.json({ error: 'app_name is required' }, 400);
@@ -437,7 +443,7 @@ export function registerBrandingRoutes(): void {
       },
       responses: {
         200: json(AccountBrandingStateSchema, 'Updated branding'),
-        ...errors(400, 401, 402, 403, 404, 413),
+        ...errors(400, 401, 403, 404, 413),
       },
     }),
     async (c: any) => {
@@ -446,8 +452,9 @@ export function registerBrandingRoutes(): void {
       const kind = c.req.param('kind') as BrandingAssetKind;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-      const denied = await requireEntitlement(c, accountId, 'branding');
-      if (denied) return denied;
+      if (!(await brandingAllowed(accountId))) {
+        return c.json({ error: 'Organization branding is turned off for this account.', code: 'branding_disabled' }, 403);
+      }
 
       const form = await c.req.parseBody().catch(() => null);
       const file = form?.file;
@@ -545,7 +552,7 @@ export function registerBrandingRoutes(): void {
           after: { kind, url: null },
         });
       }
-      return c.json({ branding: after, entitled: await accountHasEntitlement(accountId, 'branding') });
+      return c.json({ branding: after, entitled: await brandingAllowed(accountId) });
     },
   );
 
@@ -587,7 +594,7 @@ export function registerBrandingRoutes(): void {
           after: { ...after },
         });
       }
-      return c.json({ branding: after, entitled: await accountHasEntitlement(accountId, 'branding') });
+      return c.json({ branding: after, entitled: await brandingAllowed(accountId) });
     },
   );
 }

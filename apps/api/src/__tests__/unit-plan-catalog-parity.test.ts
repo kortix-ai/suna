@@ -118,8 +118,11 @@ for (const key of TIER_KEYS) {
         scim: record.entitlements.scim,
         rbac: record.entitlements.rbac,
         auditAccess: record.entitlements.auditAccess,
-        branding: record.entitlements.branding,
       }).toEqual(expected);
+    });
+
+    test('branding is on for every plan', () => {
+      expect(record.entitlements.branding).toBe(true);
     });
 
     test('managedModels matches tierGrantsAllModels', () => {

@@ -6,23 +6,24 @@ import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
 import { requestClientIp } from '../../middleware/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
-import type { TierEntitlements } from '../../types';
+import type { EnterpriseFeature } from '../../types';
 import { resolveAccountBilling } from '../../billing/services/billing-cache';
 
-/** Human label per entitlement, for the 402 message shown to admins. */
-const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
+/** Human label per Enterprise feature, for the 402 message shown to admins. */
+const ENTITLEMENT_LABEL: Record<EnterpriseFeature, string> = {
   sso: 'SAML single sign-on',
   scim: 'SCIM directory provisioning',
   rbac: 'Custom roles, policies, and groups',
   auditAccess: 'Audit log access and export',
-  branding: 'Organization branding',
 };
 
 /**
- * Gate an enterprise-only IAM surface behind the account's plan. Returns a 402
- * `Response` to return early when the account's tier lacks `key`, or `null`
- * when entitled. The denial names the billing plan separately from Enterprise
- * features and points to the demo or license path without changing access.
+ * The gate for an Enterprise route (the rule is in ENTERPRISE_FEATURES,
+ * ../../types). Returns a 402 `Response` to return early when the account may
+ * not use `key` (not Licensed, not in Demo, no valid self-host license key), or
+ * `null` when it may. Call it after the authorization check and before any
+ * lookup, so a denied account learns nothing about the resource. The denial
+ * names the billing plan and points to the demo or license path.
  *
  *   const denied = await requireEntitlement(c, accountId, 'sso');
  *   if (denied) return denied;
@@ -30,7 +31,7 @@ const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
 export async function requireEntitlement(
   c: Context,
   accountId: string,
-  key: keyof TierEntitlements,
+  key: EnterpriseFeature,
 ): Promise<Response | null> {
   if (await accountHasEntitlement(accountId, key)) return null;
   const { plan } = await resolveAccountBilling(accountId);

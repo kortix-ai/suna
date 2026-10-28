@@ -2049,6 +2049,11 @@
       "count": 4
     }
   },
+  "src/projects/routes/ee/project-audit-log.ts": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
   "src/projects/routes/gateway-keys.ts": {
     "no-restricted-syntax": {
       "count": 3
@@ -2142,7 +2147,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/routes/project-credentials.ts": {

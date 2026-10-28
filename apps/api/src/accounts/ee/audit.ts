@@ -910,7 +910,7 @@ auditRouter.openapi(
     },
     responses: {
       200: json(z.object({ replayed: z.boolean() }), 'Delivery queued'),
-      ...errors(401, 403, 404),
+      ...errors(401, 402, 403, 404),
     },
   }),
   async (c: any) => {
@@ -919,6 +919,8 @@ auditRouter.openapi(
     const webhookId = c.req.param('webhookId');
     const deliveryId = c.req.param('deliveryId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
     const [hook] = await db
       .select({ webhookId: auditWebhooks.webhookId })
       .from(auditWebhooks)

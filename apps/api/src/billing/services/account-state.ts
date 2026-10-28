@@ -179,7 +179,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns.
       monthly_credits: monthlyUsd ?? tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
-      entitlements,
+      entitlements: { ...entitlements, branding: resolved.entitlements.branding },
     },
     enterprise_license_available: enterpriseLicenseActive(),
     enterprise_entitled: resolved.enterprise !== 'off',
@@ -293,7 +293,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       display_name: 'Free',
       monthly_credits: 0,
       can_purchase_credits: false,
-      entitlements: getTierEntitlements('free'),
+      entitlements: { ...getTierEntitlements('free'), branding: true },
     },
     enterprise_license_available: enterpriseLicenseActive(),
     // No-DB local mode has no credit_accounts row, so the contracted-Enterprise

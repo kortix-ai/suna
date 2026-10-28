@@ -15,6 +15,7 @@
  */
 
 import { canonicalTier } from './tier-facts';
+import { enterpriseEntitlements, type EnterpriseEntitlements } from '../../types';
 
 /** Public plan family — the identity a customer sees. */
 export type PlanFamily = 'free' | 'credits' | 'enterprise';
@@ -36,12 +37,10 @@ export interface PlanRecord {
   shape: BillingShape;
   /** Strictly ordered ladder position. Compare, don't display. */
   rank: number;
-  entitlements: {
-    sso: boolean;
-    scim: boolean;
-    rbac: boolean;
-    auditAccess: boolean;
-    /** Organization branding (own logo / icon / favicon / product name). */
+  /** The Enterprise features (ENTERPRISE_FEATURES), then the plan's own switches. */
+  entitlements: EnterpriseEntitlements & {
+    /** Organization branding (own logo / icon / favicon / product name). On for
+     *  every plan; an operator override can turn it off for one account. */
     branding: boolean;
     /** True iff the tier's `models` list includes 'all' (tierGrantsAllModels). */
     managedModels: boolean;
@@ -68,15 +67,7 @@ export const PLAN_FAMILY_LABELS: Record<PlanFamily, string> = {
   enterprise: 'Enterprise',
 };
 
-// Organization branding is on every plan: anyone may rebrand Kortix
-// (Apache 2.0), so it is not an Enterprise feature.
-const NO_ENTERPRISE = {
-  sso: false,
-  scim: false,
-  rbac: false,
-  auditAccess: false,
-  branding: true,
-} as const;
+const NO_ENTERPRISE = enterpriseEntitlements(false);
 
 export const PLAN_CATALOG: Record<string, PlanRecord> = {
   none: {
@@ -85,7 +76,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'non_plan',
     shape: 'none',
     rank: 0,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, branding: true, managedModels: false, canPurchaseCredits: false, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'No Plan',
   },
@@ -99,7 +90,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, branding: true, managedModels: false, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },
@@ -110,7 +101,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     status: 'current',
     shape: 'credits',
     rank: 2,
-    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, branding: true, managedModels: true, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 12 },
     displayName: 'Credits',
   },
@@ -123,10 +114,7 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     shape: 'contract',
     rank: 3,
     entitlements: {
-      sso: true,
-      scim: true,
-      rbac: true,
-      auditAccess: true,
+      ...enterpriseEntitlements(true),
       branding: true,
       managedModels: true,
       canPurchaseCredits: true,

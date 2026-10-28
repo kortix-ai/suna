@@ -1,5 +1,5 @@
 import { type Database, auditEvents, auditEventsAll } from '@kortix/db';
-import { and, asc, eq, gt, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { isUuid } from './validate';
 
 const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -213,4 +213,21 @@ export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, stri
     user_agent: row.userAgent,
     metadata: row.metadata,
   };
+}
+
+/**
+ * One page of the audit log, newest first: up to `limit + 1` rows matching
+ * `conditions`, so the caller can tell whether another page follows.
+ */
+export async function readAuditEventPage(
+  database: Pick<Database, 'select'>,
+  conditions: SQL[],
+  limit: number,
+): Promise<AuditEventRow[]> {
+  return database
+    .select()
+    .from(auditEventsAll)
+    .where(and(...conditions))
+    .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
+    .limit(limit + 1);
 }

@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 import { config } from '../../config';
-import type { TierConfig, TierEntitlements } from '../../types';
+import { enterpriseEntitlements, type EnterpriseEntitlements, type TierConfig } from '../../types';
 import { canonicalTier } from './tier-facts';
 
 // Config-free tier facts live in their own module so genuinely pure consumers
@@ -106,26 +106,11 @@ export const MAX_PROJECTS_PER_ACCOUNT = 200;
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
-// Enterprise feature gates. The whole IAM surface — groups + custom
-// roles/policies (`rbac`), the identity providers (SAML SSO + SCIM), and
-// audit log access — is exclusive to the sales-assigned `enterprise` tier.
-// Non-entitled accounts see an upsell in the UI and a 402 from the
-// requireEntitlement() guard on create/update routes. See TierEntitlements.
-const SELF_SERVE: TierEntitlements = {
-  sso: false,
-  scim: false,
-  rbac: false,
-  auditAccess: false,
-  // Branding is on every plan; it is not an Enterprise feature.
-  branding: true,
-};
-const ALL_ENTERPRISE: TierEntitlements = {
-  sso: true,
-  scim: true,
-  rbac: true,
-  auditAccess: true,
-  branding: true,
-};
+// The Enterprise features (ENTERPRISE_FEATURES in ../../types): off on every
+// self-serve tier, on for `enterprise`. Routes check them with
+// requireEntitlement() (accounts/iam/http-helpers.ts).
+const SELF_SERVE = enterpriseEntitlements(false);
+const ALL_ENTERPRISE = enterpriseEntitlements(true);
 
 /**
  * `monthlyCredits` is the FIXED allowance. `credits` has none: its allowance is
@@ -460,8 +445,8 @@ export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
 }
 
-/** Full entitlement set for a tier (enterprise feature gates). */
-export function getTierEntitlements(tierName: string): TierEntitlements {
+/** The Enterprise features a tier unlocks. */
+export function getTierEntitlements(tierName: string): EnterpriseEntitlements {
   return getTier(tierName).entitlements;
 }
 

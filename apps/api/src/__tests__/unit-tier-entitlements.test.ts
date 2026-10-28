@@ -18,7 +18,6 @@ describe('tier entitlements (enterprise gating)', () => {
     expect(tierHasEntitlement('enterprise', 'scim')).toBe(true);
     expect(tierHasEntitlement('enterprise', 'rbac')).toBe(true);
     expect(tierHasEntitlement('enterprise', 'auditAccess')).toBe(true);
-    expect(tierHasEntitlement('enterprise', 'branding')).toBe(true);
   });
 
   test('every non-enterprise tier: identity, rbac, and audit are all gated', () => {
@@ -41,7 +40,6 @@ describe('tier entitlements (enterprise gating)', () => {
       expect(tierHasEntitlement(t, 'scim')).toBe(false);
       expect(tierHasEntitlement(t, 'rbac')).toBe(false);
       expect(tierHasEntitlement(t, 'auditAccess')).toBe(false);
-      expect(tierHasEntitlement(t, 'branding')).toBe(true);
     }
   });
 
@@ -53,7 +51,6 @@ describe('tier entitlements (enterprise gating)', () => {
       scim: false,
       rbac: false,
       auditAccess: false,
-      branding: true,
     });
   });
 

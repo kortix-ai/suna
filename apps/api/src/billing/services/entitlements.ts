@@ -17,28 +17,13 @@
 
 import { config } from '../../config';
 import { enterpriseLicenseActive } from './enterprise-license';
-import type { TierEntitlements } from '../../types';
+import { pickEnterprise, type EnterpriseEntitlements, type EnterpriseFeature } from '../../types';
 import type { getCreditAccount } from '../repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from './billing-cache';
 import { resolvePlanRecord } from './plan-catalog';
 import type { ResolvedBilling } from './resolve-billing';
 
-/** The five enterprise feature gates, projected out of a resolved plan. */
-function enterpriseGates(resolved: ResolvedBilling): TierEntitlements {
-  const { sso, scim, rbac, auditAccess, branding } = resolved.entitlements;
-  return { sso, scim, rbac, auditAccess, branding };
-}
 
-/**
- * The entitlement set a self-host Kortix Enterprise license grants. Read from
- * the plan catalog rather than `getTierEntitlements('enterprise')` so this
- * module never imports `tiers.ts` (which boots env validation at module scope).
- * The parity test pins the two to the same values.
- */
-function enterpriseLicenseGates(): TierEntitlements {
-  const { sso, scim, rbac, auditAccess, branding } = resolvePlanRecord('enterprise').entitlements;
-  return { sso, scim, rbac, auditAccess, branding };
-}
 
 /**
  * Resolve the plan key backing an account ('none' if no billing row).
@@ -121,21 +106,21 @@ export function invalidateCachedAccountTier(accountId?: string): void {
 export async function getAccountEntitlements(
   accountId: string,
   prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
-): Promise<TierEntitlements> {
-  if (enterpriseLicenseActive()) return enterpriseLicenseGates();
+): Promise<EnterpriseEntitlements> {
+  if (enterpriseLicenseActive()) return pickEnterprise(resolvePlanRecord('enterprise').entitlements);
   const resolved = await resolveAccountBilling(
     accountId,
     // `undefined` means "fetch the row"; `null` means "this account has none".
     prefetchedAccount !== undefined ? { row: prefetchedAccount } : { fresh: true },
   );
-  return enterpriseGates(resolved);
+  return pickEnterprise(resolved.entitlements);
 }
 
 /** Whether an account's plan unlocks a specific enterprise feature. */
 export async function accountHasEntitlement(
   accountId: string,
-  key: keyof TierEntitlements,
+  feature: EnterpriseFeature,
 ): Promise<boolean> {
   if (enterpriseLicenseActive()) return true;
-  return (await getAccountEntitlements(accountId))[key] === true;
+  return (await getAccountEntitlements(accountId))[feature] === true;
 }

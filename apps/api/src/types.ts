@@ -70,43 +70,36 @@ export type AppEnv = {
 // ─── Tier System (Billing) ──────────────────────────────────────────────────
 
 /**
- * Enterprise feature gates, keyed by tier. These unlock the identity/governance
- * surfaces that only Enterprise (sales-assigned) accounts get. A self-serve
- * tier (Free / Team) has every flag `false`; the `enterprise` tier has them all
- * `true`. Enforced server-side in the SCIM / SSO routes + the /scim/v2 data
- * plane, and surfaced on the account-state `tier` block so the UI can hide the
- * setup cards for non-entitled accounts. Add a key here, set it per tier in
- * billing/services/tiers.ts, then guard the relevant route with
- * `requireEntitlement(c, accountId, '<key>')`.
+ * The Enterprise features: the four entitlements the Kortix Enterprise License
+ * (`ee/LICENSE`) sells. This list is the single source of truth. The plan
+ * catalog, the Demo and Licensed states, the self-host license key, the
+ * per-account overrides and `requireEntitlement` all derive from it.
+ *
+ *   sso          SAML SSO provider config, domain verification, group mappings.
+ *   scim         SCIM 2.0 directory provisioning (tokens + the /scim/v2 API).
+ *   rbac         Custom roles, policies and groups. Built-in roles stay free.
+ *   auditAccess  Reading, exporting and streaming the audit log. Recording is
+ *                never gated.
+ *
+ * The gate rule for every Enterprise route (`ee/README.md`): creating or
+ * changing Enterprise configuration, and reading the audit log, needs the
+ * entitlement (`requireEntitlement` → 402 `entitlement_required`). Reading
+ * configuration and removing it never do, so an account whose license ended
+ * can see and undo what it set up. SSO sign-in is never gated.
  */
-export interface TierEntitlements {
-  /** SAML SSO provider config + JIT provisioning + group-claim mapping. */
-  sso: boolean;
-  /** SCIM 2.0 directory provisioning (token mint/revoke + /scim/v2 endpoints). */
-  scim: boolean;
-  /**
-   * Custom RBAC: user-defined roles, fine-grained policy bindings, and groups
-   * (IAM v1 — custom-roles.ts + groups.ts). Built-in preset roles (owner/admin/
-   * member/manager/user) stay free on every tier — this only gates the
-   * ability to define custom roles/policies/groups beyond those presets.
-   */
-  rbac: boolean;
-  /**
-   * Read/export access to the audit trail (account audit log + per-session
-   * agent-action audit) and audit-webhook streaming. Recording is NEVER gated —
-   * every tier's actions are always captured; this only gates who can read,
-   * export, or stream them out.
-   */
-  auditAccess: boolean;
-  /**
-   * Organization branding: replace the Kortix logo, icon, favicon (light +
-   * dark), and product name with the account's own for every member of the account
-   * (`accounts.branding`, written only through `/accounts/:id/branding*`).
-   * Reads and the reset/remove routes stay ungated so a downgraded account can
-   * still see and unwind what it set; the API stops SERVING the branding to
-   * members the moment the entitlement lapses.
-   */
-  branding: boolean;
+export const ENTERPRISE_FEATURES = ['sso', 'scim', 'rbac', 'auditAccess'] as const;
+export type EnterpriseFeature = (typeof ENTERPRISE_FEATURES)[number];
+export type EnterpriseEntitlements = Record<EnterpriseFeature, boolean>;
+
+/** Every Enterprise feature set to `value`. */
+export function enterpriseEntitlements(value: boolean): EnterpriseEntitlements {
+  return { sso: value, scim: value, rbac: value, auditAccess: value };
+}
+
+/** The Enterprise features of a larger entitlement record. */
+export function pickEnterprise(entitlements: EnterpriseEntitlements): EnterpriseEntitlements {
+  const { sso, scim, rbac, auditAccess } = entitlements;
+  return { sso, scim, rbac, auditAccess };
 }
 
 export interface TierConfig {
@@ -118,8 +111,8 @@ export interface TierConfig {
   models: string[];
   /** Apps an account on this tier may own, and App runtimes it may run at once. */
   appLimit: number;
-  /** Enterprise feature gates. Absent ⇒ treated as all-false. */
-  entitlements: TierEntitlements;
+  /** The Enterprise features this tier unlocks. */
+  entitlements: EnterpriseEntitlements;
 }
 
 // ─── Account State (API response) ───────────────────────────────────────────
@@ -256,9 +249,10 @@ export interface AccountStateResponse {
      *  keeps describing the subscription, not the resolved plan. */
     monthly_credits: number;
     can_purchase_credits: boolean;
-    /** Enterprise feature gates for this tier — drives whether the UI shows
-     *  the SSO / SCIM setup cards. */
-    entitlements: TierEntitlements;
+    /** The Enterprise features the account may use, which drive the setup
+     *  cards and upsells in the UI. `branding` is a plan entitlement, on for
+     *  every plan unless an operator turns it off for the account. */
+    entitlements: EnterpriseEntitlements & { branding: boolean };
   };
   /** True when a self-host deployment holds a valid Kortix Enterprise license
    *  key (KORTIX_LICENSE_KEY), which turns every enterprise entitlement on

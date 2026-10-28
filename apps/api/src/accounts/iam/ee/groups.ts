@@ -43,7 +43,7 @@ import { readJsonObject } from '../../../shared/http-body';
 // `rbac` entitlement gates every route that CREATES or GROWS group state
 // (create group, rename, add members); reads and deletions stay open so a
 // downgraded account can still see and clean up leftover groups — revoking
-// access is never paywalled. See TierEntitlements in ../../types.
+// access is never paywalled. See ENTERPRISE_FEATURES in ../../../types.
 //
 // SCIM-sourced groups (source === 'scim') are OWNED BY THE IdP: renames and
 // membership edits here would corrupt sync — sign-in group claims and
