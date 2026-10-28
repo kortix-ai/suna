@@ -1631,6 +1631,7 @@ const catalog = {
     "signInWithEmail": "Sign in with email",
     "createNewAccount": "Create new account",
     "byContinuingYouAgreeSimple": "By continuing, you agree to our",
+    "customerLogoNotice": "Kortix may show your organization's name and logo as a customer, on any plan. Opt out anytime at legal@kortix.com.",
     "phoneVerification": {
       "title": "Verify Your Phone Number",
       "titleOtp": "Enter Verification Code",

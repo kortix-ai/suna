@@ -22,3 +22,9 @@ export async function runSubprocessorNotices(): Promise<void> {
   const { runSubprocessorNoticeSweep } = await import('./services/subprocessor-notices');
   await runSubprocessorNoticeSweep();
 }
+
+/** Terms section 16: email an open Terms change to every paid account. */
+export async function runTermsNotices(): Promise<void> {
+  const { runTermsNoticeSweep } = await import('./services/terms-notices');
+  await runTermsNoticeSweep();
+}
