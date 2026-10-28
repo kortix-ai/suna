@@ -36,16 +36,25 @@ import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode }
 import { Image, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
-import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView } from '@kortix/sdk';
+import {
+  formatImageGenElapsed,
+  imageGenGrid,
+  type ImageGenGridTile,
+  imageGenRetryDelay,
+  imageGenView,
+  type ImageGenView,
+  sessionLogOpenCall,
+} from '@kortix/sdk';
 import { formatMegabytes } from '@kortix/sdk/react';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { useReduceMotion } from '@/components/session/dot-matrix/use-reduce-motion';
-import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
+import { useSandboxImage, useSandboxUrl } from '@/components/session/turn/use-sandbox-image';
+import { rememberSharedImage, useSharedImage } from '@/lib/files/shared-image';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { webSpace } from '@/lib/session/user-message';
-import { TurnLiveContext, isLocalSandboxFilePath, useToolNavigation } from '../shared/infrastructure';
+import { ImageGenRunsContext, TurnLiveContext, isLocalSandboxFilePath, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
@@ -107,7 +116,7 @@ function FadeInImage({ uri, headers, alt, openLabel, onLoaded, onError, onPress,
   cover?: boolean;
   headers?: Record<string, string>;
   alt: string;
-  onLoaded: (ratio: number | null) => void;
+  onLoaded: (ratio: number | null, size?: { width: number; height: number }) => void;
   onError?: () => void;
   onPress?: () => void;
 }) {
@@ -125,7 +134,7 @@ function FadeInImage({ uri, headers, alt, openLabel, onLoaded, onError, onPress,
       onError={onError}
       onLoad={(e) => {
         const { width, height } = e.nativeEvent.source;
-        onLoaded(width && height ? width / height : null);
+        onLoaded(width && height ? width / height : null, width && height ? { width, height } : undefined);
         opacity.value = still ? 1 : withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
       }}
       style={{ width: '100%', height: '100%' }}
@@ -146,6 +155,8 @@ function FadeInImage({ uri, headers, alt, openLabel, onLoaded, onError, onPress,
 
 interface SandboxImageProps {
   path: string;
+  /** The file's sha256 from the output (R38): the loaded source is stored under it too. */
+  sha256?: string;
   alt: string;
   openLabel: string;
   seed: string;
@@ -155,9 +166,10 @@ interface SandboxImageProps {
 }
 
 /** One load of the sandbox file; a failure hands over to the next attempt after `WAKE_RETRY_MS`. */
-function SandboxImageAttempt({ path, alt, openLabel, seed, cover, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
+function SandboxImageAttempt({ path, sha256, alt, openLabel, seed, cover, onRatio, onPress, onFail }: SandboxImageProps & { onFail: () => void }) {
   const { t } = useTranslation();
   const image = useSandboxImage(path, true);
+  const sandboxUrl = useSandboxUrl();
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (image.phase !== 'error') return;
@@ -185,9 +197,11 @@ function SandboxImageAttempt({ path, alt, openLabel, seed, cover, onRatio, onPre
           headers={image.source.headers}
           alt={alt}
           onError={image.handleError}
-          onLoaded={(ratio) => {
+          onLoaded={(ratio, size) => {
             setLoaded(true);
             onRatio(ratio);
+            // The file sheet and a `show` of the same bytes draw this source next (R38).
+            if (image.source) rememberSharedImage(sandboxUrl, path, sha256, image.source, size);
           }}
           onPress={onPress}
         />
@@ -211,7 +225,7 @@ function SandboxImage(props: SandboxImageProps) {
     return (
       <Overlay>
         <View style={{ alignItems: 'center', gap: TURN_SPACE.gap2 }}>
-          <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{t('imageGen.notLoaded')}</Text>
+          <Text style={[TURN_TYPE.xs, { color: palette.mutedForeground }]}>{t('imageGen.unavailable')}</Text>
           <Button variant="secondary" size="sm" onPress={() => setRound(0)}>
             <Text>{t('common.retry')}</Text>
           </Button>
@@ -292,13 +306,15 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
   const palette = useTurnPalette();
   const plate = usePlate();
   const { openFile, openExternal } = useToolNavigation();
-  const [natural, setNatural] = useState<number | null>(null);
+  const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
+  // A remount starts at the ratio the image already measured (R38).
+  const shared = useSharedImage(useSandboxUrl(), filePath, image.sha256);
+  const [natural, setNatural] = useState<number | null>(shared?.ratio ?? null);
   const [urlLoaded, setUrlLoaded] = useState(false);
   const onRatio = useCallback((ratio: number | null) => setNatural(ratio), []);
   const maxHeight = useMaxImageHeight();
 
-  if (image.phase === 'failed') return <FailureNote error={image.error} fill={fill} />;
-  const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
+  if (image.phase === 'failed' || image.phase === 'stopped') return <FailureNote error={image.error} fill={fill} />;
   if (image.imagePath && !filePath && !image.directUrl) {
     // A path the file API cannot read: name it instead of loading forever.
     return (
@@ -339,7 +355,7 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
     );
   } else if (filePath) {
     content = (
-      <SandboxImage path={filePath} alt={alt} openLabel={openLabel} seed={seed} cover={fill} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
+      <SandboxImage path={filePath} sha256={image.sha256} alt={alt} openLabel={openLabel} seed={seed} cover={fill} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
     );
   }
   return (
@@ -357,18 +373,24 @@ function ImageGenFrame({ image, seed, busy, model, fill }: {
   );
 }
 
+/** A bento row's ratio over its tile ratio `r`: 2 side by side → 2r; 3 (large + two stacked) → 1.5r; 4 (2×2) → r. */
+const BENTO_SCALE: Record<number, number> = { 1: 1, 2: 2, 3: 1.5, 4: 1 };
+
 export function ImageGenTool({ call }: ToolProps) {
   const { t } = useTranslation();
   // The turn says whether an open call still runs: an open call on a finished turn was stopped.
   const live = useContext(TurnLiveContext);
-  const view = useMemo(() => imageGenView(call, live), [call, live]);
+  // Consecutive image_gen calls of a turn draw as one grid, here, at the first (R38).
+  const run = useContext(ImageGenRunsContext).get(call.id);
+  const views = useMemo(() => (run ? run.map(sessionLogOpenCall) : [call]).map((one) => imageGenView(one, live)), [run, call, live]);
+  const grid = useMemo(() => imageGenGrid(views), [views]);
   const maxHeight = useMaxImageHeight();
-  const edit = view.action === 'edit';
-  const solo = view.images.length === 1;
+  const view = views[0]!;
+  const solo = views.length === 1 && view.images.length === 1;
 
   // The card carries no prompt and no model (R29): the frames are the content,
   // their status (busy, loading, an error) the only text.
-  if (!view.images.length) {
+  if (views.length === 1 && !view.images.length) {
     // The whole call failed or stopped.
     return (
       <View className="w-full max-w-md">
@@ -377,81 +399,91 @@ export function ImageGenTool({ call }: ToolProps) {
     );
   }
 
-  const busyLine = (
-    <BusyLabel
-      seed={call.call_id}
-      label={
-        solo
-          ? t(edit ? 'imageGen.editing' : 'imageGen.generating')
-          : t(edit ? 'imageGen.editingCount' : 'imageGen.generatingCount', { count: view.images.length })
-      }
-      startedAt={view.startedAt}
-    />
-  );
-  const frame = (i: number) => (
-    <ImageGenFrame
-      key={i}
-      image={view.images[i]!}
-      seed={call.call_id}
-      model={view.model}
-      fill={!solo}
-      // The first frame carries the busy line, the one announced status; the
-      // others show its glyph alone, hidden from assistive tech.
-      busy={
-        i === 0 ? (
-          busyLine
-        ) : (
-          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <SessionDotMatrix sessionId={call.call_id} size={14} />
-          </View>
-        )
-      }
-    />
-  );
-  if (solo) return <View className="w-full">{frame(0)}</View>;
+  const callIds = (run ?? [call]).map((one) => one.call_id);
+  const frame = ({ image, call: at, first }: ImageGenGridTile, i: number) => {
+    const callView = views[at]!;
+    const edit = callView.action === 'edit';
+    const seed = callIds[at]!;
+    const several = callView.images.length > 1;
+    return (
+      <ImageGenFrame
+        key={i}
+        image={image}
+        seed={seed}
+        model={callView.model}
+        fill={!solo}
+        // Each call's first frame carries its busy line, the one announced
+        // status per call; the others show its glyph alone, hidden from assistive tech.
+        busy={
+          first ? (
+            <BusyLabel
+              seed={seed}
+              label={
+                several
+                  ? t(edit ? 'imageGen.editingCount' : 'imageGen.generatingCount', { count: callView.images.length })
+                  : t(edit ? 'imageGen.editing' : 'imageGen.generating')
+              }
+              startedAt={callView.startedAt}
+            />
+          ) : (
+            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+              <SessionDotMatrix sessionId={seed} size={14} />
+            </View>
+          )
+        }
+      />
+    );
+  };
+  if (solo) return <View className="w-full">{frame(grid.tiles[0]!, 0)}</View>;
 
-  // The bento: one rectangle, the width of the message, its height fixed from
-  // the requested ratio `r` (`view.aspectRatio`), so nothing moves when the
-  // images land; tile i keeps slot i. Web draws the same slots.
+  // The bento: each row one rectangle, its height fixed from the requested
+  // ratio `r` of its first tile's call, so nothing moves when the images land;
+  // tile i keeps slot i. Web draws the same slots.
   const gap = webSpace(1);
   const tile = (i: number, flex: number) => (
     <View key={i} testID={`image-gen-tile-${i}`} style={{ flex }}>
-      {frame(i)}
+      {frame(grid.tiles[i]!, i)}
     </View>
   );
-  const r = aspectRatioValue(view.aspectRatio);
-  const count = Math.min(view.images.length, 4);
-  // 2: side by side → 2r. 3: tile 0 takes 2/3 of the width and both rows,
-  // tiles 1 and 2 stack on the right → 1.5r. 4: 2×2 → r.
-  const ratio = count === 2 ? 2 * r : count === 3 ? 1.5 * r : r;
-  return (
-    <View
-      testID="image-gen-bento"
-      className="w-full"
-      style={{ ...capped(ratio, maxHeight), flexDirection: count === 4 ? 'column' : 'row', gap }}
-    >
+  const bentoRow = (count: number, start: number, style: object, testID?: string) => (
+    <View key={start} testID={testID} style={{ ...style, flexDirection: count === 4 ? 'column' : 'row', gap }}>
       {count === 2 ? (
-        [tile(0, 1), tile(1, 1)]
+        [tile(start, 1), tile(start + 1, 1)]
       ) : count === 3 ? (
         <>
-          {tile(0, 2)}
+          {tile(start, 2)}
           <View style={{ flex: 1, gap }}>
-            {tile(1, 1)}
-            {tile(2, 1)}
+            {tile(start + 1, 1)}
+            {tile(start + 2, 1)}
           </View>
         </>
       ) : (
         <>
           <View style={{ flex: 1, flexDirection: 'row', gap }}>
-            {tile(0, 1)}
-            {tile(1, 1)}
+            {tile(start, 1)}
+            {tile(start + 1, 1)}
           </View>
           <View style={{ flex: 1, flexDirection: 'row', gap }}>
-            {tile(2, 1)}
-            {tile(3, 1)}
+            {tile(start + 2, 1)}
+            {tile(start + 3, 1)}
           </View>
         </>
       )}
+    </View>
+  );
+  const starts = grid.rows.map((_, row) => grid.rows.slice(0, row).reduce((sum, n) => sum + n, 0));
+  const rects = grid.rows.map((count, row) => aspectRatioValue(views[grid.tiles[starts[row]!]!.call]!.aspectRatio) * BENTO_SCALE[count]!);
+  if (grid.rows.length === 1) {
+    return (
+      <View className="w-full">{bentoRow(grid.rows[0]!, 0, capped(rects[0]!, maxHeight), 'image-gen-bento')}</View>
+    );
+  }
+  // Five or more (R38): rows of bento patterns (5 = 3+2, 8 = 4+4) in one
+  // column, as wide as its tallest row allows under the cap. The column has
+  // no ratio of its own: its height is its rows and the gaps between them.
+  return (
+    <View testID="image-gen-grid" className="w-full" style={{ width: '100%', maxWidth: maxHeight * Math.min(...rects), gap }}>
+      {grid.rows.map((count, row) => bentoRow(count, starts[row]!, { width: '100%', aspectRatio: rects[row] }, `image-gen-row-${row}`))}
     </View>
   );
 }

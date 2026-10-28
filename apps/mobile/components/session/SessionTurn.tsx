@@ -43,6 +43,7 @@ import {
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
+  sessionLogImageGenRuns,
   shouldShowToolPart,
   showDrawnByImageGen,
   type SessionLogTurn,
@@ -54,6 +55,7 @@ import {
   answeredQuestionCalls,
   commandPromptText,
   compactionTurnView,
+  imageDigestsDrawnByImageGen,
   imagePathsDrawnByImageGen,
   inlineContentItems,
   isOpenTextBlock,
@@ -81,7 +83,12 @@ import { webSpace, type MessageAttachment, type QueuedPromptState } from '@/lib/
 import { SessionBusyIndicator, useTurnBusyStatus } from './session-busy-indicator';
 import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-display';
 import { TurnErrorDisplay } from './SessionErrorBanner';
-import { ImageGenPathsContext, TurnLiveContext } from './tool/shared/infrastructure';
+import {
+  ImageGenDigestsContext,
+  ImageGenPathsContext,
+  ImageGenRunsContext,
+  TurnLiveContext,
+} from './tool/shared/infrastructure';
 import { ToolPartRenderer, type PermissionReply } from './tool/tool-part-renderer';
 import './tool/tools/register';
 import { ActivityBurst } from './turn/activity-burst';
@@ -243,6 +250,17 @@ function SessionTurnImpl({
     () => new Set(imageGenPathsKey ? imageGenPathsKey.split('\n') : []),
     [imageGenPathsKey],
   );
+  // R38: the same bytes at another path (a Drive copy) count too, by sha256.
+  const imageGenDigestsKey = useMemo(() => [...imageDigestsDrawnByImageGen(segments)].join('\n'), [segments]);
+  const imageGenDigests = useMemo(
+    () => new Set(imageGenDigestsKey ? imageGenDigestsKey.split('\n') : []),
+    [imageGenDigestsKey],
+  );
+  // R38: consecutive image_gen deliverables draw as one grid at the first call, live and settled.
+  const imageGenRuns = useMemo(
+    () => sessionLogImageGenRuns(segments, { paths: imageGenPaths, digests: imageGenDigests }),
+    [segments, imageGenPaths, imageGenDigests],
+  );
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
@@ -396,7 +414,10 @@ function SessionTurnImpl({
       if (segment.kind === 'standalone') {
         if (!shouldShowToolPart(segment.block)) return null;
         // A `show` whose every file is an image drawn above renders nothing, not even the row.
-        if (showDrawnByImageGen(segment.block, imageGenPaths)) return null;
+        if (showDrawnByImageGen(segment.block, imageGenPaths, imageGenDigests)) return null;
+        // A later call of an image_gen run draws in the first call's grid (R38).
+        const run = imageGenRuns.get(segment.block.id);
+        if (run && run[0] !== segment.block) return null;
         return (
           <LoopMotionContext.Provider key={segment.block.id} value={shimmerSegment}>
             <ToolPartRenderer
@@ -431,6 +452,8 @@ function SessionTurnImpl({
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
        <ImageGenPathsContext.Provider value={imageGenPaths}>
+       <ImageGenDigestsContext.Provider value={imageGenDigests}>
+       <ImageGenRunsContext.Provider value={imageGenRuns}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {split
             ? [
@@ -441,6 +464,8 @@ function SessionTurnImpl({
               ]
             : segments.map((segment) => renderSegment(segment))}
         </View>
+       </ImageGenRunsContext.Provider>
+       </ImageGenDigestsContext.Provider>
        </ImageGenPathsContext.Provider>
       </TurnLiveContext.Provider>,
     );

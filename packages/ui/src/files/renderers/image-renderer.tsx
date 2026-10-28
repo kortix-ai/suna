@@ -7,6 +7,7 @@ import { Button } from '../../primitives/button';
 import { ButtonGroup, ButtonGroupSeparator } from '../../primitives/button-group';
 import Hint from '../../primitives/hint';
 import Loading from '../../primitives/loading';
+import { IconInfo } from '../../primitives/kortix-icons';
 import { usePreviewFit } from '../viewer/preview-fit';
 import { cn } from '../../lib/utils';
 import {
@@ -43,6 +44,11 @@ interface ImageRendererProps {
   /** Add the backdrop swatches to the shelf (see `ImageBackdrop`). Off by
    *  default — an opaque JPEG has exactly one meaningful background. */
   backdrop?: boolean;
+  /**
+   * The image's details toggle (ⓘ), last on the shelf: shown only when the
+   * host has details for this image (a generated image's prompt and model).
+   */
+  info?: { pressed: boolean; onToggle: () => void; label: string };
 }
 
 const MAX_RETRIES = 3;
@@ -89,6 +95,7 @@ export function ImageRenderer({
   fileName,
   controls = 'hover',
   backdrop: showBackdrop = false,
+  info,
 }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const backdrops = useLocalizedUiCatalog(BACKDROPS);
@@ -318,7 +325,7 @@ export function ImageRenderer({
               : [
                   'top-1 opacity-0 transition-opacity duration-200 ease-out',
                   'group-hover:opacity-100 focus-within:opacity-100',
-                  showInfo && 'opacity-100',
+                  (showInfo || info?.pressed) && 'opacity-100',
                 ],
           )}
         >
@@ -366,6 +373,20 @@ export function ImageRenderer({
                 <RotateCw className="size-4" />
               </Button>
             </Hint>
+            {info ? (
+              <Hint label={info.label} side="bottom">
+                <Button
+                  variant="secondary"
+                  size="icon-base"
+                  onClick={info.onToggle}
+                  aria-label={info.label}
+                  aria-pressed={info.pressed}
+                  data-image-info=""
+                >
+                  <IconInfo className="size-4" weight={info.pressed ? 'fill' : 'regular'} />
+                </Button>
+              </Hint>
+            ) : null}
             {/* Backdrop swatches join the SAME group behind a separator rather
                 than floating as a second shelf — one row of chrome over the
                 canvas, not two competing ones. The glyph IS the colour: a

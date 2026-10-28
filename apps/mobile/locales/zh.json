@@ -1273,10 +1273,11 @@
     "loading": "正在加载图像",
     "stopped": "已停止",
     "failed": "图像未生成。",
-    "notLoaded": "图像未能加载。",
     "tapToLoad": "轻点加载（{{size}}）",
     "retrySecond_other": "{{count}}秒后重试。",
     "retryMinute_other": "{{count}}分钟后重试。",
-    "retryHour_other": "{{count}}小时后重试。"
+    "retryHour_other": "{{count}}小时后重试。",
+    "unavailable": "图片不可用",
+    "details": "图片详情"
   }
 }

@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 
 import type { SandboxFile } from '@/api/types';
 import { blobToDataURL, useSandboxFileBlob, useSandboxFileContent } from '@/lib/files/hooks';
+import { type SharedImageSource, useSharedImage } from '@/lib/files/shared-image';
 import { previewDecision } from '@/lib/files/preview-limits';
 import {
   FilePreviewType,
@@ -42,7 +43,13 @@ export function useFilePreviewData(
   const isBinaryFile = kind !== 'text';
   // Size from the directory listing, when it reports one.
   const listingDecision = file ? previewDecision({ size: file.size, previewType }) : 'preview';
-  const rendersBlob = kind === 'blob';
+  // An image the card (or a `show`) already loaded draws from the app's shared
+  // image store: its native source, no blob read and no data URL (R38). A
+  // failed draw (an expired token) falls back to the blob read.
+  const shared = useSharedImage(sandboxUrl, enabled && previewType === FilePreviewType.IMAGE ? file?.path : null);
+  const [sharedFailed, setSharedFailed] = useState(false);
+  const imageSource: SharedImageSource | undefined = shared && !sharedFailed ? shared.source : undefined;
+  const rendersBlob = kind === 'blob' && !imageSource;
   const shouldFetchText = enabled && !!file && !isBinaryFile && listingDecision !== 'too-large';
   const shouldFetchBlob = enabled && !!file && rendersBlob && listingDecision !== 'too-large';
 
@@ -93,6 +100,11 @@ export function useFilePreviewData(
     blobError,
     blobTooLarge,
     blobUrl,
+    /** The shared store's source for an image already loaded elsewhere, and its ratio. */
+    imageSource,
+    imageRatio: imageSource ? (shared?.ratio ?? null) : null,
+    /** Called when `imageSource` fails to draw: read the file instead. */
+    dropImageSource: () => setSharedFailed(true),
     isLoading: isLoadingText || isLoadingBlob,
     /** Loads again after a failure (a sandbox that was asleep). */
     retry: () => {

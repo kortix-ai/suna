@@ -10,6 +10,7 @@ import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { InfoBanner } from '../../primitives/info-banner';
 import Loading from '../../primitives/loading';
+import { ImageUnavailable } from '../renderers/image-frame';
 import { StatusDot } from '../../primitives/status';
 import { MermaidDiagram } from '../renderers/mermaid/mermaid-diagram';
 import { cn } from '../../lib/utils';
@@ -28,7 +29,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense, useCallback } from 'react';
+import React, { lazy, Suspense, useCallback, useState } from 'react';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
@@ -86,11 +87,12 @@ function RendererFallback() {
 
 /**
  * An image with its caption under it: a generated image's prompt and the model
- * that made it. Only an image opened with a caption has one; any other file
- * renders exactly as without it.
+ * that made it, shown while the viewer's details toggle (ⓘ) is on. Only an
+ * image opened with a caption has one; any other file renders exactly as
+ * without it.
  */
-function CaptionedImage({ caption, children }: { caption: FileCaption | undefined; children: React.ReactNode }) {
-  if (!caption) return <>{children}</>;
+function CaptionedImage({ caption, open, children }: { caption: FileCaption | undefined; open: boolean; children: React.ReactNode }) {
+  if (!caption || !open) return <>{children}</>;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">{children}</div>
@@ -213,7 +215,7 @@ export function FileContentRenderer({
     isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
     setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
     fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
-    blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
+    blobLoading, blobError, sharedImagePath, retrySharedImage, heicImageUrl, heicConverting, displayContent,
     handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
     needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
     isNotFound,
@@ -229,6 +231,13 @@ export function FileContentRenderer({
   });
   const storedCaption = useFileCaption(filePath);
   const caption = showCaption ? storedCaption : undefined;
+  // The caption is hidden until the details toggle opens it; per file, so the next image starts closed.
+  const tImageGen = useTranslations('imageGen');
+  const [captionOpenFor, setCaptionOpenFor] = useState<string | null>(null);
+  const captionOpen = captionOpenFor === filePath;
+  const imageInfo = caption
+    ? { pressed: captionOpen, onToggle: () => setCaptionOpenFor(captionOpen ? null : filePath), label: tImageGen('details') }
+    : undefined;
   const bytesOnly = !!source.bytesOnly;
   // The table has no lines: a jump to a line (a content-search match) opens
   // CSV and TSV in the code editor.
@@ -327,7 +336,12 @@ export function FileContentRenderer({
           {contentError &&
             !showLoadingState &&
             !isSandboxWaking &&
-            (errorFallback ? (
+            (sharedImagePath && !isNotFound ? (
+              // An image never shows the read's raw error text (R38).
+              <div className="flex h-full items-center justify-center p-8">
+                <ImageUnavailable onRetry={retrySharedImage} />
+              </div>
+            ) : errorFallback ? (
               errorFallback(contentError, filePath)
             ) : isNotFound ? (
               <FileNotFoundState filePath={filePath} />
@@ -350,13 +364,14 @@ export function FileContentRenderer({
 
           {/* Image content (non-HEIC) */}
           {!isLoading && !error && imageDataUrl && (
-            <CaptionedImage caption={caption}>
+            <CaptionedImage caption={caption} open={captionOpen}>
               <Suspense fallback={<RendererFallback />}>
                 <ImageRenderer
                   url={imageDataUrl}
                   className="h-full"
                   fileName={fileName}
                   controls={imageControls}
+                  info={imageInfo}
                 />
               </Suspense>
             </CaptionedImage>
@@ -365,13 +380,14 @@ export function FileContentRenderer({
           {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
           {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
           {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-            <CaptionedImage caption={caption}>
+            <CaptionedImage caption={caption} open={captionOpen}>
               <Suspense fallback={<RendererFallback />}>
                 <ImageRenderer
                   url={heicImageUrl}
                   className="h-full"
                   fileName={fileName}
                   controls={imageControls}
+                  info={imageInfo}
                 />
               </Suspense>
             </CaptionedImage>

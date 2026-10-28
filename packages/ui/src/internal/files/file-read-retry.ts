@@ -1,4 +1,4 @@
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { isRuntimeStartingError } from '@kortix/sdk';
 
 export const UPLOADED_FILE_READ_RETRY_DELAY_MS = 2_000;
 export const UPLOADED_FILE_READ_RETRY_WINDOW_MS = 60_000;
@@ -103,7 +103,8 @@ export const SANDBOX_PARKED_REFETCH_INTERVAL_MS = 30_000;
  * the file appears on its own in seconds. A parked box takes the slow lane.
  */
 export function sandboxWakingRefetchInterval(error: unknown, parked: boolean): number | false {
-  if (!isSandboxNotReadyError(error)) return false;
+  // Also the runtime URL not pinned yet ("Server URL not ready"): it clears on its own too.
+  if (!isRuntimeStartingError(error)) return false;
   return parked ? SANDBOX_PARKED_REFETCH_INTERVAL_MS : SANDBOX_WAKING_REFETCH_INTERVAL_MS;
 }
 
@@ -116,7 +117,7 @@ export function shouldRetryFileRead(
   // retry loop so the viewer can render its "waking up" state immediately; the
   // query-level poll (SANDBOX_WAKING_REFETCH_INTERVAL_MS) re-reads until the
   // sandbox is back.
-  if (isSandboxNotReadyError(error)) return false;
+  if (isRuntimeStartingError(error)) return false;
 
   if (isUploadedWorkspacePath(filePath)) {
     if (isPermanentFileReadFailure(error) && !isMissingFileReadFailure(error)) return false;

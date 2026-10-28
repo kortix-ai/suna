@@ -1,9 +1,9 @@
 'use client';
 import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '../../../primitives/text-shimmer';
-import { useBinaryBlob } from '../../../files/runtime/hooks/use-binary-blob';
+import { useSharedImage } from '../../../files/runtime/hooks/use-shared-image';
 import { type FileCaption, useFilePreviewStore } from '../../../internal/stores/file-preview-store';
-import { ImageFrame } from '../../../files/renderers/image-frame';
+import { ImageFrame, ImageUnavailable } from '../../../files/renderers/image-frame';
 import { Button } from '../../../primitives/button';
 import { ChatGptConnectionSlot } from '../../models/chatgpt-connection-button';
 import { useModelConnectionGate } from '../../models/use-model-connection-gate';
@@ -11,6 +11,7 @@ import { sessionPersonalUser } from '../../overrides/provider-pool-draft';
 import { useSessionIds } from '../../../providers/session-ids';
 import { useUiViewerId } from '../../../providers/ui-provider';
 import {
+  ImageGenRunsContext,
   InTranscriptTurnContext,
   isLocalSandboxFilePath,
   ReadOnlySessionContext,
@@ -22,10 +23,18 @@ import { useKortixComputerStore } from '../../../internal/stores/kortix-computer
 import { cn } from '../../../lib/utils';
 import type { ToolProps } from '../shared/types';
 import { useLocale, useTranslations } from '../../../i18n';
-import { formatImageGenElapsed, imageGenRetryDelay, imageGenView, type ImageGenView, isSandboxNotReadyError } from '@kortix/sdk';
+import {
+  formatImageGenElapsed,
+  imageGenGrid,
+  type ImageGenGridTile,
+  imageGenRetryDelay,
+  imageGenView,
+  type ImageGenView,
+  sessionLogOpenCall,
+} from '@kortix/sdk';
 import { type FlatModel, useProjectSession } from '@kortix/sdk/react';
 import { ArrowsOutSimpleIcon } from '@phosphor-icons/react';
-import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 /** The one busy signal over the flat frame. Elapsed time counts from the call's start, so a reload keeps it. */
 function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; startedAt?: number | null }) {
@@ -154,12 +163,13 @@ function ImageGenFrame({
   const t = useTranslations('imageGen');
   const { enabled: navigationEnabled } = useToolNavigation();
   const filePath = image.imagePath && isLocalSandboxFilePath(image.imagePath) ? image.imagePath : null;
-  const { blobUrl, error: rawBlobError } = useBinaryBlob(filePath);
-  // A readiness 503 (a parked or booting sandbox) is a wait, not a failure:
-  // useBinaryBlob keeps polling while it lasts, so the image lands once the box is up.
-  const blobError = rawBlobError && !isSandboxNotReadyError(rawBlobError) ? rawBlobError : null;
+  // The page's shared image store: the viewer and a `show` of the same bytes draw this URL too (R38).
+  // A sandbox still starting (a waking 503, a runtime URL not pinned yet) is a
+  // wait, not a failure: the store reports it as loading and the read keeps
+  // polling, so the image lands once the box is up.
+  const { url: blobUrl, error: blobError, retry, naturalRatio, onNaturalSize } = useSharedImage(filePath, image.sha256);
 
-  if (image.phase === 'failed') return <FailureNote error={image.error} fill={fill} />;
+  if (image.phase === 'failed' || image.phase === 'stopped') return <FailureNote error={image.error} fill={fill} />;
   if (image.imagePath && !filePath && !image.directUrl) {
     // A path the file API cannot read: name it, as the old card did, instead of loading forever.
     return (
@@ -194,12 +204,14 @@ function ImageGenFrame({
           generating ? (
             busy
           ) : blobError ? (
-            <span className="text-muted-foreground text-xs">{blobError}</span>
+            <ImageUnavailable onRetry={retry} />
           ) : !src ? (
             <BusyLabel seed={seed} label={t('loading')} />
           ) : null
         }
         onOpen={openFullScreen}
+        naturalRatio={naturalRatio}
+        onNaturalSize={onNaturalSize}
       />
       {src && openFullScreen ? (
         // The one hint that the image opens full screen, on hover only; the whole frame is the button.
@@ -244,21 +256,65 @@ const BENTO: Record<number, { grid: string; scale: number; first?: string }> = {
   4: { grid: 'grid-cols-2 grid-rows-2', scale: 1 },
 };
 
+/** `min(100%, …)`: the widest a rectangle of ratio `rect` may be under the height cap. */
+const cappedWidth = (rect: number) => `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${rect}))`;
+
+/**
+ * Five or more images (R38): ONE grid of six columns whose rows are the
+ * bento patterns (`imageGenGridRows`: 5 = 3+2, 8 = 4+4, …). Every tile sits
+ * in the same grid, placed by line numbers, so a tile is never re-parented.
+ *
+ * The grid is as wide as its tallest row allows under the cap (`width`), and
+ * each row is exactly `width / rects[k]` tall (`rects[k]` = its tile ratio ×
+ * the pattern's scale), so no row passes `IMAGE_MAX_HEIGHT`. Track heights are
+ * lengths, read from the figure's inline size (`cqw`): the grid is the sum of
+ * its rows and the gaps between them, with no aspect ratio of its own. (Flex
+ * rows under an aspect ratio left an empty band whenever their `fr` factors
+ * summed below 1, e.g. 16:9 tiles.) A two-track row subtracts the gap between
+ * its tracks, so a large tile spanning both is the row's height.
+ */
+function gridPlacement(rows: number[], rects: number[]) {
+  const width = `min(100cqw, ${IMAGE_MAX_HEIGHT} * ${Math.min(...rects)})`;
+  const tracks: string[] = [];
+  const places: CSSProperties[] = [];
+  rows.forEach((count, row) => {
+    const track = tracks.length + 1;
+    const height = `${width} / ${rects[row]}`;
+    if (count === 2) tracks.push(`calc(${height})`);
+    else tracks.push(`calc((${height} - var(--spacing)) / 2)`, `calc((${height} - var(--spacing)) / 2)`);
+    for (let i = 0; i < count; i++) {
+      if (count === 2) places.push({ gridColumn: `${1 + 3 * i} / span 3`, gridRow: `${track}` });
+      else if (count === 4) places.push({ gridColumn: `${1 + 3 * (i % 2)} / span 3`, gridRow: `${track + Math.floor(i / 2)}` });
+      else if (i === 0) places.push({ gridColumn: '1 / span 4', gridRow: `${track} / span 2` });
+      else places.push({ gridColumn: '5 / span 2', gridRow: `${track + i - 1}` });
+    }
+  });
+  return { style: { gridTemplateRows: tracks.join(' '), width }, places };
+}
+
 export function ImageGenTool({ call }: ToolProps) {
   const t = useTranslations('imageGen');
   // In a transcript turn, the turn says whether an open call still runs.
   const live = useContext(TurnLiveContext);
   const inTurn = useContext(InTranscriptTurnContext);
-  const view = useMemo(() => imageGenView(call, inTurn ? live : undefined), [call, inTurn, live]);
-  const edit = view.action === 'edit';
-  const solo = view.images.length === 1;
+  // Consecutive image_gen calls of a turn draw as one grid, here, at the first (R38).
+  const run = useContext(ImageGenRunsContext).get(call.id);
+  const views = useMemo(
+    () => (run ? run.map(sessionLogOpenCall) : [call]).map((one) => imageGenView(one, inTurn ? live : undefined)),
+    [run, call, inTurn, live],
+  );
+  const grid = useMemo(() => imageGenGrid(views), [views]);
+  const view = views[0]!;
+  const solo = views.length === 1 && view.images.length === 1;
   // One fix per card, even when several frames failed for the same reason.
-  const repairable = view.error?.connectModel ? view.error : view.images.find((image) => image.error?.connectModel)?.error;
+  const repairable =
+    views.find((one) => one.error?.connectModel)?.error ??
+    views.flatMap((one) => one.images).find((image) => image.error?.connectModel)?.error;
   const action = repairable ? <ConnectAction code={repairable.code} provider={repairable.provider} /> : null;
 
   // The card carries no prompt and no model (R29): the frames are the content,
   // their status (busy, loading, an error) the only text.
-  if (!view.images.length) {
+  if (views.length === 1 && !view.images.length) {
     // The whole call failed or stopped.
     return (
       <div className="w-full max-w-md">
@@ -267,53 +323,77 @@ export function ImageGenTool({ call }: ToolProps) {
     );
   }
 
-  const busyLine = (
-    <BusyLabel
-      seed={call.call_id}
-      label={solo ? t(edit ? 'editing' : 'generating') : t(edit ? 'editingCount' : 'generatingCount', { count: view.images.length })}
-      startedAt={view.startedAt}
-    />
-  );
-  const bento = solo ? null : BENTO[Math.min(view.images.length, 4)]!;
-  const rectangle = bento ? ratioValue(view.aspectRatio) * bento.scale : 1;
-  const frames = view.images.map((image, i) => (
-    <ImageGenFrame
-      key={i}
-      image={image}
-      seed={call.call_id}
-      model={view.model}
-      fill={!solo}
-      // The first frame carries the busy line, the one status region; the
-      // others show its glyph alone, hidden from assistive tech.
-      busy={
-        i === 0 ? (
-          busyLine
-        ) : (
-          <span aria-hidden="true" className="text-muted-foreground">
-            <SessionDotMatrix sessionId={call.call_id} size={14} />
-          </span>
-        )
-      }
-    />
-  ));
+  const callIds = (run ?? [call]).map((one) => one.call_id);
+  const frame = ({ image, call: at, first }: ImageGenGridTile) => {
+    const callView = views[at]!;
+    const edit = callView.action === 'edit';
+    const seed = callIds[at]!;
+    const several = callView.images.length > 1;
+    return (
+      <ImageGenFrame
+        image={image}
+        seed={seed}
+        model={callView.model}
+        fill={!solo}
+        // Each call's first frame carries its busy line, the one status region
+        // per call; the others show its glyph alone, hidden from assistive tech.
+        busy={
+          first ? (
+            <BusyLabel
+              seed={seed}
+              label={several ? t(edit ? 'editingCount' : 'generatingCount', { count: callView.images.length }) : t(edit ? 'editing' : 'generating')}
+              startedAt={callView.startedAt}
+            />
+          ) : (
+            <span aria-hidden="true" className="text-muted-foreground">
+              <SessionDotMatrix sessionId={seed} size={14} />
+            </span>
+          )
+        }
+      />
+    );
+  };
+  // A tile is keyed by its call and place in it: it keeps its frame (and its
+  // loaded image) while the run grows.
+  // A call's tiles are contiguous, so its place is the distance to its first tile.
+  const tileKey = (tile: ImageGenGridTile, i: number) => `${callIds[tile.call]}:${i - grid.tiles.findIndex((other) => other.call === tile.call)}`;
+
+  if (solo) {
+    return (
+      <figure className="flex w-full flex-col gap-2">
+        {frame(grid.tiles[0]!)}
+        {action ? <div className="flex flex-col items-start">{action}</div> : null}
+      </figure>
+    );
+  }
+
+  const count = grid.tiles.length;
+  const bento = grid.rows.length === 1 ? BENTO[count]! : null;
+  const rowRects = grid.rows.map((size, row) => {
+    const firstTile = grid.tiles[grid.rows.slice(0, row).reduce((sum, n) => sum + n, 0)]!;
+    return ratioValue(views[firstTile.call]!.aspectRatio) * BENTO[size]!.scale;
+  });
+  const placed = bento ? null : gridPlacement(grid.rows, rowRects);
 
   return (
-    <figure className="flex w-full flex-col gap-2">
-      {bento ? (
-        <div
-          data-image-gen-bento={Math.min(view.images.length, 4)}
-          className={cn('grid min-h-0 w-full gap-1', bento.grid)}
-          style={{ aspectRatio: rectangle, width: `min(100%, calc(${IMAGE_MAX_HEIGHT} * ${rectangle}))` }}
-        >
-          {frames.slice(0, 4).map((frame, i) => (
-            <div key={i} data-image-gen-tile={i} className={cn('min-h-0 min-w-0', i === 0 && bento.first)}>
-              {frame}
-            </div>
-          ))}
-        </div>
-      ) : (
-        frames
-      )}
+    // An inline-size container: the merged grid sizes its rows from its width (`cqw`).
+    <figure className={cn('flex w-full flex-col gap-2', !bento && '@container')}>
+      <div
+        {...(bento ? { 'data-image-gen-bento': count } : { 'data-image-gen-grid': grid.rows.join('+') })}
+        className={cn('grid min-h-0 w-full gap-1', bento ? bento.grid : 'grid-cols-6')}
+        style={placed ? placed.style : { aspectRatio: rowRects[0], width: cappedWidth(rowRects[0]!) }}
+      >
+        {grid.tiles.map((tile, i) => (
+          <div
+            key={tileKey(tile, i)}
+            data-image-gen-tile={i}
+            className={cn('min-h-0 min-w-0', bento && i === 0 && bento.first)}
+            style={placed?.places[i]}
+          >
+            {frame(tile)}
+          </div>
+        ))}
+      </div>
       {/* Failed frames share one fix, under them. */}
       {action ? <div className="flex flex-col items-start">{action}</div> : null}
     </figure>

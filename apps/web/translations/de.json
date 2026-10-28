@@ -23383,6 +23383,9 @@
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
     "failed": "Das Bild wurde nicht erstellt.",
-    "retry": "Versuchen Sie es {when} erneut."
+    "retry": "Versuchen Sie es {when} erneut.",
+    "unavailable": "Bild nicht verfügbar",
+    "tryAgain": "Erneut versuchen",
+    "details": "Bilddetails"
   }
 }

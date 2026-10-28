@@ -212,6 +212,19 @@ describe('sessionLogShowGroupCall', () => {
     const failed = sessionLogShowGroupCall([one, call('show4', 'show', { title: 'Chart' }, { status: 'error', result: { content: [{ type: 'text', text: 'gone' }], is_error: true, error: { message: 'gone' } } })]);
     expect((failed.input as { items: unknown[] }).items.at(-1)).toEqual({ status: 'error', type: 'error', title: 'Chart', content: 'gone' });
   });
+
+  test('each item keeps the sha256 its own call\'s output gives its file (R38)', () => {
+    const sha = 'b'.repeat(64);
+    const out = (path: string) => ({ result: { content: [{ type: 'text' as const, text: JSON.stringify({ entry: { path, sha256: sha } }) }], is_error: false } });
+    const merged = sessionLogShowGroupCall([
+      call('show1', 'show', { type: 'markdown', path: '/workspace/notes.md' }),
+      call('show2', 'show', { type: 'image', path: 'drives/a.png' }, out('/workspace/drives/a.png')),
+    ]);
+    expect((merged.input as { items: unknown[] }).items).toEqual([
+      { status: 'ready', type: 'markdown', path: '/workspace/notes.md' },
+      { status: 'ready', type: 'image', path: 'drives/a.png', sha256: sha },
+    ]);
+  });
 });
 
 describe('sessionLogAnsweredQuestionCall', () => {

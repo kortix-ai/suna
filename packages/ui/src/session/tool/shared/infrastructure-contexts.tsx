@@ -87,6 +87,20 @@ export const RecoveredCallsContext = createContext<ReadonlySet<string>>(new Set(
 export const ImageGenPathsContext = createContext<ReadonlySet<string>>(new Set());
 
 /**
+ * The sha256 of the images the turn's `image_gen` calls already drew
+ * (`imageDigestsShownByImageGen`): a `show` of the same bytes at another path
+ * (a Drive copy) is not drawn a second time either (R38).
+ */
+export const ImageGenDigestsContext = createContext<ReadonlySet<string>>(new Set());
+
+/**
+ * The runs of the turn's `image_gen` calls that draw as one grid
+ * (`sessionLogImageGenRuns`), by block id: the first call draws the run, the
+ * others nothing (R38).
+ */
+export const ImageGenRunsContext = createContext<ReadonlyMap<string, ToolCallBlock[]>>(new Map());
+
+/**
  * True inside a transcript turn's steps, where `TurnLiveContext` is a fact
  * about the owning turn rather than its `false` default. The image card reads
  * both to tell a stopped generation from one still running.

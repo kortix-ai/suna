@@ -9,10 +9,16 @@ import {
   formatImageGenElapsed,
   imageGenRetryDelay,
   imageGenView,
+  imageDigestsShownByImageGen,
+  imageGenGrid,
+  imageGenGridRows,
   imagePathsShownByImageGen,
+  sessionLogImageGenRuns,
   showDrawnByImageGen,
+  showItemDigest,
   withoutImageGenDuplicates,
 } from './image-gen-view';
+import type { SessionLogSegment } from '../../session-log/turns/blocks';
 
 const START = 1_761_000_000_000;
 
@@ -501,5 +507,109 @@ describe('one image renders once (D5)', () => {
     const paths = imagePathsShownByImageGen([show({ type: 'image', path: '/workspace/x.png' })]);
     expect(paths.size).toBe(0);
     expect(showDrawnByImageGen(show({ type: 'image', path: '/workspace/x.png' }), paths)).toBe(false);
+  });
+});
+
+describe('R38: digests, one grid per turn', () => {
+  const SHA_FOX = 'f'.repeat(64);
+  const SHA_OWL = '0'.repeat(63) + 'a';
+  const digestOutput = JSON.stringify({
+    model: 'codex/gpt-image-2',
+    images: [
+      { path: '/workspace/output/images/fox.png', size: '1024x1024', prompt: 'A fox', sha256: SHA_FOX },
+      { path: '/workspace/output/images/owl.png', size: '1024x1024', prompt: 'An owl', sha256: 'NOT-A-DIGEST' },
+    ],
+  });
+  const gen = (id: string, prompts: string[], output?: string) =>
+    ({ ...call(output ? { status: 'completed', input: { prompts }, output } : { status: 'running', input: { prompts } }), id, call_id: id }) as ToolCallBlock;
+  const showOf = (id: string, input: Record<string, unknown>, output: unknown) =>
+    ({ ...call({ status: 'completed', input, output: JSON.stringify(output) }, 'show'), id, call_id: id }) as ToolCallBlock;
+  const standalone = (block: ToolCallBlock): SessionLogSegment => ({ kind: 'standalone', block });
+
+  test('an image carries the sha256 of its bytes; a malformed digest is dropped', () => {
+    const view = imageGenView(gen('g1', ['A fox', 'An owl'], digestOutput));
+    expect(view.images.map((image) => image.sha256)).toEqual([SHA_FOX, undefined]);
+    expect([...imageDigestsShownByImageGen([gen('g1', ['A fox', 'An owl'], digestOutput)])]).toEqual([SHA_FOX]);
+  });
+
+  test('a show item reads its sha256 from the show output, by path with or without /workspace', () => {
+    const single = showOf('s1', { type: 'image', path: 'output/copy.png' }, { entry: { type: 'image', path: '/workspace/output/copy.png', sha256: SHA_FOX } });
+    expect(showItemDigest(single, 'output/copy.png')).toBe(SHA_FOX);
+    expect(showItemDigest(single, '/workspace/output/copy.png')).toBe(SHA_FOX);
+    expect(showItemDigest(single, 'other.png')).toBeUndefined();
+    const carousel = showOf('s2', { items: '[]' }, { items: [{ path: '/drives/me/space/images/shuttle.png', sha256: SHA_OWL }, { path: '/workspace/notes.md' }] });
+    expect(showItemDigest(carousel, '/drives/me/space/images/shuttle.png')).toBe(SHA_OWL);
+    expect(showItemDigest(carousel, '/workspace/notes.md')).toBeUndefined();
+    expect(showItemDigest(showOf('s3', {}, 'not json'), 'a.png')).toBeUndefined();
+  });
+
+  test('a show image with the same sha256 as a generated image renders from cache and is not drawn twice', () => {
+    const digests = new Set([SHA_FOX]);
+    const paths = new Set<string>();
+    const items = [
+      { type: 'image', path: '/drives/me/space/images/fox.png' },
+      { type: 'markdown', path: '/drives/me/space/notes.md' },
+    ];
+    const drive = showOf('s1', { items }, { items: [{ ...items[0], sha256: SHA_FOX }, items[1]] });
+    expect(showDrawnByImageGen(drive, paths, digests)).toBe(false);
+    const withDigests = items.map((item) => ({ ...item, sha256: showItemDigest(drive, item.path) }));
+    expect(withoutImageGenDuplicates(withDigests, paths, digests).map((item) => item.path)).toEqual(['/drives/me/space/notes.md']);
+    const only = showOf('s2', { type: 'image', path: '/drives/me/space/images/fox.png' }, { entry: { ...items[0], sha256: SHA_FOX } });
+    expect(showDrawnByImageGen(only, paths, digests)).toBe(true);
+    // Other bytes at that path are drawn.
+    expect(showDrawnByImageGen(only, paths, new Set([SHA_OWL]))).toBe(false);
+  });
+
+  test('grid rows: up to four is one bento; five and more are rows of the bento patterns', () => {
+    const rows = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, imageGenGridRows(n)]));
+    expect(rows).toEqual({
+      1: [1], 2: [2], 3: [3], 4: [4],
+      5: [3, 2], 6: [3, 3], 7: [3, 2, 2], 8: [4, 4],
+      9: [3, 3, 3], 10: [3, 3, 2, 2], 11: [3, 3, 3, 2], 12: [3, 3, 3, 3],
+    });
+    expect(imageGenGridRows(0)).toEqual([]);
+  });
+
+  test('two consecutive image_gen calls render one grid of five', () => {
+    const space = gen('g1', ['Shuttle', 'Station', 'Rover']);
+    const apples = gen('g2', ['Red apple', 'Green apple']);
+    const text = { kind: 'text', block: { id: 't1', type: 'text', text: 'Now the apples.' } } as unknown as SessionLogSegment;
+    const segments: SessionLogSegment[] = [standalone(space), { kind: 'burst', blocks: [] }, text, standalone(apples)];
+    const runs = sessionLogImageGenRuns(segments, { paths: new Set(), digests: new Set() });
+    expect(runs.get('g1')).toEqual([space, apples]);
+    expect(runs.get('g2')).toEqual([space, apples]);
+    const grid = imageGenGrid([imageGenView(space), imageGenView(apples)]);
+    expect(grid.rows).toEqual([3, 2]);
+    expect(grid.tiles.map((tile) => [tile.call, tile.image.prompt, tile.first])).toEqual([
+      [0, 'Shuttle', true], [0, 'Station', false], [0, 'Rover', false],
+      [1, 'Red apple', true], [1, 'Green apple', false],
+    ]);
+  });
+
+  test('a visible show between two image_gen calls splits the run; a show drawn by image_gen does not', () => {
+    const one = gen('g1', ['a'], JSON.stringify({ images: [{ path: '/workspace/a.png', prompt: 'a', sha256: SHA_FOX }] }));
+    const two = gen('g2', ['b']);
+    const pdf = showOf('s1', { type: 'file', path: '/workspace/report.pdf' }, { entry: { path: '/workspace/report.pdf' } });
+    const copy = showOf('s2', { type: 'image', path: '/drives/a.png' }, { entry: { path: '/drives/a.png', sha256: SHA_FOX } });
+    const drawn = { paths: imagePathsShownByImageGen([one]), digests: imageDigestsShownByImageGen([one]) };
+    expect(sessionLogImageGenRuns([standalone(one), standalone(pdf), standalone(two)], drawn).size).toBe(0);
+    expect(sessionLogImageGenRuns([standalone(one), standalone(copy), standalone(two)], drawn).get('g2')).toEqual([one, two]);
+    expect(sessionLogImageGenRuns([standalone(one)], drawn).size).toBe(0);
+  });
+
+  test('a call that failed or stopped as a whole keeps one slot per prompt in a grid', () => {
+    const failed = {
+      ...call({ status: 'error', input: { prompts: ['x', 'y'] }, error: 'Image generation failed (500): Upstream error.' }),
+      id: 'g1',
+      call_id: 'g1',
+    } as ToolCallBlock;
+    const grid = imageGenGrid([imageGenView(failed), imageGenView(gen('g2', ['z', 'w', 'v']))]);
+    expect(grid.rows).toEqual([3, 2]);
+    expect(grid.tiles.slice(0, 2).map((tile) => [tile.image.phase, tile.image.error?.message])).toEqual([
+      ['failed', 'Upstream error.'],
+      ['failed', 'Upstream error.'],
+    ]);
+    const stopped = imageGenView(gen('g3', ['s']), false);
+    expect(imageGenGrid([stopped]).tiles.map((tile) => [tile.image.phase, tile.image.error])).toEqual([['stopped', null]]);
   });
 });

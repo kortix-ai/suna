@@ -8070,7 +8070,10 @@ const catalog = {
     "loading": "Loading image",
     "stopped": "Stopped",
     "failed": "The image was not generated.",
-    "retry": "Try again {when}."
+    "retry": "Try again {when}.",
+    "unavailable": "Image unavailable",
+    "tryAgain": "Try again",
+    "details": "Image details"
   }
 };
 

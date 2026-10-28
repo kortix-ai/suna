@@ -40,6 +40,7 @@ import Loading from '../../primitives/loading';
 import { TextShimmer } from '../../primitives/text-shimmer';
 import { framePolicy } from '../viewer/preview-policy';
 import { useBinaryBlob } from '../runtime/hooks/use-binary-blob';
+import { useSharedImage } from '../runtime/hooks/use-shared-image';
 import { sessionDriveMountPath } from '../../internal/files/session-drive-files';
 import { useFileContent } from '../runtime/hooks/use-file-content';
 import { useHeicBlob } from '../../internal/hooks/use-heic-url';
@@ -63,7 +64,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
-import { ImageFrame } from './image-frame';
+import { ImageFrame, ImageUnavailable } from './image-frame';
 import { MermaidDiagram } from './mermaid/mermaid-diagram';
 import { ViewerFrame } from './shared/viewer-frame';
 import { resolveShowType, shouldRenderFromSandboxFile } from './show-type-utils';
@@ -284,6 +285,12 @@ export interface ShowContentProps {
    * blob would run agent-authored script inside the app.
    */
   attachment?: string;
+  /**
+   * The sha256 of the file's bytes, from the `show` output (R38): an image
+   * already loaded under another path (the generated original of a Drive
+   * copy) draws at once from the shared image store.
+   */
+  sha256?: string;
   /** Optional: render a proxied localhost iframe. Caller provides this component. */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
   /**
@@ -324,6 +331,7 @@ export function ShowContentRenderer({
   language = '',
   aspectRatio = '',
   attachment,
+  sha256,
   LocalhostPreview,
   fill = false,
   onStatusChange,
@@ -431,15 +439,17 @@ export function ShowContentRenderer({
   // its sandbox read is a base64 text read, but a stored copy is bytes.
   const storedCopy = isSessionAttachmentRef(attachment) ? (attachment as string) : null;
   const blobFilePath = showBlobSource({ effectiveType, attachment, sandboxPath });
-  const {
-    blobUrl,
-    blob: rawBlob,
-    isLoading: blobLoading,
-    error: blobError,
-  } = useBinaryBlob(blobFilePath);
-
   // HEIC conversion — converts the raw blob to renderable JPEG
   const isHeic = isImage && isHeicFile(fileName);
+  // Every other image draws from the page's shared image store (R38): by its
+  // sha256 when another surface already loaded those bytes, else read once.
+  const sharedImage = useSharedImage(isImage && !isHeic ? blobFilePath : null, isImage && !isHeic ? sha256 : null);
+  const binary = useBinaryBlob(isImage && !isHeic ? null : blobFilePath);
+  const { blob: rawBlob } = binary;
+  const blobUrl = isImage && !isHeic ? sharedImage.url : binary.blobUrl;
+  const blobLoading = isImage && !isHeic ? sharedImage.loading : binary.isLoading;
+  const blobError = isImage && !isHeic ? sharedImage.error : binary.error;
+
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
     isHeic ? rawBlob : null,
     fileName,
@@ -639,7 +649,14 @@ export function ShowContentRenderer({
         </div>,
       );
     }
-    if (blobError) return <LoadError message={blobError} />;
+    // Never the read's raw error text on an image (R38): a short note and Try again.
+    if (blobError) {
+      return framed(
+        <div className={mediaH}>
+          <ImageFrame aspectRatio="auto" src={null} alt={title || fileName} pending={false} label={<ImageUnavailable onRetry={sharedImage.retry} />} className="h-full rounded-none" />
+        </div>,
+      );
+    }
     // HEIC: use the converted JPEG URL
     const imageUrl = isHeic ? heicImageUrl : blobUrl;
     if (imageUrl) {
@@ -1048,6 +1065,8 @@ export interface ShowCarouselItem {
   aspect_ratio?: string;
   /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
   attachment?: string;
+  /** The bytes' sha256 from the `show` output — see `ShowContentProps.sha256`. */
+  sha256?: string;
   /** `pending`: a grouped `show` call whose payload has not arrived yet. The
    *  slot holds its place so the card does not jump when it lands. */
   status?: 'pending' | 'ready' | 'error';
@@ -1279,6 +1298,7 @@ export function ShowCarousel({
             language={currentItem.language}
             aspectRatio={currentItem.aspect_ratio}
             attachment={currentItem.attachment}
+            sha256={currentItem.sha256}
             LocalhostPreview={LocalhostPreview}
             toolbarActions={toolbarActions}
             fill={fill}

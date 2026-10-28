@@ -15,6 +15,7 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { WarningCircleIcon as AlertCircle } from '@/lib/icons';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { log } from '@/lib/logger';
+import type { SharedImageSource } from '@/lib/files/shared-image';
 import { generatePdfJsHtml, generateDocxHtml } from './file-preview-html';
 import {
   FilePreviewBottomInsetContext,
@@ -23,18 +24,33 @@ import {
   usePreviewNavigationGuard,
 } from './file-preview-webview';
 
-export function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
+export function ImagePreview({
+  blobUrl,
+  source,
+  initialRatio,
+  onSourceError,
+  fileName,
+}: {
+  blobUrl?: string;
+  /** An image already loaded elsewhere (R38): drawn from its native source, at its known ratio, with no loader. */
+  source?: SharedImageSource;
+  initialRatio?: number | null;
+  /** `source` failed to draw: the caller reads the file instead. */
+  onSourceError?: () => void;
+  fileName: string;
+}) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!(source && initialRatio));
   const [hasError, setHasError] = useState(false);
   // Width/height ratio of the loaded image; the box follows the live window width.
-  const [aspectRatio, setAspectRatio] = useState(0);
+  const [aspectRatio, setAspectRatio] = useState(source && initialRatio ? initialRatio : 0);
   const { width: screenWidth } = useWindowDimensions();
   const maxWidth = screenWidth - 32;
   const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
-  if (!blobUrl) {
+  const imageSource = source ?? (blobUrl ? { uri: blobUrl } : undefined);
+  if (!imageSource) {
     return (
       <PreviewStatus className="flex-1 items-center justify-center p-8" title="Loading image..." />
     );
@@ -61,7 +77,7 @@ export function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName
             </View>
           )}
           <Image
-            source={{ uri: blobUrl }}
+            source={imageSource}
             style={{
               width: maxWidth,
               height: aspectRatio ? maxWidth / aspectRatio : 300,
@@ -73,6 +89,7 @@ export function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName
               setIsLoading(false);
             }}
             onError={() => {
+              if (source && onSourceError) return onSourceError();
               setIsLoading(false);
               setHasError(true);
             }}

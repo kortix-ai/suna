@@ -15,6 +15,7 @@ import { segmentTurn, type SegmentTurnOptions } from '../../turns/segments/segme
 import { isQuestionTool } from '../../turns/segments/session-activity-groups';
 import { groupShowSegments, showGroupItems, type ShowGroupItem, type ShowGroupedSegment } from '../../turns/segments/show-group';
 import { stepLabel } from '../../turns/segments/step-label';
+import { showItemDigest } from '../../turns/tools/image-gen-view';
 import { splitTurnWork } from '../../turns/segments/work-split';
 import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
@@ -148,10 +149,15 @@ export function sessionLogOpenCall(call: ToolCallBlock): ToolCallBlock {
   return open;
 }
 
-/** A failed call keeps its slot as an `error` item whose `content` is the message. */
-function carouselItem(item: ShowGroupItem): Omit<ShowGroupItem, 'callID' | 'error'> {
+/**
+ * A failed call keeps its slot as an `error` item whose `content` is the message. An item
+ * whose own call's output gives its file a sha256 carries it (R38, `showItemDigest`).
+ */
+function carouselItem(item: ShowGroupItem, call: ToolCallBlock | undefined): Omit<ShowGroupItem, 'callID' | 'error'> & { sha256?: string } {
   const { callID: _callID, error, ...rest } = item;
-  return item.status === 'error' ? { ...rest, type: 'error', content: error || 'This output failed to load.' } : rest;
+  if (item.status === 'error') return { ...rest, type: 'error', content: error || 'This output failed to load.' };
+  const sha256 = call && showItemDigest(call, item.path);
+  return sha256 ? { ...rest, sha256 } : rest;
 }
 
 /**
@@ -163,7 +169,8 @@ export function sessionLogShowGroupCall(calls: ReadonlyArray<ToolCallBlock>): To
   const parts = calls.map(toolPartOf);
   const first = parts[0]!;
   const running = parts.some((p) => p.state.status === 'running' || p.state.status === 'pending');
-  const items = showGroupItems(parts).map(carouselItem);
+  const byCallId = new Map(calls.map((block) => [block.call_id, block]));
+  const items = showGroupItems(parts).map((item) => carouselItem(item, byCallId.get(item.callID)));
   return toolCallBlock({ ...first, state: { ...first.state, status: running ? 'running' : 'completed', input: { items } } } as ToolPart);
 }
 

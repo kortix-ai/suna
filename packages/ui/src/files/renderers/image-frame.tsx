@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '../../i18n';
+import { Button } from '../../primitives/button';
 import { cn } from '../../lib/utils';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -27,6 +29,10 @@ export interface ImageFrameProps {
   maxHeight?: string;
   /** The image button's accessible name; `alt` when unset. */
   openLabel?: string;
+  /** The image's natural ratio when another surface already measured it (`"<w> / <h>"`), so a remount starts at it. */
+  naturalRatio?: string | null;
+  /** Reports the image's natural size once it decoded. */
+  onNaturalSize?: (width: number, height: number) => void;
 }
 
 /** `'3 / 2'` → `1.5`; anything unreadable → `1`. */
@@ -42,10 +48,23 @@ function ratioValue(ratio: string): number {
  * The frame itself never moves: the busy signal is the label (one waiting
  * channel, kortix-brand `layout.md` States).
  */
-export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, className, fill = false, maxHeight, openLabel }: ImageFrameProps) {
+export function ImageFrame({
+  aspectRatio,
+  src,
+  alt,
+  pending,
+  label,
+  onOpen,
+  className,
+  fill = false,
+  maxHeight,
+  openLabel,
+  naturalRatio = null,
+  onNaturalSize,
+}: ImageFrameProps) {
   const img = useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = useState(false);
-  const [natural, setNatural] = useState<string | null>(null);
+  const [natural, setNatural] = useState<string | null>(naturalRatio);
 
   // A new source starts hidden at the requested ratio again; a cached one may
   // be complete before React sees `load`.
@@ -53,12 +72,17 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
     const el = img.current;
     const complete = !!el?.complete && el.naturalWidth > 0;
     setLoaded(complete);
-    setNatural(complete && el ? `${el.naturalWidth} / ${el.naturalHeight}` : null);
+    setNatural(complete && el ? `${el.naturalWidth} / ${el.naturalHeight}` : naturalRatio);
+    // The ratio is the cached one until this source decodes; a new source is measured on load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
   const onLoad = () => {
     const el = img.current;
-    if (el?.naturalWidth && el.naturalHeight) setNatural(`${el.naturalWidth} / ${el.naturalHeight}`);
+    if (el?.naturalWidth && el.naturalHeight) {
+      setNatural(`${el.naturalWidth} / ${el.naturalHeight}`);
+      onNaturalSize?.(el.naturalWidth, el.naturalHeight);
+    }
     setLoaded(true);
   };
 
@@ -108,3 +132,21 @@ export function ImageFrame({ aspectRatio, src, alt, pending, label, onOpen, clas
     </div>
   );
 }
+
+/**
+ * An image whose file could not be read: "Image unavailable" and Try again,
+ * centered in the frame. Never the read's own error text (R38): that is
+ * internal (a status line, a path, a stack), not something a reader can act on.
+ */
+export function ImageUnavailable({ onRetry }: { onRetry: () => void }) {
+  const t = useTranslations('imageGen');
+  return (
+    <span className="text-muted-foreground flex flex-col items-center gap-2 text-xs">
+      {t('unavailable')}
+      <Button type="button" variant="secondary" size="sm" className="active:scale-[0.96]" onClick={onRetry}>
+        {t('tryAgain')}
+      </Button>
+    </span>
+  );
+}
+

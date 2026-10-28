@@ -1277,13 +1277,14 @@
     "loading": "Loading image",
     "stopped": "Stopped",
     "failed": "The image was not generated.",
-    "notLoaded": "The image did not load.",
     "tapToLoad": "Tap to load ({{size}})",
     "retrySecond_one": "Try again in {{count}} second.",
     "retrySecond_other": "Try again in {{count}} seconds.",
     "retryMinute_one": "Try again in {{count}} minute.",
     "retryMinute_other": "Try again in {{count}} minutes.",
     "retryHour_one": "Try again in {{count}} hour.",
-    "retryHour_other": "Try again in {{count}} hours."
+    "retryHour_other": "Try again in {{count}} hours.",
+    "unavailable": "Image unavailable",
+    "details": "Image details"
   }
 }

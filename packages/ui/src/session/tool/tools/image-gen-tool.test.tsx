@@ -13,7 +13,7 @@ import { IntlTestProvider } from '../../../test-utils/intl';
 import * as sdkReact from '@kortix/sdk/react';
 import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { useKortixComputerStore } from '../../../internal/stores/kortix-computer-store';
-import { InTranscriptTurnContext, ReadOnlySessionContext, TurnLiveContext } from '../shared/infrastructure';
+import { ImageGenRunsContext, InTranscriptTurnContext, ReadOnlySessionContext, TurnLiveContext } from '../shared/infrastructure';
 import { ImageGenTool } from './image-gen-tool';
 
 // The file read, as the card sees it: still loading by default.
@@ -443,11 +443,30 @@ describe('ImageGenTool', () => {
     }
   });
 
-  test('a real read error is shown in the frame', () => {
-    blob = { blobUrl: null, blob: null, isLoading: false, error: 'File not found' };
+  test('a runtime-not-ready error keeps the tile loading', () => {
+    // An older session whose sandbox is stopped: the runtime URL is not pinned yet.
+    blob = { blobUrl: null, blob: null, isLoading: false, error: '[kortix-runtime] Server URL not ready — sandbox is still loading' };
+    try {
+      for (const html of [render(COMPLETED), render({ status: 'completed', input: { prompts: THREE }, output: batch(THREE.map((p, i) => [`/workspace/output/images/${i}.png`, '1024x1024', p])) })]) {
+        expect(html).toContain('aria-busy="true"');
+        expect(html).toContain('Loading image');
+        expect(html).not.toContain('Server URL not ready');
+        expect(html).not.toContain('kortix-runtime');
+        expect(html).not.toContain('Image unavailable');
+      }
+    } finally {
+      blob = { blobUrl: null, blob: null, isLoading: true, error: null };
+    }
+  });
+
+  // Replaces "a real read error is shown in the frame" (R38, Jay 2026-10-28): a tile never shows raw error text.
+  test('a real load failure shows Image unavailable with retry, never the raw message', () => {
+    blob = { blobUrl: null, blob: null, isLoading: false, error: 'Failed to read file (500): internal stack detail' };
     try {
       const html = render(COMPLETED);
-      expect(html).toContain('File not found');
+      expect(html).toContain('Image unavailable');
+      expect(html).toMatch(/<button[^>]*>Try again<\/button>/);
+      expect(html).not.toContain('internal stack detail');
       expect(html).not.toContain('aria-busy="true"');
     } finally {
       blob = { blobUrl: null, blob: null, isLoading: true, error: null };
@@ -584,5 +603,175 @@ describe('ImageGenTool', () => {
     expect(render({ status: 'running' }, { live: true })).toContain('Generating image');
     // Outside a transcript turn the call's own status decides.
     expect(render({ status: 'running' })).toContain('Generating image');
+  });
+});
+
+describe('one grid per turn (R38)', () => {
+  /** One image_gen call of `n` prompts, running, or completed with every image in. */
+  function genCall(id: string, n: number, done = false, ratio = '1:1') {
+    const prompts = Array.from({ length: n }, (_, i) => `${id} prompt ${i}`);
+    return toolCallBlock({
+      type: 'tool',
+      tool: 'image_gen',
+      callID: id,
+      id,
+      state: {
+        status: done ? 'completed' : 'running',
+        input: { action: 'generate', prompts, aspect_ratio: ratio },
+        ...(done && { output: batch(prompts.map((prompt, i) => [`/workspace/output/images/${id}-${i}.png`, '1024x1024', prompt])) }),
+        time: { start: Date.now() - 5_000 },
+      },
+    } as unknown as ToolPart);
+  }
+  /** The run's first call, drawn in a live turn with the run in context. */
+  function renderRun(calls: ReturnType<typeof genCall>[]) {
+    const runs = new Map(calls.map((one) => [one.id, calls]));
+    return renderToStaticMarkup(
+      <IntlTestProvider locale="en" onError={() => {}}>
+        <QueryClientProvider client={new QueryClient()}>
+          <InTranscriptTurnContext.Provider value>
+            <TurnLiveContext.Provider value>
+              <ImageGenRunsContext.Provider value={runs}>
+                <ImageGenTool call={calls[0]!} />
+              </ImageGenRunsContext.Provider>
+            </TurnLiveContext.Provider>
+          </InTranscriptTurnContext.Provider>
+        </QueryClientProvider>
+      </IntlTestProvider>,
+    );
+  }
+  const gridStyleOf = (html: string) => /data-image-gen-grid="[^"]+"[^>]*style="([^"]*)"/.exec(html)?.[1] ?? '';
+  const SPACING = 0.23 * 16;
+  /** A CSS length expression in px, for a `column`-px-wide figure in a `viewport`-px-tall window. */
+  function px(expr: string, column: number, viewport: number): number {
+    const js = expr
+      .replaceAll('var(--spacing)', String(SPACING))
+      .replaceAll('100cqw', String(column))
+      .replaceAll('60vh', String(0.6 * viewport))
+      .replaceAll('calc(', '(')
+      .replaceAll('min(', 'Math.min(');
+    return Function(`return ${js}`)() as number;
+  }
+  /** The grid's rows (its track heights) and its width, in px. */
+  function layoutOf(html: string, column: number, viewport: number) {
+    const style = gridStyleOf(html);
+    const rows = /grid-template-rows:(.*?);/.exec(style)![1]!.match(/calc\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/g)!;
+    const width = /width:(min\(.*\))$/.exec(style)![1]!;
+    return { tracks: rows.map((row) => px(row, column, viewport)), width: px(width, column, viewport) };
+  }
+  const placesOf = (html: string) => tilesOf(html).map((tile) => /style="([^"]*)"/.exec(tile.tag)?.[1] ?? '');
+  const gridOf = (html: string) => /data-image-gen-grid="([^"]+)"/.exec(html)?.[1] ?? null;
+
+  test('two consecutive image_gen calls render one grid of five', () => {
+    const html = renderRun([genCall('space', 3, true), genCall('apples', 2)]);
+    expect(gridOf(html)).toBe('3+2');
+    expect(tilesOf(html)).toHaveLength(5);
+    // The first row is the three-bento: one large tile, two stacked; the second row two side by side.
+    expect(placesOf(html)).toEqual([
+      'grid-column:1 / span 4;grid-row:1 / span 2',
+      'grid-column:5 / span 2;grid-row:1',
+      'grid-column:5 / span 2;grid-row:2',
+      'grid-column:1 / span 3;grid-row:3',
+      'grid-column:4 / span 3;grid-row:3',
+    ]);
+    // The generating call keeps its own busy line in its first tile; the done call's images load.
+    expect(count(html, 'Generating 2 images')).toBe(1);
+    expect(count(html, 'aria-busy="true"')).toBe(5);
+    // Each row is its own rectangle: a 1.5 row and a 2 row of square tiles, as wide as the 1.5 row allows.
+    expect(gridStyleOf(html)).toContain('width:min(100cqw, 60vh * 1.5)');
+  });
+
+  test('six images are two rows of three: 3+3', () => {
+    const html = renderRun([genCall('a', 3), genCall('b', 3)]);
+    expect(gridOf(html)).toBe('3+3');
+    expect(placesOf(html)).toEqual([
+      'grid-column:1 / span 4;grid-row:1 / span 2',
+      'grid-column:5 / span 2;grid-row:1',
+      'grid-column:5 / span 2;grid-row:2',
+      'grid-column:1 / span 4;grid-row:3 / span 2',
+      'grid-column:5 / span 2;grid-row:3',
+      'grid-column:5 / span 2;grid-row:4',
+    ]);
+  });
+
+  test('seven images are three, then two, then two: 3+2+2', () => {
+    const html = renderRun([genCall('a', 3), genCall('b', 2), genCall('c', 2)]);
+    expect(gridOf(html)).toBe('3+2+2');
+    expect(placesOf(html).slice(3)).toEqual([
+      'grid-column:1 / span 3;grid-row:3',
+      'grid-column:4 / span 3;grid-row:3',
+      'grid-column:1 / span 3;grid-row:4',
+      'grid-column:4 / span 3;grid-row:4',
+    ]);
+  });
+
+  test('eight images are two 2×2 rows: 4+4, no row taller than the cap', () => {
+    const html = renderRun([genCall('a', 4, false, '9:16'), genCall('b', 4, false, '9:16')]);
+    expect(gridOf(html)).toBe('4+4');
+    expect(placesOf(html)).toEqual([
+      'grid-column:1 / span 3;grid-row:1',
+      'grid-column:4 / span 3;grid-row:1',
+      'grid-column:1 / span 3;grid-row:2',
+      'grid-column:4 / span 3;grid-row:2',
+      'grid-column:1 / span 3;grid-row:3',
+      'grid-column:4 / span 3;grid-row:3',
+      'grid-column:1 / span 3;grid-row:4',
+      'grid-column:4 / span 3;grid-row:4',
+    ]);
+    // Each 2×2 row of 9:16 tiles is 9:16; the grid's width keeps each at most 60vh tall.
+    expect(gridStyleOf(html)).toContain('width:min(100cqw, 60vh * 0.5625)');
+    const { tracks } = layoutOf(html, 720, 480);
+    // Two 2×2 rows: each row is two tracks and a gap, at most 60vh (288 px) tall.
+    expect(tracks[0]! + SPACING + tracks[1]!).toBeLessThanOrEqual(288 + 1e-9);
+  });
+
+  test('a tile keeps its frame while the run grows: tiles are keyed by call and place', async () => {
+    // Two calls of two are one bento of four; a third call makes it 3+3 in the same grid element.
+    const four = renderRun([genCall('a', 2), genCall('b', 2)]);
+    expect(bentoOf(four)).toEqual({ count: 4, ratio: 1 });
+    const six = renderRun([genCall('a', 2), genCall('b', 2), genCall('c', 2)]);
+    expect(gridOf(six)).toBe('3+3');
+    expect(tilesOf(six)).toHaveLength(6);
+  });
+
+  test('a failed call in a run keeps one slot per prompt', () => {
+    const failed = toolCallBlock({
+      type: 'tool',
+      tool: 'image_gen',
+      callID: 'f',
+      id: 'f',
+      state: { status: 'error', input: { prompts: ['x', 'y'] }, error: 'Image generation failed (500): Upstream error.', time: { start: 1 } },
+    } as unknown as ToolPart);
+    const html = renderRun([genCall('a', 3), failed]);
+    expect(gridOf(html)).toBe('3+2');
+    expect(tilesOf(html).slice(3).every((tile) => tile.body.includes('Upstream error.'))).toBe(true);
+  });
+
+  test('the merged grid is exactly the sum of its rows: no aspect ratio, no min height, no empty band', () => {
+    // Jay's turn: three 16:9 space images, then two 16:9 apples. The old fr rows (factors summing to 0.66)
+    // left a third of the box empty under the last row.
+    const html = renderRun([genCall('space', 3, false, '16:9'), genCall('apples', 2, false, '16:9')]);
+    const style = gridStyleOf(html);
+    expect(style).not.toContain('aspect-ratio');
+    expect(style).not.toContain('min-height');
+    expect(style).not.toContain('fr');
+    for (const [column, viewport] of [[720, 900], [720, 480], [360, 800]] as const) {
+      const { tracks, width } = layoutOf(html, column, viewport);
+      const r = 16 / 9;
+      // Row 1 (three-bento, 1.5r) is two tracks and one gap; row 2 (two side by side, 2r) one track.
+      const row1 = tracks[0]! + SPACING + tracks[1]!;
+      const row2 = tracks[2]!;
+      expect(tracks).toHaveLength(3);
+      expect(row1).toBeCloseTo(width / (1.5 * r));
+      expect(row2).toBeCloseTo(width / (2 * r));
+      // The grid's height is the rows plus the gaps between tracks: nothing else.
+      const height = tracks.reduce((sum, track) => sum + track, 0) + SPACING * (tracks.length - 1);
+      expect(height).toBeCloseTo(row1 + SPACING + row2);
+      // No row is taller than the cap, and the grid is never wider than the column.
+      expect(Math.max(row1, row2)).toBeLessThanOrEqual(0.6 * viewport + 1e-9);
+      expect(width).toBeLessThanOrEqual(column);
+    }
+    // The figure is the inline-size container the rows measure.
+    expect(html).toMatch(/<figure class="[^"]*@container/);
   });
 });

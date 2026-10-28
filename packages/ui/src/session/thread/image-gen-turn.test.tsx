@@ -109,3 +109,52 @@ test('v2: a script\'s nested image_gen and a nested show of the same image draw 
   expect(html).toContain('report.pdf');
   expect(html).not.toContain('>fox.png<');
 });
+
+// R38 through the real transcript: two image_gen calls with text between them draw ONE grid of five,
+// settled (hoisted) as live, and a show of a Drive copy (same sha256) draws nothing.
+function renderTurn(blocks: SessionLogMessage['blocks'], working: boolean) {
+  const turns = sessionLogTurns({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 'synthetic', parent_thread_id: null, spawned_by: null,
+    agent: null, title: null, created_at: '', messages: [
+      message('prompt', 'user', [{ type: 'text', id: 'q', text: 'Space, then apples' }]),
+      message('reply', 'assistant', blocks, { reply_to: 'prompt', ...(working && { status: 'streaming', completed_at: null }) }),
+    ],
+  });
+  const turn = turns[0];
+  if (!turn) throw new Error('Missing synthetic turn');
+  return renderToStaticMarkup(
+    <IntlTestProvider locale="en" onError={() => {}}>
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <SessionTurn
+            turn={turn} turnOutcome={{}} sessionId="synthetic" sessionStatus={undefined} isLast ownsPlan={false}
+            permissions={[]} questions={[]} sessionWorking={working} isWorkingTurn={working}
+            suppressBusyIndicator={false} awaitingUser={false} pending={false} isFirstTurn
+            onPermissionReply={async () => {}} onRewind={() => {}} rewindDisabled
+          />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </IntlTestProvider>,
+  );
+}
+
+test('two consecutive image_gen calls render one grid of five, live and settled; a Drive copy is not drawn twice', () => {
+  const sha = 'd'.repeat(64);
+  const batch = (names: string[]) =>
+    JSON.stringify({ model: 'codex/gpt-image-2', images: names.map((name, i) => ({ path: `/workspace/output/images/${name}.png`, size: '1024x1024', prompt: name, ...(i === 0 && { sha256: sha }) })) });
+  const blocks: SessionLogMessage['blocks'] = [
+    call('img-1', 'image_gen', { prompts: ['shuttle', 'station', 'rover'] }, batch(['shuttle', 'station', 'rover'])),
+    { type: 'text', id: 'between', text: 'Now two apples.' },
+    call('img-2', 'image_gen', { prompts: ['red', 'green'] }, batch(['red', 'green'])),
+    call('copy', 'show', { type: 'image', path: '/drives/me/space/images/shuttle.png' },
+      JSON.stringify({ entry: { type: 'image', path: '/drives/me/space/images/shuttle.png', sha256: sha } })),
+    { type: 'text', id: 'answer', text: 'Synthetic answer' },
+  ];
+  for (const working of [false, true]) {
+    const html = renderTurn(blocks, working);
+    expect(html.match(/<figure/g)).toHaveLength(1);
+    expect(html).toContain('data-image-gen-grid="3+2"');
+    expect(html.match(/data-image-gen-tile=/g)).toHaveLength(5);
+    expect(html).not.toContain('shuttle.png<');
+  }
+});

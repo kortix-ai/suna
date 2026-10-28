@@ -15,6 +15,7 @@
  */
 
 import {
+  imageDigestsShownByImageGen,
   imagePathsShownByImageGen,
   sessionLogActivityText,
   sessionLogAnsweredQuestionCall,
@@ -248,6 +249,11 @@ export function turnSegments(
  */
 export function imagePathsDrawnByImageGen(segments: ReadonlyArray<TurnSegment>): Set<string> {
   return imagePathsShownByImageGen(segments.flatMap((s) => (s.kind === 'burst' ? s.blocks : [s.block])));
+}
+
+/** The sha256 of the images this turn's `image_gen` calls drew: a `show` of the same bytes at another path draws nothing either (R38). */
+export function imageDigestsDrawnByImageGen(segments: ReadonlyArray<TurnSegment>): Set<string> {
+  return imageDigestsShownByImageGen(segments.flatMap((s) => (s.kind === 'burst' ? s.blocks : [s.block])));
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 } from '@kortix/sdk';
 import {
   BoundActivateContext,
+  ImageGenDigestsContext,
   ImageGenPathsContext,
   InlineServicePreview,
   partInput,
@@ -39,7 +40,7 @@ import {
   useServicePreview,
 } from '../shared/show-helpers';
 import type { ToolProps } from '../shared/types';
-import { showDrawnByImageGen, withoutImageGenDuplicates } from '@kortix/sdk';
+import { showDrawnByImageGen, showItemDigest, withoutImageGenDuplicates } from '@kortix/sdk';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
@@ -80,20 +81,23 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   // `path`, so the card renders while the sandbox is off.
   const attachment = (input.attachment as string) || '';
 
-  // Images an `image_gen` card of this turn already drew are not drawn twice (D5).
+  // Images an `image_gen` card of this turn already drew are not drawn twice:
+  // the same path (D5), or the same bytes at another path, by sha256 (R38).
   const drawnByImageGen = useContext(ImageGenPathsContext);
+  const drawnDigests = useContext(ImageGenDigestsContext);
   const items = useMemo<ShowCarouselItem[] | null>(() => {
     const raw = input.items;
     if (!raw) return null;
     try {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const rest = withoutImageGenDuplicates(parsed as ShowCarouselItem[], drawnByImageGen);
+        const withDigests = (parsed as ShowCarouselItem[]).map((item) => ({ ...item, sha256: item.sha256 ?? showItemDigest(call, item.path) }));
+        const rest = withoutImageGenDuplicates(withDigests, drawnByImageGen, drawnDigests);
         return rest.length > 0 ? rest : null;
       }
     } catch {}
     return null;
-  }, [input.items, drawnByImageGen]);
+  }, [input.items, call, drawnByImageGen, drawnDigests]);
 
   const isCarousel = !!items && items.length > 0;
 
@@ -229,7 +233,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
     () => isShowPayloadEmpty({ items, path, url, content }),
     [items, path, url, content],
   );
-  if (!running && (hasNothingToShow || showDrawnByImageGen(call, drawnByImageGen))) return null;
+  if (!running && (hasNothingToShow || showDrawnByImageGen(call, drawnByImageGen, drawnDigests))) return null;
 
   const unavailable = isShowContentUnavailable({
     running,
@@ -320,6 +324,7 @@ export function ShowTool({ call, sessionId }: ToolProps) {
                   language={language}
                   aspectRatio={aspectRatio}
                   attachment={attachment}
+                  sha256={showItemDigest(call, path)}
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}

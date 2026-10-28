@@ -3,6 +3,7 @@
 import { binaryBlobKeys, fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
+import { forgetSharedImage } from './use-shared-image';
 
 /**
  * The viewer's manual Refresh — the safety net under the automatic one.
@@ -25,6 +26,7 @@ export function useFileRefresh(filePath: string | null | undefined) {
     if (!filePath) return;
     setRefreshing(true);
     setReloadKey((n) => n + 1);
+    forgetSharedImage(serverUrl, filePath);
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: fileContentKeys.file(serverUrl, filePath) }),
       queryClient.invalidateQueries({ queryKey: binaryBlobKeys.file(serverUrl, filePath) }),

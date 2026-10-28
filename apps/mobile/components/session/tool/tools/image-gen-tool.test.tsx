@@ -41,7 +41,7 @@ const EN: Record<string, string> = {
   'imageGen.stopped': 'Stopped',
   'imageGen.failed': 'The image was not generated.',
   'imageGen.retryHour': 'Try again in {{count}} hours.',
-  'imageGen.notLoaded': 'The image did not load.',
+  'imageGen.unavailable': 'Image unavailable',
   'common.retry': 'Try again',
 };
 mock.module('react-i18next', () => ({
@@ -56,7 +56,7 @@ mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: Text }));
 mock.module('@/components/session/dot-matrix/session-dot-matrix', () => ({ SessionDotMatrix: () => null }));
 mock.module('@/components/session/dot-matrix/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 /** What every `useSandboxImage` mount reports: `error` stands for a load the native loader gave up on. */
-let imagePhase: 'load' | 'error' = 'load';
+let imagePhase: 'probing' | 'load' | 'error' = 'load';
 mock.module('@/components/session/turn/use-sandbox-image', () => ({
   useSandboxImage: (path: string) => ({
     phase: imagePhase,
@@ -66,12 +66,15 @@ mock.module('@/components/session/turn/use-sandbox-image', () => ({
     loadAnyway: () => {},
     handleError: () => {},
   }),
+  useSandboxUrl: () => 'https://sandbox.example',
 }));
 const TurnLiveContext = React.createContext(false);
+const ImageGenRunsContext = React.createContext<ReadonlyMap<string, ToolCallBlock[]>>(new Map());
 /** Every `openFile(path, line, caption)` the card made. */
 const opened: unknown[][] = [];
 mock.module('../shared/infrastructure', () => ({
   TurnLiveContext,
+  ImageGenRunsContext,
   isLocalSandboxFilePath: (path: string) => path.startsWith('/workspace/'),
   useToolNavigation: () => ({ openFile: (...args: unknown[]) => opened.push(args), openExternal: () => {} }),
 }));
@@ -405,7 +408,16 @@ describe('ImageGenTool', () => {
     expect(tree?.root.findAll((node) => node.type === 'button')).toHaveLength(0);
   });
 
-  test('a load that keeps failing says so after the retries, and Try again starts over', async () => {
+  test('a runtime-not-ready error keeps the tile loading', async () => {
+    // The sandbox origin is not pinned yet (an older session's stopped box): the loader stays probing.
+    imagePhase = 'probing';
+    await render(call({ status: 'completed', output: batch([[FOX, '1254x836', 'A paper-cutout fox']]) }), false);
+    expect(texts()).toContain('Loading image');
+    expect(texts().join(' ')).not.toMatch(/not ready|kortix-runtime|Image unavailable/);
+  });
+
+  // "a load that keeps failing says so after the retries" said "The image did not load."; R38 names it like web.
+  test('a real load failure shows Image unavailable with retry, never the raw message', async () => {
     jest.useFakeTimers();
     imagePhase = 'error';
     const output = batch([[FOX, '1254x836', 'A paper-cutout fox']]);
@@ -416,12 +428,75 @@ describe('ImageGenTool', () => {
         jest.advanceTimersByTime(3000);
       });
     }
-    expect(texts()).toContain('The image did not load.');
+    expect(texts()).toContain('Image unavailable');
+    expect(texts()).not.toContain('The image did not load.');
     const retry = tree?.root.findAll((node) => node.type === 'button') ?? [];
     expect(retry).toHaveLength(1);
     imagePhase = 'load';
     await act(async () => (retry[0]!.props.onPress as () => void)());
-    expect(texts()).not.toContain('The image did not load.');
+    expect(texts()).not.toContain('Image unavailable');
     expect(tree?.root.findAll((node) => node.type === 'image')).toHaveLength(1);
   });
 });
+
+describe('one grid per turn (R38)', () => {
+  function genCall(id: string, n: number, ratio = '1:1') {
+    const prompts = Array.from({ length: n }, (_, i) => `${id} prompt ${i}`);
+    return toolCallBlock({
+      type: 'tool', tool: 'image_gen', callID: id, id, messageID: 'msg-1', sessionID: 'ses-1',
+      state: { status: 'running', input: { action: 'generate', prompts, aspect_ratio: ratio }, time: { start: Date.now() - 5_000 } },
+    } as unknown as ToolPart);
+  }
+  async function renderRun(calls: ToolCallBlock[]) {
+    await act(async () => {
+      tree = create(
+        <TurnLiveContext.Provider value>
+          <ImageGenRunsContext.Provider value={new Map(calls.map((one) => [one.id, calls]))}>
+            <ImageGenTool call={calls[0]!} />
+          </ImageGenRunsContext.Provider>
+        </TurnLiveContext.Provider>,
+      );
+    });
+  }
+  const byTestId = (id: string) => tree?.root.findAll((node) => node.type === 'view' && node.props.testID === id)[0];
+  /** Each row's tile count, top to bottom. */
+  const rowCounts = () =>
+    (tree?.root.findAll((node) => node.type === 'view' && /^image-gen-row-\d+$/.test(String(node.props.testID ?? ''))) ?? []).map(
+      (row) => row.findAll((node) => node.type === 'view' && /^image-gen-tile-\d+$/.test(String(node.props.testID ?? ''))).length,
+    );
+
+  test('two consecutive image_gen calls render one grid of five', async () => {
+    await renderRun([genCall('space', 3), genCall('apples', 2)]);
+    expect(byTestId('image-gen-grid')).toBeDefined();
+    expect(rowCounts()).toEqual([3, 2]);
+    // Each call's first tile carries its own busy line.
+    expect(texts().filter((text) => /^Generating \d images$/.test(text))).toEqual(['Generating 3 images', 'Generating 2 images']);
+  });
+
+  test('layout: 6 = 3+3, 7 = 3+2+2, 8 = 4+4', async () => {
+    for (const [sizes, rows] of [[[3, 3], [3, 3]], [[3, 2, 2], [3, 2, 2]], [[4, 4], [4, 4]]] as const) {
+      await renderRun(sizes.map((n, i) => genCall(`c${i}`, n)));
+      expect(rowCounts()).toEqual([...rows]);
+      await act(async () => tree?.unmount());
+      tree = undefined;
+    }
+  });
+
+  test('the merged grid is exactly the sum of its rows: no aspect ratio, no min height, every row under the cap', async () => {
+    await renderRun([genCall('space', 3, '16:9'), genCall('apples', 2, '16:9')]);
+    const column = byTestId('image-gen-grid')!.props.style as Record<string, number | string>;
+    expect(column.aspectRatio).toBeUndefined();
+    expect(column.minHeight).toBeUndefined();
+    expect(column.height).toBeUndefined();
+    const rows = [0, 1].map((row) => byTestId(`image-gen-row-${row}`)!.props.style as { aspectRatio: number; gap: number });
+    const r = 16 / 9;
+    expect(rows.map((row) => row.aspectRatio)).toEqual([1.5 * r, 2 * r]);
+    // In a 720-pt column at a 480-pt window (cap 288): the column narrows to the tallest row's cap.
+    const width = Math.min(720, column.maxWidth as number);
+    const heights = rows.map((row) => width / row.aspectRatio);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(288 + 1e-9);
+    // Rows + the one gap between them is the whole column: nothing else takes height.
+    expect(column.gap).toBe(rows[0]!.gap);
+  });
+});
+

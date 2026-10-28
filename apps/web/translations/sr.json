@@ -23383,6 +23383,9 @@
     "loading": "Učitavanje slike",
     "stopped": "Zaustavljeno",
     "failed": "Slika nije generisana.",
-    "retry": "Pokušajte ponovo {when}."
+    "retry": "Pokušajte ponovo {when}.",
+    "unavailable": "Slika nije dostupna",
+    "tryAgain": "Pokušajte ponovo",
+    "details": "Detalji slike"
   }
 }

@@ -1275,13 +1275,14 @@
     "loading": "Cargando imagen",
     "stopped": "Detenido",
     "failed": "No se generó la imagen.",
-    "notLoaded": "No se cargó la imagen.",
     "tapToLoad": "Toca para cargar ({{size}})",
     "retrySecond_one": "Vuelve a intentarlo en {{count}} segundo.",
     "retrySecond_other": "Vuelve a intentarlo en {{count}} segundos.",
     "retryMinute_one": "Vuelve a intentarlo en {{count}} minuto.",
     "retryMinute_other": "Vuelve a intentarlo en {{count}} minutos.",
     "retryHour_one": "Vuelve a intentarlo en {{count}} hora.",
-    "retryHour_other": "Vuelve a intentarlo en {{count}} horas."
+    "retryHour_other": "Vuelve a intentarlo en {{count}} horas.",
+    "unavailable": "Imagen no disponible",
+    "details": "Detalles de la imagen"
   }
 }

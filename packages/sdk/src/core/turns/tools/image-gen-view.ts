@@ -15,8 +15,11 @@
  * gateway's public id: `openai-codex` is ChatGPT), present only when the
  * gateway named one (kortixd `image_gen.ts`, `refusal`).
  */
+import type { SessionLogSegment } from '../../session-log/turns/blocks';
 import type { SessionLogBlock, ToolCallBlock } from '../../session-log/types';
+import { shouldShowToolPart } from '../parts';
 import { safeHttpUrl } from '../safe-url';
+import { isNoGroupActivityTool } from '../segments/session-activity-groups';
 import { normalizeName } from './tool-meta';
 
 export type ImageGenPhase = 'generating' | 'ready' | 'failed' | 'stopped';
@@ -62,6 +65,8 @@ export interface ImageGenView {
     imagePath: string | null;
     /** Legacy outputs only (no `path`), and only an http(s) URL. */
     directUrl: string | null;
+    /** The lowercase hex sha256 of the saved file's bytes, when the output names it (R38). */
+    sha256?: string;
     error: ImageGenView['error'];
   }[];
   /** A failure: of the whole call on the view, of one prompt on an image. */
@@ -111,6 +116,12 @@ const REFUSAL_PREFIX = /^Image generation failed \(\d+\):\s*/;
 const STOPPED_TEXTS = new Set(['Operation aborted', 'The operation was aborted.', 'No result provided']);
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+/** A lowercase hex sha256, else undefined. */
+function digest(value: unknown): string | undefined {
+  return typeof value === 'string' && SHA256.test(value) ? value : undefined;
+}
 
 /**
  * A one-image output → a sandbox path and/or a URL. Every older `image_gen`
@@ -258,7 +269,8 @@ export function imageGenView(call: ToolCallBlock, live?: boolean): ImageGenView 
     for (const image of Array.isArray(output.images) ? output.images : []) {
       // S6: a batch image is a sandbox path, never a URL.
       const path = named(image?.path);
-      if (path) entries.push({ ...frame(String(image.prompt ?? ''), 'ready'), aspectRatio: sizeAspect(image.size) ?? requested, imagePath: path });
+      const sha256 = digest(image?.sha256);
+      if (path) entries.push({ ...frame(String(image.prompt ?? ''), 'ready'), aspectRatio: sizeAspect(image.size) ?? requested, imagePath: path, ...(sha256 && { sha256 }) });
     }
     for (const miss of Array.isArray(output.failed) ? output.failed : []) {
       entries.push({ ...frame(String(miss?.prompt ?? ''), 'failed'), error: failure(String(miss?.error ?? '')) });
@@ -310,11 +322,59 @@ export function imagePathsShownByImageGen(blocks: readonly SessionLogBlock[]): S
   return paths;
 }
 
-/** The `show` items an `image_gen` card of the same turn did not draw already. */
-export function withoutImageGenDuplicates<T extends { path?: string }>(items: T[], paths: ReadonlySet<string>): T[] {
-  if (!paths.size) return items;
-  return items.filter((item) => !item.path || !paths.has(imageGenPathKey(item.path)));
+/** The sha256 of every image the turn's `image_gen` calls drew, when their output names it. */
+export function imageDigestsShownByImageGen(blocks: readonly SessionLogBlock[]): Set<string> {
+  const digests = new Set<string>();
+  for (const block of blocks) {
+    if (block.type !== 'tool_call' || !/^image[-_]gen$/.test(block.name)) continue;
+    for (const image of imageGenView(block).images) if (image.sha256) digests.add(image.sha256);
+  }
+  return digests;
 }
+
+const showDigests = new WeakMap<ToolCallBlock, Map<string, string>>();
+
+/**
+ * The sha256 the `show` call's output gives the file at `path` (its single
+ * `entry` or one of its `items`), matched with or without the `/workspace/`
+ * prefix; undefined when the output names none (an older kortixd, a file over
+ * the size bound, a non-image).
+ */
+export function showItemDigest(call: ToolCallBlock, path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  let byPath = showDigests.get(call);
+  if (!byPath) {
+    byPath = new Map();
+    let output: { entry?: unknown; items?: unknown } | null = null;
+    try {
+      output = JSON.parse(resultText(call));
+    } catch {
+      // no output yet, or not JSON
+    }
+    const entries = output && typeof output === 'object' ? [output.entry, ...(Array.isArray(output.items) ? output.items : [])] : [];
+    for (const entry of entries as { path?: unknown; sha256?: unknown }[]) {
+      const sha256 = digest(entry?.sha256);
+      if (sha256 && typeof entry.path === 'string') byPath.set(imageGenPathKey(entry.path), sha256);
+    }
+    showDigests.set(call, byPath);
+  }
+  return byPath.get(imageGenPathKey(path));
+}
+
+/**
+ * The `show` items an `image_gen` card of the same turn did not draw already:
+ * the same path, or the same bytes (`sha256`) at another path.
+ */
+export function withoutImageGenDuplicates<T extends { path?: string; sha256?: string }>(
+  items: T[],
+  paths: ReadonlySet<string>,
+  digests: ReadonlySet<string> = NO_DIGESTS,
+): T[] {
+  if (!paths.size && !digests.size) return items;
+  return items.filter((item) => !(item.path && paths.has(imageGenPathKey(item.path))) && !(item.sha256 && digests.has(item.sha256)));
+}
+
+const NO_DIGESTS: ReadonlySet<string> = new Set();
 
 const SHOW_TOOLS = new Set(['show', 'show_user']);
 
@@ -322,8 +382,8 @@ const SHOW_TOOLS = new Set(['show', 'show_user']);
  * True when `call` is a `show` / `show_user` and every file it names is an
  * image the turn's `image_gen` already drew: the host renders nothing for it.
  */
-export function showDrawnByImageGen(call: ToolCallBlock, paths: ReadonlySet<string>): boolean {
-  if (!paths.size || !SHOW_TOOLS.has(normalizeName(call.name))) return false;
+export function showDrawnByImageGen(call: ToolCallBlock, paths: ReadonlySet<string>, digests: ReadonlySet<string> = NO_DIGESTS): boolean {
+  if ((!paths.size && !digests.size) || !SHOW_TOOLS.has(normalizeName(call.name))) return false;
   const input = inputOf(call);
   let items: unknown = input.items;
   if (typeof items === 'string') {
@@ -338,5 +398,86 @@ export function showDrawnByImageGen(call: ToolCallBlock, paths: ReadonlySet<stri
     : typeof input.path === 'string' && input.path
       ? [{ path: input.path }]
       : [];
-  return list.length > 0 && withoutImageGenDuplicates(list, paths).length === 0;
+  const withDigests = list.map((item) => ({ ...item, sha256: showItemDigest(call, item.path) }));
+  return list.length > 0 && withoutImageGenDuplicates(withDigests, paths, digests).length === 0;
+}
+
+/**
+ * The rows of a grid of `count` images (R38): up to four is one bento (1, 2
+ * side by side, 3 = one large + two stacked, 4 = 2×2); more are rows of those
+ * patterns, in order: rows of three, or of four when that divides evenly, and
+ * one or two rows of two for the rest (5 = 3+2, 7 = 3+2+2, 8 = 4+4).
+ */
+export function imageGenGridRows(count: number): number[] {
+  if (count <= 0) return [];
+  if (count <= 4) return [count];
+  const rows = (size: number, n: number) => Array.from({ length: n }, () => size);
+  if (count % 3 === 0) return rows(3, count / 3);
+  if (count % 4 === 0) return rows(4, count / 4);
+  if (count % 3 === 2) return [...rows(3, (count - 2) / 3), 2];
+  return [...rows(3, (count - 4) / 3), 2, 2];
+}
+
+/** One slot of an image grid: the frame, the index of its call in the run, and whether it is that call's first. */
+export interface ImageGenGridTile {
+  image: ImageGenView['images'][number];
+  call: number;
+  first: boolean;
+}
+
+export interface ImageGenGrid {
+  tiles: ImageGenGridTile[];
+  /** How many tiles each row holds, top to bottom (`imageGenGridRows`). */
+  rows: number[];
+}
+
+/**
+ * The one grid of a run of `image_gen` calls (`sessionLogImageGenRuns`), tiles
+ * in call order. A call that failed or stopped as a whole keeps one slot per
+ * prompt, each showing its failure, so nothing after it moves.
+ */
+export function imageGenGrid(views: readonly ImageGenView[]): ImageGenGrid {
+  const tiles = views.flatMap((view, call) => {
+    const images = view.images.length
+      ? view.images
+      : (view.prompts.length ? view.prompts : ['']).map((prompt) => ({
+          prompt,
+          phase: view.phase === 'stopped' ? ('stopped' as const) : ('failed' as const),
+          aspectRatio: view.aspectRatio,
+          imagePath: null,
+          directUrl: null,
+          error: view.phase === 'stopped' ? null : view.error,
+        }));
+    return images.map((image, i) => ({ image, call, first: i === 0 }));
+  });
+  return { tiles, rows: imageGenGridRows(tiles.length) };
+}
+
+const IMAGE_GEN = /^image[-_]gen$/;
+
+/**
+ * The runs of `image_gen` cards of one turn that draw as ONE grid (R38): two
+ * or more `image_gen` calls standing alone with no other visible deliverable
+ * between them (a `show` the cards already drew does not count; bursts and
+ * text do not either, since the settled turn hoists the deliverables
+ * together). Each member's block id maps to its run; the host draws the grid
+ * at `run[0]` and nothing for the others, live and settled alike.
+ */
+export function sessionLogImageGenRuns(
+  segments: ReadonlyArray<SessionLogSegment>,
+  drawn: { paths: ReadonlySet<string>; digests: ReadonlySet<string> },
+): Map<string, ToolCallBlock[]> {
+  const runs = new Map<string, ToolCallBlock[]>();
+  let run: ToolCallBlock[] = [];
+  const close = () => {
+    if (run.length > 1) for (const block of run) runs.set(block.id, run);
+    run = [];
+  };
+  const visible = (block: ToolCallBlock) => shouldShowToolPart(block) && !showDrawnByImageGen(block, drawn.paths, drawn.digests);
+  for (const segment of segments) {
+    if (segment.kind === 'standalone' && IMAGE_GEN.test(segment.block.name)) run.push(segment.block);
+    else if (segment.kind === 'show-group' ? segment.blocks.some(visible) : segment.kind === 'standalone' && isNoGroupActivityTool(segment.block.name) && visible(segment.block)) close();
+  }
+  close();
+  return runs;
 }

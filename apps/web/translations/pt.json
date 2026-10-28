@@ -23383,6 +23383,9 @@
     "loading": "Carregando imagem",
     "stopped": "Interrompido",
     "failed": "A imagem não foi gerada.",
-    "retry": "Tente novamente {when}."
+    "retry": "Tente novamente {when}.",
+    "unavailable": "Imagem indisponível",
+    "tryAgain": "Tentar novamente",
+    "details": "Detalhes da imagem"
   }
 }

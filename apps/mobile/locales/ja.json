@@ -1273,10 +1273,11 @@
     "loading": "画像を読み込み中",
     "stopped": "停止しました",
     "failed": "画像は生成されませんでした。",
-    "notLoaded": "画像を読み込めませんでした。",
     "tapToLoad": "タップして読み込む（{{size}}）",
     "retrySecond_other": "{{count}}秒後に再試行してください。",
     "retryMinute_other": "{{count}}分後に再試行してください。",
-    "retryHour_other": "{{count}}時間後に再試行してください。"
+    "retryHour_other": "{{count}}時間後に再試行してください。",
+    "unavailable": "画像を表示できません",
+    "details": "画像の詳細"
   }
 }

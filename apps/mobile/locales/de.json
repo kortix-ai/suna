@@ -1275,13 +1275,14 @@
     "loading": "Bild wird geladen",
     "stopped": "Gestoppt",
     "failed": "Das Bild wurde nicht erstellt.",
-    "notLoaded": "Das Bild wurde nicht geladen.",
     "tapToLoad": "Zum Laden tippen ({{size}})",
     "retrySecond_one": "Versuchen Sie es in {{count}} Sekunde erneut.",
     "retrySecond_other": "Versuchen Sie es in {{count}} Sekunden erneut.",
     "retryMinute_one": "Versuchen Sie es in {{count}} Minute erneut.",
     "retryMinute_other": "Versuchen Sie es in {{count}} Minuten erneut.",
     "retryHour_one": "Versuchen Sie es in {{count}} Stunde erneut.",
-    "retryHour_other": "Versuchen Sie es in {{count}} Stunden erneut."
+    "retryHour_other": "Versuchen Sie es in {{count}} Stunden erneut.",
+    "unavailable": "Bild nicht verfügbar",
+    "details": "Bilddetails"
   }
 }
