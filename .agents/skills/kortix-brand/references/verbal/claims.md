@@ -104,7 +104,7 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 **Rule.** Never name a customer, a customer's people or a customer's data in any copy, image, deck or commit. Use a codename or the class ("a customer", "an enterprise workspace"). — *Why:* the repo rule in `CLAUDE.md` forbids customer data in anything published, and the pre-kit copy carried the same line. — *Where:* every surface. — *When silent:* write the class, not the name.
 
-**Rule.** Do not name a model version number on a marketing page. Name model families. — *Why:* A page naming `opus-4.7` is wrong within the month, and no build step catches it (`step-models.tsx` gate). — *Where:* marketing | deck. The one exception is the managed lineup on the home "Run any model" tab (D23). — *When silent:* "any model, your keys".
+**Rule.** Do not name a model version number on a marketing page. Name model families. — *Why:* A page naming `opus-4.7` is wrong within the month, and no build step catches it (`step-models.tsx` gate). — *Where:* marketing | deck. — *When silent:* "any model, your keys".
 
 ### Models and subscriptions
 

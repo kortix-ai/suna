@@ -24,7 +24,8 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Date:** 2026-10-27
 - **Decision:** The home How it works tab "Run any model" shows the provider marks (any provider with your own keys) and names the Kortix-managed models with their versions, today "DeepSeek V4.1 Flash" and "GLM 5.3 Flash", served with zero data retention. The names live in one constant, `MANAGED_MODELS` in `step-providers.tsx`; it follows Platinum Inference's `GET /v1/inference/models`. Everywhere else the families-only rule in [claims.md](verbal/claims.md) holds. The separate home sections "Need an internal app?" and "Every model, one bill." are removed: Apps and models are tabs of How it works.
 - **Why:** founder, 2026-10-27: "it should just be model-agnostic: connect any model provider ... show the actual logos ... say we offer deepseek v4 1 ... fold all of these ideas fully into how kortix works".
-- **Where:** `apps/web/src/features/marketing/landing-sections/how-it-works-tabs.tsx`, `apps/web/src/features/marketing/how-it-work/step/step-providers.tsx`, `step-apps.tsx`.
+- **Where:** `apps/web/src/features/marketing/landing-sections/how-it-works-tabs.tsx`, `step-apps.tsx`.
+- **Status:** reverted 2026-10-28 by the design cleanup on the `services-page` branch ("cleaner home and services sections"): the tab shows the model-slot panel again and names no versions. The families-only rule holds everywhere.
 - **Supersedes:** the families-only rule for this one tab.
 - **Source:** the `services-page` branch.
 
