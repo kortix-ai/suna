@@ -59,6 +59,11 @@ export function loadTelegramBotToken(projectId: string): Promise<string | null> 
   return readSecret(projectId, TELEGRAM_BOT_TOKEN);
 }
 
+/** The secret Telegram sends with every update to this project's webhook. */
+export function loadTelegramWebhookSecret(projectId: string): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
+
 export async function deleteTelegramInstall(projectId: string): Promise<void> {
   await db
     .delete(chatInstalls)
