@@ -367,8 +367,8 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 </Steps>
 
 - **One chat is one session.** The next message in the chat continues it. In a forum group, each topic is its own session. `/new` starts a fresh session, and your next message starts it at once.
-- **When the agent has a question, Kortix posts it in the chat.** One question with up to 6 options shows one button per option. Several questions, a multi-select question or a longer list shows a numbered list. Tap a button, or reply with your own answer: either reaches the agent as a new message. A tap removes the buttons. Only an allowed user's tap counts.
-- **A question follows the connector's approval rules.** Kortix posts it only where the agent's `send_message` to that chat runs without approval. Otherwise the agent asks in its own words, and its message waits for approval as usual.
+- **When the agent of a chat's session has a question, Kortix posts it in the chat.** One question with up to 6 options shows one button per option. Several questions, a multi-select question or a longer list shows a numbered list. Tap a button, or reply with your own answer: either reaches the agent as a new message. A tap removes the buttons. Only an allowed user's tap counts.
+- **A question follows the connector's rules.** Kortix posts it only where the agent's own `send_message` to that chat would run without approval, with the agent's own connector account. Otherwise the agent asks in its own words, and that message follows the same rules: it waits for approval, or it is refused.
 - **A tap on a question from before `/new` is refused** and its buttons are removed.
 - **The agent replies through the `kortix_telegram` connector:** `send_message`, `edit_message_text`, `delete_message`, `send_chat_action`, `get_chat` and `get_me`. The bot token never enters the sandbox.
 - **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.

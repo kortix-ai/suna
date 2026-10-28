@@ -4,6 +4,8 @@ import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
+import { resolveTokenPrincipal } from '../../connectors/db-deps-principal';
+import { bearerToken } from '../../shared/bearer-token';
 import { channelOfSessionMetadata, isUnattendedSessionMetadata, releaseChannelQuestion, unattendedQuestionSentinel } from '../../channels/question-release';
 import { releaseRuntimeQuestion } from '../session-lifecycle/release-runtime-question';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -253,8 +255,14 @@ export function registerTurnQuestionsRoutes(): void {
       // Only the session's own sandbox posts into a session-addressed chat
       // (Telegram): a person's token may store a question, but its text never
       // reaches other people (as `notify`). Only a question the runtime names:
-      // the `q-<session>` fallback row is shared by later questions.
-      const chat = callerSandboxSessionId !== null && runtimeRequestId && pendingId ? { pendingId } : null;
+      // the `q-<session>` fallback row is shared by later questions. The post
+      // stands in for the agent's own connector call, so the principal its
+      // token names decides it, as the connector gateway would.
+      const principal =
+        callerSandboxSessionId !== null && runtimeRequestId && pendingId
+          ? await resolveTokenPrincipal(bearerToken(c.req.header('Authorization')), sessionId).catch(() => null)
+          : null;
+      const chat = principal && pendingId ? { pendingId, principal } : null;
       const result = notificationCenter
         ? await relayTurnQuestion(sessionId, questions, chat).catch((err): { ok: false; error: string } => {
             logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });

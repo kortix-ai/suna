@@ -14,7 +14,7 @@
  * the bot token never enters the sandbox.
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
-import { chatThreads, projects } from '@kortix/db';
+import { chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq, like, or } from 'drizzle-orm';
 import { type IntegrationEvent, registerEventConsumer } from '../../integrations/event-inbox';
 import { logger } from '../../lib/logger';
@@ -24,7 +24,6 @@ import { TELEGRAM_CHANNEL_CONNECTOR_SLUG } from '../../connectors/channels';
 import { connectorActionAlwaysRuns } from '../../connectors/db-deps-rows';
 import {
   getPendingQuestion,
-  reconcileStoredSessionAgentGrant,
   releaseRuntimeQuestion,
   renderAnswerPrompt,
   resolvePendingQuestion,
@@ -134,6 +133,8 @@ const QUESTION_BODY_MAX = 3900;
  * A question button's `callback_data`: `kq:<question row id>:<option index>`,
  * 41 bytes (Telegram allows 64). Persisted in chats: never change the format.
  */
+/** A tap on a question nothing can answer any more: its session is gone, or the chat moved on. */
+const EARLIER_QUESTION = 'This question is from an earlier conversation. Send your answer as a message.';
 const QUESTION_BUTTON = /^kq:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d)$/;
 
 /** At most `max` UTF-16 units, never half an emoji: Telegram refuses a lone surrogate. */
@@ -179,13 +180,15 @@ export const telegramPort: ChannelPort = {
   },
   /**
    * The agent's question, posted as the agent would post it with `send_message`
-   * and only where that call runs without approval (an admin's `risk` mode, a
-   * block rule or a policy set still decide). One single-select question with
+   * and only where that call would run without approval for the agent's own
+   * principal (its connector account, an admin's `risk` mode, a block rule or a
+   * policy set still decide). One single-select question with
    * up to MAX_BUTTONS options gets one button per option; anything else, or a
    * bot that cannot take presses, gets a numbered list to reply to.
    */
-  async postQuestion(target, { sessionId, pendingId, questions }) {
+  async postQuestion(target, { sessionId, pendingId, questions, principal }) {
     try {
+      if (principal.projectId !== target.projectId || principal.sessionId !== sessionId) return false;
       const token = await loadTelegramBotToken(target.projectId);
       if (!token) return false;
       const [chatId, topicId] = target.threadId.split(':');
@@ -211,9 +214,8 @@ export const telegramPort: ChannelPort = {
             }
           : {}),
       });
-      const grant = await reconcileStoredSessionAgentGrant({ projectId: target.projectId, sessionId });
       const runsUnattended = (args: Record<string, unknown>) =>
-        connectorActionAlwaysRuns({ projectId: target.projectId, slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args, grant });
+        connectorActionAlwaysRuns({ principal, slug: TELEGRAM_CHANNEL_CONNECTOR_SLUG, actionPath: 'send_message', args });
       let body = message(oneTap);
       if (!(await runsUnattended(body))) {
         logger.info('[telegram] question left to the agent: send_message needs approval', { sessionId });
@@ -415,7 +417,7 @@ export async function handleTelegramPress(
       reply_markup: { inline_keyboard: [] },
     }).catch((error) => logger.warn('[telegram] question message not edited', { error: String(error) }));
   if (!asked || !option || !threadId) {
-    await answer('This question is from an earlier conversation. Send your answer as a message.');
+    await answer(EARLIER_QUESTION);
     await telegramCall(token, 'editMessageReplyMarkup', {
       chat_id: message.chat.id,
       message_id: message.message_id,
@@ -438,10 +440,20 @@ export async function handleTelegramPress(
   if (inTurn) {
     const released = await releaseRuntimeQuestion(asked.sessionId, asked.requestId, answers);
     if (released === 'released') return;
-    // A follow-up would wait behind the turn the question blocks (up to the
-    // waiting-turn bound). Retry; the last attempt delivers it as a follow-up.
-    if (released === 'unreachable' && !run.finalAttempt) throw new Error('telegram question release unreachable');
+    // A running session's follow-up would wait behind the turn the question
+    // blocks (up to the waiting-turn bound): retry, and the last attempt
+    // follows up. A parked or ended session has no such turn: follow up now.
+    if (released === 'unreachable' && !run.finalAttempt && (await sessionStatus(asked.sessionId)) === 'running') {
+      throw new Error('telegram question release unreachable');
+    }
   }
+
+  // Nothing reaches the agent (its session is gone, or the chat moved on to
+  // another): the message must not keep saying "Answered".
+  const undelivered = async () => {
+    await edit(telegramQuestionText(asked.questions, EARLIER_QUESTION));
+    return null;
+  };
 
   const [, topicId] = threadId.split(':');
   const reply: TelegramMessage = {
@@ -456,7 +468,7 @@ export async function handleTelegramPress(
     // new message) since the check refuses it.
     {
       ...telegramPort,
-      prepareFollowUp: async (_target, thread) => (thread.sessionId === asked.sessionId ? 'deliver' : 'refuse'),
+      prepareFollowUp: async (_target, thread) => (thread.sessionId === asked.sessionId ? 'deliver' : (await undelivered(), 'refuse')),
     },
     {
       target: { platform: 'telegram', workspaceId: install.botId, threadId, projectId: event.projectId, messageId: String(message.message_id) },
@@ -467,10 +479,15 @@ export async function handleTelegramPress(
       },
       followUp: { text: renderTelegramPrompt(reply, 'follow-up') },
       // A press never starts a session.
-      plan: async () => null,
+      plan: undelivered,
     },
     run,
   );
+}
+
+async function sessionStatus(sessionId: string): Promise<string | null> {
+  const [row] = await db.select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+  return row?.status ?? null;
 }
 
 /** The session's thread in this chat (the chat itself, or one of its forum topics), on this bot. */
