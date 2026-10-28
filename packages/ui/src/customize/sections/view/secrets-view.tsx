@@ -286,7 +286,15 @@ export function SecretsView({
   // role that holds `project.secret.write` without the manager role saw a
   // read-only page, and one denied the leaf saw editable controls that 403.
   const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
-  const allRows = useMemo(() => buildRows(normalized), [normalized]);
+  const projectRows = useMemo(() => buildRows(normalized), [normalized]);
+  // An agent's grant governs only what reaches its sandbox: environment
+  // variables and network-enforced secrets. Model logins, connector and git
+  // credentials are used by Kortix services (the model and connector settings
+  // decide who may use them), and a disabled secret reaches nothing.
+  const allRows = useMemo(
+    () => (agentGrant ? projectRows.filter((r) => r.strategy === 'runtime' || r.strategy === 'egress') : projectRows),
+    [agentGrant, projectRows],
+  );
   const viewerId = useUiViewerId() ?? null;
   const tSharing = useI18nTranslations('accessSharing');
 
@@ -341,9 +349,9 @@ export function SecretsView({
   const orphans = useMemo(
     () =>
       agentGrant && !query.trim()
-        ? grantOrphans(agentGrant.value, allRows.map((r) => r.identifier))
+        ? grantOrphans(agentGrant.value, projectRows.map((r) => r.identifier))
         : [],
-    [agentGrant, allRows, query],
+    [agentGrant, projectRows, query],
   );
 
   // Agent mode: one switch per row, at the row's end, like every Access view.

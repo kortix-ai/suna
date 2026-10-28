@@ -246,22 +246,6 @@ describe('checkChannelModel — checked as the gateway will run it', () => {
     });
   });
 
-  test('an agent whose secret grant leaves out the key is refused before any probe', async () => {
-    usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
-
-    const verdict = await access.checkChannelModel(scope(), 'codex/gpt-6-astra', { agentGrantEnv: async () => ['GITHUB_TOKEN'] });
-
-    expect(verdict).toEqual({ ok: false, reason: 'agent_grant', envVar: 'CODEX_AUTH_JSON', providerId: 'codex' });
-    expect(probes).toHaveLength(0);
-  });
-
-  test('an unrestricted agent, or one granted the key, passes the grant check', async () => {
-    usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
-    for (const env of [null, 'all' as const, ['codex_auth_json']]) {
-      expect((await access.checkChannelModel(scope(), 'codex/gpt-6-astra', { agentGrantEnv: async () => env })).ok).toBe(true);
-    }
-  });
-
   test('with no key to select, a live session`s own selection counts', async () => {
     await access.checkChannelModel(scope(), 'anthropic/claude-opus-4-8', { sessionId: 'sess-1' });
     expect(probes[0]).toMatchObject({ sessionId: 'sess-1' });
@@ -358,13 +342,6 @@ describe('planChannelSessionStart — the model and keys a new chat session star
     // Checked WITH those keys: without them a key-only model looked
     // unservable and was replaced by a Kortix model.
     expect(turnCalls[0]).toMatchObject({ userId: 'ivan', personalUserId: 'ivan', providerSecretPools: { codex: ['k1', 'k2'] } });
-  });
-
-  test('an agent that may not use the keys gets none, and the model is checked without them', async () => {
-    usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
-    const plan = await start({ chosenModel: 'codex/gpt-6-astra', agentGrantEnv: async () => ['GITHUB_TOKEN'] });
-    expect(plan).toEqual({ model: 'codex/gpt-6-astra', unavailableModel: 'codex/gpt-6-astra' });
-    expect(turnCalls[0]).not.toHaveProperty('providerSecretPools');
   });
 
   test('an unavailable choice with no replacement is reported before session creation', async () => {

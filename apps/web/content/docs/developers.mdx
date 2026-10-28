@@ -981,7 +981,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
-| `secrets` | grant | `none` | Secret names the agent's sandbox receives. |
+| `secrets` | grant | `none` | Secret names the agent's sandbox receives: environment variables and network-enforced secrets. Model logins, connector and git credentials are used by Kortix services; the agent's model and connector settings decide their use. |
 | `apps` | grant | `none` | App slugs the agent may open when the App's access is restricted or private. |
 | `kortix_permissions` | grant | `none` | Project permissions (`project.*`) the agent holds, whoever starts the session. `kortix validate --scopes` prints them. An account permission is an error. See [Agents](/docs/guide#agents). |
 | `workspace` | map | — | What new sessions of this agent get in /workspace. Any other key under `workspace` is an error. |

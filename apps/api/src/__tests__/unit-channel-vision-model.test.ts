@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   capabilityReadsImages,
   channelTurnModel,
-  grantAllowsCodex,
   promptModelOverride,
   resetVisionProbeCacheForTest,
 } from '../channels/vision-model';
@@ -91,28 +90,6 @@ describe('promptModelOverride', () => {
  * so these also prove the fall-through: a target that is not servable must
  * never be pinned onto the prompt.
  */
-/**
- * A `codex/*` model needs `CODEX_AUTH_JSON` on the RUNNING AGENT's grant.
- * `isModelServableForAccount` probes without a grant, so it answers yes and
- * the turn then dies with "The running agent cannot use ChatGPT connections."
- * — seen live on dev 2026-09-21 after the reroute picked `codex/gpt-6-astra`.
- * Rerouting onto a guaranteed failure is worse than not rerouting at all.
- */
-describe('grantAllowsCodex', () => {
-  test('an unrestricted grant allows it', () => {
-    expect(grantAllowsCodex(null)).toBe(true);
-    expect(grantAllowsCodex(undefined)).toBe(true);
-    expect(grantAllowsCodex('all')).toBe(true);
-  });
-
-  test('a listed grant must name the secret, case-insensitively', () => {
-    expect(grantAllowsCodex(['CODEX_AUTH_JSON'])).toBe(true);
-    expect(grantAllowsCodex(['codex_auth_json'])).toBe(true);
-    expect(grantAllowsCodex(['OPENAI_API_KEY'])).toBe(false);
-    expect(grantAllowsCodex([])).toBe(false);
-  });
-});
-
 describe('channelTurnModel', () => {
   const base = { projectId: 'p1', accountId: 'a1', userId: 'u1' };
   beforeEach(() => resetVisionProbeCacheForTest());
@@ -191,42 +168,6 @@ describe('channelTurnModel', () => {
     expect(await channelTurnModel({ ...base, currentModel: 'retired-model-v1', hasImage: true })).toBe(
       'codex/gpt-6-astra',
     );
-  });
-
-  test('a codex model is skipped when the agent may not use ChatGPT connections', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => ['OPENAI_API_KEY'],
-      }),
-    ).toBeNull();
-  });
-
-  test('a codex model is chosen when the agent grant names CODEX_AUTH_JSON', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => ['CODEX_AUTH_JSON'],
-      }),
-    ).toBe('codex/gpt-6-astra');
-  });
-
-  // Not knowing the grant is not permission to use one.
-  test('a grant that cannot be resolved fails closed and skips codex', async () => {
-    expect(
-      await channelTurnModel({
-        ...base,
-        currentModel: 'deepseek-v4-flash',
-        hasImage: true,
-        agentGrantEnv: async () => {
-          throw new Error('manifest unreadable');
-        },
-      }),
-    ).toBeNull();
   });
 
   test('an unauthenticated sender never moves the model', async () => {

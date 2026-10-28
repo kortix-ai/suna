@@ -65,19 +65,19 @@ const BUILTIN_TOOLS: ReadonlyArray<{ id: string; group: AgentCapabilityToolGroup
   { id: 'edit', group: 'workspace', description: 'Change part of a file.' },
   { id: 'glob', group: 'workspace', description: 'Find files by name pattern.' },
   { id: 'grep', group: 'workspace', description: 'Search inside files.' },
-  { id: 'codemode', group: 'workspace', description: 'Write one script that calls the other tools.' },
-  { id: 'question', group: 'interaction', description: 'Ask you a question and wait for the answer.' },
-  { id: 'agent', group: 'interaction', description: 'Hand work to a subagent and get its result.', aliases: ['task'] },
+  { id: 'codemode', group: 'workspace', description: 'Kortix codemode: write one script that calls the other tools.' },
+  { id: 'question', group: 'interaction', description: 'Ask you a question in the Kortix chat and wait for the answer.' },
+  { id: 'agent', group: 'interaction', description: 'Start a Kortix subagent session and get its result.', aliases: ['task'] },
 ];
 
 /** One line per Kortix tool (`apps/kortix-sandbox-agent-server/src/services/tools/kortix/`). */
 const KORTIX_TOOL_DESCRIPTIONS: Record<(typeof KORTIX_TOOL_NAMES)[number], string> = {
-  web_search: 'Search the web for current information.',
-  image_search: 'Search the web for images.',
-  image_gen: 'Generate images with an image model the project can use.',
-  scrape_webpage: 'Read web pages as clean text.',
-  memory: 'Read and write the project memory in memory/.',
-  show: 'Show you a file, image or result in the conversation.',
+  web_search: 'Kortix web search: current information from the web.',
+  image_search: 'Kortix image search: images from the web.',
+  image_gen: 'Kortix image generation, with an image model the project can use.',
+  scrape_webpage: 'Kortix page reader: web pages as clean text.',
+  memory: 'Kortix project memory: read and write the files in memory/.',
+  show: 'Show you a file, image or result in the Kortix conversation.',
 };
 
 /** The extensions the pi runtime loads for every agent (`harness/pi/runtime.ts`). */

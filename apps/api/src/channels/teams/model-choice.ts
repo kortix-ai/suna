@@ -13,7 +13,6 @@ import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { config } from '../../config';
 import {
   type ChannelModelScope,
-  agentGrantEnvFor,
   applyChannelSessionKeys,
   channelKeySelection,
   channelModelScope,
@@ -132,26 +131,19 @@ export async function applyTeamsModelChoice(
     );
   }
   const agentName = live?.agentName ?? selection?.agentName ?? null;
-  const agentGrantEnv = agentGrantEnvFor(scope.projectId, agentName);
   const liveScope = live?.sessionId
     ? await sessionModelScope(scope, { sessionId: live.sessionId, ownerUserId: live.createdBy })
     : scope;
   const liveShared = Boolean(scope.personalUserId && !liveScope.personalUserId);
   const checkScope = { ...scope, personalUserId: liveScope.personalUserId };
-  const verdict = await checkChannelModel(checkScope, id, { agentGrantEnv });
+  const verdict = await checkChannelModel(checkScope, id);
   const label = labelForModelRef(id);
   if (!verdict.ok) {
-    if (verdict.reason === 'agent_grant') {
-      const agent = agentName || 'default';
-      return buildNoticeCard(
-        `The ${agent} agent may not use ${verdict.providerId === 'codex' ? 'ChatGPT connections' : `${verdict.providerId} keys`}. Add \`${verdict.envVar}\` to its \`secrets\` in kortix.yaml, or pick another model.`,
-      );
-    }
     // Would it work with the person's own keys? Then say what stands in the way.
     // Only for a linked person: an unlinked one runs as the account owner,
     // whose own keys are never theirs to be told about.
     if (!checkScope.personalUserId && scope.linkedUserId) {
-      const personal = await checkChannelModel({ ...scope, personalUserId: scope.linkedUserId }, id, { agentGrantEnv });
+      const personal = await checkChannelModel({ ...scope, personalUserId: scope.linkedUserId }, id);
       if (personal.ok && liveShared) {
         // Stored anyway: the private session `/new` starts will use it.
         await setChannelModel(ctx, personal.model);
