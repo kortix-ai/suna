@@ -483,4 +483,6 @@ export interface ChangeRequestMergeResponse {
     base_sha_before: string;
     base_sha_after: string;
   };
+  /** Other open requests on the same base whose commits this merge carried; each is now merged. */
+  also_merged?: Array<{ cr_id: string; number: number }>;
 }

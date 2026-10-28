@@ -713,6 +713,8 @@ without a verified invoice amount. No subscription fee is inferred or allocated
 
 Open **Customize → Models → Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
+A project chain also takes over when the requested model id is unknown or retired (`404`). Every gateway answer therefore carries two headers: `x-kortix-requested-model` names the model the request asked for, and `x-kortix-model` names the model that answered. When they differ, a fallback served the request.
+
 ## Outcomes
 
 An outcome in Kortix is a **Goal**: an objective an agent owns until a separate check confirms it is met. The agent plans the work, does it, follows up with people and waits when it must.
@@ -1631,6 +1633,8 @@ A merge runs these steps:
 3. Otherwise it creates a merge commit, `Merge CR #<n>: <title>`, authored by `Kortix <noreply@kortix.ai>`. `--message` sets another message.
 4. A conflict stops the merge with `409` and the list of conflicting files.
 
+A merge can carry the commits of other open change requests on the same base. Example: you merge the top request of a stack, and the requests below it land with it. Kortix marks each of those requests `merged`, with the same merge commit. The response lists them in `also_merged`, and `kortix cr merge` prints `Also merged #<n>`.
+
 After the merge, running sessions on that base pick up the new config, and Kortix syncs the project's connectors from the new `kortix.yaml`. See [Config comes from the base branch](#config-comes-from-the-base-branch).
 
 **Request changes** records the note on the change request and sends it to the session that opened it as a new prompt. A sleeping sandbox wakes.
@@ -1833,6 +1837,8 @@ For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>
 #### Delete
 
 Deleting a project deletes its managed repository. A repository you connected yourself is left untouched. See [Projects](/docs).
+
+Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
 
 ## kortix.yaml reference
 

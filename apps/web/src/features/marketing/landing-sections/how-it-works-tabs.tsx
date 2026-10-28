@@ -3,7 +3,7 @@
 import { StepComputer } from '@/features/marketing/how-it-work/step/step-computer';
 import { StepConnectors } from '@/features/marketing/how-it-work/step/step-connectors';
 import { StepApps } from '@/features/marketing/how-it-work/step/step-apps';
-import { MANAGED_MODELS, StepProviders } from '@/features/marketing/how-it-work/step/step-providers';
+import { StepModels } from '@/features/marketing/how-it-work/step/step-models';
 import { StepSourceOfTruth } from '@/features/marketing/how-it-work/step/step-source-of-truth';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
@@ -28,31 +28,28 @@ const TABS: {
   {
     id: 'context',
     title: 'Connect to everything',
-    description:
-      '3,000+ apps in a click, plus MCP servers and any API over OpenAPI, GraphQL or plain HTTP, your own included. Set it up once and choose which agent may use each.',
+    description: '3,000+ apps, MCP servers and any API, scoped per agent.',
     panel: () => <StepConnectors />,
     bare: true,
   },
   {
     id: 'models',
     title: 'Run any model',
-    description: `Connect any provider with your own keys, or the ChatGPT plan you already pay for. Or run ${MANAGED_MODELS.join(' and ')}, managed by Kortix with zero data retention. You pay for the work, not per seat.`,
-    panel: () => <StepProviders />,
+    description: 'Pick the model per agent or session, with your key or ours.',
+    panel: () => <StepModels />,
     bare: true,
   },
   {
     id: 'computer',
     title: 'Every agent gets its own computer',
-    description:
-      'A full cloud computer per session: a terminal, your files, code and a browser for anything with no API, from old portals to internal apps. Your team can connect their own computers too, under rules each person sets on the machine.',
+    description: 'Each session runs on its own computer, browser included.',
     panel: () => <StepComputer />,
     bare: true,
   },
   {
     id: 'apps',
     title: 'Ask for an app, get one',
-    description:
-      'An agent builds the dashboard, tracker or approval form you ask for and ships it as an App: on your live data, at a stable URL, behind Kortix sign-in.',
+    description: 'Ask for a dashboard or tracker, and an agent ships it as an App.',
     panel: () => <StepApps />,
     bare: true,
   },
