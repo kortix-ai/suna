@@ -199,11 +199,15 @@ mock.module('../../../shared/db', () => ({
   },
 }));
 
+const realSessionTitleGenerate = await import('../../session-title-generate');
 mock.module('../../session-title-generate', () => ({
+  ...realSessionTitleGenerate,
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
+const realSessionOpen = await import('../../session-open');
 mock.module('../../session-open', () => ({
+  ...realSessionOpen,
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];
@@ -303,7 +307,9 @@ mock.module('../../../sandbox-proxy/forward', () => ({
   },
 }));
 
+const realSessions = await import('../../lib/sessions');
 mock.module('../../lib/sessions', () => ({
+  ...realSessions,
   createProjectSession: async () => {
     throw new Error('not expected');
   },
@@ -421,11 +427,15 @@ let envSyncCalls = 0;
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
+const realBackend = await import('../../../sandbox-proxy/backend');
 mock.module('../../../sandbox-proxy/backend', () => ({
+  ...realBackend,
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));
+const realSandboxEnvSync = await import('../../lib/sandbox-env-sync');
 mock.module('../../lib/sandbox-env-sync', () => ({
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {
     envSyncCalls += 1;
   },

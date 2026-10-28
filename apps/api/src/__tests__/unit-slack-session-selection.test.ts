@@ -70,7 +70,9 @@ mock.module('../shared/db', () => ({
   },
   hasDatabase: () => true,
 }));
+const realSessionLifecycle = await import('../projects/session-lifecycle');
 mock.module('../projects/session-lifecycle', () => ({
+  ...realSessionLifecycle,
   deliverThroughQueue: async () => 'delivered',
   createSession: async (input: { body: Record<string, unknown> }) => {
     lastBody = input.body;

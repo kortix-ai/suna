@@ -65,10 +65,14 @@ mock.module('../../../shared/db', () => ({
   },
 }));
 
+const realSessionTitleGenerate = await import('../../session-title-generate');
 mock.module('../../session-title-generate', () => ({
+  ...realSessionTitleGenerate,
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
+const realSessionOpen = await import('../../session-open');
 mock.module('../../session-open', () => ({
+  ...realSessionOpen,
   openSession: async () => {
     throw new Error('not expected: create_session never opens a session in this test');
   },
@@ -81,7 +85,9 @@ mock.module('../../../sandbox-proxy/forward', () => ({
 // The reproduction: `createProjectSession` THROWS instead of returning
 // `{ error }` — exactly what `loadProjectAgents({ rethrowReadErrors: true })`
 // does when the mirror's cold clone times out.
+const realSessions = await import('../../lib/sessions');
 mock.module('../../lib/sessions', () => ({
+  ...realSessions,
   createProjectSession: async () => {
     throw new Error(CLONE_TIMEOUT_MESSAGE);
   },
@@ -142,11 +148,15 @@ mock.module('../../opencode-mapping', () => ({
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',
 }));
+const realBackend = await import('../../../sandbox-proxy/backend');
 mock.module('../../../sandbox-proxy/backend', () => ({
+  ...realBackend,
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
   invalidateSandbox: () => {},
 }));
+const realSandboxEnvSync = await import('../../lib/sandbox-env-sync');
 mock.module('../../lib/sandbox-env-sync', () => ({
+  ...realSandboxEnvSync,
   syncSandboxEnvForPrompt: async () => {},
 }));
 
