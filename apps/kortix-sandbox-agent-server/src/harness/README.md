@@ -638,7 +638,8 @@ the fields the frames do not carry, so a live put carries the `message_id`,
   first assistant `message.updated` of that turn, not at accept.
 
 The collection's put of a message has a higher rev than its live puts, and a
-message the journal has collected gets no live put again.
+message the journal has collected gets no live put again (except a streaming
+record of a mid-turn collection, below).
 
 #### Mid-turn collection (pi)
 
@@ -646,8 +647,8 @@ A box can die mid-turn (the provider deletes it, the daemon crashes). Before
 2026-10-28 the journal collected only at turn end, so such a box lost the whole
 turn from the session log, the prompt included. On pi (`midTurnMs`,
 `JOURNAL_MID_TURN_MS` = 5 s, set in `pi/boot.ts`), each `message.*` frame on
-the v1 bus schedules one collection and send at most 5 s later. A box that
-dies mid-turn loses at most 5 s of what pi stored:
+the v1 bus schedules one collection and send at most 5 s later. So within 5 s
+apps/api holds what pi stored of the turn:
 - the prompt: pi appends its entry when the turn starts;
 - each finished step, with its call results: a `complete` record, and the first
   one marks the turn `log_durable_at`;
