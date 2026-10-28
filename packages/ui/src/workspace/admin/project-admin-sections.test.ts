@@ -49,7 +49,7 @@ describe('Project admin /admin/<section> scheme', () => {
     expect(projectAdminNavTarget('llm-providers')).toBe('models');
     expect(projectAdminNavTarget('channels')).toBe('connectors');
     expect(projectAdminNavTarget('reminders')).toBe('triggers');
-    // `/admin/loops` was the Loops page: loops are automations, on one page.
+    // `/admin/loops` was the Loops page: loops are triggers, on one page.
     expect(parseProjectAdminSection('loops')).toBe('triggers');
     expect(projectAdminNavTarget('experimental')).toBe('feature-flags');
     expect(projectAdminNavTarget('snapshots')).toBe('sandbox');

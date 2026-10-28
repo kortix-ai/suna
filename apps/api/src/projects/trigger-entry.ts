@@ -4,6 +4,7 @@ import {
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
   normalizeTriggerList,
+  parseChangeRequestFilter,
   parseDurationSeconds,
   parseTriggerFilter,
 } from '@kortix/manifest-schema';
@@ -369,8 +370,10 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   if (keyedByKey) {
     entry.session_key = spec.sessionKey;
   }
-  if (spec.filter && Object.keys(spec.filter).length > 0) {
-    entry.filter = spec.filter;
+  // A change_request trigger writes its branch back as `filter.base`.
+  const filter = spec.type === 'change_request' && spec.changeRequest?.base ? { ...spec.filter, base: spec.changeRequest.base } : spec.filter;
+  if (filter && Object.keys(filter).length > 0) {
+    entry.filter = filter;
   }
   if (spec.type === 'cron') {
     if (spec.runAt) {
@@ -491,11 +494,12 @@ function parseTriggerEntry(
     typeRaw !== 'cron' &&
     typeRaw !== 'webhook' &&
     typeRaw !== 'event' &&
-    typeRaw !== 'app'
+    typeRaw !== 'app' &&
+    typeRaw !== 'change_request'
   ) {
     return err(
       slug,
-      `type must be "cron", "webhook", "event", or "app" (got "${typeRaw || 'unset'}")`,
+      `type must be "cron", "webhook", "event", "app", or "change_request" (got "${typeRaw || 'unset'}")`,
     );
   }
   const type = typeRaw as GitTriggerType;
@@ -597,7 +601,8 @@ function parseTriggerEntry(
 
   // Optional payload guard: a value (equals) or one operator per path,
   // compared as text against the delivery (`@kortix/manifest-schema`).
-  const parsedFilter = parseTriggerFilter(row.filter);
+  // A change_request trigger reads `filter.base` as the merge's target branch.
+  const parsedFilter = type === 'change_request' ? parseChangeRequestFilter(row.filter) : parseTriggerFilter(row.filter);
   if ('error' in parsedFilter) return err(slug, parsedFilter.error);
   const { filter } = parsedFilter;
 
@@ -621,6 +626,21 @@ function parseTriggerEntry(
     ...caps,
     ...overlap,
   };
+
+  if (type === 'change_request') {
+    return {
+      ok: true,
+      spec: {
+        ...base,
+        type: 'change_request',
+        cron: null,
+        runAt: null,
+        timezone: 'UTC',
+        secretEnv: null,
+        changeRequest: { crId: null, base: 'base' in parsedFilter ? (parsedFilter.base as string | null) : null },
+      },
+    };
+  }
 
   if (type === 'app') {
     const parsed = parseAppField(row);

@@ -10,7 +10,7 @@ import {
 
 /* Project admin sections whose page lives in this app, not in `@kortix/ui`.
    None today: the Loops page (and its calendar) was removed on 2026-10-28;
-   loops are automations on the package's Automations page (`/admin/triggers`,
+   loops are triggers on the package's Triggers page (`/admin/triggers`,
    `/admin/loops` resolves there). Apps is not one either: its page is the
    sidebar's Apps (`/projects/:id/apps`), and `/admin/apps` redirects there. */
 const HOST_SECTIONS: ProjectAdminHostSections = {};

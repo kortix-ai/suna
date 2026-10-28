@@ -48,7 +48,7 @@ import {
   type ProjectConfigSummary,
   readProjectFile,
 } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId, useProjectAutomations } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId, useUnifiedTriggers } from '@kortix/sdk/react';
 import { DotsThreeIcon, LockSimpleIcon, PlayIcon, SparkleIcon, StarIcon, TrashIcon } from '@phosphor-icons/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
@@ -335,13 +335,13 @@ function useAgentLocation(tabs: readonly AgentTab[], views: readonly AgentConfig
   );
 }
 
-/** How many automations start this agent (kortix.yaml and runtime), and how
- *  many grants name it. `GET /automations` leaves out what the caller may not read. */
+/** How many triggers start this agent (kortix.yaml and runtime), and how
+ *  many grants name it. `GET /triggers/all` leaves out what the caller may not read. */
 function useAgentUseCounts(projectId: string, agentName: string, config: ProjectConfigSummary) {
   const accountId = useProjectAccountId(projectId);
   const canManageMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed === true;
-  const automations = useProjectAutomations(projectId);
+  const triggers = useUnifiedTriggers(projectId);
   const grants = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
@@ -352,8 +352,8 @@ function useAgentUseCounts(projectId: string, agentName: string, config: Project
   // A trigger stored as `default` starts the project's default agent.
   const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
   return {
-    triggerCount: automations.data
-      ? automations.data.automations.filter(
+    triggerCount: triggers.data
+      ? triggers.data.triggers.filter(
           (a) => a.target.kind === 'agent' && (a.target.agent === 'default' && fallback ? fallback : a.target.agent) === agentName,
         ).length
       : undefined,

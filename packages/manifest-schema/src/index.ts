@@ -23,7 +23,7 @@ import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
 import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
-import { parseTriggerFilter } from './trigger-filter';
+import { parseChangeRequestFilter, parseTriggerFilter } from './trigger-filter';
 import { validateManifestBodyV3 } from './index.v3';
 import { validateAgentPolicySetRefs, validateConnectorPolicySets } from './policy-sets';
 import {
@@ -133,6 +133,7 @@ export {
 export { normalizeTriggerEntry, normalizeTriggerList } from './trigger-shape';
 export {
   TRIGGER_FILTER_OPERATORS,
+  parseChangeRequestFilter,
   parseTriggerFilter,
   triggerFilterValueMatches,
   type TriggerFilter,
@@ -1455,8 +1456,9 @@ export function validateTriggers(rawNode: unknown, path: string, issues: Manifes
       issues.push({ path: `${where}.overlap`, message: 'overlap must be "skip" or "allow".', severity: 'error' });
     }
     // The payload filter (KRTX-1721): a value (equals) or one operator per path.
+    // A change_request trigger's `filter.base` is the merge's target branch (parseChangeRequestFilter).
     if (entry.filter !== undefined) {
-      const parsed = parseTriggerFilter(entry.filter);
+      const parsed = type === 'change_request' ? parseChangeRequestFilter(entry.filter) : parseTriggerFilter(entry.filter);
       if ('error' in parsed) issues.push({ path: `${where}.filter`, message: `${parsed.error}.`, severity: 'error' });
     }
     // The misfire bound (KRTX-1743): cron only, a duration of at least 60s.

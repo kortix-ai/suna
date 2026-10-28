@@ -200,7 +200,7 @@ export function slugify(input: string): string {
       .replace(/[^a-z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .replace(/-{2,}/g, '-')
-      .slice(0, 128) || 'automation'
+      .slice(0, 128) || 'trigger'
   );
 }
 

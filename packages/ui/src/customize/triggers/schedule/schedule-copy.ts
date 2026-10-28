@@ -216,7 +216,7 @@ export function describeNextRun(trigger: ProjectTrigger): string | null {
 
 /* ─── Names ─────────────────────────────────────────────────────────────── */
 
-/** Never blank: falls back to what the automation does, then to its kind. */
+/** Never blank: falls back to what the trigger does, then to its kind. */
 export function triggerName(trigger: ProjectTrigger): string {
   const named = trigger.name?.trim();
   if (named) return named;
@@ -445,13 +445,13 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  * each row's own type (via {@link KIND_COPY}) for anything kind-specific.
  */
 export const TRIGGERS_COPY = {
-  title: 'Automations',
+  title: 'Triggers',
   description: 'Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.',
-  noun: 'automation',
-  createLabel: 'New automation',
-  searchPlaceholder: 'Search automations',
-  emptyTitle: 'No automations yet',
-  emptyBody: 'Create an automation and your agent runs on its own, no prompt needed.',
+  noun: 'trigger',
+  createLabel: 'New trigger',
+  searchPlaceholder: 'Search triggers',
+  emptyTitle: 'No triggers yet',
+  emptyBody: 'Create a trigger and your agent runs on its own, no prompt needed.',
 } as const;
 
 export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {

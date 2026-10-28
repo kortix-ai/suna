@@ -98,7 +98,8 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app'] as const;
+/** `change_request`: a merged change request of the project fires it (`filter.base` names the branch). */
+export const TRIGGER_TYPES = ['cron', 'webhook', 'event', 'app', 'change_request'] as const;
 
 /** What a `type: monitor` entry answers since the monitor box was removed. */
 export const MONITOR_REMOVED_MESSAGE =

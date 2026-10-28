@@ -246,6 +246,8 @@ export function serializeDeclaredTrigger(projectId: string, trigger: TriggerList
     secretEnv: trigger.secret_env,
     event: trigger.event ? { connector: trigger.event.connector, account: trigger.event.account, type: trigger.event.type, config: {} } : null,
     app: trigger.app,
+    // A kortix.yaml change_request trigger lists its branch as `filter.base` (`GET /triggers`).
+    changeRequest: { crId: null, base: typeof trigger.filter?.base === 'string' ? trigger.filter.base : null },
   };
   return {
     id: trigger.slug,

@@ -1,7 +1,7 @@
 import type { TriggerList } from '@kortix/api-contract';
 import { hiddenSpaceIds } from '../../shared/space-access';
 import { apps, connectorConnections, connectors, projectSpaces, projectTriggerRuntime } from '@kortix/db';
-import { type TriggerFilter, cronIntervalError, formatDurationSeconds, normalizeTriggerEntry, parseTriggerFilter } from '@kortix/manifest-schema';
+import { type TriggerFilter, cronIntervalError, formatDurationSeconds, normalizeTriggerEntry, parseChangeRequestFilter, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -135,8 +135,7 @@ export async function loadTriggersForResponse(
       slug: spec.slug,
       path: spec.path,
       name: spec.name,
-      // A manifest trigger is never `change_request` (runtime only, lib/runtime-triggers.ts).
-      type: spec.type as Exclude<typeof spec.type, 'change_request'>,
+      type: spec.type,
       agent: spec.agent,
       model: spec.model,
       enabled: spec.enabled,
@@ -173,7 +172,8 @@ export async function loadTriggersForResponse(
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
       session_key: spec.sessionKey,
-      filter: spec.filter,
+      // A change_request trigger's branch reads back as `filter.base`, as kortix.yaml writes it.
+      filter: spec.type === 'change_request' && spec.changeRequest?.base ? { ...spec.filter, base: spec.changeRequest.base } : spec.filter,
       // Run caps (KRTX-1721); null = unset (the hourly default, 60, applies).
       max_runs_per_hour: spec.maxRunsPerHour ?? null,
       max_runs_per_day: spec.maxRunsPerDay ?? null,
@@ -292,6 +292,8 @@ export interface TriggerDraft {
   event?: GitTriggerEventFields | null;
   /** For type=app only — the slug of the App whose events fire the trigger. */
   app?: string | null;
+  /** For type=change_request only — the branch a merge must land on (GitTriggerSpec.changeRequest). */
+  changeRequest?: GitTriggerSpec['changeRequest'];
   /** A fire calls this App instead of running an agent (GitTriggerSpec.target). */
   target?: GitTriggerSpec['target'];
   /** For type=cron only — a fixed period instead of a cron expression (GitTriggerSpec.everySeconds). */
@@ -325,11 +327,11 @@ export function parseTriggerDraft(
 
   const typeRaw = normalizeString(body.type);
   const type: GitTriggerType | null =
-    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'event' || typeRaw === 'app'
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'event' || typeRaw === 'app' || typeRaw === 'change_request'
       ? typeRaw
       : null;
   if (typeRaw === 'monitor') return { error: MONITOR_REMOVED };
-  if (!type) return { error: 'type must be "cron", "webhook", "event", or "app"' };
+  if (!type) return { error: 'type must be "cron", "webhook", "event", "app", or "change_request"' };
   if (type !== 'event') {
     const bad = eventOnlyKeyError(body, 'event_config', type);
     if (bad) return { error: bad };
@@ -355,7 +357,8 @@ export function parseTriggerDraft(
   const session = parseDraftSession(body, type);
   if ('error' in session) return session;
   const { sessionMode, pinnedSessionId, sessionKey } = session;
-  const parsedFilter = parseTriggerFilter(body.filter);
+  // A change_request trigger reads `filter.base` as the merge's target branch.
+  const parsedFilter = type === 'change_request' ? parseChangeRequestFilter(body.filter) : parseTriggerFilter(body.filter);
   if ('error' in parsedFilter) return parsedFilter;
   const { filter } = parsedFilter;
 
@@ -373,7 +376,9 @@ export function parseTriggerDraft(
         ? parseAppDraft(body, common)
         : type === 'cron'
           ? parseCronDraft(body, common)
-          : parseWebhookDraft(body, common);
+          : type === 'change_request'
+            ? { ...common, type, cron: null, runAt: null, timezone: 'UTC', secretEnv: null, changeRequest: { crId: null, base: 'base' in parsedFilter ? (parsedFilter.base as string | null) : null } }
+            : parseWebhookDraft(body, common);
   if ('error' in draft) return draft;
   return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap, ...parsedTarget };
 }
@@ -540,7 +545,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
-    filter: spec.filter,
+    filter: spec.type === 'change_request' && spec.changeRequest?.base ? { ...spec.filter, base: spec.changeRequest.base } : spec.filter,
     // Event keys only for an event trigger: a non-event body must not carry them.
     ...(spec.event
       ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event_source: spec.event.source ?? null, event: spec.event.type, event_config: spec.event.config }
@@ -587,6 +592,7 @@ export function draftToSpec(
     ...(draft.overlap ? { overlap: draft.overlap } : {}),
     event: draft.event,
     ...(draft.type === 'app' ? { app: draft.app ?? null } : {}),
+    ...(draft.changeRequest ? { changeRequest: draft.changeRequest } : {}),
     ...(draft.target ? { target: draft.target } : {}),
     ...(draft.everySeconds ? { everySeconds: draft.everySeconds } : {}),
     sessionMode: draft.sessionMode,

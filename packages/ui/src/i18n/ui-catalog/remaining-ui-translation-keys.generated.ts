@@ -1,12 +1,11 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
-  "automation": 'text6d65ed5c7500',
-  "New automation": 'textdb87a63d537e',
-  "Search automations": 'textbdff71b20b9c',
-  "No automations yet": 'textb777509a8aea',
+  "trigger": 'text683259feabbf',
+  "New trigger": 'texta38f4ea67a30',
+  "Search triggers": 'textcf789cba73dc',
+  "No triggers yet": 'text362ec1f12075',
   "Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.": 'text8fbb8c347fc0',
-  "Create an automation and your agent runs on its own, no prompt needed.": 'textf09c738f5caf',
-  "Automations": 'textad1fb9ec0cb3',
+  "Create a trigger and your agent runs on its own, no prompt needed.": 'texte9acea9f91da',
   "Connector events": 'text0ba357fa63f8',
   "Connector event": 'textca395c4d19b2',
   "connector event": 'text6064256ee716',

@@ -1,7 +1,9 @@
 /**
- * The `change_request` source (`lib/runtime-triggers.ts`): a merged change request
- * fires every enabled trigger whose filter matches it. The merge
- * route calls this after the merge is durable; it never fails the merge.
+ * The `change_request` source (`lib/runtime-triggers.ts`): a merged change
+ * request fires every enabled trigger whose filter matches it, runtime rows and
+ * kortix.yaml `type: change_request` entries alike (both are
+ * `project_trigger_runtime` rows: reconcile catalogs the manifest ones). The
+ * merge route calls this after the merge is durable; it never fails the merge.
  */
 import { projectTriggerRuntime } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -58,7 +60,8 @@ async function fireOne(project: ProjectRow, spec: GitTriggerSpec, cr: MergedChan
   const now = new Date();
   const payload = {
     change_request: cr,
-    trigger: { slug: spec.slug, type: spec.type, kind: 'runtime' },
+    // A kortix.yaml slug has no `.`; a runtime id does (`trigger.<hex>`).
+    trigger: { slug: spec.slug, type: spec.type, kind: spec.slug.includes('.') ? 'runtime' : 'declared' },
     fired_at: now.toISOString(),
   };
   const run = { projectId: project.projectId, slug: spec.slug, source: 'change_request' as const, spec, payload, now };

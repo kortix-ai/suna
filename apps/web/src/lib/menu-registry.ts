@@ -662,7 +662,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-triggers',
-    label: 'Automations',
+    label: 'Triggers',
     icon: AlarmClock,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -676,7 +676,7 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
-      'automations automation schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring loops loop reminders reminder remind check back later follow up repeat nudge change request merged',
+      'triggers trigger automations automation schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring loops loop reminders reminder remind check back later follow up repeat nudge change request merged',
   },
   {
     id: 'proj-secrets',

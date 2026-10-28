@@ -17,6 +17,30 @@ const swap = (from: string, to: string) => {
   return GOLDEN.replace(from, to);
 };
 
+describe('kortix_version 3: a change_request trigger', () => {
+  const merged = (filter: string) =>
+    swap(
+      '    prompt: Write the weekly support report for the last 7 days.\n',
+      `    prompt: Write the weekly support report for the last 7 days.\n  - slug: merged\n    type: change_request\n    agent: assistant\n${filter}    prompt: Verify {{ change_request.number }} on prod.\n`,
+    );
+
+  test('is valid with no filter, and with filter.base', () => {
+    expect(check(merged('')).errors).toEqual([]);
+    expect(check(merged('    filter: { base: main }\n')).errors).toEqual([]);
+    expect(check(merged('    filter: { base: main, change_request.title: { prefix: [fix] } }\n')).errors).toEqual([]);
+  });
+
+  test('filter.base must be a branch name', () => {
+    expect(errorPaths(merged('    filter: { base: "" }\n'))).toContain('triggers[1].filter');
+    expect(errorPaths(merged('    filter: { base: { in: [main] } }\n'))).toContain('triggers[1].filter');
+  });
+
+  test('takes no schedule, webhook or connector keys', () => {
+    expect(errorPaths(merged('    every: 5m\n'))).toContain('triggers[1].every');
+    expect(errorPaths(merged('    connector: github\n')).length).toBeGreaterThan(0);
+  });
+});
+
 describe('kortix_version 3: the golden manifest', () => {
   test('is valid with no warnings', () => {
     const { errors, warnings } = check(GOLDEN);

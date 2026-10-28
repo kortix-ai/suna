@@ -89,7 +89,7 @@ export function reminderTitle(reminder: Pick<SessionReminder, 'name' | 'prompt'>
 
 /**
  * "Cron 0 9 * * * Europe/Berlin", "Every 1h", "Once", or "On an event" for a
- * session automation a webhook, connector or App event, or merge fires;
+ * session-target trigger a webhook, connector or App event, or merge fires;
  * `t` is the `reminders` translator.
  */
 export function scheduleLabel(
