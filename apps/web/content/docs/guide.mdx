@@ -15,7 +15,7 @@ This page covers every part of Kortix, in the order you meet it.
 - **A project is a git repo.** Kortix hosts the repo for you, or you connect your own on GitHub.
 - **`kortix.yaml` declares the project.** It lists the agents and the skills, tools, connectors and triggers they use. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 - **Every session runs on its own isolated cloud computer.** A session never touches your laptop or another session. See [Computers](/docs/guide#computers).
-- **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Automations](/docs/guide#automations).
+- **Triggers run agents 24/7.** A schedule, a webhook or an App event starts a session, with nobody at the keyboard. See [Triggers](/docs/guide#triggers).
 - **Developers build on the same backend.** The [REST API](/docs/developers#rest-api), the [CLI](/docs/developers#cli), [`@kortix/sdk`](/docs/developers#sdk) and [`@kortix/ui`](/docs/developers#kortix-ui) reach every project and session.
 
 ## A workspace for people
@@ -50,7 +50,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | Skills | Written playbooks an agent follows for a specific task. | [Skills](/docs/guide#skills) |
 | Drive | Shared folders for people and agents, including the company's memory. | [Drive](/docs/guide#drive) |
 | Connectors | Governed access to the apps, APIs and services your team uses. | [Connectors](/docs/guide#connectors) |
-| Automations | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Automations](/docs/guide#automations) |
+| Triggers | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Triggers](/docs/guide#triggers) |
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
 | Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide#computers) |
 | Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide#apps) |
@@ -149,7 +149,7 @@ Roles and groups are on the [Teams](/docs/guide#teams) page.
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session with an agent. |
-| **Customize** | **My Kortix**, your **Agents**, **Review**, **Members**, **Models** and **Settings**. Settings opens **Project admin**: the project's libraries (**Connectors**, **Secrets**, **Skills**, **Tools**, **Extensions**, **Drives**, **Automations**, **Models**, **Repo**) and its settings. |
+| **Customize** | **My Kortix**, your **Agents**, **Review**, **Members**, **Models** and **Settings**. Settings opens **Project admin**: the project's libraries (**Connectors**, **Secrets**, **Skills**, **Tools**, **Extensions**, **Drives**, **Triggers**, **Models**, **Repo**) and its settings. |
 | **Drive** | Shared folders: **My files**, **Company**, and **All files** for admins. |
 | **Apps** | The project's Apps. |
 | **Sessions** | Your sessions. |
@@ -332,7 +332,7 @@ Project managers, account owners and account admins can open every App in the pr
 A server App runs in one of two modes:
 
 - **Always on.** It runs around the clock, and Kortix restarts it when it stops. Use it for live updates, background work and databases.
-- **On demand.** It stops after a quiet period. The next visitor or automation wakes it. A stopped on-demand App uses no compute.
+- **On demand.** It stops after a quiet period. The next visitor or trigger wakes it. A stopped on-demand App uses no compute.
 
 A new App is always on. A static App has nothing to run, so neither mode applies.
 
@@ -434,7 +434,7 @@ An agent can use a connector only when the agent has been given access to it. Th
 - **Everyone in the project.** A shared account that every member and every allowed agent can use.
 - **Specific people, groups, or agents.** A shared account for a chosen audience.
 
-Automations never use a private account. They need an account shared with the whole project. See [Automations](/docs/guide#automations).
+Triggers never use a private account. They need an account shared with the whole project. See [Triggers](/docs/guide#triggers).
 
 ### Set it up
 
@@ -504,26 +504,29 @@ Your browser opens the Kortix consent screen. Approve the app only when you conn
 
 To remove access, open **Settings** → **Personal access keys** → **Connected apps** and select **Revoke access**.
 
-## Automations
+## Triggers
 
-<video src="/media/guide/automations.mp4" aria-label="Automations in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+{/* The section was "Automations" until 2026-10-28; published links name #automations. */}
+<a id="automations" />
 
-An automation starts agent work with nobody at the keyboard. It has two parts: a **source**, what fires it, and a **target**, what a fire does.
+<video src="/media/guide/automations.mp4" aria-label="Triggers in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+
+A trigger starts agent work with nobody at the keyboard. It has two parts: a **source**, what fires it, and a **target**, what a fire does.
 
 | Source | Fires when | Good for |
 | --- | --- | --- |
 | **Schedule** | A time arrives, or a fixed period passes (`cron`, `every`, `at`, `in`). | Daily reports, weekly reviews, regular checks. |
-| **Webhook** | Another system sends a signed request to the automation's address. | Form tools, payment systems, code hosts. |
-| **Connector event** | Something happens in a connected app. | New issues, new messages, new orders. |
-| **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the above. See [Apps](/docs/guide#apps). |
-| **Change request merged** | A change request of the project merges. | Release notes, a check after a deploy. |
+| **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the others. See [Apps](/docs/guide#apps). |
+| **Connector event** | Something happens in a connected app. Beta: turn on **Connector events** under **Project admin → Feature flags**. | New issues, new messages, new orders. |
+| **Webhook** | Another system sends a signed request to the trigger's address. | Form tools, payment systems, code hosts. |
+| **Change request merged** | A change request of the project merges, into one branch or any. | Release notes, a check after a deploy. |
 
 | Target | A fire | Called |
 | --- | --- | --- |
 | **Agent** | Starts a new session of that agent, on its own cloud computer. | A trigger |
 | **Session** | Wakes one session that already exists, with its full history. | A loop |
 
-Any source works with either target. An automation lives in one of two places:
+Any source works with either target. A trigger lives in one of two places:
 
 - **In `kortix.yaml`**, under `triggers:`. It changes through a commit, so it is reviewed like code. The page and the API mark it **kortix.yaml**.
 - **Created at runtime**, in the database. An agent or a person creates it with one command or API call: no commit, and it is gone when you remove it. Every loop is one. The page marks it **Created at runtime**.
@@ -537,49 +540,58 @@ To react to something outside Kortix, use a webhook when the other system can se
 1. Kortix fills in your instruction with the details of the event, such as fields from the webhook's request.
 2. It starts a new session by default, with your chosen agent and model, on its own computer.
 3. The agent does the work, using the connectors it may use.
-4. The **Automations** page shows the automation's last run and its status. The session appears in your lists.
+4. The **Triggers** page shows the trigger's last run and its status. The session appears in your lists.
 
 A few rules keep this safe:
 
 - **App events are marked.** A session that an App event starts opens with a line that says the content is automated, not user input. The agent treats it as data, not as orders.
 - **Shared accounts only.** A private connector account never feeds a trigger. Use an account shared with the whole project.
-- **Nobody to ask.** If an automated session waits on a person, it waits at most 30 minutes, then stops. Use connector rules that let the needed actions run. See [Connectors](/docs/guide#connectors).
+- **Nobody to ask.** If a session that a trigger started waits on a person, it waits at most 30 minutes, then stops. Use connector rules that let the needed actions run. See [Connectors](/docs/guide#connectors).
 - **Who can see the runs.** By default, only people who manage triggers, plus account owners and admins, can open the sessions. You can choose **Selected teammates** or **Whole project** instead.
 - **One run at a time.** A schedule skips a run while its previous run is still going.
 
 ### Set it up
 
 <Steps>
-<Step title="Open Automations">
-Open your project, then **Project admin → Automations**. The tabs are **All**, **Schedules** and **Webhooks**. **App events** appears once the project has one. Runtime automations list under **Created at runtime**.
+<Step title="Open Triggers">
+Open your project, then **Project admin → Triggers**. The tabs are **All**, **Schedules**, **Webhooks**, and one for each other source the project uses. Runtime triggers list under **Created at runtime**.
 </Step>
-<Step title="Create the automation">
-Select **New automation**, then **Set up manually**. Under **When**, choose a schedule or a webhook. This adds it to `kortix.yaml`.
+<Step title="Create the trigger">
+Select **New trigger**, then **Set up manually**. Under **When**, choose **Schedule**, **App event**, **Connector event**, **Webhook** or **Change request merged**. A source the project cannot use yet says why and links to the fix: **Apps** when no App sends events, **Feature flags** while connector events are off. This adds the trigger to `kortix.yaml`.
 </Step>
 <Step title="Write the instruction">
 Under **Then**, write what the agent should do, and pick the agent and the model.
 </Step>
 <Step title="Create and test">
-Choose **Create trigger**. Select **Run now** to try it once.
+Choose **Create**. Select **Run now** to try it once.
 </Step>
 </Steps>
 
-A webhook also needs a signing secret, stored as a project secret.
+A webhook also needs a signing secret, stored as a project secret. A **Change request merged** trigger takes an optional branch: empty fires on every merge. In `kortix.yaml` it reads:
 
-To create one at runtime, use the CLI: `kortix automations add "<prompt>"` with a source flag (`--every 1h`, `--on webhook --secret-env NAME`, `--on cr-merged --cr <id>`) and a target (`--session <id>`, the default inside a session, or `--agent <name>`).
+```yaml
+triggers:
+  - slug: verify-prod
+    type: change_request
+    filter: { base: main }   # optional: only merges into main
+    agent: kortix
+    prompt: "Change request #{{ change_request.number }} merged into {{ change_request.base_ref }}. Verify prod."
+```
+
+To create one at runtime, use the CLI: `kortix triggers add "<prompt>"` with a source flag (`--runtime --every 1h`, `--on webhook --secret-env NAME`, `--on cr-merged --cr <id>`) and a target (`--session <id>`, the default inside a session, or `--agent <name>`). `kortix triggers ls` lists both kinds; `pause`, `resume`, `run` and `rm` take a runtime id (`trigger.<hex>`) or a `kortix.yaml` slug.
 
 <a id="reminders" />
 
 ### Loops
 
-A loop is an automation with a schedule source and a session target. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. A session can also be woken by a webhook, an event or a merged change request: `kortix automations add "…" --on cr-merged --cr <id>`. Loops are on by default (flag key `reminders`). **Project admin → Automations** lists them under **Created at runtime**, and the session shows the automations that wake it. `kortix loop`, `kortix loops`, `kortix remind` and `kortix reminders` still work with the same flags.
+A loop is a trigger that wakes the session that created it. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. A session can also be woken by a webhook, an event or a merged change request: `kortix triggers add "…" --on cr-merged --cr <id>`. Loops are on by default (flag key `reminders`). **Project admin → Triggers** lists them under **Created at runtime**, and the session shows the triggers that wake it. `kortix loop`, `kortix loops`, `kortix remind` and `kortix reminders` still work with the same flags.
 
-### Keeping automations under control
+### Keeping triggers under control
 
 - **Run limits.** A trigger starts at most 60 runs an hour unless you set another limit under **Options** → **Run limits**. You can add a daily limit too.
 - **Auto-pause.** A trigger that hits its hourly limit for 2 hours in a row pauses itself. It shows **Paused** until you select **Resume**.
 - **Failures.** A failed run shows **Last run didn’t finish**. When a trigger's runs start failing, an account owner's phone gets one notification.
-- **Pause everything.** **Account settings** → **Settings** → **Automations** → **Pause all triggers** stops every schedule, webhook, event and loop in every project.
+- **Pause everything.** **Account settings** → **Settings** → **Triggers** → **Pause all triggers** stops every schedule, webhook, event and loop in every project.
 
 ## Computers
 
@@ -667,7 +679,7 @@ Only you, at the computer, can widen access. Narrowing it works from anywhere an
 
 #### Share it with your team
 
-Open **Project admin → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with everyone also serves automations that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
+Open **Project admin → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with everyone also serves triggers that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
 
 ## Models
 
@@ -699,7 +711,7 @@ A provider key belongs to the whole project.
 
 A session that names no model uses the first of these that is set:
 
-1. The model chosen for the session, the [channel](/docs/guide#channels) or the [automation](/docs/guide#automations).
+1. The model chosen for the session, the [channel](/docs/guide#channels) or the [trigger](/docs/guide#triggers).
 2. The model pinned to the agent.
 3. The project default.
 4. The account default, for every project that has no default of its own.
@@ -1245,7 +1257,7 @@ Manage the payment method and invoices under **Manage billing**. Only owners and
 
 ### Running out
 
-When the balance reaches zero, agents pause and automations stop starting sessions. The account's Apps stop too, and visitors see an **App paused** page.
+When the balance reaches zero, agents pause and triggers stop starting sessions. The account's Apps stop too, and visitors see an **App paused** page.
 
 To continue, add credits or update the payment method. On Free, you can also subscribe to Credits or wait for the next monthly grant. A member who cannot add credits can select **Ask an owner**. Every owner and admin then gets an email with the balance.
 

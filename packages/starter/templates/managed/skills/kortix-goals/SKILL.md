@@ -16,7 +16,7 @@ Three things, three questions:
 | Thing | Answers |
 | --- | --- |
 | Agent | who works it: its grants decide what the goal may touch |
-| Automation (loop, trigger) | when work starts: the heartbeat, a reply, a merged change request |
+| Trigger (a loop is one) | when work starts: the heartbeat, a reply, a merged change request |
 | Goal | what done means: the folder below |
 
 A goal is a folder in Files, `Goals/<slug>/` in the company folder by default
