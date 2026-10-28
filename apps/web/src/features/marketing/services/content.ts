@@ -82,7 +82,7 @@ export const platform = {
 export const caseCta = 'See what we would build for your company.';
 
 export const intro = {
-  title: 'Rather meet first?',
+  title: "Let's meet first.",
   body: 'Book an intro call with the team. We look at how your company works and pick the first function together.',
 } as const;
 
