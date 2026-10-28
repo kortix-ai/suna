@@ -96,8 +96,7 @@ Subcommands:
     --build-command <command>       Bundle build command.
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
-    --provider <name>               platinum (default when the server has it), or daytona
-                                    (legacy fallback, removal scheduled).
+    --provider <name>               platinum (default).
     --access <mode>                 private (default), project, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
@@ -499,7 +498,7 @@ function readManifestOrNew(path: string): string {
   try {
     return readFileSync(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'kortix_version: 2\n';
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'kortix_version: 3\n';
     throw error;
   }
 }

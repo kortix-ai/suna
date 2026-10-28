@@ -1,33 +1,56 @@
 /**
- * Copy for the surface pages: /desktop, /mobile, /cli, /slack, /teams.
+ * Copy for the five "Use it from" pages: /desktop, /mobile, /cli, /slack,
+ * /teams. One shape per page, in the home page's rhythm: hero (with one
+ * product visual), pillars, one tab per capability, FAQ. The visuals live in
+ * `stages.tsx` (hero) and `panels.tsx` (tabs). English only, like /security.
  *
- * Plain English here, localized through the UI catalog where a key exists
- * (same precedent as `download/content.ts`).
- *
- * ACCURACY GATE — every line traces to shipped code (checked 2026-10-26):
- *  Desktop: the app wraps the hosted web app; sessions still run on cloud
- *   machines, so never "runs Kortix on your machine". Quick Entry is
- *   apps/desktop-electron/src/quick-entry.js (5 recent sessions, 10 files of
- *   20 MB, screenshot on macOS). Screen and keyboard control ship on macOS and
- *   Windows only. macOS: one universal .dmg, 10.15+; Linux: AppImage x86_64.
- *  Mobile: both store listings are public (mobile-store-urls.ts); iOS 16.4+,
- *   iPad supported, over-the-air updates. Projects, accounts and connectors
- *   are created on the web, not the phone. No offline mode. Warm sessions and
- *   the notification inbox are beta flags: not claimed.
- *  CLI: commands from apps/cli/src/command-table.ts; install script is
- *   bash-only (macOS and Linux, x86_64 and arm64, WSL on Windows). The TUI is
- *   experimental: not claimed.
- *  Slack: channels/slack/*. Never bare "one click": the bot is invited and
- *   mentioned. Thread = session; Stop button; review and connector cards;
- *   /kortix login for per-person identity.
- *  Teams: channels/teams/*; the `teams` flag graduated 2026-10-01. Needs a
- *   tenant admin's consent once. No reactions, no message search.
+ * Every line was checked on 2026-10-28. Sources, by page:
+ *  Desktop: apps/desktop-electron (quick-entry.js, quick-entry-rules.js:
+ *   5 recent sessions, 10 files of 20 MB, the three shortcuts; app-menu.js
+ *   "Quick Entry Shortcut"; computer.js accessPrompt; attention-badge.js;
+ *   instance-chooser.js; electron-builder.yml: universal dmg, 10.15+, nsis,
+ *   AppImage; Computer Use ships cua-driver on mac and win only);
+ *   guide.mdx "Desktop app", "Connect your own computer".
+ *   Sessions run on cloud computers: never "runs Kortix on your machine".
+ *  Mobile: apps/mobile (PermissionPromptCard: Deny / Allow once / Allow
+ *   always; ReviewDetailSheet: Merge / Request changes; (settings)/
+ *   notifications.tsx: the four kinds; (settings)/instances.tsx; app.json
+ *   supportsTablet; ios/Podfile 16.4); mobile-store-urls.ts (both listings
+ *   public); guide.mdx "The mobile app".
+ *  CLI: `kortix --help` and `<cmd> --help` (chat, cr, review, init, ship,
+ *   members, access, audit, self-host, hosts); download/cli route targets
+ *   darwin/linux x arm64/x64; guide.mdx "The terminal" (TUI experimental).
+ *  Slack: apps/api/src/channels/slack (review-cards.ts, approval-card.ts,
+ *   turn.ts Stop, identity.ts, commands.ts); guide.mdx "Channels". Never
+ *   bare "one click". The agent acts with its own permissions, not the
+ *   sender's role (guide.mdx; channels/core/identity.ts).
+ *  Teams: apps/api/src/channels/teams (cards.ts buildReviewCard with the
+ *   feedback box, commands.ts /new /stop /login, file-proxy.ts OneDrive and
+ *   SharePoint, message-action.ts "Open in Kortix", private-reply.ts);
+ *   claims.md "Channels" (Teams live). No reactions, no message search.
+ * Sample data: the fictional Arcadia; people are "Member N".
  */
 
-import { localizeUiCatalog } from '@kortix/ui/i18n';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import type { ComponentType } from 'react';
+import {
+  ArrowsClockwiseIcon,
+  BellRingingIcon,
+  BracketsCurlyIcon,
+  ChatsCircleIcon,
+  CheckSquareOffsetIcon,
+  DesktopIcon,
+  FilesIcon,
+  HardDrivesIcon,
+  IdentificationBadgeIcon,
+  KeyboardIcon,
+  LightningIcon,
+  PaperPlaneTiltIcon,
+  PlayCircleIcon,
+  RobotIcon,
+  TerminalWindowIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
-import type { UiTranslator } from '@/i18n/translator';
 
 import type { MarkId } from './surface-mark';
 
@@ -41,14 +64,9 @@ export type SurfaceAction = {
   icon?: MarkId;
 };
 
-export type SurfaceSection = {
-  id: string;
-  title: string;
-  titleMuted: string;
-  body: readonly string[];
-  cells: readonly { k: string; v: string }[];
-  cols?: string;
-};
+export type Pillar = { icon: ComponentType<{ className?: string }>; name: string; line: string; body: string };
+
+export type HowTab = { id: string; title: string; description: string; body: readonly string[] };
 
 export type SurfaceContent = {
   id: SurfaceId;
@@ -56,18 +74,23 @@ export type SurfaceContent = {
     title: string;
     titleMuted: string;
     sub: string;
+    /** `install` puts the CLI install command first. */
+    install?: boolean;
     actions: readonly SurfaceAction[];
-    note?: string;
+    note: string;
+    caption: string;
+    captionMuted: string;
   };
-  specs: readonly { k: string; v: string }[];
-  sections: readonly SurfaceSection[];
+  pillars: { title: string; titleMuted: string; items: readonly Pillar[] };
+  how: { title: string; titleMuted: string; tabs: readonly HowTab[] };
+  faq: readonly { id: string; question: string; answer: string }[];
 };
 
 /** Every surface, in menu order, with the one line its cross-link cell shows. */
 export const SURFACE_ORDER: readonly { id: SurfaceId; href: string; name: string; line: string }[] = [
-  { id: 'desktop', href: '/desktop', name: 'Desktop', line: 'Mac, Windows and Linux, with Quick Entry.' },
+  { id: 'desktop', href: '/desktop', name: 'Desktop', line: 'macOS, Windows and Linux, with Quick Entry.' },
   { id: 'mobile', href: '/mobile', name: 'Mobile', line: 'iPhone, iPad and Android.' },
-  { id: 'cli', href: '/cli', name: 'CLI', line: 'One binary for people and agents.' },
+  { id: 'cli', href: '/cli', name: 'CLI', line: 'One binary for people, scripts and agents.' },
   { id: 'slack', href: '/slack', name: 'Slack', line: 'Mention it in a thread.' },
   { id: 'teams', href: '/teams', name: 'Microsoft Teams', line: 'Chats, group chats and channels.' },
 ];
@@ -75,67 +98,114 @@ export const SURFACE_ORDER: readonly { id: SurfaceId; href: string; name: string
 const DESKTOP: SurfaceContent = {
   id: 'desktop',
   hero: {
-    title: 'Kortix, in its own window.',
-    titleMuted: 'On Mac, Windows and Linux.',
-    sub: 'The Kortix you use in the browser, as a native app: a prompt bar over any app, a badge for finished work, and an opt-in link to this computer.',
+    title: 'Kortix on your desktop.',
+    titleMuted: 'For macOS, Windows and Linux.',
+    sub: 'The Kortix app in its own window. Hand an agent a task from any app with one shortcut, and see at a glance when its work is done.',
     actions: [
       { label: 'Download for macOS', href: '/download/macos', primary: true, icon: 'apple' },
       { label: 'Windows', href: '/download/windows', icon: 'windows' },
       { label: 'Linux', href: '/download/linux', icon: 'linux' },
     ],
     note: 'macOS 10.15 or later, one universal build · Windows 64-bit · Linux AppImage, x86_64',
+    caption: '⌘⇧Space opens Quick Entry over any app.',
+    captionMuted: 'The agent still works on its own cloud computer.',
   },
-  specs: [
-    { k: 'Platforms', v: 'macOS, Windows and Linux' },
-    { k: 'macOS', v: 'One universal build, 10.15 or later' },
-    { k: 'Linux', v: 'AppImage, x86_64' },
-    { k: 'Updates', v: 'Downloaded in the background' },
-  ],
-  sections: [
+  pillars: {
+    title: 'A native app, not a browser tab.',
+    titleMuted: 'Four things the desktop adds.',
+    items: [
+      {
+        icon: KeyboardIcon,
+        name: 'Quick Entry',
+        line: 'A prompt bar over any app.',
+        body: '⌘⇧Space on a Mac, Ctrl+Shift+Space on Windows and Linux. Type the task, press Enter.',
+      },
+      {
+        icon: BellRingingIcon,
+        name: 'A badge for finished work',
+        line: 'On the Dock or the taskbar.',
+        body: 'It counts the sessions with a finished turn you have not read.',
+      },
+      {
+        icon: DesktopIcon,
+        name: 'This computer, if you allow it',
+        line: 'Files, shell and screen.',
+        body: 'Connect it, and an agent can work on your own machine, for as long as you allow.',
+      },
+      {
+        icon: ArrowsClockwiseIcon,
+        name: 'Always current',
+        line: 'It updates itself.',
+        body: 'When an update is ready, choose Restart now or Later.',
+      },
+    ],
+  },
+  how: {
+    title: 'How the desktop app works.',
+    titleMuted: 'One shortcut, one computer, one badge.',
+    tabs: [
+      {
+        id: 'quick-entry',
+        title: 'Hand off a task from any app',
+        description: 'Quick Entry: one shortcut, one prompt.',
+        body: [
+          'Press ⌘⇧Space in any app. Type the task and press Enter: Kortix starts a new session in the project you have open.',
+          'The picker sends it to one of your 5 most recent sessions instead. Attach up to 10 files of 20 MB each, or a screenshot on macOS.',
+        ],
+      },
+      {
+        id: 'connect',
+        title: 'Lend an agent this computer',
+        description: 'Filesystem, Shell, Computer Use.',
+        body: [
+          'Select Connect this computer in the sidebar, check the code in your browser, and choose what agents may use.',
+          'Computer Use runs on macOS and Windows. The computer is private to you until you share it with a project.',
+        ],
+      },
+      {
+        id: 'access',
+        title: 'Approve each use on the machine',
+        description: 'Ask each time, always, or off.',
+        body: [
+          'The computer decides, whatever the project allows. In Ask each time, the first call opens a prompt on your screen.',
+          'Only you, at the computer, can widen access. Revoke it from the menu bar or the tray at any time.',
+        ],
+      },
+      {
+        id: 'badge',
+        title: 'See when work is done',
+        description: 'A count on the Dock or the taskbar.',
+        body: [
+          'The badge counts the sessions with a finished turn you have not read. Windows shows a dot on the taskbar icon.',
+          'With a connected computer, the app stays in the menu bar or the tray when you close the last window.',
+        ],
+      },
+    ],
+  },
+  faq: [
     {
-      id: 'quick-entry',
-      title: 'Ask from anywhere.',
-      titleMuted: 'A prompt bar over any app.',
-      body: [
-        '**Quick Entry** opens on top of whatever you are doing. Start a new session or send to one of your five most recent ones, pick the agent, and attach up to 10 files.',
-        'On macOS one button adds a screenshot of your screen. The shortcut is **⌘⇧Space** on a Mac and **Ctrl+Shift+Space** on Windows and Linux.',
-      ],
-      cells: [
-        { k: 'Shortcut', v: '⌘⇧Space on a Mac, Ctrl+Shift+Space elsewhere.' },
-        { k: 'Where it goes', v: 'A new session, or one of your five most recent.' },
-        { k: 'Attachments', v: 'Up to 10 files, 20 MB each.' },
-        { k: 'Screenshot', v: 'One click on macOS adds your screen.' },
-      ],
+      id: 'desktop-where-agents-run',
+      question: 'Do agents run on my computer?',
+      answer:
+        'No. Every session runs on its own cloud computer. The desktop app is the Kortix web app in a native window. An agent uses your computer only after you connect it, and only for what you allowed.',
     },
     {
-      id: 'this-computer',
-      title: 'Lend an agent this computer.',
-      titleMuted: 'Only when you say so.',
-      body: [
-        'Sessions run on their own cloud machine. **Connect this computer** and an agent can also use its files and shell, and on macOS and Windows its screen and keyboard.',
-        'Allow it for **one hour or 24 hours**, ask each time, or turn it off. A tray icon shows the connection; pause or disconnect it there.',
-      ],
-      cells: [
-        { k: 'Access', v: 'Files and shell; screen and keyboard on macOS and Windows.' },
-        { k: 'For how long', v: 'One hour, 24 hours, ask each time, always or off.' },
-        { k: 'Tray', v: 'Pause, keep awake, open at login, disconnect.' },
-        { k: 'Your call', v: 'Disconnect from the tray at any time.' },
-      ],
+      id: 'desktop-systems',
+      question: 'Which systems does it run on?',
+      answer:
+        'macOS 10.15 or later, as one universal build for Apple silicon and Intel. Windows 64-bit. Linux as an AppImage for x86_64; there is no arm64 build.',
     },
     {
-      id: 'native',
-      title: 'A native app, not a tab.',
-      titleMuted: 'It tells you when work is done.',
-      body: [
-        'The Dock or taskbar badge counts **sessions with a finished turn you have not read**. Connector sign-ins open inside the app; your own sign-in goes through your browser and back.',
-        'Updates download in the background and ask once to restart. On first launch, choose **Kortix Cloud or your own self-hosted instance**; change it later from the menu.',
-      ],
-      cells: [
-        { k: 'Badge', v: 'Counts sessions with a turn you have not read.' },
-        { k: 'Sign-in', v: 'In your browser, then back to the app.' },
-        { k: 'Self-hosted', v: 'Point the app at your own Kortix.' },
-        { k: 'Updates', v: 'In the background; restart when you choose.' },
-      ],
+      id: 'desktop-shortcut',
+      question: 'Can I change the Quick Entry shortcut?',
+      answer:
+        'Yes. The Quick Entry Shortcut menu offers ⌘⇧Space, ⌥Space and ⌥⇧Space on a Mac, and the same keys with Ctrl and Alt on Windows and Linux.',
+    },
+    {
+      id: 'desktop-self-hosted',
+      question: 'Does it work with a self-hosted Kortix?',
+      answer:
+        'Yes. On first launch, choose Kortix Cloud or your own instance. Change it later with Change Kortix Instance… in the menu.',
     },
   ],
 };
@@ -143,66 +213,110 @@ const DESKTOP: SurfaceContent = {
 const MOBILE: SurfaceContent = {
   id: 'mobile',
   hero: {
-    title: 'Kortix in your pocket.',
-    titleMuted: 'Start, steer and approve from your phone.',
-    sub: 'The native app for iPhone, iPad and Android. Talk to your agents, answer their questions, and approve their work wherever you are.',
+    title: 'Kortix on your phone.',
+    titleMuted: 'Start, follow and approve work from anywhere.',
+    sub: 'The native app for iPhone, iPad and Android. Start a session, watch it work, and answer an agent the moment it asks.',
     actions: [
       { label: 'App Store', href: APP_STORE_URL, external: true, primary: true, icon: 'appstore' },
       { label: 'Google Play', href: GOOGLE_PLAY_URL, external: true, icon: 'googleplay' },
     ],
     note: 'iOS 16.4 or later · iPad supported · Android on Google Play',
+    caption: 'Approve a step from your pocket.',
+    captionMuted: 'The agent waits until you decide.',
   },
-  specs: [
-    { k: 'Platforms', v: 'iPhone, iPad and Android' },
-    { k: 'Stores', v: 'App Store and Google Play' },
-    { k: 'iOS', v: '16.4 or later' },
-    { k: 'Input', v: 'Type, dictate or attach' },
-  ],
-  sections: [
+  pillars: {
+    title: 'Your agents, wherever you are.',
+    titleMuted: 'Not a companion app. The sessions themselves.',
+    items: [
+      {
+        icon: PaperPlaneTiltIcon,
+        name: 'Start anywhere',
+        line: 'Type, dictate or attach.',
+        body: 'Open a project and start a session, with a photo, a file or your voice.',
+      },
+      {
+        icon: PlayCircleIcon,
+        name: 'Follow it live',
+        line: 'Every step as it happens.',
+        body: 'Open a running session and watch the turn arrive.',
+      },
+      {
+        icon: CheckSquareOffsetIcon,
+        name: 'Approve on the spot',
+        line: 'Permissions and change requests.',
+        body: 'Allow a step, or read a change request’s diff and merge it.',
+      },
+      {
+        icon: BellRingingIcon,
+        name: 'A push when it matters',
+        line: 'Not a refresh.',
+        body: 'When a session finishes, fails, asks a question or needs a permission.',
+      },
+    ],
+  },
+  how: {
+    title: 'How the mobile app works.',
+    titleMuted: 'Four things you do from the phone.',
+    tabs: [
+      {
+        id: 'start',
+        title: 'Start a session',
+        description: 'Type, dictate or attach.',
+        body: [
+          'Open a project and type a task, or dictate it. Pick the agent and the model for the turn.',
+          'Attach a photo, a file or a picture from the camera. The agent works with it on its own cloud computer.',
+        ],
+      },
+      {
+        id: 'permission',
+        title: 'Answer a permission',
+        description: 'Deny, Allow once, Allow always.',
+        body: [
+          'When an agent’s rules say ask, the turn stops and a card sits above the composer. It shows the tool and what it will run.',
+          'Choose Deny, Allow once or Allow always. The turn continues as soon as you decide.',
+        ],
+      },
+      {
+        id: 'review',
+        title: 'Review a change request',
+        description: 'Read the diff, then decide.',
+        body: [
+          'Agents send their changes as change requests. Open one to read its diff, file by file.',
+          'Merge it, or request changes with a note for the agent.',
+        ],
+      },
+      {
+        id: 'notify',
+        title: 'Choose your notifications',
+        description: 'Four kinds, each a switch.',
+        body: [
+          'Your phone gets a push when a session finishes, fails, asks a question or needs a permission.',
+          'Turn each kind on or off in Settings, under Notifications.',
+        ],
+      },
+    ],
+  },
+  faq: [
     {
-      id: 'sessions',
-      title: 'The whole session, on a small screen.',
-      titleMuted: 'Not a companion app.',
-      body: [
-        'Chat with any session as it streams. Pick **the model and the agent**, @-mention files and skills, and dictate instead of typing.',
-        'Attach from **the camera, your photos or Files**, or paste text. Project files, sandbox previews and session sharing come with you.',
-      ],
-      cells: [
-        { k: 'Live', v: 'Watch a turn arrive, step by step.' },
-        { k: 'Dictation', v: 'Speak; the phone’s own recognizer types.' },
-        { k: 'Attachments', v: 'Camera, photos, Files or pasted text.' },
-        { k: 'Previews', v: 'Open what the agent built.' },
-      ],
+      id: 'mobile-devices',
+      question: 'Which devices does it run on?',
+      answer: 'iPhone and iPad with iOS 16.4 or later, and Android phones from Google Play.',
     },
     {
-      id: 'approvals',
-      title: 'Approve from anywhere.',
-      titleMuted: 'Your agents wait for you, not your laptop.',
-      body: [
-        'When an agent needs permission, a card sits above the composer: **Deny, Allow once or Allow always**. Its questions arrive as answers you tap.',
-        'The review inbox shows each **change request with its diff**. Approve or reject it from the phone.',
-      ],
-      cells: [
-        { k: 'Permissions', v: 'Deny, allow once or allow always.' },
-        { k: 'Questions', v: 'Answer the agent in a tap.' },
-        { k: 'Change requests', v: 'Read the diff, then approve or reject.' },
-        { k: 'Schedules', v: 'Create, pause and run triggers.' },
-      ],
+      id: 'mobile-same-sessions',
+      question: 'Are these the same sessions as on the web?',
+      answer:
+        'Yes. The web app, the desktop app and the phone read the same projects and sessions. Start on one and continue on another.',
     },
     {
-      id: 'notifications',
-      title: 'It tells you when to look.',
-      titleMuted: 'A push, not a refresh.',
-      body: [
-        'A push arrives when a turn **finishes, fails, asks a question or needs permission**. Choose which ones in Settings.',
-        'Sign in with Google, Apple or email, with two-factor. Point the app at **your own self-hosted Kortix** if you run one.',
-      ],
-      cells: [
-        { k: 'Push', v: 'Finished, failed, a question, a permission.' },
-        { k: 'Sign-in', v: 'Google, Apple on iOS, or email, with 2FA.' },
-        { k: 'Self-hosted', v: 'Use your own Kortix instance.' },
-        { k: 'Updates', v: 'Fixes arrive over the air.' },
-      ],
+      id: 'mobile-invites',
+      question: 'Can I accept an invite on my phone?',
+      answer: 'Yes. Accept or decline an invite to a project in the app, then browse the project’s files.',
+    },
+    {
+      id: 'mobile-self-hosted',
+      question: 'Does it work with a self-hosted Kortix?',
+      answer: 'Yes. Add your own instance in Settings, then sign in to it.',
     },
   ],
 };
@@ -210,69 +324,119 @@ const MOBILE: SurfaceContent = {
 const CLI: SurfaceContent = {
   id: 'cli',
   hero: {
-    title: 'Your company, from the terminal.',
-    titleMuted: 'One binary for you and your agents.',
-    sub: 'kortix creates, ships and runs projects, sessions and the account from a shell or a script. The same commands work for a person and for an agent.',
-    actions: [
-      { label: 'Read the CLI docs', href: '/docs/cli', primary: true, icon: 'cli' },
-      { label: 'Self-host with it', href: '/self-hosted' },
-    ],
-    note: 'curl -fsSL https://kortix.com/install | bash',
+    title: 'Kortix from your terminal.',
+    titleMuted: 'One binary for you, your scripts and your agents.',
+    sub: 'The kortix command does from a shell what the web app does. It creates projects, runs sessions, reviews change requests, and configures agents, connectors and secrets.',
+    install: true,
+    actions: [{ label: 'Read the CLI docs', href: '/docs/developers#cli' }],
+    note: 'macOS and Linux, x86_64 and arm64 · On Windows, use WSL',
+    caption: 'From a prompt to a merged change, in four commands.',
+    captionMuted: 'Every command also runs inside an agent’s session.',
   },
-  specs: [
-    { k: 'Install', v: 'One curl line' },
-    { k: 'Systems', v: 'macOS and Linux, WSL on Windows' },
-    { k: 'Architectures', v: 'x86_64 and arm64' },
-    { k: 'Self-host', v: 'kortix self-host start' },
-  ],
-  sections: [
+  pillars: {
+    title: 'The same commands for everyone.',
+    titleMuted: 'People, scripts and agents.',
+    items: [
+      {
+        icon: TerminalWindowIcon,
+        name: 'For you',
+        line: 'A REPL, or one prompt and out.',
+        body: '`kortix chat` talks to a session’s agent. `--prompt` sends one message and prints the reply.',
+      },
+      {
+        icon: BracketsCurlyIcon,
+        name: 'For scripts',
+        line: 'JSON and exit codes.',
+        body: 'Read commands take `--json`. A failed run or a blocked merge exits non-zero.',
+      },
+      {
+        icon: RobotIcon,
+        name: 'For agents',
+        line: 'No login inside a session.',
+        body: 'In a session’s sandbox, `kortix` reads its token and project from the environment.',
+      },
+      {
+        icon: HardDrivesIcon,
+        name: 'For your own servers',
+        line: 'Self-host with one command.',
+        body: '`kortix self-host start` pulls the images and starts the stack.',
+      },
+    ],
+  },
+  how: {
+    title: 'How the CLI works.',
+    titleMuted: 'Five jobs, each a command.',
+    tabs: [
+      {
+        id: 'start',
+        title: 'Start a project',
+        description: 'init, then ship.',
+        body: [
+          '`kortix init` creates a project folder with its `kortix.yaml`. `kortix ship` validates it, commits, and on the first run creates the cloud project.',
+          'Run `ship` again any time. It commits and pushes the branch you are on.',
+        ],
+      },
+      {
+        id: 'run',
+        title: 'Run a session',
+        description: 'chat, steer, queue.',
+        body: [
+          '`kortix chat --new` starts a session. `-p` sends one prompt and prints the reply; without it, you get a REPL.',
+          '`--steer` hands a message to the turn that is running. `--queue` stores it, even while the sandbox sleeps.',
+        ],
+      },
+      {
+        id: 'review',
+        title: 'Review the work',
+        description: 'cr and review.',
+        body: [
+          'Agents send their work as change requests. `kortix cr diff` shows one, and `kortix cr merge` merges it.',
+          '`kortix review ls` lists everything that waits on a person: change requests, connector calls and outputs.',
+        ],
+      },
+      {
+        id: 'admin',
+        title: 'Run the account',
+        description: 'members, access, audit.',
+        body: [
+          '`members` invites people and sets their role. `access` grants roles to people, groups and agents.',
+          '`audit` lists the account’s audit events, newest first, and exports them as CSV or JSONL.',
+        ],
+      },
+      {
+        id: 'self-host',
+        title: 'Run Kortix yourself',
+        description: 'self-host and hosts.',
+        body: [
+          '`kortix self-host start` pulls the Docker images and starts the stack. `status`, `logs` and `update` manage it.',
+          '`kortix hosts use` switches the CLI between Kortix Cloud and your own instance.',
+        ],
+      },
+    ],
+  },
+  faq: [
     {
-      id: 'lifecycle',
-      title: 'From an empty folder to a running company.',
-      titleMuted: 'init, ship, chat.',
-      body: [
-        '**kortix init** scaffolds a project, **kortix ship** creates it in the cloud and pushes it, and **kortix chat** opens a session: a REPL, or one prompt and out with --prompt.',
-        'Agents, connectors, secrets, triggers, files and change requests each have a command, so **what you do in the app, you can script**.',
-      ],
-      cols: 'lg:grid-cols-3',
-      cells: [
-        { k: 'init', v: 'Scaffold a project with its kortix.yaml.' },
-        { k: 'ship', v: 'Create the cloud project and push.' },
-        { k: 'chat', v: 'A REPL, or one prompt and out.' },
-        { k: 'sessions', v: 'List and follow sessions.' },
-        { k: 'cr', v: 'Work with change requests.' },
-        { k: 'triggers', v: 'Cron and webhook triggers.' },
-      ],
+      id: 'cli-systems',
+      question: 'Which systems does it run on?',
+      answer: 'macOS and Linux, on x86_64 and arm64. There is no Windows binary: on Windows, run it in WSL.',
     },
     {
-      id: 'admin',
-      title: 'Run the account from a script.',
-      titleMuted: 'People, access and the audit log.',
-      body: [
-        '**members, groups, roles and permissions** decide who can do what. **audit** reads the log; **tokens** issues personal access tokens for scripts.',
-        '**doctor** checks a project, **validate** checks its kortix.yaml, and **migrate** moves it to the current schema.',
-      ],
-      cells: [
-        { k: 'Access', v: 'members, groups, roles, permissions.' },
-        { k: 'Audit', v: 'Read the audit log.' },
-        { k: 'Checks', v: 'doctor, validate, migrate.' },
-        { k: 'Tokens', v: 'Personal access tokens for scripts.' },
-      ],
+      id: 'cli-sign-in',
+      question: 'How do I sign in?',
+      answer:
+        'Run kortix login. Your browser opens, and you approve the sign-in there. For CI, sign in with a token: kortix hosts login --token <pat>.',
     },
     {
-      id: 'self-host',
-      title: 'Run all of Kortix yourself.',
-      titleMuted: 'The same CLI, your own box.',
-      body: [
-        '**kortix self-host start** runs Kortix from the same Docker images the cloud runs. **update, stop, status and logs** manage it.',
-        '**kortix hosts** switches the CLI between the cloud and your own instance, so one binary talks to both.',
-      ],
-      cells: [
-        { k: 'start', v: 'Bring up the whole stack.' },
-        { k: 'update', v: 'Move to the latest images.' },
-        { k: 'logs', v: 'Follow what the stack is doing.' },
-        { k: 'hosts', v: 'Switch between cloud and your box.' },
-      ],
+      id: 'cli-agents',
+      question: 'Can an agent use it?',
+      answer:
+        'Yes. Inside a session’s sandbox, the CLI reads KORTIX_TOKEN and KORTIX_PROJECT_ID from the environment. It needs no login and no link.',
+    },
+    {
+      id: 'cli-tui',
+      question: 'Is there a terminal UI?',
+      answer:
+        'kortix tui opens the whole product in your terminal. It is experimental, so its screens and keys can change between releases.',
     },
   ],
 };
@@ -281,65 +445,121 @@ const SLACK: SurfaceContent = {
   id: 'slack',
   hero: {
     title: 'Kortix in Slack.',
-    titleMuted: 'Mention it in a thread. Get the work back there.',
-    sub: 'Each thread is a session. An agent runs it on its own machine, streams its progress into the thread, and asks before it acts, as the person who asked.',
+    titleMuted: 'Mention it in a thread. The work comes back there.',
+    sub: 'Each Slack thread is a session. An agent works on its own cloud computer, posts its progress in the thread, and sends its changes back as a card to approve.',
     actions: [
       { label: 'Connect Slack', href: '/auth', primary: true, icon: 'slack' },
-      { label: 'Setup guide', href: '/docs/connect/channels' },
+      { label: 'Read the setup guide', href: '/docs/guide#channels' },
     ],
-    note: 'Add the app, invite it to a channel, mention it with a task.',
+    note: 'Add Kortix to Slack, invite the bot, mention it with a task.',
+    caption: 'One thread, one session.',
+    captionMuted: 'Reply in the thread to steer it.',
   },
-  specs: [
-    { k: 'Thread', v: 'One thread, one session' },
-    { k: 'Approvals', v: 'Cards in the thread' },
-    { k: 'Identity', v: 'Each person signs in once' },
-    { k: 'Install', v: 'OAuth, or your own Slack app' },
-  ],
-  sections: [
+  pillars: {
+    title: 'Agents in the threads you already use.',
+    titleMuted: 'Your team asks; the work comes back reviewed.',
+    items: [
+      {
+        icon: ChatsCircleIcon,
+        name: 'One thread, one session',
+        line: 'Follow-ups keep the context.',
+        body: 'The first message starts the session. Later messages in the thread continue it.',
+      },
+      {
+        icon: LightningIcon,
+        name: 'Live progress',
+        line: 'With a Stop button.',
+        body: 'The agent’s steps show in the thread while it works.',
+      },
+      {
+        icon: CheckSquareOffsetIcon,
+        name: 'Approve in the thread',
+        line: 'Ship it, Reject, Ask for changes.',
+        body: 'Change requests and connector approvals arrive as cards.',
+      },
+      {
+        icon: IdentificationBadgeIcon,
+        name: 'Each person signs in once',
+        line: 'With `/kortix login`.',
+        body: 'Kortix checks that the sender may start sessions in the project.',
+      },
+    ],
+  },
+  how: {
+    title: 'How Kortix works in Slack.',
+    titleMuted: 'From a mention to an approved change.',
+    tabs: [
+      {
+        id: 'mention',
+        title: 'Mention it with a task',
+        description: 'In a channel, or in a DM.',
+        body: [
+          'Invite the bot to a channel and mention it. In a channel, only a mention reaches the agent; replies without one stay between people.',
+          'In a direct message with the bot, every message reaches the agent, and the session is private to you.',
+        ],
+      },
+      {
+        id: 'progress',
+        title: 'Watch it work',
+        description: 'Live steps, with Stop.',
+        body: [
+          'The agent works on its own cloud computer and updates one message in the thread with its steps.',
+          'Stop ends the run. The reply links to the full session in Kortix.',
+        ],
+      },
+      {
+        id: 'approve',
+        title: 'Approve in the thread',
+        description: 'Cards with buttons.',
+        body: [
+          'A change request arrives as a card: Ship it, Reject or Ask for changes. A connector call that needs approval shows what it will do.',
+          'A project manager, or the person who started the session, decides.',
+        ],
+      },
+      {
+        id: 'login',
+        title: 'Link your account once',
+        description: 'With `/kortix login`.',
+        body: [
+          'Send `/kortix login` and open the link. Only you see it, it works once, and it expires after 10 minutes.',
+          'Kortix then checks that each sender is a project member who may start sessions. The agent acts with its own permissions, not the sender’s role.',
+        ],
+      },
+      {
+        id: 'channel',
+        title: 'Set it per channel',
+        description: 'Project, agent, model, who may join.',
+        body: [
+          '`/kortix` shows the channel’s project, agent and model. One workspace can serve several projects.',
+          'A join policy decides who may join a session that started in the channel.',
+        ],
+      },
+    ],
+  },
+  faq: [
     {
-      id: 'threads',
-      title: 'One thread, one session.',
-      titleMuted: 'Follow-ups keep the context.',
-      body: [
-        'Mention Kortix in a channel or message it directly. The thread becomes a session: the agent works on its own machine and **streams its progress into the thread**, with a Stop button.',
-        'Reply in the thread to steer it. In a DM every message reaches the agent; in a channel, only a mention does.',
-      ],
-      cells: [
-        { k: 'Start', v: 'Mention @Kortix, or send a DM.' },
-        { k: 'Progress', v: 'Live steps in the thread, with Stop.' },
-        { k: 'Follow-up', v: 'A reply continues the same session.' },
-        { k: 'App Home', v: 'The Assistant pane and a Home tab.' },
-      ],
+      id: 'slack-reads',
+      question: 'Does Kortix read every message in a channel?',
+      answer:
+        'No. In a channel, only a mention reaches the agent, and only in channels the bot was invited to. In a direct message with the bot, every message does.',
     },
     {
-      id: 'approvals',
-      title: 'Approve without leaving Slack.',
-      titleMuted: 'Nothing ships until a person taps.',
-      body: [
-        'When an agent opens a change request or needs a connector, a card lands in the thread: **Ship it or Reject, Approve or Deny**, or ask for changes.',
-        'When the agent has a question, the answers arrive as buttons.',
-      ],
-      cells: [
-        { k: 'Change requests', v: 'Ship it, reject, or ask for changes.' },
-        { k: 'Connector calls', v: 'Approve or deny the call.' },
-        { k: 'Questions', v: 'Answer with a button.' },
-        { k: 'Stop', v: 'End a run from the thread.' },
-      ],
+      id: 'slack-permissions',
+      question: 'Does the agent act with my permissions?',
+      answer:
+        'No. Kortix checks that you are a project member who may start sessions. The agent then acts with its own permissions, not with your role.',
     },
     {
-      id: 'identity',
-      title: 'It runs as you.',
-      titleMuted: 'Your permissions, not a shared bot’s.',
-      body: [
-        'Each person runs **/kortix login** once. From then on a run uses the sender’s own Kortix permissions, and personal keys stay in DMs.',
-        'Set the project, agent, model and who may join **per channel** with /kortix. One workspace can serve several projects.',
-      ],
-      cells: [
-        { k: 'Identity', v: 'Each person links their account once.' },
-        { k: 'Per channel', v: 'Project, agent, model and join policy.' },
-        { k: 'Several projects', v: 'A project picker per channel.' },
-        { k: 'Your own app', v: 'Bring your own Slack app instead.' },
-      ],
+      id: 'slack-projects',
+      question: 'Can one workspace serve several projects?',
+      answer:
+        'Yes. The first message in a new channel shows a project picker. The choice binds the channel to that project.',
+    },
+    {
+      id: 'slack-own-app',
+      question: 'Can we use our own Slack app, or a self-hosted Kortix?',
+      answer:
+        'Yes. kortix channels manifest prints the app manifest. Create the app from it at api.slack.com/apps, then connect it with its tokens.',
     },
   ],
 };
@@ -349,76 +569,126 @@ const TEAMS: SurfaceContent = {
   hero: {
     title: 'Kortix in Microsoft Teams.',
     titleMuted: 'In chats, group chats and channels.',
-    sub: 'The same agent sessions inside Teams: progress in one live card, an approval card before every action, and each run as the person who asked.',
+    sub: 'Mention Kortix with a task. An agent works on its own cloud computer, shows its steps in one live card, and sends its changes back as a card to approve.',
     actions: [
       { label: 'Connect Teams', href: '/auth', primary: true, icon: 'teams' },
-      { label: 'Setup guide', href: '/docs/connect/channels' },
+      { label: 'Read the setup guide', href: '/docs/guide#channels' },
     ],
-    note: 'A Teams admin grants consent once; then anyone in the organization adds it.',
+    note: 'A tenant admin grants consent once. Then anyone in your organization can add the app.',
+    caption: 'One channel post, one session.',
+    captionMuted: 'A personal chat keeps one session until /new.',
   },
-  specs: [
-    { k: 'Works in', v: 'Chats, group chats and channels' },
-    { k: 'Setup', v: 'Admin consent, then the org catalog' },
-    { k: 'Files', v: 'OneDrive and SharePoint' },
-    { k: 'Identity', v: 'Each person signs in once' },
-  ],
-  sections: [
+  pillars: {
+    title: 'Agents where your organization already talks.',
+    titleMuted: 'Four things Kortix does in Teams.',
+    items: [
+      {
+        icon: UsersThreeIcon,
+        name: 'Chats and channels',
+        line: 'Personal, group, team.',
+        body: 'Add the app to a chat or a team, and mention it with a task.',
+      },
+      {
+        icon: LightningIcon,
+        name: 'One live card',
+        line: 'The steps, then the reply.',
+        body: 'Type `/stop` to end a run.',
+      },
+      {
+        icon: CheckSquareOffsetIcon,
+        name: 'Approve with a note',
+        line: 'Feedback goes to the agent.',
+        body: 'Every review card has an optional feedback box.',
+      },
+      {
+        icon: FilesIcon,
+        name: 'Files where Teams keeps them',
+        line: 'OneDrive and SharePoint.',
+        body: 'Images show inline. Other files go to OneDrive or SharePoint.',
+      },
+    ],
+  },
+  how: {
+    title: 'How Kortix works in Teams.',
+    titleMuted: 'From one consent to an approved change.',
+    tabs: [
+      {
+        id: 'where',
+        title: 'Three places, three behaviours',
+        description: 'Personal chat, group chat, channel.',
+        body: [
+          'In a personal chat, every message reaches the agent. In a group chat or a channel, mention it.',
+          'Each channel post is its own session. A personal or group chat keeps one session until someone sends `/new`.',
+        ],
+      },
+      {
+        id: 'card',
+        title: 'Watch it work',
+        description: 'One live card.',
+        body: [
+          'The agent works on its own cloud computer and updates one card with its steps, then posts the reply.',
+          'Type `/stop` to end the run. Open in Kortix, in a message’s ⋯ menu, opens its session.',
+        ],
+      },
+      {
+        id: 'approve',
+        title: 'Approve with feedback',
+        description: 'Ship it, Request changes, Reject.',
+        body: [
+          'A change request arrives as a card with an optional feedback box. What you write goes to the agent with your decision.',
+          'A connector call that needs approval shows Approve and Deny.',
+        ],
+      },
+      {
+        id: 'files',
+        title: 'Files go where Teams keeps them',
+        description: 'OneDrive in a chat, SharePoint in a channel.',
+        body: [
+          'Images show inline. In a personal chat, other files arrive in your OneDrive after you accept them.',
+          'In a channel, files go to the team’s SharePoint files.',
+        ],
+      },
+      {
+        id: 'setup',
+        title: 'One consent, then everyone',
+        description: 'An admin once, then each person once.',
+        body: [
+          'A tenant admin grants consent once, and Kortix publishes the app to your organization’s Teams catalog.',
+          'Each person sends `/login` once, so Kortix knows who asked.',
+        ],
+      },
+    ],
+  },
+  faq: [
     {
-      id: 'where',
-      title: 'Where your team already talks.',
-      titleMuted: 'Three places, three behaviours.',
-      body: [
-        'In a **personal chat** every message reaches the agent, one session until /new. In a **group chat** a mention starts it and replies continue it. In a **channel** each post is its own session.',
-        'One live card shows the steps, then the reply. Type /stop to end a run.',
-      ],
-      cells: [
-        { k: 'Personal chat', v: 'Every message; one session until /new.' },
-        { k: 'Group chat', v: 'A mention starts it; replies continue.' },
-        { k: 'Channel', v: 'Each post is its own session.' },
-        { k: 'Live card', v: 'The steps, then the reply.' },
-      ],
+      id: 'teams-admin',
+      question: 'Do we need a Teams admin?',
+      answer:
+        'Yes, once. A tenant admin grants consent, and Kortix publishes the app to your organization’s catalog. After that, anyone can add it.',
     },
     {
-      id: 'approvals',
-      title: 'Approve in the card.',
-      titleMuted: 'With a note, if you want one.',
-      body: [
-        'Change requests and connector calls arrive as **approval cards**, with an optional feedback box. Questions come as buttons, forms, or date and number inputs.',
-        'Some replies are **visible only to the person who asked**. Any message opens in Kortix from its ⋯ menu.',
-      ],
-      cells: [
-        { k: 'Approvals', v: 'Approve or deny, with feedback.' },
-        { k: 'Questions', v: 'Buttons, forms, dates and numbers.' },
-        { k: 'Private replies', v: 'Only the asker sees them.' },
-        { k: 'Open in Kortix', v: 'From any message’s ⋯ menu.' },
-      ],
+      id: 'teams-permissions',
+      question: 'Does the agent act with my permissions?',
+      answer:
+        'No. Kortix checks that you are a project member who may start sessions. The agent then acts with its own permissions, not with your role.',
     },
     {
-      id: 'setup',
-      title: 'One consent, then everyone.',
-      titleMuted: 'Or bring your own bot.',
-      body: [
-        'A tenant admin **grants consent once**, and Kortix publishes the app to your organization’s catalog. From then on, anyone adds it to Teams.',
-        'Each person signs in once with /login, so a run uses their own permissions. Images show inline; other files go to **OneDrive** in personal chats and **SharePoint** in channels.',
-      ],
-      cells: [
-        { k: 'Consent', v: 'A tenant admin approves once.' },
-        { k: 'Catalog', v: 'Published to your organization’s apps.' },
-        { k: 'Your own bot', v: 'Use your own Azure Bot instead.' },
-        { k: 'Files', v: 'OneDrive in chats, SharePoint in channels.' },
-      ],
+      id: 'teams-own-bot',
+      question: 'Can we use our own bot?',
+      answer: 'Yes. Bring your own Azure Bot with its app ID and secret, then upload the app manifest.',
+    },
+    {
+      id: 'teams-gaps',
+      question: 'Does it support reactions or message search?',
+      answer: 'No. Long replies are cut in Teams and link to the full session in Kortix.',
     },
   ],
 };
 
-const SURFACES: Record<SurfaceId, SurfaceContent> = {
+export const SURFACES: Record<SurfaceId, SurfaceContent> = {
   desktop: DESKTOP,
   mobile: MOBILE,
   cli: CLI,
   slack: SLACK,
   teams: TEAMS,
 };
-
-export function getLocalizedSurface(id: SurfaceId, tI18nComplete: UiTranslator): SurfaceContent {
-  return localizeUiCatalog(SURFACES[id], tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
-}

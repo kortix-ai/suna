@@ -8,7 +8,7 @@ metadata:
 <skill name="kortix-channel-memory">
 
 <folders>
-A thread in a channel or a DM has memory: Markdown files in Files. People
+A thread in a channel or a DM has memory: Markdown files in Drive. People
 read and edit the same files in the channel's or DM's Memory tab. Nothing is
 copied: what you write is what they see, and the reverse.
 

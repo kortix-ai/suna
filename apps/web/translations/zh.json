@@ -1318,9 +1318,9 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV2": {
-        "title": "将清单迁移到 v2 (kortix.yaml)",
-        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
+      "manifestV3": {
+        "title": "将清单升级到 v3 (kortix.yaml)",
+        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
       },
       "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v2",
-      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v3",
+      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -2803,7 +2803,6 @@
     "signInWithEmail": "使用邮箱登录",
     "createNewAccount": "创建新账户",
     "byContinuingYouAgreeSimple": "继续即表示您同意我们的",
-    "customerLogoNotice": "无论使用何种套餐，Kortix 都可能将您所在组织的名称和标志作为客户展示。您可随时发送邮件至 legal@kortix.com 退出。",
     "phoneVerification": {
       "title": "验证您的手机号码",
       "titleOtp": "输入验证码",
@@ -10577,7 +10576,7 @@
       "text0f096c40454e": "分析数据集、绘制分布图、检查数据泄漏和不平衡，并写下关于数据内容的第一段客观说明。您从已有简报的状态开始，而不是面对空白单元格。",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 自动",
-      "text0f4827ef74ea": "Kortix 招聘职位——营销 / 内容、销售、FDE / 服务、产品 / 工程、产品 / 研发。地点：塞尔维亚贝尔格莱德和旧金山。我们招聘长期负责并持续投入的人才。",
+      "text0f4827ef74ea": "Kortix 招聘职位——FDE、GTM 和 MTS。地点：塞尔维亚贝尔格莱德和旧金山。我们招聘长期负责并持续投入的人才。",
       "text0f600458e375": "内置 SSO、成员、群组和基于角色的访问控制，为人员和智能体提供按资源划分的权限、加密密钥和完整审计记录。支持自托管，让整个平台运行在你自己的环境中。",
       "text0f64c7d16c28": "# 检查编译、请求缺失的密钥，",
       "text0f656790976e": "打开任何代理平台——它们在架构上都相同。细微差异无法形成防御性优势。唯一真正不同的是学习循环。",
@@ -16803,7 +16802,7 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -17538,7 +17537,7 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "text848f54e89660": "运行记录",
       "textb098a09c78aa": "使用负载测试",
       "text99733344956d": "负载",
@@ -21604,7 +21603,11 @@
     "inviteSent": "邀请已发送至 {email}",
     "reschedule": "需要换个时间？请使用邀请中的链接。",
     "addToCalendar": "添加到日历",
-    "done": "完成"
+    "done": "完成",
+    "errorName": "请输入你的姓名。",
+    "errorEmail": "请输入有效的工作邮箱，方便我们联系你。",
+    "errorCompany": "请输入你的公司名称。",
+    "errorSize": "请选择公司规模。"
   },
   "drives": {
     "title": "云盘",

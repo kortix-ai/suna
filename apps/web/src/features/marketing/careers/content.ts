@@ -13,8 +13,8 @@
  *    no headcount, no remote policy. The only two locations are **Belgrade,
  *    Serbia** and **San Francisco**; every opening is open in both, and no
  *    third location may be added.
- *  - The five openings are the founder's own list. Every bullet under them
- *    comes from him. Keep them short — a spec belongs in a conversation.
+ *  - The three openings (FDE, GTM and MTS, 2026-10-28) are the founder's own list. Keep each to
+ *    one broad line: the founder wants them open, not specified. A spec belongs in a conversation.
  *  - Applications go through `ApplyModal`, which posts to the same
  *    `/api/demo-request` pipeline as "Book your demo". There is no ATS and no
  *    jobs@ alias — do not invent one. The three direct links (email, X,
@@ -22,10 +22,6 @@
  *  - There is NO file upload on that pipeline (JSON in, one blob into
  *    `contact_forms`). Ask for a LINK to a CV or portfolio. Never promise an
  *    attachment.
- *  - Naming opencode / Codex / Claude Code / Pi under Product / Eng describes
- *    ecosystem fluency wanted in a CANDIDATE. It must never read as a claim
- *    that Kortix supports those harnesses. OpenCode is the Kortix harness, and
- *    the same opening says so.
  *  - Competitor names, exactly: **Claude Cowork** (one word, lowercase `w`) and
  *    **ChatGPT Work** (two words).
  *  - Never name a licence — "open source" and stop. Never claim a certification.
@@ -46,76 +42,26 @@ export const hero = {
   ctaSecondaryHref: '/about',
 } as const;
 
-/** The board. Collapsed shows name, locations and the summary line. */
+/** The board: the role, its full name, one open line and the cities. Deliberately broad — the
+ *  rest is a conversation. */
 export const openings = [
   {
-    id: 'marketing',
-    name: 'Marketing / Content',
-    summary:
-      'Make Kortix the instant answer to "what is the open-source Claude Cowork or ChatGPT Work?"',
-    bullets: [
-      'Build the content baseline, and the system that keeps producing it.',
-      'Daily platform and feature explainers.',
-      'High-quality video and motion.',
-      'Use-case and marketplace-driven content.',
-      'Influencer and UGC motion on X and LinkedIn.',
-      'Crank out content the way we crank out commits.',
-    ],
-  },
-  {
-    id: 'sales',
-    name: 'Sales',
-    summary: 'Convert every inbound lead and build the outbound motion from zero.',
-    bullets: [
-      'Convert every inbound lead.',
-      'Build outbound from nothing.',
-      'Sell to companies.',
-      'Sell the FDE and services engagement alongside the platform.',
-    ],
-  },
-  {
     id: 'fde',
-    name: 'FDE / Services',
-    summary: 'Build customers their first agents, and own the services side end to end.',
-    bullets: [
-      'Onboard customers, teach them, build their first agents, and create their connections.',
-      'Own services end to end, and build the engineering team behind it.',
-      'Ran a software, automation or delivery agency at owner level.',
-      'Sold and delivered custom software. Can state deal sizes, close rate and delivery margin.',
-      'Technical enough to build the automations yourself on day one.',
-      'Writes the SOPs that make the motion repeatable.',
-      'Runs the full cycle: discovery, scope, build, handoff, expansion.',
-      'Can recruit.',
-    ],
+    name: 'FDE',
+    full: 'Forward Deployed Engineer',
+    summary: 'Work with customers to put Kortix to work across their company.',
   },
   {
-    id: 'product-eng',
-    name: 'Product / Eng',
-    summary:
-      'Own the platform end to end — the agent runtime, the product around it, and the taste that holds both together.',
-    bullets: [
-      'Built 0 to 1 and 1 to n at a startup.',
-      'Has run their own product or company. The stretch matters more than the outcome.',
-      'Excellent product taste, and UX and UI taste specifically.',
-      'Strong systems-thinking judgement.',
-      'Real understanding of agent architecture: harness, loops, context handling, tool boundaries, sandboxing, evals.',
-      'Has built agents, and lives on coding agents — opencode, Codex, Claude Code, Pi, whichever you reach for.',
-      'On the frontier of AI by habit, not by assignment.',
-      'Titles are flat. Everyone on the technical side is Member of Technical Staff.',
-      'Can recruit.',
-    ],
-    /** Guards the coding-agent bullet: fluency in a candidate, never a claim
-     *  about what Kortix runs. */
-    note: 'Kortix runs on the OpenCode harness. That bullet is about your fluency in the ecosystem, not about what the platform supports.',
+    id: 'gtm',
+    name: 'GTM',
+    full: 'Go-to-market',
+    summary: 'Tell the story, find the companies that need it, and win them.',
   },
   {
-    id: 'rnd',
-    name: 'Product / R&D',
-    summary: 'Push what open AGI means: agents that do finished work, reviewed by people.',
-    bullets: [
-      'Where Product / Eng hardens the platform, R&D pushes what it becomes.',
-      'Comfortable working a long way ahead of what ships.',
-    ],
+    id: 'mts',
+    name: 'MTS',
+    full: 'Member of Technical Staff',
+    summary: 'Build Kortix itself, anywhere in the stack.',
   },
 ] as const;
 
@@ -187,11 +133,9 @@ export const applyForm = {
   areaLabel: 'Which opening',
   areaPlaceholder: 'Pick the closest one',
   areaOptions: [
-    'Marketing / Content',
-    'Sales',
-    'FDE / Services',
-    'Product / Eng',
-    'Product / R&D',
+    'FDE — Forward Deployed Engineer',
+    'GTM — Go-to-market',
+    'MTS — Member of Technical Staff',
     'Not sure — read it and tell me',
   ],
   nameLabel: 'Name',
