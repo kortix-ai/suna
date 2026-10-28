@@ -193,7 +193,7 @@ export function formatImageGenElapsed(ms: number): string {
 }
 
 /** One key per sandbox file, with or without the `/workspace/` prefix. */
-export function imageGenPathKey(path: string): string {
+function imageGenPathKey(path: string): string {
   return path.trim().replace(/^\/?workspace\//, '');
 }
 

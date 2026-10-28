@@ -7,7 +7,6 @@ import type { ToolCallBlock } from '../../session-log/types';
 import * as root from '../../../index';
 import {
   formatImageGenElapsed,
-  imageGenPathKey,
   imageGenRetryDelay,
   imageGenView,
   imagePathsShownByImageGen,
@@ -225,7 +224,16 @@ describe('one image renders once (D5)', () => {
   });
 
   test('a show path matches with or without the /workspace prefix', () => {
-    expect(imageGenPathKey('/workspace/output/images/fox.png')).toBe(imageGenPathKey('output/images/fox.png'));
+    const paths = imagePathsShownByImageGen([imageGen]);
+    expect([...paths]).toEqual(['output/images/fox.png']);
+    expect(withoutImageGenDuplicates([{ path: '/workspace/output/images/fox.png' }], paths)).toEqual([]);
+    expect(withoutImageGenDuplicates([{ path: 'output/images/fox.png' }], paths)).toEqual([]);
+    expect(withoutImageGenDuplicates([{ path: 'workspace/output/images/fox.png' }], paths)).toEqual([]);
+    expect(withoutImageGenDuplicates([{ path: '/workspace/output/images/other.png' }], paths)).toHaveLength(1);
+  });
+
+  test('the path key is not public API', () => {
+    expect('imageGenPathKey' in root).toBe(false);
   });
 
   test('a show of only that image is drawn already; a show that adds a PDF is not', () => {
