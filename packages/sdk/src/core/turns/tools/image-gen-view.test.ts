@@ -264,6 +264,17 @@ describe('imageGenView', () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
+  test('an unterminated provider token with repeated prefixes parses in linear time', () => {
+    const started = performance.now();
+    const error = imageGenView(call({
+      status: 'error', input: INPUT,
+      error: `Image generation failed (500): ${'[provider:'.repeat(30_000)}x [provider_reauth_required]`,
+    })).error;
+    expect(error?.code).toBe('provider_reauth_required');
+    expect(error?.provider).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   test('the [provider:<id>] token before the code names the failing provider (R37)', () => {
     const refused = (provider: string, code = 'provider_reauth_required') =>
       imageGenView(call({

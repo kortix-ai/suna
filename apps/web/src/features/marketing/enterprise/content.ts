@@ -1,8 +1,10 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * `/enterprise` copy: the buyer page for a company that runs Kortix across
  * the organization, laid out like the home page: a hero with one walkthrough
  * of the company view, four pillars, one tab per buyer topic, the trust band,
- * the FAQ. English only. The controls IT reviews (SSO, SCIM, roles,
+ * the FAQ. Localized. The controls IT reviews (SSO, SCIM, roles,
  * approvals, audit) have their own page, /compliance; isolation and secrets
  * live on /security.
  *
@@ -68,7 +70,11 @@ export const steps: readonly Step[] = [
   },
 ];
 
-export type TeamState = { readonly line: string; readonly chip: string; readonly tone: 'ok' | 'wait' | 'no' };
+export type TeamState = {
+  readonly line: string;
+  readonly chip: string;
+  readonly tone: 'ok' | 'wait' | 'no';
+};
 
 /** Arcadia's teams, one agent each, and what the card shows at each step. Fictional. */
 export const teams: readonly {
@@ -119,7 +125,10 @@ export const teams: readonly {
 ];
 
 /** guide.mdx "Drive → Memory": the Company folder's Memory, read by every project member. */
-export const driveLine = { k: 'Drive · Company / Memory', v: 'Read by every team’s agents' } as const;
+export const driveLine = {
+  k: 'Drive · Company / Memory',
+  v: 'Read by every team’s agents',
+} as const;
 export const governedLine = 'Every action in the audit log · SAML SSO and SCIM for everyone';
 
 /* Pillars. Sources: guide.mdx intro, "A workspace for people", "Drive",
@@ -133,19 +142,31 @@ export const pillars = {
       id: 'platform',
       name: 'One platform for every team',
       line: 'Every team’s agents in one place.',
-      facts: ['An agent for each team’s work', 'Shared Drive and memory', 'Web, desktop, mobile, Slack and Teams'],
+      facts: [
+        'An agent for each team’s work',
+        'Shared Drive and memory',
+        'Web, desktop, mobile, Slack and Teams',
+      ],
     },
     {
       id: 'infra',
       name: 'Runs where you need it',
       line: 'Kortix Cloud, your VPC or on-prem.',
-      facts: ['Open source', 'The same images in every deployment', 'Your company is a git repository'],
+      facts: [
+        'Open source',
+        'The same images in every deployment',
+        'Your company is a git repository',
+      ],
     },
     {
       id: 'models',
       name: 'Any model',
       line: 'Your keys, your plan, your limits.',
-      facts: ['Any provider with your own keys', 'A model per agent', 'Budgets per day, week or month'],
+      facts: [
+        'Any provider with your own keys',
+        'A model per agent',
+        'Budgets per day, week or month',
+      ],
     },
     {
       id: 'governed',
@@ -382,3 +403,27 @@ export const faqItems = [
       'No. Approval rules are off until you set them. Mark an action Ask, and those calls wait for a person.',
   },
 ] as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      hero,
+      steps,
+      teams,
+      driveLine,
+      governedLine,
+      pillars,
+      topics,
+      driveTree,
+      deployments,
+      spendRows,
+      governanceRows,
+      buildLines,
+      workSteps,
+      trust,
+      faqItems,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

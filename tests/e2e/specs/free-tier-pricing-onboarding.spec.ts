@@ -11,7 +11,7 @@ test.describe('free-tier pricing and onboarding surface', () => {
     ).toBeVisible();
     await expect(page.getByText('Free', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Credits', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Enterprise', exact: true })).toBeVisible();
 
     await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();

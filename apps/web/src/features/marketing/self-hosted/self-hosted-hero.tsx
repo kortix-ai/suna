@@ -1,12 +1,14 @@
 'use client';
 
-import { cn } from '@kortix/ui';
+import { useTranslations } from '@/i18n/use-translations';
+
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { cn } from '@kortix/ui';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
-import { hero, steps } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 import { Terminal, Window } from './parts';
 
 /*
@@ -19,6 +21,9 @@ import { Terminal, Window } from './parts';
 const STEP_MS = 4000;
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { steps } = localizeModel(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -49,7 +54,12 @@ function Walkthrough() {
 
   return (
     <div className="flex w-full flex-col items-center gap-8 lg:gap-10">
-      <div role="tablist" aria-label="Install steps" onKeyDown={onKeyDown} className="flex flex-wrap justify-center gap-2">
+      <div
+        role="tablist"
+        aria-label={tMarketing('textd9aa97698883')}
+        onKeyDown={onKeyDown}
+        className="flex flex-wrap justify-center gap-2"
+      >
         {steps.map((s, i) => (
           <button
             key={s.id}
@@ -83,7 +93,10 @@ function Walkthrough() {
             <Terminal lines={step.lines} className="px-4 py-4 sm:px-6" />
           </Window>
         </div>
-        <p key={`line-${step.id}`} className={cn('text-foreground px-4 text-center text-base text-balance', fade)}>
+        <p
+          key={`line-${step.id}`}
+          className={cn('text-foreground px-4 text-center text-base text-balance', fade)}
+        >
           {step.line}
         </p>
       </div>
@@ -92,6 +105,9 @@ function Walkthrough() {
 }
 
 export function SelfHostedHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeModel(tMarketing);
+
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
@@ -100,7 +116,9 @@ export function SelfHostedHero() {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>

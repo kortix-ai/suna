@@ -1,18 +1,13 @@
 import { YamlLine } from '@/features/marketing/code-panel';
+
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
+
 import { ArrowDownIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
 import { FILES } from './content';
-import {
-  agentFiles,
-  computer,
-  reviewTerminal,
-  rulesYaml,
-  triggerFiles,
-  uiSample,
-  type Excerpt,
-} from './model';
+import { localizeMarketingContent as localizeModel, type Excerpt } from './model';
 
 /*
  * One focused visual per How it works tab. Each fits the tab's panel at
@@ -64,11 +59,15 @@ function FilePanel({
   );
 }
 
-const ManifestPanel = ({ excerpt }: { excerpt: Excerpt }) => (
-  <FilePanel title="kortix.yaml" lang="yaml" lines={excerpt.lines} />
-);
+const ManifestPanel = ({ excerpt }: { excerpt: Excerpt }) => {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  return <FilePanel title={tMarketing('text1965f383021e')} lang="yaml" lines={excerpt.lines} />;
+};
 
 function AgentsPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { agentFiles } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col gap-3">
       <ManifestPanel excerpt={agentFiles.yaml} />
@@ -78,10 +77,15 @@ function AgentsPanel() {
 }
 
 function ComputerPanel() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { computer } = localizeModel(tMarketing);
+
   return (
     <div className="flex flex-col">
       <div className="bg-background flex flex-col gap-4 rounded-lg border border-dashed p-5">
-        <span className="text-foreground text-base font-medium">Session computer</span>
+        <span className="text-foreground text-base font-medium">
+          {tMarketing('text33fdae079088')}
+        </span>
         <ul className="flex flex-col divide-y">
           {computer.inside.map((row) => (
             <li
@@ -103,7 +107,7 @@ function ComputerPanel() {
       </div>
       <ArrowDownIcon aria-hidden className="text-muted-foreground mx-auto my-2 size-4" />
       <div className="bg-background flex flex-col gap-3 rounded-lg border p-5">
-        <span className={caption}>Checked outside, by Kortix</span>
+        <span className={caption}>{tMarketing('textb853a89073bc')}</span>
         <ul className="flex flex-col gap-2">
           {computer.outside.map((row) => (
             <li
@@ -122,9 +126,26 @@ function ComputerPanel() {
 
 export const FRAMEWORK_PANELS: Record<string, () => ReactNode> = {
   agents: () => <AgentsPanel />,
-  rules: () => <FilePanel title="kortix.yaml" lang="yaml" lines={rulesYaml} />,
-  triggers: () => <ManifestPanel excerpt={triggerFiles} />,
+  rules: function RulesPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { rulesYaml } = localizeModel(tMarketing);
+    return <FilePanel title={tMarketing('text1965f383021e')} lang="yaml" lines={rulesYaml} />;
+  },
+  triggers: function TriggersPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+
+    const { triggerFiles } = localizeModel(tMarketing);
+    return <ManifestPanel excerpt={triggerFiles} />;
+  },
   computer: () => <ComputerPanel />,
-  review: () => <FilePanel title="terminal" lang="sh" lines={reviewTerminal} />,
-  build: () => <FilePanel title="chat.tsx" lines={uiSample} />,
+  review: function ReviewPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { reviewTerminal } = localizeModel(tMarketing);
+    return <FilePanel title={tMarketing('text4e686af7bdcc')} lang="sh" lines={reviewTerminal} />;
+  },
+  build: function BuildPanel() {
+    const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+    const { uiSample } = localizeModel(tMarketing);
+    return <FilePanel title={tMarketing('text2e9f6a751196')} lines={uiSample} />;
+  },
 };

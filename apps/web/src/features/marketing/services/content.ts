@@ -1,3 +1,5 @@
+import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 /**
  * The /services sales page: AI Transformation, done for you, sold as one
  * flat monthly membership. The idea: we map
@@ -26,7 +28,7 @@
  *  - Approval: "approval rules you set" (claims.md: gates are off until set).
  *  - No customer names or counts. Proof = the claims.md rows only.
  *
- * English only for now, like the /enterprise sections.
+ * Localized through the marketing catalog.
  */
 
 export const PRICE = { now: '$20,000', per: '/month' } as const;
@@ -377,3 +379,26 @@ export const closing = {
   title: 'Map it. Build it. Run it.',
   titleMuted: 'Start with one function this month.',
 } as const;
+
+export function localizeMarketingContent(tMarketing: import('@/i18n/translator').UiTranslator) {
+  return localizeUiCatalog(
+    {
+      PRICE,
+      GUARANTEE,
+      hero,
+      platform,
+      caseCta,
+      intro,
+      onboarding,
+      stages,
+      functions,
+      compare,
+      benefits,
+      pricing,
+      faq,
+      closing,
+    },
+    tMarketing,
+    MARKETING_RELEASE_TRANSLATION_KEYS,
+  );
+}

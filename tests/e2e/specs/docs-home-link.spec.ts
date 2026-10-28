@@ -11,6 +11,6 @@ test('docs home link announces the brand once in either theme', async ({ page })
     await expect(home).toHaveAttribute('href', '/docs');
   }
   await home.click();
-  await expect(page).toHaveURL(/\/docs\/?$/);
+  await expect(page).toHaveURL(/\/docs\/guide\/?$/);
   await expect(page.locator('main')).toBeVisible();
 });

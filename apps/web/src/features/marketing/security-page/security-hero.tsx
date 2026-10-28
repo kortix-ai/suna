@@ -1,8 +1,10 @@
 'use client';
 
-import { cn } from '@kortix/ui';
+import { useTranslations } from '@/i18n/use-translations';
+
 import Link from '@/components/site-link';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { cn } from '@kortix/ui';
 import {
   ArrowDownIcon,
   ArrowRightIcon,
@@ -12,7 +14,7 @@ import {
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-import { gates, hero } from './model';
+import { localizeMarketingContent as localizeModel } from './model';
 
 /*
  * The /security hero, in the home page's SandBandHero layout: the two-tone
@@ -48,8 +50,15 @@ function Node({
   className?: string;
 }) {
   return (
-    <div className={cn('bg-background flex min-w-0 flex-col gap-3 rounded-lg border p-5 lg:p-6', className)}>
-      <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">{label}</span>
+    <div
+      className={cn(
+        'bg-background flex min-w-0 flex-col gap-3 rounded-lg border p-5 lg:p-6',
+        className,
+      )}
+    >
+      <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">
+        {label}
+      </span>
       <div className="text-foreground flex items-center gap-2.5 text-lg font-medium lg:text-xl">
         {icon}
         {title}
@@ -60,6 +69,9 @@ function Node({
 }
 
 function Walkthrough() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { gates } = localizeModel(tMarketing);
+
   const reduced = Boolean(useReducedMotion());
   const [selected, setSelected] = useState(0);
   const [held, setHeld] = useState(false);
@@ -98,16 +110,22 @@ function Walkthrough() {
         className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch"
       >
         <Node
-          label="A person"
+          label={tMarketing('text94d7f303df87')}
           icon={<UserIcon className="size-5 shrink-0" aria-hidden />}
-          title="You"
+          title={tMarketing('text08b041935798')}
           note="Choose which agent may run, and grant it access."
         />
         <Arrow />
         <div className="bg-background flex min-w-0 flex-col gap-3 rounded-lg border border-dashed p-5 lg:p-6">
-          <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">Its own computer</span>
-          <div className="text-foreground text-lg font-medium lg:text-xl">The agent</div>
-          <p className="text-muted-foreground text-sm text-pretty">Acts as itself, never with your role.</p>
+          <span className="text-muted-foreground font-mono text-xs tracking-wide uppercase">
+            {tMarketing('text590bc3fdbbb6')}
+          </span>
+          <div className="text-foreground text-lg font-medium lg:text-xl">
+            {tMarketing('text750a4ad2a8e3')}
+          </div>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {tMarketing('text388893074961')}
+          </p>
           <span
             key={gate.id}
             className={cn(
@@ -120,7 +138,7 @@ function Walkthrough() {
         </div>
         <Arrow />
         <Node
-          label="Kortix gate"
+          label={tMarketing('text0598a57491dd')}
           className="border-foreground"
           icon={<ShieldCheckIcon className="size-5 shrink-0" aria-hidden />}
           title={
@@ -132,7 +150,7 @@ function Walkthrough() {
         />
         <Arrow />
         <Node
-          label="Resource"
+          label={tMarketing('texteb7a842ff958')}
           title={
             <span key={gate.id} className={fade}>
               {gate.resource}
@@ -145,7 +163,7 @@ function Walkthrough() {
       <div className="flex flex-col items-center gap-5">
         <div
           role="tablist"
-          aria-label="The five gates"
+          aria-label={tMarketing('text8ee1e1c11369')}
           onKeyDown={onKeyDown}
           className="flex flex-wrap justify-center gap-2"
         >
@@ -162,14 +180,17 @@ function Walkthrough() {
               aria-selected={i === selected}
               tabIndex={i === selected ? 0 : -1}
               onClick={() => pick(i)}
-              className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2 aria-selected:border-border"
+              className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal aria-selected:border-border flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               <span className="font-mono text-xs tabular-nums">{i + 1}</span>
               {g.gate}
             </button>
           ))}
         </div>
-        <p key={gate.id} className={cn('text-foreground max-w-2xl px-4 text-center text-base text-balance', fade)}>
+        <p
+          key={gate.id}
+          className={cn('text-foreground max-w-2xl px-4 text-center text-base text-balance', fade)}
+        >
           {gate.line}
         </p>
       </div>
@@ -178,6 +199,9 @@ function Walkthrough() {
 }
 
 export function SecurityHero() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { hero } = localizeModel(tMarketing);
+
   return (
     <section id="hero" className="relative">
       <div className="relative flex flex-col gap-7.5 px-8 pt-32 pb-18 lg:px-28 lg:pt-40">
@@ -186,14 +210,16 @@ export function SecurityHero() {
             <span className="text-foreground block">{hero.title}</span>
             <span className="text-muted-foreground block">{hero.titleMuted}</span>
           </h1>
-          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">{hero.sub}</p>
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg md:text-xl">
+            {hero.sub}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2.5 pt-2">
           <MarketingButton variant="secondary" size="md" className="hit-area-y-1" asChild>
-            <Link href="/contact">Talk to us</Link>
+            <Link href="/contact">{tMarketing('text1d1d94fb5397')}</Link>
           </MarketingButton>
           <MarketingButton size="md" className="hit-area-y-1" asChild>
-            <Link href="/docs/guide#security">Read the security docs</Link>
+            <Link href="/docs/guide#security">{tMarketing('textb611a0f8e2eb')}</Link>
           </MarketingButton>
         </div>
       </div>
