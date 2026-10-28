@@ -279,3 +279,42 @@ test('a sign-out or an account switch clears the stored digests', async () => {
   expect(reads).toEqual([DRIVE]);
   useCurrentAccountStore.getState().clear();
 });
+
+test('an image on screen is never evicted from the digest store', async () => {
+  const { useSharedImage } = await import('./use-shared-image');
+  files.set(FOX, PNG_A);
+  await mount(<ImageGenTool call={generated(FOX, SHA_A)} />);
+  // 65 newer verified images pass through and leave: more than the store's 64.
+  const others = await Promise.all(
+    Array.from({ length: 65 }, async (_, i) => {
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 10, i]);
+      const path = `/workspace/other-${i}.png`;
+      files.set(path, bytes);
+      return { path, digest: await sha(bytes) };
+    }),
+  );
+  function Pin({ path, digest }: { path: string; digest: string }) {
+    useSharedImage(path, digest);
+    return null;
+  }
+  const passing = await mount(<>{others.map((other) => <Pin key={other.path} {...other} />)}</>);
+  await act(async () => passing.unmount());
+  roots.splice(roots.indexOf(passing), 1);
+  // The card's image is still in the store: a Drive copy of it draws without a read.
+  reads.length = 0;
+  files.set(DRIVE, PNG_A);
+  await mount(<ShowContentRenderer type="image" path={DRIVE} sha256={SHA_A} />);
+  expect(reads).toEqual([]);
+});
+
+test("a card caption's digest never pins the viewer: its Refresh reads the file and draws the new bytes", async () => {
+  files.set(FOX, PNG_A);
+  await mount(<ImageGenTool call={generated(FOX, SHA_A)} />);
+  useFilePreviewStore.getState().openPreview(FOX, undefined, { text: 'A fox', sha256: SHA_A });
+  // Rewritten in place by another tool; the viewer is opened later from Files.
+  files.set(FOX, PNG_B);
+  await mount(<><Viewer path={FOX} /><RefreshProbe path={FOX} /></>);
+  await act(async () => { refresh?.(); });
+  await settle();
+  expect(await (await fetch(viewer!.imageDataUrl!)).bytes()).toEqual(PNG_B);
+});

@@ -10,14 +10,17 @@
  * is held in JS memory but the URL.
  */
 import { createImageCache } from '@kortix/sdk';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
 export interface SharedImageSource {
   uri: string;
   headers?: Record<string, string>;
 }
 
-const sharedImages = createImageCache<SharedImageSource>({ maxEntries: 200 });
+/** Entries hold the URI only: the Authorization header is the user's, one for every file (`latestHeaders`). */
+const sharedImages = createImageCache<string>({ maxEntries: 200 });
+/** The headers of the most recent load: a new token replaces the header of every cached file. */
+let latestHeaders: Record<string, string> | undefined;
 
 /** A sandbox path, scoped to its sandbox, with or without the `/workspace/` prefix. */
 function pathKey(sandboxUrl: string | undefined, path: string): string {
@@ -32,24 +35,18 @@ export function rememberSharedImage(
   source: SharedImageSource,
   size?: { width: number; height: number },
 ): void {
+  // Every later draw, of any cached file, sends the newest token.
+  latestHeaders = source.headers;
   const ref = { path: pathKey(sandboxUrl, path), sha256 };
   const known = sharedImages.get(ref);
-  // The same source with the current token is kept; a new token replaces it,
-  // so a later draw never sends an expired Authorization header.
-  const same = known && known.value.uri === source.uri && sameHeaders(known.value.headers, source.headers);
-  // Dropped by its path: the slot goes with its digest key, and the put stores both again.
-  if (known && !same) sharedImages.forget(ref.path);
-  const entry = same && known ? known : sharedImages.put(ref, source);
+  const entry = known && known.value === source.uri ? known : sharedImages.put(ref, source.uri);
   if (size && (entry.width !== size.width || entry.height !== size.height)) sharedImages.setSize(entry, size.width, size.height);
-}
-
-function sameHeaders(a: Record<string, string> | undefined, b: Record<string, string> | undefined): boolean {
-  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 }
 
 /** Drops every stored source (a sign-out or an account switch: they carry the old Authorization header). */
 export function clearSharedImages(): void {
   sharedImages.clear();
+  latestHeaders = undefined;
 }
 
 export interface SharedImage {
@@ -69,6 +66,10 @@ export function useSharedImage(sandboxUrl: string | undefined, path: string | nu
   useEffect(() => {
     if (entry && key) sharedImages.link(key, entry);
   }, [entry, key]);
-  if (!entry) return null;
-  return { source: entry.value, ratio: entry.width && entry.height ? entry.width / entry.height : null };
+  // One source object while its URI and token hold, so a native image never sees a new source.
+  const uri = entry?.value;
+  const headers = latestHeaders;
+  const source = useMemo(() => (uri ? { uri, headers } : null), [uri, headers]);
+  if (!entry || !source) return null;
+  return { source, ratio: entry.width && entry.height ? entry.width / entry.height : null };
 }

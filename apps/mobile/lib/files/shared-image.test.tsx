@@ -49,3 +49,11 @@ test('a sign-out clears the store', async () => {
   expect(await look(FOX)).toBeNull();
   expect(await look(FOX, SHA)).toBeNull();
 });
+
+test('a new token replaces the Authorization header of every cached file, Drive copies at other paths included', async () => {
+  const OWL = '/workspace/output/images/owl.png';
+  rememberSharedImage(SANDBOX, FOX, SHA, { uri, headers: { Authorization: 'Bearer first' } });
+  rememberSharedImage(SANDBOX, OWL, 'b'.repeat(64), { uri: `${SANDBOX}/file/raw?path=owl`, headers: { Authorization: 'Bearer second' } });
+  expect((await look('/workspace/drives/me/fox.png', SHA))?.source.headers).toEqual({ Authorization: 'Bearer second' });
+  expect((await look(FOX))?.source.headers).toEqual({ Authorization: 'Bearer second' });
+});

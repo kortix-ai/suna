@@ -3,7 +3,7 @@
 import { createImageCache, isRuntimeStartingError, isSessionAttachmentRef } from '@kortix/sdk';
 import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useCurrentAccountStore } from '../../../internal/stores/current-account-store';
 import { useBinaryBlob } from './use-binary-blob';
 
@@ -78,6 +78,9 @@ useCurrentAccountStore.subscribe((state, previous) => {
   if (state.selectedAccountId !== previous.selectedAccountId) clearSharedImages();
 });
 
+/** The sha256 of each Blob read and hashed. */
+const blobDigests = new WeakMap<Blob, string>();
+
 /** The bytes a digest disagreed with, read again once each (never a loop). */
 const rereadOnce = new WeakSet<Blob>();
 
@@ -118,13 +121,30 @@ export interface SharedImage {
  * reads nothing. Otherwise the file is read through its one shared query, and
  * bytes whose digest matches `sha256` join `byDigest`.
  */
-export function useSharedImage(path: string | null, sha256?: string | null): SharedImage {
+export function useSharedImage(
+  path: string | null,
+  sha256?: string | null,
+  options?: {
+    /**
+     * Keep the path's query mounted under a digest hit: the digest's bytes draw
+     * at once, and the file's own bytes replace them once read and found
+     * different. The viewer passes it, so its Refresh and `file.edited` always
+     * refetch the file, also when a card's caption named a digest for the path.
+     */
+    revalidate?: boolean;
+  },
+): SharedImage {
+  const revalidate = !!options?.revalidate;
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const read = useCallback(() => (sha256 ? byDigest.get({ sha256 })?.value : undefined), [sha256]);
   const pinned = useSyncExternalStore(byDigest.subscribe, read, read);
-  const file = useBinaryBlob(pinned || !path ? null : path, { imageWait: true });
+  const file = useBinaryBlob(path && (!pinned || revalidate) ? path : null, { imageWait: true });
   const queryClient = useQueryClient();
-  const blob = pinned ?? file.blob;
+  // Re-renders once a read's digest is known.
+  const [, setDigested] = useState(0);
+  const readDigest = file.blob ? blobDigests.get(file.blob) : undefined;
+  // The file's own bytes win once known to differ from the pinned digest.
+  const blob = revalidate && file.blob && readDigest !== undefined && readDigest !== sha256 ? file.blob : (pinned ?? file.blob);
 
   // Trust a digest only once the bytes match it: the file may have changed
   // after the tool hashed it, and a wrong entry would draw under every later
@@ -136,8 +156,10 @@ export function useSharedImage(path: string | null, sha256?: string | null): Sha
     let live = true;
     void digestOf(read).then((digest) => {
       if (!live || digest === null) return;
+      blobDigests.set(read, digest);
+      setDigested((n) => n + 1);
       if (digest === sha256) byDigest.put({ sha256 }, read, read.size);
-      else if (!rereadOnce.has(read)) {
+      else if (!revalidate && !rereadOnce.has(read)) {
         rereadOnce.add(read);
         void queryClient.invalidateQueries({ queryKey: blobKey(serverUrl, path) });
       }
@@ -145,7 +167,13 @@ export function useSharedImage(path: string | null, sha256?: string | null): Sha
     return () => {
       live = false;
     };
-  }, [file.blob, sha256, path, queryClient, serverUrl]);
+  }, [file.blob, sha256, path, queryClient, serverUrl, revalidate]);
+
+  // An image on screen is never evicted from `byDigest`: held while drawn.
+  useEffect(() => {
+    const entry = sha256 && pinned ? byDigest.get({ sha256 }) : undefined;
+    return entry ? byDigest.retain(entry) : undefined;
+  }, [sha256, pinned]);
 
   // Held while drawn, so the URL is never revoked under an <img>.
   useEffect(() => {
@@ -186,4 +214,9 @@ export function useSharedImage(path: string | null, sha256?: string | null): Sha
     }),
     [blob, file.blobUrl, file.isLoading, file.error, file.waitedOut, starting, path, retry, onNaturalSize],
   );
+}
+
+/** The full-screen viewer's image (`FileSource.useSharedImage`): a digest draws at once, the file is always read too. */
+export function useViewerImage(path: string | null, sha256?: string | null): SharedImage {
+  return useSharedImage(path, sha256, { revalidate: true });
 }

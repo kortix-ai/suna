@@ -5,7 +5,7 @@ import { downloadFile, uploadFile } from '../../internal/files/runtime-files';
 import { useFileContent } from './hooks';
 import { useBinaryBlob } from './hooks/use-binary-blob';
 import { useFileRefresh } from './hooks/use-file-refresh';
-import { useSharedImage } from './hooks/use-shared-image';
+import { useViewerImage } from './hooks/use-shared-image';
 // Do not import this component through the project-files barrel. The barrel
 // reaches useGitStatus through useChangeRequests and re-enters packages/ui/src/files/runtime.
 // Webpack cannot evaluate that async cycle while building this module constant.
@@ -23,5 +23,5 @@ export const workspaceFileSource: FileSource = {
   upload: uploadFile,
   Breadcrumbs: FilePathBreadcrumbs,
   useRefresh: useFileRefresh,
-  useSharedImage,
+  useSharedImage: useViewerImage,
 };
