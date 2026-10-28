@@ -61,11 +61,8 @@ import { AGENT_MODE_LABEL, AGENT_MODES } from '../sections/view/agent-editor-cat
 import {
   type AgentConfigSectionKey,
   type AgentDraft,
-  useLocalizedAgentConfigCatalog,
 } from '../sections/view/agent-editor';
-import { useGrantLabel } from './agent-access-text';
 import { AgentInstructions } from './agent-instructions';
-import { ACCESS_VIEWS } from './agent-tabs';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -273,107 +270,6 @@ function SummarySentence({
       )}
       .
     </p>
-  );
-}
-
-/**
- * One row per Access view: what the agent holds there, by name, and the
- * count against the project's catalog. A connector that needs a sign-in is
- * named on its row, because a grant that cannot connect does not work.
- */
-function AccessSummary({
-  name,
-  block,
-  views,
-  facts,
-  hrefFor,
-}: {
-  name: string;
-  block: AgentConfigBlock;
-  views: readonly AgentConfigSectionKey[];
-  facts: OverviewFacts;
-  hrefFor: (view: AgentConfigSectionKey) => string | null;
-}) {
-  const t = useI18nTranslations('agentEditor.tabs');
-  const tPage = useI18nTranslations('agentEditor.page');
-  const tCapabilities = useI18nTranslations('agentCapabilities');
-  const grantLabel = useGrantLabel();
-  const catalog = useLocalizedAgentConfigCatalog();
-  const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
-  const rows = ACCESS_VIEWS.filter((view) => views.includes(view));
-  return (
-    <section className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-foreground flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
-          {tPage('access')}
-          <span className="text-muted-foreground text-xs font-normal">{t('accessHint', { name })}</span>
-        </h2>
-      </div>
-      <ul className="bg-background divide-border divide-y overflow-hidden rounded-md border">
-        {rows.map((view) => {
-          const RowIcon = SECTION_ICON[view];
-          const value = grantOf(block, view);
-          const count = grantCount(value);
-          const total = facts.totals[view];
-          const detail =
-            view === 'drives'
-              ? t('drivesDetail')
-              : count === 'all'
-                ? grantExcluded(value).length > 0
-                  ? tCapabilities('allExcept', { list: grantExcluded(value).join(', ') })
-                  : t('detailAll')
-                : count === 0
-                  ? t('detailNone')
-                  : (value as string[]).join(', ');
-          const valueText = view === 'drives' ? null : grantLabel(value, total);
-          const warn = view === 'connectors' ? facts.needsSignIn.length : 0;
-          const href = hrefFor(view);
-          const content = (
-            <>
-              <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-sm">
-                <RowIcon aria-hidden className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="text-foreground block truncate text-sm">{labelOf(view)}</span>
-                <span className="text-muted-foreground block truncate text-xs">{detail}</span>
-              </span>
-              {warn > 0 ? (
-                <span className="text-foreground hidden shrink-0 items-center gap-1.5 text-sm sm:flex">
-                  <StatusDot tone="warning" />
-                  {t('needsSignIn', { count: warn })}
-                </span>
-              ) : null}
-              {valueText ? (
-                <span
-                  className={
-                    count === 0
-                      ? 'text-muted-foreground shrink-0 text-sm tabular-nums'
-                      : 'text-foreground shrink-0 text-sm tabular-nums'
-                  }
-                >
-                  {valueText}
-                </span>
-              ) : null}
-              {href ? <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" /> : null}
-            </>
-          );
-          return (
-            <li key={view}>
-              {href ? (
-                <Link
-                  href={href}
-                  className="hover:bg-hover focus-visible:bg-hover flex items-center gap-3 px-4 py-2.5 transition-colors duration-fast focus-visible:outline-none"
-                >
-                  {content}
-                </Link>
-              ) : (
-                <div className="flex items-center gap-3 px-4 py-2.5">{content}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
   );
 }
 
@@ -694,7 +590,6 @@ export function AgentOverview({
           onAskMyKortix={onAskMyKortix}
           autoFocus={focusInstructions}
         />
-        <AccessSummary name={name} block={block} views={views} facts={facts} hrefFor={hrefFor} />
       </div>
       <div className="min-w-0 space-y-3">
         <OverviewAside

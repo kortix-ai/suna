@@ -5,7 +5,6 @@ import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import {
-  isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
   sessionCanBeStopped,
@@ -146,7 +145,6 @@ import {
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
-  SparkleIcon,
   TargetIcon,
   SquareIcon as Square,
   TagIcon,
@@ -1380,7 +1378,6 @@ function ProjectSessionRow({
   };
 
   const source = sessionSource(session, tI18nComplete);
-  const isMeta = isMetaCoordinatorSession(session);
   // The conversation the runtime can fork: the pinned root conversation id,
   // not the project-session id — `POST /session/{id}/fork` addresses the
   // runtime's own id space (`ses_…`). canFork already guarantees one.
@@ -1431,14 +1428,6 @@ function ProjectSessionRow({
       </div>
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
-
-      {isMeta && (
-        <Hint side="top" label={t('metaCoordinator')}>
-          <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
-            <SparkleIcon className="size-3.5" weight="fill" />
-          </span>
-        </Hint>
-      )}
 
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
