@@ -415,7 +415,23 @@ jobs:
         with:
           node-version: 22
       - name: Check root lockfile against GHSA advisories
-        run: npx --yes pnpm@8.11.0 audit --audit-level moderate
+        # Exception: 4 better-auth advisories (GHSA-q84f-53jg-9ppm, GHSA-r4xp-prcw-77qf,
+        # GHSA-965c-763c-88jm, GHSA-44jh-23m7-hpcf). Only apps/white-label/lumen pulls
+        # better-auth; no workflow builds or deploys it; it uses none of the affected
+        # features (device login, OAuth proxy, magic link); and @convex-dev/better-auth
+        # has no release for the fixed better-auth 1.7.7+. pnpm 8.11 cannot ignore an
+        # advisory by GHSA id, so the JSON report is filtered; anything else at moderate
+        # or above fails, and an unreadable report fails.
+        run: |
+          npx --yes pnpm@8.11.0 audit --audit-level moderate --json > "$RUNNER_TEMP/audit.json" || true
+          node -e '
+            const ignore = new Set(["GHSA-q84f-53jg-9ppm", "GHSA-r4xp-prcw-77qf", "GHSA-965c-763c-88jm", "GHSA-44jh-23m7-hpcf"]);
+            const rank = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
+            const report = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const bad = Object.values(report.advisories ?? {}).filter((a) => rank[a.severity] >= rank.moderate && !ignore.has(a.github_advisory_id));
+            for (const a of bad) console.log(`${a.severity} ${a.module_name} ${a.github_advisory_id} ${a.url}`);
+            process.exit(bad.length ? 1 : 0);
+          ' "$RUNNER_TEMP/audit.json"
       - name: Check scanner lockfile against GHSA advisories
         if: always()
         working-directory: .deepsec
