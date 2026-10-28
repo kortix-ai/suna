@@ -389,12 +389,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     name: 'Goals',
     description:
       'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on (flag key `reminders`).',
-    stability: 'experimental',
-    wip: true,
+    stability: 'beta',
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Off by default again (Marko, 2026-10-27): a project turns it on.
-    platformDefault: () => false,
+    // On by default wherever Platinum is configured (Marko, 2026-10-28): Goals
+    // is a v1 product. Volumes and Loops, which it needs, are on there too.
+    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
     enforcement: 'ui-only',
     enforcementNote:
       'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
