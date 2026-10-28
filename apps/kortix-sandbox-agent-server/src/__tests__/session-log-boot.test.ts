@@ -211,6 +211,79 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     expect(again.count.restore).toBe(0)
   })
 
+  /** A 413 that carries a part of the log (`kept`), as the API answers a log over its cap. */
+  const overCap = (l: SessionLog, kept: 'model_view' | 'newest', revs: Record<string, number>, seq_max: Record<string, number>, messages: number) =>
+    Response.json(
+      { generation: 1, log: l, revs, seq_max, blobs: [], error: 'session_log_too_large', bytes: 38_588_834, limit: 24 * 1024 * 1024, messages, kept } satisfies SessionLogRestoreTooLarge,
+      { status: 413 },
+    )
+
+  test('413 kept model_view: the box writes the threads as sent, adds no note and no dropped.message, and leaves the session grade alone; every other stored id is unwritten; the restart restores nothing', async () => {
+    const child = { ...STORED.threads[0]!, thread_id: 'thr_child', parent_thread_id: 'thr_root', messages: [message('c1', 1, 'child one', { thread_id: 'thr_child', role: 'user' })] }
+    const slice = { ...STORED, threads: [STORED.threads[0]!, child] }
+    const live: Array<[string]> = [['m0'], ['m1'], ['m2'], ['c0'], ['c1']]
+    const api = fakeApi({ manifest: [manifest(0, live)], restore: [overCap(slice, 'model_view', { m0: 1, m1: 1, m2: 1, c0: 1, c1: 1 }, { thr_root: 2, thr_child: 1 }, 2)] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    // One write: no note follows.
+    expect(store.restores).toHaveLength(1)
+    expect(store.restores[0]!.log.threads.map((t) => [t.thread_id, t.messages.map((m) => m.message_id)])).toEqual([['thr_root', ['m1', 'm2']], ['thr_child', ['c1']]])
+    expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2, thr_child: 1 })
+    expect(boot).toEqual({
+      generation: 1,
+      cursors: [
+        { thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } },
+        { thread_id: 'thr_child', last_seq: 1, native_hashes: { c1: 'h-c1' } },
+      ],
+      harness: carry(3),
+    })
+    expect(state()).toEqual({ version: 1, generation: 1, unwritten: ['m0', 'c0'], harness: carry(3) })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, live)] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
+  test('413 kept model_view keeps the writer\'s own losses: a dropped attachment still gets the D3 note, without dropped.message', async () => {
+    const api = fakeApi({ manifest: [manifest(0, [['m0'], ...LIVE])], restore: [overCap(STORED, 'model_view', { m0: 1, m1: 1, m2: 1 }, { thr_root: 2 }, 1)] })
+    const store = fakeStore(null, { drops: { attachment: 1 } })
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    expect((store.restores.at(-1)!.log.threads[0]!.messages.at(-1)!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Some earlier content could not be restored: 1 attachment. If you need it, ask the user to send it again.',
+    )
+    expect(boot?.session).toMatchObject({ restore_grade: 'partial', ext: { kortix: { data: { restore: { dropped: { attachment: 1 } } } } } })
+  })
+
+  test('413 kept newest: the box writes the newest turns and a D3 note that names the earlier messages left out; the session patch is partial', async () => {
+    const newest = log([message('m3', 3, 'three', { role: 'user' }), message('m4', 4, 'four')])
+    const api = fakeApi({ manifest: [manifest(0, [...LIVE, ['m3'], ['m4']])], restore: [overCap(newest, 'newest', { m1: 1, m2: 1, m3: 1, m4: 1 }, { thr_root: 4 }, 2)] })
+    const store = fakeStore(null)
+
+    const boot = await reconcileSessionLog(store.port, RETRY)
+
+    expect(api.count.restore).toBe(1)
+    const written = store.restores.at(-1)!.log.threads[0]!.messages
+    expect(written.map((m) => m.message_id).slice(0, 2)).toEqual(['m3', 'm4'])
+    expect(written[2]).toEqual(expect.objectContaining({ seq: 5, origin: 'notification', blocks: [expect.objectContaining({ id: 'prt_kortix_restore_g1' })] }))
+    expect((written[2]!.blocks[0] as { text: string }).text).toBe(
+      'Kortix: this session was restored from its saved session log. Its 2 earliest messages were not restored: the conversation (36.8 MiB) is above the 24 MiB restore limit, and the newest messages that fit were restored. If you need it, ask the user to send it again.',
+    )
+    expect(boot).toMatchObject({ generation: 1, session: { restore_grade: 'partial', ext: { kortix: { data: { restore: { generation: 1, dropped: { message: 2 }, truncated: 0 } } } } } })
+    expect(state()).toMatchObject({ generation: 1, unwritten: ['m1', 'm2'] })
+
+    resetSessionLogJournalForTests()
+    const again = fakeApi({ manifest: [manifest(1, [...LIVE, ['m3'], ['m4']])] })
+    expect(await reconcileSessionLog(store.port, RETRY)).toMatchObject({ generation: 1, cursors: [] })
+    expect(again.count.restore).toBe(0)
+  })
+
   test('a 413 that is not session_log_too_large (a proxy) claims nothing: no restore, no retry, the mark is cleared', async () => {
     const api = fakeApi({ manifest: [manifest(0, LIVE)], restore: [new Response('Request Entity Too Large', { status: 413 })] })
     const store = fakeStore(null)

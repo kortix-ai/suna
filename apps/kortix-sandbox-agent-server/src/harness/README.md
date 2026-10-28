@@ -197,7 +197,7 @@ The boot runs these steps when the native store is behind the log (P6.4, "When t
 boot restores" below):
 
 1. `POST …/log/restore` (P6.1) answers `SessionLogRestore` `{ generation, log, revs, seq_max, blobs }`,
-   or 413 `session_log_too_large` for a log over the API's cap (see "Memory" below).
+   or 413 `session_log_too_large` with the part that fits for a log over the API's cap (see "Memory" below).
    The claim raises the generation, and the ingest applies a put whose
    `(generation, rev)` is above the stored pair, so the box needs no rev seed.
 2. `sessionLogFromRestore(answer, apiTextReader(sandboxRelayContext()))`
@@ -310,7 +310,7 @@ root. No turn runs at either point.
   a crash before it reads as behind at the next boot, and a daemon restart
   journals at the claimed generation. A 404 (no stored log) or 503 (operator
   switch off) claims nothing and restores nothing. A 413 `session_log_too_large`
-  claimed but carries no message: see "Memory" below. Any other failure (5xx,
+  claimed and carries the part of the log that fits: see "Memory" below. Any other failure (5xx,
   408, 429, network, a body that does not parse, a write that throws) is
   retried, 3 attempts, each a new claim; then the boot fails
   (`initialRuntimeSessionError`, the proxy answers
@@ -384,23 +384,41 @@ root. No turn runs at either point.
   about 1 GB. 60 screenshots of 500 kB restore; 400 (200 MB) answer 413. p99.9 of
   prod sessions is about 15 MB, p99 3.7 MB. The size query reads the records
   inside Postgres before any record leaves it. Above the cap the claim still
-  happens and the answer is 413
-  `SessionLogRestoreTooLarge`: every thread without messages, every rev,
-  `seq_max`, `messages` (the count left out), `bytes` and `limit`; no record
-  leaves Postgres. The box writes the log's root with the D3 note alone
-  (above `seq_max`, so new messages number above every stored seq), keeps no
-  other thread, persists every stored id (`revs`) as unwritten so later boots
-  do not read the store as behind, and journals at the claimed generation. The
-  note tells the agent the size and the limit; the session patch carries
-  `restore_grade: 'partial'` and `dropped: { message: <count> }`, which P5.6
-  shows as "Missing: N earlier messages". The stored history stays in the
-  transcript. The same 38.5 MB log over the cap: the daemon peaked at 135 MB
+  happens and the answer is 413 `SessionLogRestoreTooLarge` with the part of
+  the log that fits (`kept`), every rev, `seq_max`, the blobs of that part,
+  `messages` (the count left out), `bytes` and `limit`. The model never sees
+  the whole log: `modelViewSliceIds` (`@kortix/api-contract/session-log`) is
+  what it sees of a thread (the in-context turns, or after the last in-context
+  compaction its marker, cut point and kept run and the turns after it) plus
+  the last context record. The API reads light columns, the record sizes and
+  each thread's last compaction, sizes the slice at the same rule, and answers
+  `kept: 'model_view'`: the root's slice, then each sub-agent thread's slice,
+  newest first, whole or not at all. The box writes it as sent and adds no
+  note: the model's context is unchanged (the oracle tests
+  `session-log-restore-slice.test.ts` in api-contract, and the pi and OpenCode
+  `*-session-log-restore-slice.test.ts` here). A root slice over the cap alone
+  gives `kept: 'newest'`: the root's newest in-context turns that fit, from a
+  user turn, without the summary; the box writes them with a D3 note that
+  names the left-out count. When not even the newest turn fits, the answer has
+  no `kept` and no message: the box writes the log's root with the D3 note
+  alone (above `seq_max`, so new messages number above every stored seq) and
+  keeps no other thread. Every 413 persists every stored id (`revs`) the write
+  left out as unwritten, so later boots do not read the store as behind, and
+  the box journals at the claimed generation. The status stays 413: a kortixd
+  before `kept` drops the messages and writes the note alone, as before (with
+  a 200 it would mark only the part as written and claim again at every boot).
+  `newest` and the note alone carry `restore_grade: 'partial'` and
+  `dropped: { message: <count> }`, which P5.6 shows as "Missing: N earlier
+  messages". The stored history stays in the transcript. The same 38.5 MB log
+  over the cap without any message answered: the daemon peaked at 135 MB
   (+29 MB) and the API rose by about 21 MB; the 30 MB of images over the cap:
   128 MB and about 2 MB. The switch preflight (`POST …/log/switch-preflight`)
-  reports `restores: false` and a `history` loss for a log over the cap. A 413 with another body (a proxy)
-  claimed nothing and restores nothing, as a 404.
-  ponytail: an over-cap restore gives the agent none of the history; restore
-  the newest messages under the cap (paging) when sessions near it are common.
+  reports `restores: false` and a `history` loss only when the model view is
+  over the cap too. A 413 with another body (a proxy) claimed nothing and
+  restores nothing, as a 404.
+  ponytail: `newest` drops the compaction summary; keeping it needs a
+  synthesized `layout` compaction, add it when the prod data shows the
+  fallback is common.
 
 Default-on: the cap above bounds what one restore makes the box hold (live
 records plus 2/5 of live blobs, 24 MiB by default). It does not bound the native

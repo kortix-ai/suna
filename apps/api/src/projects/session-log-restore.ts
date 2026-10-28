@@ -27,10 +27,9 @@
  * attachments it reads after the answer, at `SESSION_LOG_BLOB_WEIGHT`) is compared with
  * `SESSION_LOG_RESTORE_MAX_BYTES`.
  * The size query reads the records inside Postgres only. Above the cap the claim stands and the
- * answer is `SessionLogRestoreTooLarge` (413): every thread without messages, every rev, `seq_max`,
- * no blob. The API holds ids and seqs only; the box writes the D3 note alone.
- * ponytail: the whole history is left out; restore the newest messages under the cap (paging) when
- * sessions near the cap are common.
+ * answer is `SessionLogRestoreTooLarge` (413) with the part of the log that `sessionLogRestorePlan` fits
+ * under the cap (`kept`), every rev, `seq_max` and the blobs of that part. The plan reads light columns,
+ * the record sizes and the last compaction of each thread; only the records of the part leave Postgres.
  *
  * A stored log can lack parts of a `SessionLog`: a session record built only from a
  * first batch without a session patch, or messages whose thread was never upserted.
@@ -39,7 +38,9 @@
  */
 import {
   SESSION_LOG_SCHEMA,
+  modelViewSliceIds,
   type SessionLog,
+  type SessionLogBlock,
   type SessionLogMessage,
   type SessionLogRestore,
   type SessionLogRestoreBlob,
@@ -59,7 +60,7 @@ type LogRow = typeof sessionLogs.$inferSelect;
 
 /**
  * Claim the session and read its log, or null when the session has no stored log (nothing claimed).
- * A log over `SESSION_LOG_RESTORE_MAX_BYTES` is claimed and answered without messages (`error` is set).
+ * A log over `SESSION_LOG_RESTORE_MAX_BYTES` is claimed and answered with the part that fits (`error` is set).
  */
 export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLogRestore | SessionLogRestoreTooLarge | null> {
   return db.transaction(async (tx) => {
@@ -78,8 +79,10 @@ export async function claimSessionLog(scope: SessionLogScope): Promise<SessionLo
     if (!log) return null;
     const { bytes, messages } = await sessionLogRestoreBytes(tx, scope.sessionId);
     const limit = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    if (bytes <= limit) return readWholeLog(tx, log, true);
-    return { ...(await readWholeLog(tx, log, false)), error: 'session_log_too_large', bytes, limit, messages };
+    if (bytes <= limit) return readLog(tx, log, null);
+    const plan = await sessionLogRestorePlan(tx, scope.sessionId, limit);
+    const answer = await readLog(tx, log, plan ?? { ids: new Set(), threads: null });
+    return { ...answer, error: 'session_log_too_large', bytes, limit, messages: messages - (plan?.ids.size ?? 0), ...(plan && { kept: plan.kept }) };
   });
 }
 
@@ -109,14 +112,140 @@ export async function sessionLogRestoreFits(tx: Pick<Tx, 'execute'>, sessionId: 
   return (await sessionLogRestoreBytes(tx, sessionId)).bytes <= config.SESSION_LOG_RESTORE_MAX_BYTES;
 }
 
-/** `full` false: every thread, rev and seq, no message record and no blob (the 413 answer). */
-async function readWholeLog(tx: Tx, log: LogRow, full: boolean): Promise<SessionLogRestore> {
+/** True when a restore gives the model its whole context: the log is under the cap, or its model view is (`kept: 'model_view'`). */
+export async function sessionLogRestoreKeepsModelView(tx: Pick<Tx, 'select' | 'execute'>, sessionId: string): Promise<boolean> {
+  const limit = config.SESSION_LOG_RESTORE_MAX_BYTES;
+  if ((await sessionLogRestoreBytes(tx, sessionId)).bytes <= limit) return true;
+  return (await sessionLogRestorePlan(tx, sessionId, limit))?.kept === 'model_view';
+}
+
+/** The messages (`ids`) and threads an over-cap restore answers. */
+export type SessionLogRestorePlan = { kept: 'model_view' | 'newest'; ids: Set<string>; threads: Set<string> };
+type Named = Map<string, Array<{ sha256: string; bytes: number }>>;
+
+/** Adds messages at the restore cost rule (`sessionLogRestoreBytes`) while they fit; a blob two messages name counts once. */
+class Budget {
+  private records = 0;
+  private blobs = 0;
+  private readonly counted = new Set<string>();
+  constructor(private readonly limit: number, private readonly size: Map<string, number>, private readonly named: Named) {}
+  /** Adds every message of `ids` and answers true, or adds none and answers false. */
+  take(ids: Iterable<string>): boolean {
+    let records = this.records;
+    let blobs = this.blobs;
+    const fresh = new Set<string>();
+    for (const id of ids) {
+      records += this.size.get(id) ?? 0;
+      for (const b of this.named.get(id) ?? []) {
+        if (this.counted.has(b.sha256) || fresh.has(b.sha256)) continue;
+        fresh.add(b.sha256);
+        blobs += b.bytes;
+      }
+    }
+    if (records + Math.ceil(blobs * SESSION_LOG_BLOB_WEIGHT) > this.limit) return false;
+    this.records = records;
+    this.blobs = blobs;
+    for (const sha of fresh) this.counted.add(sha);
+    return true;
+  }
+}
+
+/**
+ * What a restore over `limit` answers (P6.1 follow-up). The model never sees the whole log: `modelViewSliceIds`
+ * of a thread gives the model the context it had. The root thread's slice first; then each sub-agent thread's
+ * slice, newest first, whole or not at all: `model_view`. A root slice over `limit` alone: the root's newest
+ * in-context turns that fit, from the first user turn among them, so no turn is cut: `newest`. Null when not even
+ * the newest turn fits. The cost is `sessionLogRestoreBytes`'s rule on the messages kept: their stored JSON plus
+ * 2/5 of the blobs they name. Only light columns, the record sizes, the last compaction of each thread and the
+ * blob refs of the slices are read; no record leaves Postgres.
+ * ponytail: `newest` drops the summary too; keeping it needs a synthesized `layout` compaction, add it when the
+ * fallback is common.
+ */
+export async function sessionLogRestorePlan(tx: Pick<Tx, 'select' | 'execute'>, sessionId: string, limit: number): Promise<SessionLogRestorePlan | null> {
+  const rows = await tx
+    .select({
+      message_id: sessionLogMessages.messageId,
+      thread_id: sessionLogMessages.threadId,
+      seq: sessionLogMessages.seq,
+      role: sessionLogMessages.role,
+      kind: sql<SessionLogMessage['kind']>`${sessionLogMessages.kind}`,
+      in_context: sessionLogMessages.inContext,
+      bytes: sql<number>`octet_length(${sessionLogMessages.record}::text)`.mapWith(Number),
+    })
+    .from(sessionLogMessages)
+    .where(and(eq(sessionLogMessages.sessionId, sessionId), isNull(sessionLogMessages.deletedAt)))
+    .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
+  const byThread = new Map<string, Array<(typeof rows)[number] & { blocks?: SessionLogBlock[] }>>();
+  for (const r of rows) (byThread.get(r.thread_id) ?? byThread.set(r.thread_id, []).get(r.thread_id)!).push(r);
+  // The last in-context compaction of each thread is the only record the slice rule reads.
+  const markers = [...byThread.values()].flatMap((t) => t.filter((r) => r.kind === 'compaction' && r.in_context).slice(-1));
+  if (markers.length) {
+    const blocks = await tx
+      .select({ id: sessionLogMessages.messageId, blocks: sql<SessionLogBlock[]>`${sessionLogMessages.record}->'blocks'` })
+      .from(sessionLogMessages)
+      .where(and(eq(sessionLogMessages.sessionId, sessionId), sql`${sessionLogMessages.messageId} = ANY(${sql.param(markers.map((m) => m.message_id))}::text[])`));
+    for (const m of markers) m.blocks = blocks.find((b) => b.id === m.message_id)?.blocks;
+  }
+  const slices = new Map([...byThread].map(([id, t]) => [id, modelViewSliceIds(t)]));
+  const sliceIds = [...slices.values()].flatMap((ids) => [...ids]);
+  const named: Named = new Map();
+  if (sliceIds.length) {
+    const refs = await tx.execute<{ message_id: string; sha256: string; bytes: string }>(sql`
+      SELECT DISTINCT m.message_id, b.sha256, b.bytes
+      FROM kortix.session_log_messages m
+      CROSS JOIN LATERAL jsonb_path_query(m.record, 'lax $.**.ref') AS r(ref)
+      JOIN kortix.session_log_blobs b ON b.session_id = m.session_id AND b.deleted_at IS NULL AND 'kortix-attachment://' || b.object_key = r.ref #>> '{}'
+      WHERE m.session_id = ${sessionId} AND m.message_id = ANY(${sql.param(sliceIds)}::text[])`);
+    for (const r of refs) (named.get(r.message_id) ?? named.set(r.message_id, []).get(r.message_id)!).push({ sha256: r.sha256, bytes: Number(r.bytes) });
+  }
+  const size = new Map(rows.map((r) => [r.message_id, r.bytes]));
+  const budget = new Budget(limit, size, named);
+
+  // The threads in the answer's order (`readLog`); the root is the first without a parent, as the daemon picks it.
+  const records = await tx
+    .select({ threadId: sessionLogThreads.threadId, parent: sessionLogThreads.parentThreadId })
+    .from(sessionLogThreads)
+    .where(eq(sessionLogThreads.sessionId, sessionId))
+    .orderBy(asc(sessionLogThreads.createdAt), asc(sessionLogThreads.threadId));
+  const order = [...records, ...[...byThread.keys()].filter((id) => !records.some((t) => t.threadId === id)).map((threadId) => ({ threadId, parent: null }))];
+  const root = (order.find((t) => t.parent === null) ?? order[0])?.threadId;
+  if (root === undefined) return null;
+
+  const plan: SessionLogRestorePlan = { kept: 'model_view', ids: new Set(), threads: new Set([root]) };
+  const rootSlice = slices.get(root) ?? new Set<string>();
+  if (budget.take(rootSlice)) for (const id of rootSlice) plan.ids.add(id);
+  else {
+    const turns = (byThread.get(root) ?? []).filter((r) => rootSlice.has(r.message_id) && r.in_context && r.kind === 'turn');
+    const trial = new Budget(limit, size, named);
+    let start = turns.length;
+    while (start > 0 && trial.take([turns[start - 1]!.message_id])) start--;
+    while (start < turns.length && turns[start]!.role !== 'user') start++;
+    if (start === turns.length) return null;
+    plan.kept = 'newest';
+    for (const r of turns.slice(start)) plan.ids.add(r.message_id);
+    budget.take(plan.ids);
+  }
+  for (const { threadId } of [...order].reverse()) {
+    const slice = slices.get(threadId) ?? new Set<string>();
+    if (threadId === root || !budget.take(slice)) continue;
+    plan.threads.add(threadId);
+    for (const id of slice) plan.ids.add(id);
+  }
+  return plan;
+}
+
+/**
+ * `keep` null: the whole log. Otherwise only the records of `keep.ids`, and only the threads of `keep.threads`
+ * (null: every thread); every rev and seq either way. The blobs are the texts the answered records name.
+ */
+async function readLog(tx: Tx, log: LogRow, keep: { ids: ReadonlySet<string>; threads: ReadonlySet<string> | null } | null): Promise<SessionLogRestore> {
   const sessionId = log.sessionId;
   const threads = await tx
     .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
     .from(sessionLogThreads)
     .where(eq(sessionLogThreads.sessionId, sessionId))
     .orderBy(asc(sessionLogThreads.createdAt), asc(sessionLogThreads.threadId));
+  const only = keep && sql`${sessionLogMessages.messageId} = ANY(${sql.param([...keep.ids])}::text[])`;
   // `rev` through the drizzle column (`bigint`, mode number): a JSON number.
   const messages = await tx
     .select({
@@ -125,13 +254,13 @@ async function readWholeLog(tx: Tx, log: LogRow, full: boolean): Promise<Session
       seq: sessionLogMessages.seq,
       rev: sessionLogMessages.rev,
       deletedAt: sessionLogMessages.deletedAt,
-      record: full ? sessionLogMessages.record : sql<null>`null`,
-      toolInputOrder: full ? sessionLogMessages.toolInputOrder : sql<null>`null`,
+      record: !keep ? sessionLogMessages.record : sql<Record<string, unknown> | null>`CASE WHEN ${only} THEN ${sessionLogMessages.record} END`,
+      toolInputOrder: !keep ? sessionLogMessages.toolInputOrder : sql<unknown[] | null>`CASE WHEN ${only} THEN ${sessionLogMessages.toolInputOrder} END`,
     })
     .from(sessionLogMessages)
     .where(eq(sessionLogMessages.sessionId, sessionId))
     .orderBy(asc(sessionLogMessages.seq), asc(sessionLogMessages.messageId));
-  const stored = !full
+  const stored = keep && !keep.ids.size
     ? []
     : await tx
         .select({ objectKey: sessionLogBlobs.objectKey, sha256: sessionLogBlobs.sha256, bytes: sessionLogBlobs.bytes })
@@ -149,7 +278,7 @@ async function readWholeLog(tx: Tx, log: LogRow, full: boolean): Promise<Session
     revs[m.messageId] = m.rev;
     seqMax[m.threadId] = Math.max(seqMax[m.threadId] ?? 0, m.seq);
     if (m.deletedAt !== null) continue;
-    const record = full ? withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder) : null;
+    const record = m.record === null ? null : withToolInputOrder(m.record as unknown as SessionLogMessage, m.toolInputOrder);
     let thread = byThread.get(m.threadId);
     if (!thread) {
       thread = { schema: SESSION_LOG_SCHEMA, v: log.v, thread_id: m.threadId, parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: record?.created_at ?? log.createdAt.toISOString(), messages: [], ext: {} };
@@ -178,5 +307,6 @@ async function readWholeLog(tx: Tx, log: LogRow, full: boolean): Promise<Session
     ...log.record,
     session_id: sessionId,
   } as unknown as Omit<SessionLog, 'threads'>;
-  return { generation: log.generation, log: { ...session, threads: [...byThread.values()] }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
+  const answered = [...byThread.values()].filter((t) => !keep?.threads || keep.threads.has(t.thread_id));
+  return { generation: log.generation, log: { ...session, threads: answered }, revs, seq_max: seqMax, blobs } as SessionLogRestore;
 }
