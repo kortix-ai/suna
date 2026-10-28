@@ -1467,6 +1467,8 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
   beforeAll(async () => {
     await insertIntoView(db, accountMembers, { userId: ADMIN, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
   });
+  // Earlier describes message the bot as strangers, which stores requests: start each test from a clean list.
+  beforeEach(allowSender);
   afterEach(allowSender);
 
   test('a not-allowed sender in a private chat is recorded once, with the id and names only; a repeat within the hour writes nothing', async () => {
