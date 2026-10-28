@@ -550,13 +550,11 @@ export function AgentOverview({
           showSpace={showSpace}
         />
         <p className="text-muted-foreground px-1 text-xs text-pretty">
-          {agent.platform
-            ? t.rich('builtinNote', { code: (chunks) => <span className="font-mono">{chunks}</span> })
-            : t.rich('savedIn', {
-                file: () => <span className="font-mono">kortix.yaml</span>,
-                key: () => <span className="font-mono">agents.{agent.name}</span>,
-                source: () => <span className="font-mono">{sourcePath}</span>,
-              })}
+          {t.rich('savedIn', {
+            file: () => <span className="font-mono">kortix.yaml</span>,
+            key: () => <span className="font-mono">agents.{agent.name}</span>,
+            source: () => <span className="font-mono">{sourcePath}</span>,
+          })}
         </p>
       </div>
     </div>
