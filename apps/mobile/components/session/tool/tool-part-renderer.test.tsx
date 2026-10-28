@@ -26,7 +26,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
-import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogTurnSegments, sessionLogTurns, toolCallBlock, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
 
 // ─── Stand-ins for the heavy shared render surface ───────────────────────────
 
@@ -315,5 +315,36 @@ describe('ToolPartRenderer motion gate', () => {
 
     await renderPart(nest, { turnLive: false });
     expect(probeText()).toBe('PROBE motion:false live:false');
+  });
+});
+
+describe('a codemode script\'s nested image_gen call on v2 (a pi nested_part block)', () => {
+  const nestedImage = {
+    type: 'harness', id: 'n1', harness: 'pi', kind: 'nested_part', model_visible: false,
+    data: {
+      parent_call_id: 'call_code',
+      part: { type: 'tool', callID: 'call_code/1', tool: 'image_gen', state: { status: 'completed', input: { action: 'generate', prompts: ['cube'] }, output: '{"images":[]}', title: 'image_gen', metadata: {}, time: { start: 1, end: 2 } } },
+    },
+  };
+
+  test('the turn segment for the block renders the image row', async () => {
+    const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+    const message = (id: string, role: 'user' | 'assistant', blocks: SessionLogBlock[], seq: number): SessionLogMessage => ({
+      ...V, message_id: id, thread_id: 't', seq, role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+      finish: null, error: null, created_at: new Date(1_700_000_000_000 + seq * 1000).toISOString(), completed_at: null,
+      producer: { harness: 'pi', harness_version: '1', adapter_version: '1.2.0' }, blocks, ...(role === 'assistant' && { reply_to: 'u' }),
+    });
+    const turn = sessionLogTurns({
+      ...V, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '',
+      messages: [message('u', 'user', [{ type: 'text', id: 'q', text: 'go' }], 1), message('a', 'assistant', [nestedImage as unknown as SessionLogBlock], 2)],
+    })[0]!;
+    const segment = sessionLogTurnSegments(turn.blocks).find((s) => s.kind === 'standalone') as { block: ToolCallBlock };
+    await renderCall(segment.block);
+    expect(texts()).toContain('REGISTERED-IMAGE-ROW:complete');
+  });
+
+  test('a block that is not a tool call (no state) renders nothing and never throws', async () => {
+    await renderCall(nestedImage as unknown as ToolCallBlock);
+    expect(tree!.toJSON()).toBeNull();
   });
 });

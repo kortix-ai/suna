@@ -309,5 +309,10 @@ function ToolPartRendererImpl({
  * `memo` does not block context propagation, so `ToolSurfaceContext`,
  * `ToolActivateContext` and `ToolOutcomeContext` still reach the tool.
  */
-export const ToolPartRenderer = memo(ToolPartRendererImpl);
+/** A block that is not a tool call (a harness block a host mistyped) renders nothing: the row must never throw. */
+function ToolPartRendererGuard(props: ToolPartRendererProps & { sessionId?: string }) {
+  return props.call?.type === 'tool_call' ? <ToolPartRendererImpl {...props} /> : null;
+}
+
+export const ToolPartRenderer = memo(ToolPartRendererGuard);
 ToolPartRenderer.displayName = 'ToolPartRenderer';

@@ -257,8 +257,8 @@ function partOf(b: SessionLogBlock, c: Ctx): unknown {
       ...(b.trigger === 'overflow' && { overflow: true }), ...(b.first_kept_message_id !== null && { tail_start_id: b.first_kept_message_id }),
     };
     case 'harness':
+      if (b.kind === 'nested_part') return isObj(b.data) && isObj(b.data.part) && b.data.part.type === 'tool' ? { ...b.data.part, ...base } : undefined;
       if (c.fromV1 && (b.harness === 'opencode' || b.harness === 'pi')) return b.data;
-      if (b.kind === 'nested_part' && isObj(b.data) && isObj(b.data.part)) return { ...b.data.part, ...base };
       return b.model_visible && b.fallback_text !== undefined ? { ...base, type: 'text', text: b.fallback_text, synthetic: true } : undefined;
     case 'subtask': return undefined;
   }
