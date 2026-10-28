@@ -347,6 +347,7 @@ export interface GatewayDeps {
     toolSlug: string;
     args: Record<string, unknown>;
     connectedAccountId: string | null;
+    inputSchema?: Record<string, unknown> | null;
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
@@ -1220,7 +1221,8 @@ async function runConnectorAction(
       // These runners take provider-native file inputs. Forwarding the
       // reference would deliver the message without its file.
       throw new Error(
-        `connector_attachments_unsupported: ${connector.provider} connectors do not accept Kortix attachments`,
+        `connector_attachments_unsupported: ${connector.provider} connectors do not accept Kortix attachments` +
+          (connector.provider === 'composio' ? '; pass a public https URL in the file field instead' : ''),
       );
     }
 
@@ -1241,7 +1243,7 @@ async function runConnectorAction(
         runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs),
       );
     } else if (connector.provider === 'composio') {
-      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs));
+      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs, action.inputSchema));
     } else {
       let providerArgs =
         connector.provider === 'channel'
@@ -1543,6 +1545,7 @@ export async function runComposioAction(
   connector: GatewayConnector,
   b: ActionBinding,
   executionArgs: Record<string, unknown>,
+  inputSchema?: Record<string, unknown> | null,
 ): Promise<ExecResult> {
   if (b.kind !== 'composio') {
     throw new Error(`composio connector has unexpected binding kind "${b.kind}"`);
@@ -1566,6 +1569,7 @@ export async function runComposioAction(
     toolSlug: b.toolSlug,
     args: executionArgs,
     connectedAccountId,
+    inputSchema,
   });
 }
 

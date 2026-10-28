@@ -14,6 +14,7 @@ import {
   searchComposioCatalog,
   type ComposioCatalogClient,
 } from './composio-catalog-search';
+import { composioFileUpload, type ComposioFilesLike, uploadFileArgs } from './composio-files';
 import type { ComposioToolLike } from './types';
 
 // Re-exported so `db-deps` reaches it through the lazily imported adapter module.
@@ -52,6 +53,8 @@ export interface ComposioRuntime {
       }>
     >;
   };
+  /** Uploads a file input to Composio's storage for this project. */
+  files?: ComposioFilesLike;
   /** Read one connected account. Only the non-secret `displayName` is used. */
   connectedAccounts?: {
     get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
@@ -109,6 +112,8 @@ export interface ComposioExecuteInput {
   toolSlug: string;
   args: Record<string, unknown>;
   connectedAccountId: string | null;
+  /** The tool's input schema. Its `file_uploadable` fields take a URL (`composio-files.ts`). */
+  inputSchema?: Record<string, unknown> | null;
 }
 
 export interface ComposioConnectResult {
@@ -696,8 +701,9 @@ export async function composioSessionTools(input: {
 export async function executeComposio(
   input: ComposioExecuteInput & { runtime?: ComposioRuntime; catalogClient?: ComposioCatalogClient },
 ): Promise<ExecResult> {
+  const runtime = input.runtime ?? getComposioRuntime();
   const session = await useOrCreateSession({
-    runtime: input.runtime ?? getComposioRuntime(),
+    runtime,
     connectionId: input.connectionId,
     sessionId: input.sessionId,
     toolkit: input.toolkit,
@@ -720,9 +726,24 @@ export async function executeComposio(
   // binding, and the state check above proves it is the expected account. Passing
   // `options.account` again opts into Composio's multi-account selector, which is
   // rejected (code 4300) on ordinary single-account projects.
+  // A URL in a file field becomes a file in Composio's storage first: Composio
+  // refuses any `s3key` its own upload did not issue for this project (403).
+  let args = input.args;
+  if (runtime.files) {
+    try {
+      args = await uploadFileArgs(
+        args,
+        input.inputSchema,
+        composioFileUpload(runtime.files, input.toolkit, input.toolSlug),
+      );
+    } catch (error) {
+      const status = (error as { status?: unknown }).status;
+      return { ok: false, status: status === 400 ? 400 : 502, data: (error as Error).message };
+    }
+  }
   let response: Awaited<ReturnType<ComposioSessionLike['execute']>>;
   try {
-    response = await session.execute(input.toolSlug, input.args);
+    response = await session.execute(input.toolSlug, args);
   } catch (error) {
     // Composio's own rate limit (`RateLimitError`, HTTP 429) is a retry-later
     // answer, not a fault: the gateway turns it into a 429 with Retry-After.
