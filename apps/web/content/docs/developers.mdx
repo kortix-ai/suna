@@ -533,7 +533,7 @@ Each command takes `--project <id>` and `--host <name>`. `ls`, `show`, `diff`, `
 
 ### The Review page
 
-The Review page is the project's inbox for everything that waits on a person. Open **Review** in the project sidebar, or go to `/projects/<project_id>/review`.
+The Review page is the project's inbox for everything that waits on a person. Open **Customize** → **Review** in the project sidebar, or go to `/projects/<project_id>/customize/review`.
 
 | Item | Id | Comes from |
 | --- | --- | --- |
@@ -542,6 +542,10 @@ The Review page is the project's inbox for everything that waits on a person. Op
 | Output (`output`), question (`decision`), finished batch (`batch`) | its own id | An agent submits it with `kortix review submit`. |
 
 The lists are **Needs you**, **Waiting** and **Done**. The filters are **All**, **Changes**, **Approvals**, **Outputs**, **Questions** and **Finished**. Keys: `j` and `k` move, `Enter` opens, `a` approves, `e` asks for changes, `d` dismisses, `1` `2` `3` switch lists, `/` searches, `?` shows help.
+
+A change opens as a page, with its diff. Every other item opens in a dialog over the list, the way an approval does. `Esc` closes it.
+
+An output shows the agent's note, then what the agent made: the first image, video or audio file under `/drives/` plays in the dialog, the `preview` text shows as its description, and each other file is a row that opens it. An output that names no file shows only its note.
 
 Each list loads 50 items at a time, newest first. **Load more** shows the next 50. The filters and the search apply to the items loaded so far. The **Review** count in the sidebar, and the dot on a session that waits on you, count every item that needs you.
 
@@ -575,6 +579,16 @@ The change request dialog on the Files page and on a session's change card follo
 | `kortix review act <item> <verdict> [--message <t>]` | Decides one item. |
 | `kortix review bulk <verdict> <id>…` | Decides several agent items. It skips changes and approvals, which each need their own review. |
 | `kortix review submit --kind <k> --title <t>` | Submits an `output`, `decision` or `batch`. Options: `--summary`, `--risk` (`none`, `low`, `medium`, `high`), `--detail <json>`, `--agent`, `--session`. |
+
+An output names its files in `--detail`. `files` takes `{"path", "note"}` objects or plain paths:
+
+```bash
+kortix review submit --kind output --title "Launch video" \
+  --summary "Draft cut. Check the claims before you publish." \
+  --detail '{"files":[{"path":"/drives/me/launch/cut.mp4"},{"path":"/drives/me/launch/sources.json","note":"Sources"}],"preview":"The post text."}'
+```
+
+The Review page also reads `artifact`, `description` and every other key whose value is a file path under `/drives/` or `/workspace/`, named after its key. A file under `/drives/` opens through the session that submitted the item. A file under `/workspace/` is listed and does not open: the Review page has no running sandbox.
 
 Reading needs `project.review.read`, a verdict needs `project.review.act`, and `submit` needs `project.review.submit`. A Member holds read and submit. A Manager holds all three.
 
