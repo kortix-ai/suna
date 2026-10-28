@@ -151,12 +151,13 @@ export function AgentRail({
       className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
     >
       <Link href={item.href} prefetch={false}>
-        <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+        {/* The label never truncates; a long value ("Project default") does. */}
+        <span className="shrink-0">{item.label}</span>
         {dirty?.includes(item.key) ? (
           <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />
         ) : null}
         {item.count !== undefined ? (
-          <span className={cn('text-muted-foreground font-normal tabular-nums', !horizontal && 'ml-auto')}>
+          <span className={cn('text-muted-foreground min-w-0 truncate font-normal tabular-nums', !horizontal && 'ml-auto')}>
             {item.count}
           </span>
         ) : null}
