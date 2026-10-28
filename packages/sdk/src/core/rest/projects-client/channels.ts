@@ -252,6 +252,9 @@ export interface ChannelAccessList {
 
 const channelPath = (projectId: string, platform: ChannelAccessPlatform) =>
   `/projects/${encodeURIComponent(projectId)}/channels/${platform}`;
+// A literal path, so route-contract.test.ts resolves the Telegram-only routes
+// to `/channels/telegram/…` and fails when the API drops one.
+const telegramPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/telegram`;
 
 async function channelUsers(
   projectId: string,
@@ -330,7 +333,7 @@ async function userPhoto(
 /** The project's Telegram bot, or null when none is connected (or the flag is off). */
 export async function getTelegramInstallation(projectId: string): Promise<TelegramInstallation | null> {
   const res = await backendApi.get<TelegramInstallation | null>(
-    `${channelPath(projectId, 'telegram')}/installation`,
+    `${telegramPath(projectId)}/installation`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -350,7 +353,7 @@ export async function connectTelegram(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.post<TelegramInstallation>(
-      `${channelPath(projectId, 'telegram')}/connect`,
+      `${telegramPath(projectId)}/connect`,
       input,
       { showErrors: false },
     ),
@@ -365,7 +368,7 @@ export async function setTelegramAllowedUsers(
 ): Promise<TelegramInstallation> {
   return unwrap(
     await backendApi.put<TelegramInstallation>(
-      `${channelPath(projectId, 'telegram')}/allowed-users`,
+      `${telegramPath(projectId)}/allowed-users`,
       { user_ids: userIds },
       { showErrors: false },
     ),
@@ -374,7 +377,7 @@ export async function setTelegramAllowedUsers(
 }
 
 export async function disconnectTelegram(projectId: string): Promise<void> {
-  const res = await backendApi.delete(channelPath(projectId, 'telegram'), { showErrors: false });
+  const res = await backendApi.delete(telegramPath(projectId), { showErrors: false });
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect Telegram');
 }
 
