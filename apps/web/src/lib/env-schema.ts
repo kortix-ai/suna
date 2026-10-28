@@ -74,6 +74,10 @@ const RuntimeEnvSchema = z.object({
    *  /auth instead of the marketing landing page. Set via
    *  KORTIX_PUBLIC_DISABLE_LANDING_PAGE / NEXT_PUBLIC_DISABLE_LANDING_PAGE. */
   DISABLE_LANDING_PAGE: z.boolean().default(false),
+  /** /services and /case-studies, and every link to them. Off unless
+   *  KORTIX_PUBLIC_SERVICES_PAGES_ENABLED / NEXT_PUBLIC_SERVICES_PAGES_ENABLED
+   *  is "true" (dev sets it) or the app runs under `next dev`. */
+  SERVICES_PAGES_ENABLED: z.boolean().default(false),
   /** Self-host account-creation restriction: hides "New account" affordances
    *  (accounts page header button + empty-state CTA, account-switcher
    *  dropdown item) for non-platform-admins. Mirrors the backend's

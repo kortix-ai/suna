@@ -24,6 +24,22 @@ export const isBillingEnabled = (): boolean => {
 };
 
 /**
+ * Whether /services and /case-studies are live, with every link to them.
+ * Off by default: dev sets KORTIX_PUBLIC_SERVICES_PAGES_ENABLED=true, and
+ * `next dev` turns it on locally. Prod leaves it unset until the pages ship.
+ */
+export const isServicesPagesEnabled = (): boolean => {
+  return getEnv().SERVICES_PAGES_ENABLED;
+};
+
+const SERVICES_PAGES = new Set(['/services', '/case-studies']);
+
+/** False for a link to /services or /case-studies while those pages are off. */
+export const showsMarketingLink = (href: string): boolean => {
+  return !SERVICES_PAGES.has(href) || isServicesPagesEnabled();
+};
+
+/**
  * Whether Kortix's own managed model lineup ("Managed · Included with your
  * plan" — Claude, GLM, and DeepSeek routed through Kortix's shared Bedrock,
  * Bedrock and OpenRouter credentials) can appear anywhere in the UI.

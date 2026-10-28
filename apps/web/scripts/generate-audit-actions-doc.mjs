@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { onByDefault } from './docs-generated-region.mjs';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(scriptDirectory, '..');
@@ -35,15 +36,47 @@ function isOperatorRoute(route) {
   );
 }
 
+// The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
+// The public docs leave such a feature out until its flag is on by default.
+const FLAGGED_ACTION_PREFIXES = {
+  agent_rooms: ['project.room.', 'session.room.', 'session.idle_notice.'],
+  artifacts: ['project.artifact.', 'artifact.'],
+  email_channel: ['channel.email.', 'webhook.email.'],
+  event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
+  notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
+  pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
+  project_channels: ['project.space.', 'space.'],
+  session_groups: ['project.session_group.', 'session.group.'],
+  warm_sessions: ['session.warm.'],
+};
+
+// Actions of the legacy sandbox provider: its code still serves old boxes, and the docs name Platinum only.
+const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
+
+function hiddenActionFilter(actions) {
+  const prefixes = [
+    ...Object.entries(FLAGGED_ACTION_PREFIXES).flatMap(([flag, list]) => (onByDefault(flag) ? [] : list)),
+    ...LEGACY_ACTION_PREFIXES,
+  ];
+  for (const prefix of [...Object.values(FLAGGED_ACTION_PREFIXES).flat(), ...LEGACY_ACTION_PREFIXES]) {
+    if (!actions.some((action) => action.startsWith(prefix))) throw new Error(`no audit action starts with ${prefix}: update FLAGGED_ACTION_PREFIXES`);
+  }
+  return (action) => prefixes.some((prefix) => action.startsWith(prefix));
+}
+
 const TABLE_HEAD = ['| Action | Title | Route |', '| --- | --- | --- |'];
 
 export async function renderAuditActionsDoc() {
   const { AUDIT_ROUTE_LABELS, AUDIT_EVENT_LABELS, UNMATCHED_ROUTE_LABEL } = await catalog();
+  const hidden = hiddenActionFilter([
+    ...Object.values(AUDIT_ROUTE_LABELS).flatMap((value) => (typeof value === 'string' ? [] : [value.action])),
+    ...Object.keys(AUDIT_EVENT_LABELS),
+  ]);
   const aliasesOf = new Map();
   const routes = [];
   for (const [key, value] of Object.entries(AUDIT_ROUTE_LABELS)) {
     if (typeof value === 'string') aliasesOf.set(value, [...(aliasesOf.get(value) ?? []), key]);
-    else routes.push({ key, ...value });
+    else if (!hidden(value.action)) routes.push({ key, ...value });
   }
   const byAction = (a, b) => (a.action < b.action ? -1 : 1);
   const row = (route) => {
@@ -65,6 +98,7 @@ export async function renderAuditActionsDoc() {
   );
 
   const events = Object.entries(AUDIT_EVENT_LABELS)
+    .filter(([action]) => !hidden(action))
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([action, title]) => `| ${code(action)} | ${title} |`);
 
@@ -87,6 +121,7 @@ Every audit row carries an \`action\` of the form \`domain.resource.verb\`, for 
 - A request that matched no route records ${code(UNMATCHED_ROUTE_LABEL.action)}.
 - A row with two or more actions, such as \`secret.strategy.update\` or \`secret.strategy.changed\`, lists the route's action first. The others are events the handler records in place of the request row: only on a real change (\`secret.strategy.changed\`), or one per outcome (\`connector.approval.approved\` or \`connector.approval.denied\`). A recorded event is the request's only row.
 - An action ending in \`.*\` is a family. The rest of the action names the call, for example \`connector.github.create_issue\`.
+- An action that starts with \`opencode.\` records an agent runtime event. Every agent runtime writes it under that name.
 
 ## Request actions
 

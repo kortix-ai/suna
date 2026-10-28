@@ -27,46 +27,72 @@ export const MEGA_MENUS: MegaMenu[] = [
   {
     id: 'product',
     label: 'Product',
+    // What the product is and what it is made of. Pricing lives in the bar
+    // only. Each pillar has its own page (/multiplayer, /framework for company
+    // as code, /sovereign); Outcomes lands on the home section; the building
+    // blocks open their Guide sections.
     groups: [
       {
-        title: 'Platform',
+        title: 'The AI OS',
         links: [
-          { label: 'Security', href: '/security' },
-          // ACCURACY: never "air-gapped" (see site-config.ts).
-          { label: 'Self-hosted', href: '/self-hosted' },
-          { label: 'Enterprise', href: '/enterprise' },
-          { label: 'Pricing', href: '/pricing' },
+          { label: 'Multiplayer AI', href: '/multiplayer' },
+          { label: 'Company as code', href: '/framework' },
+          { label: 'Sovereign and open', href: '/sovereign' },
+          { label: 'Outcomes, 24/7', href: '/#use-cases' },
         ],
       },
       {
-        title: 'Apps',
+        title: 'Building blocks',
+        // Each opens its Guide page (docs revamp, 2026-10-27).
         links: [
-          { label: 'Desktop', href: '/desktop' },
-          { label: 'Mobile', href: '/mobile' },
-          { label: 'CLI', href: '/cli' },
+          { label: 'Agents', href: '/docs/guide#agents' },
+          { label: 'Skills', href: '/docs/guide#skills' },
+          // Apps: the compute platform (sites, internal tools, backends with data,
+          // functions and realtime).
+          { label: 'Apps', href: '/docs/guide#apps' },
+          // Drive: shared folders for people and agents (the Files feature).
+          { label: 'Drive', href: '/docs/guide#drive' },
+          { label: 'Connectors', href: '/docs/guide#connectors' },
+          { label: 'Automations', href: '/docs/guide#automations' },
+          { label: 'Computers', href: '/docs/guide#computers' },
+          { label: 'Models', href: '/docs/guide#models' },
         ],
       },
       {
         // ACCURACY: the channel set is Slack, Microsoft Teams and email
         // (kortix-brand claims.md). Email has no page yet.
-        title: 'Channels',
+        title: 'Use it from',
         links: [
+          { label: 'Desktop', href: '/desktop' },
+          { label: 'Mobile', href: '/mobile' },
+          { label: 'CLI', href: '/cli' },
           { label: 'Slack', href: '/slack' },
           { label: 'Microsoft Teams', href: '/teams' },
+        ],
+      },
+      {
+        title: 'Run it',
+        links: [
+          { label: 'Security', href: '/security' },
+          // ACCURACY: never "air-gapped" (see site-config.ts).
+          { label: 'Self-hosted', href: '/self-hosted' },
+          { label: 'Enterprise', href: '/enterprise' },
+          { label: 'Compliance', href: '/compliance' },
         ],
       },
     ],
   },
   {
     id: 'resources',
+    // /developers stays live but is in no menu (founder, 2026-10-27).
     label: 'Resources',
     groups: [
       {
         title: 'Learn',
         links: [
-          { label: 'Documentation', href: '/docs' },
-          { label: 'Developers', href: '/developers' },
+          { label: 'Guide', href: '/docs/guide' },
           { label: 'Use cases', href: '/use-cases' },
+          { label: 'Case studies', href: '/case-studies' },
           { label: 'Blog', href: '/blog' },
           { label: 'Changelog', href: '/changelog' },
         ],

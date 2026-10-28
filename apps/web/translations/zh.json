@@ -1318,9 +1318,9 @@
       "oneOffDescription": "您也可以描述一项更改。会话会完成并验证更改，然后打开变更请求。",
       "oneOffPlaceholder": "例如：在所有引用中将 release-bot 智能体重命名为 deploy-bot",
       "runUpgrade": "运行升级",
-      "manifestV2": {
-        "title": "将清单迁移到 v2 (kortix.yaml)",
-        "description": "将 v1 kortix.toml 转换为以治理为中心的 kortix.yaml，更新平台管理的技能，并打开变更请求供审查。"
+      "manifestV3": {
+        "title": "将清单升级到 v3 (kortix.yaml)",
+        "description": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。"
       },
       "agentEditorHint": "此项目使用版本 1 的清单。将其升级到 <code>kortix.yaml</code> 版本 3，即可在此编辑该代理的指令、模型、工具权限和访问权限。"
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "你的电脑"
     },
     "manifestUpgrade": {
-      "title": "升级到 v2",
-      "description": "此项目仍在使用 <toml>kortix.toml</toml>。代理会将其转换为 <yaml>kortix.yaml</yaml>，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
+      "title": "升级到 v3",
+      "description": "此项目使用较旧的清单。代理会将其升级到 <yaml>kortix.yaml</yaml> 版本 3，刷新托管技能并创建更改请求。在你批准之前，不会应用任何更改。",
       "start": "开始升级"
     },
     "filter": {
@@ -10578,7 +10578,7 @@
       "text0f096c40454e": "分析数据集、绘制分布图、检查数据泄漏和不平衡，并写下关于数据内容的第一段客观说明。您从已有简报的状态开始，而不是面对空白单元格。",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 自动",
-      "text0f4827ef74ea": "Kortix 招聘职位——营销 / 内容、销售、FDE / 服务、产品 / 工程、产品 / 研发。地点：塞尔维亚贝尔格莱德和旧金山。我们招聘长期负责并持续投入的人才。",
+      "text0f4827ef74ea": "Kortix 招聘职位——FDE、GTM 和 MTS。地点：塞尔维亚贝尔格莱德和旧金山。我们招聘长期负责并持续投入的人才。",
       "text0f600458e375": "内置 SSO、成员、群组和基于角色的访问控制，为人员和智能体提供按资源划分的权限、加密密钥和完整审计记录。支持自托管，让整个平台运行在你自己的环境中。",
       "text0f64c7d16c28": "# 检查编译、请求缺失的密钥，",
       "text0f656790976e": "打开任何代理平台——它们在架构上都相同。细微差异无法形成防御性优势。唯一真正不同的是学习循环。",
@@ -11442,7 +11442,6 @@
       "text292fd30cb1b5": "授予权限失败",
       "text29300070ca98": "19 天",
       "text29306928fdc1": "6 字段 cron，支持任意 IANA 时区",
-      "text293b5ec8aac7": "浏览器标签页显示你的 favicon 和产品名称，并支持深色模式变体",
       "text2945df36c2f9": "查看了连接器操作",
       "text29490fc13cfc": "无法连接到代理",
       "text29521c5c7df3": "不得合并——project.cr.merge 默认拒绝",
@@ -12598,7 +12597,6 @@
       "text4a77be626bd1": "agent 环境中的一抽屉密钥",
       "text4a79cdb7ab5e": "此工作区通过您拥有的 Slack 应用连接。我们会引导您创建应用——大约需要三分钟。",
       "text4a866105af15": "设计系统",
-      "text4a8f5784f179": "在页眉和每个加载画面中显示你的品牌标志",
       "text4a920574ea10": "配置已重新加载",
       "text4a93cfc32f25": "客户端密钥（可选）",
       "text4a9458af968f": "此文件似乎为空或无效。",
@@ -14841,7 +14839,6 @@
       "text8c4e24be27f2": "改变 中可以做什么。",
       "text8c4eef5ab253": "本周",
       "text8c5430fac0d9": "8 分 42 秒后就绪。",
-      "text8c5fe5f09fc1": "成员从登录的那一刻起就能看到你的品牌",
       "text8c64de57e442": "选择“SaaS”应用类型，然后选择 SAML（不要选择 OIDC）作为协议。为其命名，例如“Kortix”。",
       "text8c67b476d59b": "关闭以接受所有入站发件人。开启后仅允许完全匹配的邮箱、域名或正则表达式。",
       "text8c6bc099534a": "博客",
@@ -16804,7 +16801,7 @@
       "textc3bf78fdd3b9": "无法提交您的申请",
       "textc3c25857485f": "负责",
       "textc3c709a999c1": "正在读取记忆…",
-      "textc3d1545dd522": "将 v1 kortix.toml 转换为治理优先的 kortix.yaml，将平台管理的技能更新至最新 marketplace 基线，并创建变更请求以供审核。",
+      "text7823a1f3af93": "将 kortix.toml 或版本 2 的 kortix.yaml 升级到版本 3：项目注册技能、工具、命令和扩展，每个代理按名称启用它们。更新平台管理的技能，并打开变更请求供审查。",
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
@@ -16826,7 +16823,6 @@
       "textc4320ecdd111": "为人员和智能体设置按资源划分的权限。密钥静态加密；连接器凭据由服务器端代理处理，绝不进入机器。",
       "textc432b8aea2f9": "决定",
       "textc436c2a32b85": "“Google Identity Provider details”步骤 → Download metadata（GoogleIDPMetadata.xml）。Google 不提供 metadata URL。",
-      "textc44722e44ce4": "品牌定制是 Enterprise 功能",
       "textc45599294aec": "让代理真正获得访问权限很容易。",
       "textc46a054cc5d2": "SVG 已复制到剪贴板",
       "textc4736485c745": "kortix-ai/kortix · 自周一以来",
@@ -17539,7 +17535,7 @@
       "textd83a0d814c59": "API Status 显示绿色的“Enabled”，“SCIM Username”参数映射到 Email，并且 Provisioning 已启用且没有管理员审批阻塞。",
       "textd84b8be91e7b": "Kortix — 演示文稿",
       "textd84ee1e1e08b": "试试 kortix init，或输入 / 查看命令",
-      "textd85a383e851d": "将清单迁移到 v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "将清单升级到 v3 (kortix.yaml)",
       "text848f54e89660": "运行记录",
       "textb098a09c78aa": "使用负载测试",
       "text99733344956d": "负载",
@@ -21591,7 +21587,11 @@
     "inviteSent": "邀请已发送至 {email}",
     "reschedule": "需要换个时间？请使用邀请中的链接。",
     "addToCalendar": "添加到日历",
-    "done": "完成"
+    "done": "完成",
+    "errorName": "请输入你的姓名。",
+    "errorEmail": "请输入有效的工作邮箱，方便我们联系你。",
+    "errorCompany": "请输入你的公司名称。",
+    "errorSize": "请选择公司规模。"
   },
   "drives": {
     "title": "云盘",

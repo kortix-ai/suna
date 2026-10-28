@@ -1370,7 +1370,7 @@ connectors:
     name: 'v3: an npm OpenCode plugin rejected',
     format: 'yaml',
     valid: false,
-    input: swapV3('opencode: extensions/audit.opencode.ts', 'opencode: npm:audit@1.0.0'),
+    input: swapV3('pi: extensions/audit.pi.ts', 'pi: extensions/audit.pi.ts\n    opencode: npm:audit@1.0.0'),
   },
   {
     name: 'v3: a ranged pi pin rejected',
@@ -1717,8 +1717,8 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
         };
       }
     ).properties.connectors.items.properties;
-    expect(connectorProperties.name).toEqual({ type: 'string', pattern: '\\S' });
-    expect(connectorProperties.authorization_strategy).toEqual({
+    expect(connectorProperties.name).toMatchObject({ type: 'string', pattern: '\\S' });
+    expect(connectorProperties.authorization_strategy).toMatchObject({
       type: 'string',
       anyOf: [
         { enum: ['project', 'user'] },

@@ -1140,9 +1140,9 @@
       "oneOffDescription": "Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request.",
       "oneOffPlaceholder": "e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced",
       "runUpgrade": "Run upgrade",
-      "manifestV2": {
-        "title": "Migrate manifest to v2 (kortix.yaml)",
-        "description": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review."
+      "manifestV3": {
+        "title": "Upgrade manifest to v3 (kortix.yaml)",
+        "description": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review."
       },
       "agentEditorHint": "This project uses a version 1 manifest. Upgrade it to <code>kortix.yaml</code> version 3 to edit this agent's instructions, model, tool permissions and access here."
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "Your computer"
     },
     "manifestUpgrade": {
-      "title": "Upgrade to v2",
-      "description": "This project still runs <toml>kortix.toml</toml>. An agent converts it to <yaml>kortix.yaml</yaml>, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
+      "title": "Upgrade to v3",
+      "description": "This project runs an older manifest. An agent moves it to <yaml>kortix.yaml</yaml> version 3, refreshes managed skills, and opens a change request. Nothing changes until you approve it.",
       "start": "Start upgrade"
     },
     "filter": {
@@ -10589,7 +10589,7 @@
       "text0f096c40454e": "Profile the dataset, plot the distributions, check for leakage and imbalance, and write the first honest paragraph about what is in the data. You start from a briefed position rather than from an empty cell.",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 auto",
-      "text0f4827ef74ea": "Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.",
+      "text0f4827ef74ea": "Open positions at Kortix — FDE, GTM and MTS. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.",
       "text0f600458e375": "SSO, members, groups and role-based access come built in, with per-resource permissions for people and agents, encrypted secrets and a full audit trail. Self-host so the entire platform runs inside your own environment.",
       "text0f64c7d16c28": "# check it compiles, ask for the missing secrets,",
       "text0f656790976e": "Open any agent platform — they are architecturally identical. The marginal differences are not defensible. The only thing that diverges is the learning loop.",
@@ -11453,7 +11453,6 @@
       "text292fd30cb1b5": "Failed to allow permissions",
       "text29300070ca98": "19 days",
       "text29306928fdc1": "6-field cron, any IANA timezone",
-      "text293b5ec8aac7": "Your favicon and product name in the browser tab, with dark-mode variants",
       "text2945df36c2f9": "Inspected a connector action",
       "text29490fc13cfc": "Could not reach the agent",
       "text29521c5c7df3": "may not merge — project.cr.merge is default-deny",
@@ -12609,7 +12608,6 @@
       "text4a77be626bd1": "A drawer of keys in the agent’s environment",
       "text4a79cdb7ab5e": "This workspace connects through a Slack app you own. We walk you through creating it — about three minutes.",
       "text4a866105af15": "Design system",
-      "text4a8f5784f179": "Your brandmark in the header and on every loading screen",
       "text4a920574ea10": "Config reloaded",
       "text4a93cfc32f25": "Client secret (optional)",
       "text4a9458af968f": "This file appears to be empty or invalid.",
@@ -14852,7 +14850,6 @@
       "text8c4e24be27f2": "Change what can do in .",
       "text8c4eef5ab253": "This week",
       "text8c5430fac0d9": "Ready in 8m 42s.",
-      "text8c5fe5f09fc1": "Members see your brand from the moment they sign in",
       "text8c64de57e442": "Choose the \"SaaS\" application type, then select SAML (not OIDC) as the protocol. Give it a name such as \"Kortix\".",
       "text8c67b476d59b": "Leave off to accept every inbound sender. Turn on to allow exact emails, domains, or a regex.",
       "text8c6bc099534a": "Blog",
@@ -16815,7 +16812,7 @@
       "textc3bf78fdd3b9": "Could not send your application",
       "textc3c25857485f": "Does",
       "textc3c709a999c1": "Reading memory…",
-      "textc3d1545dd522": "Converts the v1 kortix.toml into the governance-first kortix.yaml, refreshes platform-managed skills to the latest marketplace baseline, and opens a change request for review.",
+      "text7823a1f3af93": "Moves kortix.toml or a version 2 kortix.yaml to version 3: the project registers skills, tools, commands and extensions, and each agent enables them by name. Refreshes platform-managed skills and opens a change request for review.",
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
@@ -16837,7 +16834,6 @@
       "textc4320ecdd111": "Per-resource permissions for people and agents. Secrets encrypted at rest; connector credentials brokered server-side, never entering the machine.",
       "textc432b8aea2f9": "Decides",
       "textc436c2a32b85": "The \"Google Identity Provider details\" step → Download metadata (GoogleIDPMetadata.xml). Google does not host a metadata URL.",
-      "textc44722e44ce4": "Branding is an Enterprise feature",
       "textc45599294aec": "Giving agents real access is the easy part.",
       "textc46a054cc5d2": "SVG copied to clipboard",
       "textc4736485c745": "kortix-ai/kortix · since Mon",
@@ -17550,7 +17546,7 @@
       "textd83a0d814c59": "API Status shows a green \"Enabled\", the \"SCIM Username\" parameter maps to Email, and provisioning is enabled without the admin-approval hold.",
       "textd84b8be91e7b": "Kortix — Presentations",
       "textd84ee1e1e08b": "try kortix init, or / for commands",
-      "textd85a383e851d": "Migrate manifest to v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Upgrade manifest to v3 (kortix.yaml)",
       "text848f54e89660": "Runs",
       "textb098a09c78aa": "Test with payload",
       "text99733344956d": "Payload",
@@ -21591,7 +21587,11 @@
     "inviteSent": "Invite sent to {email}",
     "reschedule": "Need another time? Use the link in the invite.",
     "addToCalendar": "Add to calendar",
-    "done": "Done"
+    "done": "Done",
+    "errorName": "Enter your name.",
+    "errorEmail": "Enter a valid work email so we can reach you.",
+    "errorCompany": "Enter your company name.",
+    "errorSize": "Pick your company size."
   },
   "drives": {
     "title": "Files",

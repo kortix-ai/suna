@@ -1318,9 +1318,9 @@
       "oneOffDescription": "Descrivi invece una singola modifica. Una sessione la esegue, la convalida e apre una richiesta di modifica.",
       "oneOffPlaceholder": "es. Rinomina ovunque l’agente release-bot in deploy-bot",
       "runUpgrade": "Esegui aggiornamento",
-      "manifestV2": {
-        "title": "Migra il manifest a v2 (kortix.yaml)",
-        "description": "Converte kortix.toml v1 nel file kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
+      "manifestV3": {
+        "title": "Aggiorna il manifest alla v3 (kortix.yaml)",
+        "description": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare."
       },
       "agentEditorHint": "Questo progetto usa un manifest versione 1. Aggiornalo a <code>kortix.yaml</code> versione 3 per modificare qui le istruzioni, il modello, i permessi degli strumenti e gli accessi di questo agente."
     },
@@ -1655,8 +1655,8 @@
       "localComputer": "Il tuo computer"
     },
     "manifestUpgrade": {
-      "title": "Aggiorna alla v2",
-      "description": "Questo progetto usa ancora <toml>kortix.toml</toml>. Un agente lo converte in <yaml>kortix.yaml</yaml>, aggiorna le skill gestite e apre una richiesta di modifica. Nulla cambia finché non la approvi.",
+      "title": "Aggiorna alla v3",
+      "description": "Questo progetto usa un manifest precedente. Un agente lo porta a <yaml>kortix.yaml</yaml> versione 3, aggiorna le skill gestite e apre una richiesta di modifica. Nulla cambia finché non la approvi.",
       "start": "Avvia l'aggiornamento"
     },
     "filter": {
@@ -10578,7 +10578,7 @@
       "text0f096c40454e": "Profilare il dataset, tracciare le distribuzioni, verificare leakage e sbilanciamenti e scrivere il primo paragrafo onesto sui dati. Parti da una situazione preparata, non da una cella vuota.",
       "text0f16342ee1c1": "32%",
       "text0f308cfb7ef3": "0 automatico",
-      "text0f4827ef74ea": "Posizioni aperte in Kortix: Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrado, Serbia e San Francisco. Cerchiamo responsabilità prolungata.",
+      "text0f4827ef74ea": "Posizioni aperte in Kortix: FDE, GTM e MTS. Belgrado, Serbia e San Francisco. Cerchiamo responsabilità prolungata.",
       "text0f600458e375": "SSO, membri, gruppi e accesso basato sui ruoli sono integrati, con autorizzazioni per risorsa per persone e agenti, segreti crittografati e un audit trail completo. Esegui il self-hosting per mantenere l’intera piattaforma nel tuo ambiente.",
       "text0f64c7d16c28": "# verifica che compili, chiedi i segreti mancanti,",
       "text0f656790976e": "Apri qualsiasi piattaforma per agenti: sono identiche a livello architetturale. Le differenze marginali non sono difendibili. L’unica cosa che diverge è il learning loop.",
@@ -11442,7 +11442,6 @@
       "text292fd30cb1b5": "Impossibile concedere le autorizzazioni",
       "text29300070ca98": "19 giorni",
       "text29306928fdc1": "cron a 6 campi, qualsiasi fuso orario IANA",
-      "text293b5ec8aac7": "La tua favicon e il nome del prodotto nella scheda del browser, con varianti per la modalità scura",
       "text2945df36c2f9": "Ha esaminato un'azione del connettore",
       "text29490fc13cfc": "Impossibile raggiungere l’agente",
       "text29521c5c7df3": "non può unire — project.cr.merge è negato per impostazione predefinita",
@@ -12598,7 +12597,6 @@
       "text4a77be626bd1": "Un cassetto di chiavi nell’ambiente dell’agente",
       "text4a79cdb7ab5e": "Questo workspace si connette tramite un'app Slack di tua proprietà. Ti guideremo nella sua creazione: bastano circa tre minuti.",
       "text4a866105af15": "Sistema di design",
-      "text4a8f5784f179": "Il tuo brandmark nell'intestazione e in ogni schermata di caricamento",
       "text4a920574ea10": "Configurazione ricaricata",
       "text4a93cfc32f25": "Segreto client (facoltativo)",
       "text4a9458af968f": "Questo file sembra vuoto o non valido.",
@@ -14841,7 +14839,6 @@
       "text8c4e24be27f2": "Cambia cosa può fare in .",
       "text8c4eef5ab253": "Questa settimana",
       "text8c5430fac0d9": "Pronto in 8 min 42 s.",
-      "text8c5fe5f09fc1": "I membri vedono il tuo brand dal momento in cui accedono",
       "text8c64de57e442": "Scegli il tipo di applicazione \"SaaS\", quindi seleziona SAML (non OIDC) come protocollo. Assegna un nome, ad esempio \"Kortix\".",
       "text8c67b476d59b": "Lascia disattivato per accettare qualsiasi mittente in entrata. Attiva per consentire email, domini o una regex specifici.",
       "text8c6bc099534a": "Blog",
@@ -16804,7 +16801,7 @@
       "textc3bf78fdd3b9": "Impossibile inviare la tua candidatura",
       "textc3c25857485f": "Fa",
       "textc3c709a999c1": "Lettura memoria…",
-      "textc3d1545dd522": "Converte il kortix.toml v1 nel kortix.yaml orientato alla governance, aggiorna le competenze gestite dalla piattaforma all'ultima baseline del marketplace e apre una richiesta di modifica per la revisione.",
+      "text7823a1f3af93": "Porta kortix.toml o un kortix.yaml versione 2 alla versione 3: il progetto registra competenze, strumenti, comandi ed estensioni, e ogni agente li abilita per nome. Aggiorna le competenze gestite dalla piattaforma e apre una richiesta di modifica da esaminare.",
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
@@ -16826,7 +16823,6 @@
       "textc4320ecdd111": "Permessi per risorsa per persone e agenti. Segreti crittografati a riposo; credenziali dei connettori gestite lato server, senza mai entrare nella macchina.",
       "textc432b8aea2f9": "Decide",
       "textc436c2a32b85": "Nel passaggio \"Google Identity Provider details\" → Download metadata (GoogleIDPMetadata.xml). Google non ospita un URL dei metadati.",
-      "textc44722e44ce4": "Il branding è una funzionalità Enterprise",
       "textc45599294aec": "Dare agli agenti accesso reale è la parte facile.",
       "textc46a054cc5d2": "SVG copiato negli appunti",
       "textc4736485c745": "kortix-ai/kortix · dal lun",
@@ -17539,7 +17535,7 @@
       "textd83a0d814c59": "API Status mostra \"Enabled\" in verde, il parametro \"SCIM Username\" è associato a Email e il provisioning è abilitato senza il blocco per l'approvazione dell'amministratore.",
       "textd84b8be91e7b": "Kortix — Presentazioni",
       "textd84ee1e1e08b": "prova kortix init oppure / per i comandi",
-      "textd85a383e851d": "Migra il manifest alla v2 (kortix.yaml)",
+      "text08edd5b6dcdc": "Aggiorna il manifest alla v3 (kortix.yaml)",
       "text848f54e89660": "Esecuzioni",
       "textb098a09c78aa": "Prova con payload",
       "text99733344956d": "Payload",
@@ -21591,7 +21587,11 @@
     "inviteSent": "Invito inviato a {email}",
     "reschedule": "Ti serve un altro orario? Usa il link nell’invito.",
     "addToCalendar": "Aggiungi al calendario",
-    "done": "Fatto"
+    "done": "Fatto",
+    "errorName": "Inserisci il tuo nome.",
+    "errorEmail": "Inserisci un’email di lavoro valida così possiamo contattarti.",
+    "errorCompany": "Inserisci il nome della tua azienda.",
+    "errorSize": "Scegli le dimensioni della tua azienda."
   },
   "drives": {
     "title": "Drive",

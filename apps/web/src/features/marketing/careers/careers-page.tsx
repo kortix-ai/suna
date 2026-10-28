@@ -1,7 +1,6 @@
 'use client';
 
 import { CopyRow, LinkRow } from '@/features/marketing/kit/copy-row';
-import { Disclosure } from '@/features/marketing/kit/disclosure';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, Heading, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import { useTranslations } from '@/i18n/use-translations';
@@ -14,10 +13,8 @@ type CareersContent = ReturnType<typeof getLocalizedCareersContent>;
 
 /**
  * The board, in a band (after Linear's and Runway's open-roles lists on
- * Mobbin): one `Disclosure` row per opening with the role, its summary and the
- * two cities. `name` keeps one open at a time. Open, the bullets and the Apply
- * button sit under the summary. The role is a span, not a heading: a
- * `summary` may hold one heading alone or phrasing content, not both.
+ * Mobbin): one row per opening with the role and its full name, one line, the
+ * two cities and Apply. No disclosure: each opening is one line on purpose.
  */
 function Board({
   hero,
@@ -29,49 +26,29 @@ function Board({
   return (
     <Band>
       <div className="px-6 lg:px-11">
-        {/* Column labels on the rows' grid; the empty cell stands in for the row's "+". */}
-        <div aria-hidden className="text-muted-foreground hidden gap-6 border-b py-4 text-sm lg:flex">
-          <span className="grid flex-1 grid-cols-12">
-            <span className="col-span-4 pr-8">{hero.roleLabel}</span>
-            <span className="col-span-6">{hero.summaryLabel}</span>
-          </span>
-          <span className="size-4 shrink-0" />
+        <div aria-hidden className="text-muted-foreground hidden grid-cols-12 border-b py-4 text-sm lg:grid">
+          <span className="col-span-4 pr-8">{hero.roleLabel}</span>
+          <span className="col-span-5">{hero.summaryLabel}</span>
         </div>
-        <div className="divide-y">
+        <ul className="divide-y">
           {openings.map((opening) => (
-            <Disclosure
-              key={opening.id}
-              name="openings"
-              summary={
-                <span className="grid grid-cols-1 items-baseline gap-y-2 lg:grid-cols-12">
-                  <span className="text-xl font-medium tracking-tight text-balance lg:col-span-4 lg:pr-8">
-                    {opening.name}
-                  </span>
-                  <span className="text-muted-foreground max-w-xl text-sm text-pretty lg:col-span-6 lg:pr-8">
-                    {opening.summary}
-                  </span>
-                  <span className="text-muted-foreground text-sm lg:col-span-2 lg:text-right">{locations}</span>
-                </span>
-              }
-            >
-              <div className="pb-2 lg:grid lg:grid-cols-12 lg:pr-10">
-                <div className="max-w-xl lg:col-span-6 lg:col-start-5">
-                  <ul className="text-muted-foreground marker:text-muted-foreground list-disc space-y-2 pl-4 text-sm text-pretty">
-                    {opening.bullets.map((bullet) => (
-                      <li key={bullet}>{bullet}</li>
-                    ))}
-                  </ul>
-                  {'note' in opening ? (
-                    <p className="text-muted-foreground mt-6 text-sm text-pretty">{opening.note}</p>
-                  ) : null}
-                  <MarketingButton size="md" className="hit-area-y-1 mt-8" onClick={onApply}>
-                    {apply.cta}
-                  </MarketingButton>
-                </div>
-              </div>
-            </Disclosure>
+            <li key={opening.id} className="grid grid-cols-1 items-center gap-y-3 py-6 lg:grid-cols-12">
+              <span className="flex flex-col gap-1 lg:col-span-4 lg:pr-8">
+                <span className="text-xl font-medium tracking-tight">{opening.name}</span>
+                <span className="text-muted-foreground text-sm">{opening.full}</span>
+              </span>
+              <span className="text-foreground max-w-xl text-base text-pretty lg:col-span-5 lg:pr-8">
+                {opening.summary}
+              </span>
+              <span className="flex items-center justify-between gap-4 lg:col-span-3 lg:justify-end">
+                <span className="text-muted-foreground text-sm">{locations}</span>
+                <MarketingButton size="md" variant="secondary" className="hit-area-y-1" onClick={onApply}>
+                  {apply.cta}
+                </MarketingButton>
+              </span>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </Band>
   );
@@ -85,8 +62,7 @@ const LINK_LABELS: Record<string, string> = { email: 'Email', x: 'X', linkedin: 
  * (`kit/page-frame.tsx`) like /security and /about: the hero, the openings in
  * a band, the bar as hairline cells, and how to apply. Applications go
  * through `ApplyModal` into the same lead pipeline as "Book your demo". The
- * accuracy gate (locations, no invented comp, the OpenCode distinction)
- * lives in `content.ts`.
+ * accuracy gate (locations, no invented comp) lives in `content.ts`.
  */
 export function CareersPage(): ReactNode {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

@@ -27,16 +27,16 @@ describe('LATEST_MANIFEST_VERSION', () => {
   });
 });
 
-describe('resolveManifestVerdict — v2 stays supported without an automatic v3 migration', () => {
-  test('reports version 2 and offers no migration', () => {
+describe('resolveManifestVerdict — v2 is offered the kortix migrate upgrade to v3', () => {
+  test('reports version 2 and offers the v3 migration', () => {
     const verdict = resolveManifestVerdict({
       raw: V2_YAML,
       format: 'yaml',
       path: 'kortix.yaml',
     });
     expect(verdict.version).toBe(2);
-    expect(verdict.migration_offered).toBe(false);
-    expect(verdict.target_version).toBeNull();
+    expect(verdict.migration_offered).toBe(true);
+    expect(verdict.target_version).toBe(3);
     expect(verdict.unknown_reason).toBeNull();
     expect(verdict.path).toBe('kortix.yaml');
   });
@@ -62,7 +62,7 @@ describe('resolveManifestVerdict — a real v1 kortix.toml is offered a migratio
     });
     expect(verdict.version).toBe(1);
     expect(verdict.migration_offered).toBe(true);
-    expect(verdict.target_version).toBe(2);
+    expect(verdict.target_version).toBe(3);
     expect(verdict.unknown_reason).toBeNull();
     expect(verdict.path).toBe('kortix.toml');
   });
@@ -75,18 +75,18 @@ describe('resolveManifestVerdict — a real v1 kortix.toml is offered a migratio
     });
     expect(verdict.version).toBe(1);
     expect(verdict.migration_offered).toBe(true);
-    expect(verdict.target_version).toBe(2);
+    expect(verdict.target_version).toBe(3);
   });
 });
 
-describe('resolveManifestVerdict — v2 has no implemented upgrade path', () => {
-  test('reports version 2 as supported and offers nothing', () => {
+describe('resolveManifestVerdict — v3 is the latest and offers nothing', () => {
+  test('reports version 3 and offers no migration', () => {
     const verdict = resolveManifestVerdict({
-      raw: V2_YAML,
+      raw: 'kortix_version: 3\n',
       format: 'yaml',
       path: 'kortix.yaml',
     });
-    expect(verdict.version).toBe(2);
+    expect(verdict.version).toBe(3);
     expect(verdict.latest_version).toBe(3);
     expect(verdict.migration_offered).toBe(false);
     expect(verdict.target_version).toBeNull();
