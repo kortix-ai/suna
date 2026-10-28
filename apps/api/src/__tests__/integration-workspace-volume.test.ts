@@ -240,10 +240,11 @@ describe('workspace_volume', () => {
 
     expect(await retireIdleVolumeBoxes(now)).toEqual({ retired: 0, removed: 0, failed: 0, held: 3 });
     // A forged record never reaches Platinum; no box is removed.
+    // Both sides sorted: the volume ids are random UUIDs.
     expect(callLines().sort()).toEqual([
       `GET ${PT}/v1/volumes/kws-${unreachable}/health?probe=false`,
       `GET ${PT}/v1/volumes/kws-${unsaved}/health?probe=false`,
-    ]);
+    ].sort());
     for (const [id, ext] of [[unsaved, 'sbx-unsaved'], [unreachable, 'sbx-unreachable'], [forged, 'sbx-forged']] as const) {
       const row = await boxRow(id);
       expect(row.externalId).toBe(ext);

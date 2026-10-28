@@ -187,6 +187,8 @@ kortix gateway routing reset
 
 When a fallback model answers, the composer shows **Running on** and the model name. The turn details name the model that answered and the model it replaced. **Costs** counts the spend under the model that answered.
 
+A project chain also takes over when the requested model id is unknown or retired (`404`). Every gateway answer therefore carries two headers: `x-kortix-requested-model` names the model the request asked for, and `x-kortix-model` names the model that answered. When they differ, a fallback served the request.
+
 ## Generate images
 
 The `image_gen` tool and the gateway's `/v1/images/*` endpoints use one image model per request. The tool is on [Tools](/docs/project/tools#generate-images).
@@ -206,7 +208,7 @@ With `model` set to `auto` or left out, the gateway tries every image model the 
 - A named model must be one the model catalog lists with image output. Any other model returns `not_an_image_model`, with up to 5 image models the project can use. A named model has no fallback.
 - Two kinds of models with image output in the catalog do not count: Google Deep Research agents (`deep-research-*`) and routers that pick a model per request (an id whose last segment is `auto`, such as `openrouter/openrouter/auto`).
 - Kortix-managed models do not generate images yet. No model in the managed lineup has image output.
-- A model of your [custom endpoint](#connect-your-own-provider) is tried when you name it, for example `my-vllm/flux-dev`. `auto` never picks one. The model must be in the endpoint's model list. It works when the endpoint answers `/chat/completions` with the image in `choices[0].message.images[0].image_url.url`, as a `data:` URL. Otherwise the call fails with `image_upstream_error`: the endpoint's own error, or `<model> returned no image.`
+- A model of your [custom endpoint](#connect-your-own-provider) is tried when you name it, for example `my-vllm/flux-dev`. `auto` never picks one. The model must be in the endpoint's model list; a model missing from it fails with `model_not_found`. It works when the endpoint answers `/chat/completions` with the image in `choices[0].message.images[0].image_url.url`, as a `data:` URL. Otherwise the call fails with `image_upstream_error`: the endpoint's own error, or `<model> returned no image.`
 - The routing policy and fallback chain of [Routing and fallback](#routing-and-fallback) do not apply to images.
 - Kortix calls the model with the protocol of its provider: the OpenAI Images API for ChatGPT, OpenAI, and xAI; Gemini `generateContent` for a Google key; chat completions with image output for OpenRouter and a custom endpoint. Anthropic and Bedrock models cannot generate images through Kortix.
 

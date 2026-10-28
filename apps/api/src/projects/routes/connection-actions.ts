@@ -29,6 +29,7 @@ import { ConnectionViewSchema, serializeConnection } from '../lib/connection-vie
 import { actorOf } from '../../iam/actor';
 import { requireUserCredential } from '../../tunnel/routes/auth';
 import { assignRole } from '../../iam/assignments';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import {
   startComposioConnect,
   finalizeComposioConnect,
@@ -143,6 +144,18 @@ export function registerConnectionActionsRoutes(): void {
       },
     }),
     async (c: any) => {
+      // Who may use an account is a person's decision (iam/assignments.ts
+      // `assertWriterMayAssign`). Checked on the request, so a session that
+      // borrows its launcher's authority (meta, a v1 project) is refused too.
+      if (isProjectSessionPrincipal(c)) {
+        return c.json(
+          {
+            error: 'An agent cannot change who can use a connector account. A person changes it in Customize → Connectors.',
+            code: 'agent_session_forbidden',
+          },
+          403,
+        );
+      }
       const projectId = c.req.param('projectId');
       const connectionId = c.req.param('connectionId');
       const parsed = ShareConnectionInput.safeParse(await readJsonObject(c));

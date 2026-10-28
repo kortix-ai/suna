@@ -50,3 +50,13 @@ CVE-2026-93748
 # projects carry it in their repos; it moves with kortixd. Remove when the
 # workspace moves to zod 4.
 CVE-2023-54404
+
+# CVE-2026-93753 (deepmerge 4.3.1): no fixed release exists (4.3.1 is the newest).
+# Only the mobile app pulls it, through expo and @expo/ui. Remove when a fix ships.
+CVE-2026-93753
+
+# CVE-2026-116587 (go-jose): go-jose/v4 is held at the fixed 4.1.6 in the App
+# runtime's Caddy (apps/kortix-app-runtime/caddy/go.mod). go-jose/v3 3.0.5 has no
+# fixed release; Caddy's caddypki module requires it. Remove when v3 is fixed or
+# Caddy drops it.
+CVE-2026-116587

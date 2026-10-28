@@ -8,9 +8,37 @@
  * thread the way the real post-create step does, and the clock is an instant
  * sleep, so no sandbox and no real wait is needed.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, chatEventDedup, chatThreads, jobQueue, projectSessions, projects, sessionLifecycleCommands } from '@kortix/db';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  accountMembers,
+  accountTokens,
+  accounts,
+  chatEventDedup,
+  chatThreads,
+  connectorActions,
+  connectorConnections,
+  connectorPolicies,
+  connectorPolicySets,
+  connectorProjectPolicies,
+  connectorProjectSettings,
+  connectors,
+  jobQueue,
+  projectSessions,
+  projects,
+  sessionLifecycleCommands,
+  sessionPendingQuestions,
+  sessionSandboxes,
+} from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
+import { Hono } from 'hono';
+import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-views';
+import { projectsApp } from '../../projects/surface';
+import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
+import { questionReleaseSentinel } from '../question-release';
+import { relayTurnQuestion } from '../turn-relay';
+import { ensureDefaultConnection } from '../../connectors/credentials';
+import { resolveTokenPrincipal } from '../../connectors/db-deps-principal';
+import { createAccountToken } from '../../repositories/account-tokens';
 import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
@@ -24,7 +52,9 @@ import { applyPostCreateActions, createCommandStatus, createSession } from '../.
 import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
 import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
-import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from './session';
+import { handleTelegramEvent, handleTelegramPress, telegramMessageEvent, telegramPressEvent, type TelegramMessage } from './session';
+import { telegramWebhookApp } from '../telegram-webhook';
+import { runJobBatch } from '../../shared/job-queue';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -32,12 +62,31 @@ const ACTOR = crypto.randomUUID();
 const BOT_ID = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
 const TOKEN = `${BOT_ID}:${'A'.repeat(35)}`;
 const ALLOWED = '111';
+let CONNECTOR = '';
+let CONNECTION = '';
+
+/** No sandbox runs here: the runtime's answer to a release is set per test (default: it cannot be reached). */
+let releaseOutcome: 'released' | 'already_answered' | 'unreachable' = 'unreachable';
+const releases: unknown[][] = [];
+mock.module('../../projects/session-lifecycle/release-runtime-question', () => ({
+  releaseRuntimeQuestion: async (...args: unknown[]) => {
+    releases.push(args);
+    return releaseOutcome;
+  },
+}));
 
 type Call = { method: string; body: Record<string, unknown> };
 const calls: Call[] = [];
 const waiters: Array<(call: Call) => void> = [];
 /** The next Bot API call, for a send nothing awaits (the provisioning notifier fires and forgets). */
 const nextCall = () => new Promise<Call>((resolve) => waiters.push(resolve));
+/** Runs inside a Bot API call, before it answers: a test changes state mid-press. */
+let onCall: ((call: Call) => Promise<void>) | null = null;
+/** This project's webhook, subscribed to both update types, as connect sets it. */
+const ownWebhook = () => ({ url: `https://example.test/v1/webhooks/telegram/${PROJECT}`, allowed_updates: ['message', 'callback_query'] });
+let webhookInfo: Record<string, unknown> = ownWebhook();
+/** A Bot API method the fake fails with a 500. */
+let failing: string | null = null;
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
@@ -45,8 +94,10 @@ const fake = Bun.serve({
     if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
     const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
     calls.push(call);
+    await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
-    return Response.json({ ok: true, result: { message_id: 1 } });
+    if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+    return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
   },
 });
 
@@ -118,10 +169,22 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'telegram-v2',
-    repoUrl: 'https://example.test/t.git',
+    // A repository that fails at once (a host name would wait on DNS): the
+    // manifest is unreadable, so a question post decides with the session
+    // token's stored grant.
+    repoUrl: 'file:///nonexistent/telegram-v2.git',
   });
   await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   await allowSender();
+  // The channel connector a question post is checked against, as connect writes it.
+  const [connector] = await db
+    .insert(connectors)
+    .values({ accountId: ACCOUNT, projectId: PROJECT, slug: 'kortix_telegram', name: 'Telegram', providerType: 'channel', config: { platform: 'telegram' } })
+    .returning({ connectorId: connectors.connectorId });
+  CONNECTOR = connector!.connectorId;
+  await db.insert(connectorActions).values({ connectorId: CONNECTOR, path: 'send_message', name: 'Send message', risk: 'write' });
+  // The project's account, as sync seeds it for a channel connector.
+  CONNECTION = await ensureDefaultConnection({ projectId: PROJECT, connectorId: CONNECTOR });
   restoreLifecycle();
 });
 
@@ -163,6 +226,11 @@ beforeEach(() => {
   deliverResult = 'queued';
   actor = ACTOR;
   onSleep = null;
+  onCall = null;
+  webhookInfo = ownWebhook();
+  failing = null;
+  releaseOutcome = 'unreachable';
+  releases.length = 0;
   sleeps = 0;
 });
 
@@ -173,6 +241,11 @@ afterAll(async () => {
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
+  await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, PROJECT));
+  await db.delete(accountTokens).where(eq(accountTokens.projectId, PROJECT));
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.projectId, PROJECT));
+  await deleteFromView(db, accountMembers, eq(accountMembers.accountId, ACCOUNT));
+  await db.delete(connectors).where(eq(connectors.projectId, PROJECT));
   await deleteTelegramInstall(PROJECT);
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
@@ -727,5 +800,551 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     const sent = nextCall();
     notifySessionProvisioningFailed(sessionId, 'x', { transient: false });
     expect((await sent).body.chat_id).toBe(950);
+  });
+});
+
+const QUESTION = [{ header: 'Pick', question: 'Which database?', options: [{ label: 'Postgres' }, { label: 'SQLite' }] }];
+
+/** A stored question of a session; `open`: the server could not release it (the turn still waits). */
+async function pending(sessionId: string, opts: { open?: boolean } = {}) {
+  const [row] = await db
+    .insert(sessionPendingQuestions)
+    .values({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      sessionId,
+      requestId: `que_${crypto.randomUUID()}`,
+      questions: QUESTION,
+      ...(opts.open ? {} : { answeredAt: new Date().toISOString() }),
+    })
+    .returning({ id: sessionPendingQuestions.id });
+  return row!.id;
+}
+
+/** A press on a question button, as the webhook stores it. */
+function press(data: string, opts: { chat?: number; from?: string; messageId?: number; topic?: number } = {}) {
+  const chat = opts.chat ?? 777;
+  return telegramPressEvent(PROJECT, BOT_ID, {
+    update_id: updateId++,
+    callback_query: {
+      id: `cbq-${crypto.randomUUID()}`,
+      from: { id: Number(opts.from ?? ALLOWED), username: 'synthetic' },
+      data,
+      message: {
+        message_id: opts.messageId ?? 50,
+        chat: { id: chat, type: opts.topic ? 'supergroup' : 'private' },
+        ...(opts.topic ? { message_thread_id: opts.topic, is_topic_message: true } : {}),
+      },
+    },
+  })!;
+}
+const methods = () => calls.map((c) => c.method);
+const POSTED = [[questionReleaseSentinel('telegram', true)]];
+const FULL_GRANT = { agent: 'default', permissions: 'all', connectors: 'all' };
+const tokens = new Map<string, string>();
+
+/**
+ * A Telegram session bound to a chat (`<chat>` or `<chat>:<topic>`), with a
+ * live sandbox and the session token it holds: its stored grant names the
+ * agent's policy set.
+ */
+async function askedSession(threadId: string, opts: { grant?: Record<string, unknown>; bot?: string; createdBy?: string; source?: string } = {}) {
+  const sessionId = crypto.randomUUID();
+  await db.insert(projectSessions).values({
+    sessionId,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    branchName: sessionId,
+    createdBy: opts.createdBy ?? ACTOR,
+    metadata: { source: opts.source ?? 'telegram' },
+  });
+  await bindChatThread({ projectId: PROJECT, platform: 'telegram', workspaceId: opts.bot ?? BOT_ID, threadId, sessionId });
+  // A live sandbox: a session token holds only while its sandbox does.
+  await db.insert(sessionSandboxes).values({ sandboxId: sessionId, sessionId, accountId: ACCOUNT, projectId: PROJECT, status: 'active' });
+  const token = await createAccountToken({
+    accountId: ACCOUNT,
+    userId: ACTOR,
+    projectId: PROJECT,
+    sessionId,
+    name: 'session',
+    agentGrant: (opts.grant ?? FULL_GRANT) as never,
+  });
+  tokens.set(sessionId, token.secretKey);
+  return sessionId;
+}
+
+/** The connector principal the session's sandbox token names, as the turn-question route resolves it. */
+async function principalOf(sessionId: string) {
+  const principal = await resolveTokenPrincipal(tokens.get(sessionId)!, sessionId);
+  if (!principal) throw new Error('no principal for the session token');
+  return principal;
+}
+
+describe('Telegram questions posted by the server — migrated PostgreSQL', () => {
+  /** Ask through the relay as the turn-question route does for the session's sandbox. */
+  const ask = async (sessionId: string, questions: unknown[] = QUESTION) =>
+    relayTurnQuestion(sessionId, questions as never, { pendingId: await pending(sessionId), principal: await principalOf(sessionId) });
+  const setMode = (defaultMode: 'risk' | 'allow_all') =>
+    db
+      .insert(connectorProjectSettings)
+      .values({ projectId: PROJECT, defaultMode })
+      .onConflictDoUpdate({ target: connectorProjectSettings.projectId, set: { defaultMode } });
+  const rule = (action: 'always_run' | 'require_approval', conditions: Array<{ arg: string; match: string }> | null = null) =>
+    db.insert(connectorProjectPolicies).values({ projectId: PROJECT, match: 'kortix_telegram.send_message', action, conditions });
+  const clearRules = () => db.delete(connectorProjectPolicies).where(eq(connectorProjectPolicies.projectId, PROJECT));
+
+  afterEach(async () => {
+    await clearRules();
+    await db.delete(connectorProjectSettings).where(eq(connectorProjectSettings.projectId, PROJECT));
+    await db.delete(connectorPolicySets).where(eq(connectorPolicySets.connectorId, CONNECTOR));
+    await db.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, CONNECTOR));
+    await db.update(connectors).set({ enabled: true, status: 'active', config: { platform: 'telegram' } }).where(eq(connectors.connectorId, CONNECTOR));
+    await db.update(connectorConnections).set({ status: 'active' }).where(eq(connectorConnections.connectionId, CONNECTION));
+  });
+
+  test('one question with up to six options gets a button per option, and a tap on one answers it', async () => {
+    const sessionId = await askedSession('981');
+    const id = await pending(sessionId);
+    expect(await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: id, principal: await principalOf(sessionId) })).toEqual({ ok: true, answers: POSTED });
+    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+    const sent = calls[1]!.body as { chat_id: unknown; text: string; reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } };
+    expect(sent.chat_id).toBe('981');
+    expect(sent.text).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nTap an option, or reply to this message with your own answer.');
+    expect(sent.reply_markup.inline_keyboard).toEqual([
+      [{ text: 'Postgres', callback_data: `kq:${id}:0` }],
+      [{ text: 'SQLite', callback_data: `kq:${id}:1` }],
+    ]);
+    for (const [button] of sent.reply_markup.inline_keyboard) expect(Buffer.byteLength(button!.callback_data)).toBeLessThanOrEqual(64);
+
+    await handleTelegramPress(press(sent.reply_markup.inline_keyboard[1]![0]!.callback_data, { chat: 981 }));
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.sessionId).toBe(sessionId);
+    expect(delivered[0]!.text).toContain('You asked:\n> Which database?\n\nSQLite');
+  });
+
+  test('a question in a forum topic is posted into that topic', async () => {
+    const sessionId = await askedSession('-100982:7');
+    expect(await ask(sessionId)).toMatchObject({ ok: true });
+    expect(calls.at(-1)!.body).toMatchObject({ chat_id: '-100982', message_thread_id: 7 });
+  });
+
+  test('two questions, a multi-select or more than six options are a numbered list to reply to', async () => {
+    const sessionId = await askedSession('983');
+    const options = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Option ${i + 1}`, description: '' }));
+    for (const questions of [
+      [QUESTION[0], { header: '', question: 'Which region?', options: options(2) }],
+      [{ header: '', question: 'Which features?', options: options(3), multiple: true }],
+      [{ header: '', question: 'Which size?', options: options(7) }],
+    ]) {
+      expect(await ask(sessionId, questions)).toEqual({ ok: true, answers: questions.map(() => POSTED[0]!) });
+    }
+    // No buttons, so no look at the webhook either.
+    expect(methods()).toEqual(['sendMessage', 'sendMessage', 'sendMessage']);
+    expect(calls.some((c) => 'reply_markup' in c.body)).toBe(false);
+    const [two, multiple, seven] = calls.map((c) => String(c.body.text));
+    expect(two).toBe(
+      '1) Pick: Which database?\n1. Postgres\n2. SQLite\n\n2) Which region?\n1. Option 1\n2. Option 2\n\nReply to this message with your answer, each question by its number.',
+    );
+    expect(multiple).toStartWith('Which features? (pick one or more)\n1. Option 1\n');
+    expect(seven).toContain('\n7. Option 7\n');
+    expect(seven).toEndWith('\n\nReply to this message with your answer.');
+  });
+
+  test('nothing is posted without a stored question, after /new, or into a chat of a replaced bot', async () => {
+    const sessionId = await askedSession('984');
+    expect(await relayTurnQuestion(sessionId, QUESTION as never)).toEqual({ ok: false, error: 'not_relayed' });
+    await forgetChatThread({ platform: 'telegram', workspaceId: BOT_ID, threadId: '984', projectId: PROJECT }, 'unused');
+    expect(await ask(sessionId)).toEqual({ ok: false, error: 'not_relayed' });
+    expect(await ask(await askedSession('985', { bot: 'replaced-bot' }))).toEqual({ ok: false, error: 'not_relayed' });
+    expect(calls).toEqual([]);
+  });
+
+  test("the question stays with the agent where its send_message needs approval: the risk mode, a rule for the chat, a disabled connector", async () => {
+    const sessionId = await askedSession('986');
+    const posted = async () => (await ask(sessionId)).ok;
+    await setMode('risk');
+    expect(await posted()).toBe(false);
+    await rule('always_run');
+    expect(await posted()).toBe(true);
+    await clearRules();
+    await setMode('allow_all');
+    await rule('require_approval', [{ arg: 'chat_id', match: '986' }]);
+    expect(await posted()).toBe(false);
+    await clearRules();
+    await rule('require_approval', [{ arg: 'chat_id', match: '999' }]);
+    expect(await posted()).toBe(true);
+    await db.update(connectors).set({ enabled: false }).where(eq(connectors.connectorId, CONNECTOR));
+    expect(await posted()).toBe(false);
+    // A refused post makes no Bot API call at all.
+    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage', 'getWebhookInfo', 'sendMessage']);
+  });
+
+  test("the agent's policy set decides, and a set the connector does not define refuses", async () => {
+    const sessionId = await askedSession('987', { grant: { ...FULL_GRANT, policySets: { kortix_telegram: 'strict' } } });
+    expect((await ask(sessionId)).ok).toBe(false);
+    await db.insert(connectorPolicySets).values({ connectorId: CONNECTOR, name: 'strict', policies: [{ match: 'send_message', action: 'require_approval' }] });
+    expect((await ask(sessionId)).ok).toBe(false);
+    await db
+      .update(connectorPolicySets)
+      .set({ policies: [{ match: 'send_message', action: 'always_run' }] })
+      .where(eq(connectorPolicySets.connectorId, CONNECTOR));
+    expect((await ask(sessionId)).ok).toBe(true);
+    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+  });
+
+  test("the agent's connector account decides too: a revoked account, a connector that needs sign-in, another session's principal", async () => {
+    const sessionId = await askedSession('2001');
+    const posted = async () => (await ask(sessionId)).ok;
+    expect(await posted()).toBe(true);
+    calls.length = 0;
+    await db.update(connectorConnections).set({ status: 'revoked' }).where(eq(connectorConnections.connectionId, CONNECTION));
+    expect(await posted()).toBe(false);
+    await db.update(connectorConnections).set({ status: 'active' }).where(eq(connectorConnections.connectionId, CONNECTION));
+    await db.update(connectors).set({ status: 'needs_auth' }).where(eq(connectors.connectorId, CONNECTOR));
+    expect(await posted()).toBe(false);
+    await db.update(connectors).set({ status: 'active' }).where(eq(connectors.connectorId, CONNECTOR));
+    const other = await askedSession('2002');
+    expect(await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: await pending(sessionId), principal: await principalOf(other) })).toEqual({
+      ok: false,
+      error: 'not_relayed',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test('an agent not assigned the connector posts nothing in a chat its session did not start from', async () => {
+    // An Email session bound to a Telegram chat, whose agent may use no connector.
+    const sessionId = await askedSession('2004', { source: 'email', grant: { ...FULL_GRANT, connectors: [] } });
+    expect(await ask(sessionId)).toEqual({ ok: false, error: 'not_relayed' });
+    expect(calls).toEqual([]);
+  });
+
+  test("the connector's own rules and its sensitive flag decide too", async () => {
+    const sessionId = await askedSession('2003');
+    await db.insert(connectorPolicies).values({ connectorId: CONNECTOR, match: 'send_message', action: 'require_approval' });
+    expect((await ask(sessionId)).ok).toBe(false);
+    await db.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, CONNECTOR));
+    await db.update(connectors).set({ config: { platform: 'telegram', sensitive: true } }).where(eq(connectors.connectorId, CONNECTOR));
+    expect((await ask(sessionId)).ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test('a bot connected before buttons is subscribed to presses on its own webhook, with its own secret', async () => {
+    const sessionId = await askedSession('988');
+    webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
+    expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+    expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+    // No drop_pending_updates: the messages Telegram still holds are delivered.
+    expect(calls[1]!.body).toEqual({ url: ownWebhook().url, secret_token: 's', allowed_updates: ['message', 'callback_query'] });
+    expect(calls[2]!.body).toHaveProperty('reply_markup');
+    // Telegram's default set (no allowed_updates) carries presses already.
+    calls.length = 0;
+    webhookInfo = { url: ownWebhook().url };
+    await ask(sessionId);
+    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+    expect(calls[1]!.body).toHaveProperty('reply_markup');
+  });
+
+  test('a webhook this project does not own, or a failed subscription, gets the question as text', async () => {
+    const sessionId = await askedSession('989');
+    for (const info of [{ url: '' }, { url: `https://example.test/v1/webhooks/telegram/${crypto.randomUUID()}`, allowed_updates: ['message'] }]) {
+      calls.length = 0;
+      webhookInfo = info;
+      expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+      expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+      expect(calls[1]!.body).not.toHaveProperty('reply_markup');
+      expect(String(calls[1]!.body.text)).toEndWith('Reply to this message with your answer.');
+    }
+    calls.length = 0;
+    webhookInfo = { ...ownWebhook(), allowed_updates: ['message'] };
+    failing = 'setWebhook';
+    expect(await ask(sessionId)).toEqual({ ok: true, answers: POSTED });
+    expect(methods()).toEqual(['getWebhookInfo', 'setWebhook', 'sendMessage']);
+    expect(calls[2]!.body).not.toHaveProperty('reply_markup');
+  });
+
+  test('a send Telegram refuses is not posted, so the agent asks in its own words', async () => {
+    const sessionId = await askedSession('991');
+    failing = 'sendMessage';
+    expect(await ask(sessionId)).toEqual({ ok: false, error: 'not_relayed' });
+  });
+});
+
+describe('POST /turn-question for a Telegram session — migrated PostgreSQL', () => {
+  registerTurnQuestionsRoutes();
+  const OWNER = crypto.randomUUID();
+  const request = (ctx: Record<string, unknown>, body: Record<string, unknown>, bearer?: string) => {
+    const app = new Hono<{ Variables: Record<string, unknown> }>();
+    app.use('*', async (c, next) => {
+      for (const [key, value] of Object.entries(ctx)) c.set(key, value);
+      await next();
+    });
+    app.route('/v1/projects', projectsApp);
+    return app.request(`/v1/projects/${PROJECT}/turn-question`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
+      body: JSON.stringify(body),
+    });
+  };
+
+  test("only the session's own sandbox posts the question in the chat; a member's token stores it and posts nothing", async () => {
+    await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
+    const sessionId = await askedSession('990', { createdBy: OWNER });
+    const body = (requestId?: string) => ({ session_id: sessionId, ...(requestId ? { request_id: requestId } : {}), questions: QUESTION });
+    const sandbox = { userId: ACCOUNT, accountId: ACCOUNT, authType: 'apiKey', apiKeyType: 'sandbox', sandboxId: sessionId };
+
+    const member = await request({ userId: OWNER, authType: 'jwt' }, body('que_member'));
+    expect(member.status).toBe(200);
+    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    // No runtime request id: the shared `q-<session>` row names no single question.
+    const unnamed = await request(sandbox, body(), tokens.get(sessionId));
+    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(calls).toEqual([]);
+
+    const posted = await request(sandbox, body('que_sandbox'), tokens.get(sessionId));
+    expect(posted.status).toBe(200);
+    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED });
+    const stored = await db
+      .select({ id: sessionPendingQuestions.id, requestId: sessionPendingQuestions.requestId })
+      .from(sessionPendingQuestions)
+      .where(eq(sessionPendingQuestions.sessionId, sessionId));
+    expect(stored.map((r) => r.requestId).sort()).toEqual(['que_member', 'que_sandbox', `q-${sessionId}`].sort());
+    const id = stored.find((r) => r.requestId === 'que_sandbox')!.id;
+    expect(methods()).toEqual(['getWebhookInfo', 'sendMessage']);
+    expect(calls[1]!.body.reply_markup).toEqual({
+      inline_keyboard: [[{ text: 'Postgres', callback_data: `kq:${id}:0` }], [{ text: 'SQLite', callback_data: `kq:${id}:1` }]],
+    });
+  });
+});
+
+describe('Telegram question buttons — migrated PostgreSQL', () => {
+  test('an allowed press answers the question: the tap is acknowledged, the buttons go, and the answer follows up', async () => {
+    const sessionId = await bindChat(970);
+    const id = await pending(sessionId);
+    const event = press(`kq:${id}:1`, { chat: 970 });
+    await handleTelegramPress(event);
+
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
+    expect(calls[0]!.body).toMatchObject({ text: 'Answered: SQLite' });
+    expect(calls[1]!.body).toMatchObject({ chat_id: 970, message_id: 50, reply_markup: { inline_keyboard: [] } });
+    expect(String(calls[1]!.body.text)).toEndWith('Answered: SQLite');
+    expect(created).toHaveLength(0);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ sessionId, idempotencyKey: `telegram:${BOT_ID}:${event.id}` });
+    expect(delivered[0]!.text).toContain('You asked:\n> Which database?\n\nSQLite');
+  });
+
+  test('the stored press is a projection: no names, no question text, and no `message` key an old consumer would read', () => {
+    const event = telegramPressEvent(PROJECT, BOT_ID, {
+      update_id: updateId++,
+      callback_query: {
+        id: 'cbq-projection',
+        from: { id: Number(ALLOWED), username: 'synthetic', first_name: 'Private', last_name: 'Person', language_code: 'hr' },
+        chat_instance: 'ci-1',
+        data: 'kq:00000000-0000-0000-0000-000000000000:0',
+        message: {
+          message_id: 50,
+          date: 1_760_000_000,
+          chat: { id: 777, type: 'group', title: 'Private group' },
+          from: { id: Number(BOT_ID), is_bot: true, first_name: 'Bot name' },
+          text: 'Pick: a private question',
+        },
+      },
+    } as never)!;
+    expect(event).toMatchObject({ type: 'telegram.callback_query.created', source: `telegram:${BOT_ID}`, subject: '777' });
+    expect(Object.keys(event.data)).toEqual(['callback_query']);
+    expect(event.data.callback_query).toEqual({
+      id: 'cbq-projection',
+      from: { id: Number(ALLOWED), username: 'synthetic' },
+      data: 'kq:00000000-0000-0000-0000-000000000000:0',
+      message: { message_id: 50, chat: { id: 777, type: 'group' } },
+    });
+    expect(JSON.stringify(event)).not.toMatch(/Private|Person|Bot name|private question/);
+  });
+
+  test('a press from someone not on the allow-list gets an alert only they see, and answers nothing', async () => {
+    const sessionId = await bindChat(971);
+    const id = await pending(sessionId);
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: 971, from: '999' }));
+    expect(methods()).toEqual(['answerCallbackQuery']);
+    expect(calls[0]!.body).toMatchObject({ show_alert: true });
+    expect(String(calls[0]!.body.text)).toContain('999');
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('a press on a question from before /new is refused and its buttons are removed', async () => {
+    const sessionId = await bindChat(972);
+    const id = await pending(sessionId);
+    await forgetChatThread({ platform: 'telegram', workspaceId: BOT_ID, threadId: '972', projectId: PROJECT }, 'unused');
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: 972 }));
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageReplyMarkup']);
+    expect(String(calls[0]!.body.text)).toContain('earlier conversation');
+    expect(delivered).toHaveLength(0);
+    expect(created).toHaveLength(0);
+  });
+
+  test("a button that is not a Kortix question's, an unknown question, an option out of range or another chat answers nothing", async () => {
+    const sessionId = await bindChat(973);
+    const id = await pending(sessionId);
+    await handleTelegramPress(press('agent:1', { chat: 973 }));
+    expect(methods()).toEqual(['answerCallbackQuery']);
+    expect(calls[0]!.body).not.toHaveProperty('text');
+    for (const data of [`kq:${crypto.randomUUID()}:0`, `kq:${id}:9`]) await handleTelegramPress(press(data, { chat: 973 }));
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: 974 }));
+    expect(calls.filter((c) => c.method === 'answerCallbackQuery').slice(1).map((c) => String(c.body.text))).toEqual([
+      expect.stringContaining('earlier conversation'),
+      expect.stringContaining('earlier conversation'),
+      expect.stringContaining('earlier conversation'),
+    ]);
+    expect(delivered).toHaveLength(0);
+  });
+
+  test('a press in a forum topic answers into that topic', async () => {
+    const sessionId = await newSession();
+    await bindChatThread({ projectId: PROJECT, platform: 'telegram', workspaceId: BOT_ID, threadId: '-100975:7', sessionId });
+    const id = await pending(sessionId);
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: -100975, topic: 7 }));
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.sessionId).toBe(sessionId);
+    expect(delivered[0]!.text).toContain('"message_thread_id":7');
+  });
+
+  test('a chat that moved on to another session after the check gets no answer delivered', async () => {
+    const sessionId = await bindChat(976);
+    const id = await pending(sessionId);
+    // `/new` and a new message land while the press is being answered.
+    onCall = async (call) => {
+      if (call.method !== 'editMessageText') return;
+      onCall = null;
+      await forgetChatThread({ platform: 'telegram', workspaceId: BOT_ID, threadId: '976', projectId: PROJECT }, 'unused');
+      await bindChat(976);
+    };
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: 976 }));
+    expect(delivered).toHaveLength(0);
+    expect(String(calls.filter((c) => c.method === 'editMessageText').at(-1)!.body.text)).toEndWith(
+      'This question is from an earlier conversation. Send your answer as a message.',
+    );
+  });
+
+  test('a press into a session that is gone drops the chat mapping and starts nothing', async () => {
+    const sessionId = await bindChat(977);
+    const id = await pending(sessionId);
+    deliverResult = 'no-session';
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 977 }));
+    expect(delivered).toHaveLength(1);
+    expect(created).toHaveLength(0);
+    expect(await threadRow(977)).toBeUndefined();
+    // Nothing reached an agent: the message must not keep saying "Answered".
+    expect(calls.filter((c) => c.method === 'editMessageText').map((c) => String(c.body.text).split('\n').at(-1))).toEqual([
+      'Answered: SQLite',
+      'This question is from an earlier conversation. Send your answer as a message.',
+    ]);
+  });
+
+  test('a press into a failed session retries, and on the last attempt tells the chat to start over', async () => {
+    const sessionId = await bindChat(978);
+    const id = await pending(sessionId);
+    deliverResult = 'failed';
+    const event = press(`kq:${id}:0`, { chat: 978 });
+    await expect(handleTelegramPress(event)).rejects.toThrow('telegram follow-up failed');
+    await handleTelegramPress(event, { finalAttempt: true });
+    expect(replies().at(-1)).toContain('/new');
+  });
+
+  test('a question still blocking its turn is released there with the label, and nothing follows up', async () => {
+    releaseOutcome = 'released';
+    const sessionId = await bindChat(2010);
+    const id = await pending(sessionId, { open: true });
+    const [{ requestId }] = await db.select({ requestId: sessionPendingQuestions.requestId }).from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id));
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2010 }));
+    expect(releases).toEqual([[sessionId, requestId, [['SQLite']]]]);
+    expect(delivered).toHaveLength(0);
+    expect(methods()).toEqual(['answerCallbackQuery', 'editMessageText']);
+  });
+
+  test('a question the runtime already let go of is answered as a follow-up', async () => {
+    releaseOutcome = 'already_answered';
+    const sessionId = await bindChat(2011);
+    const id = await pending(sessionId, { open: true });
+    await handleTelegramPress(press(`kq:${id}:0`, { chat: 2011 }));
+    expect(releases).toHaveLength(1);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('You asked:\n> Which database?\n\nPostgres');
+  });
+
+  test('a parked session cannot release in its turn: the press follows up at once, with no retry', async () => {
+    const sessionId = await bindChat(2012);
+    await db.update(projectSessions).set({ status: 'stopped' }).where(eq(projectSessions.sessionId, sessionId));
+    const id = await pending(sessionId, { open: true });
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2012 }));
+    expect(delivered).toHaveLength(1);
+  });
+
+  test('a question of another project answers nothing', async () => {
+    const otherProject = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: otherProject, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/other.git' });
+    const sessionId = await bindChat(2013);
+    const [row] = await db
+      .insert(sessionPendingQuestions)
+      .values({ accountId: ACCOUNT, projectId: otherProject, sessionId, requestId: 'que_other_project', questions: QUESTION, answeredAt: new Date().toISOString() })
+      .returning({ id: sessionPendingQuestions.id });
+    await handleTelegramPress(press(`kq:${row!.id}:0`, { chat: 2013 }));
+    expect(String(calls[0]!.body.text)).toContain('earlier conversation');
+    expect(delivered).toHaveLength(0);
+    await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, otherProject));
+    await db.delete(projects).where(eq(projects.projectId, otherProject));
+  });
+
+  test('a question still blocking its turn is answered there first; an unreachable runtime is retried, then followed up', async () => {
+    const sessionId = await bindChat(979);
+    await db.update(projectSessions).set({ status: 'running' }).where(eq(projectSessions.sessionId, sessionId));
+    const id = await pending(sessionId, { open: true });
+    const event = press(`kq:${id}:1`, { chat: 979 });
+    // No runtime to release it to here (no sandbox): the job retries instead of
+    // queueing the answer behind the turn the question blocks.
+    await expect(handleTelegramPress(event)).rejects.toThrow('telegram question release unreachable');
+    const [row] = await db.select().from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id));
+    expect(row!.answeredAt).not.toBeNull();
+    expect(row!.answers).toEqual([['SQLite']]);
+    expect(delivered).toHaveLength(0);
+    // The retry finds its own answer stored and tries the release again.
+    await expect(handleTelegramPress(event)).rejects.toThrow('telegram question release unreachable');
+    await handleTelegramPress(event, { finalAttempt: true });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]!.text).toContain('You asked:\n> Which database?\n\nSQLite');
+  });
+
+  test('a question someone else answered differently is not answered in its turn again: the press follows up', async () => {
+    const sessionId = await bindChat(982);
+    const id = await pending(sessionId, { open: true });
+    await db.update(sessionPendingQuestions).set({ answeredAt: new Date().toISOString(), answers: [['Postgres']] }).where(eq(sessionPendingQuestions.id, id));
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 982 }));
+    expect(delivered).toHaveLength(1);
+    const [row] = await db.select().from(sessionPendingQuestions).where(eq(sessionPendingQuestions.id, id));
+    expect(row!.answers).toEqual([['Postgres']]);
+  });
+
+  test('the webhook stores a message and a press, and the job worker runs each through its handler', async () => {
+    const sessionId = await bindChat(980);
+    const id = await pending(sessionId);
+    await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
+    const post = (update: Record<string, unknown>) =>
+      telegramWebhookApp.request(`/${PROJECT}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': 's' },
+        body: JSON.stringify(update),
+      });
+    const message = update('typed answer', ALLOWED, 980);
+    expect((await post({ update_id: Number(message.id), message: message.data.message })).status).toBe(200);
+    const tap = press(`kq:${id}:0`, { chat: 980 });
+    expect((await post({ update_id: Number(tap.id), callback_query: { ...(tap.data.callback_query as object), from: { id: Number(ALLOWED), first_name: 'Private Name' } } })).status).toBe(200);
+    const stored = await db.select().from(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
+    expect(stored.map((j) => j.queue)).toEqual([INTEGRATION_EVENTS_QUEUE, INTEGRATION_EVENTS_QUEUE]);
+    expect(JSON.stringify(stored.map((j) => j.payload))).not.toContain('Private Name');
+
+    await runJobBatch();
+    const settled = await db.select({ status: jobQueue.status }).from(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
+    expect(settled.map((j) => j.status)).toEqual(['done', 'done']);
+    expect(delivered.map((d) => d.sessionId)).toEqual([sessionId, sessionId]);
+    expect(methods()).toContain('answerCallbackQuery');
   });
 });

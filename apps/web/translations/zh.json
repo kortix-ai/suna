@@ -2803,6 +2803,7 @@
     "signInWithEmail": "使用邮箱登录",
     "createNewAccount": "创建新账户",
     "byContinuingYouAgreeSimple": "继续即表示您同意我们的",
+    "customerLogoNotice": "无论使用何种套餐，Kortix 都可能将您所在组织的名称和标志作为客户展示。您可随时发送邮件至 legal@kortix.com 退出。",
     "phoneVerification": {
       "title": "验证您的手机号码",
       "titleOtp": "输入验证码",
@@ -20805,7 +20806,14 @@
     "sessionModel": "模型 {cost}",
     "sessionSandbox": "沙盒 {cost}",
     "noCapUnlimited": "无上限 · 支出不受限制",
-    "tokensSub": "输入 {in} · 输出 {out}"
+    "tokensSub": "输入 {in} · 输出 {out}",
+    "unknownValue": "未知",
+    "estimateCoverageUnavailable": "无法获取估算覆盖范围。",
+    "estimatesSeparate": "上方的实际支出单独计算。估算从不计入费用。",
+    "estimatedUsageValueLabel": "LLM 估算使用价值(非账单):",
+    "pricedRequests": "{count} 个已计价请求",
+    "unpricedRequests": "{count} 个未计价请求",
+    "llmEstimateLabel": "LLM 估算:"
   },
   "triggerComposer": {
     "every": "每隔",

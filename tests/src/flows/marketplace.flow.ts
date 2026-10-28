@@ -47,6 +47,20 @@ flow('MKTP-1', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] },
     if (!Array.isArray(body.items) || body.items.length > 2) {
       throw new Error(`expected <=2 items with limit=2, got ${body.items?.length}`);
     }
+    r.body().has('$.limit', 2).has('$.offset', 0);
+  });
+  await ctx.step('a limit or offset that is not a whole number in range → 400, never the whole catalog (KRTX-3314)', async () => {
+    const anon = ctx.client.as(ctx.P.ANON);
+    for (const limit of ['abc', '1e3', '1.5', '0', '-1', '201', '999999999999999999999']) {
+      (await anon.get('/v1/marketplace/items', { query: { limit } })).status(400).body().exists('$.error');
+    }
+    for (const offset of ['abc', '-1', '1.5']) {
+      (await anon.get('/v1/marketplace/items', { query: { limit: '2', offset } })).status(400).body().exists('$.error');
+    }
+    (await anon.get('/v1/marketplace/items', { query: { limit: '200' } })).status(200).body().has('$.limit', 200);
+    const past = (await anon.get('/v1/marketplace/items', { query: { limit: '2', offset: '1000000' } })).status(200);
+    past.body().has('$.hasMore', false);
+    if (past.json<{ items: unknown[] }>().items.length !== 0) throw new Error('a page past the end is not empty');
   });
   await ctx.step('filtered by query text → 200, matches', async () => {
     const r = await ctx.client

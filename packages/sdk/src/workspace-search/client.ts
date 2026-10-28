@@ -55,14 +55,6 @@ export function createWorkspaceSearchClient(
     return entry.isDir ? `${entry.path}/` : entry.path;
   }
 
-  function getCacheForServer(serverUrl: string): WorkspaceIndexCache | undefined {
-    return workspaceIndexCaches.get(serverUrl);
-  }
-
-  function setCacheForServer(serverUrl: string, cache: WorkspaceIndexCache): void {
-    workspaceIndexCaches.set(serverUrl, cache);
-  }
-
   function nodeToWorkspaceEntry(node: { path: string; type: string }): WorkspaceSearchEntry {
     return toWorkspaceSearchEntry(node.path, node.type === 'directory');
   }
@@ -223,7 +215,7 @@ export function createWorkspaceSearchClient(
 
   async function getWorkspaceIndexEntries(): Promise<WorkspaceSearchEntry[]> {
     const serverUrl = getCacheKey();
-    const current = getCacheForServer(serverUrl);
+    const current = workspaceIndexCaches.get(serverUrl);
     const now = Date.now();
 
     if (current && current.entries.length > 0 && now - current.fetchedAt < INDEX_TTL_MS) {
@@ -236,7 +228,7 @@ export function createWorkspaceSearchClient(
 
     const inFlight = buildWorkspaceIndex()
       .then((entries) => {
-        setCacheForServer(serverUrl, {
+        workspaceIndexCaches.set(serverUrl, {
           entries,
           fetchedAt: Date.now(),
         });
@@ -244,14 +236,14 @@ export function createWorkspaceSearchClient(
       })
       .catch(() => {
         const fallback = current?.entries ?? [];
-        setCacheForServer(serverUrl, {
+        workspaceIndexCaches.set(serverUrl, {
           entries: fallback,
           fetchedAt: current?.fetchedAt ?? 0,
         });
         return fallback;
       });
 
-    setCacheForServer(serverUrl, {
+    workspaceIndexCaches.set(serverUrl, {
       entries: current?.entries ?? [],
       fetchedAt: current?.fetchedAt ?? 0,
       inFlight,

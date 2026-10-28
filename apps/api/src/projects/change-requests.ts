@@ -13,7 +13,7 @@
  * what.
  */
 
-import { type SQL, and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
@@ -160,6 +160,62 @@ export async function supersededByFor(
     if (next) replaced.set(row.crId, { cr_id: next.crId, number: next.number });
   }
   return replaced;
+}
+
+/** The most open requests on one base a merge checks for carried work. */
+const LANDED_CHECK_LIMIT = 200;
+
+/**
+ * Marks merged every other open request on `baseRef` whose head the merge
+ * carried into the base, and returns them (KRTX-3371). Merging the top of a
+ * stack fast-forwards the base past every request below it; those stayed
+ * `open` forever. `resolveLanded` maps each head ref that landed to its tip.
+ * The update is guarded on `status = 'open'`, so a request closed or merged
+ * meanwhile keeps its own outcome.
+ */
+export async function markChangeRequestsLanded(input: {
+  projectId: string;
+  baseRef: string;
+  exceptCrId: string;
+  mergedBy: string;
+  merge: { merge_commit_sha: string; base_sha_before: string };
+  resolveLanded: (headRefs: string[]) => Promise<Map<string, string>>;
+}): Promise<ChangeRequestRef[]> {
+  const open = await db
+    .select({ crId: changeRequests.crId, number: changeRequests.number, headRef: changeRequests.headRef })
+    .from(changeRequests)
+    .where(
+      and(
+        eq(changeRequests.projectId, input.projectId),
+        eq(changeRequests.baseRef, input.baseRef),
+        eq(changeRequests.status, 'open'),
+        ne(changeRequests.crId, input.exceptCrId),
+      ),
+    )
+    .orderBy(asc(changeRequests.number))
+    .limit(LANDED_CHECK_LIMIT);
+  if (open.length === 0) return [];
+  const landed = await input.resolveLanded([...new Set(open.map((row) => row.headRef))]);
+  const marked: ChangeRequestRef[] = [];
+  for (const row of open) {
+    const tip = landed.get(row.headRef);
+    if (!tip) continue;
+    const [updated] = await db
+      .update(changeRequests)
+      .set({
+        status: 'merged',
+        mergedAt: new Date(),
+        mergedBy: input.mergedBy,
+        mergeCommitSha: input.merge.merge_commit_sha,
+        headCommitSha: tip,
+        baseCommitSha: input.merge.base_sha_before,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(changeRequests.crId, row.crId), eq(changeRequests.status, 'open')))
+      .returning({ crId: changeRequests.crId, number: changeRequests.number });
+    if (updated) marked.push({ cr_id: updated.crId, number: updated.number });
+  }
+  return marked;
 }
 
 /**

@@ -2803,6 +2803,7 @@
     "signInWithEmail": "Iniciar sesión con email",
     "createNewAccount": "Crear nueva cuenta",
     "byContinuingYouAgreeSimple": "Al continuar, aceptas nuestra",
+    "customerLogoNotice": "Kortix puede mostrar el nombre y el logotipo de tu organización como cliente, en cualquier plan. Puedes excluirla en cualquier momento en legal@kortix.com.",
     "phoneVerification": {
       "title": "Verifica tu número de teléfono",
       "titleOtp": "Ingresa el código de verificación",
@@ -20805,7 +20806,14 @@
     "sessionModel": "Modelo {cost}",
     "sessionSandbox": "Sandbox {cost}",
     "noCapUnlimited": "Sin límite · el gasto es ilimitado",
-    "tokensSub": "{in} entrada · {out} salida"
+    "tokensSub": "{in} entrada · {out} salida",
+    "unknownValue": "Desconocido",
+    "estimateCoverageUnavailable": "Cobertura de la estimación no disponible.",
+    "estimatesSeparate": "El gasto real de arriba es aparte. Las estimaciones nunca se suman a los cargos.",
+    "estimatedUsageValueLabel": "Valor de uso estimado del LLM (no es una factura):",
+    "pricedRequests": "{count} solicitudes con precio",
+    "unpricedRequests": "{count} solicitudes sin precio",
+    "llmEstimateLabel": "Estimación del LLM:"
   },
   "triggerComposer": {
     "every": "Cada",
