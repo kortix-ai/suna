@@ -1,4 +1,6 @@
+import type { ToolPart } from '../../runtime/client';
 import { describe, expect, test } from 'bun:test';
+import { segmentTurn } from './segment-turn';
 
 import {
   isEmptyShowPart,
@@ -50,6 +52,24 @@ describe('grouping exemptions', () => {
     expect(isStandaloneActivityTool('oc-agent-spawn')).toBe(true);
     expect(isStandaloneActivityTool('agent_stop')).toBe(true);
     expect(isStandaloneActivityTool('bash')).toBe(false);
+  });
+});
+
+describe('image_gen is a deliverable', () => {
+  test('image_gen never folds into a burst group', () => {
+    for (const name of ['image_gen', 'image-gen', 'oc-image-gen']) {
+      expect(isNoGroupActivityTool(name)).toBe(true);
+      expect(isStandaloneActivityTool(name)).toBe(true);
+    }
+  });
+
+  test('image_gen between two shells splits them and stands alone', () => {
+    const call = (id: string, name: string) =>
+      ({ id, type: 'tool', tool: name, callID: `c${id}`, state: { status: 'completed', input: {} } }) as unknown as ToolPart;
+    const segments = segmentTurn([call('1', 'bash'), call('2', 'image_gen'), call('3', 'bash')]);
+
+    expect(segments.map((seg) => seg.kind)).toEqual(['burst', 'standalone', 'burst']);
+    expect((segments[1] as { part: ToolPart }).part.id).toBe('2');
   });
 });
 

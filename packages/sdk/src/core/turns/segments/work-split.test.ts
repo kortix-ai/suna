@@ -82,6 +82,39 @@ describe('splitTurnWork', () => {
     expect((split!.final[0] as { part: { id: string } }).part.id).toBe('6');
   });
 
+  test('a settled turn hoists an image_gen card above the final text', () => {
+    const s = segments([
+      tool('1', 'bash'),
+      tool('2', 'image_gen', { action: 'generate', prompt: 'a paper boat' }),
+      text('3', 'Here it is.'),
+    ]);
+    const split = splitTurnWork(s, { working: false });
+
+    expect(split!.hoisted.map((seg) => (seg as { part: ToolPart }).part.id)).toEqual(['2']);
+    expect(split!.work.map((seg) => seg.kind)).toEqual(['burst']);
+    expect((split!.work[0] as { parts: ToolPart[] }).parts.map((p) => p.id)).toEqual(['1']);
+    expect((split!.final[0] as { part: { id: string } }).part.id).toBe('3');
+  });
+
+  test('the image-gen spelling hosts register is hoisted too', () => {
+    const s = segments([tool('1', 'bash'), tool('2', 'image-gen'), text('3', 'Done.')]);
+    const split = splitTurnWork(s, { working: false });
+
+    expect(split!.hoisted.map((seg) => (seg as { part: ToolPart }).part.id)).toEqual(['2']);
+  });
+
+  test('a failed image_gen is still hoisted so its error is visible', () => {
+    const failed = {
+      ...tool('2', 'image_gen', { action: 'generate', prompt: 'a paper boat' }),
+      state: { status: 'error', input: { action: 'generate' }, error: 'Image limit reached' },
+    } as unknown as ToolPart;
+    const s = segments([tool('1', 'bash'), failed, text('3', 'The image failed.')]);
+    const split = splitTurnWork(s, { working: false });
+
+    expect(split!.hoisted.map((seg) => (seg as { part: ToolPart }).part.id)).toEqual(['2']);
+    expect(split!.work.map((seg) => seg.kind)).toEqual(['burst']);
+  });
+
   test('a sub-agent standalone stays in work', () => {
     const s = segments([tool('1', 'agent_spawn'), text('2', 'Done.')]);
     const split = splitTurnWork(s, { working: false });

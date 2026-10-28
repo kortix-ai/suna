@@ -33,14 +33,17 @@ export function shellActivityGroupLabel(count: number, running: boolean): string
 }
 
 /**
- * Tools that must never fold into a "Tool · Nx" group:
+ * The deliverable tools: never folded into a "Tool · Nx" group, and hoisted
+ * above the final text once the turn settles (`splitTurnWork`):
  *   - show / show-user: rendered output (preview, image, viewer) the user has
  *     to actually see — folding it behind a group means it can be missed.
+ *   - image_gen: the generated image is the deliverable itself, as is its
+ *     failure card.
  * `write` used to be here ("distinct files"), but a scaffold run writing six
  * JSON files as six rows buries the narrative — the grouped row lists every
  * file inside, nothing is lost.
  */
-export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user']);
+export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user', 'image_gen']);
 
 export function isNoGroupActivityTool(toolName: string | undefined): boolean {
   return NO_GROUP_ACTIVITY_TOOLS.has(normalizeActivityToolName(toolName));
@@ -123,14 +126,13 @@ export function isEmptyShowPart(call: ActivityPartLike | ToolCallBlock): boolean
 /**
  * Tools that always render on their own, never folded into a burst.
  *
- *   - show / show_user: a deliverable handed to the user. Folding it behind a
- *     collapsed row means it can be missed.
+ *   - the deliverables (`NO_GROUP_ACTIVITY_TOOLS`): handed to the user.
+ *     Folding one behind a collapsed row means it can be missed.
  *   - agent_*: a spawned sub-agent has its own lifecycle and status. Folding it
  *     in would hide a running agent behind a collapsed row.
  */
 export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
-  'show',
-  'show_user',
+  ...NO_GROUP_ACTIVITY_TOOLS,
   'agent_spawn',
   'agent_status',
   'agent_message',
