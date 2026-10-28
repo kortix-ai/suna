@@ -8,9 +8,8 @@ import { toWireModel } from '../resolution/effective';
 export const CHATGPT_IMAGE_MODEL = 'codex/gpt-image-2';
 
 // Each BYOK provider's image model for `auto`, providers in plan order: the
-// first id the catalog lists as an image model wins. A curated list, because
-// models.dev also gives image output to models that do not generate images
-// (Google `deep-research-*`).
+// first id the catalog lists as an image model wins. A curated list, so `auto`
+// plans only models whose image protocol the gateway speaks.
 const BYOK_IMAGE_MODELS: ReadonlyArray<readonly [provider: string, ids: readonly string[]]> = [
   ['openai', ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']],
   ['google', ['gemini-2.5-flash-image', 'gemini-3.1-flash-image']],
@@ -19,6 +18,17 @@ const BYOK_IMAGE_MODELS: ReadonlyArray<readonly [provider: string, ids: readonly
 ];
 
 const CONNECT_IMAGE_MODEL = 'Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.';
+
+// models.dev lists image output for models that do not generate an image from
+// a prompt: Google's Deep Research agents (`google/deep-research-*`) and
+// routers that pick a model per request (`openrouter/auto`). The catalog has
+// no field that tells a generator apart (checked: modalities, family,
+// tool_call, reasoning, cost), so this list does.
+const NOT_IMAGE_GENERATORS = /(^|\/)(deep-research-|auto$)/;
+
+/** An image model `/images/*` can call: the catalog lists image output and it generates images. */
+const generatesImages = (wire: string): boolean =>
+  wire === CHATGPT_IMAGE_MODEL || (hasImageOutput(wire) && !NOT_IMAGE_GENERATORS.test(wire));
 
 export interface ImageReach {
   /** Credential names the principal reaches: project secrets and granted pooled keys. */
@@ -35,7 +45,7 @@ export interface ImageReach {
  * still decides each one, and a failed one falls to the next.
  */
 export function reachableImageModels({ secretNames, access, managedModels }: ImageReach): string[] {
-  const usable = (model: string) => hasImageOutput(model) && modelAccessAllows(access, model);
+  const usable = (model: string) => generatesImages(model) && modelAccessAllows(access, model);
   return [
     ...(secretNames.has('CODEX_AUTH_JSON') && modelAccessAllows(access, CHATGPT_IMAGE_MODEL) ? [CHATGPT_IMAGE_MODEL] : []),
     ...BYOK_IMAGE_MODELS.flatMap(([provider, ids]) => {
@@ -57,7 +67,7 @@ export async function planImageRoute(
 ): Promise<ModelRoutePlan> {
   const wire = toWireModel(requestedModel);
   if (wire && wire !== 'auto') {
-    if (wire === CHATGPT_IMAGE_MODEL || hasImageOutput(wire)) {
+    if (generatesImages(wire)) {
       return { policyId: 'image', primaryModel: wire, fallbackModels: [], fallbackOn: 'any-error' };
     }
     const models = (await reachable()).slice(0, 5);

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 
+import { hasImageOutput } from '../models/catalog-models';
 import { type ImageReach, planImageRoute, reachableImageModels } from './image-models';
 
 // The real runtime catalog (the bundled models.dev snapshot): the preference
@@ -59,6 +60,16 @@ describe('image model route plan', () => {
     // Nothing reachable: the suggestion says what to connect.
     const none = await refusal(planImageRoute('codex/gpt-5.5', reach([])));
     expect(none.suggestion).toBe('Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.');
+  });
+
+  test('an explicit model the catalog marks image output but that does not generate images refuses not_an_image_model', async () => {
+    // models.dev lists image output for Google's Deep Research agents and for routers.
+    for (const model of ['google/deep-research-preview-04-2026', 'google/deep-research-max-preview-04-2026', 'openrouter/openrouter/auto']) {
+      expect(hasImageOutput(model), model).toBe(true);
+      const error = await refusal(planImageRoute(model, reach(['GOOGLE_GENERATIVE_AI_API_KEY'])));
+      expect(error.code, model).toBe('not_an_image_model');
+      expect(error.suggestion, model).toBe('Use an image model: google/gemini-2.5-flash-image.');
+    }
   });
 
   test('an explicit catalog image model passes through as the primary', async () => {

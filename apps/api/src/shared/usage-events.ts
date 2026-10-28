@@ -26,6 +26,11 @@ export interface UsageEventInput {
   requestId?: string | null;
 }
 
+/** Set the route of the usage row that settled gateway request `requestId`. */
+export async function setUsageEventRoute(requestId: string, route: string): Promise<void> {
+  await db.update(usageEvents).set({ route }).where(eq(usageEvents.requestId, requestId));
+}
+
 function positiveInteger(value: number | undefined) {
   return Number.isFinite(value) && value && value > 0 ? Math.floor(value) : 0;
 }

@@ -30,7 +30,7 @@ Object.assign(process.env, {
 const { db } = await import('../shared/db');
 const { seedAccount } = await import('../__tests__/helpers/integration-fixtures');
 const { recordUsageEvent } = await import('../shared/usage-events');
-const { recordGatewayUsage } = await import('./hooks');
+const { persistGatewayTrace, recordGatewayUsage } = await import('./hooks');
 
 const ACTOR = '00000000-0000-4000-a000-000000009b02';
 let accountId: string;
@@ -310,6 +310,28 @@ withDb('gateway usage settlement is idempotent per request', () => {
     expect(await usageRows(a)).toHaveLength(1);
     expect(await usageRows(b)).toHaveLength(1);
     expect(await ledger()).toHaveLength(2);
+  });
+
+  // The gateway posts an image request's usage, then its trace; only the trace
+  // names the operation.
+  test('an image usage event is recorded with the images route; a chat event keeps the chat route', async () => {
+    const image = requestId('image');
+    const chat = requestId('chat');
+    await recordGatewayUsage(event(image, { streaming: false }));
+    await recordGatewayUsage(event(chat));
+    const trace = (id: string, metadata: Record<string, unknown>) => ({
+      requestId: id, startedAt: new Date().toISOString(), accountId, actorUserId: ACTOR,
+      requestedModel: 'auto', resolvedModel: 'kortix/test', provider: 'kortix', billingMode: 'credits' as const,
+      streaming: false, status: 200, ok: true, latencyMs: 1, attempts: 1, candidatesTried: ['kortix/test'],
+      usage: { promptTokens: 1_000, completionTokens: 200, cachedTokens: 0, cacheWriteTokens: 0 },
+      upstreamCost: 0.05, finalCost: 0.05, request: null, response: null, metadata,
+    });
+    await persistGatewayTrace(trace(image, { operation: 'images.edits' }));
+    await persistGatewayTrace(trace(chat, {}));
+    const routeOf = async (id: string) =>
+      (await db.select({ route: usageEvents.route }).from(usageEvents).where(eq(usageEvents.requestId, id)))[0]?.route;
+    expect(await routeOf(image)).toBe('/v1/llm/images/edits');
+    expect(await routeOf(chat)).toBe('/v1/llm/chat/completions');
   });
 
   test('an estimated settlement is marked on its row', async () => {
