@@ -61,7 +61,8 @@ test('a turn with image_gen and a show of the same image draws the image once an
   // One image surface: the image_gen card's frame. The show draws no second one.
   expect(html.match(/<figure/g)).toHaveLength(1);
   expect(html.match(/Loading image/g)).toHaveLength(1);
-  expect(html).toContain('A synthetic fox');
+  // The card carries no prompt caption (R29); the viewer shows it on open.
+  expect(html).not.toContain('A synthetic fox');
   // The show keeps the PDF and names no image tab.
   expect(html).toContain('report.pdf');
   expect(html).not.toContain('>fox.png<');

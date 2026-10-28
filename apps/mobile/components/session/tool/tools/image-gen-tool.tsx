@@ -250,16 +250,16 @@ function FailureNote({ error }: { error: ImageGenView['error'] }) {
 }
 
 /**
- * One image, from its generating frame to the file. `solo`: the card's only
- * frame carries the generating line itself; in rows the card's header does. A
- * frame whose file is still on the way says "Loading image" in either case.
+ * One image, from its generating frame to the file. `busy` is what the frame
+ * shows while it generates (the busy line, or the glyph alone in a grid); a
+ * frame whose file is still on the way says "Loading image". The frame shows
+ * no prompt: a tap hands its prompt and `model` to the file sheet.
  */
-function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
+function ImageGenFrame({ image, seed, busy, model }: {
   image: ImageGenImage;
   seed: string;
-  solo: boolean;
-  busyLabel: string;
-  startedAt: number | null;
+  busy: ReactNode;
+  model: string | null;
 }) {
   const { t } = useTranslation();
   const palette = useTurnPalette();
@@ -281,15 +281,12 @@ function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
       </View>
     );
   }
-  const alt = image.prompt || busyLabel;
+  const alt = image.prompt || t('imageGen.generating');
+  const caption = image.prompt ? { text: image.prompt, model } : undefined;
   const directUrl = image.directUrl;
   let content: ReactNode = null;
   if (image.phase === 'generating') {
-    content = solo ? (
-      <Overlay>
-        <BusyLabel seed={seed} label={busyLabel} startedAt={startedAt} />
-      </Overlay>
-    ) : null;
+    content = <Overlay>{busy}</Overlay>;
   } else if (directUrl) {
     content = (
       <>
@@ -310,7 +307,9 @@ function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
       </>
     );
   } else if (filePath) {
-    content = <SandboxImage path={filePath} alt={alt} seed={seed} onRatio={onRatio} onPress={() => openFile(filePath)} />;
+    content = (
+      <SandboxImage path={filePath} alt={alt} seed={seed} onRatio={onRatio} onPress={() => openFile(filePath, undefined, caption)} />
+    );
   }
   return (
     <View
@@ -328,79 +327,79 @@ function ImageGenFrame({ image, seed, solo, busyLabel, startedAt }: {
   );
 }
 
+/** A failed frame has no ratio: its plate counts as a 2:1 frame when the masonry balances its columns. */
+const PLATE_HEIGHT = 0.5;
+
+/**
+ * Two-column masonry: each image in turn joins the shorter column, measured
+ * in widths (a frame's height over its width), so the columns stay even
+ * without measuring a pixel.
+ */
+function masonry(images: ImageGenImage[]): number[][] {
+  const columns: number[][] = [[], []];
+  const heights = [0, 0];
+  images.forEach((image, i) => {
+    const column = heights[1]! < heights[0]! ? 1 : 0;
+    columns[column]!.push(i);
+    heights[column]! += image.phase === 'failed' ? PLATE_HEIGHT : 1 / aspectRatioValue(image.aspectRatio);
+  });
+  return columns;
+}
+
 export function ImageGenTool({ call }: ToolProps) {
   const { t } = useTranslation();
-  const palette = useTurnPalette();
   // The turn says whether an open call still runs: an open call on a finished turn was stopped.
   const live = useContext(TurnLiveContext);
   const view = useMemo(() => imageGenView(call, live), [call, live]);
   const edit = view.action === 'edit';
   const solo = view.images.length === 1;
-  const xs = (color: string) => [TURN_TYPE.xs, { color }];
-  const promptLine = (prompt: string) =>
-    prompt ? (
-      <Text numberOfLines={2} style={xs(palette.mutedForeground)}>
-        {prompt}
-      </Text>
-    ) : null;
 
-  let body: ReactNode;
+  // The card carries no prompt and no model (R29): the frames are the content,
+  // their status (busy, loading, an error) the only text.
   if (!view.images.length) {
     // The whole call failed or stopped.
-    body = (
-      <>
+    return (
+      <View className="w-full max-w-md">
         <FailureNote error={view.error} />
-        {view.prompts.map((prompt, i) => (
-          <View key={i}>{promptLine(prompt)}</View>
-        ))}
-      </>
-    );
-  } else {
-    const cell = (image: ImageGenImage, i: number) => (
-      // In a row, `flex: 1` splits the width; a lone frame takes the card's.
-      <View key={i} style={solo ? { gap: webSpace(2) } : { flex: 1, gap: webSpace(2) }}>
-        <ImageGenFrame
-          image={image}
-          seed={call.call_id}
-          solo={solo}
-          busyLabel={t(edit ? 'imageGen.editing' : 'imageGen.generating')}
-          startedAt={view.startedAt}
-        />
-        {promptLine(image.prompt)}
       </View>
-    );
-    const rows: ImageGenImage[][] = [];
-    for (let i = 0; i < view.images.length; i += 2) rows.push(view.images.slice(i, i + 2));
-    body = solo ? (
-      cell(view.images[0]!, 0)
-    ) : (
-      <>
-        {view.phase === 'generating' ? (
-          <BusyLabel
-            seed={call.call_id}
-            label={t(edit ? 'imageGen.editingCount' : 'imageGen.generatingCount', { count: view.images.length })}
-            startedAt={view.startedAt}
-          />
-        ) : null}
-        {rows.map((row, r) => (
-          <View key={r} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2) }}>
-            {row.map((image, i) => cell(image, r * 2 + i))}
-            {/* An odd last row keeps its frame at half width. */}
-            {row.length === 1 ? <View style={{ flex: 1 }} /> : null}
-          </View>
-        ))}
-      </>
     );
   }
 
+  const busyLine = (
+    <BusyLabel
+      seed={call.call_id}
+      label={
+        solo
+          ? t(edit ? 'imageGen.editing' : 'imageGen.generating')
+          : t(edit ? 'imageGen.editingCount' : 'imageGen.generatingCount', { count: view.images.length })
+      }
+      startedAt={view.startedAt}
+    />
+  );
+  const frame = (i: number) => (
+    <ImageGenFrame
+      key={i}
+      image={view.images[i]!}
+      seed={call.call_id}
+      model={view.model}
+      // The first frame carries the busy line, the others its glyph alone.
+      busy={i === 0 ? busyLine : <SessionDotMatrix sessionId={call.call_id} size={14} />}
+    />
+  );
+
   return (
-    <View className="w-full max-w-md" style={{ gap: webSpace(2) }}>
-      {body}
-      {view.model ? (
-        <Text numberOfLines={1} style={[...xs(palette.mutedForeground), { fontFamily: monoFont }]}>
-          {view.model}
-        </Text>
-      ) : null}
+    <View className="w-full max-w-md">
+      {solo ? (
+        frame(0)
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: webSpace(2) }}>
+          {masonry(view.images).map((column, c) => (
+            <View key={c} testID="image-gen-column" style={{ flex: 1, gap: webSpace(2) }}>
+              {column.map(frame)}
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

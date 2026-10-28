@@ -41,6 +41,8 @@ import { haptics } from '@/lib/haptics';
 import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
 import { previewsInline, sessionFileKindLabel, type SessionFileKind } from '@/lib/session/session-files';
 import { THEME } from '@/lib/utils/theme';
+import type { FileCaption } from '@/stores/tool-file-preview-store';
+import { FilePreviewCaption } from '@/components/files/file-preview-caption';
 
 /** What the sheet needs of a file. A tool path knows only its name and path. */
 export interface PreviewFile {
@@ -48,6 +50,8 @@ export interface PreviewFile {
   path: string;
   /** Set by Recent files; a tool path leaves it out and the card names the type from the extension. */
   kind?: SessionFileKind;
+  /** A generated image's prompt and model, shown under it; only the image card's open sets it. */
+  caption?: FileCaption;
 }
 
 const SNAP_POINTS = ['100%'];
@@ -145,7 +149,9 @@ function FilePreviewBody({
 }) {
   const { colorScheme } = useColorScheme();
   const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
-  const contentInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  const barInset = usePinnedBarInset(BAR_CONTROL_HEIGHT);
+  // With a caption, the caption sits above the bar and the preview ends at it.
+  const contentInset = file.caption ? 0 : barInset;
   const toast = useToast();
   const sandboxFile = React.useMemo(() => toSandboxFile(file), [file]);
   // A PDF, an Office file, an archive or media is not rendered here and nothing
@@ -248,6 +254,11 @@ function FilePreviewBody({
           />
         )}
       </FilePreviewBottomInsetContext.Provider>
+      {file.caption ? (
+        <View style={{ paddingBottom: barInset }}>
+          <FilePreviewCaption caption={file.caption} />
+        </View>
+      ) : null}
 
       {/* The project drawer's pinned bar: equal cells, default button size,
           floating over a fade of the surface. Download · Add to chat. */}

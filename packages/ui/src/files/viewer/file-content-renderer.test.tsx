@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { FileSourceProvider, type FileSource } from './file-source';
 import { FileContentRenderer } from './file-content-renderer';
+import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
 
 const source: FileSource = {
   id: 'characterization',
@@ -45,5 +46,38 @@ describe('file content renderer at a target line', () => {
     const atLine = view('/workspace/a.csv', 2);
     expect(atLine).not.toContain('animate-spinner-orbit');
     expect(atLine).toContain('class="relative flex flex-col h-full"');
+  });
+});
+
+// The image card opens a generated image with its prompt and the model that
+// made it (`openPreview(path, line, caption)`); every other file is unchanged.
+describe('the full-screen view shows the caption section only when caption data is given', () => {
+  const imageSource: FileSource = {
+    ...source,
+    useFileContent: () => ({ data: { type: 'binary', encoding: 'base64', mimeType: 'image/png', content: 'iVBORw0KGgo=' }, isLoading: false, error: null, refetch: async () => undefined }),
+  } as FileSource;
+  const image = (path: string) =>
+    renderToStaticMarkup(<FileSourceProvider value={imageSource}><FileContentRenderer filePath={path} /></FileSourceProvider>);
+
+  test('an image opened without caption data renders as before', () => {
+    const html = image('/workspace/output/images/plain.png');
+    expect(html).not.toContain('data-file-caption');
+  });
+
+  test('an image opened with its caption shows the prompt and the model under it', () => {
+    useFilePreviewStore.getState().openPreview('/workspace/output/images/fox.png', undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
+    try {
+      for (const path of ['/workspace/output/images/fox.png', 'output/images/fox.png']) {
+        const html = image(path);
+        expect(html).toContain('data-file-caption');
+        expect(html).toContain('A fox in a shuttle');
+        expect(html).toContain('codex/gpt-image-2');
+      }
+      // Another file, opened in the same viewer, carries no caption.
+      expect(image('/workspace/output/images/other.png')).not.toContain('data-file-caption');
+      expect(view('/workspace/notes.ts')).not.toContain('data-file-caption');
+    } finally {
+      useFilePreviewStore.getState().closePreview();
+    }
   });
 });

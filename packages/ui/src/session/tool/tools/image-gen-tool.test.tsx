@@ -11,6 +11,7 @@ import { TooltipProvider } from '../../../primitives/tooltip';
 import * as uiProvider from '../../../providers/ui-provider';
 import { IntlTestProvider } from '../../../test-utils/intl';
 import * as sdkReact from '@kortix/sdk/react';
+import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { InTranscriptTurnContext, ReadOnlySessionContext, TurnLiveContext } from '../shared/infrastructure';
 import { ImageGenTool } from './image-gen-tool';
 
@@ -61,6 +62,8 @@ function batch(images: [string, string, string][], failed: { prompt: string; err
 const FOX = '/workspace/output/images/fox.png';
 const THREE = ['A fox in a shuttle', 'An owl in a shuttle', 'A hare in a shuttle'];
 const count = (html: string, needle: string) => html.split(needle).length - 1;
+/** The text a reader sees: markup and attributes (an image's `alt`) removed. */
+const visibleText = (html: string) => html.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
 
 function card(state: Record<string, unknown>, turn?: { live: boolean }): ReactElement {
   const call = toolCallBlock({
@@ -128,7 +131,6 @@ describe('ImageGenTool', () => {
     expect(html).toContain('Generating image');
     expect(html).toContain('0:42');
     expect(html).toContain('role="status"'); // SessionDotMatrix
-    expect(html).toContain('A paper-cutout fox');
     expect(html).not.toContain('animate-spin');
   });
 
@@ -138,18 +140,73 @@ describe('ImageGenTool', () => {
     expect(html).not.toContain('Generating image');
   });
 
-  test('a three-prompt call shows three generating frames under one busy line', () => {
+  test('a three-prompt call shows three generating frames, the busy glyph in each, one count and time', () => {
     const html = render({ status: 'running', input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' } });
     expect(count(html, 'aspect-ratio:16 / 9')).toBe(3);
     expect(count(html, 'aria-busy="true"')).toBe(3);
-    expect(html).toContain('grid-cols-2');
-    // One shared header: one dot matrix, one label, one elapsed time.
-    expect(count(html, 'role="status"')).toBe(1);
+    // The first frame names the batch and its time; the others carry the glyph alone.
+    expect(count(html, 'role="status"')).toBe(3);
     expect(count(html, 'Generating 3 images')).toBe(1);
     expect(count(html, '0:42')).toBe(1);
     expect(html).not.toContain('Generating image<');
-    for (const prompt of THREE) expect(html).toContain(prompt);
     expect(render({ status: 'running', input: { action: 'edit', prompts: THREE.slice(0, 2) } })).toContain('Editing 2 images');
+  });
+
+  test('three images render as a masonry grid', () => {
+    const html = render({
+      status: 'completed',
+      input: { action: 'generate', prompts: THREE },
+      output: batch([
+        [FOX, '1024x1024', THREE[0]!],
+        ['/workspace/output/images/owl.png', '1024x1536', THREE[1]!],
+        ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
+      ]),
+    });
+    expect(html).toContain('columns-2');
+    expect(html).not.toContain('grid-cols-2');
+    expect(count(html, 'break-inside-avoid')).toBe(3);
+    // Each image keeps its own ratio.
+    expect(['1 / 1', '2 / 3', '3 / 2'].map((ratio) => html.includes(`aspect-ratio:${ratio}`))).toEqual([true, true, true]);
+    // One image is a single frame, no columns.
+    expect(render({ status: 'completed', output: batch([[FOX, '1024x1024', 'a']]) })).not.toContain('columns-2');
+  });
+
+  test('the card renders no prompt or model text', () => {
+    const prompts = ['A fox in a shuttle', 'An owl in a shuttle'];
+    const states = [
+      render({ status: 'running', input: { action: 'generate', prompts } }),
+      render({ status: 'running', input: { action: 'generate', prompts: [prompts[0]] } }),
+      render({
+        status: 'completed',
+        input: { action: 'generate', prompts },
+        output: batch([[FOX, '1024x1024', prompts[0]!]], [{ prompt: prompts[1]!, error: 'Image generation failed (500): Upstream error.' }], 'google/gemini-2.5-flash-image'),
+      }),
+      render({ status: 'error', input: { action: 'generate', prompts }, error: 'Image generation failed (500): Upstream error.' }),
+      render({ status: 'error', input: { action: 'generate', prompts }, error: 'The operation was aborted.' }),
+    ];
+    for (const html of states) {
+      const text = visibleText(html);
+      for (const prompt of prompts) expect(text).not.toContain(prompt);
+      expect(text).not.toContain('gemini');
+      expect(html).not.toContain('font-mono');
+    }
+  });
+
+  test('opening an image passes its prompt and model to the full-screen view', async () => {
+    blob = { blobUrl: 'blob:fox', blob: null, isLoading: false, error: null };
+    try {
+      const output = batch([[FOX, '1024x1024', 'A fox in a shuttle']], [], 'codex/gpt-image-2');
+      await inDom({ status: 'completed', input: { action: 'generate', prompts: ['A fox in a shuttle'] }, output }, async (container) => {
+        const open = container.querySelector('button[aria-label="A fox in a shuttle"]') as HTMLButtonElement | null;
+        expect(open).not.toBeNull();
+        await act(async () => open?.click());
+      });
+      expect(useFilePreviewStore.getState().filePath).toBe(FOX);
+      expect(useFilePreviewStore.getState().captions['output/images/fox.png']).toEqual({ text: 'A fox in a shuttle', model: 'codex/gpt-image-2' });
+    } finally {
+      blob = { blobUrl: null, blob: null, isLoading: true, error: null };
+      useFilePreviewStore.getState().closePreview();
+    }
   });
 
   test('a batch with one failure shows two images and one error, each in its place', () => {
@@ -164,20 +221,17 @@ describe('ImageGenTool', () => {
         [{ prompt: THREE[1]!, error: 'Image generation failed (400): The request was refused. Change the prompt, then retry. [content_policy]' }],
       ),
     });
-    expect(html).toContain('grid-cols-2');
+    expect(html).toContain('columns-2');
     expect(count(html, 'aspect-ratio:')).toBe(2);
     expect(html).toContain('aspect-ratio:1 / 1');
     expect(html).toContain('aspect-ratio:3 / 2');
     expect(count(html, 'The request was refused.')).toBe(1);
     expect(html).toContain('Change the prompt, then retry.');
     expect(html).not.toContain('content_policy');
-    // The frames keep the order the call asked for.
-    const at = THREE.map((prompt) => html.indexOf(prompt));
-    expect(at[0]! < at[1]! && at[1]! < at[2]!).toBe(true);
-    expect(html.indexOf('The request was refused.')).toBeGreaterThan(at[0]!);
-    expect(html.indexOf('The request was refused.')).toBeLessThan(at[2]!);
-    // The model caption, once for the card.
-    expect(count(html, 'codex/gpt-image-2')).toBe(1);
+    // The frames keep the order the call asked for: fox, the failure, hare.
+    const refused = html.indexOf('The request was refused.');
+    expect(html.indexOf('aspect-ratio:1 / 1')).toBeLessThan(refused);
+    expect(refused).toBeLessThan(html.indexOf('aspect-ratio:3 / 2'));
   });
 
   test('a failed frame with a ChatGPT code offers the ChatGPT reconnect for its card', () => {
@@ -221,9 +275,7 @@ describe('ImageGenTool', () => {
     });
     expect(html).toContain('Loading image');
     expect(html).toContain('aspect-ratio:3 / 2');
-    expect(html).not.toContain('grid-cols-2');
-    expect(html).toContain('A paper-cutout fox');
-    expect(html).toContain('gpt-image-2');
+    expect(html).not.toContain('columns-2');
   });
 
   test('a failure shows the gateway message and suggestion', () => {
@@ -282,17 +334,13 @@ describe('ImageGenTool', () => {
     expect(html).not.toContain('image_rate_limited');
   });
 
-  test('the ready card names the model that made the image; a running call names none', () => {
+  test('a JPEG loads in the frame like a PNG, at its delivered ratio', () => {
     const html = render({
       status: 'completed',
       output: batch([['/workspace/output/images/fox.jpg', '1344x768', 'A paper-cutout fox']], [], 'google/gemini-2.5-flash-image'),
     });
-    expect(html).toContain('A paper-cutout fox');
-    expect(html).toMatch(/class="[^"]*font-mono[^"]*">google\/gemini-2\.5-flash-image</);
-    // A JPEG loads in the frame like a PNG, at its delivered ratio.
     expect(html).toContain('Loading image');
     expect(html).toContain('aspect-ratio:7 / 4');
-    expect(render({ status: 'running' })).not.toContain('font-mono');
   });
 
   const UNAVAILABLE = {

@@ -64,10 +64,12 @@ mock.module('@/components/session/turn/use-sandbox-image', () => ({
   }),
 }));
 const TurnLiveContext = React.createContext(false);
+/** Every `openFile(path, line, caption)` the card made. */
+const opened: unknown[][] = [];
 mock.module('../shared/infrastructure', () => ({
   TurnLiveContext,
   isLocalSandboxFilePath: (path: string) => path.startsWith('/workspace/'),
-  useToolNavigation: () => ({ openFile: () => {}, openExternal: () => {} }),
+  useToolNavigation: () => ({ openFile: (...args: unknown[]) => opened.push(args), openExternal: () => {} }),
 }));
 mock.module('../shared/registry', () => ({ ToolRegistry: { register: () => {} } }));
 mock.module('../shared/styles', () => ({
@@ -142,11 +144,10 @@ function texts(): string[] {
 }
 
 describe('ImageGenTool', () => {
-  test('a running call shows the busy label, the time since the call started, and the prompt', async () => {
+  test('a running call shows the busy label and the time since the call started', async () => {
     await render(call({ status: 'running' }), true);
     expect(texts()).toContain('Generating image');
     expect(texts()).toContain('0:42');
-    expect(texts()).toContain('A paper-cutout fox');
     expect(tree?.root.findAll((node) => node.type === 'image')).toHaveLength(0);
   });
 
@@ -197,16 +198,14 @@ describe('ImageGenTool', () => {
     expect(ratio()).toBeCloseTo(2 / 3);
   });
 
-  test('a ready card names the model that made the image, a JPEG loads like a PNG', async () => {
+  test('a JPEG loads like a PNG', async () => {
     const output = batch([['/workspace/output/images/fox.jpg', '1344x768', 'A paper-cutout fox']], [], 'google/gemini-2.5-flash-image');
     await render(call({ status: 'completed', output }), false);
-    expect(texts()).toContain('A paper-cutout fox');
-    expect(texts()).toContain('google/gemini-2.5-flash-image');
     const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
     expect(images[0]!.props.source).toEqual({ uri: 'sandbox:/workspace/output/images/fox.jpg', headers: undefined });
   });
 
-  test('a three-prompt call shows three generating frames under one busy line', async () => {
+  test('a three-prompt call shows three generating frames, one busy line in the first', async () => {
     await render(call({ status: 'running', input: { action: 'generate', prompts: THREE, aspect_ratio: '16:9' } }), true);
     const ratios = frameRatios();
     expect(ratios).toHaveLength(3);
@@ -214,7 +213,56 @@ describe('ImageGenTool', () => {
     expect(texts().filter((t) => t === 'Generating 3 images')).toHaveLength(1);
     expect(texts().filter((t) => t === '0:42')).toHaveLength(1);
     expect(texts()).not.toContain('Generating image');
-    for (const prompt of THREE) expect(texts()).toContain(prompt);
+  });
+
+  test('three images render as a masonry grid', async () => {
+    // Square, tall, wide: the wide one goes under the square, the shorter column.
+    const output = batch([
+      [FOX, '1024x1024', THREE[0]!],
+      ['/workspace/output/images/owl.png', '1024x1536', THREE[1]!],
+      ['/workspace/output/images/hare.png', '1536x1024', THREE[2]!],
+    ]);
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: THREE }, output }), false);
+    const columns = tree?.root.findAll((node) => node.type === 'view' && node.props.testID === 'image-gen-column') ?? [];
+    expect(columns).toHaveLength(2);
+    const uris = (column: (typeof columns)[number]) =>
+      column.findAll((node) => node.type === 'image').map((image) => (image.props.source as { uri: string }).uri);
+    expect(uris(columns[0]!)).toEqual([`sandbox:${FOX}`, 'sandbox:/workspace/output/images/hare.png']);
+    expect(uris(columns[1]!)).toEqual(['sandbox:/workspace/output/images/owl.png']);
+    // Each frame keeps its own ratio.
+    expect(frameRatios().map((r) => Number(r.toFixed(3)))).toEqual([1, 1.5, 0.667]);
+  });
+
+  test('the card renders no prompt or model text', async () => {
+    const prompts = ['A fox in a shuttle', 'An owl in a shuttle'];
+    const states = [
+      call({ status: 'running', input: { action: 'generate', prompts } }),
+      call({ status: 'running', input: { action: 'generate', prompts: [prompts[0]] } }),
+      call({
+        status: 'completed',
+        input: { action: 'generate', prompts },
+        output: batch([[FOX, '1024x1024', prompts[0]!]], [{ prompt: prompts[1]!, error: 'Image generation failed (500): Upstream error.' }], 'google/gemini-2.5-flash-image'),
+      }),
+      call({ status: 'error', input: { action: 'generate', prompts }, error: 'Image generation failed (500): Upstream error.' }),
+      call({ status: 'error', input: { action: 'generate', prompts }, error: 'The operation was aborted.' }),
+    ];
+    for (const block of states) {
+      await render(block, block.status === 'running');
+      const all = texts().join('\n');
+      for (const prompt of prompts) expect(all).not.toContain(prompt);
+      expect(all).not.toContain('gemini');
+      await act(async () => tree?.unmount());
+      tree = undefined;
+    }
+  });
+
+  test('opening an image passes its prompt and model to the full-screen view', async () => {
+    opened.length = 0;
+    const output = batch([[FOX, '1024x1024', 'A fox in a shuttle']], [], 'codex/gpt-image-2');
+    await render(call({ status: 'completed', input: { action: 'generate', prompts: ['A fox in a shuttle'] }, output }), false);
+    const open = tree?.root.findAll((node) => (node.type as string) === 'pressable')[0];
+    await act(async () => (open!.props.onPress as () => void)());
+    expect(opened).toEqual([[FOX, undefined, { text: 'A fox in a shuttle', model: 'codex/gpt-image-2' }]]);
   });
 
   test('a batch with one failure shows two images and one error, each in its place', async () => {
@@ -235,11 +283,7 @@ describe('ImageGenTool', () => {
     expect(all.filter((t) => t === 'The request was refused.')).toHaveLength(1);
     expect(all).toContain('Change the prompt, then retry.');
     expect(all.some((t) => t.includes('content_policy'))).toBe(false);
-    // The frames keep the order the call asked for; the model caption is once, last.
-    const at = (text: string) => all.indexOf(text);
-    expect(at(THREE[0]!) < at('The request was refused.') && at('The request was refused.') < at(THREE[2]!)).toBe(true);
-    expect(all.filter((t) => t === 'codex/gpt-image-2')).toHaveLength(1);
-    expect(all.at(-1)).toBe('codex/gpt-image-2');
+    expect(all).not.toContain('codex/gpt-image-2');
   });
 
   test('a ready grid frame whose file is still loading shows its loading state', async () => {
@@ -254,8 +298,6 @@ describe('ImageGenTool', () => {
     const images = tree?.root.findAll((node) => node.type === 'image') ?? [];
     expect(images).toHaveLength(1);
     expect(images[0]!.props.source).toEqual({ uri: `sandbox:${FOX}`, headers: undefined });
-    expect(texts()).toContain('A paper-cutout fox');
-    expect(texts()).toContain('gpt-image-2');
   });
 
   test('a running call names no model', async () => {

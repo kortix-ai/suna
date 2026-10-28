@@ -34,6 +34,7 @@ import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
 import { FileHeader } from './file-header';
 import { useFileContentState } from './use-file-content-state';
+import { type FileCaption, useFileCaption } from '../../internal/stores/file-preview-store';
 import { Download } from '../../internal/icons/download';
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,24 @@ function RendererFallback() {
 }
 
 /** Shared "file does not exist" UI shown when a file cannot be loaded. */
+/**
+ * An image with its caption under it: a generated image's prompt and the model
+ * that made it. Only an image opened with a caption has one; any other file
+ * renders exactly as without it.
+ */
+function CaptionedImage({ caption, children }: { caption: FileCaption | undefined; children: React.ReactNode }) {
+  if (!caption) return <>{children}</>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">{children}</div>
+      <div data-file-caption="" className="border-border max-h-32 shrink-0 overflow-y-auto border-t px-4 py-3">
+        <p className="text-foreground text-sm text-pretty">{caption.text}</p>
+        {caption.model ? <p className="text-muted-foreground mt-1 font-mono text-xs">{caption.model}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function FileNotFoundState({ filePath }: { filePath: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -200,6 +219,7 @@ export function FileContentRenderer({
     onStatusChange,
     targetLine,
   });
+  const caption = useFileCaption(filePath);
   const bytesOnly = !!source.bytesOnly;
   // The table has no lines: a jump to a line (a content-search match) opens
   // CSV and TSV in the code editor.
@@ -321,27 +341,31 @@ export function FileContentRenderer({
 
           {/* Image content (non-HEIC) */}
           {!isLoading && !error && imageDataUrl && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer
-                url={imageDataUrl}
-                className="h-full"
-                fileName={fileName}
-                controls={imageControls}
-              />
-            </Suspense>
+            <CaptionedImage caption={caption}>
+              <Suspense fallback={<RendererFallback />}>
+                <ImageRenderer
+                  url={imageDataUrl}
+                  className="h-full"
+                  fileName={fileName}
+                  controls={imageControls}
+                />
+              </Suspense>
+            </CaptionedImage>
           )}
 
           {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
           {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
           {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer
-                url={heicImageUrl}
-                className="h-full"
-                fileName={fileName}
-                controls={imageControls}
-              />
-            </Suspense>
+            <CaptionedImage caption={caption}>
+              <Suspense fallback={<RendererFallback />}>
+                <ImageRenderer
+                  url={heicImageUrl}
+                  className="h-full"
+                  fileName={fileName}
+                  controls={imageControls}
+                />
+              </Suspense>
+            </CaptionedImage>
           )}
 
           {/* The rich renderers below get `showDownload={false}`: every host of

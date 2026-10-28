@@ -2,7 +2,7 @@
 import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '../../../primitives/text-shimmer';
 import { useBinaryBlob } from '../../../files/runtime/hooks/use-binary-blob';
-import { useFilePreviewStore } from '../../../internal/stores/file-preview-store';
+import { type FileCaption, useFilePreviewStore } from '../../../internal/stores/file-preview-store';
 import { ImageFrame } from '../../../files/renderers/image-frame';
 import { Button } from '../../../primitives/button';
 import { ChatGptConnectionSlot } from '../../models/chatgpt-connection-button';
@@ -36,7 +36,7 @@ function BusyLabel({ seed, label, startedAt }: { seed: string; label: string; st
     return () => clearInterval(id);
   }, [timed]);
   return (
-    <span className="text-muted-foreground flex items-center gap-2 text-xs">
+    <span className="text-muted-foreground flex flex-wrap items-center justify-center gap-2 text-xs">
       <SessionDotMatrix sessionId={seed} size={14} className="shrink-0" />
       <TextShimmer duration={1} spread={2} className="text-xs">
         {label}
@@ -121,22 +121,21 @@ function FailureNote({ error, action }: { error: ImageGenView['error']; action?:
 }
 
 /**
- * One image, from its generating frame to the file. `solo`: the card's only
- * frame carries the generating line itself; in a grid the card's header does.
- * A frame whose file is still on the way says "Loading image" in either case.
+ * One image, from its generating frame to the file. `busy` is what the frame
+ * shows while it generates (the busy line, or the glyph alone in a grid); a
+ * frame whose file is still on the way says "Loading image". The frame shows
+ * no prompt: opening the image hands its prompt and `model` to the viewer.
  */
 function ImageGenFrame({
   image,
   seed,
-  solo,
-  busyLabel,
-  startedAt,
+  busy,
+  model,
 }: {
   image: ImageGenImage;
   seed: string;
-  solo: boolean;
-  busyLabel: string;
-  startedAt: number | null;
+  busy: ReactNode;
+  model: string | null;
 }) {
   const t = useTranslations('imageGen');
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -157,16 +156,17 @@ function ImageGenFrame({
   }
   const generating = image.phase === 'generating';
   const src = generating ? null : (image.directUrl ?? blobUrl);
+  const caption: FileCaption | undefined = image.prompt ? { text: image.prompt, model } : undefined;
   return (
     <div className="group relative">
       <ImageFrame
         aspectRatio={image.aspectRatio}
         src={src}
-        alt={image.prompt || busyLabel}
+        alt={image.prompt || t('generating')}
         pending={generating || (!src && !blobError)}
         label={
           generating ? (
-            solo ? <BusyLabel seed={seed} label={busyLabel} startedAt={startedAt} /> : null
+            busy
           ) : blobError ? (
             <span className="text-muted-foreground text-xs">{blobError}</span>
           ) : !src ? (
@@ -175,21 +175,17 @@ function ImageGenFrame({
         }
         onOpen={
           filePath && navigationEnabled
-            ? () => useFilePreviewStore.getState().openPreview(filePath)
+            ? () => useFilePreviewStore.getState().openPreview(filePath, undefined, caption)
             : undefined
         }
       />
       {!generating && filePath ? (
         <div className="bg-popover pointer-events-none absolute top-1.5 right-1.5 rounded-md border opacity-0 shadow-xs transition-opacity duration-fast group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-          <ShowFileActions path={filePath} />
+          <ShowFileActions path={filePath} caption={caption} />
         </div>
       ) : null}
     </div>
   );
-}
-
-function PromptLine({ prompt }: { prompt: string }) {
-  return prompt ? <p className="text-muted-foreground line-clamp-2 text-xs">{prompt}</p> : null;
 }
 
 export function ImageGenTool({ call }: ToolProps) {
@@ -204,52 +200,52 @@ export function ImageGenTool({ call }: ToolProps) {
   const repairable = view.error?.connectModel ? view.error : view.images.find((image) => image.error?.connectModel)?.error;
   const action = repairable ? <ConnectAction code={repairable.code} /> : null;
 
-  let body: ReactNode;
+  // The card carries no prompt and no model (R29): the frames are the content,
+  // their status (busy, loading, an error) the only text.
   if (!view.images.length) {
     // The whole call failed or stopped.
-    body = (
-      <>
+    return (
+      <div className="w-full max-w-md">
         <FailureNote error={view.error} action={action} />
-        {view.prompts.map((prompt, i) => (
-          <PromptLine key={i} prompt={prompt} />
-        ))}
-      </>
-    );
-  } else {
-    const cells = view.images.map((image, i) => (
-      <div key={i} className="flex min-w-0 flex-col gap-2">
-        <ImageGenFrame
-          image={image}
-          seed={call.call_id}
-          solo={solo}
-          busyLabel={t(edit ? 'editing' : 'generating')}
-          startedAt={view.startedAt}
-        />
-        <PromptLine prompt={image.prompt} />
       </div>
-    ));
-    body = solo ? (
-      cells
-    ) : (
-      <>
-        {view.phase === 'generating' ? (
-          <BusyLabel
-            seed={call.call_id}
-            label={t(edit ? 'editingCount' : 'generatingCount', { count: view.images.length })}
-            startedAt={view.startedAt}
-          />
-        ) : null}
-        <div className="grid grid-cols-2 items-start gap-2">{cells}</div>
-      </>
     );
   }
 
+  const busyLine = (
+    <BusyLabel
+      seed={call.call_id}
+      label={solo ? t(edit ? 'editing' : 'generating') : t(edit ? 'editingCount' : 'generatingCount', { count: view.images.length })}
+      startedAt={view.startedAt}
+    />
+  );
+  const frames = view.images.map((image, i) => (
+    <ImageGenFrame
+      key={i}
+      image={image}
+      seed={call.call_id}
+      model={view.model}
+      // The first frame carries the busy line, the others its glyph alone.
+      busy={i === 0 ? busyLine : <SessionDotMatrix sessionId={call.call_id} size={14} className="text-muted-foreground" />}
+    />
+  ));
+
   return (
     <figure className="flex w-full max-w-md flex-col gap-2">
-      {body}
-      {/* A whole-call failure carries the fix in its plate; failed frames share one, under them. */}
-      {action && view.images.length ? <div className="flex flex-col items-start">{action}</div> : null}
-      {view.model ? <figcaption className="text-muted-foreground truncate font-mono text-xs">{view.model}</figcaption> : null}
+      {solo ? (
+        frames
+      ) : (
+        // Masonry: two columns, each image at its own ratio (the requested one
+        // while it generates, so nothing jumps when it lands).
+        <div className="columns-2 gap-2">
+          {frames.map((frame, i) => (
+            <div key={i} className="mb-2 break-inside-avoid">
+              {frame}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Failed frames share one fix, under them. */}
+      {action ? <div className="flex flex-col items-start">{action}</div> : null}
     </figure>
   );
 }
