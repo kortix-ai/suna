@@ -58,6 +58,7 @@ import { projectSettingsSections } from '../../customize/project-settings/projec
 import { HubLink } from '../../internal/account-hub/account-hub-location';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
 import { useIsMobile } from '../../internal/hooks';
+import { RAIL_HORIZONTAL_ROW_CLASS, RAIL_ROW_CLASS, RailGroup } from '../../internal/components/nav-rail';
 import { capabilityAccess } from '../../internal/layout/project-settings-nav';
 import { SettingsNavProvider } from '../../internal/layout/settings-nav-context';
 import { withStaleChunkRecovery } from '../../internal/lib/chunk-reload';
@@ -443,33 +444,6 @@ export function ProjectAdminDashboard({
 
 /* ------------------------------------------------------------------ rail */
 
-/**
- * The account hub's group label dialect (`account-settings-sidebar.tsx`).
- * Each group is its own labelled tablist: arrow keys move inside a group, Tab
- * moves to the next one. `after` sits below the list, outside it: a link that
- * is not a tab (Members).
- */
-function RailGroup({ label, children, after }: { label: string; children: ReactNode; after?: ReactNode }) {
-  return (
-    <div>
-      <p className="text-muted-foreground flex h-8 items-center px-2.5 text-xs font-medium">{label}</p>
-      <TabsList orientation="vertical" aria-label={label} className="w-full">
-        {children}
-      </TabsList>
-      {after}
-    </div>
-  );
-}
-
-/** The Settings page's rail-row dialect (`project-settings-page.tsx`). */
-const ROW_CLASS = cn(
-  'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-  'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-  'data-[state=active]:bg-active data-[state=active]:font-medium',
-  '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-);
-const HORIZONTAL_ROW_CLASS = 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap';
-
 /** One row: a real link inside the trigger, since the section is URL state. */
 function RailTrigger({
   projectId,
@@ -486,7 +460,7 @@ function RailTrigger({
       value={row.key}
       asChild
       size={horizontal ? undefined : 'md'}
-      className={horizontal ? HORIZONTAL_ROW_CLASS : ROW_CLASS}
+      className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
     >
       <Link href={projectAdminHref(projectId, row.key)} prefetch>
         <Glyph className="size-4 shrink-0" />

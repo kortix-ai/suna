@@ -3,26 +3,29 @@
 import { adminPath } from '../../lib/routes';
 
 /**
- * /projects/[id]/customize/agents/[name]: one agent, as a page with tabs.
+ * /projects/[id]/customize/agents/[name]: one agent, as a page with a rail.
  *
  * Customize is agent-first. My Kortix is the one agent a person talks to; every
  * other agent is a work product with only the access its work needs. So the
- * page is the agent: one identity header, six tabs, and room to edit.
+ * page is the agent: one identity header, one rail, and room to edit.
  *
  *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
  *   │   ● Enabled · Space: workspace · People start it                 │
- *   ├ Overview  Instructions  Access  Runtime  Triggers  People        ┤
- *   │ the tab, full width                                              │
- *   └────────────── [ ● Unsaved changes  Instructions  Discard  Save ⌘S ]
+ *   ├ Overview      ┬ the row, full width                              ┤
+ *   │ Triggers      │                                                  │
+ *   │ Access: Connectors None · Secrets All · Skills All · Tools …     │
+ *   │ Runtime: Model · Workspace                                       │
+ *   └────────────────── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
  * The URL names the tab and its view (`agent-tabs.ts`); every old
- * `?section=` link still resolves. Access and Runtime carry a second-level
- * switcher; Access > Connectors, Skills, Secrets and Apps, Runtime > Model and
- * Triggers render the full resource screen in agent scope (one component, two
- * variants), embedded without its own title (`CapabilityShellEmbedProvider`).
+ * `?section=` link still resolves. The rail lists every view as its own row
+ * (2026-10-28: Access and Runtime are group labels, not a second level), each
+ * with its grant state. A view renders the full resource screen in agent
+ * scope (one component, two variants), embedded without its own title
+ * (`CapabilityShellEmbedProvider`).
  *
- * The draft is shared across tabs, so a tab switch never drops an edit; the
- * tab with an edit carries a dot, and the save bar names the changed tabs. A
+ * The draft is shared across rows, so a row switch never drops an edit; the
+ * row with an edit carries a dot, and the save bar names the changed rows. A
  * link off the page while dirty asks Stay / Leave / Save and leave.
  *
  * Two bodies under one frame:
@@ -74,10 +77,8 @@ import {
 } from '../../primitives/dropdown-menu';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
-import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import Hint from '../../primitives/hint';
 import { InfoBanner } from '../../primitives/info-banner';
-import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { configEntitySourcePath } from '../sections/component/config-entity-source-path';
@@ -113,9 +114,9 @@ import {
   AgentIdentityHeader,
   AgentPageSkeleton,
   AgentStatePage,
-  AgentTabBar,
+  AgentRail,
+  type AgentRailItem,
   AgentTabBody,
-  type AgentTabItem,
   type HeaderFact,
   LeaveDialog,
   SaveBar,
@@ -125,11 +126,13 @@ import {
   ACCESS_VIEWS,
   AGENT_TABS,
   type AgentLocation,
+  type AgentRailKey,
   type AgentTab,
   agentLocationHref,
-  changedTabs,
+  changedItems,
   closestAgentName,
   resolveAgentLocation,
+  railKeyOf,
   RUNTIME_VIEWS,
   sectionLocationHref,
 } from './agent-tabs';
@@ -462,25 +465,50 @@ function useSaveShortcut(dirty: boolean, onSave: () => void) {
   }, [dirty, onSave]);
 }
 
-/** The six tabs, labelled, with their counts and hrefs. */
-function useTabItems(
+/**
+ * The rail's rows: Overview, Triggers, then every Access and Runtime view the
+ * agent has, labelled, with its count (`countOf`) and href.
+ */
+function useRailItems(
   pathname: string,
-  tabs: readonly AgentTab[],
-  counts: { triggerCount?: number; peopleCount?: number },
-): AgentTabItem[] {
+  views: readonly AgentConfigSectionKey[],
+  counts: { triggerCount?: number },
+  countOf?: (view: AgentConfigSectionKey) => string | null,
+): AgentRailItem[] {
   const t = useI18nTranslations('agentEditor.tabs');
-  const labels: Record<AgentTab, string> = {
-    overview: t('tabOverview'),
-    access: t('tabAccess'),
-    runtime: t('tabRuntime'),
-    triggers: t('tabTriggers'),
-  };
-  return tabs.map((key) => ({
-    key,
-    label: labels[key],
-    href: agentLocationHref(pathname, key),
-    count: key === 'triggers' ? counts.triggerCount || undefined : undefined,
-  }));
+  const catalog = useLocalizedAgentConfigCatalog();
+  const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
+  const viewRows = (own: readonly AgentConfigSectionKey[], group: 'access' | 'runtime') =>
+    own
+      .filter((view) => views.includes(view))
+      .map((view) => ({
+        key: view,
+        label: labelOf(view),
+        href: sectionLocationHref(pathname, view),
+        count: countOf?.(view) ?? undefined,
+        group,
+      }));
+  return [
+    { key: 'overview', label: t('tabOverview'), href: agentLocationHref(pathname, 'overview') },
+    {
+      key: 'triggers',
+      label: t('tabTriggers'),
+      href: agentLocationHref(pathname, 'triggers'),
+      count: counts.triggerCount || undefined,
+    },
+    ...viewRows(ACCESS_VIEWS, 'access'),
+    ...viewRows(RUNTIME_VIEWS, 'runtime'),
+  ];
+}
+
+/** The rail and the body beside it, under the header's rule. */
+function RailLayout({ rail, children }: { rail: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col border-t md:flex-row">
+      {rail}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
 }
 
 // ─── Header actions ──────────────────────────────────────────────────────────
@@ -616,52 +644,10 @@ function AgentActions({
   );
 }
 
-// ─── Second-level switchers ──────────────────────────────────────────────────
-
-/**
- * The Access or Runtime view switcher: a segmented control with a count per
- * view, on a horizontal scroller with an edge fade, so nine v3 views fit 720px.
- */
-function ViewSwitcher({
-  label,
-  views,
-  active,
-  hrefFor,
-  countOf,
-}: {
-  label: string;
-  views: readonly AgentConfigSectionKey[];
-  active: AgentConfigSectionKey;
-  hrefFor: (view: AgentConfigSectionKey) => string;
-  countOf?: (view: AgentConfigSectionKey) => string | null;
-}) {
-  const catalog = useLocalizedAgentConfigCatalog();
-  const labelOf = (key: AgentConfigSectionKey) => catalog.sections.find((s) => s.key === key)?.label ?? key;
-  return (
-    <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="-mx-1 px-1">
-      <Tabs value={active} className="w-fit">
-        <TabsList aria-label={label} className="w-fit">
-          {views.map((view) => {
-            const count = countOf?.(view) ?? null;
-            return (
-              <TabsTrigger key={view} value={view} asChild className="shrink-0 gap-1.5 whitespace-nowrap">
-                <Link href={hrefFor(view)} prefetch={false}>
-                  {labelOf(view)}
-                  {count !== null ? <span className="text-muted-foreground tabular-nums">{count}</span> : null}
-                </Link>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </Tabs>
-    </FadedScrollArea>
-  );
-}
-
 /**
  * The one column every Access and Runtime view sits in, embedded resource
- * screen or settings form alike: the same width, the same top offset, the
- * switcher first. Triggers is not a view: it keeps the full width its list
+ * screen or settings form alike: the same width, the same top offset.
+ * Triggers is not a view: it keeps the full width its list
  * and detail split needs.
  */
 const VIEW_COLUMN = 'max-w-5xl';
@@ -779,11 +765,6 @@ function EditableAgentPage({
 
   const facts = useOverviewFacts(projectId, agent.name, config, draft);
   const headerFacts = useHeaderFacts(agent, config, draft, true);
-  const tabItems = useTabItems(pathname, AGENT_TABS, facts);
-  const dirtyTabs = useMemo(() => changedTabs(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
-  const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
-    dirtyTabs.map((key) => tabItems.find((item) => item.key === key)?.label ?? key),
-  );
 
   const onSave = useCallback(async (): Promise<boolean> => {
     if (!editor.isDirty || update.isPending) return !editor.isDirty;
@@ -805,8 +786,6 @@ function EditableAgentPage({
   useSaveShortcut(editor.isDirty, saveNow);
 
   const viewHref = (view: AgentConfigSectionKey) => sectionLocationHref(pathname, view);
-  const accessViews = ACCESS_VIEWS.filter((v) => views.includes(v));
-  const runtimeViews = RUNTIME_VIEWS.filter((v) => views.includes(v));
   const grantLabel = useGrantLabel();
   // A tool's aliases go off with it (`agent` takes `task`): the tab counts tools, not names.
   const toolAliases = new Set((capabilities.data?.tools ?? []).flatMap((tool) => tool.aliases));
@@ -819,12 +798,11 @@ function EditableAgentPage({
       ? grantLabel({ exclude: excluded.filter((id) => !toolAliases.has(id)) })
       : grantLabel(value);
   };
-  const switcher =
-    location.tab === 'access' && location.view ? (
-      <ViewSwitcher label={t('tabAccess')} views={accessViews} active={location.view} hrefFor={viewHref} countOf={countOf} />
-    ) : location.tab === 'runtime' && location.view ? (
-      <ViewSwitcher label={t('tabRuntime')} views={runtimeViews} active={location.view} hrefFor={viewHref} />
-    ) : null;
+  const railItems = useRailItems(pathname, views, facts, countOf);
+  const dirtyItems = useMemo(() => changedItems(editor.draft, editor.baseline), [editor.draft, editor.baseline]);
+  const changed = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    dirtyItems.map((key) => railItems.find((item) => item.key === key)?.label ?? key),
+  );
 
   const editorSection = (view: AgentConfigSectionKey) => (
     <AgentConfigSections
@@ -888,7 +866,7 @@ function EditableAgentPage({
         if (view === 'skills' || view === 'tools' || view === 'extensions') {
           const Page = view === 'skills' ? SkillsPage : view === 'tools' ? ToolsPage : ExtensionsPage;
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
               <Page
                 projectId={projectId}
                 agent={{ name: agent.name, editor }}
@@ -909,7 +887,7 @@ function EditableAgentPage({
         }
         if (view === 'connectors')
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
               <ConnectorsPage
                 projectId={projectId}
                 surface={surface}
@@ -920,19 +898,19 @@ function EditableAgentPage({
           );
         if (view === 'secrets')
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
               <SecretsPage projectId={projectId} surface={surface} grant={secretsGrant} />
             </Embedded>
           );
         if (view === 'apps' && renderApps)
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
               {renderApps({ agentName: agent.name, grant: appsGrant, needsAppRead: !grantsAppRead(draft.kortix_permissions ?? draft.kortix_cli) })}
             </Embedded>
           );
         if (view === 'drives')
           return (
-            <Embedded agentName={agent.name} lead={switcher} column={VIEW_COLUMN}>
+            <Embedded agentName={agent.name} column={VIEW_COLUMN}>
               <AgentDrivesSection projectId={projectId} agentName={agent.name} repositoryAccess={draft.repository_access !== false} />
             </Embedded>
           );
@@ -941,7 +919,6 @@ function EditableAgentPage({
         if (view === 'model')
           return (
             <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
-              {switcher}
               <EditorSectionStyleProvider value="tab">
                 <div className="space-y-8">
                   <ModelSection oc={editor.oc} setOc={editor.setOc} showPrompt={false} lead />
@@ -952,7 +929,6 @@ function EditableAgentPage({
           );
         return (
           <AgentTabBody className={`${VIEW_COLUMN} space-y-5`}>
-            {switcher}
             <CapabilityShellEmbedProvider value={{ agentName: agent.name }}>{editorSection(view)}</CapabilityShellEmbedProvider>
           </AgentTabBody>
         );
@@ -985,8 +961,18 @@ function EditableAgentPage({
             />
           }
         />
-        <AgentTabBar items={tabItems} active={location.tab} dirty={dirtyTabs} />
-        {body}
+        <RailLayout
+          rail={
+            <AgentRail
+              items={railItems}
+              active={railKeyOf(location)}
+              dirty={dirtyItems}
+              groupLabels={{ access: t('tabAccess'), runtime: t('tabRuntime') }}
+            />
+          }
+        >
+          {body}
+        </RailLayout>
         <SaveBar
           dirty={editor.isDirty}
           pending={update.isPending}
@@ -1066,7 +1052,7 @@ function ReadOnlyAgentPage({
   const canManageMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const facts = useOverviewFacts(projectId, agent.name, config, block);
   const headerFacts = useHeaderFacts(agent, config, block, false);
-  const tabItems = useTabItems(pathname, AGENT_TABS, facts);
+  const railItems = useRailItems(pathname, READ_ONLY_VIEWS, facts);
   const name = agentDisplayName(agent.name);
   // A reader has a page for Kortix permissions and Model only. Every other
   // Access row shows its grant by name on the Overview and links nowhere.
@@ -1166,8 +1152,17 @@ function ReadOnlyAgentPage({
           />
         }
       />
-      <AgentTabBar items={tabItems} active={location.tab} />
-      {body}
+      <RailLayout
+        rail={
+          <AgentRail
+            items={railItems}
+            active={railKeyOf(location)}
+            groupLabels={{ access: t('tabAccess'), runtime: t('tabRuntime') }}
+          />
+        }
+      >
+        {body}
+      </RailLayout>
     </div>
   );
 }

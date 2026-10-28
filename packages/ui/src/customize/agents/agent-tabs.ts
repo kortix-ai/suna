@@ -1,5 +1,8 @@
 /**
  * The agent page's address: four tabs, and a view inside Access and Runtime.
+ * The page draws them as ONE rail (2026-10-28): Overview, Triggers, then the
+ * Access views and the Runtime views under their group labels. The address
+ * keeps its two levels, so every link still resolves.
  *
  *   ?tab=overview | access | runtime | triggers
  *   ?tab=access&view=connectors | secrets | skills | tools | extensions | drives | apps | permissions | …
@@ -119,20 +122,22 @@ const OVERVIEW_FIELDS = new Set([
   'behavior.prompt',
   'behavior.description',
 ]);
-const ACCESS_FIELDS = new Set([
-  'tools',
-  'behavior.permission',
-  'skills',
-  'connectors',
-  'connectors_required',
-  'secrets',
-  'apps',
-  'kortix_permissions',
-  'kortix_cli',
-  'subagents',
-  'commands',
-  'extensions',
-]);
+/** The Access view that edits each field. */
+const ACCESS_FIELDS: Record<string, AccessView> = {
+  tools: 'tools',
+  'behavior.permission': 'tools',
+  skills: 'skills',
+  connectors: 'connectors',
+  connectors_required: 'connectors',
+  secrets: 'secrets',
+  apps: 'apps',
+  kortix_permissions: 'actions',
+  kortix_cli: 'actions',
+  subagents: 'subagents',
+  commands: 'commands',
+  extensions: 'extensions',
+};
+const WORKSPACE_FIELDS = new Set(['sandbox', 'workspace', 'repository_access']);
 
 function fields(block: Record<string, unknown>): Map<string, string> {
   const out = new Map<string, string>();
@@ -144,20 +149,32 @@ function fields(block: Record<string, unknown>): Map<string, string> {
   return out;
 }
 
+/** One row of the agent page's rail: a tab with no views, or a view. */
+export type AgentRailKey = 'overview' | 'triggers' | AgentConfigSectionKey;
+
+/** The rail row a location shows. */
+export function railKeyOf(location: AgentLocation): AgentRailKey {
+  return location.view ?? (location.tab === 'triggers' ? 'triggers' : 'overview');
+}
+
 /**
- * The tabs that hold an unsaved edit: each changed field of the draft, mapped
- * to the tab that edits it. A field no other tab owns (model, temperature,
- * tool rules, workspace) belongs to Runtime.
+ * The rail rows that hold an unsaved edit: each changed field of the draft,
+ * mapped to the row that edits it. A field no other row owns (model,
+ * temperature, the prompt's runtime knobs) belongs to Model.
  */
-export function changedTabs(draft: object, baseline: object): AgentTab[] {
+export function changedItems(draft: object, baseline: object): AgentRailKey[] {
   const a = fields(draft as Record<string, unknown>);
   const b = fields(baseline as Record<string, unknown>);
-  const changed = new Set<AgentTab>();
+  const changed = new Set<AgentRailKey>();
   for (const key of new Set([...a.keys(), ...b.keys()])) {
     if (a.get(key) === b.get(key)) continue;
-    changed.add(OVERVIEW_FIELDS.has(key) ? 'overview' : ACCESS_FIELDS.has(key) ? 'access' : 'runtime');
+    changed.add(
+      OVERVIEW_FIELDS.has(key)
+        ? 'overview'
+        : (ACCESS_FIELDS[key] ?? (WORKSPACE_FIELDS.has(key) ? 'workspace' : 'model')),
+    );
   }
-  return AGENT_TABS.filter((tab) => changed.has(tab));
+  return [...changed];
 }
 
 /** Edit distance, for the not-found page's "did you mean". */

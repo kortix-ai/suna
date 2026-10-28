@@ -1,14 +1,20 @@
 'use client';
 
 /**
- * The agent page's frame: one identity header, one row of underline tabs,
- * then the content. No breadcrumb, no second bar, no rail.
+ * The agent page's frame: one identity header, then one rail beside the
+ * content. No breadcrumb, no second bar.
  *
  *   ┌ ▣ researcher                         [Share] [Start session] [⋯] ┐
  *   │   ● Enabled · Space: workspace · People start it                 │
- *   ├ Overview •  Access  Runtime  Triggers 1                          ┤
- *   │ content (the one scroller)                                       │
- *   └──────────────────── [ ● Unsaved changes  Overview  Discard  Save ⌘S ]
+ *   ├──────────────┬───────────────────────────────────────────────────┤
+ *   │ Overview     │ content (the one scroller)                        │
+ *   │ Triggers   1 │                                                   │
+ *   │ Access       │                                                   │
+ *   │  Connectors None                                                 │
+ *   │  Skills  All │                                                   │
+ *   │ Runtime      │                                                   │
+ *   │  Model       │                                                   │
+ *   └──────────────┴───── [ ● Unsaved changes  Skills  Discard  Save ⌘S ]
  *
  * The header echoes the Space channel header (`space-page.tsx`): a tile, the
  * name at `text-xl font-medium`, one muted line. It is also the window's
@@ -40,7 +46,10 @@ import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { UiLink as Link } from '../../providers/ui-provider';
 import { AnimatePresence, m } from 'motion/react';
 
-import type { AgentTab } from './agent-tabs';
+import { RAIL_HORIZONTAL_ROW_CLASS, RAIL_ROW_CLASS, RailGroup } from '../../internal/components/nav-rail';
+import { FadedScrollArea } from '../../primitives/faded-scroll-area';
+
+import type { AgentRailKey } from './agent-tabs';
 
 /** One fact on the header's meta line. A `tone` draws the status dot first. */
 export interface HeaderFact {
@@ -109,62 +118,90 @@ export function CustomizeHeader({
 /** The agent page's name for the header. */
 export const AgentIdentityHeader = CustomizeHeader;
 
-export interface AgentTabItem {
-  key: AgentTab;
+export interface AgentRailItem {
+  key: AgentRailKey;
   label: string;
   href: string;
   count?: number | string;
+  /** The rail group under which the row sits; none for Overview and Triggers. */
+  group?: 'access' | 'runtime';
 }
 
 /**
- * The underline tabs under the header: the Space channel header's strip
- * (`space-page.tsx`), so every tab row in Kortix has one geometry. Each tab
- * is its label plus the trigger's even padding, and the rule spans exactly
- * the tab. A tab holding an unsaved edit carries a dot in its top-right
- * padding, out of flow, so a tab never grows (and its neighbours never
- * shift) when the draft turns dirty. The row sits above the page's
- * scroller, so it never scrolls away.
+ * The agent page's one navigation: every tab and every Access and Runtime
+ * view in a single list, so a grant is one click away and its state (All,
+ * None, a count) reads on the row. From `md` it is the left rail in Project
+ * admin's dialect (`nav-rail.tsx`); below `md` the same rows run as one
+ * horizontal strip. A row holding an unsaved edit carries a dot.
  */
-export function AgentTabBar({
+export function AgentRail({
   items,
   active,
   dirty,
+  groupLabels,
 }: {
-  items: AgentTabItem[];
-  active: AgentTab;
-  dirty?: readonly AgentTab[];
+  items: AgentRailItem[];
+  active: AgentRailKey;
+  dirty?: readonly AgentRailKey[];
+  groupLabels: Record<'access' | 'runtime', string>;
 }) {
   const t = useI18nTranslations('agentEditor.tabs');
+  const row = (item: AgentRailItem, horizontal: boolean) => (
+    <TabsTrigger
+      key={item.key}
+      value={item.key}
+      asChild
+      size={horizontal ? undefined : 'md'}
+      className={horizontal ? RAIL_HORIZONTAL_ROW_CLASS : RAIL_ROW_CLASS}
+    >
+      <Link href={item.href} prefetch={false}>
+        <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+        {dirty?.includes(item.key) ? (
+          <span role="img" aria-label={t('unsavedTab')} className="bg-foreground size-1.5 shrink-0 rounded-full" />
+        ) : null}
+        {item.count !== undefined ? (
+          <span className={cn('text-muted-foreground font-normal tabular-nums', !horizontal && 'ml-auto')}>
+            {item.count}
+          </span>
+        ) : null}
+      </Link>
+    </TabsTrigger>
+  );
+  const groups: { label?: string; rows: AgentRailItem[] }[] = [
+    { rows: items.filter((item) => !item.group) },
+    { label: groupLabels.access, rows: items.filter((item) => item.group === 'access') },
+    { label: groupLabels.runtime, rows: items.filter((item) => item.group === 'runtime') },
+  ].filter((group) => group.rows.length > 0);
   return (
-    <Tabs value={active} className="shrink-0 gap-0">
-      <TabsList
-        type="underline"
-        aria-label={t('tabsLabel')}
-        className="w-full shrink-0 justify-start overflow-x-auto px-4 [scrollbar-width:none] md:px-8"
-      >
-        {items.map((item) => (
-          <TabsTrigger key={item.key} value={item.key} asChild className="w-fit flex-none">
-            <Link href={item.href} prefetch={false}>
-              {item.label}
-              {item.count !== undefined ? (
-                <span className="text-muted-foreground tabular-nums">{item.count}</span>
-              ) : null}
-              {dirty?.includes(item.key) ? (
-                <span
-                  role="img"
-                  aria-label={t('unsavedTab')}
-                  className="bg-foreground absolute top-2 right-1.5 size-1.5 rounded-full"
-                />
-              ) : null}
-            </Link>
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <>
+      <nav aria-label={t('tabsLabel')} className="shrink-0 border-b md:hidden">
+        <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="py-2">
+          <Tabs value={active} className="w-fit px-4">
+            <TabsList orientation="horizontal" className="w-fit">
+              {groups.flatMap((group) => group.rows).map((item) => row(item, true))}
+            </TabsList>
+          </Tabs>
+        </FadedScrollArea>
+      </nav>
+      <aside className="hidden w-56 shrink-0 flex-col border-r md:flex">
+        <nav
+          aria-label={t('tabsLabel')}
+          className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col overflow-y-auto px-2 pt-3 pb-24"
+        >
+          <Tabs value={active} orientation="vertical" className="gap-3">
+            {groups.map((group, index) => (
+              <RailGroup key={group.label ?? index} label={group.label}>
+                {group.rows.map((item) => row(item, false))}
+              </RailGroup>
+            ))}
+          </Tabs>
+        </nav>
+      </aside>
+    </>
   );
 }
 
-/** The scroller under the tabs, on the page gutter. */
+/** The scroller beside the rail, on the page gutter. */
 export function AgentTabBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -174,7 +211,7 @@ export function AgentTabBody({ children, className }: { children: ReactNode; cla
 }
 
 /**
- * The page before its reads land: the header, the four tabs and the Overview's
+ * The page before its reads land: the header, the rail and the Overview's
  * two columns, in the boxes the loaded page draws, so nothing moves.
  */
 export function AgentPageSkeleton() {
@@ -193,28 +230,32 @@ export function AgentPageSkeleton() {
         </div>
         <Skeleton className="hidden h-8 w-48 shrink-0 rounded-md sm:block" />
       </header>
-      <div className="flex shrink-0 gap-5 overflow-hidden border-b px-4 pt-1 pb-3 md:px-8">
-        {['w-16', 'w-12', 'w-16', 'w-16'].map((w, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
-          <Skeleton key={i} className={cn('h-4 shrink-0 rounded-sm', w)} />
-        ))}
-      </div>
-      <div className="grid min-h-0 flex-1 gap-8 overflow-hidden px-4 pt-5 md:px-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-6">
-          <Skeleton className="h-4 w-3/4 rounded-sm" />
-          <Skeleton className="h-40 w-full rounded-md" />
-          <div className="divide-border divide-y rounded-md border">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3">
-                <Skeleton className="size-6 rounded-sm" />
-                <Skeleton className="h-4 w-40 rounded-sm" />
-              </div>
-            ))}
-          </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden border-t">
+        <div className="hidden w-56 shrink-0 space-y-1 border-r px-2 pt-3 md:block" aria-hidden>
+          {['w-16', 'w-14', 'w-12', 'w-20', 'w-16', 'w-12', 'w-12', 'w-20', 'w-14'].map((w, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder
+            <div key={i} className="flex h-8 items-center px-2.5">
+              <Skeleton className={cn('h-3.5 rounded-sm', w)} />
+            </div>
+          ))}
         </div>
-        <div className="hidden space-y-3 lg:block">
-          <Skeleton className="h-48 w-full rounded-md" />
-          <Skeleton className="h-28 w-full rounded-md" />
+        <div className="grid min-h-0 flex-1 gap-8 overflow-hidden px-4 pt-5 md:px-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-6">
+            <Skeleton className="h-4 w-3/4 rounded-sm" />
+            <Skeleton className="h-40 w-full rounded-md" />
+            <div className="divide-border divide-y rounded-md border">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="size-6 rounded-sm" />
+                  <Skeleton className="h-4 w-40 rounded-sm" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="hidden space-y-3 lg:block">
+            <Skeleton className="h-48 w-full rounded-md" />
+            <Skeleton className="h-28 w-full rounded-md" />
+          </div>
         </div>
       </div>
     </div>

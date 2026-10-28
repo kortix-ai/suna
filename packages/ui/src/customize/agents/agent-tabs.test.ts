@@ -4,23 +4,29 @@ import type { AgentConfigSectionKey } from '../sections/view/agent-editor';
 import {
   AGENT_TABS,
   agentLocationHref,
-  changedTabs,
+  changedItems,
   closestAgentName,
   resolveAgentLocation,
   sectionLocationHref,
 } from './agent-tabs';
 
-describe('changedTabs', () => {
-  test('no change, no tab', () => {
-    expect(changedTabs({ skills: ['a'] }, { skills: ['a'] })).toEqual([]);
+describe('changedItems', () => {
+  test('no change, no row', () => {
+    expect(changedItems({ skills: ['a'] }, { skills: ['a'] })).toEqual([]);
   });
-  test('each field lands on the tab that edits it', () => {
+  test('each field lands on the rail row that edits it', () => {
     expect(
-      changedTabs(
-        { behavior: { prompt: 'new', model: 'x/y' }, connectors: ['github'], enabled: false },
+      changedItems(
+        {
+          behavior: { prompt: 'new', model: 'x/y', permission: { bash: 'ask' } },
+          connectors: ['github'],
+          kortix_permissions: 'all',
+          sandbox: 'gpu',
+          enabled: false,
+        },
         { behavior: { prompt: 'old' } },
-      ),
-    ).toEqual(['overview', 'access', 'runtime']);
+      ).sort(),
+    ).toEqual(['actions', 'connectors', 'model', 'overview', 'tools', 'workspace']);
   });
 });
 
