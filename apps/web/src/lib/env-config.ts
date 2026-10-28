@@ -60,6 +60,10 @@ function readRawEnv(): Partial<RuntimeEnv> {
     DISABLE_LANDING_PAGE:
       (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
         process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true',
+    SERVICES_PAGES_ENABLED:
+      (process.env.KORTIX_PUBLIC_SERVICES_PAGES_ENABLED ||
+        process.env.NEXT_PUBLIC_SERVICES_PAGES_ENABLED) === 'true' ||
+      process.env.NODE_ENV === 'development',
     RESTRICT_ACCOUNT_CREATION:
       (process.env.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION ||
         process.env.NEXT_PUBLIC_RESTRICT_ACCOUNT_CREATION) === 'true',

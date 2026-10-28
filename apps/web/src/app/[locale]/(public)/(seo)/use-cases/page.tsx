@@ -1,3 +1,4 @@
+import { isServicesPagesEnabled } from '@/lib/config';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -90,9 +91,11 @@ export default async function UseCasesIndexPage() {
             <MarketingButton size="md" className="hit-area-y-1" asChild>
               <Link href="/auth">Start for free</Link>
             </MarketingButton>
-            <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
-              <Link href="/case-studies">See case studies</Link>
-            </MarketingButton>
+            {isServicesPagesEnabled() ? (
+              <MarketingButton size="md" variant="secondary" className="hit-area-y-1" asChild>
+                <Link href="/case-studies">See case studies</Link>
+              </MarketingButton>
+            ) : null}
           </>
         }
       />
@@ -103,16 +106,20 @@ export default async function UseCasesIndexPage() {
         <p className="text-foreground text-lg font-medium text-balance">
           Don&apos;t see yours?{' '}
           <span className="text-muted-foreground">
-            Describe it to an agent, or have our team build it.
+            {isServicesPagesEnabled()
+              ? 'Describe it to an agent, or have our team build it.'
+              : 'Describe it to an agent.'}
           </span>
         </p>
         <div className="flex flex-wrap gap-2.5">
           <MarketingButton size="md" asChild>
             <Link href="/auth">Start for free</Link>
           </MarketingButton>
-          <MarketingButton size="md" variant="secondary" asChild>
-            <Link href="/services">AI Transformation</Link>
-          </MarketingButton>
+          {isServicesPagesEnabled() ? (
+            <MarketingButton size="md" variant="secondary" asChild>
+              <Link href="/services">AI Transformation</Link>
+            </MarketingButton>
+          ) : null}
         </div>
       </div>
     </PageFrame>

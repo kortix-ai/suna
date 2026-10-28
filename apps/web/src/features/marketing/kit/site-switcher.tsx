@@ -1,6 +1,7 @@
 'use client';
 
 import Link from '@/components/site-link';
+import { isServicesPagesEnabled } from '@/lib/config';
 import { cn } from '@kortix/ui';
 import { usePathname } from 'next/navigation';
 
@@ -16,6 +17,8 @@ const SITES = [
  */
 export function SiteSwitcher({ className }: { className?: string }) {
   const current = /\/services\/?$/.test(usePathname() ?? '') ? 'services' : 'os';
+  // Without /services there is only one half: no switcher.
+  if (!isServicesPagesEnabled()) return null;
   return (
     <nav aria-label="Site" className={cn('bg-muted flex items-center rounded-md p-0.5', className)}>
       {SITES.map((site) => (

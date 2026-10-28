@@ -1,12 +1,13 @@
 'use client';
 
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import Link from '@/components/site-link';
 import { CtaSection } from '@/features/marketing/landing/cta-section';
 import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generated';
-import { localizeUiCatalog } from '@kortix/ui/i18n';
-import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from '@/components/site-link';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { showsMarketingLink } from '@/lib/config';
+import { cn } from '@kortix/ui';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { ThemeToggle } from './theme-toggle';
 
 type FooterLinkItem = {
@@ -104,7 +105,11 @@ const Footer = () => {
       <footer id="site-footer" className="relative z-10">
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-6 pt-12 pb-16 lg:grid-cols-12">
           <div className="flex flex-col justify-between gap-12 lg:col-span-5">
-            <Link href="/" aria-label="Kortix home" className="text-foreground outline-ring w-fit rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2">
+            <Link
+              href="/"
+              aria-label="Kortix home"
+              className="text-foreground outline-ring w-fit rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
               <KortixLogo size={22} variant="logomark" />
             </Link>
 
@@ -124,8 +129,9 @@ const Footer = () => {
                   <h3 className="text-muted-foreground text-sm">{section.title}</h3>
                   <ul className="mt-4 flex flex-col gap-1">
                     {section.links.map((link) =>
-                      process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false' &&
-                      link.href === '/use-cases' ? null : (
+                      (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false' &&
+                        link.href === '/use-cases') ||
+                      !showsMarketingLink(link.href) ? null : (
                         <li key={link.label}>
                           <FooterLink {...link} />
                         </li>
@@ -138,7 +144,6 @@ const Footer = () => {
           </nav>
         </div>
       </footer>
-
     </section>
   );
 };
