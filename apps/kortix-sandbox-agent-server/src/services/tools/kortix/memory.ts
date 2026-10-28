@@ -377,6 +377,8 @@ async function run(args: Record<string, any>, dir: string): Promise<string> {
   let absent: string | undefined
   switch (args.command) {
     case 'view':
+      if (args.view_range !== undefined && !(Array.isArray(args.view_range) && args.view_range.length === 2 && args.view_range.every(Number.isInteger)))
+        return 'Error: `view_range` must be two integers [start, end].'
       return (absent = need('path')) ? missing(absent) : view(args.path, args.view_range, dir)
     case 'create':
       return (absent = need('path', 'file_text')) ? missing(absent) : create(args.path, args.file_text, dir)
@@ -410,7 +412,7 @@ export default {
     properties: {
       command: { type: 'string', enum: ['view', 'create', 'str_replace', 'insert', 'delete', 'rename'], description: 'The memory operation to perform.' },
       path: { type: 'string', description: 'Repo-relative path under `memory` (e.g. `memory/overview.md`). Required for view, create, str_replace, insert, delete.' },
-      view_range: { type: 'array', items: { type: 'number' }, description: 'Optional [start, end] line range for `view` of a file. Use -1 for end-of-file.' },
+      view_range: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 2, description: 'Optional [start, end] line range for `view` of a file. Use -1 for end-of-file.' },
       file_text: { type: 'string', description: 'File contents. Required for `create`.' },
       old_str: { type: 'string', description: 'Exact text to replace (must be unique in the file). Required for `str_replace`.' },
       new_str: { type: 'string', description: 'Replacement text. Required for `str_replace` (use empty string to delete).' },

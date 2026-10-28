@@ -7,15 +7,17 @@
  *   kortix tools eject <name>         tools/<name>.ts + `tools.<name>: tools/<name>.ts`
  *
  * The selection rule is `selectedKortixTools` (@kortix/manifest-schema): no
- * `tools` key loads every Kortix tool; a `tools` key loads only the Kortix
- * tools it lists. The ejected source is the daemon's own module, embedded in
- * `kortix-tools.generated.json`.
+ * `tools` key loads every Kortix tool; a `tools` key loads the Kortix tools it
+ * lists plus `DEFAULT_ON_KORTIX_TOOLS` it does not name. The ejected source
+ * is the daemon's own module, embedded in `kortix-tools.generated.json`.
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import {
+  DEFAULT_ON_KORTIX_TOOLS,
   HARNESS_TOOL_NAMES,
   KORTIX_TOOL_NAMES,
+  isDefaultOnKortixTool,
   ManifestImportError,
   TOOL_NAME_RE,
   kortixToolRef,
@@ -36,8 +38,9 @@ imports. Kortix maintains these tools: ${KORTIX_TOOL_NAMES.join(', ')}.
 kortix_version 3: every Kortix tool is always registered; \`tools:\` maps a
 name to a project module (\`<name>: <path to a .ts or .js module>\`), and a
 Kortix tool's name replaces that tool. kortix_version 2: with no \`tools:\`
-key, every session gets all maintained tools; with one, sessions get only the
-Kortix tools it lists (\`<name>: kortix:<name>\`) plus the project's modules.
+key, every session gets all maintained tools; with one, sessions get the
+Kortix tools it lists (\`<name>: kortix:<name>\`) plus the project's modules,
+plus ${DEFAULT_ON_KORTIX_TOOLS.join(', ')} unless the list names it.
 
 Subcommands:
   ls [--json]               List each tool the sessions get: name, kind
@@ -78,7 +81,8 @@ const isKortixTool = (name: string) => (KORTIX_TOOL_NAMES as readonly string[]).
  * What a session of this manifest loads, as the API compiles it
  * (compile-agent-config.ts `compileTools`): with no `tools` key every Kortix
  * tool, else the Kortix tools listed as `kortix:<name>` or overridden by a
- * module, then the project's own tools.
+ * module, plus each `DEFAULT_ON_KORTIX_TOOLS` name the list does not name,
+ * then the project's own tools.
  */
 export function listTools(raw: Record<string, unknown>): ToolList {
   const tools = raw.tools;
@@ -91,7 +95,7 @@ export function listTools(raw: Record<string, unknown>): ToolList {
     const value = map[name];
     const path = safeToolFile(value);
     if (path && (v3 || kortixToolRef(value) === null)) rows.push({ name, kind: 'kortix (overridden)', source: path });
-    else if (v3 || tools === undefined || kortixToolRef(value) === name) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
+    else if (v3 || tools === undefined || kortixToolRef(value) === name || (isDefaultOnKortixTool(name) && !Object.hasOwn(map, name))) rows.push({ name, kind: 'kortix', source: `kortix:${name}` });
     else removed.push(name);
   }
   for (const [name, value] of Object.entries(map)) {

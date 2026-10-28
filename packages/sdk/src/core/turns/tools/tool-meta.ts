@@ -96,6 +96,13 @@ export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
       return input.path ? basename(String(input.path)) : '';
     case 'bash':
       return truncate(String(input.command ?? ''), 80);
+    case 'image_gen': {
+      // One call asks for 1–4 images (`prompts`; a Phase 1 call has one `prompt`).
+      const prompts = Array.isArray(input.prompts) ? input.prompts.filter((p): p is string => typeof p === 'string' && !!p) : [];
+      const first = prompts[0] ?? (typeof input.prompt === 'string' ? input.prompt : '');
+      if (!first) return '';
+      return prompts.length > 1 ? `${truncate(first, 50)} (+${prompts.length - 1})` : truncate(first, 60);
+    }
     default:
       break;
   }

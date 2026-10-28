@@ -8,9 +8,18 @@
  * The web UI renders a `show` call from its arguments (`type`, `path`, `url`,
  * `content`, `items`). A changed copy must keep those arguments. A relative
  * `path` resolves against the project checkout.
+ *
+ * An entry whose `path` is an image file (by extension) of at most 32 MiB
+ * gains `sha256`, the lowercase hex digest of its bytes, so a client can match
+ * it to the same picture it already holds (an image_gen result copied
+ * elsewhere). The files are hashed at the same time, streamed (symlinks
+ * followed); `show` waits for them at most 2 s in total, and a digest that is
+ * not ready by then (a slow or hung mount) is left out.
  */
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
+import { createReadStream, existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { extname, resolve } from 'node:path'
 
 /** What a call receives (the project tool contract): `directory` is the project checkout. */
 interface ToolContext {
@@ -82,6 +91,7 @@ interface ShowEntry {
   theme?: ShowTheme
   language?: string
   metadata?: Record<string, unknown>
+  sha256?: string
 }
 
 function generateId(): string {
@@ -191,6 +201,51 @@ function validateAndBuildEntry(item: Record<string, unknown>, dir: string): stri
     ...(item.language ? { language: item.language as string } : {}),
     ...(metadata ? { metadata } : {}),
   }
+}
+
+// ── Image digests ──────────────────────────────────────────────────────────
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.svg'])
+const MAX_HASH_BYTES = 32 * 1024 * 1024
+const HASH_TIMEOUT_MS = 2_000
+
+/** The sha256 of an image file of at most 32 MiB, streamed; undefined for anything else, a read error or the deadline. */
+async function imageSha256(path: string, signal: AbortSignal): Promise<string | undefined> {
+  if (!IMAGE_EXTENSIONS.has(extname(path).toLowerCase())) return undefined
+  try {
+    const info = await stat(path)
+    if (!info.isFile() || info.size > MAX_HASH_BYTES) return undefined
+    const hash = createHash('sha256')
+    let read = 0
+    // `end` is inclusive: a file that grew past the cap after stat reads one byte over and is skipped.
+    for await (const chunk of createReadStream(path, { end: MAX_HASH_BYTES, signal })) {
+      read += chunk.length
+      if (read > MAX_HASH_BYTES) return undefined
+      hash.update(chunk)
+    }
+    return hash.digest('hex')
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Add `sha256` to each image entry, all at once. Waits at most HASH_TIMEOUT_MS: `stat` takes no
+ * signal and an aborted stream waits for its in-flight read, so the work races the deadline and
+ * only digests ready before it are written. Late work settles on its own (imageSha256 never rejects).
+ */
+async function addImageDigests(entries: ShowEntry[]): Promise<void> {
+  const signal = AbortSignal.timeout(HASH_TIMEOUT_MS)
+  const digests = new Map<ShowEntry, string>()
+  const work = Promise.all(
+    entries.map(async (entry) => {
+      const sha256 = entry.path ? await imageSha256(entry.path, signal) : undefined
+      if (sha256 && !signal.aborted) digests.set(entry, sha256)
+    }),
+  )
+  const deadline = new Promise<void>((done) => (signal.aborted ? done() : signal.addEventListener('abort', () => done(), { once: true })))
+  await Promise.race([work, deadline])
+  for (const [entry, sha256] of digests) entry.sha256 = sha256
 }
 
 // ── Tool definition ────────────────────────────────────────────────────────
@@ -329,6 +384,7 @@ export default {
         else entries.push(result)
       })
       if (entries.length === 0) throw new Error(`All items failed validation:\n${errors.join('\n')}`)
+      await addImageDigests(entries)
       return shown({
         success: true,
         action: 'show',
@@ -342,6 +398,7 @@ export default {
     }
     const entry = validateAndBuildEntry(args, dir)
     if (typeof entry === 'string') throw new Error(entry)
+    await addImageDigests([entry])
     return shown({ success: true, action: 'show', entry, message: `Item '${args.title || args.type}' presented to user.` })
   },
 }

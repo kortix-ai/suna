@@ -1262,5 +1262,22 @@
     "waitingManagers": "管理此项目的人可以批准或拒绝此次调用。",
     "waitingTitle": "等待批准",
     "waitingWho": "启动此会话的人或管理此项目的人可以批准或拒绝此次调用。"
+  },
+  "imageGen": {
+    "generating": "正在生成图像",
+    "editing": "正在编辑图像",
+    "openFullScreen": "全屏打开",
+    "openFullScreenPrompt": "全屏打开：{{prompt}}",
+    "generatingCount_other": "正在生成 {{count}} 张图像",
+    "editingCount_other": "正在编辑 {{count}} 张图像",
+    "loading": "正在加载图像",
+    "stopped": "已停止",
+    "failed": "图像未生成。",
+    "tapToLoad": "轻点加载（{{size}}）",
+    "retrySecond_other": "{{count}}秒后重试。",
+    "retryMinute_other": "{{count}}分钟后重试。",
+    "retryHour_other": "{{count}}小时后重试。",
+    "unavailable": "图片不可用",
+    "details": "图片详情"
   }
 }

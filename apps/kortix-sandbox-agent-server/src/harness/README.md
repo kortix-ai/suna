@@ -964,7 +964,10 @@ one harness's tool. Each adapter maps its tools onto them: pi's `write` is
 `webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
 other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
 hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
-and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
+and `webfetch`, and `image_gen` and `memory` follow `edit`
+(`open-code/lifecycle.ts` `capabilityToolRules`). Both harnesses read the
+Kortix tools that write files from one list, `KORTIX_EDIT_TOOLS` in
+`services/tools/tool.ts`. The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against a `bash` command or a
 workspace tool's path. A pattern map is never collapsed to its `*` entry.
@@ -1055,16 +1058,35 @@ default: the other tools stay declared), `only` (requests declare codemode alone
   `parentToolCallId`). pi runs them through the extension `tool_call` handlers only, never
   `agent.beforeToolCall`, where the policy sits (`toolGate`). `nestedCallGate`, first in the
   extension list (pi stops at the first block), applies the root rule to every call with a
-  parent: `deny` blocks, `ask` attaches to the codemode part. `task` and `question` are refused
-  from a script (a subagent thread links to its root `task` call; a question needs its own part).
+  parent: `deny` blocks, `ask` attaches to the call's own part when it has one (below), else to
+  the codemode part. `task` and `question` are refused from a script (a subagent thread links to
+  its root `task` call; a question needs the model-issued call it answers). A nested call runs
+  in parallel with its siblings unless its tool is `sequential` (pi's `NestedToolCallRunner`):
+  `Promise.all` over `tools.image_gen()` generates the images at the same time.
   A tool the agent's tool access turns off is not callable from a script either (pi offers
   scripts only active tools). A subagent gets only the workspace tools, so no codemode.
-- **Transcript.** A nested call is not a part. The codemode part's `metadata.calls` is pi's
-  live record (`id`, `name`, `args` as JSON text, `running`/`ok`/`error`/`cancelled`,
-  `durationMs`, `error`). The v2 live put fires when a call in it changes status.
+- **Transcript.** A nested call is not a part, except a call to a native-part tool
+  (`NATIVE_PART_TOOLS`: `show`, `image_gen`). pi emits a nested call's
+  `tool_execution_start/update/end` on the session only, with `parentToolCallId`;
+  `onSessionEvent` publishes those of a native-part tool through the same adapter as a direct
+  call, so the card renders: a tool part on the script's message, `callID` = pi's nested id
+  `<script call>/<n>`, with its input, output and times. The codemode part's `metadata.calls` is
+  pi's live record of every nested call (`id`, `name`, `args` as JSON text,
+  `running`/`ok`/`error`/`cancelled`, `durationMs`, `error`). The v2 live put fires when a call
+  in it changes status. In `only` mode `show` and `image_gen` are model-only (pi hides a
+  `direct` tool's declaration there), so a script cannot call them.
 - **Session log.** The call is `kind: 'code'`. `result.details` is `{ calls, complete }` from
   pi's bounded `nestedCalls` (256 calls, 8 kB of input each, 32 kB in all, 500-character
   errors, no outputs): display data, never `tool_call` blocks, because the model never saw them.
+  A nested native part is a model-invisible harness block after its parent's `tool_call` block:
+  `{ harness: 'pi', kind: 'nested_part', data: { parent_call_id, part }, model_visible: false }`,
+  `part` = the v1 part the runtime published, without ids (adapter 1.2.0). `toV1` gives `part`
+  back under the block's ids, so a cold reload, a share and a restore draw the same card as the
+  live turn, once (the log's row replaces the live row by message id). At rest a nested part
+  still `pending`/`running` is closed as `error` "No result provided", like its parent. modelView
+  and the restore's pi entries skip the block; the restore's v1 transcript keeps it, so the next
+  export finds it again. A `tool_call` block takes the v1 part with its own call id first, then
+  the first one with its tool name, so a direct call never takes a nested part's id.
   `store()` values fold into the root thread's `ext.pi.data.codemode_store`; the restore writes
   both back (`nestedCalls`, one `codemode-store` entry).
 - **Build.** The compiled daemon embeds `quickjs-wasi/quickjs.wasm` (`setEmbeddedQuickJSWasmPath`,
@@ -1089,11 +1111,20 @@ resumes it after a restart. Types: `general` (all workspace and Kortix tools), `
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`; v3 has only the declared agents. The calling agent's
 `permission.task` rule (subject: `subagent_type`) removes a denied type from
-the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. Several task
-calls in one message run concurrently; a batch that includes any other tool
-stays sequential. A child session is read-only (prompts to it answer 501).
+the list and refuses a call to it. A child gets no `task` (no nesting) and no `question`. On the root,
+several task calls in one message run concurrently; a batch that includes
+any other tool stays sequential (see "Tool concurrency" below). A child runs
+its own calls one at a time (`toolExecution: 'sequential'`). A child session is read-only (prompts to it answer 501).
 A child's calls are checked against the subagent's own rules and the session's
 rules; a `deny` from either wins, so delegating never unlocks a denied call.
+
+**Tool concurrency.** The root agent runs `toolExecution: 'parallel'`. Every
+built-in tool is `executionMode: 'sequential'` except `PARALLEL_TOOLS`
+(`image_gen`, `runtime.ts`); `task` is parallel too. pi-agent-core runs a
+model step's calls concurrently only when none of them is `sequential`, so
+several `image_gen` (or `task`) calls in one step run at once and a mixed step
+runs in order. A codemode script's nested calls follow the same per-tool mode
+(pi's `NestedToolCallRunner`).
 
 ### Images
 
@@ -1232,8 +1263,8 @@ runs (`../services/tools/`):
 | Module | What |
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
-| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a harness that names no turn (OpenCode) keys the turn cap on the call's abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all six when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release; on OpenCode, the release the boot link serves, recorded as `<boot config root>/boot-release`, so a release with no OpenCode config dir still loads its tools). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`

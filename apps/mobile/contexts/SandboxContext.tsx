@@ -21,6 +21,7 @@ import { SessionRuntimeProvider, type BoundSession } from '@/components/session/
 import { useQuestionReminders } from '@/hooks/useQuestionReminders';
 import { useRuntimeStream } from '@/hooks/useRuntimeStream';
 import { useDisclosureStore } from '@/lib/session/disclosure-store';
+import { clearSharedImages } from '@/lib/files/shared-image';
 import { log } from '@/lib/logger';
 
 interface SandboxContextValue {
@@ -88,6 +89,8 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated) {
       // The SDK's session state: transcripts, pending requests, sync readers.
       resetIdentityState();
+      // Loaded image sources carry the signed-out user's Authorization header.
+      clearSharedImages();
       // Expand/collapse choices are keyed by part id: drop them with the transcript.
       useDisclosureStore.getState().clear();
       setOverride(null);

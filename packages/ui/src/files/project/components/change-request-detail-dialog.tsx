@@ -20,9 +20,10 @@ import { useTranslations } from '../../../i18n';
 import { UnifiedMarkdown } from '../../../markdown';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
+import { ButtonGroup } from '../../../primitives/button-group';
 import { InfoBanner } from '../../../primitives/info-banner';
 import Loading from '../../../primitives/loading';
-import { Modal, ModalContent, ModalHeader, ModalTitle } from '../../../primitives/modal';
+import { Modal, ModalClose, ModalContent, ModalHeader, ModalTitle } from '../../../primitives/modal';
 import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import {
@@ -52,11 +53,14 @@ import {
   FileDashedIcon,
   SparkleIcon,
   WarningIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestRecoveryBlocker, ManifestIssue } from '../change-request-recovery';
 import { useProjectContext } from '../context';
+import { uiRoutes } from '../../../lib/routes';
+import { useUiRouter } from '../../../providers/ui-provider';
 import { ChangeRequestStatusBadge } from './change-request-status-badge';
 import { useChangeRequestRecovery } from '../hooks/use-change-request-recovery';
 import {
@@ -86,6 +90,7 @@ interface ChangeRequestDetailDialogProps {
 
 export function ChangeRequestDetailDialog({ crId, onClose, onOpenChangeRequest }: ChangeRequestDetailDialogProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
   const open = crId !== null;
   const detailQuery = useChangeRequest(crId);
   const diffQuery = useChangeRequestDiff(crId);
@@ -214,14 +219,43 @@ export function ChangeRequestDetailDialog({ crId, onClose, onOpenChangeRequest }
 
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()}>
-      <ModalContent className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[90vh] lg:max-h-[90vh] lg:min-h-[90vh] lg:max-w-5xl">
+      <ModalContent
+        className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[90vh] lg:max-h-[90vh] lg:min-h-[90vh] lg:max-w-5xl"
+        showCloseButton={false}
+        // The session that proposed this change is where its reasoning lives.
+        closeButtonChildren={
+          <ButtonGroup>
+            {cr?.origin_session_id && projectId ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  router.push(uiRoutes().session(projectId, cr.origin_session_id as string));
+                  onClose();
+                }}
+              >
+                {tI18nComplete.raw('textb205bb47f81a')}
+              </Button>
+            ) : null}
+            <ModalClose asChild>
+              <Button
+                variant="secondary"
+                size="icon-base"
+                aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </ModalClose>
+          </ButtonGroup>
+        }
+      >
         {/* ---------------------------------------------------------------
             Header: the title, then one line of context. The proposal number
             and the version it lands in live in that line as plain text —
             they were a mono chip and a branch badge, which gave two facts
             nobody acts on the visual weight of the title itself.
         --------------------------------------------------------------- */}
-        <ModalHeader className="flex shrink-0 flex-col space-y-0 border-b px-5 py-4 pr-14">
+        <ModalHeader className="flex shrink-0 flex-col space-y-0 border-b px-5 py-4 pr-48">
           {!cr ? (
             <div className="space-y-2">
               <ModalTitle className="sr-only">{tI18nComplete.raw('text28b00af7cb71')}</ModalTitle>

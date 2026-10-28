@@ -6,9 +6,10 @@ import { errorToast, successToast } from '../../primitives/toast';
 import { useHeicBlob } from '../../internal/hooks/use-heic-url';
 import { isHeicFile } from '../../internal/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '../../internal/stores/diagnostics-store';
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { isRuntimeStartingError } from '@kortix/sdk';
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFileSource } from './file-source';
+import { type SharedImageResult, useFileSource } from './file-source';
+import { useFileCaption } from '../../internal/stores/file-preview-store';
 import { getFileCategory, getLanguageFromExt, type FileCategory } from './preview-policy';
 import { usePreviewFit } from './preview-fit';
 import { useContentRevision } from './use-content-revision';
@@ -21,6 +22,11 @@ type BlobCategory = (typeof BLOB_CATEGORIES)[number];
 function isImageMime(mimeType?: string): boolean {
   return !!mimeType && mimeType.startsWith('image/');
 }
+
+/** The raster images the shared image store holds (R38): not SVG (text), not HEIC (converted). */
+const RASTER_IMAGE = /\.(png|jpe?g|gif|webp|bmp|avif)$/i;
+const NO_SHARED_IMAGE: SharedImageResult = { url: null, loading: false, error: null, retry: () => {} };
+const noSharedImage = (): SharedImageResult => NO_SHARED_IMAGE;
 
 function isBlobCategory(cat: FileCategory): cat is BlobCategory {
   return (BLOB_CATEGORIES as readonly string[]).includes(cat);
@@ -76,13 +82,21 @@ export function useFileContentState({
   // BLOB_CATEGORY). Keyed off the filename alone, so it cannot depend on the
   // response it is disabling.
   const isZipArchive = getFileCategory(fileName) === 'zip';
+  // A raster image of the live workspace draws from the page's shared image
+  // store: the bytes the image card already loaded, at once, else one read of
+  // the file as bytes. Never the base64 text read, a second download of the
+  // same picture under another cache key (R38).
+  const sharedImagePath = source.useSharedImage && RASTER_IMAGE.test(fileName) ? filePath : null;
+  // An image the card opened names its bytes' sha256: drawn from the store with no read.
+  const sharedImageSha = useFileCaption(filePath)?.sha256;
+  const sharedImage = (source.useSharedImage ?? noSharedImage)(sharedImagePath, sharedImageSha);
   const {
     data: fileContent,
     isLoading,
     error,
     refetch,
     dataUpdatedAt,
-  } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
+  } = useFileContent(isHeicImage || isZipArchive || sharedImagePath ? null : filePath);
 
   // The agent's turn end refetches this file. The xlsx and sqlite renderers
   // read their own bytes, so they remount only when the content really
@@ -179,9 +193,12 @@ export function useFileContentState({
   const {
     blobUrl,
     blob: rawBlob,
-    isLoading: blobLoading,
-    error: blobError,
+    isLoading: binaryLoading,
+    error: binaryError,
   } = useBinaryBlob(blobPath);
+  const blobLoading = sharedImagePath ? sharedImage.loading : binaryLoading;
+  const blobError = sharedImagePath ? sharedImage.error : binaryError;
+  const hasBytes = sharedImagePath ? !!sharedImage.url : !!rawBlob;
 
   // HEIC conversion — converts the raw HEIC blob to a renderable JPEG URL
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
@@ -335,14 +352,15 @@ export function useFileContentState({
   // Image rendering — skip HEIC (handled separately via blob pipeline)
   const imageDataUrl = useMemo(() => {
     if (isHeicImage) return null;
+    if (sharedImagePath) return sharedImage.url;
     if (fileContent?.encoding === 'base64' && isImageMime(fileContent.mimeType)) {
       return `data:${fileContent.mimeType};base64,${fileContent.content}`;
     }
     return null;
-  }, [fileContent, isHeicImage]);
+  }, [fileContent, isHeicImage, sharedImagePath, sharedImage.url]);
 
   // Determine loading state
-  const needsBlob = isBlobCategory(fileCategory) || isHeicImage || (!!source.bytesOnly && readsOwnBytes);
+  const needsBlob = isBlobCategory(fileCategory) || isHeicImage || (!!source.bytesOnly && readsOwnBytes) || !!sharedImagePath;
   const isContentReady = needsBlob ? !blobLoading && !blobError : !isLoading && !error;
   const contentError = needsBlob
     ? blobError
@@ -357,14 +375,14 @@ export function useFileContentState({
   // state, never a failure. The file hooks keep polling while this is true
   // (SANDBOX_WAKING_REFETCH_INTERVAL_MS), so the content appears on its own
   // once the box is up.
-  const isSandboxWaking = !!contentError && isSandboxNotReadyError(contentError);
+  const isSandboxWaking = !!contentError && isRuntimeStartingError(contentError);
 
   // Detect "file not found" — either via explicit error or empty resolution
   const isNotFound = useMemo(() => {
     if (contentError) return isNotFoundError(contentError);
     // Query settled with no data and no error → file likely doesn't exist
     if (!showLoadingState && !contentError && !needsBlob && !isLoading && !fileContent) return true;
-    if (!showLoadingState && !contentError && needsBlob && !blobLoading && !blobError && !rawBlob)
+    if (!showLoadingState && !contentError && needsBlob && !blobLoading && !blobError && !hasBytes)
       return true;
     return false;
   }, [
@@ -375,7 +393,7 @@ export function useFileContentState({
     fileContent,
     blobLoading,
     blobError,
-    rawBlob,
+    hasBytes,
   ]);
 
   // Report load status up (used by `show` cards to hide dead references). Only
@@ -433,7 +451,7 @@ export function useFileContentState({
     isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
     setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
     fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
-    blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
+    blobLoading, blobError, sharedImagePath, retrySharedImage: sharedImage.retry, heicImageUrl, heicConverting, displayContent,
     handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
     needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
     isNotFound,

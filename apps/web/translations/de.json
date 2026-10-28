@@ -23384,5 +23384,20 @@
       "unarchivedToast": "#{name} wiederhergestellt",
       "failed": "#{name} konnte nicht aktualisiert werden. Versuche es erneut."
     }
+  },
+  "imageGen": {
+    "generating": "Bild wird erstellt",
+    "editing": "Bild wird bearbeitet",
+    "generatingCount": "{count, plural, one {# Bild wird erstellt} other {# Bilder werden erstellt}}",
+    "editingCount": "{count, plural, one {# Bild wird bearbeitet} other {# Bilder werden bearbeitet}}",
+    "openFullScreen": "Im Vollbild öffnen",
+    "openFullScreenPrompt": "Im Vollbild öffnen: {prompt}",
+    "loading": "Bild wird geladen",
+    "stopped": "Gestoppt",
+    "failed": "Das Bild wurde nicht erstellt.",
+    "retry": "Versuchen Sie es {when} erneut.",
+    "unavailable": "Bild nicht verfügbar",
+    "tryAgain": "Erneut versuchen",
+    "details": "Bilddetails"
   }
 }

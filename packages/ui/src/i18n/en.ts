@@ -2186,7 +2186,6 @@ const catalog = {
       "line3485JsxAttrMessageNoMatchingResultsFound": "No matching results found",
       "line3534JsxAttrMessageDirectoryIsEmpty": "Directory is empty",
       "line4240JsxTextImageSearch": "Image Search",
-      "line4414JsxTextLoadingImagePreview": "Loading image preview...",
       "line4612JsxTextCreatedSlide": "Created slide",
       "line4935JsxTextPreparingOutput": "Preparing output...",
       "line5032JsxTextOpenAsTab": "Open as tab",
@@ -8072,6 +8071,21 @@ const catalog = {
       "unarchivedToast": "#{name} unarchived",
       "failed": "Could not update #{name}. Try again."
     }
+  },
+  "imageGen": {
+    "generating": "Generating image",
+    "editing": "Editing image",
+    "generatingCount": "Generating {count, plural, one {# image} other {# images}}",
+    "editingCount": "Editing {count, plural, one {# image} other {# images}}",
+    "openFullScreen": "Open full screen",
+    "openFullScreenPrompt": "Open full screen: {prompt}",
+    "loading": "Loading image",
+    "stopped": "Stopped",
+    "failed": "The image was not generated.",
+    "retry": "Try again {when}.",
+    "unavailable": "Image unavailable",
+    "tryAgain": "Try again",
+    "details": "Image details"
   }
 };
 

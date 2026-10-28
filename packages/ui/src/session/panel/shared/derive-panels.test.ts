@@ -105,6 +105,27 @@ describe('deriveOutputs', () => {
     expect(out[0].kind).toBe('image');
   });
 
+  it('lists every image of a batch image_gen call, by its file, and none for a failed prompt', () => {
+    const output = JSON.stringify({
+      action: 'generate',
+      images: [
+        { path: '/workspace/output/images/fox.png', size: '1024x1024', prompt: 'a fox' },
+        { path: '/workspace/output/images/hare.webp', size: '1024x1024', prompt: 'a hare' },
+      ],
+      failed: [{ prompt: 'an owl', error: 'Image generation failed (500): Upstream error.' }],
+    });
+    const out = deriveOutputs([part('image_gen', { action: 'generate', prompts: ['a fox', 'an owl', 'a hare'] }, { output })]);
+    expect(out.map((item) => [item.name, item.path, item.kind])).toEqual([
+      ['fox.png', '/workspace/output/images/fox.png', 'image'],
+      ['hare.webp', '/workspace/output/images/hare.webp', 'image'],
+    ]);
+  });
+
+  it('names a batch image_gen call with no file by its first prompt', () => {
+    const out = deriveOutputs([part('image_gen', { action: 'generate', prompts: ['a fox', 'a hare'] })]);
+    expect(out.map((item) => [item.name, item.path])).toEqual([['a fox', undefined]]);
+  });
+
   it('reports upscale/remove_bg as image outputs too — same reasoning as edit', () => {
     for (const action of ['upscale', 'remove_bg']) {
       const out = deriveOutputs([part('image_gen', { action })]);

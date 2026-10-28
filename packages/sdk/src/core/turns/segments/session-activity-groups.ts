@@ -1,3 +1,4 @@
+import { parseMemoryView } from '../tools/memory-helpers';
 import { isShowPayloadEmpty } from '../tools/show-availability';
 import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
@@ -33,14 +34,17 @@ export function shellActivityGroupLabel(count: number, running: boolean): string
 }
 
 /**
- * Tools that must never fold into a "Tool · Nx" group:
+ * The deliverable tools: never folded into a "Tool · Nx" group, and hoisted
+ * above the final text once the turn settles (`splitTurnWork`):
  *   - show / show-user: rendered output (preview, image, viewer) the user has
  *     to actually see — folding it behind a group means it can be missed.
+ *   - image_gen: the generated image is the deliverable itself, as is its
+ *     failure card.
  * `write` used to be here ("distinct files"), but a scaffold run writing six
  * JSON files as six rows buries the narrative — the grouped row lists every
  * file inside, nothing is lost.
  */
-export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user']);
+export const NO_GROUP_ACTIVITY_TOOLS = new Set(['show', 'show_user', 'image_gen']);
 
 export function isNoGroupActivityTool(toolName: string | undefined): boolean {
   return NO_GROUP_ACTIVITY_TOOLS.has(normalizeActivityToolName(toolName));
@@ -71,12 +75,20 @@ export function writeActivityGroupLabel(count: number, running: boolean): string
  * the renderer is not enough. The step still wraps it in a row, the chain still
  * draws its rail, and the reader gets a blank gap where a deliverable should
  * be. The part has to be dropped before segmentation, not after.
+ *
+ * A settled `memory` read of an empty memory folder is dropped for the same
+ * reason (see `isEmptyMemoryViewPart`).
+ *
+ * It takes a session-log `ToolCallBlock` too, so the Actions panel reaches the
+ * same verdict as the transcript.
  */
-export function isInvisibleActivityPart(part: ActivityPartLike): boolean {
+export function isInvisibleActivityPart(call: ActivityPartLike | ToolCallBlock): boolean {
+  const part: ActivityPartLike = isToolCallBlock(call) ? toolPartOf(call) : call;
   if (part.type === 'snapshot' || part.type === 'patch') return true;
   if (part.type === 'step-start' || part.type === 'step-finish') return true;
   if (part.type === 'text' && !part.text?.trim()) return true;
   if (isEmptyShowPart(part)) return true;
+  if (isEmptyMemoryViewPart(part)) return true;
   return false;
 }
 
@@ -86,7 +98,32 @@ export interface ActivityPartLike {
   type?: string;
   text?: string;
   tool?: string;
-  state?: { status?: string; input?: Record<string, unknown> | null } | null;
+  state?: { status?: string; input?: Record<string, unknown> | null; output?: unknown } | null;
+}
+
+/**
+ * A settled `memory` `view` of the memory folder that found nothing in it.
+ *
+ * The agent reads memory at the start of most tasks. On a project with no
+ * memory yet, the chat drew a "Memory read" row whose card said "Memory is
+ * empty." That row tells the reader nothing, so it is dropped.
+ *
+ * "Empty" is the renderers' own test: `parseMemoryView` reads a directory
+ * listing with no entry below the viewed folder. The tool lists the folder
+ * itself on the first line; it is skipped with or without a trailing slash.
+ * A listing with any file, a view of a file, a missing path, and a
+ * `pending`/`running`/`error` call all stay visible.
+ */
+function isEmptyMemoryViewPart(part: ActivityPartLike): boolean {
+  if (normalizeActivityToolName(part.tool) !== 'memory') return false;
+  if (part.state?.status !== 'completed') return false;
+  const input = part.state.input;
+  const output = part.state.output;
+  if (input?.command !== 'view' || typeof input.path !== 'string' || typeof output !== 'string') return false;
+  const view = parseMemoryView(output, input.path);
+  if (view?.type !== 'dir') return false;
+  const root = input.path.replace(/\/$/, '');
+  return view.entries.every((entry) => entry.path.replace(/\/$/, '') === root);
 }
 
 /**
@@ -123,14 +160,13 @@ export function isEmptyShowPart(call: ActivityPartLike | ToolCallBlock): boolean
 /**
  * Tools that always render on their own, never folded into a burst.
  *
- *   - show / show_user: a deliverable handed to the user. Folding it behind a
- *     collapsed row means it can be missed.
+ *   - the deliverables (`NO_GROUP_ACTIVITY_TOOLS`): handed to the user.
+ *     Folding one behind a collapsed row means it can be missed.
  *   - agent_*: a spawned sub-agent has its own lifecycle and status. Folding it
  *     in would hide a running agent behind a collapsed row.
  */
 export const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
-  'show',
-  'show_user',
+  ...NO_GROUP_ACTIVITY_TOOLS,
   'agent_spawn',
   'agent_status',
   'agent_message',

@@ -132,12 +132,12 @@ describe('resolveManifestImports', () => {
     expect(none.raw.tools).toBeUndefined();
     expect(selectedKortixTools(none.raw.tools)).toEqual([...KORTIX_TOOL_NAMES]);
     const listed = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'tools:\n  memory: kortix:memory\n' });
-    expect(selectedKortixTools(listed.raw.tools)).toEqual(['memory']);
-    // An empty `tools` in an imported file still counts: it lists no Kortix tool.
+    expect(selectedKortixTools(listed.raw.tools)).toEqual(['image_gen', 'memory']);
+    // An empty `tools` in an imported file still counts: it lists no Kortix tool; the default-on ones load.
     for (const empty of ['tools: {}\n', 'tools:\n']) {
       const merged = await resolve({ 'kortix.yaml': root, 'extra.yaml': empty });
       expect(merged.raw.tools).toEqual({});
-      expect(selectedKortixTools(merged.raw.tools)).toEqual([]);
+      expect(selectedKortixTools(merged.raw.tools)).toEqual(['image_gen']);
       expect(validateManifest(merged.raw, 'yaml').issues.map((i) => [i.path, i.severity])).toEqual([['tools', 'warning']]);
     }
   });

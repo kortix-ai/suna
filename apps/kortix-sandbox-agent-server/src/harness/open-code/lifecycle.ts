@@ -133,6 +133,7 @@ import { configReleaseNoticePath } from '@/services/config-provider/notice'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { bootLinkPath, isInReleaseStore, readBootLinkTarget, readBootReleaseRoot, releaseRootOf } from '@/services/config-provider/boot-config'
 import { syncFlaggedManagedSkills } from '@/services/skills/managed-skills'
+import { KORTIX_EDIT_TOOLS } from '@/services/tools/tool'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { writePermissionOrderPlugin } from './permission-order'
 import { applyAgentToolAccess } from './tool-access'
@@ -616,14 +617,16 @@ export async function buildOpencodeConfigContent(
 /**
  * The OpenCode tools a capability covers beside its own: the pty plugin's
  * tools run shell commands, the template's search and scrape tools reach the
- * web. None of them asks for permission itself, and OpenCode matches a rule
- * against the tool's own name, so an agent's `bash: deny` never reached
- * `pty_spawn`.
+ * web, and the Kortix tools that write files are `edit`. None of them asks
+ * for permission itself, and OpenCode matches a rule against the tool's own
+ * name, so an agent's `bash: deny` never reached `pty_spawn`. `memory` is
+ * one tool here: `edit` governs its `view` command too (fail closed).
  */
 const CAPABILITY_TOOLS: Record<string, readonly string[]> = {
   bash: ['pty_spawn', 'pty_write', 'pty_read', 'pty_list', 'pty_kill'],
   websearch: ['web_search', 'image_search'],
   webfetch: ['scrape_webpage'],
+  edit: KORTIX_EDIT_TOOLS,
 }
 
 /**
