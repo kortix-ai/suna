@@ -54,7 +54,7 @@
     "nodemailer": "^10.2.1",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",
-    "re2js": "2.8.6",
+    "re2js": "2.8.7",
     "smol-toml": "^1.6.1",
     "stripe": "^14.0.0",
     "tar": "7.5.21",
