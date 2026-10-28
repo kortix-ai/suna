@@ -84,10 +84,10 @@ export function SandBandHero() {
       {/* Band row: hairlines top and bottom across the page, a plain band
           between the rails. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
-        <div className="bg-card relative flex flex-col items-center gap-5 overflow-hidden px-3 py-5 sm:px-6 lg:gap-6 lg:px-8 lg:py-7">
-          {/* The player (16:9 stage plus control bar) keeps the window width
-              the hero has always had, max-w-304. */}
-          <div id="demo" className="relative w-full max-w-304 scroll-mt-16">
+        <div className="bg-card relative flex flex-col items-center gap-7 overflow-hidden px-4 py-7 lg:gap-10 lg:px-0 lg:pt-17 lg:pb-10">
+          {/* The walkthrough keeps the hero's dev dimensions: max-w-304 wide,
+              a 1264 × 860 board, in the same band padding. */}
+          <div id="demo" className="relative w-full max-w-304 scroll-mt-24">
             <WorkspaceFramework />
           </div>
           {/* What the two views show, in one line. */}

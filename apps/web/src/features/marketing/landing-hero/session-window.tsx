@@ -28,8 +28,8 @@ import { SessionStatusMark } from './session-status-mark';
 
 /**
  * The Kortix session screen, rebuilt as live DOM for the landing hero (Paper
- * "Kortix 2", HVL-0). It is drawn once at the board's size, 1280 × 720 (16:9,
- * a video frame), and scaled to the column, so it reads as the product at
+ * "Kortix 2", HVL-0). It is drawn once at the board's size, 1264 × 860, and
+ * scaled to the column, so it reads as the product at
  * every width instead of reflowing into something the product never shows.
  *
  * Every name and number is a synthetic "Arcadia" fixture. The script plays
@@ -39,8 +39,8 @@ import { SessionStatusMark } from './session-status-mark';
  * that state.
  */
 
-export const W = 1280;
-export const H = 720;
+export const W = 1264;
+export const H = 860;
 
 const PROMPT =
   'Build a revenue dashboard for Arcadia from the warehouse data for the last five months.';

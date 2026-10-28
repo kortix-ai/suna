@@ -61,9 +61,9 @@ const STEP_MS = 7500;
 const stepAt = (index: number) => MODES[Math.floor(index / PER_MODE)].steps[index % PER_MODE];
 
 /**
- * The hero walkthrough, built as a video player: one 16:9 stage and one
- * control bar under it, in a single frame. The bar holds the mode switch
- * (Workspace | Framework), the four chapters of the mode, and pause. The
+ * The hero walkthrough, built as a video player: the mode switch
+ * (Workspace | Framework) above, then one 1264 × 860 stage and the step
+ * strip under it in a single frame: the four steps of the mode and pause. The
  * active chapter's top edge is the timeline, on the seam with the stage.
  *
  * Each step is a short scene that plays from its start every time it shows:
