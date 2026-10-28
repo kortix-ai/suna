@@ -66,6 +66,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/self-hosted',
   '/services',
   '/case-studies',
+  '/framework',
   '/use-cases',
   '/white-label',
   '/cli',
@@ -206,6 +207,14 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     description:
       'What runs on Kortix today: a science agent at City University of Hong Kong, an AI-run hedge fund desk, a cloud company built by agents, Kortix itself and more.',
     htmlPath: '/case-studies',
+  },
+  {
+    kind: 'marketing',
+    slug: 'framework',
+    title: 'The Kortix framework',
+    description:
+      'Kortix is a backend framework for AI agents: a project is a git repository, kortix.yaml declares the agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, and @kortix/sdk and @kortix/ui compose your own experience.',
+    htmlPath: '/framework',
   },
   {
     kind: 'marketing',

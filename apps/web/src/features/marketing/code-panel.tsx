@@ -53,7 +53,7 @@ function Value({ text }: { text: string }): ReactNode {
   return <span className={VALUE}>{text}</span>;
 }
 
-function YamlLine({ line }: { line: string }): ReactNode {
+export function YamlLine({ line }: { line: string }): ReactNode {
   if (/^\s*#/.test(line)) return <span className={COMMENT}>{line}</span>;
 
   const match = /^(\s*(?:- )?)([\w.-]+)(:)(.*)$/.exec(line);

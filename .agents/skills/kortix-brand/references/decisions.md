@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-10-27
 
+### D24 The framework surfaces explain Kortix as a backend framework and name pi
+- **Date:** 2026-10-28
+- **Decision:** The home hero band is a slider: the workspace on the left, the same sample project as code on the right (its repository with `kortix.yaml` open). A home band ("A workspace for your team. A framework underneath.") and the `/framework` page explain Kortix as a backend framework for agents: a project is a git repository, `kortix.yaml` declares agents, skills, tools and triggers, every session runs the open-source pi coding agent on its own computer, triggers run agent loops 24/7, and `@kortix/sdk` and `@kortix/ui` compose your own experience. `/framework` carries the architecture diagram (clients, the Kortix API, the project repository, the session computer, the LLM gateway). These framework surfaces may name pi; the hero headline, the pillars and other core copy still do not (D20).
+- **Why:** founder, 2026-10-28: "what doesnt come out enough on the homepage is like that u have the WORKSPACE UI for humans... But everything is code & KORTIX FRAMEWORK, Kortix.YAML & PI CODING AGENT as basis", and "a FRAMEWORK pAGE IN full that shows the technical architecture diagram".
+- **Where:** `apps/web/src/features/marketing/landing-hero/workspace-framework.tsx`, `framework-window.tsx`, `landing-sections/framework-band.tsx`, `features/marketing/framework/`.
+- **Supersedes:** D20 for the framework surfaces only.
+- **Source:** the `services-page` branch.
+
 ### D23 The home "Run any model" tab names the managed models with their versions
 - **Date:** 2026-10-27
 - **Decision:** The home How it works tab "Run any model" shows the provider marks (any provider with your own keys) and names the Kortix-managed models with their versions, today "DeepSeek V4.1 Flash" and "GLM 5.3 Flash", served with zero data retention. The names live in one constant, `MANAGED_MODELS` in `step-providers.tsx`; it follows Platinum Inference's `GET /v1/inference/models`. Everywhere else the families-only rule in [claims.md](verbal/claims.md) holds. The separate home sections "Need an internal app?" and "Every model, one bill." are removed: Apps and models are tabs of How it works.

@@ -38,8 +38,8 @@ import { SessionStatusMark } from './session-status-mark';
  * motion skips straight to that state.
  */
 
-const W = 1264;
-const H = 860;
+export const W = 1264;
+export const H = 860;
 
 const PROMPT =
   'Build a revenue dashboard for Northwind from the warehouse data for the last five months.';
@@ -177,7 +177,7 @@ function useScript(target: React.RefObject<HTMLElement | null>) {
 }
 
 /** Fits the fixed-size board to its column. */
-function useFitScale(frame: React.RefObject<HTMLElement | null>) {
+export function useFitScale(frame: React.RefObject<HTMLElement | null>) {
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const el = frame.current;
