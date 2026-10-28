@@ -136,126 +136,124 @@ export function WorkspaceFramework() {
   const playing = inView;
 
   return (
-    <div
-      ref={root}
-      className="bg-background/20 ring-border w-full rounded-2xl p-1.5 ring-1 sm:p-2"
-      role="region"
-      aria-roledescription="walkthrough"
-      aria-label={`Kortix ${MODES[mode].label.toLowerCase()}: ${current.label}`}
-    >
-      <div className="bg-background overflow-hidden rounded-xl border">
-        {/* The stage: every layer stays mounted, the shown one fades in. */}
-        <div className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
-          {LAYERS.map((layer) => {
-            const shown = current.layer === layer;
-            return (
-              <div
-                key={`${layer}-${entries[layer]}`}
-                inert={!shown}
-                className={cn(
-                  'duration-slower absolute inset-0 transition-opacity ease-out',
-                  shown ? 'opacity-100' : 'pointer-events-none opacity-0',
-                )}
-              >
-                {layer === 'session' ? (
-                  <SessionWindow framed={false} play={shown && playing} />
-                ) : null}
-                {layer === 'customize' ? (
-                  <CustomizeBoard tab={current.tab ?? 'Connectors'} play={shown && playing} />
-                ) : null}
-                {layer === 'share' ? <ShareScene play={shown && playing} /> : null}
-                {layer === 'framework' ? (
-                  <FrameworkWindow
-                    focus={shown ? current.focus : undefined}
-                    shipped={shown && index === TOTAL - 1}
-                    onInteract={() => setPaused(true)}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* The control bar, joined to the stage by one hairline. Below 64rem
-            the chapters not playing show their number only. */}
-        <div className="@container flex flex-wrap border-t sm:flex-nowrap">
-          {/* The mode switch: two quiet text tabs, the bar's first cell. */}
-          <div
-            role="group"
-            aria-label="View"
-            className="flex basis-full items-center justify-center gap-4 border-b px-4 sm:basis-auto sm:border-r sm:border-b-0"
+    <div className="flex w-full flex-col items-center gap-4">
+      {/* The mode switch, centred above the frame: the navbar's site-switcher pattern. */}
+      <div role="group" aria-label="View" className="bg-muted flex items-center rounded-md p-0.5">
+        {MODES.map((m, i) => (
+          <button
+            key={m.label}
+            type="button"
+            aria-pressed={mode === i}
+            onClick={() => go(i * PER_MODE)}
+            className="text-muted-foreground hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground outline-ring duration-moderate flex h-7 items-center rounded-sm px-3 text-xs font-medium transition-colors focus-visible:outline-2"
           >
-            {MODES.map((m, i) => (
-              <button
-                key={m.label}
-                type="button"
-                aria-pressed={mode === i}
-                onClick={() => go(i * PER_MODE)}
-                className="text-muted-foreground hover:text-foreground aria-pressed:text-foreground outline-ring flex h-10 items-center rounded-sm text-sm font-medium transition-colors focus-visible:outline-2 sm:h-auto"
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+            {m.label}
+          </button>
+        ))}
+      </div>
 
-          <ol
-            aria-label={`${MODES[mode].label} steps`}
-            className="flex min-w-0 grow basis-4/5 sm:flex-1"
-          >
-            {MODES[mode].steps.map((s, i) => {
-              const active = i === step;
+      <div
+        ref={root}
+        className="bg-background/20 ring-border w-full rounded-2xl p-1.5 ring-1 sm:p-2"
+        role="region"
+        aria-roledescription="walkthrough"
+        aria-label={`Kortix ${MODES[mode].label.toLowerCase()}: ${current.label}`}
+      >
+        <div className="bg-background overflow-hidden rounded-xl border">
+          {/* The stage: every layer stays mounted, the shown one fades in. */}
+          <div className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
+            {LAYERS.map((layer) => {
+              const shown = current.layer === layer;
               return (
-                <li
-                  key={s.label}
+                <div
+                  key={`${layer}-${entries[layer]}`}
+                  inert={!shown}
                   className={cn(
-                    'relative flex min-w-0 border-r last:border-r-0',
-                    active ? 'flex-[3] @5xl:flex-1' : 'flex-1',
+                    'duration-slower absolute inset-0 transition-opacity ease-out',
+                    shown ? 'opacity-100' : 'pointer-events-none opacity-0',
                   )}
                 >
-                  <button
-                    type="button"
-                    aria-current={active ? 'step' : undefined}
-                    onClick={() => go(mode * PER_MODE + i)}
-                    className={cn(
-                      'outline-ring hover:text-foreground flex min-w-0 flex-1 items-center gap-2.5 px-3 py-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-4',
-                      active ? 'text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                      {i + 1}
-                    </span>
-                    <span className={cn('truncate', !active && 'hidden @5xl:inline')}>
-                      {s.label}
-                    </span>
-                  </button>
-                  {active ? (
-                    <span aria-hidden className="absolute inset-x-0 -top-px h-0.5 overflow-hidden">
-                      <span
-                        ref={bar}
-                        className="bg-foreground block size-full origin-left"
-                        style={{ transform: reduced ? 'scaleX(1)' : 'scaleX(0)' }}
-                      />
-                    </span>
+                  {layer === 'session' ? (
+                    <SessionWindow framed={false} play={shown && playing} />
                   ) : null}
-                </li>
+                  {layer === 'customize' ? (
+                    <CustomizeBoard tab={current.tab ?? 'Connectors'} play={shown && playing} />
+                  ) : null}
+                  {layer === 'share' ? <ShareScene play={shown && playing} /> : null}
+                  {layer === 'framework' ? (
+                    <FrameworkWindow
+                      focus={shown ? current.focus : undefined}
+                      shipped={shown && index === TOTAL - 1}
+                      onInteract={() => setPaused(true)}
+                    />
+                  ) : null}
+                </div>
               );
             })}
-          </ol>
+          </div>
 
-          {reduced ? null : (
-            <button
-              type="button"
-              onClick={() => setPaused(!paused)}
-              aria-label={paused ? 'Play' : 'Pause'}
-              className="text-muted-foreground hover:text-foreground outline-ring flex w-11 shrink-0 items-center justify-center border-l transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2"
-            >
-              {paused ? (
-                <PlayIcon weight="fill" className="size-3" />
-              ) : (
-                <PauseIcon weight="fill" className="size-3" />
-              )}
-            </button>
-          )}
+          {/* The step strip, joined to the stage by one hairline. Below 64rem
+            the steps not playing show their number only. */}
+          <div className="@container flex border-t">
+            <ol aria-label={`${MODES[mode].label} steps`} className="flex min-w-0 flex-1">
+              {MODES[mode].steps.map((s, i) => {
+                const active = i === step;
+                return (
+                  <li
+                    key={s.label}
+                    className={cn(
+                      'relative flex min-w-0 border-r last:border-r-0',
+                      active ? 'flex-[3] @5xl:flex-1' : 'flex-1',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      aria-current={active ? 'step' : undefined}
+                      onClick={() => go(mode * PER_MODE + i)}
+                      className={cn(
+                        'outline-ring hover:text-foreground flex min-w-0 flex-1 items-center gap-2.5 px-3 py-3 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-4',
+                        active ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className={cn('truncate', !active && 'hidden @5xl:inline')}>
+                        {s.label}
+                      </span>
+                    </button>
+                    {active ? (
+                      <span
+                        aria-hidden
+                        className="absolute inset-x-0 -top-px h-0.5 overflow-hidden"
+                      >
+                        <span
+                          ref={bar}
+                          className="bg-foreground block size-full origin-left"
+                          style={{ transform: reduced ? 'scaleX(1)' : 'scaleX(0)' }}
+                        />
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+
+            {reduced ? null : (
+              <button
+                type="button"
+                onClick={() => setPaused(!paused)}
+                aria-label={paused ? 'Play' : 'Pause'}
+                className="text-muted-foreground hover:text-foreground outline-ring flex w-11 shrink-0 items-center justify-center border-l transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2"
+              >
+                {paused ? (
+                  <PlayIcon weight="fill" className="size-3" />
+                ) : (
+                  <PauseIcon weight="fill" className="size-3" />
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
