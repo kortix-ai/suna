@@ -5,7 +5,7 @@ import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import { Band, Block, CellGrid, Heading, KeyRows, PageFrame, PageHero } from '@/features/marketing/kit/page-frame';
 import Link from 'next/link';
 
-import { ArchitectureDiagram } from './architecture-diagram';
+import { ArchitectureDiagram, CROSSINGS, CrossingMark } from './architecture-diagram';
 import { MANIFEST } from './content';
 
 // Facts: framework/content.ts (the manifest gate), the docs sections
@@ -50,28 +50,41 @@ const TABS: readonly CodeTab[] = [
   },
 ];
 
-const RUNTIME = [
+// Facts: docs/guide.mdx "How it works", "Agents" (an agent acts as itself,
+// personal accounts stay personal), "Security" and "Audit log".
+const ISOLATION = [
   {
-    k: 'One computer per session',
-    v: 'Every session runs on its own isolated cloud computer with a checkout of the project on the session’s own branch, a terminal, a browser, Python and Node.js. It sleeps when idle and wakes on the next message.',
+    id: 'sessions',
+    k: 'Nothing leaks between sessions',
+    v: 'A session never touches your laptop or another session. Its files, terminal and browser are its own.',
   },
   {
-    k: 'kortixd and the pi coding agent',
-    v: 'The kortixd daemon on that computer runs the open-source pi coding agent. It serves the session runtime routes, the transcript and the live event stream.',
+    id: 'identity',
+    k: 'The agent is the identity',
+    v: 'A session runs with the agent’s permissions, not your role. An agent can never give itself a permission it does not hold.',
   },
   {
-    k: 'Changes go through review',
-    v: 'When an agent changes the project, it commits to its branch and opens a change request. A person merges it, and new sessions start with it.',
+    id: 'personal',
+    k: 'Personal stays personal',
+    v: 'Your own folder, private accounts and personal secrets reach only private sessions you started. Shared sessions and scheduled runs get none of them.',
   },
   {
-    k: 'Models through one gateway',
-    v: 'Every model call goes through the Kortix LLM gateway: your own provider keys or Kortix-managed models, with routing, fallbacks and budgets.',
-  },
-  {
-    k: 'Credentials stay on the server',
-    v: 'Connector calls go through the Kortix API, which holds the credentials. They never enter the session computer.',
+    id: 'audit',
+    k: 'Every action is on record',
+    v: 'The audit log records who did what, whether it was allowed, and the person an agent acted for.',
   },
 ];
+
+const CROSSING_ROWS = CROSSINGS.map((c) => ({
+  id: String(c.n),
+  k: (
+    <span className="flex items-center gap-3">
+      <CrossingMark n={c.n} />
+      {c.k}
+    </span>
+  ),
+  v: c.v,
+}));
 
 const LOOPS = [
   { id: 'cron', k: 'Schedules', v: 'Cron, every few minutes, or once at a set time.' },
@@ -136,7 +149,8 @@ export function FrameworkPage() {
       <Block id="architecture">
         <Heading
           title="How it fits together."
-          titleMuted="Clients, one API, and a computer per session."
+          titleMuted="Clients, one API, a computer per session, and Drive."
+          sub="A client calls the Kortix API. The API starts each session on its own cloud computer, between the project repository and the LLM gateway, with Drive folders open inside it."
         />
         <Band className="mt-12">
           <ArchitectureDiagram />
@@ -150,11 +164,18 @@ export function FrameworkPage() {
         </Band>
       </Block>
 
-      <Block id="runtime">
-        <Heading title="The runtime." titleMuted="Where the work happens." />
+      <Block id="isolation">
+        <Heading
+          title="Every agent works on its own computer."
+          titleMuted="Its edge is where policy holds."
+          sub="Work leaves the session computer in six ways. Each one is checked outside the agent’s reach, and the numbers match the diagram above."
+        />
         <div className="mt-10">
-          <KeyRows rows={RUNTIME} />
+          <KeyRows rows={CROSSING_ROWS} />
         </div>
+        <Band className="mt-12">
+          <CellGrid items={ISOLATION} cols="lg:grid-cols-4" />
+        </Band>
       </Block>
 
       <Block id="compose">
