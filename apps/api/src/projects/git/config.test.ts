@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectConfig } from './config';
+import { listManagedSkills } from '../../skills/catalog';
 import { getStarterFiles } from '@kortix/starter';
 import { isSelectableAgent } from '@kortix/sdk/projects-client';
 import { projectConfigAgentsToRuntimeAgents } from '@kortix/sdk';
@@ -266,7 +267,11 @@ opencode:
   test('pins the skills list and its ordering (sorted by slug, path normalized)', async () => {
     const config = await loadProjectConfig(project);
 
-    expect(config.skills).toEqual([
+    // Every manifest version lists the Kortix skills kortixd injects into each session.
+    expect(config.skills.filter((s) => s.name.startsWith('kortix-')).map((s) => s.name)).toEqual(
+      listManagedSkills().map((s) => s.name).sort(),
+    );
+    expect(config.skills.filter((s) => !s.name.startsWith('kortix-'))).toEqual([
       {
         name: 'alpha',
         path: '.kortix/opencode/skills/alpha/SKILL.md',
