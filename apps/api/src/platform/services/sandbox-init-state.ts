@@ -9,7 +9,7 @@ type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 export const SANDBOX_INIT_MAX_ATTEMPTS = 3;
 /**
  * Base delay for generic (non-capacity, non-still-building) retries. Previously
- * 2_000ms — when Daytona blipped on attempt 1, the session paid a flat 2s
+ * 2_000ms — when the provider blipped on attempt 1, the session paid a flat 2s
  * before the retry even started. We now do exponential backoff from 250ms:
  *   attempt 1 fail → 250ms → attempt 2 fail → 500ms → attempt 3 fail → 1000ms
  * Worst-case window is ~1.75s shorter while the retry coverage stays the same.
@@ -24,10 +24,7 @@ function errorMessage(error: unknown): string {
 }
 
 function isSnapshotStillBuilding(error: unknown): boolean {
-  if (error instanceof SnapshotStillBuildingError) return true;
-  // legacy: Daytona refuses a create from a snapshot it is still building with
-  // only this text. Delete when Daytona types the refusal.
-  return (error as Error | null)?.name?.startsWith('Daytona') === true && /snapshot .+ is building/i.test(errorMessage(error));
+  return error instanceof SnapshotStillBuildingError;
 }
 
 /** The failure keys every builder below drops before it writes its own. */

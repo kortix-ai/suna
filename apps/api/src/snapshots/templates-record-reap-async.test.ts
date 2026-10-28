@@ -72,7 +72,7 @@ describe('recordTemplateBuilt across providers', () => {
       [{ templateId: 'tpl', providerSnapshotName: 'kortix-default-old', provider: 'platinum', providerState: 'active' }],
       [],
     );
-    await recordTemplateBuilt('tpl', { snapshotName: 'kortix-default-new', contentHash: 'h', provider: 'daytona' });
+    await recordTemplateBuilt('tpl', { snapshotName: 'kortix-default-new', contentHash: 'h', provider: 'second' });
     for (let i = 0; i < 20; i++) {
       releaseDelete();
       await new Promise((resolve) => setTimeout(resolve, 1));

@@ -1588,7 +1588,7 @@ export async function resolveProjectGitAccessById(projectId: string): Promise<{
 
 // GET /v1/projects/:projectId/sandboxes
 // Available templates for this project: platform default + any `sandbox:`
-// `templates:` entries from kortix.yaml. Each row includes its live Daytona
+// `templates:` entries from kortix.yaml. Each row includes its live provider
 // state so the picker can show "ready" / "building" / "missing" at a glance.
 
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {

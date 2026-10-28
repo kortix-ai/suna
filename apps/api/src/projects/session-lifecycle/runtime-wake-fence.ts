@@ -372,8 +372,6 @@ export const RUNTIME_START_FAILURE_KEYS = [
 const AMBIGUOUS_START_ERROR_NAMES = new Set([
   'TimeoutError', // shared/with-timeout, AbortSignal.timeout, Platinum's call budget
   'AbortError',
-  'DaytonaTimeoutError',
-  'DaytonaConnectionError',
 ]);
 const AMBIGUOUS_START_ERROR_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ConnectionClosed']);
 

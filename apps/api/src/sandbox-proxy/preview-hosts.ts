@@ -15,7 +15,7 @@
  * `<a href="/learn">`, `fetch('/api')`, `url(/bg.png)`, `pushState('/x')`, a
  * service worker scoped to `/`, `new WebSocket('/hmr')`. Rewriting HTML cannot
  * close that set; only giving the app its own origin can. That is also why
- * every comparable product (Codespaces, ngrok, StackBlitz, Daytona's own proxy)
+ * every comparable product (Codespaces, ngrok, StackBlitz)
  * routes previews by hostname.
  *
  * There is a second reason. Under the path form, arbitrary sandbox code runs on

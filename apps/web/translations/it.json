@@ -1001,10 +1001,6 @@
         "description": "Rimuove il modello dal progetto. Le sessioni che lo usano già non subiranno modifiche.",
         "confirm": "Elimina"
       },
-      "provider": {
-        "legacy": "Legacy",
-        "legacyNote": "Daytona è un provider di fallback legacy. La sua rimozione è pianificata. Le sessioni Daytona esistenti continuano a funzionare per ora, ma Daytona non riceve nuove funzionalità né garanzia di supporto. Usate Platinum."
-      },
       "loadFailed": "Impossibile caricare i modelli sandbox:",
       "retry": "Riprova",
       "descriptionStart": "Ogni sessione parte da un modello sandbox, una macchina preparata con il repository già disponibile in",
@@ -10262,7 +10258,6 @@
       "text05cc7bb328c6": "git commit -am \"Descrivi la modifica\"",
       "text05da7af7e394": "Impossibile revocare il processo",
       "text05dcf5ae7043": "Output SHA-256",
-      "text888237b5222c": "Le sessioni non condividono mai un filesystem, una tabella dei processi o un namespace di rete. Su Platinum, il compute di Kortix e il provider di riferimento, il confine è una microVM Cloud Hypervisor. Daytona resta un fallback legacy, e vi diciamo su quale vi trovate.",
       "text05e7bb1645cd": "Il percorso completo",
       "text05f82c79bce3": "Nessun elemento corrisponde a \"{value0}\".",
       "text05fa2e3b0a10": "Numero di pagina",
@@ -10904,7 +10899,6 @@
       "text192173c3beda": "addebitato alle tue chiavi provider",
       "text19229283a276": "trigger kortix",
       "text1931491100e0": "Documento Word",
-      "text9c282c968d5e": "Il compute delle sandbox gira su Platinum. Daytona resta un fallback legacy, con rimozione pianificata. Le topologie completamente isolate si definiscono con noi, non in self-service.",
       "text19466f874498": "Scopri come funzionano i trigger",
       "text194e9fe656a1": "Intestazioni",
       "text1955194aaa79": "Un utente inviato compare in Members (come invito in sospeso fino al primo accesso).",
@@ -14549,7 +14543,6 @@
       "text83536ce31c42": "gmail.send_email",
       "text8353713597b6": "Prima il problema",
       "text83622a3d7d8e": "Chi impersona la connessione",
-      "text4752074ca727": "Su Platinum, il compute di Kortix e il provider di riferimento, una sandbox è una microVM Cloud Hypervisor. Daytona resta un fallback legacy, con rimozione pianificata. Vi diciamo su quale vi trovate, senza confonderli.",
       "text836cd8e8a791": "Istruzioni e script che questo agente può caricare in una sessione. Fare clic su una competenza per leggerla.",
       "text837988d39c32": "In quale sessione confluisce un avvio.",
       "text838198290fbc": "Assegna l'app: Users → apri un utente → \"Applications\" → \"+\" → aggiungi \"Kortix\" (oppure assegna l'app a un Role per provisionare tutti gli utenti di quel Role).",

@@ -890,7 +890,8 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     snapshot_name: t.snapshotName,
     content_hash: t.contentHash,
     built_from_commit: t.builtFromCommit,
-    daytona_state: t.daytonaState,
+    // Deprecated wire alias of provider_state, kept for SDK compatibility.
+    daytona_state: t.providerState,
     provider_state: t.providerState,
     ready: t.ready,
     ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),

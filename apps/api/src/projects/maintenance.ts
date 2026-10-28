@@ -7,7 +7,6 @@ import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { reconcileStaleBuilds } from '../snapshots/builder';
-import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { sweepAppRetention } from '../apps/retention';
 import { sweepAppVolumes } from '../apps/volumes';
@@ -83,8 +82,8 @@ export function maintenanceIntervalMs(): number {
 // the `finally` never runs and the lock is stuck `true` permanently — every
 // later tick then silently no-ops via `if (maintenanceRunning) return`, with
 // zero error logs, until the process restarts. That is exactly what happened
-// 2026-07-02 (unbounded Daytona SDK calls in sandbox-reaper.ts, now bounded —
-// see platform/providers/daytona.ts). Per-call timeouts fix the KNOWN cause;
+// 2026-07-02 (unbounded provider SDK calls in sandbox-reaper.ts, now
+// bounded). Per-call timeouts fix the KNOWN cause;
 // this watchdog protects against an UNKNOWN future one: if the lock has been
 // held for longer than any real cycle plausibly takes, a tick force-breaks it
 // (loudly) instead of leaving the loop dead for good.
@@ -374,7 +373,7 @@ function runMaintenanceSweeps() {
     // status with no running box behind them — invisible to the provider reaper
     // above (which keys off an `active` sandbox row). A stuck row reads as a
     // live session in every list and status view. DB-only, so it drains
-    // even while Daytona is throttling the box reaper.
+    // even while the provider is throttling the box reaper.
     () => reconcileStuckActiveSessions().catch((err) => {
       console.warn(
         '[project-maintenance] stuck-session reconcile failed:',
@@ -433,27 +432,8 @@ function runMaintenanceSweeps() {
       );
       return { checked: 0, closedReady: 0, closedFailed: 0 };
     }),
-    // GC superseded template snapshots (content-addressed names orphaned by
-    // every identity drift) before the 100/org Daytona quota fills up.
-    // Pressure-gated + bounded; no-op while the ORG total is small.
-    () => reconcileSnapshotQuota().catch((err) => {
-      console.warn(
-        '[project-maintenance] snapshot quota GC failed:',
-        err instanceof Error ? err.message : err,
-      );
-      return {
-        orgTotal: 0,
-        managedCount: 0,
-        eligible: 0,
-        deleted: 0,
-        deferred: 0,
-        budgetUnresolved: false,
-        dryRun: false,
-      };
-    }),
     // App deployment images (`kortix-app-<deploymentId>`): one per build,
-    // counted against Platinum's per-org template cap, never reclaimed by the
-    // Daytona-only quota GC above. Deletes only images whose deployment THIS
+    // counted against Platinum's per-org template cap. Deletes only images whose deployment THIS
     // database holds as unservable (App deleted, deployment failed/deleted),
     // after removing any runtime that still pins one. Bounded per pass.
     // Then retention: retire superseded deployments first (their images become
@@ -592,7 +572,6 @@ function logMaintenanceCycle(
     branches,
     computeTick,
     staleBuilds,
-    snapshotGc,
     appImages,
     connectorAttachments,
     promptAttachments,
@@ -625,7 +604,6 @@ function logMaintenanceCycle(
       computeTick.reconciled ||
       staleBuilds.closedReady ||
       staleBuilds.closedFailed ||
-      snapshotGc.deleted ||
       appImages.released ||
       appImages.runtimesRemoved ||
       appImages.errors ||
@@ -667,7 +645,6 @@ function logMaintenanceCycle(
       branches,
       computeTick,
       staleBuilds,
-      snapshotGc,
       appImages,
       connectorAttachments,
       promptAttachments,

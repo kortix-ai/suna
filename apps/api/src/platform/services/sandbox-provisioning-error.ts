@@ -49,7 +49,7 @@ export const SNAPSHOT_TOO_LARGE_MESSAGE =
  * fell through to `sandbox-provider`, whose copy blames the provider and tells
  * the user to "Try again" — for a build that can never succeed. Prod
  * 2026-09-16: a project's `kortix-tpl-` snapshot measured 10.04 GB against
- * Daytona's 10 GB cap, and every new Daytona session on that project either
+ * the legacy provider's 10 GB cap, and every new session on that project either
  * sat in `provisioning` or came back with "The sandbox provider could not
  * start this session. Try again." The 40 MB it was over was nowhere in the
  * message, so there was nothing to act on.
@@ -60,7 +60,7 @@ const SNAPSHOT_TOO_LARGE_PATTERN =
 /**
  * The provider organization's storage quota is full. Capacity, but not "a
  * minute": it frees only as the provider archives stopped boxes. Prod
- * 2026-10-06: Daytona answered "Total disk limit exceeded. Maximum allowed:
+ * 2026-10-06: the legacy provider answered "Total disk limit exceeded. Maximum allowed:
  * 40000GiB." to a pinned project for 13 hours, and every failed session said
  * "could not start this session. Try again."
  */
@@ -90,7 +90,7 @@ const GIT_AUTH_PATTERN =
  * check, plus the other policy throws (invalid consumer, missing policy, non-exact host).
  *
  * There is no longer a PROVIDER capability gap to distinguish it from: one mechanism serves
- * platinum and daytona alike, so
+ * every provider, so
  * the `unsupported-secret-delivery` category is never produced. It stays on the wire contract
  * because sandbox rows written before this change still carry it.
  */

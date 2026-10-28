@@ -92,7 +92,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     externalId: EXTERNAL_ID,
     sandboxId: SANDBOX,
     agentName: boundAgent,
-    provider: 'daytona',
+    provider: 'platinum',
   }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
   resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),

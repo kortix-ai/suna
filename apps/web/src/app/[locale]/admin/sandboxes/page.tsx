@@ -58,7 +58,6 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { SandboxProviderLabel } from '@kortix/ui/customize/sections/view/sandbox-provider-coverage';
 import {
   formatSandboxProvider,
-  isLegacySandboxProvider,
   sortSandboxProviders,
 } from '@kortix/ui/internal/lib/sandbox-providers';
 import { cn } from '@kortix/ui';
@@ -149,7 +148,6 @@ const RANGES = [
 
 export default function AdminSandboxesPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const tSandbox = useI18nTranslations('settings.sandbox');
   const ranges = useLocalizedUiCatalog(RANGES);
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
@@ -292,11 +290,7 @@ export default function AdminSandboxesPage() {
                 return (
                   <StatTile
                     key={p}
-                    label={
-                      isLegacySandboxProvider(p)
-                        ? `${formatSandboxProvider(p)} · ${tSandbox('provider.legacy')}`
-                        : formatSandboxProvider(p)
-                    }
+                    label={formatSandboxProvider(p)}
                     value={(countByProvider[p] ?? 0).toLocaleString()}
                     hint={tI18nComplete('text347cf684f3e7', { value0: pct })}
                   />
@@ -309,7 +303,7 @@ export default function AdminSandboxesPage() {
             title={tI18nComplete.raw('text43a857886565')}
             description={`${tI18nComplete('textf6668c33ea1a', {
               value0: dist ? ` (${formatSandboxProvider(dist.default)})` : '',
-            })}${allowed.some(isLegacySandboxProvider) ? ` ${tSandbox('provider.legacyNote')}` : ''}`}
+            })}`}
           >
             <AdminPanel className="space-y-5">
               {distQ.isLoading ? (

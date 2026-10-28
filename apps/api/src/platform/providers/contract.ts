@@ -1,9 +1,9 @@
 import { config } from '../../config';
 
-// Platinum is the reference provider; Daytona is a legacy fallback (removal
-// scheduled). E2B support is discontinued: a stored `e2b` row resolves through
-// tryGetProvider() to null.
-export type ProviderName = 'platinum' | 'daytona';
+// Platinum is the only sandbox provider. E2B and Daytona support are removed:
+// a stored `e2b` or `daytona` row resolves through tryGetProvider() to null,
+// and getProvider() throws RemovedProviderError for it.
+export type ProviderName = 'platinum';
 
 export class WarmRuntimeUnavailableError extends Error {
   constructor(message: string) {
@@ -228,8 +228,8 @@ export interface SandboxProvider {
    * `active_sandbox_external_template_id` pin, so the running sandbox is the
    * precise warm image activation chose — the name path can drift behind a
    * truncated template list or an idempotent-adopt that reused a name. OPTIONAL:
-   * only providers with a durable external template id implement it (Platinum;
-   * Daytona keeps the name-only default). On a DEFINITIVE
+   * only providers with a durable external template id implement it
+   * (Platinum). On a DEFINITIVE
    * not-found (404 = GC'd pin) it MUST throw {@link SandboxTemplateNotFoundError}
    * so the caller can fall back to a name-boot; a transient 5xx throws a normal
    * (retryable) error and MUST NOT be turned into a name fallback.
@@ -263,7 +263,7 @@ export interface SandboxProvider {
   recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
   /**
    * Run one command as root inside the sandbox through the PROVIDER's own
-   * channel (Platinum `/exec`, Daytona toolbox) — independent of
+   * channel (Platinum `/exec`) — independent of
    * the in-box kortix-agent daemon, which is exactly what a legacy-runtime
    * bootstrap needs: the daemon being replaced cannot be the thing that
    * replaces it. Optional: a provider without an exec channel cannot be
@@ -276,8 +276,8 @@ export interface SandboxProvider {
    * Resolve a reachable upstream URL for an arbitrary port — the data path the
    * `/v1/p/<externalId>/<port>` reverse proxy forwards to. Unlike resolveEndpoint
    * (fixed at the agent port), this takes any port so user preview apps work too.
-   * EVERY provider must implement it: the proxy used to hardcode Daytona, which
-   * silently broke every other provider's runtime connection (502/503). Keeping
+   * EVERY provider must implement it: the proxy used to hardcode one provider,
+   * which silently broke every other provider's runtime connection (502/503). Keeping
    * it on the interface makes that regression a compile error.
    */
   resolveIngress(

@@ -5,7 +5,7 @@ import { PROJECT_ACTIONS } from '../iam/actions';
 // PATCH /v1/projects/:projectId/sandbox-provider — the ONE writer of the
 // project-wide sandbox-provider pin (provider-transition activation aside).
 // KRTX-1681: a security-audit agent session unblocked its own task by running
-// `kortix sandboxes provider daytona` through this route and flipped EVERY new
+// `kortix sandboxes provider <name>` through this route and flipped EVERY new
 // session in the project. A project-wide provider pin is a person's decision:
 // this suite pins the rule that a session-bound or agent-grant token is
 // refused here, whatever its kortix_permissions, while the web UI and a
@@ -113,7 +113,7 @@ function buildApp(principal: Principal) {
   return app;
 }
 
-function patchProvider(principal: Principal, body: Record<string, unknown> = { provider: 'daytona' }) {
+function patchProvider(principal: Principal, body: Record<string, unknown> = { provider: 'platinum' }) {
   return buildApp(principal).request(`/v1/projects/${PROJECT_ID}/sandbox-provider`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
@@ -158,7 +158,7 @@ describe('PATCH /v1/projects/:projectId/sandbox-provider — agent sessions cann
     const response = await patchProvider({ authType: 'supabase' });
 
     expect(response.status).toBe(200);
-    expect(transitionCalls).toEqual([{ projectId: PROJECT_ID, targetRaw: 'daytona' }]);
+    expect(transitionCalls).toEqual([{ projectId: PROJECT_ID, targetRaw: 'platinum' }]);
   });
 
   test("a human's personal access token (no session binding, no grant) still routes the pin write", async () => {

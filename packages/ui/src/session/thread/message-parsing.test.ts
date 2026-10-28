@@ -197,7 +197,7 @@ FAIL src/routes/sessions.test.ts
 
   test('lifts every tag out of the text and leaves the prose behind', () => {
     const { cleanText, notifications } = parseSystemNotifications(
-      'Done with the refactor.\n\n<task_completed>\nTask: Refactor the parser\n</task_completed>\n\n<snapshot_build_queued>\nProvider: daytona\n</snapshot_build_queued>',
+      'Done with the refactor.\n\n<task_completed>\nTask: Refactor the parser\n</task_completed>\n\n<snapshot_build_queued>\nProvider: platinum\n</snapshot_build_queued>',
     );
 
     expect(cleanText).toBe('Done with the refactor.');

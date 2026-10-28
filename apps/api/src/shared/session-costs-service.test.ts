@@ -681,7 +681,7 @@ describe('getSessionCostRecord service', () => {
             endedAt: null,
             billedThroughAt: '2026-07-01T11:02:00.000Z',
             cost: '0.25',
-            provider: 'daytona',
+            provider: 'platinum',
             state: 'active',
             cpuCores: 2,
             memoryGb: 4,

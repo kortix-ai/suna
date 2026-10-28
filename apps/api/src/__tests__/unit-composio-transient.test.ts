@@ -15,8 +15,8 @@
  * client timeout) is EXPECTED and retryable — the provider is momentarily
  * unavailable, not a Kortix code bug. This test proves the global
  * classification downgrades it to a retryable 503 + Retry-After WITHOUT
- * paging Sentry, mirroring the Platinum / git-mirror / Daytona / request-
- * deadline patterns. See shared/composio-transient.ts + http-errors.ts.
+ * paging Sentry, mirroring the Platinum / git-mirror / request-deadline
+ * patterns. See shared/composio-transient.ts + http-errors.ts.
  *
  * Deliberately NOT classified (must stay loud):
  *   - Composio 4xx (400 / 401 / 403 / 404 / 409 / 422) — a real request fault
@@ -24,7 +24,7 @@
  *   - Composio 429 — `executeComposio` already answers it at its call site as
  *     a real HTTP 429 + Retry-After (apps/api/src/connectors/composio.ts);
  *     an unguarded 429 that bubbles here should page until it gets the same
- *     call-site treatment (mirrors the Daytona 429-is-owned-elsewhere rule);
+ *     call-site treatment;
  *   - a bare Error that merely carries a 5xx-ish field — only the SDK's own
  *     error classes may be classified.
  *

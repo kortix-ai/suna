@@ -11,11 +11,11 @@ import {
 } from './sandbox-provisioning-error';
 
 describe('classifySandboxProvisioningFailure', () => {
-  // Prod 2026-10-06: a project pinned to Daytona failed 81% of its sessions
+  // Prod 2026-10-06: a project failed 81% of its sessions
   // because the provider organization's disk quota was full, and every one
   // told the user "could not start this session. Try again."
   test.each([
-    "Total disk limit exceeded. Maximum allowed: 40000GiB.\nConsider archiving your unused Sandboxes to free up available storage.\nTo increase concurrency limits, upgrade your organization's Tier by visiting https://app.daytona.io/dashboard/limits.",
+    'Total disk limit exceeded. Maximum allowed: 40000GiB.',
     'Disk quota exceeded',
     'storage quota exceeded for organization',
   ])('names a full provider storage quota as the cause: %s', (message) => {
@@ -145,7 +145,7 @@ describe('classifySandboxProvisioningFailure', () => {
   });
 
   // Prod 2026-09-16: a project's custom template measured 10.04 GB against
-  // Daytona's 10 GB ceiling. It classified as `sandbox-provider`, so the user
+  // the provider's 10 GB ceiling. It classified as `sandbox-provider`, so the user
   // was told the provider failed and to "Try again" — for a build that can
   // never succeed, with the 40 MB overage nowhere in the message.
   test.each([

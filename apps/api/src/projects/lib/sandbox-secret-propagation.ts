@@ -42,7 +42,7 @@ export interface ProjectSecretPropagationResult {
 /**
  * The coalesced public entry — see env-sync-coalescer.ts for the incident this
  * exists for (2026-08-21: looping secret writers × per-write fan-out throttled
- * the whole Daytona org). Callers keep their await semantics: an awaited call
+ * the whole provider org). Callers keep their await semantics: an awaited call
  * returns a report from a run that STARTED after their write, so the report
  * covers it; a burst shares one trailing run instead of stacking N fan-outs.
  */

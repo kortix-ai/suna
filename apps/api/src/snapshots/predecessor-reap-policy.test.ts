@@ -21,7 +21,7 @@ describe('isReapableTemplatePredecessor', () => {
   });
 
   test('rejects provider and unrelated image namespaces', () => {
-    expect(isReapableTemplatePredecessor('daytonaio/sandbox:latest')).toBe(false);
+    expect(isReapableTemplatePredecessor('library/sandbox:latest')).toBe(false);
     expect(isReapableTemplatePredecessor('kortix-meta-runtime')).toBe(false);
   });
 });

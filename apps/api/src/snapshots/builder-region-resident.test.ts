@@ -52,6 +52,6 @@ test('home-region projects and other providers never ask Platinum', async () => 
   process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
   const { calls, prepare } = prepareSpy('ready');
   expect(await templateRegionResident('p1', 'platinum', 'kortix-tpl-new', 3_000, { readMetadata: async () => ({}), prepare })).toBe(true);
-  expect(await templateRegionResident('p1', 'daytona', 'kortix-tpl-new', 3_000, { readMetadata: async () => ON, prepare })).toBe(true);
+  expect(await templateRegionResident('p1', 'second', 'kortix-tpl-new', 3_000, { readMetadata: async () => ON, prepare })).toBe(true);
   expect(calls).toEqual([]);
 });

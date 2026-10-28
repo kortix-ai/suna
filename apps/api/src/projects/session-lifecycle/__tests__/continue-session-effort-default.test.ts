@@ -27,7 +27,7 @@ let forwardedBodies: Array<Record<string, unknown>> = [];
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://kortix.test' },
   SANDBOX_VERSION: 'test',
-  KNOWN_PROVIDERS: ['platinum', 'daytona'],
+  KNOWN_PROVIDERS: ['platinum'],
 }));
 
 mock.module('../../../shared/db', () => ({

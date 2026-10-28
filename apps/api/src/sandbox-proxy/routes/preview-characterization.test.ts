@@ -13,7 +13,7 @@
 //   - the stopped-box wake policy at the forwarder (503 control_plane page vs
 //     JSON, auto-resume on user intent)
 //   - the retry/wake machinery (502/503 invalidate+retry, connection-refused
-//     wake-once, Daytona stopped-box 400 wake-once, the dead-signal erroring)
+//     wake-once)
 //   - redirect rewriting and CORS/cookie handling for originMode vs path form
 //   - resolvePreviewWsUpstream end to end (it is only ever mocked elsewhere)
 //   - public-share delegation: {kind:'public_share'} vs the path form
@@ -35,7 +35,7 @@ const ACTIVE_RECORD = {
   sessionId: 'sess-1',
   projectId: 'proj-1',
   accountId: 'acct-1',
-  provider: 'daytona',
+  provider: 'platinum',
   status: 'active',
   serviceKey: 'svc-key',
   baseUrl: 'https://provider.test',
@@ -140,8 +140,7 @@ mock.module('../../projects/sandbox-deadline', () => ({
   // shapes, not deadline grants — the writer stays silent here.
   extendSandboxDeadline: async () => {},
 }));
-// The pass-through matches the Daytona provider (`routeIngress` answers the
-// addressed port unchanged), which is the primary provider this suite models.
+// The pass-through `routeIngress` answers the addressed port unchanged.
 mock.module('../backend', () => ({
   loadSandbox: async () => (currentRecord === null ? null : { ...currentRecord }),
   routeSandboxIngress: (_record: unknown, request: { port: number }) => ({
@@ -600,70 +599,12 @@ describe('forwardToSandbox retry and wake', () => {
     expect(timeline?.[0]).toContain('ingress=');
     expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
   });
-
-  test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {
-    const down = () => new Response('failed to get runner info: no IP address found', { status: 400 });
-    queueFetch(down(), down(), down(), down());
-    const res = await forward({ port: 3000, path: '/' });
-    expect(res.status).toBe(400);
-    expect(await res.text()).toBe('failed to get runner info: no IP address found');
-    expect(fetchCalls).toBe(4);
-    expect(counts.wakeSandbox).toBe(1);
-    expect(counts.invalidatePreviewLink).toBe(3);
-    // The 400 was returned before the give-up path, so the row was never errored.
-    expect(counts.markSandboxErrored).toBe(0);
-  });
-
-  test('a dead signal followed by an unreachable network errors the row before the 502', async () => {
-    queueFetch(
-      new Response('failed to get runner info: no IP address found', { status: 400 }),
-      refused(),
-      refused(),
-      refused(),
-    );
-    const res = await forward({ port: 3000, path: '/' });
-    expect(res.status).toBe(502);
-    expect(fetchCalls).toBe(4);
-    expect(counts.wakeSandbox).toBe(1);
-    expect(counts.markSandboxErrored).toBe(1);
-  });
 });
 
 // ── provider-edge and signed-context auth failures ───────────────────────────
 
 describe('forwardToSandbox authentication failures', () => {
-  test('a Daytona ingress 401 on a GET drops the cached link once and succeeds on the retry', async () => {
-    const stale = () =>
-      new Response(
-        JSON.stringify({ statusCode: 401, code: 'UNAUTHORIZED', message: 'unauthorized: authentication failed: stale token' }),
-        { status: 401, headers: { 'content-type': 'application/json' } },
-      );
-    queueFetch(stale(), new Response('ok', { status: 200 }));
-    const res = await forward({ port: 3000, path: '/' });
-    expect(res.status).toBe(200);
-    expect(fetchCalls).toBe(2);
-    expect(counts.invalidatePreviewLink).toBe(1);
-  });
-
-  test('a Daytona ingress 401 on a write is never replayed — 503 with its code', async () => {
-    queueFetch(
-      new Response(
-        JSON.stringify({ statusCode: 401, code: 'UNAUTHORIZED', message: 'unauthorized: authentication failed: stale token' }),
-        { status: 401, headers: { 'content-type': 'application/json' } },
-      ),
-    );
-    const res = await forward({ method: 'POST', path: '/upload', port: 3000, body: bodyOf({ a: 1 }) });
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({
-      error: 'sandbox provider authentication unavailable',
-      code: 'sandbox_provider_auth_unavailable',
-      retry: true,
-    });
-    expect(fetchCalls).toBe(1);
-  });
-
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);

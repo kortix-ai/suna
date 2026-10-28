@@ -48,7 +48,7 @@ const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
 
 const { config } = await import('../config');
 
@@ -189,7 +189,7 @@ function resetState() {
     projectId: PROJECT_ID,
     branchName: SESSION_ID,
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: SESSION_ID,
     sandboxUrl: null,
     runtimeSessionId: null,
@@ -409,7 +409,7 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['platinum', 'daytona'],
+  templateBuildProviders: () => ['platinum'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -1377,7 +1377,7 @@ describe('project session runtime guards', () => {
           manifestPath: 'kortix.yaml',
           metadata: projectRow.metadata,
         },
-        providerName: 'daytona',
+        providerName: 'platinum',
         baseRef: 'main',
         agentName: 'kortix',
         allowProjectImage: false,
@@ -1689,7 +1689,7 @@ describe('project session runtime guards', () => {
         sessionId: sessionRow!.sessionId,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
@@ -1844,7 +1844,7 @@ describe('project session runtime guards', () => {
         sessionId: sessionRow!.sessionId,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
@@ -1873,7 +1873,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'running-provider-identity',
         baseUrl: null,
         status: 'active',
@@ -1901,7 +1901,7 @@ describe('project session runtime guards', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'provisioning',
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
     };
     sessionSandboxRows = [
       {
@@ -1909,7 +1909,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
@@ -1993,12 +1993,11 @@ describe('project session runtime guards', () => {
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): a box
+  // Incident 2026-08-17T20:40:03Z (a prod session): a box
   // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
-  // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
-  // This endpoint is polled every second and Daytona folds `stopping` and
-  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
-  // transitional read parked the row, settled the live turn's ledger
+  // provider_reconcile`, while the provider's own autostop was 720 minutes.
+  // This endpoint is polled every second and a provider can report a
+  // transitional state as `stopped`, so ONE transitional read parked the row, settled the live turn's ledger
   // `runtime_gone` and kicked the client into the wake flow with the turn's work
   // lost. Unlike account deletion or the orphan sweep, this caller has NOT
   // stopped the box itself — it is a pure observation, so it must confirm.
@@ -2006,7 +2005,7 @@ describe('project session runtime guards', () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       runtimeSessionId: 'ses_root_existing',
     };
@@ -2016,7 +2015,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-mid-turn',
         baseUrl: null,
         status: 'active',
@@ -2066,7 +2065,7 @@ describe('project session runtime guards', () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       runtimeSessionId: 'ses_root_existing',
     };
@@ -2076,7 +2075,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-mid-turn-confirmed',
         baseUrl: null,
         status: 'active',
@@ -2129,7 +2128,7 @@ describe('project session runtime guards', () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       runtimeSessionId: 'ses_root_existing',
     };
@@ -2139,7 +2138,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-mid-turn-recovered',
         baseUrl: null,
         status: 'active',
@@ -2339,7 +2338,7 @@ describe('project session runtime guards', () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'stopped',
       runtimeSessionId: 'ses_root_existing',
     };
@@ -2349,7 +2348,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-original-archived',
         baseUrl: null,
         status: 'stopped',
@@ -2668,7 +2667,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-missing-on-start',
         baseUrl: null,
         status: 'active',
@@ -3100,7 +3099,7 @@ describe('project session runtime guards', () => {
     };
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'failed',
       error: 'The sandbox provider is at capacity right now. Try again in a minute.',
       metadata: { pending_prompt: pendingPrompt },
@@ -3111,7 +3110,7 @@ describe('project session runtime guards', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: null,
         baseUrl: null,
         status: 'error',

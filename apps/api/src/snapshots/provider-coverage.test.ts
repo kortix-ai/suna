@@ -9,88 +9,68 @@ import {
 
 describe('sandbox template provider coverage', () => {
   test('every canonical provider is registered as a template-build provider (parity guard)', () => {
-    // Extends automatically as SANDBOX_TEMPLATE_PROVIDERS grows — this is the
-    // test the reinforcement asked for: adding a provider without wiring it
-    // in here fails loudly instead of silently under-covering it.
-    expect(SANDBOX_TEMPLATE_PROVIDERS).toEqual(['platinum', 'daytona']);
+    // Extends automatically as SANDBOX_TEMPLATE_PROVIDERS grows — adding a
+    // provider without wiring it in here fails loudly instead of silently
+    // under-covering it.
+    expect(SANDBOX_TEMPLATE_PROVIDERS).toEqual(['platinum']);
   });
 
-  test('synchronizes reusable templates to every enabled provider regardless of routing pins', () => {
+  test('builds only on an enabled, allowed provider; removed providers never build', () => {
     expect(enabledTemplateBuildProviders({
-      allowed: ['daytona', 'platinum'],
+      allowed: ['platinum'],
       isEnabled: () => true,
-    })).toEqual(['platinum', 'daytona']);
+    })).toEqual(['platinum']);
     expect(enabledTemplateBuildProviders({
-      allowed: ['daytona', 'platinum'],
-      isEnabled: (provider) => provider !== 'platinum',
-    })).toEqual(['daytona']);
-    // A legacy `e2b` entry is never a build provider: E2B support is discontinued.
+      allowed: ['platinum'],
+      isEnabled: () => false,
+    })).toEqual([]);
+    // Legacy `e2b` and `daytona` entries are never build providers: their support is removed.
     expect(enabledTemplateBuildProviders({
-      allowed: ['platinum', 'e2b'],
+      allowed: ['platinum', 'e2b', 'daytona'],
       isEnabled: () => true,
     })).toEqual(['platinum']);
   });
 
-  test('observes the current image independently on Platinum and Daytona', async () => {
+  test('observes the current image on Platinum', async () => {
     const calls: string[] = [];
-    const states = { daytona: 'active', platinum: 'building' } as const;
-
     const result = await observeTemplateProviderCoverage('kortix-default-current', {
       isProviderEnabled: () => true,
       getProvider: (provider) => ({
         getSnapshotState: async (snapshotName: string) => {
           calls.push(`${provider}:${snapshotName}`);
-          return states[provider];
+          return 'building';
         },
       }),
       now: () => new Date('2026-07-13T12:00:00.000Z'),
     });
 
-    expect(calls).toEqual([
-      'platinum:kortix-default-current',
-      'daytona:kortix-default-current',
-    ]);
+    expect(calls).toEqual(['platinum:kortix-default-current']);
     expect(result.map(({ provider, status, launch_ready }) => ({ provider, status, launch_ready })))
-      .toEqual([
-        { provider: 'platinum', status: 'building', launch_ready: false },
-        { provider: 'daytona', status: 'ready', launch_ready: true },
-      ]);
+      .toEqual([{ provider: 'platinum', status: 'building', launch_ready: false }]);
   });
 
   test.each(['missing', 'building', 'unknown', 'build_failed', 'removing'] as const)(
-    'Automatic reports active with Platinum active and another provider %s', (state) => {
-      const coverage = [
-        { provider: 'daytona', available: true, state },
-        { provider: 'platinum', available: true, state: 'active' },
-      ] as const;
-      expect(resolveRoutedTemplateState(coverage, null)).toBe('active');
-      expect(resolveRoutedTemplateState(coverage, 'daytona')).toBe(state);
+    'Automatic and a Platinum pin both report the Platinum state %s', (state) => {
+      const coverage = [{ provider: 'platinum', available: true, state }] as const;
+      expect(resolveRoutedTemplateState(coverage, null)).toBe(state);
+      expect(resolveRoutedTemplateState(coverage, 'platinum')).toBe(state);
     },
   );
 
-  test('automatic routing is ready while another enabled provider builds', () => {
-    const coverage = [
-      { provider: 'platinum', available: true, state: 'active' },
-      { provider: 'daytona', available: true, state: 'building' },
-    ] as const;
-
-    expect(resolveRoutedTemplateState(coverage, null)).toBe('active');
-    expect(resolveRoutedTemplateState(coverage, 'platinum')).toBe('active');
-  });
-
-  test('disabled providers are unavailable and do not block automatic readiness', async () => {
+  test('a disabled provider is unavailable and Automatic reads missing', async () => {
     const result = await observeTemplateProviderCoverage('snapshot', {
-      isProviderEnabled: (provider) => provider === 'platinum',
+      isProviderEnabled: () => false,
       getProvider: () => ({ getSnapshotState: async () => 'active' }),
       now: () => new Date('2026-07-13T12:00:00.000Z'),
     });
 
-    expect(result.find((item) => item.provider === 'daytona')).toMatchObject({
+    expect(result.find((item) => item.provider === 'platinum')).toMatchObject({
       available: false,
       status: 'unavailable',
       observed_at: null,
     });
-    expect(resolveRoutedTemplateState(result, null)).toBe('active');
+    expect(resolveRoutedTemplateState(result, null)).toBe('missing');
+    expect(resolveRoutedTemplateState(result, 'platinum')).toBe('unknown');
   });
 
   test('provider probe failures stay unknown rather than claiming not built', async () => {
@@ -106,29 +86,28 @@ describe('sandbox template provider coverage', () => {
 
   test('bounds a hung provider observation and reports unknown', async () => {
     const result = await observeTemplateProviderCoverage('snapshot', {
-      isProviderEnabled: (provider) => provider === 'daytona',
+      isProviderEnabled: () => true,
       getProvider: () => ({ getSnapshotState: () => new Promise(() => {}) }),
       now: () => new Date('2026-07-13T12:00:00.000Z'),
       observationTimeoutMs: 5,
     });
 
-    expect(result.find((item) => item.provider === 'daytona')).toMatchObject({
+    expect(result.find((item) => item.provider === 'platinum')).toMatchObject({
       status: 'unknown',
       state: null,
       launch_ready: false,
     });
   });
 
-  test('retains a valid configured pin for presentation while unavailable', () => {
-    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'daytona' }))
-      .toBe('daytona');
+  test('a removed-provider pin reads as no pin', () => {
+    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'platinum' }))
+      .toBe('platinum');
     expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'managed' }))
       .toBeNull();
-    // A legacy `e2b` pin is no longer valid: E2B support is discontinued.
+    // Legacy `e2b` and `daytona` pins are no longer valid: their support is removed.
     expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'e2b' }))
       .toBeNull();
-    expect(resolveRoutedTemplateState([
-      { provider: 'daytona', available: false, state: null },
-    ], 'daytona')).toBe('unknown');
+    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'daytona' }))
+      .toBeNull();
   });
 });

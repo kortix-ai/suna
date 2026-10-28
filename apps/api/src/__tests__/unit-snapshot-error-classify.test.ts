@@ -70,9 +70,9 @@ describe('classifySnapshotError', () => {
     )).toBe('dockerfile');
   });
 
-  test('Daytona provider / transport errors', () => {
+  test('provider / transport errors', () => {
     expect(classifySnapshotError('Your socket connection to the server was not read from or written to within the timeout period')).toBe('timeout'); // timeout wins, both non-fixable
-    expect(classifySnapshotError('daytona snapshot.create failed: bad gateway 502')).toBe('provider');
+    expect(classifySnapshotError('platinum template build failed: bad gateway 502')).toBe('provider');
     expect(classifySnapshotError('Snapshot with name kortix-snap-22d94e6f-933a11278b8e not found')).toBe('provider');
     expect(classifySnapshotError('ECONNRESET')).toBe('provider');
   });

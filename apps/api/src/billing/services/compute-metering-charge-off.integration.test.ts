@@ -19,9 +19,6 @@ const withDb = confirmed ? describe : describe.skip;
 // disabled for the whole file (each DB suite runs in its own process).
 Object.assign(process.env, {
   KORTIX_URL: 'http://127.0.0.1:1',
-  DAYTONA_API_KEY: 'compute-metering-charge-off-test',
-  DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-  DAYTONA_TARGET: 'us',
 });
 
 /** Provider status per external id; an Error makes the probe throw. */
@@ -83,7 +80,7 @@ async function sandbox(
     sessionId,
     accountId,
     projectId: project.project_id,
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: options.externalId === undefined ? `ext-${sandboxId}` : options.externalId,
     status: options.status ?? 'active',
     ...(options.createdAt ? { createdAt: new Date(options.createdAt) } : {}),

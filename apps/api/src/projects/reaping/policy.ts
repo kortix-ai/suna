@@ -40,8 +40,7 @@ export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction 
   // Provider already stopped/archived it (its own auto-stop, an admin, or a
   // webhook we missed) but our row still says active — reconcile + close billing.
   if (providerStatus === 'stopped') return 'reconcile-stopped';
-  // TERMINAL — the box is dead and will never run again (Daytona `error`,
-  // Platinum `failed`). Until 2026-07-29 this arrived here as 'unknown' and was
+  // TERMINAL — the box is dead and will never run again (Platinum `failed`). Until 2026-07-29 this arrived here as 'unknown' and was
   // treated as transient uncertainty forever, so the row stayed `active` and its
   // compute window billed wall-clock against a box that had not existed for
   // weeks. A terminal state is as actionable as a stop: reconcile and close.
@@ -67,8 +66,8 @@ export function isLifecycleTransitionInProgress(err: unknown): boolean {
 export function isAlreadyNotRunning(err: unknown): boolean {
   if (isProviderNotFound(err)) return true;
   // legacy: a stop refused because the box is already down carries no status
-  // or code on Daytona (400 "not started"); Platinum's `sandbox_not_running`
-  // 409 text matches too. Delete when the providers type this refusal.
+  // or code on the legacy provider (400 "not started"); Platinum's
+  // `sandbox_not_running` 409 text matches too. Delete when the providers type this refusal.
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return msg.includes('not started') || msg.includes('not running') || msg.includes('already stopped');
 }

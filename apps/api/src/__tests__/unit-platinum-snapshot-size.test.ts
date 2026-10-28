@@ -104,7 +104,7 @@ mock.module('../shared/platinum', () => ({
 
 // Capture the real fetch; install the 200-stub PER-TEST (beforeEach), NOT at
 // module load — a module-level override here is process-global in bun and was
-// clobbering sibling test files' fetch (it broke the daytona suite in combined runs).
+// clobbering sibling test files' fetch (it broke a sibling suite in combined runs).
 const originalFetch = globalThis.fetch;
 const stubFetch = Object.assign(
   async () => new Response('', { status: 200 }),
@@ -398,16 +398,8 @@ describe('Platinum size-cap build-failure classification', () => {
   });
 });
 
-describe('Daytona build payloads are unaffected by the Platinum build-size knob', () => {
-  test('daytona.ts has zero source coupling to PLATINUM_BUILD_SIZE_MB', async () => {
-    const { readFile } = await import('node:fs/promises');
-    const src = await readFile(join(import.meta.dir, '../snapshots/providers/daytona.ts'), 'utf8');
-    expect(src).not.toContain('PLATINUM_BUILD_SIZE_MB');
-    expect(src).not.toContain('platinumBuildSizeMb');
-    expect(src).not.toContain('PLATINUM_MAX_BUILD_SIZE_MB');
-  });
-
-  test('the shared DEFAULT_DISK_GB Daytona consumes is untouched by this change', async () => {
+describe('the shared build-context defaults are independent of the Platinum build-size knob', () => {
+  test('DEFAULT_DISK_GB, DEFAULT_MEMORY_GB and DEFAULT_CPU are untouched', async () => {
     const { DEFAULT_DISK_GB, DEFAULT_MEMORY_GB, DEFAULT_CPU } = await import('../snapshots/build-context');
     expect(DEFAULT_DISK_GB).toBe(20);
     expect(DEFAULT_MEMORY_GB).toBe(4);

@@ -1001,10 +1001,6 @@
         "description": "这会从项目中移除该模板。已经使用它的会话不受影响。",
         "confirm": "删除"
       },
-      "provider": {
-        "legacy": "旧版",
-        "legacyNote": "Daytona 是旧版后备提供商，已计划移除。现有 Daytona 会话暂时仍可运行，但 Daytona 不再获得新功能，也不提供支持保证。请使用 Platinum。"
-      },
       "loadFailed": "无法加载沙盒模板：",
       "retry": "重试",
       "descriptionStart": "每个会话都从沙盒模板启动。它是一台准备好的机器，您的仓库已检出到",
@@ -10262,7 +10258,6 @@
       "text05cc7bb328c6": "git commit -am \"Describe your change\"",
       "text05da7af7e394": "撤销审判失败",
       "text05dcf5ae7043": "输出 SHA-256",
-      "text888237b5222c": "会话之间从不共享文件系统、进程表或网络命名空间。在 Platinum（Kortix 自有的计算资源，也是参考提供商）上，边界是一台 Cloud Hypervisor microVM。Daytona 仍作为旧版后备保留，我们会告诉您使用的是哪一个。",
       "text05e7bb1645cd": "往返流程",
       "text05f82c79bce3": "没有项目匹配“{value0}”。",
       "text05fa2e3b0a10": "页码",
@@ -10904,7 +10899,6 @@
       "text192173c3beda": "计入您自己的 provider 密钥",
       "text19229283a276": "kortix triggers",
       "text1931491100e0": "Word 文档",
-      "text9c282c968d5e": "沙盒计算运行在 Platinum 上。Daytona 仍作为旧版后备保留，已计划移除。完全隔离的拓扑需与我们共同规划，而非自助配置。",
       "text19466f874498": "了解触发器的工作方式",
       "text194e9fe656a1": "标头",
       "text1955194aaa79": "推送的用户会显示在 Members 下（首次登录前会作为待接受邀请）。",
@@ -14549,7 +14543,6 @@
       "text83536ce31c42": "gmail.send_email",
       "text8353713597b6": "先解决问题",
       "text83622a3d7d8e": "连接以谁的身份运行",
-      "text4752074ca727": "在 Platinum（Kortix 自有的计算资源，也是参考提供商）上，沙盒是一台 Cloud Hypervisor microVM。Daytona 仍作为旧版后备保留，已计划移除。我们会明确告诉您使用的是哪一个，不会混为一谈。",
       "text836cd8e8a791": "该代理可以加载到会话中的指令和脚本。单击技能即可阅读。",
       "text837988d39c32": "触发时使用哪个会话。",
       "text838198290fbc": "分配应用：Users → 打开用户 →“Applications”→“+”→ 添加“Kortix”（或将应用分配给某个 Role，以便为该 Role 中的所有人 Provision）。",

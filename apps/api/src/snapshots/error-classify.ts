@@ -5,16 +5,16 @@
  * platform: no ready image means new sessions can't boot. To recover well we
  * need to know *why* a build failed so the UI can route it correctly — a
  * Dockerfile bug is fixable by an agent (edit the repo, open a CR), while a
- * dead dev tunnel or a Daytona gateway blip is infrastructure the user just
+ * dead dev tunnel or a provider gateway blip is infrastructure the user just
  * retries.
  *
  * The classifier is intentionally heuristic (regex over the error string) —
- * Daytona/Docker don't give us structured error codes. Order matters: the
+ * Providers and Docker don't give us structured error codes. Order matters: the
  * most specific buckets are checked first.
  */
 
 export type SnapshotErrorCategory =
-  /** The Daytona org hit its snapshot quota — builds fail org-wide until GC frees slots. */
+  /** The provider org hit its snapshot quota — builds fail org-wide until GC frees slots. */
   | 'quota'
   /** User's Dockerfile / build steps failed (RUN, COPY, apt-get, npm…). Fixable by an agent. */
   | 'dockerfile'
@@ -22,7 +22,7 @@ export type SnapshotErrorCategory =
   | 'layer'
   /** Kortix callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
   | 'tunnel'
-  /** Daytona transport / gateway / socket blip — transient provider infra. */
+  /** Provider transport / gateway / socket blip — transient provider infra. */
   | 'provider'
   /** Build exceeded its deadline or was orphaned by an API restart. */
   | 'timeout'
@@ -49,7 +49,7 @@ export interface SnapshotErrorInfo {
 
 const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
   // Org snapshot quota exhausted — most specific, must outrank 'provider'
-  // (the raw message usually contains 'daytona'/'snapshot' too).
+  // (the raw message usually contains 'snapshot' too).
   {
     category: 'quota',
     test: /quota|snapshot limit|limit of \d+ snapshots|maximum number of snapshots|too many snapshots|snapshot count/i,
@@ -74,10 +74,10 @@ const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
     category: 'timeout',
     test: /orphaned|timed out|timeout|deadline|exceeded the time/i,
   },
-  // Daytona transport / gateway flakiness.
+  // Provider transport / gateway flakiness.
   {
     category: 'provider',
-    test: /daytona|snapshot with name .* not found|socket connection|idle connection|socket hang up|bad gateway|\bgateway\b|\b50[234]\b|econnreset|econnrefused|etimedout|\beof\b|network error/i,
+    test: /snapshot with name .* not found|socket connection|idle connection|socket hang up|bad gateway|\bgateway\b|\b50[234]\b|econnreset|econnrefused|etimedout|\beof\b|network error/i,
   },
   // A step in the KORTIX-INJECTED runtime layer failed — the user's Dockerfile is
   // fine and an agent "fixing" it can only make things worse. MUST outrank
@@ -117,7 +117,7 @@ export function classifySnapshotError(raw: string | null | undefined): SnapshotE
 const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> = {
   quota: {
     title: 'Snapshot quota reached',
-    hint: 'The Daytona organization hit its snapshot limit. Superseded snapshots are garbage-collected automatically by the maintenance sweep — retry in a few minutes, or delete unused sandbox templates.',
+    hint: 'The sandbox provider organization hit its snapshot limit. Delete unused sandbox templates, then retry.',
     fixableByAgent: false,
   },
   dockerfile: {
@@ -142,7 +142,7 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
   },
   provider: {
     title: 'Sandbox provider error',
-    hint: 'Daytona returned a transport/gateway error while building. This is usually transient — retry the build.',
+    hint: 'The sandbox provider returned a transport/gateway error while building. This is usually transient — retry the build.',
     fixableByAgent: false,
   },
   timeout: {

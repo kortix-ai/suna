@@ -1,5 +1,5 @@
 // KRTX-471: a proxied request whose cached ingress link is stale pays a
-// provider round-trip (Platinum's POST /expose, Daytona's preview link)
+// provider round-trip (Platinum's POST /expose)
 // inline before it dials. The request-context split counted none of it, so a
 // latency spike here read as unexplained API time — the ~5 s give-ups this
 // issue investigated carried only the failed daemon dials in `upstream_ms`.

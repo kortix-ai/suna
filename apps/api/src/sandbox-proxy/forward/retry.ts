@@ -27,7 +27,6 @@ import {
   isUploadRequest,
 } from '../preview-retry-budget';
 import { releasePromptDelivery } from '../prompt-dedupe';
-import { isProviderIngressAuthFailure } from '../provider-auth';
 import { portFailureHop } from '../proxy-hop';
 import { shouldBypassIngressCache } from '../sse-stall';
 import type { ForwardRequest, ForwardState } from './context';
@@ -220,8 +219,8 @@ async function forwardAttempt(
 
 /**
  * The upstream statuses this proxy acts on instead of passing through: a
- * provider auth failure, a redirect, a rejected signed context, the daemon's
- * not-ready 503, a port-not-ready 502/503, and Daytona's stopped-box 400.
+ * redirect, a rejected signed context, the daemon's not-ready 503, and a
+ * port-not-ready 502/503.
  * Returns the response to send, `'retry'` for another attempt, or null to
  * pass the upstream response through.
  */
@@ -235,27 +234,6 @@ async function handleUpstreamFailureStatus(
 ): Promise<Response | 'retry' | null> {
   const { sandboxId, port, method, remainingPath, origin, redirectPrefix, record, userId, serviceKey, promptDedupeKey, incomingHeaders, upstreamPort, ptl, turn } = req;
   const { nonReplayableWrite } = plan;
-  // A resumed Daytona sandbox can reject a cached preview token. Its edge
-  // answers either JSON 401 or a login redirect; neither is the daemon's
-  // signed-context refusal. Drop every transport's cached link for this
-  // port and refresh once for reads. Never replay a write here.
-  if (await isProviderIngressAuthFailure(record.provider, upstream)) {
-    await upstream.body?.cancel().catch(() => {});
-    invalidatePreviewLink(sandboxId, port);
-    if (!state.providerCredentialsRefreshed && (method === 'GET' || method === 'HEAD') && attempt < MAX_RETRIES) {
-      state.providerCredentialsRefreshed = true;
-      return 'retry';
-    }
-    await turn.abandon();
-    // The provider rejected authentication before the daemon received it.
-    if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
-    return jsonProxyError({
-      error: 'sandbox provider authentication unavailable',
-      code: 'sandbox_provider_auth_unavailable',
-      retry: true,
-    }, 503, origin);
-  }
-
   if (upstream.status >= 300 && upstream.status < 400) {
     await turn.abandon();
     if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
@@ -281,9 +259,7 @@ async function handleUpstreamFailureStatus(
     return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
   }
 
-  // Daytona returns various error codes when the sandbox isn't ready:
-  //   400 "no IP address found" — sandbox is stopped
-  //   400 "failed to get runner info" — sandbox is archived (no runner)
+  // The provider edge answers these while the sandbox is not ready:
   //   502 — container started but the port isn't listening yet
   //   503 — sandbox service temporarily unavailable
   // Retry with auto-wake so users don't see errors during the boot window.
@@ -373,39 +349,7 @@ async function handleUpstreamFailureStatus(
 
   if (upstream.status === 400) {
     const bodyText = await upstream.text();
-    // legacy allowlist: Daytona's edge marks a stopped or archived box only
-    // with this 400 text, no code. Delete when Daytona types the answer.
-    const isSandboxDown =
-      bodyText.includes('no IP address found') ||
-      bodyText.includes('failed to get runner info');
-    // Daytona rejected this BEFORE opencode — the box has no runner, so the
-    // prompt certainly was not enqueued. On the last attempt we stop
-    // retrying and pass the 400 through, and the dedupe claim must go with
-    // it: otherwise the client's retry under the same Idempotency-Key hits
-    // the bogus 200 "duplicate" and the message is lost. (Reviewer caught
-    // this: the retry guard used to be part of THIS condition, so the final
-    // attempt fell through holding the claim.)
-    if (isSandboxDown && attempt >= MAX_RETRIES && promptDedupeKey) {
-      releasePromptDelivery(promptDedupeKey);
-    }
-    if (isSandboxDown && attempt < MAX_RETRIES) {
-      state.sawDeadSignal = true; // confirmed-dead → erroring the row is justified
-      if (!state.wakeTriggered) {
-        console.warn(
-          `[PREVIEW] Sandbox ${sandboxId} is stopped/archived (Daytona: ${bodyText.slice(0, 120)}), triggering wake`,
-        );
-        await wakeSandbox(sandboxId);
-        state.wakeTriggered = true;
-      } else {
-        console.warn(
-          `[PREVIEW] Sandbox ${sandboxId} still booting (attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
-        );
-      }
-      invalidatePreviewLink(sandboxId, port);
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-      return 'retry';
-    }
-    // Not a Daytona stopped error — a definitive 400, never enqueued. Pass it
+    // A definitive 400, never enqueued. Pass it
     // through and let a same-key retry deliver.
     await turn.abandon();
     if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
@@ -457,9 +401,7 @@ async function recoverFromAttemptError(
   // enqueue the message twice or write the file twice. Only retry when the
   // error PROVES nothing reached the box (the upstream refused the
   // connection). Any other error stops here and returns the friendly
-  // unreachable response below. (The Daytona "no IP / no runner" 400 branch —
-  // a rejection before opencode — retries in the response path above, which
-  // is safe.)
+  // unreachable response below.
   if (
     state.promptDeliveryMayHaveReachedUpstream &&
     plan.nonReplayableWrite &&

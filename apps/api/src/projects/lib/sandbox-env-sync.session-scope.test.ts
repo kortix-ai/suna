@@ -100,7 +100,7 @@ function row(externalId: string): SandboxRow {
   return {
     externalId,
     sessionId: `sess-${externalId}`,
-    provider: 'daytona',
+    provider: 'platinum',
     config: { serviceKey: `svc-${externalId}` },
     metadata: null,
   };

@@ -16,7 +16,7 @@
  * silent), and once more when it CLEARS. The numbers are in every line.
  *
  * No build failure was observed in that window — the eviction it reports is a
- * Daytona org limit and prod now bakes mostly on Platinum — so this is a
+ * provider org limit — so this is a
  * capacity decision for an operator (raise the quota, or gate the warm bake),
  * not something the GC can fix by sweeping harder.
  */

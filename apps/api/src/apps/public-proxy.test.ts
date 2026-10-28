@@ -9,7 +9,6 @@ const {
   appPublicResponseHeaders,
   appPublicStatusResponse,
   appColdStartUpstreamResponse,
-  appProviderStoppedResponse,
   appRuntimeNeedsWake,
   appEdgeSignature,
   appUpstreamHeaders,
@@ -22,11 +21,6 @@ const { createAppAccessToken } = await import('./access');
 const { config } = await import('../config');
 
 describe('Apps public edge', () => {
-  test('recognises a dead Daytona runtime by its 400 shape', () => {
-    expect(appProviderStoppedResponse('daytona', 400, 'no IP address found')).toBe(true);
-    expect(appProviderStoppedResponse('daytona', 502, 'port is not open')).toBe(false);
-  });
-
   const projectApp = {
     appId: '11111111-1111-4111-8111-111111111111',
     accountId: '99999999-9999-4999-8999-999999999999',
@@ -489,18 +483,6 @@ describe('Apps public edge', () => {
     expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, false, 502)).toBeNull();
     expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, true, 500)).toBeNull();
     expect(appColdStartUpstreamResponse(request, { name: 'Storefront' }, true, 404)).toBeNull();
-  });
-
-  test('classifies only Daytona provider-stopped 400 responses as wake signals', () => {
-    expect(appProviderStoppedResponse(
-      'daytona',
-      400,
-      'bad request: failed to resolve container IP: no IP address found. Is the Sandbox started?',
-    )).toBe(true);
-    expect(appProviderStoppedResponse('daytona', 400, 'failed to get runner info')).toBe(true);
-    expect(appProviderStoppedResponse('daytona', 400, 'application validation failed')).toBe(false);
-    expect(appProviderStoppedResponse('platinum', 400, 'no IP address found')).toBe(false);
-    expect(appProviderStoppedResponse('daytona', 502, 'no IP address found')).toBe(false);
   });
 
   test('allows Apps to render inside Kortix while preserving the rest of the upstream CSP', () => {

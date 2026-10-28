@@ -69,7 +69,7 @@ mock.module('../shared/db', () => ({
               agentName: null,
               projectId: 'proj-1',
               accountId: 'acct-1',
-              provider: 'daytona',
+              provider: 'platinum',
               status: 'stopped',
               baseUrl: null,
               config: {},

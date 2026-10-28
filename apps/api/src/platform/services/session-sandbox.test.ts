@@ -48,7 +48,7 @@ const SANDBOX_ID = '00000000-0000-4000-a000-00000000a001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a002';
 const PROJECT_ID = '00000000-0000-4000-a000-00000000a003';
 const USER_ID = '00000000-0000-4000-a000-00000000a004';
-const EXTERNAL_ID = 'ext-daytona-1';
+const EXTERNAL_ID = 'ext-platinum-1';
 
 // ── mutable test state, reset in beforeEach ─────────────────────────────────
 let insertedSandboxRows: Array<Record<string, unknown>> = [];
@@ -102,7 +102,7 @@ let activeRouting: {
 } | null = null;
 let agentGrantError: Error | null = null;
 const testConfig = {
-  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum'],
   KORTIX_URL: 'http://localhost:8008',
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
@@ -186,7 +186,7 @@ mock.module('../../shared/db', () => ({
           }
           const isRecoveryClaim =
             table === sessionSandboxes &&
-            updates.provider === 'daytona' &&
+            updates.provider === 'platinum' &&
             updates.status === 'provisioning' &&
             'config' in updates;
           if (isRecoveryClaim) {
@@ -200,7 +200,7 @@ mock.module('../../shared/db', () => ({
                       sessionId: SANDBOX_ID,
                       accountId: ACCOUNT_ID,
                       projectId: PROJECT_ID,
-                      provider: 'daytona',
+                      provider: 'platinum',
                       externalId: null,
                       status: 'provisioning',
                       baseUrl: null,
@@ -237,7 +237,7 @@ mock.module('../providers', () => ({
         throw new Error(createError);
       }
       return {
-        externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
+        externalId: `ext-${name}-1`,
         baseUrl: 'https://sandbox.test',
         metadata: {},
       };
@@ -439,7 +439,7 @@ function baseOpts() {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     userId: USER_ID,
-    provider: 'daytona' as const,
+    provider: 'platinum' as const,
     gitProject: { defaultBranch: 'main' } as unknown as Parameters<
       typeof provisionSessionSandbox
     >[0]['gitProject'],
@@ -726,8 +726,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         built: false,
       },
     ];
-    providerCreateErrors.daytona = `snapshot ${legacyProjectImageName} not found`;
-    providerCreateErrorLimits.daytona = 3;
+    providerCreateErrors.platinum = `snapshot ${legacyProjectImageName} not found`;
+    providerCreateErrorLimits.platinum = 3;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -735,7 +735,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'platinum' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-base-intact');
   });
@@ -757,8 +757,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         built: true,
       },
     ];
-    providerCreateErrors.daytona = 'snapshot kortix-default-stale not found';
-    providerCreateErrorLimits.daytona = 3;
+    providerCreateErrors.platinum = 'snapshot kortix-default-stale not found';
+    providerCreateErrorLimits.platinum = 3;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -766,7 +766,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'platinum' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-rebuilt');
   });
@@ -858,7 +858,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       providerExternalId: 'ext-platinum-1',
       runtimeArtifact: { provider: 'platinum', artifactType: 'platinum_template' },
     });
-    expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('daytonaSandboxId');
     expect(computeSessionsOpened[0]).toMatchObject({ provider: 'platinum' });
   });
 
@@ -874,11 +873,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     expect(providerNamesRequested).toEqual(['platinum']);
     expect(providerCreateCalls).toBe(3);
-    expect(
-      updateCalls.some(
-        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
-      ),
-    ).toBe(false);
   });
 
   test('an unused project auto-session surfaces terminal provisioning failure', async () => {
@@ -907,26 +901,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       failureCategory: 'provider-capacity',
       errorMessage: 'The sandbox provider is at capacity right now. Try again in a minute.',
     });
-  });
-
-  test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
-    providerFallbackEnabled = true;
-    providerCreateErrors.platinum = 'Platinum unavailable';
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-    const { provider: _provider, ...automaticOpts } = baseOpts();
-
-    await provisionSessionSandbox(automaticOpts);
-    await opened;
-
-    expect(providerNamesRequested).toEqual(['platinum', 'daytona']);
-    expect(providerCreateCalls).toBe(4);
-    expect(
-      updateCalls.some(
-        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
-      ),
-    ).toBe(true);
   });
 
   test('authoritative row conflict fails closed before a second provider sandbox can be created', async () => {

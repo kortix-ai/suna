@@ -10,13 +10,12 @@ describe('isMissingRuntimeError — a start that found no box', () => {
     expect(isMissingRuntimeError(err('SandboxNotFoundError', 'Sandbox x not found'))).toBe(true);
   });
 
-  test("Daytona's gone-container text still counts, on Daytona's errors only", () => {
-    expect(isMissingRuntimeError(err('DaytonaError', 'failed to inspect sandbox container: No such container', { statusCode: 400 }))).toBe(true);
+  test('gone-container text alone is not a missing runtime', () => {
     expect(isMissingRuntimeError(err('PlatinumHttpError', 'platinum POST -> 500 no such container', { status: 500 }))).toBe(false);
   });
 
   test('a 500 whose message says "not found" is not a missing runtime', () => {
-    expect(isMissingRuntimeError(err('DaytonaError', 'runner not found for region', { statusCode: 500 }))).toBe(false);
+    expect(isMissingRuntimeError(err('PlatinumHttpError', 'runner not found for region', { status: 500 }))).toBe(false);
     expect(isMissingRuntimeError(new Error('config key not found'))).toBe(false);
   });
 });

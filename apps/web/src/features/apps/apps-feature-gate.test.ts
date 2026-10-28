@@ -347,8 +347,8 @@ test('Delete lives in the App settings modal, behind a confirm, never in the bar
 test('internal infrastructure names are not shown to App owners', () => {
   const view = appsSource();
 
-  // `hosting_provider` is the sandbox fleet a build landed on ("daytona",
-  // "platinum") — something the reader neither chose nor can change. It was
+  // `hosting_provider` is the sandbox fleet a build landed on
+  // ("platinum") — something the reader neither chose nor can change. It was
   // printed on every version row where the age should have been.
   expect(view).not.toContain('deployment.hosting_provider');
   expect(view).toContain('relativeTime(deployment.created_at)');

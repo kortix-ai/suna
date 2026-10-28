@@ -542,10 +542,6 @@ const catalog = {
         "description": "This removes the template from the project. Sessions already using it are unaffected.",
         "confirm": "Delete"
       },
-      "provider": {
-        "legacy": "Legacy",
-        "legacyNote": "Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum."
-      },
       "loadFailed": "Failed to load sandbox templates:",
       "retry": "Retry",
       "descriptionStart": "Every session starts from a sandbox template — a prepared machine with your repository already checked out at",

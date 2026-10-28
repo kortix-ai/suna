@@ -165,8 +165,8 @@ describe('isProxiedBaseReset', () => {
     expect(isProxiedBaseReset(8000, '/kortix/refresh', 'base=1')).toBe(true);
   });
 
-  test('refuses it on opencode 4096 too, which Daytona does not reroute', () => {
-    // Gating on 8000 alone left the direct-:4096 Daytona path open — the same
+  test('refuses it on opencode 4096 too, for an ingress that does not reroute', () => {
+    // Gating on 8000 alone left the direct-:4096 path open — the same
     // drift that made the session-visibility gate a cross-end-user leak.
     expect(isProxiedBaseReset(4096, '/kortix/refresh', 'base=1')).toBe(true);
   });

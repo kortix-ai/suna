@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SandboxProvider } from '../platform/providers';
+import { RemovedProviderError } from '../platform/providers/deprecated';
+import type { SandboxProviderName } from '../config';
 import type { SandboxProviderAdapter } from '../snapshots/providers';
 import {
   APP_CONTROL_PORT,
@@ -70,7 +72,7 @@ describe('AppHostingProvider', () => {
   test('builds the provider snapshot with the App runtime profile', async () => {
     const { hosting, builds } = dependencies();
     await hosting.buildImage({
-      provider: 'daytona',
+      provider: 'platinum',
       snapshotName: 'kortix-app-deployment-1',
       slug: 'hello',
       sourceDir: '/tmp/source',
@@ -87,7 +89,6 @@ describe('AppHostingProvider', () => {
         sourceDir: '/tmp/source',
         runtimeSpec: { static_root: '/usr/share/nginx/html' },
       },
-      spec: { cpu: 1, memoryGb: 2, diskGb: 10 },
     });
   });
 
@@ -113,7 +114,7 @@ describe('AppHostingProvider', () => {
   test('creates an App workload with only the derived appd token', async () => {
     const { hosting, creates, appRuntimeStarts } = dependencies();
     const result = await hosting.createRuntime({
-      provider: 'daytona',
+      provider: 'platinum',
       runtimeId: 'runtime-1',
       accountId: 'account-1',
       userId: 'user-1',
@@ -139,24 +140,22 @@ describe('AppHostingProvider', () => {
     expect(appRuntimeStarts).toEqual(['box-1']);
   });
 
-  test('an always-on App is persistent on Platinum and keeps the provider backstop elsewhere', async () => {
+  test('an always-on App is persistent on Platinum; a scale-to-zero App keeps the provider backstop', async () => {
     const input = {
       runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
       snapshotName: 'kortix-app-deployment-1', machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 }, alwaysOn: true,
     };
     const { hosting, creates } = dependencies();
     await hosting.createRuntime({ ...input, provider: 'platinum' });
-    await hosting.createRuntime({ ...input, provider: 'daytona' });
     await hosting.createRuntime({ ...input, provider: 'platinum', alwaysOn: false });
-    // Daytona would clamp 0 to a 1-minute stop; keep-alive renews the backstop instead.
-    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined, undefined]);
+    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined]);
   });
 
   test('restarts the App runtime daemon after provider start and cold wake', async () => {
     const { hosting, appRuntimeStarts } = dependencies();
 
-    await hosting.start('daytona', 'box-1');
-    await hosting.ensureRunning('daytona', 'box-1');
+    await hosting.start('platinum', 'box-1');
+    await hosting.ensureRunning('platinum', 'box-1');
 
     expect(appRuntimeStarts).toEqual(['box-1', 'box-1']);
   });
@@ -176,7 +175,7 @@ describe('AppHostingProvider', () => {
     } as unknown as SandboxProvider;
     const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
 
-    await hosting.start('daytona', 'box-1');
+    await hosting.start('platinum', 'box-1');
 
     expect(events).toEqual(['start', 'status', 'status', 'appd']);
   });
@@ -248,13 +247,13 @@ describe('AppHostingProvider', () => {
     } as unknown as SandboxProvider;
     const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
 
-    await hosting.stop('daytona', 'box-1');
+    await hosting.stop('platinum', 'box-1');
 
     expect(events).toEqual(['stop', 'status']);
   });
 
   test('resolves a stop that conflicts with a provider state change once the sandbox settles stopped', async () => {
-    // Daytona rejects a stop with 409 "Sandbox state change in progress" while
+    // A provider rejects a stop with 409 "Sandbox state change in progress" while
     // a concurrent lifecycle transition moves the sandbox. The reported state
     // still reads running at that instant, so stop must wait for the
     // transition to settle instead of failing the request.
@@ -272,7 +271,7 @@ describe('AppHostingProvider', () => {
     } as unknown as SandboxProvider;
     const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
 
-    await hosting.stop('daytona', 'box-1');
+    await hosting.stop('platinum', 'box-1');
 
     expect(events).toEqual(['stop', 'status', 'stop', 'status']);
   });
@@ -294,7 +293,7 @@ describe('AppHostingProvider', () => {
     } as unknown as SandboxProvider;
     const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
 
-    await hosting.stop('daytona', 'box-1');
+    await hosting.stop('platinum', 'box-1');
 
     expect(events).toEqual(['stop', 'status', 'stop']);
   });
@@ -341,12 +340,13 @@ describe('AppHostingProvider', () => {
   test('remove is a no-op when the runtime provider can no longer be constructed', async () => {
     const hosting = new AppHostingProvider({
       runtimeProvider: () => {
-        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
+        throw new RemovedProviderError('daytona');
       },
     });
 
     // Resolves rather than rejecting; nothing to assert beyond no throw.
-    await hosting.remove('daytona', 'box-1');
+    // A stored legacy `daytona` row reaches here through a cast.
+    await hosting.remove('daytona' as SandboxProviderName, 'box-1');
   });
 
   test('polls authenticated appd status until the runtime is ready', async () => {
@@ -380,7 +380,7 @@ describe('AppHostingProvider', () => {
       sleep: async () => {},
     });
 
-    await hosting.waitUntilReady('daytona', 'box-1', 'runtime-1', 1_000);
+    await hosting.waitUntilReady('platinum', 'box-1', 'runtime-1', 1_000);
 
     expect(events).toEqual(['bootstrap']);
   });

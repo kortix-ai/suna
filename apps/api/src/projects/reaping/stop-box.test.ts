@@ -75,7 +75,7 @@ const row = {
   sandboxId: 'sb-1',
   sessionId: 'sess-1',
   externalId: 'ext-1',
-  provider: 'daytona' as const,
+  provider: 'platinum' as const,
 };
 
 const NOW = new Date('2026-08-15T00:05:00.000Z');

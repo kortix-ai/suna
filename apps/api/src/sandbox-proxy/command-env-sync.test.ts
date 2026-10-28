@@ -43,7 +43,7 @@ const RECORD = {
   sessionId: 'sess-1',
   externalId: 'ext-1',
   agentName: 'default',
-  provider: 'daytona',
+  provider: 'platinum',
 };
 
 function jsonHeaders(): Headers {
@@ -155,7 +155,7 @@ describe('isTurnStartEnvSync', () => {
 
   // THE HOLE THIS CLOSES. `shouldSyncProjectEnvBeforeProxy` answered `port !== 8000
   // ⇒ false` on the CLIENT-addressed port and never stripped the in-box
-  // `/proxy/<n>/` prefix. Daytona's `routeIngress` is a pass-through, so a prompt
+  // `/proxy/<n>/` prefix. A pass-through `routeIngress` keeps the port, so a prompt
   // addressed at :4096 kept `port === 4096` and skipped the secret refresh and the
   // grant re-mint while still getting the config convergence, which keys on
   // `isTurnStartRequest`. Both OpenCode halves count: a verified reload swaps
@@ -193,7 +193,7 @@ describe('runPrePromptEnvSync — a /command body', () => {
     const rec = recorder();
     expect(await runSync(rec, COMMAND_BODY)).toBe(null);
     expect(rec.envSync).toEqual([
-      { requestedAgent: 'writer', sessionId: 'sess-1', providerName: 'daytona' },
+      { requestedAgent: 'writer', sessionId: 'sess-1', providerName: 'platinum' },
     ]);
   });
 

@@ -15,7 +15,7 @@ const row = (over: Record<string, unknown> = {}) =>
     projectId: 'p',
     branchName: 'b',
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: 's',
     sandboxUrl: null,
     runtimeSessionId: null,

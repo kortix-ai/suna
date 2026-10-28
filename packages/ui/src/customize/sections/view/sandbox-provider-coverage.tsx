@@ -3,10 +3,7 @@ import type { SandboxTemplate } from '@kortix/sdk';
 import { useTranslations } from '../../../i18n';
 
 import { Badge } from '../../../primitives/badge';
-import {
-  formatSandboxProvider,
-  isLegacySandboxProvider,
-} from '../../../internal/lib/sandbox-providers';
+import { formatSandboxProvider } from '../../../internal/lib/sandbox-providers';
 
 export type ProviderCoverageEntry = NonNullable<SandboxTemplate['provider_coverage']>[number];
 export type ProviderCoverageStatus = ProviderCoverageEntry['status'];
@@ -14,19 +11,9 @@ export type SandboxProvider = ProviderCoverageEntry['provider'];
 
 export type SandboxProviderMode = 'automatic' | 'pinned';
 
-/** A provider's name, with a `Legacy` badge for the legacy fallback provider (Daytona). */
+/** A provider's name. */
 export function SandboxProviderLabel({ provider }: { provider: string }) {
-  const t = useTranslations('settings.sandbox');
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {formatSandboxProvider(provider)}
-      {isLegacySandboxProvider(provider) ? (
-        <Badge variant="muted" size="sm">
-          {t('provider.legacy')}
-        </Badge>
-      ) : null}
-    </span>
-  );
+  return <span className="inline-flex items-center gap-1.5">{formatSandboxProvider(provider)}</span>;
 }
 
 export function describeProviderCoverage(
@@ -56,12 +43,12 @@ export interface SandboxProviderBadgeCopy {
   states?: Partial<Record<ProviderCoverageStatus, string>>;
 }
 
-/** Every sandbox runs on Platinum: a deprecated provider's coverage is not shown. */
+/** Every sandbox runs on Platinum: another provider's coverage is not shown. */
 export function availableProviderCoverage(
   coverage: SandboxTemplate['provider_coverage'] | null | undefined,
 ): ProviderCoverageEntry[] {
   return (coverage ?? []).filter(
-    (item) => item.available && !isLegacySandboxProvider(item.provider),
+    (item) => item.available && item.provider === 'platinum',
   );
 }
 

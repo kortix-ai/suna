@@ -289,24 +289,6 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(scheduled).toBe(1);
   });
 
-  test('a box already staged on this build (Daytona): proceed — it converges at its next start', async () => {
-    let scheduled = 0;
-    const metadata = {
-      legacyRuntimeBootstrap: { state: 'staged', attempts: 1, manifestBuild: 1790538288, lastAttemptAt: '2026-09-26T23:00:00.000Z' },
-    };
-    const outcome = await guaranteeCurrentRuntimeOnOpen(
-      { ...row('sb-staged'), provider: 'daytona', metadata },
-      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
-      () => {
-        scheduled += 1;
-        return true;
-      },
-    );
-    expect(outcome.action).toBe('proceed');
-    expect(outcome.retry?.status).toBe('staged');
-    expect(scheduled).toBe(0);
-  });
-
   // A box whose only staleness is its own pending update, on a daemon with the
   // runtime-truth tick (`runtime_truth`, since 2026-09-27; the supervisor loop
   // shipped 2026-08-20), installs the update itself within minutes. A legacy

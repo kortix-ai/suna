@@ -153,7 +153,7 @@ export interface ProvisionSessionSandboxResult {
 }
 
 /**
- * Daytona occasionally drops an image between when we resolved it and when we
+ * A provider can drop an image between when we resolved it and when we
  * tried to boot from it — `snapshot.get` says active, then `sandbox.create`
  * says missing. Detect that one specific race so we can rebuild and retry once.
  */
@@ -256,9 +256,8 @@ export function sessionBootByTemplateIdEnabled(): boolean {
  *     image name, AND
  *   - MANDATORY provider-match: the pin belongs to the provider it was activated
  *     for — `routing.activeProvider === providerName`. This is what makes a
- *     rollback safe: a project reverted to Daytona with a leftover Platinum id
- *     pin (activeProvider='daytona') booting a Daytona session must use the NAME,
- *     never the stale Platinum id.
+ *     rollback safe: a project reverted to another provider with a leftover
+ *     Platinum id pin must boot by NAME, never the stale Platinum id.
  * `disabledForSession` lets the caller drop to name-boot after a 404 fallback.
  */
 export function decideSessionBoot(input: {
@@ -344,7 +343,7 @@ interface SessionProvisionState {
   provider: SessionSandboxProvider;
   firstImagePromise: Promise<FirstImage> | null;
   bgExternalId: string | null;
-  // Single retry hook: if Daytona's sandbox.create races a snapshot deletion
+  // Single retry hook: if the provider's create races a snapshot deletion
   // and reports "not found", we rebuild and retry once. More than once means
   // something is genuinely broken — surface the error.
   healedStaleSnapshot: boolean;
@@ -486,7 +485,7 @@ export async function provisionSessionSandbox(opts: {
   allowProjectImage?: boolean;
   /**
    * Extra env vars injected into the sandbox at provider create-time. These
-   * land in the Daytona snapshot's environment so its boot script can read
+   * land in the sandbox image's environment so its boot script can read
    * them (e.g. `KORTIX_PROJECT_REPO_URL`, `KORTIX_PROJECT_BRANCH`).
    *
    * A promise is awaited only where the provider input is built, so the env
@@ -497,7 +496,7 @@ export async function provisionSessionSandbox(opts: {
   /**
    * Project + ref the session boots against. The boot path resolves the
    * commit SHA for `baseRef` and asks the snapshot builder for the matching
-   * Daytona image — building inline if it doesn't exist yet. When `baseRef`
+   * provider image — building inline if it doesn't exist yet. When `baseRef`
    * is omitted, defaults to `gitProject.defaultBranch`.
    */
   gitProject: GitBackedProject;
@@ -590,8 +589,7 @@ export async function provisionSessionSandbox(opts: {
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
   // Cold-only: every session boots from its Dockerfile snapshot (the shared
   // default or a per-project template), resolved by ensureSandboxImage. No warm
-  // / stateful-snapshot fast path — Platinum and Daytona take the identical cold
-  // path.
+  // / stateful-snapshot fast path.
   state.firstImagePromise = (async () => {
     const gitProject = await resolveGitProject();
     // Parallel branch: note() keeps the main path's deltas truthful. These two
@@ -711,8 +709,7 @@ export async function provisionSessionSandbox(opts: {
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
-    // providerAutoStopBackstopMinutes() (Daytona → daytonaLifecycle(); Platinum →
-    // auto_stop_minutes). That timer is a LAST-RESORT backstop for a box this API
+    // providerAutoStopBackstopMinutes() (Platinum → auto_stop_minutes). That timer is a LAST-RESORT backstop for a box this API
     // can no longer reach — 12h, deliberately far above any real turn, because it
     // sees only inbound traffic and nothing resets it during a local tool run.
     // The primary stop is `deadline_at` (projects/sandbox-deadline.ts), enforced
@@ -750,7 +747,7 @@ async function resolveAttemptImage(
   branch: string,
 ): Promise<EnsureSandboxImageResult> {
   const { sandbox, providerCreateInput, tl } = ctx;
-  // Stateless image resolution: ask Daytona if it has the image; build if not.
+  // Stateless image resolution: ask the provider if it has the image; build if not.
   // No DB lookup, no degraded fallback — the snapshot is either there or we
   // build it inline. The build log captures the attempt for the dashboard;
   // it is never read on this path. The first attempt consumes the promise we
@@ -917,8 +914,8 @@ async function createAttemptSandbox(
   const createFn = bootDecision.bootByTemplateId
     ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
     : undefined;
-  // No provider edge is armed at create: one mechanism serves platinum
-  // and daytona alike. The guest holds a handle; the broker route substitutes server-side.
+  // No provider edge is armed at create: one mechanism serves every
+  // provider. The guest holds a handle; the broker route substitutes server-side.
   let result: ProvisionResult;
   let attempts: number;
   try {
@@ -1143,7 +1140,7 @@ async function activateProvisionedSandbox(
         providerExternalId: result.externalId,
         ...boot.box,
         runtimeArtifact: {
-          artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
+          artifactType: `${providerName}_template`,
           providerArtifactRef: state.imageInfo!.snapshotName,
           contentHash: state.imageInfo!.contentHash,
           sandboxSlug: state.imageInfo!.slug,
@@ -1267,7 +1264,7 @@ async function runProvisionAttempt(
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
   // generic provider fault. There is nothing to register with a provider —
-  // one mechanism serves platinum and daytona alike: the guest gets a HANDLE
+  // one mechanism serves every provider: the guest gets a HANDLE
   // and the broker route substitutes the real value server-side.
   await resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId);
   tl.note('network-boundary');
@@ -1434,7 +1431,7 @@ async function failSessionSandboxProvisioning(
   const { accountId } = opts;
   const { providerName, provider, bgExternalId } = state;
   // Keep provider SDK text in diagnostic metadata. Show one stable contract
-  // for Platinum, Daytona, and future providers.
+  // for every provider.
   // A project with drives runs on Platinum only: when Platinum cannot be
   // reached at all, say that, instead of a generic provider failure.
   const platinumUnreachable =

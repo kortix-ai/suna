@@ -7,7 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 // Defense-in-depth against the fleet-wide "Request timed out after 30s" class
 // of incident (2026-06-08). The real root cause was DB connection-pool
 // starvation (see packages/db/src/client.ts), but a secondary failure mode is
-// any handler that makes a slow downstream call (Daytona, connector, git host)
+// any handler that makes a slow downstream call (sandbox provider, connector, git host)
 // without its own timeout: it hangs until the frontend's 30s client abort,
 // holding server resources the whole time and surfacing as a confusing,
 // URL-only timeout in Better Stack.

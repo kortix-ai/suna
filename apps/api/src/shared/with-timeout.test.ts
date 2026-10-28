@@ -17,11 +17,11 @@ describe('withTimeout', () => {
   });
 
   test('rejects with a TimeoutError when the work never settles', async () => {
-    const p = withTimeout(never(), 50, 'Daytona get(sbx-1)');
+    const p = withTimeout(never(), 50, 'provider get(sbx-1)');
     await expect(p).rejects.toBeInstanceOf(TimeoutError);
     await p.catch((err: TimeoutError) => {
       expect(err.timeoutMs).toBe(50);
-      expect(err.message).toContain('Daytona get(sbx-1)');
+      expect(err.message).toContain('provider get(sbx-1)');
       expect(err.message).toContain('50ms');
     });
   });

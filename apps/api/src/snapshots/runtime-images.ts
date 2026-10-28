@@ -68,7 +68,7 @@ const META_SNAPSHOT_PREFIX = 'kortix-meta';
  * The meta image name, namespaced by environment.
  *
  * The namespace is not cosmetic — it is what makes the reap safe. dev,
- * staging and prod share one Daytona organisation (same API key), so an
+ * staging and prod can share one provider organisation (same API key), so an
  * un-namespaced reap running on dev would happily delete the image prod is
  * booting meta sandboxes from. Each environment can only ever see, and
  * therefore only ever delete, its own.
@@ -275,7 +275,7 @@ type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
  * Try the provider's agent-only swap instead of a full rebuild. Returns true iff
  * the new snapshot was produced by swapping just the kortix-agent binary into the
  * predecessor's rootfs. Conservative + CORRECT — fires ONLY when:
- *   • the provider supports it (Platinum; Daytona has no `swapAgent`),
+ *   • the provider supports it (Platinum's `swapAgent`),
  *   • a distinct predecessor snapshot exists (there's a real drift), and
  *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
  *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so

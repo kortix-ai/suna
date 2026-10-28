@@ -20,8 +20,8 @@
  * catalogue, connect flows, tool execution, sync) must NOT page Sentry for
  * it. `app.onError` calls `isComposioTransientProviderError` and downgrades
  * the failure to a retryable 503 + `Retry-After` WITHOUT paging Sentry,
- * mirroring the `PlatinumSandboxNotRunningError`, `GitOperationError:timeout`,
- * Daytona-transient and request-deadline patterns.
+ * mirroring the `PlatinumSandboxNotRunningError`, `GitOperationError:timeout`
+ * and request-deadline patterns.
  *
  * Deliberately NOT classified (must stay loud, falling through to the generic
  * capture):
@@ -33,8 +33,7 @@
  *     call site as a real HTTP 429 + `Retry-After`
  *     (apps/api/src/connectors/composio.ts); an unguarded 429 that bubbles
  *     into `app.onError` should page until it gets the same call-site
- *     treatment — the same ownership rule the Daytona classifiers follow
- *     (`isDaytonaRateLimitError` owns the 429 there);
+ *     treatment;
  *   - `APIUserAbortError` (a caller aborted the request) — not a provider
  *     failure at all.
  *

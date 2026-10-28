@@ -6,7 +6,7 @@
 // into the container's writable layer — which is node ephemeral storage. Over
 // many session-boot/bake builds these accumulate to GBs (observed ~20GB/pod),
 // fill the node disk, and trip kubelet DiskPressure → pods get evicted cluster-
-// wide. quota-gc.ts only reaps Daytona-side warm snapshots, not these local dirs.
+// wide. No provider-side sweep touches these local dirs.
 //
 // This sweep runs on EVERY replica (build contexts are created on any pod during
 // on-demand session boot, not just the leader) and removes kortix-* temp dirs

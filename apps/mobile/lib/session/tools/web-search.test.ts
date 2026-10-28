@@ -65,10 +65,10 @@ describe('web search list', () => {
     expect(single[0].caption).toBeUndefined();
 
     const multi = webSearchSourceSegments([
-      { query: 'site:daytona.io Daytona sandboxes', sources: [{ title: 'Daytona', url: 'https://daytona.io' }] },
+      { query: 'site:example.com Example widgets', sources: [{ title: 'Example', url: 'https://example.com' }] },
       { query: 'empty', sources: [] },
     ]);
-    expect(multi[0].caption).toBe('Daytona sandboxes on daytona.io');
+    expect(multi[0].caption).toBe('Example widgets on example.com');
     expect(multi[1].caption).toBeUndefined();
   });
 
@@ -83,8 +83,8 @@ describe('web search list', () => {
 describe('web search trigger', () => {
   test('one query: the humanised query, never the engine syntax', () => {
     expect(
-      webSearchTriggerLabel([{ query: 'site:daytona.io Daytona sandboxes', sources: [] }], 'ignored'),
-    ).toBe('Daytona sandboxes on daytona.io');
+      webSearchTriggerLabel([{ query: 'site:example.com Example widgets', sources: [] }], 'ignored'),
+    ).toBe('Example widgets on example.com');
   });
 
   test('several queries: "N searches"', () => {

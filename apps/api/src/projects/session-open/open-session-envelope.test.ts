@@ -168,7 +168,7 @@ function row(
 const VISIBLE = {
   row: {
     status: 'active',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     baseRef: null,
     agentName: 'default',
     runtimeSessionId: null,

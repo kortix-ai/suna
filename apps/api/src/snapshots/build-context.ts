@@ -3,13 +3,9 @@
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
  * runtime layer (agent binary + CLI + entrypoint + slack-cli +
- * opencode/agent-browser). Daytona ships this context to its build service via
- * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
- * from-build`. Staging the context here — once — guarantees the produced image
- * is byte-identical across providers and keeps the artifact paths in one place.
- *
- * Extracted verbatim from the Daytona adapter (no behaviour change); see
- * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
+ * opencode/agent-browser). Platinum ships it to `POST /v1/templates/
+ * from-build` (snapshots/providers/platinum.ts). Staging the context here —
+ * once — keeps the artifact paths in one place.
  */
 
 import { createHash } from 'node:crypto';
@@ -381,7 +377,7 @@ export async function stageBuildContext(
     // binary / the composed Dockerfile reaches the provider as a confusing remote
     // "Path does not exist", and the auto-build can't tell it's a staging miss to
     // recover from. Assert at the source so a miss is caught here AND is retryable
-    // (the daytona adapter re-stages on "staging incomplete").
+    // (the provider adapter re-stages on "staging incomplete").
     // It was declared and never called, so it guarded nothing.
     await assertContextComplete(contextDir, dockerfileName);
     console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
@@ -391,13 +387,11 @@ export async function stageBuildContext(
 
 
 // ── Buildah-portability guard ──────────────────────────────────────────────
-// The SAME composed context ships to BOTH providers. Daytona builds with
-// BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
-// builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+// Platinum builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
 // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
 // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
 // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
-// 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+// 2026-06-27) took dev down for hours because the legacy provider's BuildKit tolerated it.
 // Reject it at the SOURCE with a clear error instead of an opaque remote build
 // failure minutes later — and keep the Dockerfile portable to both builders.
 async function guardBuildahPortable(composed: string): Promise<void> {
@@ -409,7 +403,7 @@ async function guardBuildahPortable(composed: string): Promise<void> {
       `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
         `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
         `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
-        `directives work on Daytona but silently break every Platinum template build.`,
+        `directives work on BuildKit but silently break every Platinum template build.`,
     );
   }
 }

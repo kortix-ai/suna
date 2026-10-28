@@ -19,11 +19,10 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// Platinum is the reference provider. Daytona is a legacy fallback: its
-// removal is scheduled, existing Daytona sessions keep working for now, and it
-// gets no new features and no support guarantee. E2B support is discontinued;
-// the DB enum keeps `e2b` only so legacy rows stay readable.
-export type SandboxProviderName = 'platinum' | 'daytona';
+// Platinum is the only sandbox provider. E2B and Daytona support are removed
+// (Daytona on 2026-10-28); the DB enum keeps `e2b` and `daytona` only so
+// legacy rows stay readable.
+export type SandboxProviderName = 'platinum';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -413,7 +412,7 @@ const envSchema = z.object({
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
-  // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
+  // (consumed by the provider lifecycle). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
   // Mandatory declared agents. GATED OFF platform-wide by default — flipping it on would
@@ -427,10 +426,6 @@ const envSchema = z.object({
   // *declared* default_agent. Non-subject projects keep the v1 adopt-to-govern
   // behavior (absence of `[[agents]]` → unrestricted) untouched.
   KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
-
-  // Supabase Storage bucket holding the durable per-sandbox backup bundle
-  // (workspace files + OpenCode chat-history store). Source for rehydrate.
-  LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
 
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
   SLACK_SIGNING_SECRET: optStr,
@@ -545,21 +540,6 @@ const envSchema = z.object({
 
   // ── Billing — RevenueCat (optional) ──────────────────────────────────────
   REVENUECAT_WEBHOOK_SECRET: optStr,
-
-  // ── Daytona — LEGACY fallback provider (removal scheduled; use Platinum) ──
-  // Required only if ALLOWED_SANDBOX_PROVIDERS includes daytona.
-  // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
-  // boots from a per-project snapshot built by the snapshot builder
-  // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
-  // would silently bypass per-project Dockerfiles and is explicitly
-  // disallowed.
-  DAYTONA_API_KEY: optStr,
-  DAYTONA_SERVER_URL: optStr,
-  DAYTONA_TARGET: optStr,
-  // Org-level Daytona webhook signing secret (Svix `whsec_…`). When set, the
-  // /v1/billing/webhooks/daytona endpoint closes compute billing the instant a
-  // box stops; the reaper sweep is the backstop, so this is optional.
-  DAYTONA_WEBHOOK_SECRET: optStr,
 
   // When a template's content hash changes and a fresh snapshot is built, drop
   // the now-superseded predecessor immediately (reap-on-repoint) instead of
@@ -725,7 +705,7 @@ const envSchema = z.object({
   PLATINUM_API_URL: optStr,
   PLATINUM_TEMPLATE: optStr,
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
-  // once at registration). Optional — same backstop story as Daytona's.
+  // once at registration). Optional: the reaper sweep is the backstop.
   PLATINUM_WEBHOOK_SECRET: optStr,
   // Local development switch. `local` points the provider at a Platinum
   // control plane on this machine (PLATINUM_API_URL_LOCAL / _KEY_LOCAL);
@@ -742,10 +722,10 @@ const envSchema = z.object({
   // players (YouTube, Vimeo) work. Unset: pages are served from KORTIX_URL, opaque.
   ARTIFACT_CONTENT_URL: optStr,
   // Comma-separated. The first entry is the default for new sessions.
-  // Platinum is the reference; `daytona` is a legacy opt-in fallback.
+  // Only `platinum` is accepted; any other entry is ignored with a warning.
   ALLOWED_SANDBOX_PROVIDERS: optStrDefault('platinum'),
 
-  // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
+  // ── Sandbox lifecycle (auto-stop / auto-archive / auto-delete) ────────────
   // Set as SDK create() params so a box self-manages even if the API/tunnel
   // that created it dies (orphaned local-dev & ephemeral-env sessions are the
   // main leak source). All in MINUTES.
@@ -779,8 +759,7 @@ const envSchema = z.object({
   // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
   // the next open boots a fresh box on the volume. -1 keeps every stopped box.
   KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
-  // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
-  // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
+  // The PROVIDER-NATIVE idle timer (Platinum auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES above, which welded an idle-policy knob to
   // a provider-safety knob; see providerAutoStopBackstopMinutes() in
@@ -962,11 +941,12 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-// `e2b` is not listed: E2B support is discontinued, so the entry is ignored.
-export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['platinum', 'daytona'] as const;
+// `e2b` and `daytona` are not listed: their support is removed, so the entry
+// is ignored.
+export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['platinum'] as const;
 
 /**
- * Parse comma-separated provider list (e.g. "platinum,daytona"). `fallback` is
+ * Parse comma-separated provider list (e.g. "platinum"). `fallback` is
  * returned both when `raw` is empty and when every entry in it is unrecognised
  * — kept as a parameter (rather than hardcoding `['platinum']`) so a caller
  * whose empty/all-invalid answer should mean "nothing enabled" does not
@@ -1026,26 +1006,6 @@ function validateEnv(): z.infer<typeof envSchema> {
   const providerKeySuffix = billingOn
     ? ''
     : ' — agent sessions will fail until it is set (kortix self-host env set ...)';
-  if (providers.includes('daytona')) {
-    if (!raw.DAYTONA_API_KEY)
-      issues.push({
-        var: 'DAYTONA_API_KEY',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
-        level: providerKeyLevel,
-      });
-    if (!raw.DAYTONA_SERVER_URL)
-      issues.push({
-        var: 'DAYTONA_SERVER_URL',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
-        level: providerKeyLevel,
-      });
-    if (!raw.DAYTONA_TARGET)
-      issues.push({
-        var: 'DAYTONA_TARGET',
-        message: `Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona" (legacy fallback, removal scheduled; use platinum)${providerKeySuffix}`,
-        level: providerKeyLevel,
-      });
-  }
   if (providers.includes('platinum')) {
     if (!raw.PLATINUM_API_KEY)
       issues.push({
@@ -1356,7 +1316,6 @@ export const config = {
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
-  LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
   SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
@@ -1405,14 +1364,6 @@ export const config = {
   // ─── RevenueCat (Billing) ─────────────────────────────────────────────────
   REVENUECAT_WEBHOOK_SECRET: env.REVENUECAT_WEBHOOK_SECRET,
 
-  // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
-  // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
-  // sandbox boots from its project-specific snapshot resolved at session
-  // start time by apps/api/src/snapshots/builder.ts.
-  DAYTONA_API_KEY: env.DAYTONA_API_KEY,
-  DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
-  DAYTONA_TARGET: env.DAYTONA_TARGET,
-  DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
   KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
@@ -1615,8 +1566,6 @@ export const config = {
   isProviderEnabled(name: SandboxProviderName): boolean {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
-      case 'daytona':
-        return !!this.DAYTONA_API_KEY;
       case 'platinum':
         return !!this.PLATINUM_API_KEY;
       default: {

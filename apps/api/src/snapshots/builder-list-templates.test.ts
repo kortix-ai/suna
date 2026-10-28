@@ -28,7 +28,7 @@ const HEALTHY_TEMPLATE = {
   name: 'Default',
   isShared: true,
   source: 'platform' as const,
-  provider: 'daytona',
+  provider: 'platinum',
   image: null,
   dockerfilePath: null,
   entrypoint: null,
@@ -98,7 +98,7 @@ mock.module('./templates', () => ({
 mock.module('../config', () => ({
   config: {
     isProviderEnabled: () => true,
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     host: 'test',
   },
 }));

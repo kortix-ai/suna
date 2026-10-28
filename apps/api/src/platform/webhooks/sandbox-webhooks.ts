@@ -4,17 +4,13 @@
  * webhooks make billing close the instant a provider reports a box stopped,
  * instead of up to a sweep-interval later.
  *
- *  - Daytona: org-level webhook, events `sandbox.created` / `sandbox.state.updated`
- *    (payload carries `id`, `newState`). Deliveries are signed Svix-style
- *    (`webhook-id` / `webhook-timestamp` / `webhook-signature`, secret `whsec_…`).
  *  - Platinum: events `sandbox.created` / `sandbox.state_updated` / `sandbox.deleted`,
  *    each HMAC-SHA-256 signed with the per-webhook secret shown once at
  *    registration (`POST /v1/webhooks`).
  *
- * Signature header/format specifics for each provider are confirmed against a
- * live delivery at deploy time — see verify* below. Until the matching secret is
- * configured Platinum ingress is not registered (Daytona stays inert with 503),
- * and the reaper alone keeps billing
+ * Signature header/format specifics are confirmed against a live delivery at
+ * deploy time — see verify* below. Until the secret is configured Platinum
+ * ingress is not registered, and the reaper alone keeps billing
  * correct, so enabling webhooks is purely an upgrade in latency, never a
  * correctness dependency.
  */
@@ -27,7 +23,6 @@ import {
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
-import { readStandardWebhookHeaders, verifyStandardWebhook } from '../../lib/webhooks/standard-webhooks';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
 
@@ -95,43 +90,6 @@ export async function applySandboxLifecycle(
 export interface WebhookResult {
   status: number;
   body: Record<string, unknown>;
-}
-
-/** Daytona webhook handler. `headers` is a case-insensitive getter. */
-export async function handleDaytonaWebhook(
-  rawBody: string,
-  getHeader: (name: string) => string | undefined,
-): Promise<WebhookResult> {
-  const secret = config.DAYTONA_WEBHOOK_SECRET;
-  if (!secret) return { status: 503, body: { error: 'daytona webhook not configured' } };
-
-  // Daytona signs with Svix (Standard Webhooks). The helper also rejects a
-  // timestamp more than 5 minutes off, so a captured delivery cannot be replayed.
-  const headers = readStandardWebhookHeaders(getHeader);
-  if (!verifyStandardWebhook({ rawBody, secret, headers })) {
-    return { status: 401, body: { error: 'invalid signature' } };
-  }
-  bindIntegrationPrincipal('daytona');
-
-  let event: any;
-  try {
-    event = JSON.parse(rawBody);
-  } catch {
-    return { status: 400, body: { error: 'invalid json' } };
-  }
-
-  const externalId: string | undefined = event?.id ?? event?.data?.id ?? event?.sandboxId;
-  const eventType: string = event?.event ?? event?.type ?? '';
-  const newState: string | undefined = event?.newState ?? event?.state ?? event?.data?.state;
-  if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
-
-  const dedupId = `daytona:${getHeader('webhook-id') ?? `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
-  const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch(() => true);
-  if (!fresh) return { status: 200, body: { ok: true, deduped: true } };
-
-  const outcome = classifyLifecycle(newState, eventType);
-  const res = await applySandboxLifecycle(externalId, outcome);
-  return { status: 200, body: { ok: true, externalId, ...res } };
 }
 
 /** Platinum webhook handler. */

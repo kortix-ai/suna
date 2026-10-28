@@ -92,7 +92,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       await client.query(
         `INSERT INTO kortix.provider_events
            (provider, kind, outcome, total_ms, session_id, account_id)
-         VALUES ('daytona', 'provision', 'ok', 125, $1, $2)`,
+         VALUES ('platinum', 'provision', 'ok', 125, $1, $2)`,
         [SESSION, ACCOUNT],
       );
       await client.query(
@@ -229,7 +229,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       await client!.query(
         `INSERT INTO kortix.provider_events
            (provider, kind, outcome, total_ms, session_id, account_id)
-         VALUES ('daytona', 'stop', 'ok', 25, $1, $2)`,
+         VALUES ('platinum', 'stop', 'ok', 25, $1, $2)`,
         [SESSION, ACCOUNT],
       );
     } finally {
@@ -292,7 +292,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       await client!.query(
         `INSERT INTO kortix.provider_events
            (provider, kind, outcome, total_ms, session_id, account_id)
-         VALUES ('daytona', 'restart', 'ok', 15, $1, $2)`,
+         VALUES ('platinum', 'restart', 'ok', 15, $1, $2)`,
         [SESSION, ACCOUNT],
       );
     } finally {

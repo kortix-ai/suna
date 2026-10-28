@@ -8,10 +8,6 @@ import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
-import {
-  legacyRehydrateSpec,
-  rehydrateSessionChat,
-} from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { refreshResumedSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
@@ -344,11 +340,6 @@ async function provisionReplacementRuntime(
   await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
 
   const runtimeMetadata = { restarted_at: new Date().toISOString() };
-  const rehydrate = legacyRehydrateSpec(
-    session.metadata,
-    loaded.row.metadata,
-    loaded.row.projectId,
-  );
   allocateSessionRuntime({
     sessionId,
     accountId: loaded.row.accountId,
@@ -387,15 +378,6 @@ async function provisionReplacementRuntime(
         restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
-    beforeActive: rehydrate
-      ? (externalId) =>
-          rehydrateSessionChat({
-            sessionId,
-            externalId,
-            provider: providerName,
-            spec: rehydrate,
-          })
-      : undefined,
   });
 }
 

@@ -105,8 +105,8 @@ export function buildUpstreamRequestHeaders(
   // Re-originate the request to the upstream so the sandbox dev server sees a
   // CONSISTENT origin/host pair. The browser's Origin reflects OUR public proxy
   // host (p3000-<id>.localhost:8008 or the path-based API host), but the upstream
-  // is reached at `previewUrl` and — behind Daytona — sees a `host`/`x-forwarded-host`
-  // of the Daytona proxy (3000-<id>.daytonaproxy01.net). Frameworks that enforce
+  // is reached at `previewUrl` and — behind a provider edge — sees a
+  // `host`/`x-forwarded-host` of that edge. Frameworks that enforce
   // same-origin on mutations (Next.js Server Actions, SvelteKit, Remix, Django CSRF)
   // reject that mismatch as "Invalid Server Actions request." Rewriting Origin (and
   // pinning x-forwarded-host for single-hop upstreams) to the upstream

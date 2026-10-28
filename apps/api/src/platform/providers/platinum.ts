@@ -1,12 +1,11 @@
 /**
  * Platinum sandbox provider.
  *
- * Provisions Cloud Hypervisor microVMs via the Platinum REST API. Mirrors the
- * Daytona provider's contract one-for-one; the only differences are Platinum's
- * request shapes:
+ * Provisions Cloud Hypervisor microVMs via the Platinum REST API. Implements
+ * the SandboxProvider contract with these Platinum request shapes:
  *   - create boots from a per-project TEMPLATE (opts.snapshot = a Platinum
  *     template id/name) with `?wait_for_state=running` so create returns a
- *     running sandbox synchronously (provisioning.async = false, like Daytona).
+ *     running sandbox synchronously (provisioning.async = false).
  *   - every port is reached through Platinum's edge via a PRIVATE expose: the
  *     edge requires the HMAC preview token, which the proxy carries in the
  *     `x-pt-preview-token` header (see resolveIngress). The agent port is also
@@ -791,22 +790,22 @@ export class PlatinumProvider implements SandboxProvider {
     // Return as soon as the VM is running and the agent port is exposed — do NOT
     // block on the in-guest runtime (repo clone + opencode). That readiness is
     // polled by the frontend (useOpenCodeRuntimeReady + the react-query
-    // "opencode not ready" retry) EXACTLY as it is for Daytona, whose create()
-    // also returns a not-yet-usable box and defers readiness to the FE.
+    // "opencode not ready" retry): create() returns a not-yet-usable box and
+    // defers readiness to the FE.
     //
     // Why this matters: the old code polled /kortix/health for runtimeReady up
     // to 75s here. Under a restored-VM virtio-net RX stall the clone can hang,
     // so that poll burned the full 75s and surfaced as the dreaded provision
     // timeout. Returning at vm-running makes the 75s timeout IMPOSSIBLE (we never
     // poll) and — since a Platinum restore resumes in ~50ms — create() returns in
-    // ~1s, FASTER than Daytona's cloud-start. The daemon's clone-retry +
+    // ~1s. The daemon's clone-retry +
     // transfer-stall-timeout (kortix-sandbox-agent-server) recover any transient
     // clone stall in the background while the FE waits, so the session still
     // becomes usable without any create-path hang.
     console.log(
       `[platinum-timing] ${externalId} ` +
         `vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
-        `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
+        `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll)` +
         (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );
 
@@ -1154,7 +1153,7 @@ export class PlatinumProvider implements SandboxProvider {
       // until the provider confirms a terminal state.
       if (state === 'stopped' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
-      // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
+      // Terminal, not transitional: a dead box
       // reported as `unknown` is a box `decideReconcile` never acts on, and
       // compute billing then accrues wall-clock against it indefinitely.
       if (state === 'error' || state === 'failed') return 'terminal';
@@ -1327,8 +1326,7 @@ export class PlatinumProvider implements SandboxProvider {
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     // Expose the agent port through Platinum's edge, privately: the preview
     // token travels in the header resolveIngress returns, and the daemon also
-    // checks the KORTIX serviceKey bearer below (the same two layers as
-    // Daytona's preview token + serviceKey).
+    // checks the KORTIX serviceKey bearer below (two layers).
     // POST /:id/expose takes a SINGLE {port,public} and returns a single
     // {url,port,...} — the array {expose:[...]} shape is only valid on the
     // create route's inline expose. Sending the array here 400s.

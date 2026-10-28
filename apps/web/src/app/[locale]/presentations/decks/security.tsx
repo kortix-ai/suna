@@ -28,8 +28,8 @@ import { useTranslations } from '@/i18n/use-translations';
  * corrections that must not be "restored". Read them before editing a line.
  *
  * ── FOUR CORRECTIONS TO THE SPOKEN DRAFT ─────────────────────────────────
- *  1. "a disposable microVM" — not true of legacy Daytona. microVM is
- *     accurate for Platinum (Cloud Hypervisor) only.
+ *  1. "a disposable microVM" — accurate for Platinum (Cloud Hypervisor)
+ *     only; brand has not cleared it as a blanket claim.
  *  2. "scoped to a person or a group" — that model was retired
  *     (20260706_secrets_v2_identifier_model.sql). Scoping is per project, per
  *     agent grant, and connector-scoped.

@@ -20,7 +20,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     projectId: 'proj-1',
     branchName: 'session/test',
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: null,
     sandboxUrl: null,
     runtimeSessionId: null,

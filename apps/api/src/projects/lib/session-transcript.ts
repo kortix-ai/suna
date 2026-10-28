@@ -33,8 +33,8 @@ const WORKSPACE_DIRECTORY = '/workspace';
  * Budget for resolving the sandbox's daemon endpoint inside a transcript
  * read. The request deadline is 25 s and the rest of the live attempt is
  * already bounded (3 s session list, 8 s message fetch), so 8 s keeps the
- * worst attempt under the deadline. Unbounded, Daytona's preview-link
- * resolution runs two provider calls of up to 20 s each — 2026-09-29: a
+ * worst attempt under the deadline. Unbounded, a provider's preview-link
+ * resolution could run two provider calls of up to 20 s each — 2026-09-29: a
  * cold/wedged provider stacked that into 25 s deadline 503s and 20–25 s
  * reads on GET /v1/projects/:id/sessions/:id/transcript.
  * # ponytail: 8 s ceiling converts a slow-but-live read into a possibly-stale
@@ -155,8 +155,8 @@ export async function buildSessionTranscriptDigest(
 
   // ONE endpoint resolution serves the pin check and the message fetch — it
   // is handed to `ensureOpencodeSessionPin` below instead of being resolved
-  // again there. Resolution touches the sandbox provider (Daytona
-  // preview-link / service-key lookup) and can throw on a 429
+  // again there. Resolution touches the sandbox provider (preview-link
+  // / service-key lookup) and can throw on a 429
   // `ThrottlerException` rate limit, an archived/deleted box, a transient
   // provider outage, or simply hang — the provider SDK exposes no per-call
   // timeout, so the resolution is bounded with `withTimeout` and a hang

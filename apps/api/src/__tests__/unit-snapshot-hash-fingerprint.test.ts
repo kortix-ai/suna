@@ -9,7 +9,7 @@ import { describe, expect, test } from 'bun:test';
 // explicitly in every case so that default is never used. Tests run under dotenvx
 // (scripts/test.sh) so the real config loads fine — and we deliberately do NOT
 // `mock.module('../config')` here: in bun that mock is process-GLOBAL and leaks
-// into sibling test files (it broke the daytona suite in combined runs).
+// into sibling test files (it broke a sibling suite in combined runs).
 import { computeSnapshotHash } from '../snapshots/hash';
 
 describe('Snapshot hash — runtime fingerprint coupling (mass-rebuild root cause)', () => {

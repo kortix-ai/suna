@@ -55,7 +55,7 @@ async function fixture(
       (sandbox_id, session_id, account_id, project_id, external_id, provider, status, metadata)
     values
       (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${`sbx_wake_${sessionId.slice(0, 8)}`}, 'daytona', 'stopped', '{}'::jsonb)`);
+       ${`sbx_wake_${sessionId.slice(0, 8)}`}, 'platinum', 'stopped', '{}'::jsonb)`);
   created.push(sessionId);
   return sessionId;
 }

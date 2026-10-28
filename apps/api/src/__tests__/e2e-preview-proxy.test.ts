@@ -44,12 +44,12 @@ let mockDbSandbox: any = {
   agentName: 'default',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
-  provider: 'daytona',
+  provider: 'platinum',
   baseUrl: null,
 };
 let mockDbMembership: any = { accountRole: 'member' };
-let mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
-let mockPreviewToken: string | null = 'daytona-preview-token-123';
+let mockPreviewUrl = 'https://preview.platinum.test/proxy-url';
+let mockPreviewToken: string | null = 'preview-token-123';
 let mockWakeCalls: string[] = [];
 let mockFetchResponses: Array<{
   status: number;
@@ -273,28 +273,6 @@ mock.module('../sandbox-proxy/preview-auth', () => ({
     token === 'ws-token' ? { userId: TEST_USER_ID, sessionId: null } : null,
 }));
 
-// Daytona SDK mock
-mock.module('../shared/daytona', () => ({
-  isDaytonaConfigured: () => true,
-  archiveDaytonaSandboxById: async () => ({ ok: true }),
-  isDaytonaDiskQuotaError: () => false,
-  listStoppedDaytonaSandboxesOldestFirst: async function* () {},
-  listDaytonaSnapshots: async () => [],
-  deleteDaytonaSnapshotById: async () => true,
-  getDaytona: () => ({
-    get: async (sandboxId: string) => {
-      return {
-        getPreviewLink: async (port: number) => {
-          return { url: mockPreviewUrl, token: mockPreviewToken };
-        },
-        start: async () => {
-          mockWakeCalls.push(sandboxId);
-        },
-      };
-    },
-  }),
-}));
-
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
@@ -340,13 +318,7 @@ mock.module('../platform/providers', () => ({
         return {
           url: mockPreviewUrl,
           headers:
-            name === 'daytona'
-              ? {
-                  'X-Daytona-Skip-Preview-Warning': 'true',
-                  'X-Daytona-Disable-CORS': 'true',
-                  ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
-                }
-              : name === 'platinum' && mockPreviewToken
+            name === 'platinum' && mockPreviewToken
                 ? { 'x-provider-traffic-token': mockPreviewToken }
                 : {},
           effectivePort: route.effectivePort,
@@ -363,7 +335,6 @@ mock.module('../platform/providers', () => ({
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
-    isDaytonaEnabled: () => true,
     // The preview CORS allowlist reads this. Set to the SAME value as the real
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
@@ -532,7 +503,6 @@ beforeEach(() => {
   __resetPromptDedupe();
   invalidateSandbox(TEST_SANDBOX_ID);
   invalidateSandbox('platinum-oc-http');
-  invalidateSandbox('daytona-oc-http');
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
@@ -540,12 +510,12 @@ beforeEach(() => {
     accountId: 'account-001',
     status: 'active',
     config: { serviceKey: TEST_SERVICE_KEY },
-    provider: 'daytona',
+    provider: 'platinum',
     baseUrl: null,
   };
   mockDbMembership = { accountRole: 'member' };
-  mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
-  mockPreviewToken = 'daytona-preview-token-123';
+  mockPreviewUrl = 'https://preview.platinum.test/proxy-url';
+  mockPreviewToken = 'preview-token-123';
   mockWakeCalls = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
@@ -574,15 +544,6 @@ describe('Preview proxy: websocket upstream resolution', () => {
   // resolves, applies the provider's query defaults, and, where the provider
   // asks for it, signs the user context into the URL as well as the header.
   test.each([
-    {
-      name: 'a Daytona opencode PTY',
-      provider: 'daytona',
-      previewUrl: 'https://preview.daytona.io/proxy-url',
-      port: 4096,
-      path: '/pty/pty_test/connect',
-      expected: 'wss://preview.daytona.io/proxy-url/pty/pty_test/connect',
-      signedInUrl: false,
-    },
     {
       name: 'a Platinum opencode PTY',
       provider: 'platinum',
@@ -840,7 +801,7 @@ describe('Preview proxy: forwarding', () => {
     const text = await res.text();
     expect(text).toBe('<html>Hello</html>');
     // The path after the sandbox/port prefix is forwarded as is.
-    expect(mockFetchCalls[0]?.url).toBe('https://preview.daytona.io/proxy-url/api/v2/page');
+    expect(mockFetchCalls[0]?.url).toBe('https://preview.platinum.test/proxy-url/api/v2/page');
   });
 
   // An upstream answer the proxy does not pass through is released, not left to
@@ -908,11 +869,9 @@ describe('Preview proxy: forwarding', () => {
   // `effectivePort`), never by the port the client addressed. Platinum serves
   // opencode's 4096 through the daemon on 8000, so a `/file/import` addressed
   // to 4096 there IS the daemon's import: an ambiguous failure is never
-  // replayed, or the box downloads the file twice. Daytona dials 4096 itself,
-  // where `/file/import` is an ordinary route and the same failure is retried.
+  // replayed, or the box downloads the file twice.
   test.each([
     ['platinum', 'platinum-oc-http', [8000], 1],
-    ['daytona', 'daytona-oc-http', [4096, 4096, 4096, 4096], 4],
   ] as const)(
     '%s: a /file/import addressed to 4096 is classified by the port the route dials',
     async (provider, sandbox, dialledPorts, dials) => {
@@ -961,11 +920,11 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(204);
     expect(mockFetchCalls).toHaveLength(2);
-    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+    expect(mockFetchCalls[0].url).toBe('https://preview.platinum.test/proxy-url/kortix/env');
     expect(mockFetchCalls[0].method).toBe('POST');
     expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     expect(mockFetchCalls[0].headers['content-type']).toBe('application/json');
-    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
+    expect(mockFetchCalls[0].headers['x-provider-traffic-token']).toBe('preview-token-123');
     expect(JSON.parse(mockFetchCalls[0].body ?? '{}')).toEqual({
       env: {
         OPENROUTER_API_KEY: 'sk-live',
@@ -983,7 +942,7 @@ describe('Preview proxy: forwarding', () => {
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
-      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
+      'https://preview.platinum.test/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
   });
 
@@ -1118,8 +1077,8 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(204);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/session/ses_123/prompt_async',
     ]);
     expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
       agent: requested,
@@ -1142,8 +1101,8 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(204);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/session/ses_123/prompt_async',
     ]);
     expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
       agent: 'researcher',
@@ -1167,7 +1126,7 @@ describe('Preview proxy: forwarding', () => {
     const body = await res.json();
     expect(body.error).toContain('env sync failed: 401');
     expect(mockFetchCalls).toHaveLength(1);
-    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+    expect(mockFetchCalls[0].url).toBe('https://preview.platinum.test/proxy-url/kortix/env');
   });
 
   test('does not retry non-transient project env sync HTTP errors that mention network failures', async () => {
@@ -1189,7 +1148,7 @@ describe('Preview proxy: forwarding', () => {
     expect(body.error).toContain('env sync failed: 500');
     expect(mockWakeCalls).toEqual([]);
     expect(mockFetchCalls).toHaveLength(1);
-    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+    expect(mockFetchCalls[0].url).toBe('https://preview.platinum.test/proxy-url/kortix/env');
   });
 
   test('retries transient project env sync failures before forwarding prompt_async', async () => {
@@ -1211,9 +1170,9 @@ describe('Preview proxy: forwarding', () => {
     expect(res.status).toBe(204);
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/session/ses_123/prompt_async',
     ]);
   });
 
@@ -1243,9 +1202,9 @@ describe('Preview proxy: forwarding', () => {
     expect(res.status).toBe(204);
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/kortix/env',
-      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/kortix/env',
+      'https://preview.platinum.test/proxy-url/session/ses_123/prompt_async',
     ]);
   });
 
@@ -1285,22 +1244,11 @@ describe('Preview proxy: forwarding', () => {
   // has no provider-specific branch.
   test.each([
     {
-      provider: 'daytona',
-      previewUrl: 'https://preview.daytona.io/proxy-url',
-      token: 'daytona-preview-token-123',
-      present: {
-        'x-daytona-skip-preview-warning': 'true',
-        'x-daytona-disable-cors': 'true',
-        'x-daytona-preview-token': 'daytona-preview-token-123',
-      },
-      absent: ['x-provider-traffic-token'],
-    },
-    {
       provider: 'platinum',
       previewUrl: 'https://preview.platinum.test/proxy-url',
       token: 'platinum-traffic-token',
       present: { 'x-provider-traffic-token': 'platinum-traffic-token' },
-      absent: ['x-daytona-preview-token'],
+      absent: [],
     },
   ])('$provider ingress headers are forwarded as the provider resolved them', async (row) => {
     mockDbSandbox = { ...mockDbSandbox, provider: row.provider };
@@ -1394,54 +1342,7 @@ describe('Preview proxy: forwarding', () => {
 
 });
 
-describe('Preview proxy: provider credential recovery', () => {
-  const providerRejection = JSON.stringify({
-    statusCode: 401,
-    code: 'UNAUTHORIZED',
-    message: 'unauthorized: authentication failed: Invalid or expired token',
-  });
-
-  const providerRefusals: typeof mockFetchResponses = [
-    { status: 401, body: providerRejection, headers: { 'content-type': 'application/json' } },
-    { status: 307, body: '', headers: { location: 'https://api.auth.daytona.io/user_management/authorize?state=opaque' } },
-  ];
-  for (const rejected of providerRefusals) {
-    test(`refreshes rejected Daytona ingress credentials after ${rejected.status}`, async () => {
-      mockFetchResponses = [rejected, { status: 200, body: '[]' }];
-      const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
-        headers: { Authorization: 'Bearer test' },
-      });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual([]);
-      expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
-      expect(mockFetchCallCount).toBe(2);
-      expect(mockWakeCalls).toEqual([]);
-    });
-  }
-
-  test('stops after one credential refresh and does not expose provider login redirects', async () => {
-    mockFetchResponses = Array.from({ length: 5 }, () => ({ status: 401, body: providerRejection }));
-    const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
-      headers: { Authorization: 'Bearer test' },
-    });
-    expect(response.status).toBe(503);
-    expect((await response.json()).code).toBe('sandbox_provider_auth_unavailable');
-    expect(mockFetchCallCount).toBe(2);
-  });
-
-  test('invalidates provider credentials without replaying a PTY creation', async () => {
-    mockFetchResponses = [{ status: 401, body: providerRejection }];
-    const app = createProxyTestApp();
-    const response = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, {
-      method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: '{}',
-    });
-    expect(response.status).toBe(503);
-    expect(mockFetchCallCount).toBe(1);
-    mockFetchResponses = [{ status: 200, body: '[]' }];
-    await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/pty`, { headers: { Authorization: 'Bearer test' } });
-    expect(mockResolvedPreviewPorts).toEqual([8000, 8000]);
-  });
-
+describe('Preview proxy: application redirects', () => {
   test('preserves application OAuth redirects', async () => {
     mockFetchResponses = [{ status: 307, body: '', headers: { location: 'https://accounts.example.com/login' } }];
     const response = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
@@ -1492,38 +1393,10 @@ describe('Preview proxy: CORS', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
-
 });
 
-// Daytona answers 400 with one of these bodies before it reaches the box at
-// all: the box is stopped or archived. The proxy wakes it once and retries.
-describe('Preview proxy: auto-wake on a sandbox-down 400', () => {
-  test.each(['no IP address found for sandbox', 'failed to get runner info: 404 Not Found'])(
-    'triggers wake and retries when upstream answers 400 "%s"',
-    async (downBody) => {
-      mockFetchResponses = [
-        { status: 400, body: downBody },
-        { status: 200, body: 'Sandbox is back!' },
-      ];
-      const app = createProxyTestApp();
-      const origSetTimeout = globalThis.setTimeout;
-      globalThis.setTimeout = ((fn: any) => fn()) as any;
-      try {
-        const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
-          headers: { Authorization: 'Bearer test' },
-        });
-        expect(res.status).toBe(200);
-        expect(await res.text()).toBe('Sandbox is back!');
-      } finally {
-        globalThis.setTimeout = origSetTimeout;
-      }
-      expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
-    },
-  );
-});
-
-describe('Preview proxy: non-sandbox-down 400', () => {
-  test('passes through 400 that is NOT sandbox-down', async () => {
+describe('Preview proxy: an upstream 400', () => {
+  test('passes an upstream 400 through', async () => {
     mockFetchResponses = [{ status: 400, body: 'Bad request: invalid input' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api`, {
@@ -1599,7 +1472,7 @@ describe('Preview proxy: retry exhaustion', () => {
     expect(await res.json()).toMatchObject({ hop: 'daemon' });
   });
 
-  // Literal ports, on Daytona (no 4096 → 8000 reroute). Both halves of the
+  // Literal ports. Both halves of the
   // opencode pair carry the conversation, so a dead one is the runtime. 3211
   // needs the session gate, but it serves static files only: a dead file
   // listener is not "the sandbox is gone", and the SDK probe must not count it.
@@ -1882,7 +1755,7 @@ describe('Preview proxy: no-trailing-slash', () => {
       headers: { Authorization: 'Bearer test' },
     });
     expect(res.status).toBe(200);
-    expect(mockFetchCalls[0]?.url).toBe('https://preview.daytona.io/proxy-url/');
+    expect(mockFetchCalls[0]?.url).toBe('https://preview.platinum.test/proxy-url/');
   });
 });
 
@@ -1960,7 +1833,7 @@ describe('Preview proxy: hop attribution when the provider never resolves', () =
 
 // A session-bound caller (a sandbox token) may reach only its OWN session's
 // conversation. Every port that carries it is gated: the daemon (8000), both
-// halves of opencode's port pair (4096/4097, reached directly on Daytona), and
+// halves of opencode's port pair (4096/4097), and
 // the static-file listener (3211), which reads that session's workspace.
 // Ownership alone cannot separate end-users when every session of a wrapper
 // shares one created_by.

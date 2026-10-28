@@ -345,7 +345,7 @@ export function systemNotificationSeverity(tag: string): 'error' | 'warning' | '
  * trace. Tone carries the severity, the sentence carries the rest.
  */
 export function SystemNotificationCard({ notification }: { notification: SystemNotification }) {
-  // One detail, and the friendliest one: identifiers and codes ("daytona",
+  // One detail, and the friendliest one: identifiers and codes ("platinum",
   // "1.2s", "us-east-1") have no spaces, so the longest value that does is the
   // closest thing to a sentence the tag gave us. Overflow is a truncated line,
   // never a second row.

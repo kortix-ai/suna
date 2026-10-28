@@ -9,13 +9,14 @@ import {
 // `allowed` + `isEnabled` are injected (they model config.ALLOWED_SANDBOX_PROVIDERS
 // + config.isProviderEnabled), so no env/DB. Precedence under test:
 //   explicit request › per-project pin (if enabled) › fallback (weighted balancer).
-const ALLOWED = ['platinum', 'daytona'] as const;
+// The helpers are provider-agnostic; `second` is a synthetic second provider.
+const ALLOWED = ['platinum', 'second'] as const;
 const bothEnabled = (_p: string) => true;
 
 describe('resolveSessionProvider (per-project provider override)', () => {
   test('explicit request wins over the pin + is used verbatim', () => {
     expect(
-      resolveSessionProvider({ requested: 'platinum', projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled }),
+      resolveSessionProvider({ requested: 'platinum', projectPin: 'second', allowed: ALLOWED, isEnabled: bothEnabled }),
     ).toEqual({ provider: 'platinum' });
   });
 
@@ -39,26 +40,28 @@ describe('resolveSessionProvider (per-project provider override)', () => {
         requested: null,
         projectPin: 'platinum',
         allowed: ALLOWED,
-        isEnabled: (p) => p === 'daytona' || p === 'platinum',
+        isEnabled: (p) => p === 'second' || p === 'platinum',
       }),
     ).toEqual({ provider: 'platinum' });
   });
 
   test('stale pin (provider since removed from ALLOWED) is ignored → fallback', () => {
     expect(
-      resolveSessionProvider({ requested: null, projectPin: 'platinum', allowed: ['daytona'], isEnabled: (p) => p === 'daytona' }),
+      resolveSessionProvider({ requested: null, projectPin: 'platinum', allowed: ['second'], isEnabled: (p) => p === 'second' }),
     ).toEqual({ fallback: true });
   });
 
   test('pin allowed but keyless (isEnabled=false) → fallback, never a hard create failure', () => {
     expect(
-      resolveSessionProvider({ requested: null, projectPin: 'platinum', allowed: ALLOWED, isEnabled: (p) => p === 'daytona' }),
+      resolveSessionProvider({ requested: null, projectPin: 'platinum', allowed: ALLOWED, isEnabled: (p) => p === 'second' }),
     ).toEqual({ fallback: true });
   });
 
-  test('a Daytona pin is ignored even while Daytona is enabled → fallback, so the project runs on Platinum', () => {
+  // Daytona support was removed on 2026-10-28. A stored `daytona` pin is
+  // legacy data: it is ignored, so the project runs on Platinum.
+  test('a stored legacy Daytona pin is ignored even if it were enabled → fallback', () => {
     expect(
-      resolveSessionProvider({ requested: null, projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled }),
+      resolveSessionProvider({ requested: null, projectPin: 'daytona', allowed: ['platinum', 'daytona'], isEnabled: bothEnabled }),
     ).toEqual({ fallback: true });
   });
 
@@ -105,9 +108,9 @@ describe('sessionProviderIsLocked', () => {
       sessionProviderIsLocked(
         resolveSessionProvider({
           requested: null,
-          projectPin: 'daytona',
+          projectPin: 'second',
           allowed: ALLOWED,
-          isEnabled: (p) => p !== 'daytona',
+          isEnabled: (p) => p !== 'second',
         }),
       ),
     ).toBe(false);
@@ -120,11 +123,11 @@ describe('nextFailoverProvider', () => {
     fallbackAttempted: false,
     fallbackEnabled: true,
     current: 'platinum',
-    allowed: ['platinum', 'daytona'] as const,
+    allowed: ['platinum', 'second'] as const,
   };
 
   test('an unlocked balancer pick hands off to the other allowed provider', () => {
-    expect(nextFailoverProvider(base)).toBe('daytona');
+    expect(nextFailoverProvider(base)).toBe('second');
   });
 
   test('a locked provider never fails over', () => {

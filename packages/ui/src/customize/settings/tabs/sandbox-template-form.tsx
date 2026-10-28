@@ -4,8 +4,7 @@ import { useTranslations } from '../../../i18n';
 /**
  * Create / edit dialog for a project's sandbox template.
  *
- * Mirrors the Daytona "Create Snapshot" form (image + resources + entrypoint)
- * but adapted for Kortix: a template can be defined either by a `dockerfile`
+ * Fields: image + resources + entrypoint. A template can be defined either by a `dockerfile`
  * path in the project repo OR a public `image` reference. The Kortix runtime
  * layer is added automatically — the user only defines their workspace base.
  */

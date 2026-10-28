@@ -954,7 +954,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|webhooks|email|resend",
   "POST|v1|webhooks|events|:provider",
   "POST|v1|webhooks|projects|:projectId|:slug",
-  "POST|v1|webhooks|sandbox|daytona",
   "POST|v1|webhooks|slack",
   "POST|v1|webhooks|slack|:projectId",
   "POST|v1|webhooks|slack|:projectId|commands",

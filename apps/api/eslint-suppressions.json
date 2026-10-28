@@ -1414,28 +1414,6 @@
       "count": 1
     }
   },
-  "src/platform/providers/daytona-state.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/platform/providers/daytona.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 3
-    },
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/platform/providers/index.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -1529,7 +1507,7 @@
   },
   "src/platform/webhooks/routes.ts": {
     "no-restricted-syntax": {
-      "count": 2
+      "count": 1
     }
   },
   "src/platform/webhooks/sandbox-webhooks.ts": {
@@ -1540,11 +1518,6 @@
   "src/projects/active-turn-renewal.ts": {
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/projects/disk-quota-guard.ts": {
-    "no-console": {
-      "count": 3
     }
   },
   "src/projects/git-backends/code-storage.ts": {
@@ -1802,7 +1775,7 @@
   },
   "src/projects/maintenance.ts": {
     "no-console": {
-      "count": 25
+      "count": 24
     },
     "no-restricted-properties": {
       "count": 3
@@ -2715,7 +2688,7 @@
   },
   "src/sandbox-proxy/forward/retry.ts": {
     "no-console": {
-      "count": 7
+      "count": 5
     }
   },
   "src/sandbox-proxy/forward/turn-start.ts": {
@@ -3096,14 +3069,6 @@
       "count": 1
     }
   },
-  "src/snapshots/providers/daytona.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-console": {
-      "count": 3
-    }
-  },
   "src/snapshots/providers/index.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -3123,11 +3088,6 @@
     },
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/snapshots/quota-gc.ts": {
-    "no-console": {
-      "count": 7
     }
   },
   "src/snapshots/runtime-images.ts": {

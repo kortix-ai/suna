@@ -2,8 +2,8 @@ import { sessionSandboxes } from '@kortix/db';
 /**
  * A runtime that is started again after the provider had it STOPPED comes back
  * with nothing in memory: every pause Kortix issues or observes is a
- * `keepMemory:false` pause (E2B), a stop (Daytona) or a lifecycle stop
- * (Platinum). Any turn that was open on that box is therefore over — the
+ * `keepMemory:false` pause (E2B, removed), a stop (Daytona, removed) or a
+ * lifecycle stop (Platinum). Any turn that was open on that box is therefore over — the
  * OpenCode process that owned it is gone — and its last assistant message sits
  * in the transcript with `tokens 0/0/0` and no parts.
  *
@@ -104,7 +104,7 @@ const liveDeps: RuntimeRestartRecoveryDeps = {
   // DYNAMIC import on purpose. `sandbox-proxy/backend.ts` imports this module,
   // and pulling the whole engine into that graph statically drags every module
   // the engine touches into tests that only mock part of it — two suites broke
-  // on a partially-mocked `shared/daytona` / `projects/git` the moment the
+  // on a partially-mocked provider module / `projects/git` the moment the
   // static edge existed. Nothing here needs the engine before this call.
   kickDrain: () =>
     void import('./drain')

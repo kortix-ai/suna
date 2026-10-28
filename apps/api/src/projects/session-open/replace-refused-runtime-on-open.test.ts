@@ -21,7 +21,7 @@ const RUNNING_ROW = {
   sessionId: 'sess-1',
   projectId: 'proj-1',
   accountId: 'acct-1',
-  provider: 'daytona',
+  provider: 'platinum',
   externalId: 'ext-1',
   baseUrl: null,
   status: 'active',
@@ -36,7 +36,7 @@ const RUNNING_ROW = {
 const LOADED = { row: {} as never, userId: 'user-1' };
 const VISIBLE = {
   row: {
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     baseRef: null,
     agentName: 'default',
     metadata: null,

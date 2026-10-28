@@ -293,7 +293,7 @@ describe('HTTP enforcement — project write/lifecycle leaf gates (every checkbo
   // The per-project sandbox-provider pin routes EVERY new session in the
   // project, so a session principal may never flip it — whatever grant it
   // holds (KRTX-1681: a security-audit agent pinned its whole project to
-  // daytona). Humans keep the settings.write leaf: a member PAT is denied by
+  // another provider). Humans keep the settings.write leaf: a member PAT is denied by
   // the leaf, a manager PAT routes the write.
   describe('the provider pin is a person\'s action (sandbox-provider PATCH)', () => {
     test('a session-bound agent token → refused outright (agent_session_forbidden), grant irrelevant', async () => {

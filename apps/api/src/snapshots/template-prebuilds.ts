@@ -158,7 +158,6 @@ export interface SandboxTemplateView {
   diskGb: number;
   snapshotName: string;
   contentHash: string;
-  daytonaState: string;
   providerState: string;
   ready: boolean;
   provider: string;
@@ -236,7 +235,6 @@ async function toView(
     diskGb: t.diskGb,
     snapshotName: identity.snapshotName,
     contentHash: identity.contentHash,
-    daytonaState: state,
     providerState: state,
     ready: state === 'active',
     provider: t.provider,

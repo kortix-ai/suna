@@ -12,8 +12,6 @@ import { beginWork, captureServer, finishRequest } from './shared/drain';
 import { describeEmailChain } from './lib/email/transport';
 import { initModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
-import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
 import { primeComposioTransientClassifier } from './shared/composio-transient';
 import { ensureSchema } from './ensure-schema';
 import { dispatchInbound } from './inbound-dispatch';
@@ -29,25 +27,7 @@ export { app };
 
 // === Start Server ===
 
-// Pre-load the Daytona SDK's `DaytonaRateLimitError` class so the synchronous
-// `isDaytonaRateLimitError` classifier (on the global `app.onError` hot path)
-// has its strongest instanceof signal available the first time a 429 throws —
-// see shared/daytona-rate-limit.ts. Fire-and-forget: the classifier's
-// name/statusCode/message fallbacks already cover the rare race where a 429
-// throws before this resolves, so we never block startup on it.
-void primeDaytonaRateLimitClassifier();
-
-// Pre-load the Daytona SDK's `DaytonaTimeoutError` / `DaytonaConnectionError`
-// classes so the synchronous `isDaytonaTransientProviderError` classifier (on
-// the global `app.onError` hot path) has its strongest instanceof signal
-// available the first time a transient gateway / connection / timeout failure
-// throws — see shared/daytona-transient.ts. Fire-and-forget: the classifier's
-// name / statusCode / message fallbacks already cover the rare race where a
-// transient failure throws before this resolves, so we never block startup on
-// it.
-void primeDaytonaTransientClassifier();
-
-// Same for the Composio client's `InternalServerError` / `APIConnectionError`
+// Pre-load the Composio client's `InternalServerError` / `APIConnectionError`
 // classes so `isComposioTransientProviderError` (global `app.onError`) has
 // its instanceof signal from the first transient Composio failure on — see
 // shared/composio-transient.ts. Fire-and-forget, never blocks startup; an

@@ -2,7 +2,7 @@ import { config, type SandboxProviderName } from '../../config';
 
 // Weighted load-balancing of NEW sandboxes across ALLOWED_SANDBOX_PROVIDERS.
 // Weights live in kortix.platform_settings under 'provider_distribution' as
-// { [provider]: weight } (e.g. { platinum: 70, daytona: 30 }). Unset, empty,
+// { [provider]: weight } (e.g. { platinum: 100 }). Unset, empty,
 // or all-zero -> fall back to getDefaultProvider() (the first allowed provider),
 // so behavior is unchanged until an admin configures a split. Single allowed
 // provider -> no DB read.

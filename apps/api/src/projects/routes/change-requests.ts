@@ -452,7 +452,7 @@ export function registerChangeRequestsRoutes(): void {
       }
 
       // resolveEndpoint already injects the sandbox service key as a Bearer token
-      // (and the Daytona preview headers), which the daemon's /kortix/git route
+      // (and the provider preview headers), which the daemon's /kortix/git route
       // validates against KORTIX_TOKEN — same contract as /kortix/env.
       let endpoint: { url: string; headers: Record<string, string> };
       try {

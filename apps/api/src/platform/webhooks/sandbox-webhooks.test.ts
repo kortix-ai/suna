@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
-const cfg: { DAYTONA_WEBHOOK_SECRET?: string; PLATINUM_WEBHOOK_SECRET?: string } = {};
+const cfg: { PLATINUM_WEBHOOK_SECRET?: string } = {};
 let stoppedCalls: string[] = [];
 let stoppedOptions: Array<Record<string, unknown> | undefined> = [];
 let removedCalls: string[] = [];
@@ -39,12 +39,10 @@ mock.module('../../projects/sandbox-reaper', () => ({
 const {
   classifyLifecycle,
   verifyHmacSha256,
-  handleDaytonaWebhook,
   handlePlatinumWebhook,
 } = await import('./sandbox-webhooks');
 
 beforeEach(() => {
-  cfg.DAYTONA_WEBHOOK_SECRET = undefined;
   cfg.PLATINUM_WEBHOOK_SECRET = undefined;
   stoppedCalls = [];
   stoppedOptions = [];
@@ -88,70 +86,6 @@ describe('verifyHmacSha256 (Platinum)', () => {
   });
 });
 
-function svixHeaders(secret: string, id: string, ts: string, body: string): (h: string) => string | undefined {
-  const sig = createHmac('sha256', Buffer.from(secret.replace(/^whsec_/, ''), 'base64'))
-    .update(`${id}.${ts}.${body}`, 'utf8')
-    .digest('base64');
-  const map: Record<string, string> = {
-    'webhook-id': id,
-    'webhook-timestamp': ts,
-    'webhook-signature': `v1,${sig}`,
-  };
-  return (h: string) => map[h.toLowerCase()];
-}
-
-describe('handleDaytonaWebhook', () => {
-  const secret = `whsec_${Buffer.from('k').toString('base64')}`;
-  const now = () => String(Math.floor(Date.now() / 1000));
-  test('503 when not configured', async () => {
-    const r = await handleDaytonaWebhook('{}', () => undefined);
-    expect(r.status).toBe(503);
-  });
-  test('401 on bad signature', async () => {
-    cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const r = await handleDaytonaWebhook('{"id":"sb"}', () => 'bad');
-    expect(r.status).toBe(401);
-  });
-  test('closes billing on a stopped state', async () => {
-    cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbA', newState: 'stopped', updatedAt: 't1' });
-    const r = await handleDaytonaWebhook(body, svixHeaders(secret, 'm1', now(), body));
-    expect(r.status).toBe(200);
-    expect(stoppedCalls).toEqual(['sbA']);
-  });
-  // `classifyLifecycle` folds `stopping` and `archiving` — both TRANSITIONAL —
-  // into `stopped`. A delivery is an unsolicited observation, so mid-turn it
-  // must be confirmed by a second one before the box is durably parked
-  // (incident 2026-08-17T20:40:03Z, a prod session: one such observation
-  // parked a running turn with `stopReason: provider_reconcile`).
-  test('a stopped delivery is an OBSERVATION, and says so', async () => {
-    cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbC', newState: 'stopping', updatedAt: 't1' });
-    await handleDaytonaWebhook(body, svixHeaders(secret, 'm3', now(), body));
-
-    expect(stoppedCalls).toEqual(['sbC']);
-    expect(stoppedOptions).toEqual([{ confirmMidTurnStop: true }]);
-  });
-  test('dedupes a repeated delivery', async () => {
-    cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbB', newState: 'stopped', updatedAt: 't1' });
-    const hdr = svixHeaders(secret, 'm2', now(), body);
-    await handleDaytonaWebhook(body, hdr);
-    await handleDaytonaWebhook(body, hdr);
-    expect(stoppedCalls).toEqual(['sbB']); // second is deduped
-  });
-  // A captured delivery keeps a valid signature forever. The signed timestamp
-  // bounds how long it can be replayed.
-  test('401 on a correctly signed delivery older than 5 minutes', async () => {
-    cfg.DAYTONA_WEBHOOK_SECRET = secret;
-    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbD', newState: 'stopped', updatedAt: 't1' });
-    const old = String(Math.floor(Date.now() / 1000) - 6 * 60);
-    const r = await handleDaytonaWebhook(body, svixHeaders(secret, 'm4', old, body));
-    expect(r.status).toBe(401);
-    expect(stoppedCalls).toEqual([]);
-  });
-});
-
 describe('handlePlatinumWebhook', () => {
   const secret = 'whsec_plat';
   function hmacHeader(body: string): (h: string) => string | undefined {
@@ -168,6 +102,25 @@ describe('handlePlatinumWebhook', () => {
     const r = await handlePlatinumWebhook(body, hmacHeader(body));
     expect(r.status).toBe(200);
     expect(removedCalls).toEqual(['pX']);
+  });
+  // `classifyLifecycle` folds `stopping` and `archiving` — both TRANSITIONAL —
+  // into `stopped`. A delivery is an unsolicited observation, so mid-turn it
+  // must be confirmed by a second one before the box is durably parked
+  // (incident 2026-08-17T20:40:03Z, a prod session: one such observation
+  // parked a running turn with `stopReason: provider_reconcile`).
+  test('a stopped delivery is an OBSERVATION, and says so', async () => {
+    cfg.PLATINUM_WEBHOOK_SECRET = secret;
+    const body = JSON.stringify({ event: 'sandbox.state_updated', id: 'pC', state: 'stopping' });
+    await handlePlatinumWebhook(body, hmacHeader(body));
+    expect(stoppedCalls).toEqual(['pC']);
+    expect(stoppedOptions).toEqual([{ confirmMidTurnStop: true }]);
+  });
+  test('dedupes a repeated delivery', async () => {
+    cfg.PLATINUM_WEBHOOK_SECRET = secret;
+    const body = JSON.stringify({ event: 'sandbox.state_updated', id: 'pB', state: 'stopped' });
+    await handlePlatinumWebhook(body, hmacHeader(body));
+    await handlePlatinumWebhook(body, hmacHeader(body));
+    expect(stoppedCalls).toEqual(['pB']); // second is deduped
   });
   test('noop on started', async () => {
     cfg.PLATINUM_WEBHOOK_SECRET = secret;

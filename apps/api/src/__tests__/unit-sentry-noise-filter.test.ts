@@ -104,7 +104,7 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
   // unconditionally `captureException`d it → paged
   // Sentry → the frontend surfaced the 500 as `ApiError: Internal server
   // error`. The fix classifies it as transient (skip Sentry capture) while
-  // STILL logging + STILL 500. Mirrors #5167/#5175 (Daytona transient
+  // STILL logging + STILL 500. Mirrors #5167/#5175 (provider transient
   // no-capture) + #4709 (ignore list).
   test('the Supabase pool-exhaustion PostgresError is filtered (exact prod message)', () => {
     // Exact message from the prod Sentry event (Better Stack 721b7efe…).

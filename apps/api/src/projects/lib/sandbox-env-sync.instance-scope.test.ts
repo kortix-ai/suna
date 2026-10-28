@@ -110,7 +110,7 @@ function row(externalId: string, metadata: Record<string, unknown> | null): Sand
   return {
     externalId,
     sessionId: `sess-${externalId}`,
-    provider: 'daytona',
+    provider: 'platinum',
     config: { serviceKey: `svc-${externalId}` },
     metadata,
   };

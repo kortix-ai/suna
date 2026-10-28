@@ -297,8 +297,7 @@ describe('deleteSnapshot removes every exact-name Platinum template', () => {
 
   // Platinum refuses to delete a template while any sandbox still pins its
   // rootfs (409 template_in_use; verified live 2026-09-22 against
-  // api.platinum.dev). Daytona deletes a snapshot under live sandboxes, so
-  // this outcome is Platinum-only. It is an expected state, not an outage:
+  // api.platinum.dev). It is an expected state, not an outage:
   // callers must see a typed error, never a generic provider failure.
   test('maps 409 template_in_use to SnapshotInUseError and still deletes free duplicates', async () => {
     const target = 'kortix-default-in-use';

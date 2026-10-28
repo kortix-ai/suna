@@ -1048,8 +1048,7 @@ export function normalizeTreePath(input?: string | null) {
 
 /**
  * Materialize a subtree of the repo at a commit into a fresh local
- * directory — the snapshot builder feeds this to Daytona's Image API
- * which expects a local Dockerfile + context. Archives to a temporary tarball
+ * directory — the snapshot builder feeds this to the provider build, which expects a local Dockerfile + context. Archives to a temporary tarball
  * before extraction so Bun child-process stream backpressure cannot truncate
  * large trees under load.
  *

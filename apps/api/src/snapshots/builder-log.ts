@@ -67,7 +67,7 @@ export async function listSnapshotBuilds(
  * than the max build window against the provider and closes it: `ready` if the
  * snapshot is active, `failed` otherwise. Idempotent and safe to run anywhere.
  *
- * The cutoff must exceed the longest legitimate build (Daytona build timeout +
+ * The cutoff must exceed the longest legitimate build (provider build timeout +
  * activation poll); below that we'd race a build that's genuinely still going.
  */
 const STALE_BUILD_MS = 20 * 60 * 1000;
@@ -134,7 +134,7 @@ export async function reconcileStaleBuilds(
 /**
  * New build rows record the exact provider in metadata. Historical rows do not,
  * and multi-provider builds predate this provenance, so legacy rows remain
- * unresolved instead of being guessed as Daytona or whichever provider happens
+ * unresolved instead of being guessed as whichever provider happens
  * to be enabled today.
  */
 export function buildLogProviderCandidates(
@@ -218,8 +218,8 @@ export async function closeBuildLogFailed(buildId: string, message: string): Pro
  * supersession prune in {@link runInlineBuild}. Long: a stale-but-live code
  * version (dev's split-brain ran for days) keeps re-building its identity, so
  * every prune within the window would re-arm the mutual-destruction loop, and a
- * kept default costs only provider storage (Daytona's quota GC ranks defaults
- * by freshness; Platinum templates are CAS-chunked).
+ * kept default costs only provider storage (Platinum templates are
+ * CAS-chunked).
  */
 export const PREDECESSOR_PRUNE_PROTECT_MS = 6 * 60 * 60 * 1000;
 

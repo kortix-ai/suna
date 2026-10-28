@@ -7,7 +7,7 @@
  *
  * Providers cap how many templates an org may hold: Platinum refuses builds
  * past its per-org template count (`org_template_quota_exceeded`, tiers
- * 10/50/500), and `snapshots/quota-gc.ts` reclaims Daytona only. A build that
+ * 10/50/500). A build that
  * hits the cap reclaims unused images once and retries once
  * (`buildWithImageQuotaGuard`); a second refusal fails the deployment with
  * `app_image_quota_exceeded` instead of three retries on a backoff.
@@ -69,7 +69,7 @@ import {
   APP_IMAGE_PREFIX,
   appDeploymentSnapshotName,
   deploymentIdFromAppSnapshotName,
-} from '../snapshots/quota-gc-select';
+} from '../snapshots/app-image-names';
 
 /** Deployment states that can never serve traffic again. */
 export const RECLAIMABLE_DEPLOYMENT_STATUSES = ['failed', 'cancelled', 'deleted'] as const;
@@ -366,7 +366,7 @@ export class AppImageQuotaExceededError extends Error {
 
 /**
  * The provider's template-COUNT refusal: Platinum `org_template_quota_exceeded`,
- * Daytona's snapshot-count limit. Not a disk or CPU quota (transient), and never
+ * or another provider's snapshot-count limit. Not a disk or CPU quota (transient), and never
  * a failed Platinum build, whose message carries the Dockerfile's log lines.
  */
 export function isTemplateQuotaRefusal(message: string): boolean {

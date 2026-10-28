@@ -32,7 +32,7 @@ let posted: Array<{
 // to an env snapshot. Cheaper than teaching the fake db which table it was
 // asked for. Rebuilt in `beforeEach` so a test that mutates it (e.g. the
 // no-createdBy case) cannot leak into the next.
-const SANDBOX_ROW = { externalId: 'ext-1', provider: 'daytona', config: { serviceKey: 'svc-key' } };
+const SANDBOX_ROW = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'svc-key' } };
 let SESSION_ROW: {
   createdBy: string;
   agentName: string;
@@ -186,7 +186,7 @@ describe('pushSessionScopeToSandbox', () => {
   });
 
   test('a sandbox with no service key is refused rather than pushed unauthenticated', async () => {
-    activeSandbox = { externalId: 'ext-1', provider: 'daytona', config: {} };
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: {} };
     const result = await pushSessionScopeToSandbox(INPUT);
     expect(result.applied).toBe(false);
     expect(result.reason).toBe('sandbox has no service key');

@@ -88,16 +88,16 @@ export async function forwardToSandbox(
   // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
   // The AUTH/CONTROL guards below (session-visibility gate + /kortix/env block)
   // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
-  // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
-  // alone left the direct-:4096 Daytona path ungated.
+  // 4096 — Platinum reroutes 4096→8000, but a provider that passes 4096
+  // through would leave a direct-:4096 path ungated by an 8000-only gate.
   //
   // EVERY TURN-START PREPARATION KEYS ON `upstreamPort` + `remainingPath`, and
   // there is now ONE predicate for all of them (`isTurnStartEnvSync`, built on
   // `isTurnStartRequest`). The previous rule — "env-sync stays on the
-  // client-addressed `port` ON PURPOSE, to behave identically to Daytona" — was
-  // wrong, and it made one request get different preparations on different
-  // providers: Platinum rewrote 4096→8000 so the sync ran, Daytona passed 4096
-  // through so it did not, and a prompt at :4096 got the config convergence and
+  // client-addressed `port` ON PURPOSE" — was wrong, and it made one request
+  // get different preparations on different providers: Platinum rewrote
+  // 4096→8000 so the sync ran, the legacy provider passed 4096 through so it
+  // did not, and a prompt at :4096 got the config convergence and
   // the undeclared-agent drop but no secret refresh and no grant re-mint.
   // `redirectPrefix`/`X-Forwarded-Prefix` DO still key on the client-addressed
   // `port`, and that one is genuinely on purpose: the prefix must reflect the

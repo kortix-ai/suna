@@ -450,7 +450,7 @@ export function registerProjectSettingsRoutes(): void {
   // design — pin a project to platinum even when platinum's weight is 0. Human callers
   // only: project.settings.write, and never a session principal —
   // the pin routes EVERY new session in the project (KRTX-1681: a security-audit
-  // agent pinned its whole project to daytona to unblock its own task).
+  // agent pinned its whole project to another provider to unblock its own task).
   projectsApp.openapi(
     createRoute({
       method: 'patch',
@@ -497,7 +497,7 @@ export function registerProjectSettingsRoutes(): void {
       // Switching to a safe target (null clear, the platform-default provider, or
       // the already-active provider) is applied immediately and returns the
       // updated project (back-compat). Switching to a DIFFERENT enabled provider
-      // (the Daytona→Platinum case) does NOT flip the active provider now — it
+      // (a switch to Platinum) does NOT flip the active provider now — it
       // records a durable transition, keeps the source active for new sessions,
       // and returns a PREPARATION object the UI polls until the target image is
       // built + verified, then activated.
@@ -529,7 +529,7 @@ export function registerProjectSettingsRoutes(): void {
   );
 
   // GET /:projectId/sandbox-provider/transition — poll the durable provider-migration
-  // transition for this project. The PATCH prepare branch (Daytona→Platinum) returns
+  // transition for this project. The PATCH prepare branch (switch to Platinum) returns
   // a `kind:'preparation'` body but does NOT flip the active provider; the client
   // polls this endpoint until the transition reaches a terminal status. Project-scoped
   // (loadProjectForUser rejects cross-project/non-member with a 404, same scoping as

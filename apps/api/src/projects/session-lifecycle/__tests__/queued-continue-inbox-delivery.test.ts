@@ -142,7 +142,7 @@ let pauseAfterPosts: number | null = null;
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
-  KNOWN_PROVIDERS: ['platinum', 'daytona'],
+  KNOWN_PROVIDERS: ['platinum'],
 }));
 
 mock.module('../../../shared/db', () => ({
@@ -214,7 +214,7 @@ mock.module('../../session-open', () => ({
     if (delay) await delay;
     return {
       stage: 'ready',
-      sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
+      sandbox: { external_id: EXTERNAL_ID, provider: 'platinum' },
       opencode_session_id: OC_SESSION_ID,
     };
   },
@@ -566,7 +566,7 @@ beforeEach(() => {
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     baseRef: 'main',
     agentName: 'agent',
     opencodeSessionId: OC_SESSION_ID,

@@ -26,7 +26,7 @@ let sessionMetadata: Record<string, unknown> | null = null;
 const SANDBOX_ROW = {
   sessionId: 'sess-1',
   externalId: 'ext-1',
-  provider: 'daytona',
+  provider: 'platinum',
   config: { serviceKey: 'svc-key' },
 };
 const SESSION_ROW = {
@@ -312,7 +312,7 @@ describe('pushSessionAgentConfigToSandbox', () => {
   });
 
   test('a sandbox with no service key is refused rather than pushed unauthenticated', async () => {
-    activeSandbox = { externalId: 'ext-1', provider: 'daytona', config: {} };
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: {} };
 
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
 

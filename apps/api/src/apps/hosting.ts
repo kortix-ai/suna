@@ -31,8 +31,7 @@ export interface AppMachineSpec {
 /**
  * A Platinum App template carries these minimal defaults; each machine passes
  * its own size at create (Platinum enforces the template's as a floor), so a
- * resize never rebuilds the image. Daytona sizes the box from the
- * template, so there the template keeps the App's size.
+ * resize never rebuilds the image.
  */
 export const APP_TEMPLATE_MACHINE: AppMachineSpec = { cpuCores: 1, memoryGb: 1, diskGb: 1 };
 
@@ -170,9 +169,7 @@ export class AppHostingProvider {
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
       ...(input.volumes && Object.keys(input.volumes).length > 0 ? { volumes: input.volumes, volumesRequired: true } : {}),
       // On-demand Apps keep the provider's idle backstop. An always-on App opts
-      // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
-      // 1-minute stop, so there it keeps the backstop and
-      // the keep-alive pass renews it every 5 minutes (`renewLifecycle`).
+      // out of it on Platinum, where 0 means persistent.
       ...(input.alwaysOn && input.provider === 'platinum' ? { autoStopInterval: 0 } : {}),
     });
     try {
@@ -269,14 +266,14 @@ export class AppHostingProvider {
     try {
       await runtimeProvider.stop(externalId);
     } catch (error) {
-      // Provider stop endpoints are not consistently idempotent. Daytona, for
-      // example, rejects a second stop after it already archived the sandbox.
+      // Provider stop endpoints are not consistently idempotent: a provider can
+      // reject a second stop after it already stopped the sandbox.
       // Confirm provider truth before deciding whether the operation failed.
       let status = await runtimeProvider.getStatus(externalId).catch(() => 'unknown' as const);
       if (status === 'stopped' || status === 'removed') return;
       // A conflict can also mean the sandbox is mid-flight between provider
-      // states: Daytona rejects a stop with "Sandbox state change in progress"
-      // while a start, archive or restore is running, and its reported state
+      // states: a provider can reject a stop while a start, archive or restore
+      // is running, and its reported state
       // still reads running at that instant. The desired state is stopped
       // either way, so give the transition a bounded window to settle — a
       // sandbox that reports stopped or removed satisfies the request, and one

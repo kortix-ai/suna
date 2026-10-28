@@ -39,7 +39,7 @@ let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Resp
 const originalFetch = globalThis.fetch;
 
 mock.module('../../../config', () => ({
-  config: { ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'platinum'] },
+  config: { ALLOWED_SANDBOX_PROVIDERS: ['platinum'] },
 }));
 
 const updater = (table: unknown) => ({
@@ -232,7 +232,7 @@ describe('stopSession', () => {
     sandboxRow = {
       sandboxId: 'sess-1',
       externalId: 'ext-1',
-      provider: 'daytona',
+      provider: 'platinum',
       status: 'stopped',
       metadata: {},
     };
@@ -286,7 +286,7 @@ describe('stopSession', () => {
     sandboxRow = {
       sandboxId: 'sess-1',
       externalId: 'ext-1',
-      provider: 'daytona',
+      provider: 'platinum',
       status: 'active',
       metadata: { foo: 'bar' },
     };
@@ -336,7 +336,7 @@ describe('stopSession', () => {
   // 05#4: a prompt could land between the abort and provider.stop. The claim
   // makes beginSandboxTurn refuse it, so it must commit before the abort.
   test('claims the row before it aborts the turn and powers the box off', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'platinum', status: 'active', metadata: {} };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(200);
     expect(callOrder[0]).toBe('claim');
@@ -348,7 +348,7 @@ describe('stopSession', () => {
   });
 
   test('answers `stopping` and does nothing when another stop already holds the claim', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'platinum', status: 'active', metadata: {} };
     claimGranted = false;
     const result = await stopSession(baseInput);
     expect(result.status).toBe(200);
@@ -358,7 +358,7 @@ describe('stopSession', () => {
   });
 
   test('releases its claim when the provider stop fails', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'platinum', status: 'active', metadata: {} };
     stopError = new Error('internal provider error: connection refused');
     const result = await stopSession(baseInput);
     expect(result.status).toBe(502);
@@ -370,7 +370,7 @@ describe('stopSession', () => {
     sandboxRow = {
       sandboxId: 'sess-1',
       externalId: 'ext-1',
-      provider: 'daytona',
+      provider: 'platinum',
       status: 'active',
       metadata: {},
     };
@@ -497,14 +497,14 @@ describe('stopSession', () => {
     test('stamps the open turns as a stop this person asked for, BEFORE the abort', async () => {
       // Without the stamp the abort's end frame, or the runtime_gone settle,
       // reads as a failure nobody explained, and nobody sees who stopped it.
-      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'platinum', status: 'active', metadata: {} };
       expect((await stopSession(baseInput)).status).toBe(200);
       expect(stamps).toEqual([{ sessionId: 'sess-1', name: 'UserStop', scope: {}, by: 'user-1', abortsBefore: 0 }]);
       expect(abortFetchCalls).toHaveLength(1);
     });
 
     test('an agent credential stops it under nobody', async () => {
-      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+      sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'platinum', status: 'active', metadata: {} };
       await stopSession({ ...baseInput, stoppedBy: null });
       expect(stamps.map((stamp) => stamp.by)).toEqual([null]);
     });
@@ -513,7 +513,7 @@ describe('stopSession', () => {
       sandboxRow = {
         sandboxId: 'sess-1',
         externalId: 'ext-1',
-        provider: 'daytona',
+        provider: 'platinum',
         status: 'active',
         metadata: {},
       };

@@ -1,6 +1,6 @@
 // Real-DB e2e for the session-side reaper reconciliation (reconcileStuckActiveSessions).
 //
-// The provider reaper (reapAndReconcileSandboxes) needs a live Daytona to test;
+// The provider reaper (reapAndReconcileSandboxes) needs a live provider to test;
 // THIS pass is DB-only, so it gets a real end-to-end test against an actual
 // Postgres. It exercises the exact decision matrix that keeps the concurrent-
 // session cap honest: a stuck active-status session with no live box is drained

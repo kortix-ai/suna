@@ -706,7 +706,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
           managed: null,
           withheld: null,
           agent_env_written: false,
-          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+          reason: 'Sandbox env push failed: connection refused',
         }),
       ],
     });
@@ -736,7 +736,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
         {
           session_id: 'session-bad',
           sandbox_id: 'sandbox-bad',
-          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+          reason: 'Sandbox env push failed: connection refused',
         },
       ],
     });
@@ -1051,7 +1051,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
           managed: null,
           withheld: null,
           agent_env_written: false,
-          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+          reason: 'Sandbox env push failed: connection refused',
         }),
       ],
     });
@@ -1081,7 +1081,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
         {
           session_id: 'session-bad',
           sandbox_id: 'sandbox-bad',
-          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+          reason: 'Sandbox env push failed: connection refused',
         },
       ],
     });

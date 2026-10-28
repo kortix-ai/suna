@@ -12,7 +12,7 @@
  * forever. Such sessions accreted to 200+ on a single account and blocked it.
  *
  * This pass closes that gap from the session side. It is DB-ONLY (no provider
- * round-trip), so it is immune to the Daytona throttling that starves the box
+ * round-trip), so it is immune to the provider throttling that starves the box
  * reaper, and it acts ONLY on sessions that are provably idle:
  *   - status ∈ ACTIVE_SESSION_STATUSES and untouched for longer than the auto-
  *     stop TTL (so a healthy in-flight provision/branch is never touched),

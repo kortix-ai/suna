@@ -32,10 +32,9 @@ import type { UiTranslator } from '@/i18n/translator';
  *     are resolved server-side and never enter the machine, Kortix's own
  *     upstream keys never enter it either, and a session only receives the
  *     secrets both the person's role and the agent's declared grant allow.
- *  2. "Each session runs in its own VM" / blanket "microVM" is NOT true of the
- *     legacy Daytona provider. Platinum is a Cloud Hypervisor microVM; Daytona,
- *     the legacy fallback, is not. The copy claims one isolated sandbox per session, and
- *     names microVM only where it is accurate.
+ *  2. "Each session runs in its own VM" / blanket "microVM" is not a cleared
+ *     claim. Platinum is a Cloud Hypervisor microVM. The copy claims one
+ *     isolated sandbox per session, and names microVM only where it is accurate.
  *  3. "Egress controlled at the network" (a `kortix-brand` proof point) is NOT
  *     substantiated anywhere in this tree — the network design is
  *     "Proposed — not scheduled". Dropped.

@@ -3,7 +3,7 @@ import { SnapshotInUseError } from '../snapshots/providers/errors';
 import {
   appDeploymentSnapshotName,
   deploymentIdFromAppSnapshotName,
-} from '../snapshots/quota-gc-select';
+} from '../snapshots/app-image-names';
 import {
   AppImageQuotaExceededError,
   appImageName,
@@ -178,7 +178,7 @@ describe('reclaimAppDeploymentImages', () => {
         appDeploymentSnapshotName(DEPLOYMENT_B),
         appDeploymentSnapshotName(FOREIGN),
         'kortix-default-abc123',
-        'daytonaio/stock-image',
+        'library/stock-image',
       ],
     });
     const io = fakeIo({ providers: [{ name: 'platinum', adapter: provider }], reclaimable: [DEPLOYMENT_A] });
@@ -202,7 +202,7 @@ describe('reclaimAppDeploymentImages', () => {
     const broken = fakeProvider({ failList: true });
     const healthy = fakeProvider({ images: [appDeploymentSnapshotName(DEPLOYMENT_B)] });
     const io = fakeIo({
-      providers: [{ name: 'platinum', adapter: broken }, { name: 'daytona', adapter: healthy }],
+      providers: [{ name: 'platinum', adapter: broken }, { name: 'second', adapter: healthy }],
       reclaimable: [DEPLOYMENT_B],
     });
     const result = await reclaimAppDeploymentImages({}, io);
@@ -277,7 +277,7 @@ describe('shared App image names', () => {
       { environment: 'staging:https://api.example.test' },
       { environment: 'dev:https://other.example.test' },
       { accountId: '00000000-0000-4000-a000-0000000000a2' },
-      { provider: 'daytona' },
+      { provider: 'second' },
       { artifactDigest: `sha256:${'cd'.repeat(32)}` },
       { source: { kind: 'dockerfile', dockerfile: 'Dockerfile.prod' } },
       { dockerfile: 'FROM node:24-alpine\n' },
@@ -355,8 +355,6 @@ describe('template quota guard', () => {
   // template count: neither may reclaim or fail the deployment permanently.
   test.each([
     ['a Dockerfile RUN step that prints a disk quota error', 'Platinum template kortix-appimg-dev-abc build failed: RUN npm ci: write /app/node_modules: Disk quota exceeded'],
-    ['a Daytona organization disk quota', 'Snapshot build failed: Total disk quota exceeded (100GB). Please contact support'],
-    ['a Daytona CPU quota', 'Snapshot build failed: Total CPU quota exceeded'],
     ['a pip quota line in a Platinum build log', 'Platinum template kortix-appimg-dev-abc build failed: ERROR: quota exceeded for package index'],
   ])('%s passes through without a reclaim', async (_label, message) => {
     let reclaims = 0;
@@ -370,20 +368,6 @@ describe('template quota guard', () => {
     expect((failure as Error).message).toBe(message);
     expect(reclaims).toBe(0);
     expect(builds).toBe(1);
-  });
-
-  test('a Daytona snapshot-count refusal reclaims like the Platinum template quota', async () => {
-    let reclaims = 0;
-    let builds = 0;
-    await buildWithImageQuotaGuard({
-      provider: 'daytona',
-      build: async () => {
-        builds += 1;
-        if (builds === 1) throw new Error('Snapshot build failed: Organization has reached the maximum number of snapshots (100)');
-      },
-      reclaim: async () => { reclaims += 1; },
-    });
-    expect([builds, reclaims]).toEqual([2, 1]);
   });
 
   test('any other build failure passes through without a reclaim', async () => {

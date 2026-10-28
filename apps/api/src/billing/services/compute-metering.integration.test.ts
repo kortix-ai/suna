@@ -105,7 +105,7 @@ async function sandbox(
     sessionId,
     accountId,
     projectId: project.project_id,
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: options.externalId === undefined ? `ext-${sandboxId}` : options.externalId,
     status: options.status ?? 'active',
     ...(options.createdAt ? { createdAt: new Date(options.createdAt) } : {}),
@@ -129,7 +129,7 @@ async function openWindow(input: {
     .values({
       accountId: input.accountId,
       sandboxId,
-      provider: 'daytona',
+      provider: 'platinum',
       ...SPEC,
       state: 'active',
       startedAt: input.startedAt,
@@ -233,7 +233,7 @@ async function app(
     .values({
       deploymentId: deployment!.deploymentId,
       accountId,
-      provider: 'daytona',
+      provider: 'platinum',
       externalId,
       status: options.runtimeStatus ?? 'running',
       controlTokenHash: '0'.repeat(64),
@@ -276,10 +276,10 @@ withDb('compute metering on PostgreSQL', () => {
       const accountId = await account({});
       const sandboxId = await sandbox(accountId);
 
-      const id = await startComputeSession({ sandboxId, accountId, provider: 'daytona', spec: SPEC });
+      const id = await startComputeSession({ sandboxId, accountId, provider: 'platinum', spec: SPEC });
 
       const [open] = await windowsOf(sandboxId);
-      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'daytona', costUsd: 0 });
+      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'platinum', costUsd: 0 });
       expect(open!.lastBilledAt).toBe(open!.startedAt);
       expect(await ledgerOf(accountId)).toEqual([]);
     });
@@ -404,7 +404,7 @@ withDb('compute metering on PostgreSQL', () => {
       const first = await startComputeSession({
         sandboxId,
         accountId,
-        provider: 'daytona',
+        provider: 'platinum',
         spec: { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 },
       });
       await pauseComputeSession(sandboxId);
@@ -418,7 +418,7 @@ withDb('compute metering on PostgreSQL', () => {
           id: second,
           state: 'active',
           endedAt: null,
-          provider: 'daytona',
+          provider: 'platinum',
           cpuCores: 4,
           memoryGb: 8,
           diskGb: 40,
@@ -680,7 +680,7 @@ withDb('compute metering on PostgreSQL', () => {
         .values({
           projectId: monitorProject.project_id,
           accountId,
-          provider: 'daytona',
+          provider: 'platinum',
           externalId: 'monitor-ext',
           status: 'running',
           boxEpoch: 'epoch-1',
@@ -716,7 +716,7 @@ withDb('compute metering on PostgreSQL', () => {
       });
       const project = await fixtures.seedProject('compute-monitor-unavailable', { accountId });
       const [box] = await db.insert(projectMonitorBoxes).values({
-        projectId: project.project_id, accountId, provider: 'daytona',
+        projectId: project.project_id, accountId, provider: 'platinum',
         externalId: 'monitor-unavailable', status: 'running', boxEpoch: 'epoch-1',
       }).returning({ boxId: projectMonitorBoxes.boxId });
       const monitor = await openWindow({

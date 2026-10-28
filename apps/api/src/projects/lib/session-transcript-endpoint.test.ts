@@ -7,7 +7,7 @@ import type { MirrorSnapshot } from './session-transcript-mirror';
  * request — the pin check and the message fetch share it — and that shared
  * resolution is bounded: a hung provider or box degrades to the mirror at the
  * budget instead of stacking waits into the 25 s request deadline. The
- * sandbox-proxy backend (the Daytona/provider hops) stands in for the
+ * sandbox-proxy backend (the provider hops) stands in for the
  * provider here; it is the slow, cached side of the resolution.
  *
  * 2026-09-29 prod: GET /v1/projects/:id/sessions/:id/transcript answered

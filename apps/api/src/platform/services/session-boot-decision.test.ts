@@ -11,13 +11,12 @@ setTestEnv('SUPABASE_URL', 'http://127.0.0.1:54321');
 setTestEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role');
 setTestEnv('API_KEY_SECRET', 'test-api-key-secret');
 setTestEnv('TUNNEL_SIGNING_SECRET', 'test-tunnel-signing-secret');
-setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum,daytona');
+setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'platinum');
 setTestEnv('KORTIX_URL', 'https://api.example.test');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
-setTestEnv('DAYTONA_API_KEY', 'dt_test');
 
 const {
   decideSessionBoot,
@@ -133,24 +132,20 @@ describe('FIX-A decideSessionBoot — pinned-id boot gating', () => {
     ).toEqual({ bootByTemplateId: null });
   });
 
-  test('rollback: a leftover Platinum id pin does NOT id-boot a Daytona session (name-boot)', () => {
-    // Rolled back to Daytona: the session runs on Daytona, which has no id-boot,
-    // so a stale Platinum id in the pin can never brick boot.
+  test('a pin left by another provider never id-boots (name-boot)', () => {
+    // A stored legacy pin (Daytona support was removed on 2026-10-28) names a
+    // provider the session does not run on, so its template id is never used.
     expect(
       decideSessionBoot({
         killSwitchOn: true,
         routing: {
           activeProvider: 'daytona',
-          activeExternalTemplateId: 'tpl_platinum_leftover',
+          activeExternalTemplateId: 'tpl_legacy_leftover',
           activeSnapshotName: null,
         },
-        providerName: 'daytona',
-        providerSupportsIdBoot: false,
+        providerName: 'platinum',
+        providerSupportsIdBoot: true,
       }),
-    ).toEqual({ bootByTemplateId: null });
-    // And a session whose provider differs from the pin's provider never id-boots.
-    expect(
-      decideSessionBoot({ killSwitchOn: true, routing: pinned, providerName: 'daytona', providerSupportsIdBoot: true }),
     ).toEqual({ bootByTemplateId: null });
   });
 

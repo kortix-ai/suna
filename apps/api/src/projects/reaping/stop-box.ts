@@ -14,8 +14,6 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import { getProvider, isProviderName } from '../../platform/providers';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
-import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
-import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { PlatinumHttpError } from '../../shared/platinum';
 import type { StopReason } from '../stop-reason';
@@ -51,8 +49,7 @@ const ABORT_TIMEOUT_MS = 4_000;
  *     needs: Platinum answers its `POST /v1/sandboxes/:id/expose` with 429
  *     `rate_limited` (the org's 20/s write budget under a stop burst), the
  *     typed 409 `sandbox_not_running` for a box auto-stopped before the
- *     abort, or 404 for a box already gone. Daytona's SDK shapes (throttler
- *     429, gateway 502/503/504, connection/timeout) are the same class.
+ *     abort, or 404 for a box already gone. Gateway 502/503/504 is the same class.
  * Every one of those is a normal miss, not a fault: log it at info, SAMPLED
  * (see ABORT_MISS_LOG_INTERVAL_MS). A refusal of the dial itself is a miss at
  * any status (the abort never gates the stop); on the ingress resolve, only
@@ -61,11 +58,9 @@ const ABORT_TIMEOUT_MS = 4_000;
  */
 function isExpectedAbortMiss(err: unknown): boolean {
   // Already stopped/gone is the designed idle-stop state — the reaper's own
-  // classifier for the stop itself (404 gone, Daytona "not started",
+  // classifier for the stop itself (404 gone,
   // Platinum's typed or textual not-running 409).
   if (isAlreadyNotRunning(err)) return true;
-  if (isDaytonaRateLimitError(err)) return true;
-  if (isDaytonaTransientProviderError(err)) return true;
   return err instanceof PlatinumHttpError && (err.status === 429 || err.status >= 502);
 }
 

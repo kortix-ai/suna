@@ -475,7 +475,7 @@ describe('isAmbiguousRuntimeStartError', () => {
   const named = (name: string, message = 'x') => Object.assign(new Error(message), { name });
 
   test('a timeout, an abort or a lost connection may still be starting the box', () => {
-    for (const name of ['TimeoutError', 'AbortError', 'DaytonaTimeoutError', 'DaytonaConnectionError']) {
+    for (const name of ['TimeoutError', 'AbortError']) {
       expect(isAmbiguousRuntimeStartError(named(name))).toBe(true);
     }
     expect(isAmbiguousRuntimeStartError(Object.assign(new TypeError('socket closed'), { code: 'ECONNRESET' }))).toBe(true);
@@ -483,6 +483,6 @@ describe('isAmbiguousRuntimeStartError', () => {
 
   test('the message text alone is not evidence', () => {
     expect(isAmbiguousRuntimeStartError(new Error('provider timed out after 10s'))).toBe(false);
-    expect(isAmbiguousRuntimeStartError(named('DaytonaError', 'request aborted: connection reset'))).toBe(false);
+    expect(isAmbiguousRuntimeStartError(named('PlatinumHttpError', 'request aborted: connection reset'))).toBe(false);
   });
 });

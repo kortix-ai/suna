@@ -159,7 +159,7 @@ export async function ensureSandboxImage(
     /**
      * The provider the SESSION will run on (its sandbox provider). Build there,
      * not on the template row's last-built provider — otherwise a template built
-     * on one provider (e.g. Daytona) makes a session on another (e.g. Platinum)
+     * on one provider makes a session on another
      * reuse a snapshot that doesn't exist there → 404 on create. Defaults to the
      * row's provider for non-session callers (pre-build/manual/background).
      */
@@ -189,7 +189,7 @@ export async function ensureSandboxImage(
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
   // snapshot (same content hash + name) as active, boot straight off it without
-  // a provider round-trip. Daytona's `snapshot.get` is a public-internet call
+  // a provider round-trip. A provider's snapshot read is a public-internet call
   // that spikes to many seconds under load, and it runs on every warm boot —
   // pure dead time when our own row already knows the answer. The auto-heal in
   // session-sandbox.ts (rebuild + retry once on "snapshot not found") covers the
@@ -329,7 +329,7 @@ export async function ensureSandboxImage(
   // A burst of triggers for the same snapshot identity — e.g. a project-create
   // pre-build, the first session boot, and a background rebuild all landing
   // within the same build window — must produce exactly ONE provider build and
-  // ONE build-log row. `daytona.snapshot.create` calls racing under the same
+  // ONE build-log row. Provider snapshot-create calls racing under the same
   // name conflict, and duplicate rows are what left two "Building" entries
   // orphaned in the UI. We dedupe in-process by (provider, snapshot name); the
   // cross-process case is deduped above by provider truth + settlement polling.
@@ -477,9 +477,9 @@ async function runInlineBuild(
       containerRuntime: template.containerRuntime,
       // Built where its sessions boot, so they never wait for a copy.
       region: identity.region,
-      // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
+      // Cold-only: Platinum builds a cold rootfs template
       // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
-      // AND on resume — the SAME path Daytona takes, no provider divergence.
+      // AND on resume.
       // Stateful/warm capture used to resume opencode mid-state off a CH memory
       // snapshot, which intermittently wedged it (virtio-net RX stall after
       // restore → /global/event + /pty hang while /kortix/health still

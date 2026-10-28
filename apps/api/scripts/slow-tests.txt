@@ -17,8 +17,6 @@ src/projects/git/config.test.ts
 src/config-releases/store.supabase.test.ts
 src/__tests__/e2e-cr-empty-guard-git.test.ts
 src/projects/git/mirror-view-stale.test.ts
-src/platform/providers/daytona.test.ts
-src/__tests__/unit-daytona-snapshot-context.test.ts
 src/projects/routes/project-audit-ingestion.test.ts
 src/middleware/auth.test.ts
 src/projects/session-lifecycle/__tests__/queued-continue-inbox-delivery.test.ts
@@ -26,7 +24,6 @@ src/secrets/relay-transport.test.ts
 src/projects/git/branches-push-transient.test.ts
 src/mcp/sandbox.test.ts
 src/__tests__/unit-request-deadline.test.ts
-src/shared/daytona.test.ts
 src/snapshots/providers/platinum-wait-active.test.ts
 src/projects/trigger-schedule.jitter.test.ts
 src/__tests__/unit-hosted-deployment-vendor-removal.test.ts

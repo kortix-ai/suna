@@ -108,7 +108,7 @@ const deviceTokenReleaseLimiter = new TokenBucketRateLimiter('device_token_relea
  * INCIDENT 2026-08-21: agents in two projects used secrets as a config store
  * and wrote them in loops (one made 1,017 writes in a morning). Every write
  * fans an env push to every active sandbox in the project, so the loops became
- * a provider-API storm that got the whole Daytona org rate-limited — failing
+ * a provider-API storm that got the whole provider org rate-limited — failing
  * session creates and wakes for every other customer. No human workflow writes
  * secrets 100 times in an hour; an agent loop does.
  *

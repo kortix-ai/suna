@@ -14,7 +14,7 @@ let freshReference = async (_provider: string, _externalId: string): Promise<boo
 mock.module('./reaping/orphan-box-references', () => ({
   hasProviderBoxReference: (provider: string, externalId: string) => freshReference(provider, externalId),
 }));
-// `terminal` is a real provider answer (Daytona `error`, Platinum `failed`), so
+// `terminal` is a real provider answer (Platinum `failed`), so
 // the fixture has to be able to express it — see decideReconcile.
 let statusByExternal: Record<
   string,
@@ -24,7 +24,6 @@ let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
 let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
-let platinumManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -213,7 +212,7 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 const reaperConfigModule = mockConfigModule({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
   KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum'],
 });
 const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
 mock.module('../config', () => reaperConfigModule);
@@ -355,7 +354,7 @@ mock.module('../platform/providers', () => ({
       const err = lifecycleRenewErrorByExternal[externalId];
       if (err) throw err;
     },
-    listManagedRunningSandboxes: async () => (name === 'platinum' ? platinumManagedBoxes : managedBoxes),
+    listManagedRunningSandboxes: async () => managedBoxes,
   }),
 }));
 
@@ -510,7 +509,6 @@ beforeEach(() => {
   stops = [];
   stopsByProvider = [];
   managedBoxes = [];
-  platinumManagedBoxes = [];
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
@@ -570,10 +568,10 @@ describe('decideReconcile', () => {
   test('running is not a reconcile concern', () => {
     expect(decideReconcile('running')).toBe('none');
   });
-  // Daytona `error` / Platinum `failed` used to arrive here as 'unknown' and so
+  // A terminal provider state (Platinum `failed`) used to arrive here as 'unknown' and so
   // returned 'none' forever, leaving the row `active` and its compute window
   // billing wall-clock against a box that had been dead for weeks (12 of the
-  // longest-billed open prod rows were ALL in Daytona state `error`).
+  // longest-billed open prod rows were ALL in a terminal state).
   test('REGRESSION: a terminal (dead) box reconciles and closes billing', () => {
     expect(decideReconcile('terminal')).toBe('reconcile-stopped');
   });
@@ -763,7 +761,7 @@ function candidate(over: Partial<any> = {}) {
     sandboxId: 'sb-1',
     sessionId: 'sess-1',
     accountId: 'acct-1',
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: 'ext-1',
     metadata: null,
     // Healthy by default: a live deadline. Tests that want a kill set it.
@@ -914,7 +912,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
     expect(r.stopped).toBe(0);
     expect(r.lifecycleRenewed).toBe(1);
-    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    expect(timeoutRenewals).toEqual([{ provider: 'platinum', externalId: 'ext-1' }]);
   });
 
   test('the fast renewal lane excludes every row without durable turn authority', async () => {
@@ -983,7 +981,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ]);
     expect(r.stopped).toBe(0);
     expect(r.lifecycleRenewed).toBe(1);
-    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    expect(timeoutRenewals).toEqual([{ provider: 'platinum', externalId: 'ext-1' }]);
   });
 
   test('never ACTS on a terminal read before the delivery grace deadline', async () => {
@@ -1095,7 +1093,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       expect(clearedTurnCalls).toEqual([]);
       expect(r.stopped).toBe(0);
       // The provider's own timer still follows the Kortix deadline, which has not passed.
-      expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+      expect(timeoutRenewals).toEqual([{ provider: 'platinum', externalId: 'ext-1' }]);
     });
 
     test("a person's session on a question keeps the box two hours", async () => {
@@ -1786,7 +1784,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'long-turn' }]);
     expect(r.stopped).toBe(0);
     expect(r.lifecycleRenewed).toBe(1);
-    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    expect(timeoutRenewals).toEqual([{ provider: 'platinum', externalId: 'ext-1' }]);
   });
 
   test('an expired active record clears only after exact terminal evidence', async () => {
@@ -1847,7 +1845,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'first-token' }]);
     expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'second-token' }]);
-    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    expect(timeoutRenewals).toEqual([{ provider: 'platinum', externalId: 'ext-1' }]);
     expect(stops).toEqual([]);
     expect(result.stopped).toBe(0);
     expect(result.lifecycleRenewed).toBe(1);
@@ -2663,31 +2661,6 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.lifecycleRenewed).toBe(1);
   });
 
-  test('every provider renews its native lifecycle while the Kortix deadline is live', async () => {
-    candidates = (['platinum', 'daytona'] as const).map((provider, index) =>
-      candidate({
-        sandboxId: `sb-${provider}`,
-        sessionId: `sess-${provider}`,
-        externalId: `ext-${provider}`,
-        provider,
-        deadlineAt: new Date(NOW.getTime() + HOUR + index),
-      }),
-    );
-    for (const provider of ['platinum', 'daytona']) {
-      statusByExternal[`ext-${provider}`] = 'running';
-    }
-
-    const r = await reapAndReconcileSandboxes(NOW);
-
-    expect(r.skipped).toBe(2);
-    expect(r.lifecycleRenewed).toBe(2);
-    expect(timeoutRenewals).toEqual([
-      { provider: 'platinum', externalId: 'ext-platinum' },
-      { provider: 'daytona', externalId: 'ext-daytona' },
-    ]);
-    expect(stops).toEqual([]);
-  });
-
   test('an expired box is stopped without renewing its provider lifecycle', async () => {
     candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() - 1) })];
     statusByExternal['ext-1'] = 'running';
@@ -2713,11 +2686,12 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual([]);
   });
 
-  test('a Daytona org throttle during renewal is transient, never an error line', async () => {
-    candidates = [candidate({ provider: 'daytona', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+  test('a Platinum org throttle during renewal is transient, never an error line', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
     statusByExternal['ext-1'] = 'running';
-    const throttled = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
-    throttled.name = 'DaytonaRateLimitError';
+    const throttled = new Error(
+      'platinum POST /v1/sandboxes/ext-1/exec -> 429 {"error":"too many write requests for this org"}',
+    );
     lifecycleRenewErrorByExternal['ext-1'] = throttled;
 
     const logged: string[] = [];
@@ -2937,11 +2911,11 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): one
+  // Incident 2026-08-17T20:40:03Z (a prod session): one
   // provider read of `stopped` durably parked a box that was running a turn,
-  // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
-  // — the provider never stopped it. `stopping` and `pending_stop` both map to
-  // `stopped` (platform/providers/daytona-state.ts), so a box mid-transition, or
+  // `stopReason: provider_reconcile`, and the provider's own autostop was 720
+  // — the provider never stopped it. A transitional state can map to
+  // `stopped`, so a box mid-transition, or
   // one transient misread, settled its turns `runtime_gone` and kicked its
   // client to the wake flow. While turn authority exists the park needs TWO
   // observations, one pass apart — the wake fence, mirrored to the stop side.
@@ -3067,7 +3041,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('a terminal provider state parks a turn-holding box on the FIRST read', async () => {
-    // Daytona `error` / Platinum `failed`. There is no transitional state that
+    // Platinum `failed`. There is no transitional state that
     // maps to `terminal`, so a second observation would only cost the box's
     // client another pass of waiting for an answer that cannot change.
     candidates = [midTurnCandidate()];
@@ -3167,7 +3141,7 @@ describe('reapOrphanProviderBoxes', () => {
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
   test('keeps monitor boxes', async () => {
-    monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
+    monitorKeepRows = [{ provider: 'platinum', externalId: 'monitor' }];
     managedBoxes = ['monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
     expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
     expect(stops).toEqual([]);
@@ -3195,7 +3169,7 @@ describe('reapOrphanProviderBoxes', () => {
 
   test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
-    candidates = [{ provider: 'daytona', externalId: 'keep-1' }];
+    candidates = [{ provider: 'platinum', externalId: 'keep-1' }];
     managedBoxes = [
       { externalId: 'keep-1', createdAt: hoursAgo(48) }, // in keepSet → live
       { externalId: 'orphan-1', createdAt: hoursAgo(48) }, // orphan + old → STOP
@@ -3231,7 +3205,7 @@ describe('reapOrphanProviderBoxes', () => {
 
   test('keeps a provider box referenced by a live App runtime', async () => {
     candidates = [];
-    appRuntimeKeepRows = [{ provider: 'daytona', externalId: 'app-live' }];
+    appRuntimeKeepRows = [{ provider: 'platinum', externalId: 'app-live' }];
     managedBoxes = [
       { externalId: 'app-live', createdAt: hoursAgo(48) },
       { externalId: 'real-orphan', createdAt: hoursAgo(48) },
@@ -3241,19 +3215,6 @@ describe('reapOrphanProviderBoxes', () => {
 
     expect(stops).toEqual(['real-orphan']);
     expect(r).toMatchObject({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
-  });
-
-  test('lists and stops orphan boxes through every configured provider adapter', async () => {
-    managedBoxes = [{ externalId: 'daytona-orphan', createdAt: hoursAgo(10) }];
-    platinumManagedBoxes = [{ externalId: 'platinum-orphan', createdAt: hoursAgo(10) }];
-
-    const r = await reapOrphanProviderBoxes(NOW2);
-
-    expect(stopsByProvider).toEqual([
-      { provider: 'platinum', externalId: 'platinum-orphan' },
-      { provider: 'daytona', externalId: 'daytona-orphan' },
-    ]);
-    expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {
@@ -3742,7 +3703,7 @@ describe('reconcileOrphanComputeSessions', () => {
     sbStatus: 'active',
     sbUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
     sbMetadata: {},
-    sessionProvider: 'daytona',
+    sessionProvider: 'platinum',
     sessionExternalId: 'ext-1',
     appStatus: null,
     appUpdatedAt: null,
@@ -3790,7 +3751,7 @@ describe('reconcileOrphanComputeSessions', () => {
         appStatus: 'running',
         appUpdatedAt: new Date(NOW3.getTime() - HOUR).toISOString(),
         appMetadata: {},
-        appProvider: 'daytona',
+        appProvider: 'platinum',
         appExternalId: 'app-ext-1',
       }),
     ];
@@ -3814,7 +3775,7 @@ describe('reconcileOrphanComputeSessions', () => {
         appStatus: 'stopped',
         appUpdatedAt: stoppedAt.toISOString(),
         appMetadata: {},
-        appProvider: 'daytona',
+        appProvider: 'platinum',
         appExternalId: 'app-ext-1',
       }),
     ];

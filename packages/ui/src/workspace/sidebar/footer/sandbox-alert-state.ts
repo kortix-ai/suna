@@ -68,7 +68,6 @@ export function sandboxHealthRefetchInterval(
 export {
   formatSandboxProvider,
   formatSandboxProviders,
-  isLegacySandboxProvider,
   sandboxProviderRank,
   sortSandboxProviders,
 } from '../../../internal/lib/sandbox-providers';

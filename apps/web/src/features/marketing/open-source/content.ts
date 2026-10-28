@@ -48,8 +48,8 @@
  *     "disconnected" or "air-gapped". Isolated topologies are scoped through
  *     `/enterprise`, which `/self-hosted` routes to.
  *  5. Do not claim "egress controlled at the network" — nothing implements it.
- *  6. Do not claim blanket "microVM isolation" — true for Platinum, not for
- *     Daytona, the legacy fallback. This section names no isolation boundary.
+ *  6. Do not claim blanket "microVM isolation" — true for Platinum, not a
+ *     cleared brand claim. This section names no isolation boundary.
  *  7. Any CLI command put back here must be a shipped one. The two that used to
  *     sit in this file were `kortix self-host start`
  *     (`apps/cli/src/commands/self-host.ts`) and `kortix hosts use <host>`

@@ -276,9 +276,9 @@ describe('classifyDaemonHealth', () => {
 });
 
 describe('relaunchStrategyFor', () => {
-  test('platinum relaunches in place; daytona converges at next start; legacy e2b and unknown unsupported', () => {
+  test('platinum relaunches in place; legacy daytona, e2b and unknown unsupported', () => {
     expect(relaunchStrategyFor('platinum')).toBe('pt-app');
-    expect(relaunchStrategyFor('daytona')).toBe('next-start');
+    expect(relaunchStrategyFor('daytona')).toBeNull();
     expect(relaunchStrategyFor('e2b')).toBeNull();
     expect(relaunchStrategyFor('local')).toBeNull();
   });
@@ -314,7 +314,7 @@ describe('decideDeadDaemonOnOpen', () => {
     expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('park');
   });
 
-  test('providers that relaunch on their own start keep parking', () => {
+  test('a provider with no relaunch strategy keeps parking', () => {
     expect(decideDeadDaemonOnOpen({ provider: 'daytona', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
   });
 });
@@ -590,18 +590,6 @@ describe('bootstrapLegacyRuntime', () => {
     expect(calls.patches).toHaveLength(0);
   });
 
-  test('daytona: stages and records staged; a staged record is not redone on the same build', async () => {
-    const calls: Calls = { patches: [], audits: [], execs: [] };
-    const deps = makeDeps({ health: [LEGACY_HEALTH, LEGACY_HEALTH], exec: async (cmd) => { calls.execs.push(cmd); return { exitCode: 0, stdout: '{"ok":true,"stage":"staged","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' }; } }, calls);
-    const r = await bootstrapLegacyRuntime(input(null, 'daytona'), deps);
-    expect(r.outcome).toBe('staged');
-    const script = Buffer.from(calls.execs[0][2].split("'")[3], 'base64').toString('utf8');
-    expect(script).toContain("RELAUNCH='next-start'");
-    const again = await bootstrapLegacyRuntime(input(calls.patches.at(-1)!, 'daytona'), deps);
-    expect(again.outcome).toBe('staged');
-    expect(calls.execs).toHaveLength(1);
-  });
-
   test('a rotated session PAT is handed to the script; none when nothing to rotate', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
     const deps = makeDeps({ rotateKortixToken: async () => 'kortix_pat_xxxxxxxx' }, calls);
@@ -614,11 +602,6 @@ describe('bootstrapLegacyRuntime', () => {
     const script2 = Buffer.from(calls.execs[1][2].split("'")[3], 'base64').toString('utf8');
     expect(script2).toContain("NEW_KORTIX_TOKEN=''");
     expect(() => renderLegacyBootstrapScript({ relaunch: 'pt-app', kortixToken: "x'; rm -rf /" })).toThrow();
-    // next-start providers never rotate: the provider owns the daemon's env.
-    let minted = 0;
-    const daytona = makeDeps({ health: [LEGACY_HEALTH, LEGACY_HEALTH], rotateKortixToken: async () => { minted++; return 'kortix_pat_x'; }, exec: async (cmd) => { calls.execs.push(cmd); return { exitCode: 0, stdout: '{"ok":true,"stage":"staged"}\n', stderr: '' }; } }, calls);
-    await bootstrapLegacyRuntime(input(null, 'daytona'), daytona);
-    expect(minted).toBe(0);
   });
 
   test('an in-progress attempt younger than the stale window is not duplicated', async () => {

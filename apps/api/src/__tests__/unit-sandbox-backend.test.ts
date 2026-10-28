@@ -15,15 +15,6 @@ mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
 }));
 mock.module('../shared/db', () => ({ db: {} }));
-mock.module('../shared/daytona', () => ({
-  getDaytona: () => ({}),
-  archiveDaytonaSandboxById: async () => ({ ok: true }),
-  isDaytonaDiskQuotaError: () => false,
-  listStoppedDaytonaSandboxesOldestFirst: async function* () {},
-}));
-mock.module('../projects/disk-quota-guard', () => ({
-  triggerEmergencyDiskArchiveSweep: () => {},
-}));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
@@ -49,12 +40,10 @@ beforeEach(() => {
 describe('buildSandboxUpstreamHeaders', () => {
   test('preserves provider-owned ingress headers without knowing their names', async () => {
     const h = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: '', serviceKey: null, providerHeaders: {
-      'X-Daytona-Skip-Preview-Warning': 'true',
-      'X-Daytona-Disable-CORS': 'true',
+      'X-Provider-Example': 'true',
       'x-provider-traffic-token': 'provider-token',
     } });
-    expect(h['X-Daytona-Skip-Preview-Warning']).toBe('true');
-    expect(h['X-Daytona-Disable-CORS']).toBe('true');
+    expect(h['X-Provider-Example']).toBe('true');
     expect(h['x-provider-traffic-token']).toBe('provider-token');
   });
 

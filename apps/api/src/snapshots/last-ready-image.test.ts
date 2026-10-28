@@ -106,7 +106,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
   });
 
   test("a build on another provider does not hide this provider's last ready image", async () => {
-    // Dev 2026-10-24: a Daytona build repointed the shared row at the identity
+    // Dev 2026-10-24: another provider's build repointed the shared row at the identity
     // still building on Platinum, so Platinum boots waited 12 min for it.
     const provider = fakeProvider(['kortix-tpl-OLD']);
     const servable = await findServableLastReadyImage(provider, {

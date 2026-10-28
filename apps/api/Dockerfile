@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
       -trimpath -ldflags='-s -w' -o /out/caddy .
 
 # ---- Sandbox Agent Stage ----
-# The API builds Daytona layered snapshots at runtime. Those snapshots bake the
+# The API builds Platinum sandbox templates at runtime. Those snapshots bake the
 # sandbox-side daemon from this repo, so the deployable API image must carry the
 # latest compiled Linux binary even though we no longer publish a sandbox image.
 FROM --platform=$BUILDPLATFORM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS sandbox-agent

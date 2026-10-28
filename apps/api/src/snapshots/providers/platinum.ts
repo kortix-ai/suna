@@ -2,11 +2,10 @@
  * Platinum implementation of `SandboxProviderAdapter`.
  *
  * Platinum templates ARE the "snapshots" (GET/DELETE /v1/templates). Building
- * does exactly what Daytona does — ship the staged build context (user
- * Dockerfile + Kortix runtime layer) to the provider and let it build
- * server-side. Daytona uses Image.fromDockerfile(); Platinum uses
- * `POST /v1/templates/from-build` (tar.gz of the same context staged by
- * snapshots/build-context.ts, so the produced image is identical). Platinum's
+ * ships the staged build context (user Dockerfile + Kortix runtime layer) to
+ * the provider and lets it build server-side, via
+ * `POST /v1/templates/from-build` (tar.gz of the context staged by
+ * snapshots/build-context.ts). Platinum's
  * host then runs `podman build` + bakes its microVM init/agent, same as its
  * from-spec path.
  */
@@ -171,8 +170,7 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   //   - `org_template_quota_exceeded` (api/templates.ts pickBuildHost) — the
   //     per-org COUNT cap on live templates (tiers 10/50/500). This does NOT
   //     self-clear: nothing frees a template row on its own, and Kortix has no
-  //     org-wide GC for Platinum (snapshots/quota-gc.ts is Daytona-only — it
-  //     imports listDaytonaSnapshots/deleteDaytonaSnapshotById exclusively). So
+  //     org-wide template GC for Platinum. So
   //     burning BUILD_ATTEMPTS on it is pure delay in front of a wall, and it
   //     buries the one error an operator actually needs to see. Fail fast; the
   //     caller falls through to the cold path and the session still boots.
@@ -264,9 +262,9 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   /** One build attempt: stage a FRESH context, ship it, register, wait active.
    *  Re-staged per attempt by buildSnapshot so a context disturbed between
-   *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
+   *  staging and the S3 upload self-heals. */
   private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
-    // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
+    // Stage the build context (Dockerfile + agent/cli/entrypoint/…).
     const ctx = await stageRuntimeBuildContext({
       snapshotName: input.snapshotName,
       userDockerfile,
@@ -288,8 +286,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // 100s-of-MB context uploads in constant memory. The previous
       // new Uint8Array(await readFile()) buffered the ENTIRE tarball (twice) in
       // RAM and OOMKilled the 512Mi api pod (exit 137), 502-ing every session
-      // whose request hit the crashing replica. Daytona never buffers — its SDK
-      // streams the context — so this brings the Platinum path to parity.
+      // whose request hit the crashing replica. Streaming fixes that.
       // uploadWithRetry re-presigns + retries on a transient S3 408/timeout/5xx
       // (see its doc comment) — context_s3_key below is whichever attempt won.
       //

@@ -22,10 +22,9 @@ const CUSTOMER_COMPUTE_RATE_CARD: ProviderComputeRateCard = {
 // Keep every provider explicit: adding a provider must also select its customer rate.
 const PROVIDER_COMPUTE_RATE_CARDS: Record<ProviderName, ProviderComputeRateCard> = {
   platinum: CUSTOMER_COMPUTE_RATE_CARD,
-  daytona: CUSTOMER_COMPUTE_RATE_CARD,
 };
 
-/** A legacy `e2b` compute window (E2B support is discontinued) closes at the same rate. */
+/** A legacy `e2b` or `daytona` compute window (support removed) closes at the same rate. */
 export function getProviderComputeRateCard(name: string): ProviderComputeRateCard {
   return PROVIDER_COMPUTE_RATE_CARDS[name as ProviderName] ?? CUSTOMER_COMPUTE_RATE_CARD;
 }

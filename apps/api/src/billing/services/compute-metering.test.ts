@@ -137,7 +137,7 @@ function staleRow(sessionId: string | null): typeof sandboxComputeSessions.$infe
     sandboxId: 'sb_row',
     sessionId,
     actorUserId: null,
-    provider: 'daytona',
+    provider: 'platinum',
     cpuCores: 2,
     memoryGb: 4,
     diskGb: 20,
@@ -216,7 +216,7 @@ describe('calculateComputeCost', () => {
     expect(calculateComputeCost(spec, seconds)).toBeCloseTo(cost, 8);
   });
 
-  // `e2b` is a legacy stored value (E2B support is discontinued); its window still closes.
+  // `e2b` and `daytona` are legacy stored values (support removed); their windows still close.
   test.each(['platinum', 'daytona', 'e2b'])('%s bills the one hosted customer rate', (provider) => {
     expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.10944109589041096, 8);
   });

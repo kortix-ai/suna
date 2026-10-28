@@ -221,7 +221,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         // transient failed-start mid-start-retry) — condemned live boxes in
         // prod on 2026-10-02/03. Ask the same recovery gate the parked sweep
         // runs before this pass writes a loss. Providers without a recovery
-        // gate (Daytona) keep the historical single-read verdict.
+        // gate keep the historical single-read verdict.
         recoverRemoved: provider.recoverInPlace
           ? async () => (await recoverRemovedParkedRuntime(row, externalId, now)).outcome
           : undefined,

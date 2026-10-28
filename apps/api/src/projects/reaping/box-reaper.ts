@@ -36,8 +36,6 @@
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider, isProviderName } from '../../platform/providers';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
-import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
-import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
@@ -100,7 +98,7 @@ export interface ReapResult {
   husksFinalized: number; // an orphaned open assistant turn we closed server-side
   turnsSettled: number; // ledger rows still open on a box that is no longer running
   errors: number;
-  transient: number; // an expected, transient provider failure (Daytona 429 / gateway blip); the next pass retries it
+  transient: number; // an expected, transient provider failure (provider 429 / gateway blip); the next pass retries it
 }
 
 export const EMPTY_REAP_RESULT: ReapResult = {
@@ -430,7 +428,7 @@ async function reapRunningSandbox(
   }
   // A RENEWAL THAT STARVES MUST NOT BE SILENT.
   //
-  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona):
+  // Incident 2026-08-17T20:40:03Z (a prod session):
   // every probe of this box's turn came back `unknown` — the daemon on
   // that warm snapshot answers the turn question with neither `true`
   // nor `false` — so `renewActiveSandboxTurn` never ran and
@@ -479,8 +477,8 @@ async function reapRunningSandbox(
   // arithmetic, and nothing the box itself can influence upward.
   if (row.deadlineAt.getTime() > now.getTime()) {
     // Keep the PROVIDER'S own timer subordinate to Kortix's deadline.
-    // Platinum and Daytona have native idle timers. Without this provider-neutral renewal, any
-    // one of them can stop a box while the Kortix deadline still says a
+    // Platinum has a native idle timer. Without this provider-neutral renewal, it
+    // can stop a box while the Kortix deadline still says a
     // live agent turn owns it. The sandbox cannot call this method.
     await provider.renewLifecycle(row.externalId);
     result.lifecycleRenewed += 1;
@@ -1062,7 +1060,7 @@ async function reconcileNotRunningSandbox(
         break;
       }
       // `stopped` is the one reconcile state a TRANSITION can produce:
-      // Daytona's `stopping` and `pending_stop` both map to it. While a
+      // a provider's `stopping` maps to it. While a
       // turn is open that single read is not proof — a second one, a pass
       // later, is (decideStoppedObservation). `terminal` is excluded on
       // purpose: nothing transitional maps to it, so a second observation
@@ -1116,16 +1114,12 @@ async function reconcileNotRunningSandbox(
 
 /** Count one row's failure. An expected, transient provider failure is counted and never logged. */
 function countReapFailure(result: ReapResult, row: ReapCandidate, err: unknown): void {
-  // An expected, transient provider failure — a Daytona org-wide 429
-  // (`ThrottlerException`) or a gateway blip — is the provider working as
-  // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
-  // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
-  // or one org throttle across a live fleet emits an error line per box.
+  // An expected, transient provider failure — an org-wide 429 or a gateway
+  // blip — is the provider working as designed. It must never page, or one
+  // org throttle across a live fleet emits an error line per box.
   // Counting it separately and logging NOTHING here keeps this page quiet
   // while the next pass still retries the renewal.
   if (
-    isDaytonaRateLimitError(err) ||
-    isDaytonaTransientProviderError(err) ||
     (row.provider === 'platinum' &&
       err instanceof Error &&
       /^platinum POST \/v1\/sandboxes\/[^/]+\/exec -> 429\b/.test(err.message) &&

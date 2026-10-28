@@ -1339,7 +1339,7 @@ adminApp.openapi(
   },
 );
 
-// PUT new weights ({ platinum: 70, daytona: 30 }). Filtered to allowed providers.
+// PUT new weights ({ platinum: 100 }). Filtered to allowed providers.
 adminApp.openapi(
   createRoute({
     method: 'put', path: '/api/provider-distribution', tags: ['admin'],

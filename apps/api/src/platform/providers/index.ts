@@ -1,6 +1,6 @@
 import { config, KNOWN_PROVIDERS } from '../../config';
 import type { ProviderName, SandboxProvider } from './contract';
-import { DaytonaProvider } from './daytona';
+import { RemovedProviderError } from './deprecated';
 import { PlatinumProvider } from './platinum';
 
 export * from './contract';
@@ -8,8 +8,8 @@ export * from './contract';
 const providers = new Map<ProviderName, SandboxProvider>();
 
 /**
- * Narrows a stored provider string (the DB enum still holds `e2b`) to a live
- * provider name. A legacy `e2b` row returns false: E2B support is discontinued.
+ * Narrows a stored provider string (the DB enum still holds `e2b` and
+ * `daytona`) to a live provider name. A legacy row returns false.
  */
 export function isProviderName(name: string): name is ProviderName {
   return (KNOWN_PROVIDERS as readonly string[]).includes(name);
@@ -28,17 +28,9 @@ export function getProvider(name: ProviderName): SandboxProvider {
       }
       provider = new PlatinumProvider();
       break;
-    case 'daytona':
-      // Legacy fallback provider: removal scheduled, kept for existing sessions.
-      if (!config.DAYTONA_API_KEY) {
-        throw new Error('Daytona (legacy fallback) provider requires DAYTONA_API_KEY to be set.');
-      }
-      provider = new DaytonaProvider();
-      break;
-    default: {
-      const exhaustive: never = name;
-      throw new Error(`Unknown sandbox provider: ${exhaustive}`);
-    }
+    default:
+      // A stored legacy row (`daytona`, `e2b`) reaches here through a cast.
+      throw new RemovedProviderError(String(name));
   }
 
   providers.set(name, provider);
@@ -50,7 +42,7 @@ export function getProvider(name: ProviderName): SandboxProvider {
  * throwing when the provider cannot be constructed — its API key is unset
  * (the provider is disabled on this deployment) or the name is not a known
  * provider (a legacy runtime deployed on a provider this box has since retired,
- * such as a stored `e2b` row: E2B support is discontinued).
+ * such as a stored `e2b` or `daytona` row).
  *
  * Teardown code (App delete, stop, idle-reap, deploy supersede) must never fail
  * because a long-gone sandbox lived on a provider we can no longer reach: the

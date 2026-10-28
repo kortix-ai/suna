@@ -3,7 +3,7 @@ import { classifyRuntimeRequest } from './runtime-request';
 
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
 // stay under the AWS ALB's 60s idle timeout: when every attempt hangs (a cold or
-// errored sandbox whose Daytona upstream never answers) the proxy has to return
+// errored sandbox whose provider upstream never answers) the proxy has to return
 // its own friendly portUnreachable page BEFORE the load balancer severs the idle
 // connection — otherwise the browser gets the LB/CDN's bare 502 (Cloudflare's
 // branded error page) instead. 50s leaves ~10s of headroom.

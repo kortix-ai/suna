@@ -24,7 +24,7 @@ const cfg: {
 mock.module('../../config', () => ({
   config: cfg,
   SANDBOX_VERSION: 'test-version',
-  KNOWN_PROVIDERS: ['platinum', 'daytona'],
+  KNOWN_PROVIDERS: ['platinum'],
 }));
 mock.module('../../shared/db', () => ({ db: {} }));
 
@@ -65,8 +65,8 @@ describe('providerAutoStopBackstopMinutes — the provider-safety knob', () => {
     }
   });
 
-  // 0 is Daytona's and Platinum's encoding for "persistent — never auto-stop".
-  // It must NEVER reach them from here: an unbounded box is the whole defect.
+  // 0 is Platinum's encoding for "persistent — never auto-stop".
+  // It must NEVER reach it from here: an unbounded box is the whole defect.
   test('reads 0 as unset, never as "never auto-stop"', () => {
     cfg.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES = 0;
     expect(providerAutoStopBackstopMinutes()).toBe(720);

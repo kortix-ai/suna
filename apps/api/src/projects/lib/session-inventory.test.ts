@@ -24,7 +24,7 @@ function row(
     projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     branchName: sessionId,
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: sessionId,
     sandboxUrl: null,
     runtimeSessionId: null,

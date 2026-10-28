@@ -4,7 +4,7 @@
  *
  * Both proxy data paths (HTTP forward in forward/ and the WebSocket
  * upstream resolver) used to duplicate this: each loaded the session-sandbox
- * row, resolved the service key, fetched the Daytona preview link, and built
+ * row, resolved the service key, fetched the provider preview link, and built
  * the signed X-Kortix-User-Context header with slightly different code. The
  * HTTP path even queried the *same* row twice per request (ownership gate +
  * forward). This module collapses all of that into one place:
@@ -63,7 +63,7 @@ export interface SandboxRecord {
 }
 
 // ── Caches ───────────────────────────────────────────────────────────────────
-// One cache per distinct cost: the Daytona preview link (a network call, keyed
+// One cache per distinct cost: the provider preview link (a network call, keyed
 // per port) and the service key (cheap, but lets callers skip a row fetch). The
 // row status is intentionally NOT cached — the proxy must see active/stopped
 // transitions immediately so auto-wake and "not ready" responses stay correct.
@@ -264,10 +264,8 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 }
 
 // ── Preview link (provider-resolved upstream, cached per port) ────────────────
-// Delegates to the sandbox's provider — NOT hardcoded to Daytona. The proxy is
-// provider-agnostic: a Platinum sandbox resolves to its edge URL, Daytona to a
-// preview link. (This is the fix for the 502/503 every non-Daytona sandbox hit
-// through `/v1/p/`.)
+// Delegates to the sandbox's provider — never hardcoded to one. The proxy is
+// provider-agnostic: a Platinum sandbox resolves to its edge URL.
 
 export async function resolveSandboxIngress(
   // An App machine has no session row, so it passes the two fields used.
@@ -337,8 +335,7 @@ export function invalidatePreviewLink(sandboxId: string, port: number): void {
 
 /**
  * Build the auth/identity headers every upstream sandbox call needs:
- *   - Daytona preview-warning bypass + CORS-disable flags
- *   - the per-link Daytona preview token (when present)
+ *   - the provider's own headers (e.g. Platinum's preview token)
  *   - Authorization: Bearer <service key> (replaces the user's JWT)
  *   - a signed X-Kortix-User-Context so the daemon can enforce per-user ACLs
  *     without calling back to the API (only when we have both a real user and

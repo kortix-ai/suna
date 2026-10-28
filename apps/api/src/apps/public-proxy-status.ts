@@ -1,4 +1,4 @@
-import { config, type SandboxProviderName } from '../config';
+import { config } from '../config';
 import { escapeHtml } from '../shared/html';
 
 // The `frame-ancestors` directive for App responses. It decides which origins
@@ -252,23 +252,3 @@ export function appColdStartUpstreamResponse(
     : null;
 }
 
-/**
- * Does this upstream answer mean the runtime is gone rather than the App being
- * broken?
- *
- * A provider edge answers for a sandbox it can still see, so a dead runtime
- * arrives as an ORDINARY RESPONSE rather than as a connection error — which is
- * why this check exists at all, and why the shape of it matters per provider.
- */
-export function appProviderStoppedResponse(
-  provider: SandboxProviderName,
-  status: number,
-  body: string,
-): boolean {
-  if (provider === 'daytona') {
-    return status === 400 && (
-      body.includes('no IP address found') || body.includes('failed to get runner info')
-    );
-  }
-  return false;
-}

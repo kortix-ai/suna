@@ -2,7 +2,7 @@
  * The provider-agnostic sandbox status vocabulary.
  *
  * `terminal` is a box the provider reports in a DEAD, unrecoverable state
- * (Daytona `error`/`build_failed`, Platinum `failed`) — deliberately distinct
+ * (Platinum `failed`/`error`) — deliberately distinct
  * from `unknown`, which means "we could not determine the state right now".
  *
  * They were conflated until 2026-07-29, and that conflation was the single most
@@ -29,7 +29,7 @@ export function isProviderNotFound(error: unknown): boolean {
     | { name?: unknown; status?: unknown; statusCode?: unknown; code?: unknown }
     | null
     | undefined;
-  if (err?.name === 'DaytonaNotFoundError' || err?.name === 'SandboxNotFoundError') return true;
+  if (err?.name === 'SandboxNotFoundError') return true;
   if (err?.status === 404 || err?.statusCode === 404 || err?.code === 404) return true;
   const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
   return code === 'not_found' || code === 'notfound';

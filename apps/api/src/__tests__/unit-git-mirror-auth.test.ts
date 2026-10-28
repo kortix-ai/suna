@@ -7,7 +7,7 @@
  * used to make the cold bare-clone of a PRIVATE repo run unauthenticated
  * (`fatal: could not read Username for 'https://github.com'`) — failing every
  * concurrent caller, including a token-bearing session start. That surfaced to
- * users as the misleading "Provisioning failed via daytona."
+ * users as the misleading "Provisioning failed via <provider>."
  *
  * The fix makes the mirror auth-self-sufficient: when the caller didn't pass a
  * token, `refreshMirror` lazily resolves one from the project's stored

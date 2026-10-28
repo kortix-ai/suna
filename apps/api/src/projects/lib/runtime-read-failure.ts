@@ -39,8 +39,6 @@ const RUNTIME_UNAVAILABLE_STATUSES = new Set([404, 502, 503, 504]);
 const RUNTIME_UNAVAILABLE_ERROR_NAMES = new Set([
   'TimeoutError', // AbortSignal.timeout, shared/with-timeout, Platinum's call budget
   'AbortError',
-  'DaytonaTimeoutError',
-  'DaytonaConnectionError',
 ]);
 // Transport-level fetch failures Bun raises as plain messages, not codes — and
 // deliberately no error-`code` check: Postgres errors carry ECONNRESET/

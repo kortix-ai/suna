@@ -829,6 +829,7 @@ export function registerAppsRoutes(): void {
         body: { content: { 'application/json': { schema: z.object({
           artifact_id: z.string().uuid().optional(),
           source: SourceSchema,
+          // `daytona` stays only so a request naming it gets 400 sandbox_provider_deprecated.
           provider: z.enum(['platinum', 'daytona']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),

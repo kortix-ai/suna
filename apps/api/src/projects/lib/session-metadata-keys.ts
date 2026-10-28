@@ -69,8 +69,8 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // A restored deleted session (`restore-session.ts`): its boxes restore from
   // the session log at boot too.
   'restoredAt',
-  // Legacy migration restore. Selects the archive that session open and
-  // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
+  // Legacy migration record written by the retired Suna migration. Nothing
+  // reads it since the Daytona-only chat rehydrate was removed (2026-10-28).
   'legacy_migration',
   // Channel origin. Reply targets and the channel runtime env
   // (`session-channel-env.ts`, the Slack/Teams/email/Telegram relays).

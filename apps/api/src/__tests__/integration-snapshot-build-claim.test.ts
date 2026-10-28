@@ -23,7 +23,7 @@ async function dropOtherReplica(key: string): Promise<void> {
 }
 
 test('a build another replica holds is not claimed; once it releases, the waiter wakes and claims', async () => {
-  const key = `daytona:img-${crypto.randomUUID()}`;
+  const key = `platinum:img-${crypto.randomUUID()}`;
   await otherReplicaHolds(key, 600);
   expect(await claimSnapshotBuild(key)).toBe(false);
   // This replica's release must not free another replica's claim.
@@ -43,7 +43,7 @@ test('a build another replica holds is not claimed; once it releases, the waiter
 });
 
 test('an expired claim (its replica died mid-build) is taken over', async () => {
-  const key = `daytona:img-${crypto.randomUUID()}`;
+  const key = `platinum:img-${crypto.randomUUID()}`;
   await otherReplicaHolds(key, -1);
   await waitForSnapshotBuildRelease(key, 1_000, 50);
   expect(await claimSnapshotBuild(key)).toBe(true);
@@ -52,7 +52,7 @@ test('an expired claim (its replica died mid-build) is taken over', async () => 
 
 test('a heartbeat renewal keeps a claim longer than its lease; releaseAll frees every claim of this replica', async () => {
   const { renewSnapshotBuild, releaseAllSnapshotBuilds } = await import('../snapshots/build-claim');
-  const key = `daytona:img-${crypto.randomUUID()}`;
+  const key = `platinum:img-${crypto.randomUUID()}`;
   expect(await claimSnapshotBuild(key)).toBe(true);
   await db
     .update(workerLeaderLease)

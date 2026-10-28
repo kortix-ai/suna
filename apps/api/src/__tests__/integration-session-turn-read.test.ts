@@ -158,7 +158,7 @@ describe('GET .../turn against real Postgres', () => {
     // `prepareInitialSandboxTurn` + `initialSandboxTurnMetadata` write the turn
     // into `activeTurns` and issue NO ledger INSERT; the first `session_turns`
     // row appears only when `acceptSandboxTurn` runs, after the daemon confirms
-    // acceptance — 18.9s (daytona) / 24.5s (platinum) into a session start. A
+    // acceptance — 24.5s (platinum) into a session start. A
     // ledger-only read answers "idle" for that entire window.
     await setAuthority('provisioning', [
       {

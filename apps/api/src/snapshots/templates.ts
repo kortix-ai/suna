@@ -8,7 +8,7 @@
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries the provider of its most recent
- * successful build; the matching Platinum or Daytona adapter is resolved
+ * successful build; the matching provider adapter is resolved
  * through the shared provider registry.
  */
 
@@ -568,8 +568,7 @@ export async function settlePredecessorReapsForTests(): Promise<void> {
  * legacy managed namespaces, and skipped if ANY other template row still
  * references the name. Scoped `kpp2-` project images are excluded because this
  * path has no data-plane ownership proof. The ownership-aware per-project
- * reaper handles them; Daytona quota GC is the provider-specific pressure
- * backstop. Never throws — a failed reap falls back to later cleanup.
+ * reaper handles them. Never throws — a failed reap falls back to later cleanup.
  */
 async function reapPredecessorSnapshot(
   templateId: string,
@@ -653,7 +652,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     name: row.name,
     isShared: row.isShared,
     source: (row.source as ResolvedTemplate['source']) ?? 'toml',
-    provider: row.provider ?? 'daytona',
+    provider: row.provider ?? 'platinum',
     image: row.image,
     dockerfilePath: row.dockerfilePath,
     entrypoint: row.entrypoint,

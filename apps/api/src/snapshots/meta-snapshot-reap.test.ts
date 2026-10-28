@@ -10,8 +10,8 @@
  * which fails every CI run and every new-project build — those cannot fall back
  * to a last-known-good image the way an existing project's session can.
  *
- * The dangerous part is that dev, staging and prod share ONE Daytona
- * organisation (verified: identical API key across all four env profiles). A
+ * The dangerous part is that dev, staging and prod share ONE provider
+ * organisation. A
  * reap that is not namespaced would let a dev deploy delete the image prod
  * boots meta sandboxes from. That is the first test below.
  */

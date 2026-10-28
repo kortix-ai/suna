@@ -9,7 +9,7 @@ describe('appDeploymentFailureDisposition', () => {
   });
 
   test('retries provider, quota, timeout, and unknown infrastructure failures', () => {
-    expect(appDeploymentFailureDisposition('Daytona bad gateway')).toEqual({
+    expect(appDeploymentFailureDisposition('provider bad gateway')).toEqual({
       permanent: false,
       code: 'provider_error',
     });

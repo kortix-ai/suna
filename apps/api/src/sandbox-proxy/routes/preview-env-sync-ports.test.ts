@@ -5,12 +5,12 @@
 //     predicate that never stripped the in-box `/proxy/<n>/` prefix;
 //   - the config-convergence gate keyed on `isTurnStartRequest`, which covers
 //     4096/4097 AND strips the prefix.
-// Platinum rewrites 4096 → 8000 in `routeSandboxIngress`, Daytona does not. So
-// the same prompt got the secret refresh and the connector-grant re-mint on
-// Platinum and neither on Daytona, purely because of where it was addressed.
+// Platinum rewrites 4096 → 8000 in `routeSandboxIngress`; a pass-through
+// ingress does not. So the same prompt got the secret refresh and the
+// connector-grant re-mint only where the port was rewritten.
 //
-// `routeSandboxIngress` below is Daytona's shape — a pass-through, effective
-// port == addressed port — because that is the provider the hole was open on.
+// `routeSandboxIngress` below is a pass-through — effective port == addressed
+// port — because that is the shape the hole was open on.
 //
 // `mock.module` is process-global; the `--isolate` runner gives this file its
 // own module graph. Same stub set as ./forward.test.ts, plus counters on the two
@@ -28,7 +28,7 @@ const ACTIVE_RECORD = {
   accountId: 'acct-1',
   externalId: 'ext-1',
   agentName: 'default',
-  provider: 'daytona',
+  provider: 'platinum',
 };
 
 let envSyncCalls: Array<{ sessionId: string; requestedAgent: string | null }> = [];
@@ -89,7 +89,7 @@ mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
-// Daytona ingress is a pass-through: the effective port IS the addressed port.
+// A pass-through ingress: the effective port IS the addressed port.
 mock.module('../backend', () => ({
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: (_record: unknown, request: { port: number }) => ({

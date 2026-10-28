@@ -41,7 +41,7 @@ import { BuildDetails, BuildRow, SnapshotsTabView, describeBuildOutcome } from '
  *
  * **The trap this file is written around.** `DisclosureContent` unmounts its
  * children while closed, so anything inside a build row's body is absent from a
- * collapsed `BuildRow`'s markup. Asserting `not.toContain('Daytona')` against a
+ * collapsed `BuildRow`'s markup. Asserting `not.toContain('Platinum')` against a
  * collapsed row would therefore pass whatever the body does — a test that
  * cannot fail. Every assertion about a build's technical facts goes through
  * `BuildDetails` (the exported body) instead, and each negative assertion has a
@@ -58,7 +58,7 @@ const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBu
   error_category: null,
   fixable_by_agent: false,
   source: 'manual',
-  provider: 'daytona',
+  provider: 'platinum',
   started_at: '2026-07-13T10:00:00.000Z',
   finished_at: '2026-07-13T10:05:00.000Z',
   ...overrides,
@@ -226,7 +226,7 @@ describe('BuildDetails', () => {
   test('never names the resolved provider when the project is on Automatic', () => {
     const html = renderBuildDetails('automatic');
 
-    expect(html).not.toContain('Daytona');
+    expect(html).not.toContain('Platinum');
     // Every other fact is still there — this is a scoping rule, not a blank body.
     expect(html).toContain('kortix-tpl-abc123');
     expect(html).toContain('Manual rebuild');
@@ -234,13 +234,13 @@ describe('BuildDetails', () => {
   });
 
   test('names the resolved provider once the project has explicitly pinned one', () => {
-    expect(renderBuildDetails('pinned')).toContain('Daytona');
+    expect(renderBuildDetails('pinned')).toContain('Platinum');
   });
 
   test('omits the provider fact when the build predates provider tracking', () => {
     const html = renderBuildDetails('pinned', { provider: null });
 
-    expect(html).not.toContain('Daytona');
+    expect(html).not.toContain('Platinum');
     expect(html).not.toContain('Runs on');
   });
 
@@ -315,7 +315,7 @@ describe('SnapshotsTabView', () => {
     const out = renderToStaticMarkup(
       <SnapshotsTabView
         canManage
-        status={runtimeStatus({ state: 'blocked', failed_providers: ['daytona'] })}
+        status={runtimeStatus({ state: 'blocked', failed_providers: ['platinum'] })}
       />,
     );
     expect(out).toContain('Sessions can’t start');
@@ -326,7 +326,7 @@ describe('SnapshotsTabView', () => {
     const out = renderToStaticMarkup(
       <SnapshotsTabView
         canManage={false}
-        status={runtimeStatus({ state: 'blocked', failed_providers: ['daytona'] })}
+        status={runtimeStatus({ state: 'blocked', failed_providers: ['platinum'] })}
       />,
     );
     expect(out).not.toContain('Rebuild');

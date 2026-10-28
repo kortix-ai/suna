@@ -41,9 +41,8 @@ export function asFirm<T>(secret: string, fn: () => Promise<T>): Promise<T> {
  * Optional sandbox provider for sessions Lumen starts (`KORTIX_SANDBOX_PROVIDER`,
  * e.g. "platinum"). Unset: the Kortix project's default.
  */
-export function sandboxProvider(): { provider?: "platinum" | "daytona" } {
-  const p = process.env.KORTIX_SANDBOX_PROVIDER;
-  return p === "platinum" || p === "daytona" ? { provider: p } : {};
+export function sandboxProvider(): { provider?: "platinum" } {
+  return process.env.KORTIX_SANDBOX_PROVIDER === "platinum" ? { provider: "platinum" } : {};
 }
 
 const statusOf = (err: unknown) => (err as { status?: number })?.status;

@@ -477,16 +477,7 @@ export function liveStopClaimAtMs(
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {
-  if (isProviderNotFound(error)) return true;
-  // legacy: Daytona answers a start on a box whose container is gone with a
-  // non-404 that names the gone container only in Docker's text. Scoped to
-  // Daytona's own error classes so another provider's text never matches.
-  // Delete when Daytona types this answer (status 404 or an errorCode).
-  const name = error instanceof Error ? error.name : '';
-  return (
-    name.startsWith('Daytona') &&
-    /no such container|container not found|failed to inspect sandbox container/i.test((error as Error).message)
-  );
+  return isProviderNotFound(error);
 }
 
 /**

@@ -43,7 +43,7 @@ const ROW = {
   sessionId: 'sess-1',
   projectId: 'proj-1',
   accountId: 'acct-1',
-  provider: 'daytona',
+  provider: 'platinum',
   externalId: 'ext-1',
   baseUrl: null,
   status: 'active',
@@ -57,7 +57,7 @@ const ROW = {
 
 const LOADED = { row: {} as never, userId: 'user-1' };
 const VISIBLE = {
-  row: { sandboxProvider: 'daytona', baseRef: null, agentName: 'default', metadata: null },
+  row: { sandboxProvider: 'platinum', baseRef: null, agentName: 'default', metadata: null },
 };
 
 const PARKING_POPULATIONS: Array<{ reason: string; stopReason: Parameters<typeof preserveEstablishedRuntimeOnOpen>[6] }> = [

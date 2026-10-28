@@ -8,8 +8,9 @@ describe('tryGetProvider', () => {
     expect(tryGetProvider('some-retired-provider')).toBeNull();
   });
 
-  test('returns null for a legacy e2b row: E2B support is discontinued', () => {
+  test('returns null for a legacy e2b or daytona row: their support is removed', () => {
     expect(tryGetProvider('e2b')).toBeNull();
+    expect(tryGetProvider('daytona')).toBeNull();
   });
 
   test('never throws, whatever the provider string', () => {

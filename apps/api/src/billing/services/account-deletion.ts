@@ -408,7 +408,7 @@ const STOP_CONCURRENCY = 8;
  * died mid-provision (`provisioning`) or whose last control-plane call errored
  * (`error`) still exists at the provider and still bills; only `stopped` and
  * `archived` are terminal. The release-gate incident that motivated this found
- * 47 sessions in exactly these non-`active` states with live Daytona boxes.
+ * 47 sessions in exactly these non-`active` states with live provider boxes.
  */
 const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
 

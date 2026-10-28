@@ -38,9 +38,6 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
-process.env.DAYTONA_API_KEY = 'test-daytona-key';
-process.env.DAYTONA_SERVER_URL = 'https://daytona.example.test';
-process.env.DAYTONA_TARGET = 'test-target';
 process.env.KORTIX_URL = 'https://api.example.test';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
@@ -260,7 +257,7 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['platinum', 'daytona'],
+  templateBuildProviders: () => ['platinum'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -361,7 +358,7 @@ mock.module('../platform/services/session-sandbox', () => ({
 mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => {
     if (providerFailure) throw providerFailure;
-    return 'daytona';
+    return 'platinum';
   },
 }));
 
@@ -1146,7 +1143,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       projectId: PROJECT_ID,
       branchName: 'main',
       baseRef: 'main',
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       sandboxId: null,
       sandboxUrl: null,
       runtimeSessionId: null,
@@ -1720,7 +1717,7 @@ function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
     projectId: PROJECT_ID,
     branchName: 'main',
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: null,
     sandboxUrl: null,
     runtimeSessionId: null,

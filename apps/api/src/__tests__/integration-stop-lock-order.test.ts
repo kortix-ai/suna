@@ -43,7 +43,7 @@ async function seed(): Promise<void> {
   });
   await db.insert(sessionSandboxes).values({
     sandboxId: SANDBOX_ID, sessionId: SESSION_ID, accountId: ACCOUNT_ID, projectId: PROJECT_ID,
-    status: 'active', provider: 'daytona', externalId: 'ext-stop-lock-order', metadata: {},
+    status: 'active', provider: 'platinum', externalId: 'ext-stop-lock-order', metadata: {},
   });
 }
 

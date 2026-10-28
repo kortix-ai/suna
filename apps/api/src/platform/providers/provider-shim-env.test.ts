@@ -56,27 +56,6 @@ const SESSION_ENV = {
 /** The env map the provider under test actually handed to its runtime SDK. */
 let deliveredEnv: Record<string, string> | undefined;
 
-mock.module('../../shared/daytona', () => ({
-  getDaytona: () => ({
-    create: async (params: { envVars: Record<string, string> }) => {
-      deliveredEnv = params.envVars;
-      return {
-        id: 'sbx-shim',
-        getPreviewLink: async () => ({ url: 'https://sbx-shim.daytona.test' }),
-      };
-    },
-  }),
-  // Disk-quota-guard deps: unused by create() here, but imported at module load
-  // so they must exist as named exports for the mock to satisfy daytona.ts.
-  archiveDaytonaSandboxById: async () => ({ ok: true }),
-  isDaytonaDiskQuotaError: () => false,
-  listStoppedDaytonaSandboxesOldestFirst: async function* () {},
-}));
-
-mock.module('../../projects/disk-quota-guard', () => ({
-  triggerEmergencyDiskArchiveSweep: () => {},
-}));
-
 mock.module('../../shared/platinum', () => ({
   isPlatinumConfigured: () => true,
   platinumJsonResponse: async () => {
@@ -98,7 +77,6 @@ mock.module('../sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.com',
 }));
 
-const { DaytonaProvider } = await import('./daytona');
 const { PlatinumProvider } = await import('./platinum');
 
 const CREATE_OPTS = {
@@ -110,7 +88,6 @@ const CREATE_OPTS = {
 };
 
 const PROVIDERS = [
-  { name: 'daytona', create: () => new DaytonaProvider().create({ ...CREATE_OPTS }) },
   { name: 'platinum', create: () => new PlatinumProvider().create({ ...CREATE_OPTS }) },
 ] as const;
 

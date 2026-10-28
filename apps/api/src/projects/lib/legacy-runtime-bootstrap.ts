@@ -15,7 +15,7 @@
  *
  * THE MECHANISM. The control plane cannot ask the old daemon to replace
  * itself, so it goes through the PROVIDER's exec channel (Platinum `/exec`,
- * Daytona toolbox — `SandboxProvider.exec`), which is
+ * `SandboxProvider.exec`), which is
  * independent of the in-box daemon, and runs one idempotent script that:
  *   1. reads the box's own API URL + sandbox token from /etc/environment (no
  *      secret crosses the control plane; the box converges on the API it
@@ -28,8 +28,7 @@
  *      keeping `kortix-entrypoint.legacy`;
  *   4. relaunches the runtime. On Platinum pt-init runs the image entrypoint
  *      once and never respawns it, so the script stops the legacy chain and
- *      starts `/sbin/pt-app` detached. Daytona re-runs the entrypoint
- *      on every start, so staging alone converges them at the next wake.
+ *      starts `/sbin/pt-app` detached.
  * The new daemon then converges OpenCode, CLI and skills by itself — this
  * module installs a supervisor and a current daemon, nothing else.
  *
@@ -365,14 +364,12 @@ export type RelaunchStrategy = 'pt-app' | 'next-start';
 /**
  * How a provider re-runs the image entrypoint. Platinum's pt-init launches it
  * once and never again (the VM survives its exit), so the script must relaunch
- * in place. Daytona runs the entrypoint on every sandbox start.
+ * in place. A legacy provider has no strategy.
  */
 export function relaunchStrategyFor(provider: ProviderName | string): RelaunchStrategy | null {
   switch (provider) {
     case 'platinum':
       return 'pt-app';
-    case 'daytona':
-      return 'next-start';
     default:
       return null;
   }
@@ -391,8 +388,7 @@ export type DeadDaemonOpenAction = 'request' | 'wait' | 'park';
  * only freezes the corpse: every later open resumes the same snapshot with
  * nothing on :8000, forever (prod 2026-09-28: 18 h, every `/start` parked it
  * again). So ask for the relaunch once per unreachable spell, and park only
- * after it had its chance. Daytona reruns the entrypoint on its next
- * start, so parking IS its repair.
+ * after it had its chance.
  */
 export function decideDeadDaemonOnOpen(input: {
   provider: string;
@@ -763,7 +759,7 @@ export type LegacyBootstrapRetryStatus = 'idle' | 'running' | 'staged' | 'cooldo
 export interface LegacyBootstrapRetrySummary {
   /** `idle`: nothing recorded, or the record is settled and free to retry now.
    *  `running`: an attempt is currently in flight (this replica or another).
-   *  `staged`: converges at the provider's next start (Daytona); nothing to retry.
+   *  `staged`: converges at the provider's next start (a legacy row); nothing to retry.
    *  `cooldown`: a failed attempt is backing off; see `nextRetryAt`.
    *  `exhausted`: the attempt budget for this manifest build is spent; only a
    *  new build or an operator `--force` moves this forward — `nextRetryAt` is
@@ -1083,7 +1079,7 @@ async function checkBootstrapBudget(
     }
   }
   if (record && sameBuild && record.state === 'staged' && !deadDaemonOnRunningBox) {
-    // Daytona: staged and waiting for the provider's next start. Nothing
+    // Staged and waiting for the provider's next start. Nothing
     // to redo until a current daemon proves it or the build moves on. A box
     // with no daemon is the exception: nothing will start it again, so
     // "converges at next start" is a promise that can never be kept.
@@ -1180,9 +1176,9 @@ async function runBootstrapScript(
     );
   };
   // Token rotation only where the box's own environment is what the daemon
-  // boots from (Platinum: /etc/environment via pt-init). Daytona hands
-  // the daemon its env from the provider on every start, so a rotated secret
-  // in the box would diverge from what the daemon actually runs with.
+  // boots from (Platinum: /etc/environment via pt-init). A provider that hands the
+  // daemon its env on every start would diverge from a rotated secret in
+  // the box.
   const kortixToken =
     strategy === 'pt-app' ? ((await deps.rotateKortixToken?.()) ?? undefined) : undefined;
   const commitToken = async (rotatedOnBox: boolean | null) => {

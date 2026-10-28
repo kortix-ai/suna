@@ -7,14 +7,14 @@ describe('isProviderNotFound', () => {
 
   test('a 404, a not_found code or an SDK not-found class', () => {
     expect(isProviderNotFound(named('PlatinumHttpError', { status: 404 }))).toBe(true);
-    expect(isProviderNotFound(named('DaytonaNotFoundError', { statusCode: 404 }))).toBe(true);
+    expect(isProviderNotFound(named('ProviderError', { statusCode: 404 }))).toBe(true);
     expect(isProviderNotFound(named('SandboxNotFoundError'))).toBe(true);
     expect(isProviderNotFound(named('Error', { code: 'not_found' }))).toBe(true);
   });
 
   test('a 500 whose message says "not found" is not a lost box', () => {
     const err = Object.assign(new Error('sandbox not found in scheduler cache'), {
-      name: 'DaytonaError',
+      name: 'ProviderError',
       statusCode: 500,
     });
     expect(isProviderNotFound(err)).toBe(false);

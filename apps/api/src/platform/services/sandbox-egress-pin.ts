@@ -23,7 +23,7 @@
  * internet. An agent would exfiltrate through a Cloudflare Worker and the
  * control would have bought nothing, while breaking git, npm and pip.
  *
- * Measured instead (two Daytona sandboxes, personal account, 2026-08-14):
+ * Measured instead (two sandboxes on the legacy provider, personal account, 2026-08-14):
  *
  *     sandbox A → <egress_ip_a> , <egress_ip_a>
  *     sandbox B → <egress_ip_b> , <egress_ip_b>

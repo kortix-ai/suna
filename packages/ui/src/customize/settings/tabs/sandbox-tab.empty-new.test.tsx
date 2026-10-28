@@ -102,7 +102,7 @@ const template = (overrides: Partial<SandboxTemplate> = {}): SandboxTemplate => 
   name: 'Default sandbox',
   is_default: false,
   source: 'toml',
-  provider: 'daytona',
+  provider: 'platinum',
   has_dockerfile: false,
   has_image: true,
   image: 'kortixai/sandbox-base:2026.08',

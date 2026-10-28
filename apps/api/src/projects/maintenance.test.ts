@@ -75,17 +75,7 @@ mock.module('../billing/services/compute-metering', () => ({
 mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: tracked({ checked: 0, closedReady: 0, closedFailed: 0 }),
 }));
-mock.module('../snapshots/quota-gc', () => ({
-  reconcileSnapshotQuota: async () => ({
-    orgTotal: 0,
-    managedCount: 0,
-    eligible: 0,
-    deleted: 0,
-    deferred: 0,
-    budgetUnresolved: false,
-    dryRun: false,
-  }),
-}));
+
 // Controllable per-test: the first call can be made to hang forever (to
 // simulate the exact 2026-07-02 failure mode — an unbounded provider call
 // stuck inside reapAndReconcileSandboxes), later calls resolve normally.
@@ -197,11 +187,11 @@ describe('maintenance sweeps run with bounded concurrency', () => {
   });
 });
 
-// Regression coverage for the 2026-07-02 incident: an unbounded Daytona SDK
+// Regression coverage for the 2026-07-02 incident: an unbounded provider SDK
 // call inside a maintenance cycle left `maintenanceRunning` stuck `true`
 // forever (its `finally` never ran), silently killing the idle-sandbox
 // reaper for hours and accumulating $39k+ in unbilled-idle compute across
-// prod. Per-call timeouts (platform/providers/daytona.ts, shared/platinum.ts)
+// prod. Per-call timeouts (shared/platinum.ts)
 // fix the known cause; this watchdog is the independent backstop against an
 // unknown future one — a held lock past the threshold must be force-reset,
 // not trusted forever.

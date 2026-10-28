@@ -1,7 +1,7 @@
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { handleDaytonaWebhook, handlePlatinumWebhook } from './sandbox-webhooks';
+import { handlePlatinumWebhook } from './sandbox-webhooks';
 
 /**
  * Sandbox lifecycle webhook ingress (NOT billing — these are provider state
@@ -18,27 +18,8 @@ import { handleDaytonaWebhook, handlePlatinumWebhook } from './sandbox-webhooks'
  *
  * Raw body is required for signature verification, so no JSON body schema is
  * declared. Platinum ingress is registered only when its secret is configured.
- * Daytona remains inert (503) until its matching secret is configured.
  */
 export const sandboxWebhooksApp = makeOpenApiApp();
-
-sandboxWebhooksApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/daytona',
-    tags: ['webhooks'],
-    summary: 'Daytona sandbox lifecycle webhook (Svix-signed, public)',
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
-      ...errors(400, 401, 503),
-    },
-  }),
-  async (c: any) => {
-    const rawBody = await c.req.text();
-    const { status, body } = await handleDaytonaWebhook(rawBody, (h: string) => c.req.header(h));
-    return c.json(body, status);
-  },
-);
 
 if (config.PLATINUM_WEBHOOK_SECRET) {
   sandboxWebhooksApp.openapi(

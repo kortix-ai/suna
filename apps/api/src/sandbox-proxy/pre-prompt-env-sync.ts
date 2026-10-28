@@ -104,7 +104,7 @@ export function isRetryableEnvSyncFailure(err: unknown): boolean {
  * answered `port !== 8000 ⇒ false` and never stripped the in-box `/proxy/<n>/`
  * prefix, while the config-convergence gate and the connector gate both keyed on
  * `isTurnStartRequest`, which covers 4096/4097 AND strips the prefix. Platinum
- * rewrites 4096→8000 and Daytona does not, so on Daytona a prompt addressed
+ * rewrites 4096→8000 and the legacy provider did not, so there a prompt addressed
  * straight at :4096 got the config check and the undeclared-agent drop but NOT
  * the secret refresh or the connector-grant re-mint. Same request, two answers,
  * provider-dependent. Built on `isTurnStartRequest` so that can never recur.
@@ -467,7 +467,7 @@ export async function runPrePromptEnvSync(
       // sandbox-port reachability miss: retry/wake in the outer loop, then
       // return the friendly port-unreachable response if the sandbox never
       // recovers. Throwing HTTPException here bypassed that retry path and
-      // turned expected 502/timeouts from Daytona into Better Stack errors.
+      // turned expected provider 502/timeouts into Better Stack errors.
       throw new Error(message);
     }
     console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);

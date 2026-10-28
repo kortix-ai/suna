@@ -155,11 +155,11 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // BELOW the opencode install, the `opencode serve` migration-bake, and the
 // config-deps bun install. The migration-bake writes a sqlite db with live
 // timestamps and the config-deps install churns node_modules mtimes — both
-// non-deterministic — so on a content-addressed provider cache (Daytona) they
+// non-deterministic — so on a content-addressed provider cache they
 // bust the cache for the Chromium layer chained below them. The kortix-agent
 // SOURCE feeds the snapshot fingerprint (AGENT_RUNTIME_ARTIFACTS below), so any
 // agent-server code change mints a brand-new base snapshot name → a full rebuild
-// on Daytona (no agent-swap) → Chromium re-download → the base image never
+// on a provider without agent-swap → Chromium re-download → the base image never
 // becomes ready inside the session window → "session never starts" (the actual
 // mechanism behind the v0.10.11 rollback: PR #5010 changed the agent-server and
 // re-minted the base hash). Fix: move the Chromium block to sit DIRECTLY on the

@@ -148,7 +148,7 @@ function prompt(externalId = 'ext-1') {
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
     providerHeaders: {},
-    providerName: 'daytona',
+    providerName: 'platinum',
   });
 }
 

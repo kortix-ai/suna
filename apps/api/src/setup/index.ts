@@ -135,7 +135,7 @@ setupApp.openapi(
  * providers are enabled so it can branch the setup flow accordingly.
  *
  * Response: { providers: string[], default: string, capabilities: ... }
- *   e.g. { providers: ["daytona"], default: "daytona", capabilities: {...} }
+ *   e.g. { providers: ["platinum"], default: "platinum", capabilities: {...} }
  */
 setupApp.openapi(
   createRoute({

@@ -120,7 +120,7 @@ describe('selectDivergedBoxes', () => {
 
   test('the same external id under a different provider is a different box', () => {
     const diverged = selectDivergedBoxes(
-      [box('sbx-a', 'daytona')],
+      [box('sbx-a', 'second')],
       [{ provider: 'platinum', externalId: 'sbx-a', status: 'stopped', sandboxId: 'sb-a' }],
     );
     expect(diverged).toEqual([]);

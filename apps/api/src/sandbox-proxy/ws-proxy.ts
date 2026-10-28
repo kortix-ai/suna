@@ -9,17 +9,16 @@
 // This module:
 //   1. authenticates the upgrade via the `?token=` query param (browsers can't
 //      set Authorization headers on a WebSocket) — mirroring `combinedAuth`,
-//   2. resolves the upstream WS URL + headers (Daytona preview link + service
+//   2. resolves the upstream WS URL + headers (provider preview link + service
 //      key + signed user-context), and
 //   3. pipes bytes both ways once Bun upgrades the client socket.
 //
 // IMPORTANT — opencode PTY usually targets port 4096, not 8000.
 // opencode serves its PTY WebSocket (`/pty/{id}/connect`) directly on its
-// internal port 4096. Daytona can expose that port directly. Platinum cannot:
-// the opencode process is loopback-bound and direct public exposure would bypass
-// the sandbox agent's signed user-context auth. The resolver therefore keeps
-// Daytona on 4096 and sends Platinum PTY upgrades through the agent bridge on
-// 8000. A box whose runtime is not OpenCode (pi) has no `/pty/`: that upgrade
+// internal port 4096. Platinum cannot expose it: the opencode process is
+// loopback-bound and direct public exposure would bypass the sandbox agent's
+// signed user-context auth. The resolver sends Platinum PTY upgrades through
+// the agent bridge on 8000. A box whose runtime is not OpenCode (pi) has no `/pty/`: that upgrade
 // is refused with `409`. Every first-party terminal uses the daemon's own PTY,
 // `/kortix/pty/{id}/connect` on 8000, which works on every harness.
 // ════════════════════════════════════════════════════════════════════════════
@@ -37,7 +36,7 @@ import { recheckStreamAccess } from '../shared/stream-access-recheck';
 
 /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
 // opencode's PTY WebSocket endpoint lives on opencode's own port, reachable via
-// a dedicated Daytona preview link (the daemon on 8000 can't proxy WS).
+// a dedicated provider preview link.
 //
 // That port MOVES. A verified config reload boots the replacement opencode on
 // the idle half of the port pair and promotes it, so after one reload the live
@@ -350,7 +349,7 @@ async function resolveUpgradeForPrincipal(input: {
   }
 
   // Strip our own auth credentials before forwarding — opencode authenticates
-  // via the Daytona preview token header, not our query params.
+  // via the provider preview token header, not our query params.
   const upstreamQuery = new URLSearchParams(input.search);
   // `wake=1` is OUR resume signal (see shouldWakeStoppedSandboxForWsAttach) and
   // means nothing to the daemon — strip it with the credentials.
@@ -424,7 +423,7 @@ export const previewWsHandlers = {
     let upstream: WebSocket;
     try {
       // Bun extends the WebSocket constructor with a `headers` option so we can
-      // forward the Daytona preview token / service key / signed user-context.
+      // forward the provider preview token / service key / signed user-context.
       upstream = new WebSocket(state.url, { headers: state.headers } as any);
     } catch (err) {
       invalidateFailedHandshake();

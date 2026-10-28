@@ -69,11 +69,10 @@ export type StoppedObservationDecision = 'park' | 'await_confirmation';
 /**
  * May a single provider-`stopped` read park this box?
  *
- * Incident 2026-08-17T20:40:03Z (a prod session on a Daytona sandbox): it did,
- * mid-turn, `stopReason: provider_reconcile` — while Daytona's own
+ * Incident 2026-08-17T20:40:03Z (a prod session on the legacy provider): it did,
+ * mid-turn, `stopReason: provider_reconcile` — while the provider's own
  * `autoStopInterval` was 720 minutes and nothing had asked for a stop.
- * `stopping` and `pending_stop` both map to `stopped`
- * (platform/providers/daytona-state.ts), so a box mid-transition — or one
+ * A provider's `stopping` maps to `stopped`, so a box mid-transition — or one
  * transient misread — settled its turns `runtime_gone` and kicked its client to
  * the wake flow with the turn's work lost.
  *

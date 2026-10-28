@@ -104,7 +104,6 @@ test('stale stopped status and live turns remain referenced', async () => {
     updatedAt: new Date('2026-01-01'), metadata: { activeTurns: { synthetic: { state: 'active' } } },
   });
   expect(await hasProviderBoxReference('platinum', externalId)).toBe(true);
-  expect(await hasProviderBoxReference('daytona', externalId)).toBe(false);
   const marker = await sandboxOwnershipMarker();
   fleet = [externalId].map((id) => ({
     id, state: 'running', created_at: '2026-01-01T00:00:00Z',

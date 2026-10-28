@@ -172,7 +172,7 @@ export const CatalogQuerySchema = z.object({
  * e.g. the connector-auth-discovery InfoBanner). Without this typed code the
  * bare `501 "not supported"` body surfaced as an opaque `ApiError` in
  * Better Stack (pattern `1f3c4d96…`) — a known unsupported state paging like
- * a real defect. Mirrors the `GitOperationError`/Daytona typed-envelope
+ * a real defect. Mirrors the `GitOperationError`/provider typed-envelope
  * pattern (PRs #5167/#5175/#5188) and the no-compaction-model classification
  * (PR #5183): a typed code lets the telemetry gate distinguish "deployment
  * doesn't offer this capability" (501 feature_not_supported → silent) from a

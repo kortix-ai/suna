@@ -17,10 +17,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 
+// `daytona` is listed to prove a removed provider is ignored, not enabled.
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
-process.env.DAYTONA_API_KEY = 'daytona_test_key';
-process.env.DAYTONA_SERVER_URL = 'https://app.daytona.io/api';
-process.env.DAYTONA_TARGET = 'us';
 process.env.PLATINUM_API_KEY = 'pt_test_key';
 process.env.PLATINUM_API_URL = 'https://api.platinum.test';
 process.env.KORTIX_URL = 'https://api.example.com';
@@ -28,18 +26,35 @@ process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
 const { KNOWN_PROVIDERS, config } = await import('../../config');
-const { getProvider } = await import('./index');
+const { getProvider, tryGetProvider, isProviderName } = await import('./index');
+const { RemovedProviderError } = await import('./deprecated');
 const { getProviderComputeRateCard } = await import('./compute-rates');
 const { getSandboxProvider } = await import('../../snapshots/providers');
 const { SANDBOX_TEMPLATE_PROVIDERS } = await import('../../snapshots/provider-coverage');
 
 describe('sandbox provider parity across shared subsystems', () => {
   test('config.KNOWN_PROVIDERS is the single canonical provider list every other list must match', () => {
-    expect(KNOWN_PROVIDERS).toEqual(['platinum', 'daytona']);
+    expect(KNOWN_PROVIDERS).toEqual(['platinum']);
     expect(new Set(SANDBOX_TEMPLATE_PROVIDERS)).toEqual(new Set(KNOWN_PROVIDERS));
+    expect(config.ALLOWED_SANDBOX_PROVIDERS).toEqual(['platinum']);
   });
 
-  for (const name of ['platinum', 'daytona'] as const) {
+  // Daytona support was removed on 2026-10-28. Stored rows may still name it
+  // (or `e2b`): reading them must never construct a provider or crash.
+  for (const legacy of ['daytona', 'e2b']) {
+    test(`a stored legacy \`${legacy}\` row resolves to no provider`, () => {
+      expect(isProviderName(legacy)).toBe(false);
+      expect(tryGetProvider(legacy)).toBeNull();
+      expect(() => getProvider(legacy as never)).toThrow(RemovedProviderError);
+      try {
+        getProvider(legacy as never);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'sandbox_provider_removed', provider: legacy });
+      }
+    });
+  }
+
+  for (const name of ['platinum'] as const) {
     test(`${name}: runtime registry constructs a provider implementing the full contract`, () => {
       const provider = getProvider(name);
       expect(provider.name).toBe(name);
@@ -88,8 +103,8 @@ describe('sandbox provider parity across shared subsystems', () => {
 
       const provider = getProvider(name);
       // No provider registers credentials anywhere. The value is substituted by
-      // the broker route per request and never leaves the API, on platinum
-      // and daytona alike. A provider that grows a `syncNetworkBoundary` again
+      // the broker route per request and never leaves the API, on every
+      // provider. A provider that grows a `syncNetworkBoundary` again
       // reintroduces the split this test exists to prevent.
       expect('syncNetworkBoundary' in provider).toBe(false);
     });
@@ -102,7 +117,7 @@ describe('sandbox provider parity across shared subsystems', () => {
     // Walks the prototype chain: these are classes, so the methods live on the
     // prototype and `Object.keys` on the instance would report [] for anything
     // and prove nothing.
-    const surface = (name: 'platinum' | 'daytona', needle: string) => {
+    const surface = (name: 'platinum', needle: string) => {
       const keys = new Set<string>();
       for (
         let o: object | null = getProvider(name) as unknown as object;
@@ -115,7 +130,7 @@ describe('sandbox provider parity across shared subsystems', () => {
     };
 
     // Positive control: the walk really does see prototype methods.
-    for (const name of ['platinum', 'daytona'] as const) {
+    for (const name of ['platinum'] as const) {
       expect(surface(name, 'resolveingress')).toEqual(['resolveIngress']);
       expect(surface(name, 'networkboundary')).toEqual([]);
     }

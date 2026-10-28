@@ -155,7 +155,7 @@ describe('scheduled deletion', () => {
       sessionId,
       accountId,
       projectId: project!.projectId,
-      provider: 'daytona',
+      provider: 'platinum',
       externalId: `ext-${sessionId}`,
       status: 'stopped',
     });

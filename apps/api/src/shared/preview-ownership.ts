@@ -1,7 +1,7 @@
 /**
  * Preview proxy ownership gate + user-context resolver.
  *
- * Project-sessions on Daytona model:
+ * Project-sessions model:
  *   - A sandbox lives in `kortix.session_sandboxes`.
  *   - A user can hit the sandbox if they're a member of the account that owns
  *     it (account_members.account_id == session_sandboxes.account_id) AND may
@@ -273,7 +273,7 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 /**
  * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
- * the Daytona-side externalId string.
+ * the provider-side externalId string.
  */
 async function resolveSandboxRef(
   previewSandboxId: string,
@@ -318,7 +318,7 @@ async function resolveSandboxRef(
 
 /**
  * Resolve the project a sandbox belongs to, given the same `previewSandboxId`
- * form the proxy path carries (uuid or Daytona externalId). Used by the
+ * form the proxy path carries (uuid or provider externalId). Used by the
  * project-scoped-PAT gate in middleware/auth.ts to decide whether a project
  * PAT may reach `/v1/p/{sandboxId}/...` — it may, only for a sandbox whose
  * `session_sandboxes.project_id` matches the token's own project. One indexed

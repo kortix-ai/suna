@@ -25,7 +25,7 @@ async function providerEvent(accountId: string, kind: string, ageDays = 0) {
   try {
     await client.query(
       `INSERT INTO kortix.provider_events (provider, kind, outcome, account_id, created_at)
-       VALUES ('daytona', $2, 'ok', $1, now() - make_interval(days => $3))`,
+       VALUES ('platinum', $2, 'ok', $1, now() - make_interval(days => $3))`,
       [accountId, kind, ageDays],
     );
   } finally {

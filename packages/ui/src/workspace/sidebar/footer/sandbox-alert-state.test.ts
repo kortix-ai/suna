@@ -37,7 +37,7 @@ function status(overrides: Partial<SandboxRuntimeStatus>): SandboxRuntimeStatus 
     current_failure: null,
     stale_failure: null,
     stale_reason: null,
-    ready_providers: ['daytona', 'platinum'],
+    ready_providers: ['platinum'],
     building_providers: [],
     failed_providers: [],
     fix_with_agent_available: false,
@@ -91,7 +91,7 @@ describe('resolveSandboxAlertSeverity', () => {
           status: status({
             state: 'degraded',
             ready_providers: ['platinum'],
-            failed_providers: ['daytona'],
+            failed_providers: ['e2b'],
           }),
         }),
       ),
@@ -198,15 +198,13 @@ describe('describeFailedBuild', () => {
 });
 
 describe('formatSandboxProviders', () => {
-  test('reads as prose, Platinum first and the legacy provider last', () => {
+  test('reads as prose, Platinum first', () => {
     expect(formatSandboxProviders([])).toBe('');
-    expect(formatSandboxProviders(['daytona'])).toBe('Daytona');
-    expect(formatSandboxProviders(['daytona', 'platinum'])).toBe('Platinum and Daytona');
+    expect(formatSandboxProviders(['platinum'])).toBe('Platinum');
+    expect(formatSandboxProviders(['daytona', 'platinum'])).toBe('Platinum and Daytona (removed)');
   });
 
   test('shows a provider with no label, such as a legacy e2b row, as its raw value', () => {
-    expect(formatSandboxProviders(['daytona', 'e2b', 'platinum'])).toBe(
-      'Platinum, e2b and Daytona',
-    );
+    expect(formatSandboxProviders(['e2b', 'platinum'])).toBe('Platinum and e2b');
   });
 });

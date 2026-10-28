@@ -28,12 +28,7 @@ import {
   isDeadCredential,
 } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
-import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
-import {
-  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
-  isDaytonaStateTransitionConflict,
-} from './shared/daytona-state-transition';
-import { isDaytonaTransientProviderError } from './shared/daytona-transient';
+import { RemovedProviderError } from './platform/providers/deprecated';
 import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
   isComposioTransientProviderError,
@@ -85,47 +80,6 @@ function handlePlatinumSandboxNotRunning(
     });
     c.header('Retry-After', '10');
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
-  }
-  return null;
-}
-
-function handleDaytonaRateLimit(
-  err: Error,
-  c: Context,
-  method: string,
-  path: string,
-): Response | null {
-  // Daytona's org-wide throttler surfaces any HTTP 429 from the Daytona API as
-  // `DaytonaRateLimitError: ThrottlerException: Too Many Requests`. That is an
-  // EXPECTED, transient provider state — every Daytona call site (preview link
-  // resolution, transcript / public-share reads, lease discover, reaper health,
-  // env-sync fan-out, snapshot reconciliation, …) must NOT page Sentry for it.
-  // Prior PRs (#3567, #4605) guarded call sites one-by-one but new paths kept
-  // reintroducing the same Better Stack fingerprint (`ec26b248…`) because a
-  // forgotten try/catch still let the 429 propagate here → captureException →
-  // Sentry. This single classifier covers EVERY remaining + future call site:
-  // it downgrades the expected Daytona 429 to a retryable 503 + Retry-After
-  // WITHOUT paging Sentry (mirroring the Platinum / git-timeout / request-
-  // deadline patterns). Other Daytona failures (404 missing box, 409 conflict,
-  // 5xx outage, timeout, disk quota) still throw a generic error and fall
-  // through to the generic capture below, so unexpected failures stay loud.
-  // See shared/daytona-rate-limit.ts.
-  if (isDaytonaRateLimitError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [DaytonaRateLimitError] ${err.message}`, {
-      method,
-      path,
-      errorType: 'DaytonaRateLimitError',
-      errorName: err.name,
-    });
-    c.header('Retry-After', '10');
-    return c.json(
-      {
-        error: true,
-        message: 'sandbox provider is temporarily rate-limited',
-        status: 503,
-      },
-      503,
-    );
   }
   return null;
 }
@@ -208,102 +162,6 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
         code: 'repository_push_rejected',
       },
       409,
-    );
-  }
-  return null;
-}
-
-function handleDaytonaStateTransitionConflict(
-  err: Error,
-  c: Context,
-  method: string,
-  path: string,
-): Response | null {
-  // Daytona answers HTTP 409 when a sandbox state transition is already in
-  // flight ("Sandbox state change in progress") — e.g. a second stop request
-  // arrives while the first is still settling. `apps.ts hosting.stop()`'s
-  // settle window expires and re-throws a plain Error whose cause is the
-  // original DaytonaConflictError; any call site without its own try/catch
-  // (the POST /v1/projects/:id/apps/:appId/stop route) forwarded it to the
-  // generic 500 → Sentry → Better Stack pattern `6bc03d7d…`. The in-flight
-  // transition is already doing what the caller asked, so this is an
-  // EXPECTED, self-resolving state: answer a typed 409
-  // `sandbox_state_change_in_progress` WITHOUT paging Sentry. The SDK
-  // classifies that code silent to onError and the web toast shows the
-  // retryable message. Other 409s (a DaytonaConflictError for a different
-  // reason, or an unrelated upstream) still fall through to the generic
-  // capture below. See shared/daytona-state-transition.ts.
-  if (isDaytonaStateTransitionConflict(err)) {
-    appLogger.warn(
-      `${method} ${path} -> 409 [DaytonaConflictError:state-transition] ${err.message.slice(0, 200)}`,
-      {
-        method,
-        path,
-        errorType: 'DaytonaConflictError',
-        errorName: err.name,
-        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
-      },
-    );
-    return c.json(
-      {
-        error: true,
-        message: 'sandbox state change in progress; try again shortly',
-        code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
-        status: 409,
-      },
-      409,
-    );
-  }
-  return null;
-}
-
-function handleDaytonaTransientProviderError(
-  err: Error,
-  c: Context,
-  method: string,
-  path: string,
-): Response | null {
-  // A transient Daytona provider gateway / connection / timeout failure is
-  // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
-  // gateway) momentarily 502/503/504-ing, a socket reset mid-call, or the
-  // SDK's own bounded call timing out. The SDK surfaces these as a generic
-  // `DaytonaError` whose `message` is the raw upstream response body — when
-  // the gateway 502s with an HTML error page, that HTML becomes the error
-  // message verbatim, which is exactly what produced the recurring Better
-  // Stack pattern `e98d61f1…` (`DaytonaError` with message
-  // `<html>…<h1>502 Bad Gateway</h1>…</html>`, thrown from the SDK's axios
-  // response interceptor at `createDaytonaError`). The 429 throttler case
-  // is owned by `shared/daytona-rate-limit.ts` (`isDaytonaRateLimitError`)
-  // and is NOT matched here — this classifier is the sibling for transient
-  // gateway / connection / timeout failures. It downgrades those to a
-  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the
-  // Platinum / git-timeout / request-deadline patterns), so a forgotten
-  // try/catch at any Daytona call site (preview-link resolution, lease
-  // discover, reaper health, env-sync fan-out, snapshot reconciliation, …)
-  // can no longer page Better Stack for an upstream blip. Other Daytona
-  // failures (404 missing box, 409 conflict, 401/403 auth, 400 validation,
-  // disk quota, unexpected 5xx with a JSON body) still throw a generic
-  // error and fall through to the generic capture below, so unexpected
-  // failures stay loud. See shared/daytona-transient.ts.
-  if (isDaytonaTransientProviderError(err)) {
-    appLogger.warn(
-      `${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`,
-      {
-        method,
-        path,
-        errorType: 'DaytonaError',
-        errorName: err.name,
-        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
-      },
-    );
-    c.header('Retry-After', '10');
-    return c.json(
-      {
-        error: true,
-        message: 'sandbox provider is temporarily unavailable',
-        status: 503,
-      },
-      503,
     );
   }
   return null;
@@ -452,7 +310,7 @@ function handleDatabaseOrUnknownError(
     // `GET /v1/projects` contend for the pooler's 20-session pool. It
     // resolves when load drops. Reusing `isSentryIgnoredError` keeps the
     // classification in one place (mirrors the #4709 ignore list + the
-    // #5167/#5175 Daytona transient no-capture pattern). The DIRECT
+    // #5167/#5175 provider transient no-capture pattern). The DIRECT
     // `captureException` below would otherwise page Sentry despite
     // `ignoreErrors` (a direct call bypasses that list); skip it but STILL
     // log + STILL 500 so the client sees the error and retries. The infra
@@ -531,7 +389,7 @@ function handleComposioTransientProviderError(
   // not recover from within its own retry budget. This single classifier
   // covers EVERY remaining + future call site: it downgrades the failure to a
   // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
-  // / git-timeout / Daytona / request-deadline patterns), so a forgotten
+  // / git-timeout / request-deadline patterns), so a forgotten
   // try/catch at any Composio call site can no longer page Better Stack for
   // an upstream blip. Composio 4xx (auth/validation/not-found/conflict) and
   // 429 (owned by `executeComposio`'s call-site 429 + Retry-After answer)
@@ -656,18 +514,21 @@ function handleUnhandledError(err: Error, c: Context): Response {
   }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
-  const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);
-  if (daytonaRateLimited) return daytonaRateLimited;
+  if (err instanceof RemovedProviderError) {
+    // A stored legacy row (`daytona`, `e2b`): expected, not a bug. No Sentry.
+    appLogger.warn(`${method} ${path} -> 410 [RemovedProviderError] ${err.provider}`, {
+      method,
+      path,
+      provider: err.provider,
+    });
+    return c.json({ error: true, code: err.code, message: err.message, status: 410 }, 410);
+  }
   const disconnected = handleRepositoryDisconnected(err, c);
   if (disconnected) return disconnected;
   const gitUnavailable = handleTransientGitMirrorFailure(err, c, method, path);
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);
   if (pushRejected) return pushRejected;
-  const stateTransition = handleDaytonaStateTransitionConflict(err, c, method, path);
-  if (stateTransition) return stateTransition;
-  const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
-  if (daytonaTransient) return daytonaTransient;
   const composioTransient = handleComposioTransientProviderError(err, c, method, path);
   if (composioTransient) return composioTransient;
   const undecryptable = handleSecretUndecryptable(err, c, method, path);

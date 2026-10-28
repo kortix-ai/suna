@@ -19,7 +19,7 @@ const ORIGINAL_ENV = {
   INTERNAL_KORTIX_ENV: process.env.INTERNAL_KORTIX_ENV,
   SUPABASE_URL: process.env.SUPABASE_URL,
 };
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
 process.env.FRONTEND_URL = 'https://app.test.kortix.local';
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.SUPABASE_URL = 'https://supabase.test.kortix.local';

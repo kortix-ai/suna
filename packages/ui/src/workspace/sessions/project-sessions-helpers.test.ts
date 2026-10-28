@@ -37,7 +37,7 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     project_id: 'project-1',
     branch_name: 'session-1',
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: 'session-1',
     sandbox_url: null,
     opencode_session_id: null,

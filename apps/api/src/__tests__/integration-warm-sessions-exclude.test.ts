@@ -303,6 +303,7 @@ describe('warm sessions — compute placement', () => {
   });
 
   test('another provider cannot prove Platinum placement with a same-named metadata field', async () => {
+    // A stored legacy `daytona` row (support removed 2026-10-28).
     const sessionId = await seedWarmSession({ boxProvider: 'daytona', boxRegion: 'us-east' });
     expect(await lookup()).toBeNull();
     expect(await warmSessionPlacement(sessionId, on)).toBe('mismatch');

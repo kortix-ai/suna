@@ -68,7 +68,7 @@ async function fixture(opts: { userId?: string; revokedAt?: string; recordKey?: 
   await db.execute(sql`
     insert into kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, external_id, provider, status, config)
     values (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-            ${`sbx_heal_${sessionId.slice(0, 8)}`}, 'daytona', 'stopped',
+            ${`sbx_heal_${sessionId.slice(0, 8)}`}, 'platinum', 'stopped',
             ${JSON.stringify({ serviceKey: opts.recordKey === false ? 'kortix_pat_some_other_key_value_0000' : token.secretKey })}::jsonb)`);
   await db.execute(sql`
     update kortix.account_tokens set status = 'revoked', revoked_at = ${opts.revokedAt ?? MIGRATION_REVOKE}::timestamptz

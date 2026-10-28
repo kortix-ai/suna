@@ -7,7 +7,7 @@ import {
 } from './builder';
 
 test('background snapshot build dedup is provider-qualified', () => {
-  expect(backgroundBuildKey('daytona', 'kortix-default-abc')).not.toBe(
+  expect(backgroundBuildKey('second', 'kortix-default-abc')).not.toBe(
     backgroundBuildKey('platinum', 'kortix-default-abc'),
   );
   expect(backgroundBuildKey('platinum', 'kortix-default-abc')).toBe(
@@ -18,18 +18,18 @@ test('background snapshot build dedup is provider-qualified', () => {
 test('new snapshot build logs reconcile only against their recorded provider', () => {
   expect(buildLogProviderCandidates(
     { source: 'background', slug: 'default-warm', provider: 'platinum' },
-    ['platinum', 'daytona'],
+    ['platinum', 'second'],
   )).toEqual(['platinum']);
 });
 
 test('historical and unknown build logs remain unattributed', () => {
   expect(buildLogProviderCandidates(
     { source: 'background', slug: 'default-warm' },
-    ['platinum', 'daytona', 'daytona'],
+    ['platinum', 'second', 'second'],
   )).toEqual([]);
   expect(buildLogProviderCandidates(
     { source: 'manual', provider: 'managed' },
-    ['platinum', 'daytona'],
+    ['platinum', 'second'],
   )).toEqual([]);
 });
 

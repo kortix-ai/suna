@@ -404,7 +404,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     // THE BOOT PROMPT. `initialSandboxTurnMetadata` writes the turn straight
     // into `activeTurns` and issues no ledger INSERT at all; the first
     // `session_turns` row appears only when the daemon confirms acceptance,
-    // 18.9s (daytona) / 24.5s (platinum) later. A ledger-only read answers
+    // 24.5s (platinum) later. A ledger-only read answers
     // "idle" for that whole window. The same hole opens for any turn whose
     // swallowed INSERT never landed.
     sandboxTable = [

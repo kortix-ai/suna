@@ -7,7 +7,7 @@ describe('carriesSessionData', () => {
     expect(carriesSessionData(8000)).toBe(true);
   });
 
-  // Daytona's routeIngress is a pass-through, so a client-addressed :4096 stays
+  // A pass-through routeIngress keeps a client-addressed :4096 at
   // :4096. Gating on 8000 alone let a sandbox token reach ANOTHER end-user's
   // conversation there, because ownership alone cannot separate end-users when
   // every KaaB session shares one created_by. The daemon's verified reload

@@ -125,7 +125,7 @@ export const AnyObject = z.record(z.string(), z.any());
 
 // ─── PATCH /:projectId/sandbox-provider response (FIX-L) ─────────────────────
 // The endpoint returns EITHER the updated project (safe/immediate switch) OR a
-// preparation object (the Daytona→Platinum prepare branch), both under HTTP 200.
+// preparation object (the switch-to-Platinum prepare branch), both under HTTP 200.
 // An explicit `kind` discriminant makes the union unambiguous; the OpenAPI schema
 // is a `oneOf` keyed on it (was a permissive AnyObject that hid the prepare shape).
 

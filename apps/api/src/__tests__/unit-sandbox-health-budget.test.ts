@@ -6,7 +6,7 @@
  *   "ApiError — Request timed out after 30s: /projects/<id>/sandbox-health"
  * (Better Stack error f49bbe8a9ec0ad587e5ad540cbdce3917361004fba8d0c914146d2cbbd119fff).
  *
- * A prior fix (PR #3361) bounded only the Daytona `snapshot.get` /
+ * A prior fix (PR #3361) bounded only the provider `snapshot.get` /
  * `listSandboxTemplates` portion. But the handler also awaits git-auth
  * resolution (`loadGitProject`) and the build-log DB query
  * (`listSnapshotBuilds`) with no bound — so a slow DB or git-auth call still
@@ -80,7 +80,7 @@ describe('sandbox-health budget', () => {
   });
 
   test('a never-settling dependency degrades promptly instead of hanging', async () => {
-    // This is the incident: a hung dependency (git-auth / Daytona / build-log
+    // This is the incident: a hung dependency (git-auth / provider / build-log
     // DB) inside the handler body. With the budget it must resolve to the safe
     // payload well before the client's 30s abort — not pend forever.
     const start = Date.now();
@@ -121,7 +121,7 @@ describe('sandbox-health budget', () => {
  * Poll caching (perf, 2026-08-26).
  *
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
- * `provider.getSnapshotState()` — a LIVE round trip to Platinum / Daytona
+ * `provider.getSnapshotState()` — a LIVE round trip to Platinum
  * — once per template, plus a git read to hash the template
  * directory. On the SampleCo corpus that made this "cheap polling endpoint"
  * the slowest non-proxy read on the box: 559 ms mean server-side over 169

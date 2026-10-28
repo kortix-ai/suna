@@ -32,7 +32,7 @@ const ACTIVE_RECORD = {
   accountId: 'acct-1',
   externalId: 'ext-1',
   agentName: 'default',
-  provider: 'daytona',
+  provider: 'platinum',
 };
 
 // The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
@@ -99,7 +99,7 @@ mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
-// Daytona ingress is a pass-through: the effective port is the addressed port.
+// A pass-through ingress: the effective port is the addressed port.
 mock.module('../backend', () => ({
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: (_record: unknown, request: { port: number }) => ({
@@ -333,15 +333,15 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     new Response('failed to get runner info: no IP address found', { status: 400 });
 
   test('the retry re-delivers instead of getting a bogus 200 duplicate', async () => {
-    // The reviewer's catch on this PR. The Daytona sandbox-down branch used to be
+    // The reviewer's catch on this PR. The sandbox-down branch used to be
     // `if (status === 400 && attempt < MAX_RETRIES)`, so on the FINAL attempt it
     // fell through and returned the 400 to the client with the dedupe claim still
     // held. The client's retry under the same Idempotency-Key then short-circuited
     // to `{status:'duplicate'}` and the user's prompt was silently lost — the very
     // message-loss this PR exists to stop, surviving in the one path it missed.
     //
-    // Daytona rejects this BEFORE opencode ("no IP address found" means the box has
-    // no runner at all), so delivery is provably not-delivered and releasing is safe.
+    // A 400 is a definitive refusal that never enqueued the prompt, so releasing
+    // the claim is safe.
     const args = [
       'sb-1',
       8000,

@@ -187,8 +187,6 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Not a community edition.': 'texte3bbf2902a7f',
   'not on your box': 'textaa57cad004f0',
   'Nothing is shared, because nothing is shared.': 'text9045e34e96f2',
-  'On Platinum, Kortix’s own compute and the reference provider, a sandbox is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and its removal is scheduled. We will tell you which one you are on rather than blur them together.':
-    'text4752074ca727',
   'on your box': 'text425aa668a9e4',
   'One branch per session': 'textb0f2f6dd1e38',
   'One Compose project, no hidden pieces.': 'text2a2728fd9252',
@@ -239,8 +237,6 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'SAML SSO, SCIM directory sync, custom roles, groups and reading the audit log are Enterprise entitlements. On a self-hosted instance they switch on with an Enterprise licence. The built-in owner, admin, member, manager and editor roles are there on every install, and the audit record is written on every install whether or not you can read it back yet.':
     'text2288facc3728',
   sandbox: 'textb7ad567477c8',
-  'Sandbox compute runs on Platinum. Daytona remains a legacy fallback, and its removal is scheduled. Fully isolated topologies are scoped with us rather than self-served.':
-    'text9c282c968d5e',
   'SCIM 2.0': 'text98fe74b2a48a',
   'Scope a team to specific agents': 'text7bbd0566a549',
   Secrets: 'textd8707d411d99',

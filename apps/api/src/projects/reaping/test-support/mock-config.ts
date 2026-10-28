@@ -18,11 +18,11 @@ export function mockConfigModule(
   return {
     config: {
       KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-      ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+      ALLOWED_SANDBOX_PROVIDERS: ['platinum'],
       ...overrides,
     },
     SANDBOX_VERSION: 'test',
-    KNOWN_PROVIDERS: ['platinum', 'daytona'],
+    KNOWN_PROVIDERS: ['platinum'],
     // Same arity as the real `(raw, fallback = ['platinum'])`. A zero-arg stub
     // silently ignores both arguments, so a suite that comes to depend on the
     // fallback would pass here and behave differently against real config.

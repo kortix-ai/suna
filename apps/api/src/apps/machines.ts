@@ -152,7 +152,7 @@ export function machineAppSpec(
   };
 }
 
-/** The size of a machine of `group`. Daytona sizes from the template, which carries the App's size. */
+/** The size of a machine of `group`. A non-Platinum runtime sizes from the template, which carries the App's size. */
 export function machineSize(app: AppRow, config: AppReleaseConfig, group: string, provider: string): AppMachineSpec {
   if (provider !== 'platinum') return { cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb };
   const vm = appVmFor(config, group);

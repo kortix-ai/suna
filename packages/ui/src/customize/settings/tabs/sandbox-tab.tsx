@@ -259,7 +259,7 @@ function TemplateCard({
     onError: (err: Error) => errorToast(err.message || tI18nComplete('texta422c2e168e4')),
   });
 
-  const stateInfo = describeState(template.provider_state || template.daytona_state, {
+  const stateInfo = describeState(template.provider_state, {
     active: t('states.ready'),
     pulling: t('states.pulling'),
     building: t('states.building'),

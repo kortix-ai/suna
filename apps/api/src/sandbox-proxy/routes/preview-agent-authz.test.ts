@@ -26,7 +26,7 @@ const ACTIVE_RECORD = {
   externalId: 'ext-1',
   sandboxId: 'sbx-1',
   agentName: 'pipeline-hygiene',
-  provider: 'daytona',
+  provider: 'platinum',
 };
 
 let authorizeCalls: Array<{ action: string; target: unknown }> = [];

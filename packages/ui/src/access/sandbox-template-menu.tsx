@@ -128,26 +128,26 @@ export function describeSandboxTemplate(tpl: SandboxTemplate): {
     : tpl.has_image
       ? `Image: ${tpl.image}`
       : `Dockerfile: ${tpl.dockerfile_path}`;
-  const building = ['pulling', 'building'].includes(tpl.daytona_state);
+  const building = ['pulling', 'building'].includes(tpl.provider_state);
   const tone =
-    tpl.daytona_state === 'active'
+    tpl.provider_state === 'active'
       ? 'green'
       : building
         ? 'blue'
-        : tpl.daytona_state === 'missing'
+        : tpl.provider_state === 'missing'
           ? 'muted'
           : 'red';
   return {
     Icon,
     subtitle,
     stateLabel:
-      tpl.daytona_state === 'active'
+      tpl.provider_state === 'active'
         ? 'Ready'
         : building
           ? 'Building — session will wait'
-          : tpl.daytona_state === 'missing'
+          : tpl.provider_state === 'missing'
             ? 'Not built — first session will build it'
-            : tpl.daytona_state.replace('_', ' '),
+            : tpl.provider_state.replace('_', ' '),
     stateText: {
       green: 'text-kortix-green',
       blue: 'text-kortix-blue',

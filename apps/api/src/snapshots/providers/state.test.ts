@@ -3,7 +3,7 @@ import { normalizeExistingProviderState } from './state';
 
 describe('unified sandbox template provider state', () => {
   test.each([
-    ['active', 'active'], // Daytona
+    ['active', 'active'],
     ['ready', 'active'], // Platinum
     ['building', 'building'],
     ['pulling', 'building'],

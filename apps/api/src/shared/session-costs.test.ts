@@ -185,7 +185,7 @@ describe('sortLedgerEntriesNewestFirst', () => {
         ended_at: null,
         billed_through_at: '2026-07-01T10:02:00.000Z',
         cost: 0.2,
-        provider: 'daytona',
+        provider: 'platinum',
         state: 'active',
         compute_seconds: 120,
         cpu_cores: 2,

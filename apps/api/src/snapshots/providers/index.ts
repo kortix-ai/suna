@@ -1,16 +1,14 @@
 /**
  * Sandbox provider adapters.
  *
- * A provider builds and hosts the actual sandbox image. Platinum (the
- * reference) and Daytona (legacy fallback, removal scheduled) implement the
- * `SandboxProviderAdapter` interface and slot in here.
+ * A provider builds and hosts the actual sandbox image. Platinum implements
+ * the `SandboxProviderAdapter` interface and slots in here.
  *
- * The provider is identified by a stable string (`platinum` or `daytona`) that
+ * The provider is identified by a stable string (`platinum`) that
  * lives on the template row. The session boot path resolves the
  * adapter by that string and delegates the actual snapshot build / state check.
  */
 
-import { daytonaProvider } from './daytona';
 import { platinumProvider } from './platinum';
 
 interface SandboxResourceSpec {
@@ -46,8 +44,7 @@ export interface BuildableTemplate {
   appContext?: AppBuildContext;
   /**
    * kortix.yaml `container_runtime: true`: the sandbox runs Docker with bridge
-   * + overlay networking. Platinum bakes the full guest kernel module tree;
-   * Daytona runs nested Docker without it.
+   * + overlay networking. Platinum bakes the full guest kernel module tree.
    */
   containerRuntime?: boolean;
   /**
@@ -88,7 +85,7 @@ export interface BuildLogTap {
  * the id the build PROVED (Platinum's `requireExternalTemplateId` — the id
  * already in hand at registration) instead of re-deriving it via a fragile,
  * truncation-prone name-list lookup. `externalTemplateId` is absent on providers
- * with no external-id concept (Daytona returns void).
+ * with no external-id concept.
  */
 export interface BuildSnapshotResult {
   externalTemplateId?: string;
@@ -143,7 +140,7 @@ export interface SandboxProviderAdapter {
    * Optional agent-only fast path: produce `newSnapshotName` from a predecessor
    * `sourceSnapshotName` by swapping ONLY the kortix-agent binary (no rebuild).
    * Implemented by providers that control the host filesystem (Platinum). Absent
-   * on providers without a rootfs handle (Daytona) — callers fall back to build.
+   * on providers without a rootfs handle — callers fall back to build.
    * `region` is the predecessor's build region (BuildableTemplate.region).
    */
   swapAgent?(
@@ -157,7 +154,6 @@ export interface SandboxProviderAdapter {
 }
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
-ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {

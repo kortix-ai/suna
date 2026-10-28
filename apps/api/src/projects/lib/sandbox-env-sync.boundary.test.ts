@@ -24,7 +24,7 @@ import type { ProviderName } from '../../platform/providers';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Which provider the single active sandbox row reports for the case in flight. */
-let sandboxProvider: ProviderName = 'daytona';
+let sandboxProvider: ProviderName = 'platinum';
 let envPushes: Array<{ url: string }> = [];
 
 const SESSION_ROW = {
@@ -122,10 +122,10 @@ beforeEach(() => {
 
   __resetNetworkBoundaryArmCacheForTests();
   envPushes = [];
-  sandboxProvider = 'daytona';
+  sandboxProvider = 'platinum';
 });
 
-const PROVIDERS: ProviderName[] = ['platinum', 'daytona'];
+const PROVIDERS: ProviderName[] = ['platinum'];
 
 describe('egress-enforced delivery is provider-independent', () => {
   for (const provider of PROVIDERS) {
@@ -138,30 +138,8 @@ describe('egress-enforced delivery is provider-independent', () => {
       expect(result.results).toHaveLength(1);
       expect(result.results[0].status).toBe('synced');
       expect(result.results[0].reason).toBeUndefined();
-      // The env push is the delivery. Before the unification, daytona
-      // never reached it: the arm refused first and the sandbox got nothing.
+      // The env push is the delivery.
       expect(envPushes).toHaveLength(1);
     });
   }
-
-  test('every provider produces byte-identical outcomes', async () => {
-    const outcomes: Array<{ provider: ProviderName; status: string; pushes: number }> = [];
-    for (const provider of PROVIDERS) {
-      __resetNetworkBoundaryArmCacheForTests();
-      envPushes = [];
-      sandboxProvider = provider;
-      const result = await propagateProjectSecretsToActiveSandboxes('proj-1');
-      outcomes.push({
-        provider,
-        status: result.results[0].status,
-        pushes: envPushes.length,
-      });
-    }
-
-    const shape = ({ provider: _provider, ...rest }: (typeof outcomes)[number]) => rest;
-    expect(outcomes.map(shape)).toEqual([
-      { status: 'synced', pushes: 1 },
-      { status: 'synced', pushes: 1 },
-    ]);
-  });
 });

@@ -77,7 +77,7 @@ export const SENTRY_IGNORE_ERRORS = [
   // cron ticks + `llm-gateway` catalog loads + user `GET /v1/projects`
   // contending for the pooler's 20-session pool), NOT a code bug — `pool_size`
   // is a Supabase-pooler config, not in this codebase. It resolves when load
-  // drops, and is a sibling of the Daytona transient class (#5167/#5175) and
+  // drops, and is a sibling of the provider transient class (#5167/#5175) and
   // the bare-timeout filter (#4709). The stable, deploy-agnostic substring is
   // `max clients reached in session mode` (the `pool_size: 20` suffix is
   // pooler-config-specific and may change); `EMAXCONNSESSION` is added as a

@@ -12,7 +12,7 @@
  *   - Stop answers 409 for any row that is not `active`.
  *
  * The box then runs with no Kortix deadline until the provider's own idle timer
- * stops it (up to 12 hours on Daytona and Platinum).
+ * stops it (up to 12 hours on Platinum).
  *
  * This lane picks up a `provisioning` row once its restart or recovery lease has
  * expired, or once it has not changed for `STUCK_WITHOUT_LEASE_MS` when it holds

@@ -77,7 +77,7 @@
  *    `apps/api/src/types.ts:129-135`). That distinction is the honest answer and
  *    must survive editing.
  *  - ISOLATION. "Its own isolated machine" only. NEVER a blanket "microVM" —
- *    true for the Platinum provider (Cloud Hypervisor), not for legacy Daytona.
+ *    true for the Platinum provider (Cloud Hypervisor), not a cleared claim.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
  *  - HARNESS. Name no harness product: write "agents" or "agent harness", and

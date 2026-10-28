@@ -2,7 +2,7 @@
  * Lightweight provisioning timeline for benchmarking session boot.
  *
  * Session creation fans out across several detached steps (branch push,
- * snapshot resolve, Daytona create, in-sandbox boot, opencode ready). Until now
+ * snapshot resolve, provider create, in-sandbox boot, opencode ready). Until now
  * there was no end-to-end timing, so "new session takes 30s" was unattributable.
  * This records monotonic marks (perf.now) at each step, emits one structured log
  * line, and returns a serializable summary that gets persisted into the sandbox

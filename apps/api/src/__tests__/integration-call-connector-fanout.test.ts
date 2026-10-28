@@ -160,7 +160,7 @@ beforeAll(async () => {
     sessionId,
     accountId: project.account_id,
     projectId: project.project_id,
-    provider: 'daytona',
+    provider: 'platinum',
     status: 'active',
     externalId: 'call-fanout-box',
     baseUrl: 'http://127.0.0.1:1',

@@ -77,7 +77,7 @@ async function prefetchSandboxRow(c: Context, next: Next) {
 }
 
 // Every sandbox serves from a per-sandbox URL — the preview handler reads it
-// from the row (`baseUrl`) or fetches it from Daytona's SDK. No per-provider
+// from the row (`baseUrl`) or resolves it through the provider. No per-provider
 // dispatch needed in this thin proxy.
 sandboxProxyApp.route('/', preview);
 

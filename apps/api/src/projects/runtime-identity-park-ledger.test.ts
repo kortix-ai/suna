@@ -132,7 +132,7 @@ const ROW = {
       'open-token': { token: 'open-token', state: 'active', opencodeSessionId: 'ses_root' },
     },
   },
-  provider: 'daytona',
+  provider: 'platinum',
   updatedAt: new Date('2026-08-23T00:00:00.000Z'),
 };
 

@@ -29,7 +29,7 @@ const RECORD = {
   sessionId: 'sess-1',
   externalId: 'ext-1',
   agentName: 'kortix',
-  provider: 'daytona',
+  provider: 'platinum',
 };
 
 function baseInput(overrides: Partial<Parameters<typeof runPrePromptEnvSync>[0]> = {}) {

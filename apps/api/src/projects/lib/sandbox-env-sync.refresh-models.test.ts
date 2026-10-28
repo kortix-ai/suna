@@ -94,7 +94,7 @@ mock.module('../secrets', () => ({
 }));
 
 mock.module('./network-secret-boundary', () => ({
-  // Daytona is on-demand (see platform/providers): zero bindings means the
+  // Zero bindings means the
   // network-boundary leg is a complete no-op, so this suite never has to
   // touch `platform/providers`.
   resolveSessionNetworkBoundary: async () => [],
@@ -136,7 +136,7 @@ function prompt(externalId = 'ext-1', requestedAgent?: string) {
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
     providerHeaders: {},
-    providerName: 'daytona',
+    providerName: 'platinum',
     requestedAgent,
   });
 }
@@ -234,7 +234,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
       serviceKey: 'svc-key',
       previewUrl: 'https://sandbox.test',
       providerHeaders: {},
-      providerName: 'daytona',
+      providerName: 'platinum',
     });
     await syncSandboxEnvForPrompt({
       projectId: 'proj-1',
@@ -243,7 +243,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
       serviceKey: 'svc-key',
       previewUrl: 'https://sandbox.test',
       providerHeaders: {},
-      providerName: 'daytona',
+      providerName: 'platinum',
       opencodeEnv: { KORTIX_MODEL: 'kortix/test-model' },
     });
 

@@ -11,7 +11,7 @@ import { isDeprecatedProvider } from '../../platform/providers/deprecated';
  *   2. the per-project pin (`metadata.default_sandbox_provider`) — used only if
  *      still ENABLED (allowed + API key present). This intentionally bypasses the
  *      distribution WEIGHTS, so a project can be pinned to e.g. platinum even when
- *      platinum's weight is 0. A stale/disabled pin or a deprecated (Daytona) pin
+ *      platinum's weight is 0. A stale/disabled pin or a removed (Daytona) pin
  *      is silently ignored, never a hard create failure;
  *   3. `{ fallback: true }` → the caller runs the weighted balancer (selectProvider()).
  */

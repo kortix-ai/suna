@@ -258,7 +258,7 @@ app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/resend �
 registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
-app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
+app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/platinum — provider lifecycle → close billing
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access

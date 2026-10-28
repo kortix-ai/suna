@@ -60,10 +60,9 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 403, message: 'not authorized' };
   }
   // Both session-data ports carry the conversation — gate on session visibility,
-  // not just account membership (see forwardToSandbox). This resolver forces
-  // opencode WebSockets to :4096 on Daytona, so keying on 8000 alone left the
-  // PTY/opencode WS leg ungated there — the same hole this PR closes on the HTTP
-  // side, one function further down the file.
+  // not just account membership (see forwardToSandbox). An opencode WebSocket
+  // can address :4096, so keying on 8000 alone would leave the PTY/opencode WS
+  // leg ungated.
   if (
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,

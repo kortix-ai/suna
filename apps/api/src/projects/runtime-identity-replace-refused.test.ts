@@ -124,7 +124,7 @@ const RUNNING_ROW = {
   externalId: 'ext-1',
   status: 'active',
   metadata: {},
-  provider: 'daytona',
+  provider: 'platinum',
   updatedAt: new Date('2026-09-27T00:00:00.000Z'),
 };
 

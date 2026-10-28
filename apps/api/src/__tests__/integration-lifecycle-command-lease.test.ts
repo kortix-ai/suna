@@ -167,7 +167,7 @@ beforeAll(async () => {
       (sandbox_id, session_id, account_id, project_id, provider, external_id, status, deadline_at)
     values
       (${deadlineSandboxId}::uuid, ${deadlineSessionId}, ${project.account_id}::uuid,
-       ${project.project_id}::uuid, 'daytona', ${`ext-${deadlineSandboxId}`}, 'active',
+       ${project.project_id}::uuid, 'platinum', ${`ext-${deadlineSandboxId}`}, 'active',
        now() + interval '1 minute')`);
 });
 
@@ -707,7 +707,7 @@ describe('a prompt whose runtime is unreachable', () => {
       insert into kortix.session_sandboxes
         (sandbox_id, session_id, account_id, project_id, provider, external_id, status)
       values (${stoppedSandboxId}::uuid, ${stoppedSessionId}, ${project.account_id}::uuid,
-              ${project.project_id}::uuid, 'daytona', ${`ext-${stoppedSandboxId}`}, 'active')`);
+              ${project.project_id}::uuid, 'platinum', ${`ext-${stoppedSandboxId}`}, 'active')`);
     await db.execute(sql`
       update kortix.session_sandboxes
          set status = 'stopped', deadline_at = ${stoppedDeadline.toISOString()}::timestamptz

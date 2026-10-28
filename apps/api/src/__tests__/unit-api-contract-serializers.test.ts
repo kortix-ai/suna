@@ -48,7 +48,7 @@ function sessionRow(
     projectId: PROJECT_ID,
     branchName: 'kortix/session-1',
     baseRef: 'main',
-    sandboxProvider: 'daytona',
+    sandboxProvider: 'platinum',
     sandboxId: null,
     sandboxUrl: null,
     runtimeSessionId: 'ses_abc',

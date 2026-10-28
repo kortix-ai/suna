@@ -1,7 +1,7 @@
 /**
  * Bound a promise with a wall-clock timeout.
  *
- * Some upstream SDK calls (notably the Daytona SDK) take a request but expose
+ * Some upstream SDK calls (notably provider SDKs) take a request but expose
  * no per-call timeout / AbortSignal, so a degraded upstream can leave the
  * promise pending indefinitely. `Promise.race`-ing it against a timer turns an
  * unbounded hang into a deterministic, catchable failure — which the caller can
@@ -57,7 +57,7 @@ export function withTimeout<T>(
  * configured value gets clamped up to it.
  *
  * A silent `Math.max(floorMs, configured)` (the pattern this replaces) means
- * an operator who sets e.g. `KORTIX_DAYTONA_CALL_TIMEOUT_MS=200` during an
+ * an operator who sets e.g. a provider call timeout of `200` during an
  * incident — trying to fail faster — silently gets 1000ms instead with zero
  * indication their change had no effect. This logs once per process so that
  * mismatch is visible instead of a confusing "I set it to 200 but it's still

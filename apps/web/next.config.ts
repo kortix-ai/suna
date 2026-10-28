@@ -250,9 +250,8 @@ const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
 
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
-// origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>),
-// a Daytona sandbox (<port>-<id>.daytonaproxy01.net), or a Cloudflare quick
-// tunnel (<id>.trycloudflare.com). Next's Server Action CSRF guard
+// origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>)
+// or a Cloudflare quick tunnel (<id>.trycloudflare.com). Next's Server Action CSRF guard
 // (app-render/action-handler.ts) rejects requests where the browser `Origin`
 // doesn't match the `host`/`x-forwarded-host` it sees — surfacing as
 // "Invalid Server Actions request." — and the dev `/_next/*` guard
@@ -277,8 +276,6 @@ const ALLOWED_PROXY_ORIGINS =
         '*.localhost',
         '*.localhost:3000',
         '*.localhost:8008',
-        // Daytona cloud sandbox proxy
-        '*.daytonaproxy01.net',
         // Cloudflare quick tunnel (KORTIX_URL in scripts/dev-local.sh)
         '*.trycloudflare.com',
         ...EXTRA_ALLOWED_ORIGINS,

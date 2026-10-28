@@ -31,21 +31,21 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('is ready when every routable provider holds the current image', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'ready'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'ready'), coverage('platinum', 'ready')],
       selectedProvider: null,
       builds: [build()],
     });
 
     expect(status.state).toBe('ready');
     expect(status.current_failure).toBeNull();
-    expect(status.ready_providers).toEqual(['daytona', 'platinum']);
+    expect(status.ready_providers).toEqual(['second', 'platinum']);
   });
 
   test.each(['not_built', 'building', 'unknown', 'failed', 'unavailable'] as const)(
     'Automatic is ready with a launch-ready provider alongside %s', (otherStatus) => {
       const status = resolveSandboxRuntimeStatus({
         snapshotName: CURRENT,
-        coverage: [coverage('daytona', otherStatus), coverage('platinum', 'ready')],
+        coverage: [coverage('second', otherStatus), coverage('platinum', 'ready')],
         selectedProvider: null,
         builds: [],
       });
@@ -62,7 +62,7 @@ describe('resolveSandboxRuntimeStatus', () => {
 
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'building'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'building'), coverage('platinum', 'ready')],
       selectedProvider: null,
       builds: [failure, build({ snapshotName: PREVIOUS })],
     });
@@ -78,7 +78,7 @@ describe('resolveSandboxRuntimeStatus', () => {
 
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'ready'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'ready'), coverage('platinum', 'ready')],
       selectedProvider: null,
       builds: [failure],
     });
@@ -94,7 +94,7 @@ describe('resolveSandboxRuntimeStatus', () => {
 
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'ready'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'ready'), coverage('platinum', 'ready')],
       selectedProvider: null,
       builds: [failure],
     });
@@ -108,7 +108,7 @@ describe('resolveSandboxRuntimeStatus', () => {
 
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'failed'), coverage('platinum', 'not_built')],
+      coverage: [coverage('second', 'failed'), coverage('platinum', 'not_built')],
       selectedProvider: null,
       builds: [failure],
     });
@@ -116,7 +116,7 @@ describe('resolveSandboxRuntimeStatus', () => {
     expect(status.state).toBe('blocked');
     expect(status.current_failure).toBe(failure);
     expect(status.stale_failure).toBeNull();
-    expect(status.failed_providers).toEqual(['daytona']);
+    expect(status.failed_providers).toEqual(['second']);
   });
 
   test('keeps a sibling failure as history when Automatic has a ready provider', () => {
@@ -124,7 +124,7 @@ describe('resolveSandboxRuntimeStatus', () => {
 
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'failed'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'failed'), coverage('platinum', 'ready')],
       selectedProvider: null,
       builds: [failure],
     });
@@ -132,21 +132,21 @@ describe('resolveSandboxRuntimeStatus', () => {
     expect(status.state).toBe('ready');
     expect(status.current_failure).toBeNull();
     expect(status.stale_failure).toBe(failure);
-    expect(status.failed_providers).toEqual(['daytona']);
+    expect(status.failed_providers).toEqual(['second']);
   });
 
   test('a pinned project follows only its pin', () => {
     const failure = build({ status: 'failed', snapshotName: CURRENT });
     const args = {
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'failed'), coverage('platinum', 'ready')],
+      coverage: [coverage('second', 'failed'), coverage('platinum', 'ready')],
       builds: [failure],
     };
 
     expect(resolveSandboxRuntimeStatus({ ...args, selectedProvider: 'platinum' }).state).toBe(
       'ready',
     );
-    expect(resolveSandboxRuntimeStatus({ ...args, selectedProvider: 'daytona' }).state).toBe(
+    expect(resolveSandboxRuntimeStatus({ ...args, selectedProvider: 'second' }).state).toBe(
       'blocked',
     );
   });
@@ -154,7 +154,7 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('a provider probe blip is never evidence of a broken sandbox', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'unknown'), coverage('platinum', 'unknown')],
+      coverage: [coverage('second', 'unknown'), coverage('platinum', 'unknown')],
       selectedProvider: null,
       builds: [build({ status: 'failed', snapshotName: CURRENT })],
     });
@@ -166,7 +166,7 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('an unbuilt image with no failure waits for the next session, quietly', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'not_built'), coverage('platinum', 'not_built')],
+      coverage: [coverage('second', 'not_built'), coverage('platinum', 'not_built')],
       selectedProvider: null,
       builds: [],
     });
@@ -201,7 +201,7 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('ignores providers the platform has not enabled', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('platinum', 'ready'), coverage('daytona', 'unavailable')],
+      coverage: [coverage('platinum', 'ready'), coverage('second', 'unavailable')],
       selectedProvider: null,
       builds: [build()],
     });

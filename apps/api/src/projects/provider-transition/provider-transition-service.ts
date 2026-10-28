@@ -201,8 +201,8 @@ export async function requestProviderTransition(input: {
   if (!row || row.status === 'archived') throw new ProviderTransitionError('project not found', 'not_found');
 
   // Validate the target (enabled provider) — a disabled/unknown target is a hard
-  // 400, never a silently-ignored switch. A deprecated provider (Daytona) is
-  // refused even while it is enabled: no project may be pinned to it.
+  // 400, never a silently-ignored switch. A removed provider (Daytona) is
+  // refused: no project may be pinned to it.
   if (isDeprecatedProvider(target)) {
     throw new ProviderTransitionError(DEPRECATED_PROVIDER_ERROR, 'bad_provider');
   }

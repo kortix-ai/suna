@@ -1,6 +1,6 @@
 /**
  * Unit coverage for `withTimeout` — the wall-clock guard that bounds upstream
- * SDK calls with no native timeout (notably Daytona's `snapshot.get`).
+ * SDK calls with no native timeout.
  *
  * Regression context: a hung `snapshot.get` behind the `/sandbox-health`
  * polling endpoint left the request pending until the frontend's 30s client
@@ -30,13 +30,13 @@ describe('withTimeout', () => {
     const start = Date.now();
     let caught: unknown;
     try {
-      await withTimeout(never<string>(), 20, 'Daytona snapshot.get(foo)');
+      await withTimeout(never<string>(), 20, 'provider snapshot.get(foo)');
     } catch (err) {
       caught = err;
     }
     expect(caught).toBeInstanceOf(TimeoutError);
     expect((caught as TimeoutError).timeoutMs).toBe(20);
-    expect((caught as Error).message).toContain('Daytona snapshot.get(foo)');
+    expect((caught as Error).message).toContain('provider snapshot.get(foo)');
     // It must give up promptly, not block anywhere near a real request timeout.
     expect(Date.now() - start).toBeLessThan(1_000);
   });

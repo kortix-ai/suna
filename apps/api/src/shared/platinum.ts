@@ -2,7 +2,7 @@
  * Platinum API client (our own Cloud Hypervisor microVM sandbox platform).
  *
  * Thin fetch wrapper — Platinum is a plain REST API (Bearer pt_live_… key),
- * so unlike Daytona there's no SDK. Every call goes through platinumJson()
+ * so there's no SDK. Every call goes through platinumJson()
  * which adds auth + base URL and surfaces non-2xx as errors with the body.
  *
  * A call about ONE sandbox (`/v1/sandboxes/<id>…`) goes to the control plane
@@ -255,9 +255,9 @@ function retryOnGlobalOrigin(err: unknown, method: string, signal: AbortSignal):
 }
 
 // Bare `fetch()` has NO default timeout — a stalled connection to Platinum
-// hangs the caller forever, same failure class as the Daytona SDK's 24h axios
-// default (see platform/providers/daytona.ts for the full incident writeup).
-// Platinum is dev's default sandbox provider, and getStatus()/stop()/start()
+// hangs the caller forever, the same failure class as an SDK's 24h axios
+// default (the 2026-07-02 maintenance-lock incident). Platinum is the sandbox
+// provider, and getStatus()/stop()/start()
 // here sit on the exact same reaper hot path, so this is bounded by default.
 // A caller that needs a longer/no bound (e.g. a deliberately long-poll) can
 // still pass its own `init.signal` — this only fills in a default.

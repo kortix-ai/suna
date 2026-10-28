@@ -27,7 +27,7 @@ function serverRow(sessionId: string): ProjectSession {
     project_id: P,
     branch_name: sessionId,
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: sessionId,
     sandbox_url: null,
     opencode_session_id: null,

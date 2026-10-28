@@ -120,7 +120,7 @@ export function WebSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProp
   // searched for, so it reads the same way a search-results page would.
   //
   // Which is exactly why the query cannot go through raw: models write engine
-  // syntax (`site:daytona.io Daytona sandboxes`), and a search-results page
+  // syntax (`site:example.com Example widgets`), and a search-results page
   // never shows you your own operators back. See `humanizeSearchQuery`.
   const triggerLabel =
     queryResults.length === 1

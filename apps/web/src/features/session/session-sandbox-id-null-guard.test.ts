@@ -28,7 +28,7 @@ function runningSession(overrides: Partial<ProjectSession> = {}): ProjectSession
     account_id: 'acct-1',
     branch_name: 'S1',
     base_ref: 'main',
-    sandbox_provider: 'daytona',
+    sandbox_provider: 'platinum',
     sandbox_id: 'sbx-db-1',
     sandbox_url: 'https://api.kortix.com/v1/p/ext-1/8000',
     opencode_session_id: 'oc-1',

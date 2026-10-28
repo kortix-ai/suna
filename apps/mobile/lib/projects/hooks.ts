@@ -1213,7 +1213,7 @@ export function useProjectSnapshots(projectId: string | null) {
       const anyBuilding =
         (data.builds ?? []).some((b) => b.status === 'building') ||
         (data.templates ?? []).some((t) =>
-          ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase())
+          ['pulling', 'building'].includes((t.provider_state || '').toLowerCase())
         );
       return anyBuilding ? 5_000 : false;
     },

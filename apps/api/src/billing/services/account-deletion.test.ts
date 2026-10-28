@@ -382,8 +382,8 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     // and nothing widened it.
     ownedAccountRows = [{ accountId: 'acct-2' }];
     sandboxRows = [
-      { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
-      { sandboxId: 'sb-2', provider: 'daytona', externalId: 'ext-2' },
+      { sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' },
+      { sandboxId: 'sb-2', provider: 'platinum', externalId: 'ext-2' },
       { sandboxId: 'sb-3', provider: 'platinum', externalId: 'ext-3' },
       { sandboxId: 'sb-4', provider: 'platinum', externalId: 'ext-4' },
     ];
@@ -413,7 +413,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
   });
 
   test('a box with no external id is skipped entirely', async () => {
-    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: null }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'platinum', externalId: null }];
 
     await deleteAccountImmediately('acct-1');
 
@@ -424,8 +424,8 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
 
   test('a stop failure on one box still removes it and never blocks the others', async () => {
     sandboxRows = [
-      { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
-      { sandboxId: 'sb-2', provider: 'daytona', externalId: 'ext-2' },
+      { sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' },
+      { sandboxId: 'sb-2', provider: 'platinum', externalId: 'ext-2' },
     ];
     stopErrorByExternal['ext-1'] = new Error('provider unavailable');
 
@@ -440,8 +440,8 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
 
   test('a remove failure on one box does not block the rest or the deletion', async () => {
     sandboxRows = [
-      { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
-      { sandboxId: 'sb-2', provider: 'daytona', externalId: 'ext-2' },
+      { sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' },
+      { sandboxId: 'sb-2', provider: 'platinum', externalId: 'ext-2' },
     ];
     removeErrorByExternal['ext-1'] = new Error('provider 500');
 
@@ -456,7 +456,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
   test('a failed removed-reconcile falls back to the stopped reconcile', async () => {
     // The row must end terminal either way — an eternally `active` row keeps
     // billing and keeps the box eligible for a wake.
-    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' }];
     removedReconcileErrorByExternal['ext-1'] = new Error('deadlock detected');
 
     const result = await deleteAccountImmediately('acct-1');
@@ -466,6 +466,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     expect(reconciledStopped).toEqual(['ext-1']);
   });
 
+  // A legacy `daytona` row (support removed 2026-10-28) has no provider client.
   test('a provider with no configured client still settles the row', async () => {
     providerAvailable = false;
     sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
@@ -629,7 +630,7 @@ test('failed auth deletion leaves the pending request incomplete', async () => {
 describe("deleting an account that is not the requester's personal account", () => {
   test('a team account the requester owns: data deleted, login and other accounts kept', async () => {
     ownedAccountRows = [{ accountId: ME }, { accountId: 'acct-2' }];
-    sandboxRows = [{ sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' }];
+    sandboxRows = [{ sandboxId: 'sb-1', provider: 'platinum', externalId: 'ext-1' }];
 
     await deleteAccountImmediately('acct-1', ME);
 

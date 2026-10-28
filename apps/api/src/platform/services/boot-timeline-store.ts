@@ -5,7 +5,7 @@ import { logger } from '../../lib/logger';
 export type BootTimelineMark = { label: string; atMs: number };
 
 export type BootTimelineInput = {
-  /** Sandbox provider the session booted on ('daytona' | 'platinum' | ...) —
+  /** Sandbox provider the session booted on ('platinum') —
    *  resolved by the caller (routes/boot-timeline.ts) from session_sandboxes,
    *  since the in-guest daemon posting this doesn't know its own provider. */
   provider: string;

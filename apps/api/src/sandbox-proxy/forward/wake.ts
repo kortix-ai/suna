@@ -9,9 +9,8 @@ import type { PreviewProxyAccess } from './access';
 // Bringing a stopped box up: when a proxied request may wake it, the wake
 // itself, and how the daemon says it is still booting.
 
-// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only). Daytona
-// (a container) reaches it directly; Platinum (a microVM) has its edge dial the
-// guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
+// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only).
+// Platinum (a microVM) has its edge dial the guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
 // is what breaks `kortix sessions connect` / `opencode attach` on Platinum.
 //
 // The sandbox agent on :8000 (binds 0.0.0.0, reachable) already reverse-proxies

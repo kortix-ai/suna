@@ -126,7 +126,7 @@ async function seed(): Promise<void> {
     sql`INSERT INTO kortix.session_pending_questions (account_id, project_id, session_id, request_id, questions)
       VALUES (${ACCOUNT_ID}, ${PROJECT_ID}, ${SESSION_ID}, 'del-test-request', '[]'::jsonb)`,
     sql`INSERT INTO kortix.provider_events (account_id, provider, kind, outcome)
-      VALUES (${ACCOUNT_ID}, 'daytona', 'deleted', 'ok')`,
+      VALUES (${ACCOUNT_ID}, 'platinum', 'deleted', 'ok')`,
     sql`INSERT INTO kortix.legacy_sandbox_migrations (run_id, sandbox_id, account_id)
       VALUES ('del-test-run', ${SANDBOX_ID}, ${ACCOUNT_ID})`,
     sql`INSERT INTO kortix.suna_account_migrations (run_id, account_id)

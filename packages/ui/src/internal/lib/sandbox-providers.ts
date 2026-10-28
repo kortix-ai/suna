@@ -1,18 +1,14 @@
-/** Sandbox provider names, order and labels. Platinum is the reference provider. */
+/** Sandbox provider names, order and labels. Platinum is the only provider. */
 
 const PROVIDER_LABEL: Record<string, string> = {
   platinum: 'Platinum',
-  daytona: 'Daytona',
+  // A stored row from before Daytona support was removed on 2026-10-28.
+  daytona: 'Daytona (removed)',
 };
 
-/** Platinum is the reference provider. Daytona is a legacy fallback with removal scheduled. */
-export function isLegacySandboxProvider(provider: string): boolean {
-  return provider === 'daytona';
-}
-
-/** Sort key: Platinum first, legacy providers last. */
+/** Sort key: Platinum first. */
 export function sandboxProviderRank(provider: string): number {
-  return provider === 'platinum' ? 0 : isLegacySandboxProvider(provider) ? 2 : 1;
+  return provider === 'platinum' ? 0 : 1;
 }
 
 export function sortSandboxProviders<T extends string>(providers: readonly T[]): T[] {
@@ -24,7 +20,7 @@ export function formatSandboxProvider(provider: string): string {
   return PROVIDER_LABEL[provider] ?? provider;
 }
 
-/** `Platinum`, `Platinum and Daytona`. */
+/** `Platinum`, `Platinum and e2b`. */
 export function formatSandboxProviders(providers: readonly string[]): string {
   const names = sortSandboxProviders(providers).map(formatSandboxProvider);
   if (names.length <= 1) return names[0] ?? '';
