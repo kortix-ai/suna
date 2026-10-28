@@ -8,7 +8,7 @@
  * thread the way the real post-create step does, and the clock is an instant
  * sleep, so no sandbox and no real wait is needed.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import {
   accountMembers,
   accountTokens,
@@ -30,6 +30,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, like } from 'drizzle-orm';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { Hono } from 'hono';
 import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-views';
 import { projectsApp } from '../../projects/surface';
@@ -43,6 +44,7 @@ import { config } from '../../config';
 import { emitIntegrationEvent, INTEGRATION_EVENTS_QUEUE } from '../../integrations/event-inbox';
 import { connectorConnectionIsConnected } from '../../projects/lib/session-connector-bindings';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { config as appConfig } from '../../config';
 import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
 import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
@@ -51,7 +53,9 @@ import { adoptChatThreads, bindChatThread, claimThreadCreate } from '../core/thr
 import { applyPostCreateActions, createCommandStatus, createSession } from '../../projects/session-lifecycle/create-session';
 import { turnPromptSource } from '../../projects/lib/notification-recipients';
 import { sessionWebUrl } from '../slack/util';
-import { deleteTelegramInstall, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
+import { deleteTelegramInstall, recordTelegramAccessRequest, saveTelegramInstall, setTelegramAllowedUserIds } from './installs';
+import { registerChannelTelegramRoutes } from '../../projects/routes/channel-telegram';
+import { serializeProject } from '../../projects/lib/serializers';
 import { handleTelegramEvent, handleTelegramPress, telegramMessageEvent, telegramPressEvent, type TelegramMessage } from './session';
 import { telegramWebhookApp } from '../telegram-webhook';
 import { runJobBatch } from '../../shared/job-queue';
@@ -87,16 +91,37 @@ const ownWebhook = () => ({ url: `https://example.test/v1/webhooks/telegram/${PR
 let webhookInfo: Record<string, unknown> = ownWebhook();
 /** A Bot API method the fake fails with a 500. */
 let failing: string | null = null;
+/** getChat per user id: a profile, or 'fail' for a 500. Any other id: Telegram's "chat not found". */
+const chats = new Map<string, Record<string, unknown> | 'fail'>();
+/** Synthetic JPEG bytes the fake serves for every file. */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+/** Paths of file downloads the fake served. */
+const downloads: string[] = [];
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
-    const [, botToken, method] = new URL(req.url).pathname.split('/');
+    const path = new URL(req.url).pathname;
+    if (path.startsWith('/file/')) {
+      downloads.push(path);
+      if (!path.startsWith(`/file/bot${TOKEN}/`)) return new Response('Not Found', { status: 404 });
+      return new Response(JPEG, { headers: { 'content-type': 'image/jpeg' } });
+    }
+    const [, botToken, method] = path.split('/');
     if (botToken !== `bot${TOKEN}`) return Response.json({ ok: false, description: 'Unauthorized' }, { status: 401 });
     const call = { method: method ?? '', body: (await req.json().catch(() => ({}))) as Record<string, unknown> };
     calls.push(call);
     await onCall?.(call);
     waiters.splice(0).forEach((resolve) => resolve(call));
     if (call.method === failing) return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+    if (call.method === 'getChat') {
+      const chat = chats.get(String(call.body.chat_id));
+      if (chat === 'fail') return Response.json({ ok: false, description: 'synthetic failure' }, { status: 500 });
+      if (!chat) return Response.json({ ok: false, description: 'Bad Request: chat not found' }, { status: 400 });
+      return Response.json({ ok: true, result: { id: Number(call.body.chat_id), type: 'private', ...chat } });
+    }
+    if (call.method === 'getFile') {
+      return Response.json({ ok: true, result: { file_id: call.body.file_id, file_path: `photos/${call.body.file_id}.jpg` } });
+    }
     return Response.json({ ok: true, result: call.method === 'getWebhookInfo' ? webhookInfo : { message_id: 1 } });
   },
 });
@@ -240,6 +265,7 @@ afterAll(async () => {
   await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
+  await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
   await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${BOT_ID}:%`));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, PROJECT));
   await db.delete(accountTokens).where(eq(accountTokens.projectId, PROJECT));
@@ -1069,6 +1095,54 @@ describe('Telegram questions posted by the server — migrated PostgreSQL', () =
   });
 });
 
+describe('question buttons go when the chat answers another way — migrated PostgreSQL', () => {
+  const remembered = (chat: string) =>
+    db.select().from(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:${BOT_ID}:${chat}|%`));
+  const edits = () => calls.filter((c) => c.method === 'editMessageText');
+  async function posted(chat: string) {
+    const sessionId = await askedSession(chat);
+    const id = await pending(sessionId);
+    expect((await relayTurnQuestion(sessionId, QUESTION as never, { pendingId: id, principal: await principalOf(sessionId) })).ok).toBe(true);
+    calls.length = 0;
+    return { sessionId, id };
+  }
+
+  test('a typed answer takes the buttons off and says it was answered in the chat; the words still reach the agent', async () => {
+    const { sessionId } = await posted('2101');
+    expect(await remembered('2101')).toHaveLength(1);
+    await handleTelegramEvent(update('Postgres', ALLOWED, 2101));
+    expect(edits().map((c) => ({ chat_id: c.body.chat_id, message_id: c.body.message_id, reply_markup: c.body.reply_markup }))).toEqual([
+      { chat_id: '2101', message_id: 1, reply_markup: { inline_keyboard: [] } },
+    ]);
+    expect(String(edits()[0]!.body.text)).toBe('Pick: Which database?\n1. Postgres\n2. SQLite\n\nAnswered in the chat.');
+    expect(await remembered('2101')).toHaveLength(0);
+    expect(delivered.at(-1)).toMatchObject({ sessionId });
+  });
+
+  test('/new takes the buttons off with "A new conversation started."', async () => {
+    await posted('2102');
+    await handleTelegramEvent(update('/new', ALLOWED, 2102));
+    expect(String(edits()[0]!.body.text)).toEndWith('\n\nA new conversation started.');
+    expect(await remembered('2102')).toHaveLength(0);
+  });
+
+  test("a tap's answer stays: a later message does not rewrite it", async () => {
+    const { id } = await posted('2103');
+    await handleTelegramPress(press(`kq:${id}:1`, { chat: 2103, messageId: 1 }));
+    expect(String(edits().at(-1)!.body.text)).toEndWith('Answered: SQLite');
+    calls.length = 0;
+    await handleTelegramEvent(update('thanks', ALLOWED, 2103));
+    expect(edits()).toEqual([]);
+  });
+
+  test('a stranger in the chat changes nothing', async () => {
+    await posted('2104');
+    await handleTelegramEvent(update('hello', '999', 2104));
+    expect(edits()).toEqual([]);
+    expect(await remembered('2104')).toHaveLength(1);
+  });
+});
+
 describe('POST /turn-question for a Telegram session — migrated PostgreSQL', () => {
   registerTurnQuestionsRoutes();
   const OWNER = crypto.randomUUID();
@@ -1346,5 +1420,301 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
     expect(settled.map((j) => j.status)).toEqual(['done', 'done']);
     expect(delivered.map((d) => d.sessionId)).toEqual([sessionId, sessionId]);
     expect(methods()).toContain('answerCallbackQuery');
+  });
+});
+
+describe('Telegram allowed users and access requests — migrated PostgreSQL', () => {
+  registerChannelTelegramRoutes();
+  const ADMIN = crypto.randomUUID();
+  const api = async (method: string, path: string, body?: unknown, userId = ADMIN) => {
+    const app = new Hono<{ Variables: Record<string, unknown> }>();
+    app.use('*', async (c, next) => {
+      c.set('userId', userId);
+      c.set('authType', 'jwt');
+      await next();
+    });
+    app.route('/v1/projects', projectsApp);
+    return app.request(`/v1/projects/${PROJECT}/channels/telegram${path}`, {
+      method,
+      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+  };
+  const telegramMetadata = async () => {
+    const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
+    return (row!.metadata as { telegram?: Record<string, any> } | null)?.telegram ?? {};
+  };
+  const setTelegram = (telegram: Record<string, unknown>) =>
+    db.update(projects).set({ metadata: { telegram } }).where(eq(projects.projectId, PROJECT));
+  /** The pool behind `db`: a spy on the `db` proxy itself sees no call. */
+  const pooled = () => (globalThis as { __kortixApiDb?: typeof db }).__kortixApiDb!;
+  /** The install as a webhook loaded it: this bot, no request seen yet. */
+  const loaded = { botId: BOT_ID, accessRequests: [] };
+  const storedIds = async () => ((await telegramMetadata()).accessRequests ?? []).map((r: { id: string }) => r.id);
+  const request = (id: string, last_seen = new Date().toISOString()) => ({
+    id,
+    username: `user_${id}`,
+    first_name: `Stored ${id}`,
+    last_name: null,
+    last_seen,
+  });
+  /** A message to the bot from `from`, in a private chat with them unless `chat` says otherwise. */
+  const message = (text: string, from: Record<string, unknown>, chat: { id: number; type: string } = { id: Number(from.id), type: 'private' }) =>
+    telegramMessageEvent(PROJECT, BOT_ID, {
+      update_id: updateId++,
+      message: { message_id: updateId, date: 1_760_000_000, chat, from: from as TelegramMessage['from'], text },
+    })!;
+
+  beforeAll(async () => {
+    await insertIntoView(db, accountMembers, { userId: ADMIN, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
+  });
+  // Earlier describes message the bot as strangers, which stores requests: start each test from a clean list.
+  beforeEach(allowSender);
+  afterEach(allowSender);
+
+  test('a not-allowed sender in a private chat is recorded once, with the id and names only; a repeat within the hour writes nothing', async () => {
+    const from = { id: 4001, is_bot: false, username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester', language_code: 'en' };
+    await handleTelegramEvent(message('please run the secret plan', from));
+    const [entry] = (await telegramMetadata()).accessRequests;
+    expect(Object.keys(entry).sort()).toEqual(['first_name', 'id', 'last_name', 'last_seen', 'username']);
+    expect(entry).toMatchObject({ id: '4001', username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester' });
+    expect(JSON.stringify(await telegramMetadata())).not.toContain('secret plan');
+    expect(replies()).toEqual([expect.stringContaining('Your request is waiting for a project admin')]);
+    expect(replies()[0]).toContain('Customize → Connectors → Channels → Telegram');
+    expect(replies()[0]).toContain('4001');
+    // The pairing reply is the only Telegram call: recording asks Telegram nothing.
+    expect(calls.map((c) => c.method)).toEqual(['sendMessage']);
+
+    const transaction = spyOn(pooled(), 'transaction');
+    try {
+      await handleTelegramEvent(message('again', from));
+      // The loaded install already shows the request: no row lock, no write.
+      expect(transaction).not.toHaveBeenCalled();
+      expect(replies()[1]).toContain('Your request is waiting for a project admin');
+    } finally {
+      transaction.mockRestore();
+    }
+    expect((await telegramMetadata()).accessRequests).toEqual([entry]);
+    // A webhook that loaded the install before the request landed re-checks under the lock.
+    expect(await recordTelegramAccessRequest(PROJECT, loaded, from)).toBe(true);
+    expect((await telegramMetadata()).accessRequests).toEqual([entry]);
+    await handleTelegramEvent(message('renamed', { ...from, first_name: 'Renamed' }));
+    expect((await telegramMetadata()).accessRequests).toEqual([expect.objectContaining({ id: '4001', first_name: 'Renamed' })]);
+  });
+
+  test('a request that is not stored gets the plain reply, once, and the log carries no stored name', async () => {
+    const warn = spyOn(logger, 'warn');
+    const postgres = Object.assign(new Error('deadlock detected'), { name: 'PostgresError', code: '40P01' });
+    const transaction = spyOn(pooled(), 'transaction').mockImplementationOnce(() =>
+      Promise.reject(new DrizzleQueryError('update "projects" set "metadata" = $1', ['Synthetic Hiddenname'], postgres)),
+    );
+    try {
+      await handleTelegramEvent(message('hello', { id: 4090, first_name: 'Synthetic Hiddenname' }));
+      // Read before the restore: a restore clears the recorded calls.
+      expect(warn.mock.calls.find(([text]) => text === '[telegram] access request not recorded')?.[1]).toEqual({
+        projectId: PROJECT,
+        error: 'Database error (SQLSTATE 40P01): deadlock detected',
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('Hiddenname');
+    } finally {
+      transaction.mockRestore();
+      warn.mockRestore();
+    }
+    expect(replies()).toEqual([expect.stringContaining('Ask a project admin to allow your Telegram user ID 4090 under')]);
+    expect(replies()[0]).not.toContain('waiting');
+    expect(replies()[0]).not.toContain('message this bot privately');
+    expect(await storedIds()).toEqual([]);
+  });
+
+  test('an allowed sender and a sender in a group are not recorded', async () => {
+    await handleTelegramEvent(message('/start', { id: Number(ALLOWED), first_name: 'Allowed' }));
+    await handleTelegramEvent(message('hello', { id: 4002, first_name: 'Group Member' }, { id: -4100, type: 'group' }));
+    expect((await telegramMetadata()).accessRequests).toBeUndefined();
+    expect(replies()[1]).toContain('message this bot privately');
+  });
+
+  test('concurrent requests all land, newest first, and the list keeps the newest 20', async () => {
+    await Promise.all(Array.from({ length: 5 }, (_, i) => recordTelegramAccessRequest(PROJECT, loaded, { id: 4050 + i })));
+    expect((await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id).sort()).toEqual(['4050', '4051', '4052', '4053', '4054']);
+    for (let i = 0; i < 20; i++) await recordTelegramAccessRequest(PROJECT, loaded, { id: 4060 + i });
+    const ids = (await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id);
+    expect(ids).toHaveLength(20);
+    expect(ids[0]).toBe('4079');
+  });
+
+  test('a stored name loses its control and format characters and is cut at 64 characters, never inside an emoji', async () => {
+    await recordTelegramAccessRequest(PROJECT, loaded, {
+      id: 4085,
+      first_name: `a${'🙂'.repeat(70)}`,
+      // A NUL, a right-to-left override, a first-strong isolate and a zero-width space.
+      last_name: 'Syn\u0000th\u202Ee\u2068ti\u200Bc',
+      username: 42,
+    });
+    expect((await telegramMetadata()).accessRequests[0]).toMatchObject({
+      id: '4085',
+      first_name: `a${'🙂'.repeat(63)}`,
+      last_name: 'Synthetic',
+      username: null,
+    });
+  });
+
+  test('every write drops expired requests and the requests of allowed ids: allow, remove, dismiss, record, a no-op', async () => {
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    // 4102 asked over 30 days ago; 4100 is allowed and still has a request stored.
+    const before = { allowedUserIds: ['4100', '4101'], accessRequests: [request('4102', old), request('4100'), request('4103'), request('4104')] };
+    const writes: Array<[() => Promise<unknown>, string[]]> = [
+      [() => api('POST', '/allowed-users', { user_id: '4103' }), ['4104']],
+      [() => api('DELETE', '/allowed-users/4101'), ['4103', '4104']],
+      [() => api('DELETE', '/access-requests/4103'), ['4104']],
+      [() => api('DELETE', '/access-requests/4199'), ['4103', '4104']],
+      [() => recordTelegramAccessRequest(PROJECT, loaded, { id: 4105 }), ['4105', '4103', '4104']],
+    ];
+    for (const [write, left] of writes) {
+      await setTelegram(before);
+      await write();
+      expect(await storedIds()).toEqual(left);
+    }
+  });
+
+  test('allowing ids by PUT drops their requests, and a later remove brings none back', async () => {
+    await setTelegram({ allowedUserIds: ['4110'], accessRequests: [request('4111'), request('4112')] });
+    const put = await api('PUT', '/allowed-users', { user_ids: ['4110', '4111'] });
+    expect(await put.json()).toMatchObject({ allowed_user_ids: ['4110', '4111'], access_request_count: 1 });
+    expect(await storedIds()).toEqual(['4112']);
+    const removed = await api('DELETE', '/allowed-users/4111');
+    expect(await removed.json()).toMatchObject({ allowed_user_ids: ['4110'], access_request_count: 1 });
+
+    // A request stored while its id was allowed (before this rule) does not come back on remove either.
+    await setTelegram({ allowedUserIds: ['4113'], accessRequests: [request('4113')] });
+    expect(await (await api('DELETE', '/allowed-users/4113')).json()).toMatchObject({ allowed_user_ids: [], access_request_count: 0 });
+    expect(await storedIds()).toEqual([]);
+  });
+
+  test('a request for a bot the project no longer has is not stored', async () => {
+    // Another bot: a webhook that loaded the install before a reconnect.
+    expect(await recordTelegramAccessRequest(PROJECT, { ...loaded, botId: String(Number(BOT_ID) + 1) }, { id: 4120 })).toBe(false);
+    expect(await storedIds()).toEqual([]);
+    // No bot: a webhook that loaded the install before a disconnect.
+    await deleteTelegramInstall(PROJECT);
+    try {
+      expect(await recordTelegramAccessRequest(PROJECT, loaded, { id: 4121 })).toBe(false);
+      expect(await storedIds()).toEqual([]);
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    }
+  });
+
+  test('a reconnect with the same bot keeps the requests; another bot clears them and keeps the allowed list', async () => {
+    await setTelegram({ allowedUserIds: ['4130'], accessRequests: [request('4131')] });
+    await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    expect(await storedIds()).toEqual(['4131']);
+    try {
+      await saveTelegramInstall({ projectId: PROJECT, botId: String(Number(BOT_ID) + 1), username: 'other_bot', token: TOKEN, webhookSecret: 's' });
+      expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4130'] });
+    } finally {
+      await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
+    }
+  });
+
+  test('the list names allowed users and requests from Telegram and falls back when getChat fails', async () => {
+    // Telegram's names get the stored-request cleaning: no bidi override, no zero-width space.
+    chats.set('4010', { first_name: 'A\u202Eda\u200B', username: 'ada_synthetic', photo: { small_file_id: 'f4010', small_file_unique_id: 'u4010' } });
+    chats.set('4012', 'fail');
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    // 4011 is a legacy numeric id; 4013 asked over 30 days ago; 4010 asked and is allowed.
+    await setTelegram({ allowedUserIds: ['4010', 4011], accessRequests: [request('4012'), request('4013', old), request('4010')] });
+
+    const res = await api('GET', '/users');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.allowed).toEqual([
+      { user_id: '4010', username: 'ada_synthetic', first_name: 'Ada', last_name: null, photo_version: 'u4010', known: true },
+      { user_id: '4011', username: null, first_name: null, last_name: null, photo_version: null, known: false },
+    ]);
+    expect(body.requests).toEqual([
+      { user_id: '4012', username: 'user_4012', first_name: 'Stored 4012', last_name: null, photo_version: null, known: true, last_seen: expect.any(String) },
+    ]);
+    const install = await (await api('GET', '/installation')).json();
+    expect(install).toMatchObject({ allowed_user_ids: ['4010', '4011'], access_request_count: 1 });
+  });
+
+  test('the photo route serves the bytes through the API, never the token; an id not listed is 404', async () => {
+    chats.set('4015', { first_name: 'Photo', photo: { small_file_id: 'f4015', small_file_unique_id: 'u4015' } });
+    await setTelegram({ allowedUserIds: ['4015', '4016'] });
+    downloads.length = 0;
+
+    const res = await api('GET', '/users/4015/photo?v=u4015');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    expect(res.headers.get('cache-control')).toBe('private, max-age=86400');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes).toEqual(JPEG);
+    expect(JSON.stringify([...res.headers]) + new TextDecoder().decode(bytes)).not.toContain(TOKEN);
+    expect(downloads).toEqual([`/file/bot${TOKEN}/photos/f4015.jpg`]);
+
+    const unknown = await api('GET', '/users/4999/photo');
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'telegram_user_unknown' });
+    // 4016 never started the bot: getChat answers "chat not found".
+    expect(await (await api('GET', '/users/4016/photo')).json()).toMatchObject({ code: 'telegram_photo_unavailable' });
+    failing = 'getFile';
+    const down = await api('GET', '/users/4015/photo');
+    expect(down.status).toBe(502);
+    const text = await down.text();
+    expect(text).toContain('telegram_unreachable');
+    expect(text).not.toContain(TOKEN);
+  });
+
+  test('allow moves a request to the allowed list in one write; a legacy numeric id is not added twice; a full list is 409', async () => {
+    await setTelegram({ allowedUserIds: [4021], accessRequests: [request('4020'), request('4022')] });
+    const allowed = await api('POST', '/allowed-users', { user_id: '4020' });
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toMatchObject({ allowed_user_ids: ['4021', '4020'], access_request_count: 1 });
+    expect((await telegramMetadata()).accessRequests.map((r: { id: string }) => r.id)).toEqual(['4022']);
+
+    const again = await api('POST', '/allowed-users', { user_id: '4021' });
+    expect(await again.json()).toMatchObject({ allowed_user_ids: ['4021', '4020'] });
+    expect(await (await api('POST', '/allowed-users', { user_id: '@someone' })).json()).toMatchObject({ code: 'telegram_user_ids_invalid' });
+
+    await setTelegram({ allowedUserIds: Array.from({ length: 200 }, (_, i) => String(10_000 + i)) });
+    const full = await api('POST', '/allowed-users', { user_id: '4023' });
+    expect(full.status).toBe(409);
+    expect(await full.json()).toMatchObject({ code: 'telegram_allowed_users_full' });
+  });
+
+  test('remove and dismiss are idempotent and answer the installation', async () => {
+    await setTelegram({ allowedUserIds: ['4030', '4031'], accessRequests: [request('4032')] });
+    for (let i = 0; i < 2; i++) {
+      const removed = await api('DELETE', '/allowed-users/4030');
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toMatchObject({ allowed_user_ids: ['4031'] });
+      const dismissed = await api('DELETE', '/access-requests/4032');
+      expect(dismissed.status).toBe(200);
+      expect(await dismissed.json()).toMatchObject({ access_request_count: 0 });
+    }
+    expect((await api('DELETE', '/allowed-users/abc')).status).toBe(400);
+  });
+
+  test('a non-member reads no identities and changes nothing', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    const stranger = crypto.randomUUID();
+    expect([403, 404]).toContain((await api('GET', '/users', undefined, stranger)).status);
+    expect([403, 404]).toContain((await api('GET', '/users/4040/photo', undefined, stranger)).status);
+    expect([403, 404]).toContain((await api('POST', '/allowed-users', { user_id: '4041' }, stranger)).status);
+    expect((await telegramMetadata()).allowedUserIds).toEqual(['4040']);
+  });
+
+  test('the public project shape hides metadata.telegram', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    const [row] = await db.select().from(projects).where(eq(projects.projectId, PROJECT));
+    expect((row!.metadata as Record<string, unknown>).telegram).toBeDefined();
+    expect(serializeProject(row!).metadata).not.toHaveProperty('telegram');
+  });
+
+  test('disconnect clears the requests and keeps the allowed list for a reconnect', async () => {
+    await setTelegram({ allowedUserIds: ['4040'], accessRequests: [request('4041')] });
+    await deleteTelegramInstall(PROJECT);
+    expect(await telegramMetadata()).toEqual({ allowedUserIds: ['4040'] });
+    await saveTelegramInstall({ projectId: PROJECT, botId: BOT_ID, username: 'synthetic_bot', token: TOKEN, webhookSecret: 's' });
   });
 });

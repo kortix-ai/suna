@@ -13,7 +13,9 @@
  * | `New message from <user> in the same Slack thread:` | the same renderer before 2026-09, kept for old transcripts |
  * | `You're answering a message on Microsoft Teams as a teammate.` | `channels/teams/session.ts` renderAgentPrompt |
  * | `New message from <user> in the same Teams conversation:` | `channels/teams/session.ts` renderFollowUpPrompt |
- * | `You received a message on Telegram.` | the retired one-session-per-message Telegram webhook (removed 2026-10-24), kept so old transcripts still render |
+ * | `You received a message on Telegram.` + `Chat:`/`From:`/`Message id:`, the text, `How to answer:` | `channels/telegram/session.ts` renderTelegramPrompt |
+ * | `New Telegram message from <user> in the same chat:` + the same block | `channels/telegram/session.ts` renderTelegramPrompt |
+ * | `You received a message on Telegram.` + a `Message:` line | the retired one-session-per-message Telegram webhook (removed 2026-10-24), kept so old transcripts still render |
  * | `[<Platform> · <context> · message from <user>]` | the pre-2026 header, kept so old transcripts still render |
  *
  * The parser is pure and framework-free so `channel-message.test.ts` can pin
@@ -148,6 +150,38 @@ const FOLLOW_UP_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp }> = 
   { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
 ];
 
+const TELEGRAM_FIRST_HEADER = 'You received a message on Telegram.';
+const TELEGRAM_FOLLOW_UP_HEADER = /^New Telegram message from (\S+) in the same chat:$/;
+/** Where the agent's instructions begin: the last one, so a person's own text cannot end the message early. */
+const TELEGRAM_TAIL = '\n\nHow to answer:\n- Reply with the ';
+
+/**
+ * A Telegram prompt as `renderTelegramPrompt` writes it: the header line, the
+ * `Chat:`, `From:` and `Message id:` lines, the text, then `How to answer:`.
+ * The chat id names nothing a person reads, so the context stays empty (as for
+ * Teams). The retired shape, with a `Message:` line, is left to the loop below.
+ */
+function readTelegramPrompt(text: string): ChannelMessageInfo | undefined {
+  const lineEnd = text.indexOf('\n');
+  if (lineEnd < 0) return undefined;
+  const header = text.slice(0, lineEnd).trimEnd();
+  const followUp = TELEGRAM_FOLLOW_UP_HEADER.exec(header);
+  if (header !== TELEGRAM_FIRST_HEADER && !followUp) return undefined;
+  const idLine = /^Message id:[^\n]*\n/m.exec(text);
+  if (!idLine) return undefined;
+  const start = idLine.index + idLine[0].length;
+  const rest = text.slice(start).replace(/^\r?\n/, '');
+  if (/^Message:\r?\n/.test(rest)) return undefined;
+  const tail = text.lastIndexOf(TELEGRAM_TAIL);
+  return {
+    platform: 'Telegram',
+    context: '',
+    userName: field(text.slice(lineEnd, idLine.index), 'From') || followUp?.[1] || 'unknown',
+    messageText: text.slice(start, tail > start ? tail : text.length).trim(),
+    followUp: followUp !== null,
+  };
+}
+
 /** A header only counts when it opens the prompt (a revived-thread NOTE may precede it). */
 function opensPrompt(text: string, headerIndex: number): boolean {
   const before = text.slice(0, headerIndex).trim();
@@ -171,6 +205,9 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
       followUp: false,
     };
   }
+
+  const telegram = readTelegramPrompt(text);
+  if (telegram) return telegram;
 
   for (const shape of FIRST_MESSAGE_HEADERS) {
     const m = shape.header.exec(text);

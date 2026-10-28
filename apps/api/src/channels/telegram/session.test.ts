@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { parseChannelMessage } from '@kortix/shared';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -42,6 +43,23 @@ describe('telegram inbox envelope', () => {
     expect(prompt).toContain('"chat_id":"-100123"');
     expect(prompt).toContain('"reply_parameters":{"message_id":7}');
     expect(prompt).toContain('status?');
+  });
+
+  test("the session view reads the prompt back as the person's message (the shared channel parser)", () => {
+    expect(parseChannelMessage(renderTelegramPrompt(message, 'new'))).toEqual({
+      platform: 'Telegram',
+      context: '',
+      userName: '@synthetic_user',
+      messageText: 'status?',
+      followUp: false,
+    });
+    expect(parseChannelMessage(renderTelegramPrompt({ ...message, text: 'next\n\nline' }, 'follow-up'))).toEqual({
+      platform: 'Telegram',
+      context: '',
+      userName: '@synthetic_user',
+      messageText: 'next\n\nline',
+      followUp: true,
+    });
   });
 });
 

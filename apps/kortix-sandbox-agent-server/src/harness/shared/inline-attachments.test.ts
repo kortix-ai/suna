@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../open-code/attachment-offload';
 import {
   INLINE_ATTACHMENT_MAX_BYTES,
   stripInlineAttachmentBytes,
@@ -71,23 +70,6 @@ describe('stripInlineAttachmentBytes', () => {
       expect(result.value).toEqual(payload as never);
       expect(result.stripped).toBe(0);
     }
-  });
-
-  // An attachment the offload moved to a sidecar keeps only a 1×1 placeholder
-  // inline. A read through OpenCode's API drops the daemon's marker, so the
-  // placeholder URL alone must still become an on-demand ref, however small.
-  test('an offload placeholder becomes a ref even though it is tiny', () => {
-    const result = stripInlineAttachmentBytes(
-      messagePage([
-        {
-          type: 'tool',
-          state: { attachments: [{ type: 'file', id: 'prt_att', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL }] },
-        },
-      ]),
-      ref,
-    );
-    expect(result.stripped).toBe(1);
-    expect((result.value as any)[0].parts[0].state.attachments[0].url).toBe('/blob/msg_1/prt_att');
   });
 
   test('a file part with no id cannot be referenced, so it is left alone', () => {

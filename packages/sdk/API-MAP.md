@@ -280,6 +280,19 @@ Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
 `GET/POST /v1/projects/:id/channels/slack/file[/upload]`).
 
+Telegram: facade `project(id).channels.telegram.*`; hooks live in `@kortix/ui` (`internal/hooks/channels/use-channels-installations.ts`).
+| op | function | REST |
+|---|---|---|
+| `installation` (`access_request_count`) | `getTelegramInstallation` | `GET /v1/projects/:id/channels/telegram/installation` |
+| `connect` | `connectTelegram` | `POST .../channels/telegram/connect` |
+| `setAllowedUsers` (replace list) | `setTelegramAllowedUsers` | `PUT .../channels/telegram/allowed-users` |
+| `disconnect` | `disconnectTelegram` | `DELETE .../channels/telegram` |
+| `users` (`{allowed, requests}`) | `listTelegramUsers` | `GET .../channels/telegram/users` |
+| `allowUser` | `allowTelegramUser` | `POST .../channels/telegram/allowed-users` `{user_id}` |
+| `removeUser` | `removeTelegramUser` | `DELETE .../channels/telegram/allowed-users/:userId` |
+| `dismissAccessRequest` | `dismissTelegramAccessRequest` | `DELETE .../channels/telegram/access-requests/:userId` |
+| `userPhoto` (JPEG `Blob`, 404 → `null`) | `getTelegramUserPhoto` | `GET .../channels/telegram/users/:userId/photo?v=` |
+
 ### 18. Account audit log (Enterprise)  ✅ (client + facade) / 🟡 (hooks)
 Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on `audit.read`/`account.write` + the account's `auditAccess` entitlement. `projects-client/audit.ts` ✅; facade `kortix.accounts.audit.{log, export, webhooks: {list,create,update,remove}}` ✅ (accountId-first, like the rest of `kortix.accounts.*`); no hooks yet (this is an admin-console surface, low priority for the agent-product hooks):
 | op | REST |

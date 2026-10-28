@@ -837,7 +837,7 @@ In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives
 Open **Customize → Connectors**, select the **Channels** scope, and select **Connect** on Telegram. Paste the **Bot token** and the **Allowed Telegram user ids**. Kortix keeps the token on the server.
 </Step>
 <Step title="Message the bot">
-A message from an allowed user starts a session. Anyone else gets a reply that shows their user id. A project manager adds it under **Allowed users**.
+A message from an allowed user starts a session. Anyone else gets a reply that shows their user ID. When they write to the bot in a private chat, they also appear under **Allowed users → Wants access**. A project manager allows them with one click or dismisses the request. You can still add a user by ID.
 </Step>
 </Steps>
 
@@ -845,6 +845,7 @@ A message from an allowed user starts a session. Anyone else gets a reply that s
 - **Questions come with buttons.** When the agent asks one question with up to 6 options, Kortix posts one button per option. Several questions, a multi-select question or a longer list arrive as a numbered list. Tap a button, or reply with your own answer.
 - **A question follows the connector's rules.** Kortix posts it only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused.
 - **Telegram has no account link.** The allowed-user list decides who may talk to the bot. Only an allowed user's tap counts.
+- **An access request keeps only who asked:** the user ID, the username, the name and when they last wrote, never the message. Kortix keeps the newest 20 requests for 30 days. Disconnecting the bot deletes them.
 - **In a group, the bot reads only commands, replies to it and mentions.** To let it read every message, send `/setprivacy` to @BotFather, or make the bot a group admin.
 
 ## Everywhere

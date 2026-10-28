@@ -15,7 +15,7 @@ import {
   useLinkCaptureDevice,
   useRevokeCaptureEnrollmentToken,
 } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, CheckIcon, CopyIcon, DesktopIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, DesktopIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useId, useState } from 'react';
 
@@ -54,7 +54,6 @@ import {
 } from '@kortix/ui/table';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
 import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
@@ -72,6 +71,7 @@ import {
   type ExpiryDays,
   type RolloutOs,
 } from './rollout-model';
+import { CopyBlock } from '../copy-block';
 
 const errorText = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
@@ -310,7 +310,7 @@ function CreatedToken({ token }: { token: CaptureEnrollmentTokenSecret }) {
     <section className="space-y-3" aria-live="polite">
       <Label>{t('createdTitle', { name: token.name })}</Label>
       <p className="text-muted-foreground text-xs text-pretty">{t('createdBody')}</p>
-      <CopyBlock text={token.token} />
+      <CopyBlock text={token.token} copyLabel={t('copy')} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">{t('installTitle')}</p>
         <Tabs value={os} onValueChange={(value) => setOs(value as RolloutOs)}>
@@ -323,7 +323,7 @@ function CreatedToken({ token }: { token: CaptureEnrollmentTokenSecret }) {
           </TabsListCompact>
         </Tabs>
       </div>
-      <CopyBlock text={installCommand(os, url, token.token)} />
+      <CopyBlock text={installCommand(os, url, token.token)} copyLabel={t('copy')} />
       <p className="text-muted-foreground text-xs text-pretty">{t(`installBody.${os}`)}</p>
     </section>
   );
@@ -397,33 +397,6 @@ function TokenRow({ accountId, token }: { accountId: string; token: CaptureEnrol
         }
       />
     </li>
-  );
-}
-
-/** A copyable line: the token or the install command. */
-function CopyBlock({ text }: { text: string }) {
-  const t = useTranslations('capture.rollout');
-  const { copy, copied } = useCopy();
-  return (
-    <div className="bg-muted flex items-start rounded-md border">
-      <pre className="scrollbar-hide min-w-0 flex-1 overflow-x-auto py-2.5 pl-3 font-mono text-xs leading-relaxed">
-        <code>{text}</code>
-      </pre>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => copy(text)}
-        aria-label={t('copy')}
-        className="m-1 size-7 shrink-0"
-      >
-        {copied ? (
-          <CheckIcon className="text-kortix-green size-3.5" />
-        ) : (
-          <CopyIcon className="size-3.5" />
-        )}
-      </Button>
-    </div>
   );
 }
 

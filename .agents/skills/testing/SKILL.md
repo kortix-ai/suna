@@ -173,9 +173,9 @@ equivalent of every CI job your change touches:
 
 | Change touches | CI job (post-merge / release) | Run locally before the merge |
 | --- | --- | --- |
-| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes on the `staging` PR and nightly on `dev` | the package's test file, `pnpm test -- --id <ID>` |
-| browser-visible behavior | `Tests` browser lanes | drive the page with agent-browser; the `test` label for the browser lanes |
-| `apps/api` | `CI` → API typecheck; `Tests` packages lane → API lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
+| shared code, the API, the SDK, a migration, the runtime | `Tests` lanes nightly on `dev` and in the release suite | the package's test file, `pnpm test -- --id <ID>` |
+| browser-visible behavior | release-suite browser journeys against staging | drive the page with agent-browser |
+| `apps/api` | `Tests` `packages-api` lane → API typecheck and lint | `pnpm --filter kortix-api typecheck` and `pnpm --filter kortix-api lint` (after fixing a violation: `lint:prune`) |
 | `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
 | `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |
 | `packages/db/migrations` | `DB Migrations` | the four commands in `packages/db/MIGRATIONS.md` → "CI gates" |
@@ -186,9 +186,9 @@ equivalent of every CI job your change touches:
 Secrets and customer terms need no extra command: the `.githooks` pre-commit
 hook encrypts `.env` files and runs `scripts/check-blocked-terms.sh`.
 
-The post-merge `Tests` run on `main` blocks nothing. A red run comments the
+The nightly `Tests` run on `dev` blocks nothing. A red run comments the
 failing lanes and every commit since the last green run on the commit. The
-author whose commit broke `main` fixes forward; after 1 hour red, anyone may
+author whose commit broke `dev` fixes forward; after 1 hour red, anyone may
 revert the culprit PR.
 The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
@@ -205,29 +205,22 @@ Kortix controls, or it goes.
 
 ## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs seven
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs six
 lanes in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
 `ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
-The core lane runs `pnpm test -- --no-packages`. Four package lanes run
+Two core lanes split the core run: `pnpm test -- --core-group=flows` and
+`pnpm test -- --core-group=db` (DB suites, runner units, route coverage,
+worktree tests, then the SDK). Four package lanes run
 `pnpm test -- --packages-only --package-group=<api|cli|kortixd|rest>`, one slice
-of package quality each; `rest` holds the repo-wide checks. Two browser lanes
-run shards `1/2` and `2/2` over the money-path specs (list in
-`tests/README.md`), one Playwright worker each, via
-`pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
-requested SHA.
+of package quality each; `rest` holds the repo-wide checks. No browser journey
+runs in `tests.yml`: the money-path specs run once, in the release suite,
+against deployed staging (`tests-release.yml`, two Playwright workers).
 
-- Check out the requested SHA with `fetch-depth: 1`: the pushed `main` commit,
+- Check out the requested SHA with `fetch-depth: 1`: the nightly `dev` HEAD,
   or a release pull request's head.
 - Run `pnpm install --frozen-lockfile`.
-- Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
-  (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
-  `pnpm exec supabase start --ignore-health-check -x studio,imgproxy` before the
-  root command (no test uses the dashboard or image transforms), and
-  `supabase stop --no-backup` in an `always()` step after it.
-- Use one Playwright worker for each local-stack browser shard in CI. Keep two
-  workers for deployed staging runs, which set `E2E_BROWSER_WORKERS` explicitly.
 - Export `KORTIX_PACKAGE_SKIP_SDK_TESTS=1` for the `packages-*` lanes; the SDK tests
-  run in the core lane.
+  run in the `core-db` lane.
 - Keep the guard step and the artifact upload `if: always()`.
 - Do not reintroduce a cloud-sandbox worker for these lanes. The
   Platinum/Daytona path (`tests/bin/sandbox-ci.ts`) was removed on 2026-08-26
@@ -253,7 +246,7 @@ the rare explicit request.
 
 - Add `preview` only after a writer reviews the exact same-repository PR SHA.
 - Build the API, gateway, and frontend without credentials in separate jobs.
-- Run the trusted preview controller from `main`.
+- Run the trusted preview controller from the default branch (`dev`).
 - Run on Platinum only: the preview host and every session inside it. A
   Platinum failure fails the preview. Never fall back to Daytona.
 - Live-sandbox flows declare `requires: ['sandbox']` (`KE2E_CAP_SANDBOX`). The

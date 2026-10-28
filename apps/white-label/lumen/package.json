@@ -26,7 +26,7 @@
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-query": "^5.75.2",
     "ajv": "8.18.0",
-    "better-auth": "1.7.12",
+    "better-auth": "1.6.33",
     "convex": "1.46.0",
     "jszip": "3.10.2",
     "mammoth": "1.13.0",
