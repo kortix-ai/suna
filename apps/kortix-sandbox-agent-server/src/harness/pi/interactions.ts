@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { comparePatterns } from '@kortix/api-contract/permission-rules'
+import { KORTIX_EDIT_TOOLS } from '@/services/tools/tool'
 import type { RuntimeFrame } from './transcript'
 
 export type PermissionReply = RuntimePermissionReply
@@ -213,19 +214,22 @@ function resolveRule(config: PermissionRuleConfig | undefined, subject: string |
   return config['*']
 }
 
-/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+/**
+ * pi's tools whose name is not their capability: `write` and the Kortix tools
+ * that write files (`KORTIX_EDIT_TOOLS`) are `edit`; the search and scrape
+ * tools reach the web.
+ */
 const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
   write: 'edit',
   web_search: 'websearch',
   image_search: 'websearch',
   scrape_webpage: 'webfetch',
-  // It writes a file under output/images: `edit: deny` stops it as it stops `write`.
-  image_gen: 'edit',
+  ...Object.fromEntries(KORTIX_EDIT_TOOLS.map((tool) => [tool, 'edit' as const])),
 }
 
 /**
  * The capability a permission rule names for this call (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own.
- * `memory` writes files under `memory/`: every command but `view` is an `edit`, so `edit: deny` stops it as it stops `write`.
+ * `memory`'s `view` command only reads, so it is `read`; its other commands are `edit`.
  */
 export function toolCapability(tool: string, args?: unknown): string {
   if (tool === 'memory') return (args as { command?: unknown } | null | undefined)?.command === 'view' ? 'read' : 'edit'

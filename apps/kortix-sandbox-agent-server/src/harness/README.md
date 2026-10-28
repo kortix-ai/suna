@@ -962,7 +962,10 @@ one harness's tool. Each adapter maps its tools onto them: pi's `write` is
 `webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
 other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
 hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
-and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
+and `webfetch`, and `image_gen` and `memory` follow `edit`
+(`open-code/lifecycle.ts` `capabilityToolRules`). Both harnesses read the
+Kortix tools that write files from one list, `KORTIX_EDIT_TOOLS` in
+`services/tools/tool.ts`. The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against a `bash` command or a
 workspace tool's path. A pattern map is never collapsed to its `*` entry.

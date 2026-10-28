@@ -4237,8 +4237,9 @@ describe('pi codemode', () => {
       expect(part.callID).toStartWith(`${code!.callID}/`)
       expect(part.state).toMatchObject({ status: 'completed', input: { action: 'generate', prompts: [prompt] }, time: { start: expect.any(Number), end: expect.any(Number) } })
       const output = JSON.parse(part.state.output)
-      expect(output.images).toEqual([{ path: expect.stringContaining(join(r.workspace, 'output', 'images')), size: '1024x1024', prompt }])
-      expect(existsSync(output.images[0].path)).toBe(true)
+      expect(output.images).toEqual([{ path: expect.stringContaining(join(r.workspace, 'output', 'images')), size: '1024x1024', prompt, sha256: expect.any(String) }])
+      // R38: the digest names the bytes saved on disk.
+      expect(output.images[0].sha256).toBe(createHash('sha256').update(readFileSync(output.images[0].path)).digest('hex'))
     }
     expect(show!.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Two images' } })
     expect(JSON.parse(show!.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Two images' } })

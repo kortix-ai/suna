@@ -577,6 +577,58 @@ describe('handleImageRequest', () => {
     expect(usage[0].finalCost).toBeCloseTo(usage[0].upstreamCost * 1.5, 10);
   });
 
+  test('a billed image answered without usage is refused and its hold returned', async () => {
+    const alone = setup(
+      { resolveUpstream: async () => [managed], assertBillingActive: async () => ({ holdUsd: 0.5 }) },
+      async () => chatImage({}),
+    );
+    const refused = await alone.run({ model: 'kortix-image', prompt: 'a red cube' });
+    expect(refused.status).toBe(502);
+    const text = await refused.text();
+    expect(text).not.toContain(FAKE_B64);
+    expect(JSON.parse(text)).toMatchObject({
+      code: 'image_model_unpriced',
+      message: 'kortix-image answered without a billable image usage.',
+      suggestion: 'Retry, or choose another image model.',
+    });
+    expect(alone.usage).toEqual([expect.objectContaining({ billingHoldUsd: 0.5, finalCost: 0, upstreamCost: 0 })]);
+
+    // Like any candidate failure, the next planned model answers and settles the hold.
+    const chained = setup(
+      {
+        resolveRoute: async () => plan('kortix-image', 'openai/gpt-image-1-mini'),
+        resolveUpstream: connected({ 'kortix-image': managed, 'openai/gpt-image-1-mini': openai }),
+        assertBillingActive: async () => ({ holdUsd: 0.5 }),
+      },
+      async (url) => (url.includes('inference.example.test') ? chatImage({}) : openAiImage()),
+    );
+    const served = await chained.run({ prompt: 'a red cube' });
+    expect(served.status).toBe(200);
+    expect(chained.calls).toHaveLength(2);
+    expect(chained.usage).toEqual([expect.objectContaining({ billingMode: 'none', provider: 'openai', billingHoldUsd: 0.5 })]);
+  });
+
+  test('a billed image with a provider-reported cost is charged', async () => {
+    const { usage, run } = setup(
+      { resolveUpstream: async () => [managed], assertBillingActive: async () => ({ holdUsd: 0.5 }) },
+      async () => chatImage({ cost: 0.04 }),
+    );
+    const response = await run({ model: 'kortix-image', prompt: 'a red cube' });
+    expect(response.status).toBe(200);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ billingMode: 'credits', billingHoldUsd: 0.5, upstreamCost: 0.04 });
+    expect(usage[0].finalCost).toBeCloseTo(0.04 * 1.5, 10);
+  });
+
+  test('an unbilled image without usage is still delivered (ChatGPT, own key)', async () => {
+    for (const descriptor of [codex, openai]) {
+      const { usage, run } = setup({ resolveUpstream: async () => [descriptor] }, async () => okImage());
+      const response = await run({ model: 'some/image-model', prompt: 'a red cube' });
+      expect(response.status).toBe(200);
+      expect(usage).toEqual([expect.objectContaining({ billingMode: 'none', finalCost: 0 })]);
+    }
+  });
+
   test('a failed managed request refunds its hold and names no upstream', async () => {
     const { usage, run } = setup(
       {

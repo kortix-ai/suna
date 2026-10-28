@@ -24,6 +24,14 @@
  * is the author's choice.
  */
 
+/**
+ * The Kortix tools that write files in the checkout (`image_gen` under
+ * `output/images/`, `memory` under `memory/`). The `edit` permission governs
+ * them on every harness: pi (`toolCapability`) and OpenCode
+ * (`capabilityToolRules`) both read this list.
+ */
+export const KORTIX_EDIT_TOOLS: readonly string[] = ['image_gen', 'memory']
+
 /** What a running tool knows about its call. */
 export interface ToolContext {
   /** The Kortix session the call belongs to. */

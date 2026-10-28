@@ -531,8 +531,11 @@ async function tryCandidate(run: Run, candidate: UpstreamDescriptor, model: stri
   return attempt.status === 429 ? 'next-account' : null;
 }
 
-/** Step 5, settle and respond: cost, one usage event, the trace, the normalized answer (U-D1). */
-async function settle(run: Run, descriptor: UpstreamDescriptor, model: string, result: ImageResult): Promise<Response> {
+/**
+ * Step 5, settle and respond: cost, one usage event, the trace, the normalized answer (U-D1).
+ * Null: a billed image without a price failed (recorded in `run.last`).
+ */
+async function settle(run: Run, descriptor: UpstreamDescriptor, model: string, result: ImageResult): Promise<Response | null> {
   const counts = result.usage;
   const { upstreamCost, finalCost } = calculateCost(
     descriptor.resolvedModel ?? model,
@@ -541,6 +544,17 @@ async function settle(run: Run, descriptor: UpstreamDescriptor, model: string, r
     result.upstreamCostUsd,
     descriptor.pricing,
   );
+  // A billed image answered without usage or a cost is not free: it is not
+  // delivered, and the hold settles with the next model or returns (CWE-840).
+  if (descriptor.billingMode !== 'none' && !(finalCost > 0)) {
+    failed(run, model, {
+      status: 502,
+      code: 'image_model_unpriced',
+      message: `${model} answered without a billable image usage.`,
+      suggestion: 'Retry, or choose another image model.',
+    });
+    return null;
+  }
   const upstream = descriptor.publicProvider
     ? { upstream: { provider: descriptor.provider, model: descriptor.resolvedModel ?? model } }
     : {};

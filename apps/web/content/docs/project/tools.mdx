@@ -159,7 +159,8 @@ agents:
 ```
 
 - Set `image_gen: ask` to approve each call.
-- `image_gen` writes a file, so `edit: deny` also denies it, unless the agent sets a rule for `image_gen`.
+- `image_gen` writes a file, so `edit: deny` also denies it, unless the agent sets a rule for `image_gen`. The same applies to `memory`, on both harnesses.
+- On OpenCode (deprecated), these tools cannot ask: `edit: ask` or an `edit` pattern map denies them.
 - Deleting the `image_gen` line under `tools:` does not remove it.
 
 ### Replace it
