@@ -366,6 +366,7 @@ agents:
 | `off` | no `codemode` |
 
 - An agent's value replaces the top-level one. Read when the session starts.
+- A subagent gets `codemode` only when its own agent sets `codemode: on` or `only` (`kortix_version: 3`). Omitted, it has none, whatever the session agent's value. `on` adds codemode beside the subagent's direct tools; `only` gives the subagent's model `codemode` and `show` alone, so every other tool call runs from a script. The subagent's own tool allowlist omitting `codemode`/`show` does not disable them (they are built-in controls), but the subagent's own `codemode: off`, a `deny` rule, or the session (root) agent's allowlist all still turn them off — then the subagent keeps its direct tools. `tools: none` means no tools at all, codemode included. `codemode` is not a tool name, so do not list it in a `tools` allowlist or `exclude` (validate warns it is unknown); use `codemode: off` to turn a subagent's codemode off. So a session (root) agent that uses a strict `tools:` allowlist must list `codemode` in it for its subagents to get codemode.
 - A script's calls pass the same permission policy as direct calls: a `deny` rule blocks them, and an `ask` rule pauses the script until someone answers.
 - A script cannot start a subagent (`task`) or ask a question (`question`). The model calls those directly.
 - Scripts run in a sandboxed JavaScript VM (QuickJS) with no file system, network or timers. They reach the box only through the tools.
