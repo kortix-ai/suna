@@ -146,27 +146,14 @@ function startServer(
         });
       }
       if (p === '/agents/meta/config' && req.method === 'GET') {
-        // The built-in view (builtin-agents.ts builtinAgentConfigView): the v3 view of MY_KORTIX_BLOCK.
+        // The built-in view (agent-config.ts builtinAgentConfigView).
         return Response.json({
           agent: 'meta',
           builtin: 'my_kortix',
           schema_version: 3,
           editable: false,
           default_agent: defaultAgent,
-          block: {
-            codemode: 'only',
-            tools: 'all',
-            skills: 'all',
-            subagents: 'all',
-            commands: 'all',
-            connectors: 'none',
-            secrets: 'none',
-            apps: 'none',
-            kortix_permissions: 'all',
-            sandbox: 'meta',
-            repository_access: false,
-            behavior: { description: 'The one agent you talk to.', mode: 'primary', prompt: 'You are My Kortix.' },
-          },
+          block: null,
           harness: 'pi',
           ignored_settings: [],
         });
