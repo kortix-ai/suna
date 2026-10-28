@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 // /docs is a Blume (Astro) static site built from `content/docs/` +
 // `blume.config.ts`. `blume build` writes its output to `dist/` at the repo
 // root of apps/web. Its `deployment.base` config leaves pages FLAT at the
-// dist root (verified: `dist/index.html`, `dist/quickstart/index.html`,
-// `dist/sdk/index.html`) rather than nested under a `dist/docs/` subfolder —
+// dist root (verified: `dist/index.html`, `dist/audit-actions/index.html`) rather than nested under a `dist/docs/` subfolder —
 // so the whole `dist/` directory, not a subdirectory of it, is what gets
 // copied into `public/docs/`.
 //
@@ -26,7 +25,9 @@ const BLUME_CONFIG = path.join(WEB_ROOT, 'blume.config.ts');
 export function getBlumeDocsOutputPaths() {
   return [
     path.join(PUBLIC_DOCS, 'index.html'),
-    path.join(PUBLIC_DOCS, 'quickstart', 'index.html'),
+    // The docs are one page (index.html); audit-actions is the nested page
+    // that proves the rest of the site landed too.
+    path.join(PUBLIC_DOCS, 'audit-actions', 'index.html'),
   ];
 }
 

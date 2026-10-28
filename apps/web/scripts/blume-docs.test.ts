@@ -5,7 +5,7 @@ describe('getBlumeDocsOutputPaths', () => {
   test('names the two files that prove the docs build landed', () => {
     const paths = getBlumeDocsOutputPaths();
     expect(paths.some((p) => p.endsWith('public/docs/index.html'))).toBe(true);
-    expect(paths.some((p) => p.endsWith('public/docs/quickstart/index.html'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('public/docs/audit-actions/index.html'))).toBe(true);
   });
 });
 
@@ -15,8 +15,8 @@ describe('built docs document titles', () => {
     const { buildBlumeDocs } = await import('./blume-docs.mjs');
     buildBlumeDocs();
     const home = await Bun.file(new URL('../public/docs/index.html', import.meta.url)).text();
-    const quickstart = await Bun.file(new URL('../public/docs/quickstart/index.html', import.meta.url)).text();
-    expect(home.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Docs - Kortix');
-    expect(quickstart.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Quickstart - Kortix');
+    const inner = await Bun.file(new URL('../public/docs/audit-actions/index.html', import.meta.url)).text();
+    expect(home.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Guide - Kortix');
+    expect(inner.match(/<title>(.*?)<\/title>/)?.[1]).toBe('Audit actions - Kortix');
   }, 120_000);
 });

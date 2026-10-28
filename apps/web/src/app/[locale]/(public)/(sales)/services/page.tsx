@@ -97,7 +97,7 @@ function JoinButton({
 /** The team you meet on the call: faces cut from the /about team photo. */
 function TeamFaces() {
   return (
-    <span aria-hidden className="flex -space-x-3">
+    <span aria-hidden className="flex shrink-0 -space-x-2.5">
       {[1, 2, 3, 4, 5, 6].map((n) => (
         <Image
           key={n}
@@ -105,7 +105,7 @@ function TeamFaces() {
           alt=""
           width={80}
           height={80}
-          className="ring-card size-14 rounded-full ring-4"
+          className="ring-background size-10 rounded-full ring-2"
         />
       ))}
     </span>
@@ -363,36 +363,39 @@ export default function ServicesPage() {
       {/* ── pricing: one plan, the guarantee, the intro call ──────────────── */}
       <Block id="pricing">
         <Heading title={pricing.title} titleMuted={pricing.titleMuted} />
-        {/* Both cards carry the toast's smooth shadow ring (shadow.floriankiem.com
-            `ring-sm`) instead of a flat border, share one padding, and end on
-            their button, so Join now and Book an intro call sit on one line. */}
-        <div className="mt-12 grid grid-cols-1 gap-4 px-8 lg:grid-cols-[3fr_2fr] lg:px-28">
-          <div className="bg-foreground text-background smooth-shadow-ring-sm flex flex-col gap-6 rounded-lg p-8 lg:p-10">
-            <h3 className="text-lg font-medium">{pricing.plan}</h3>
-            <Price />
-            <p className="text-sm text-pretty opacity-70">{pricing.lock}</p>
-            <ul className="grid grid-cols-1 gap-x-6 gap-y-3 border-t border-current/20 pt-6 text-sm sm:grid-cols-2">
-              {pricing.includes.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <SolidCheckIcon className="text-ring mt-0.5" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs text-pretty opacity-70">
-              {pricing.secure}. {GUARANTEE}
-            </p>
-            <JoinButton variant="secondary" className="mt-auto w-full" />
+        {/* One panel on the toast's smooth shadow ring (shadow.floriankiem.com
+            `ring-sm`) instead of a flat border. */}
+        <div className="smooth-shadow-ring-sm mx-8 mt-12 overflow-hidden rounded-lg lg:mx-28">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            <div className="bg-foreground text-background flex flex-col gap-6 p-8 lg:p-10">
+              <h3 className="text-lg font-medium">{pricing.plan}</h3>
+              <Price />
+              <p className="text-sm text-pretty opacity-70">{pricing.lock}</p>
+              <div className="mt-auto flex flex-col gap-3 pt-2">
+                <JoinButton variant="secondary" className="w-full" />
+                <p className="text-center text-xs text-pretty opacity-70">
+                  {pricing.secure}. {GUARANTEE}
+                </p>
+              </div>
+            </div>
+            <div className="bg-card flex flex-col gap-5 p-8 lg:p-10">
+              <h3 className="text-foreground text-lg font-medium">{pricing.includedTitle}</h3>
+              <ul className="flex flex-col gap-3 text-sm">
+                {pricing.includes.map((item) => (
+                  <li key={item} className="text-foreground flex items-start gap-2">
+                    <SolidCheckIcon className="text-ring mt-0.5" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
-          <div className="bg-card smooth-shadow-ring-sm flex flex-col gap-6 rounded-lg p-8 lg:p-10">
-            <div>
-              <h3 className="text-foreground text-lg font-medium">{intro.title}</h3>
-              <p className="text-muted-foreground mt-2 text-sm text-pretty">{intro.body}</p>
-            </div>
-            <div className="flex flex-1 items-center">
-              <TeamFaces />
-            </div>
-            <IntroButton className="mt-auto w-full" />
+          <div className="flex flex-col gap-5 border-t p-6 sm:flex-row sm:items-center lg:px-10">
+            <TeamFaces />
+            <p className="text-muted-foreground flex-1 text-sm text-pretty">
+              <span className="text-foreground font-medium">{intro.title}</span> {intro.body}
+            </p>
+            <IntroButton className="shrink-0" />
           </div>
         </div>
       </Block>
