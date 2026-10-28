@@ -8,7 +8,7 @@
 // re-exports it) is safe: every shared helper is a hoisted function
 // declaration, and the platform modules touch those helpers only at call time,
 // long after both sides of the cycle have finished evaluating.
-import { chatInstalls, projectSecrets } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValueForConsumer } from '../projects/secrets';
 
@@ -17,11 +17,30 @@ import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValueForCon
 // into project secrets.
 export { decryptProjectSecret as decryptChannelSecret, encryptProjectSecret as encryptChannelSecret };
 import { db } from '../shared/db';
+import { deleteSlackInstall } from './slack/installs';
+import { deleteTeamsInstall } from './teams/installs';
+import { releaseTelegramBot } from './telegram/installs';
 
 export * from './slack/installs';
 export * from './email/installs';
 export * from './teams/installs';
 export * from './telegram/installs';
+
+/**
+ * The project delete releases its chat channels; the tombstone keeps their rows
+ * (no FK cascade), and the routers would keep resolving to it. Each platform
+ * goes the way its disconnect goes, and the Slack and Teams channel bindings
+ * go with them. The email inbox stays: a mail to it gets the deleted project's
+ * notice (email/session.ts).
+ */
+export async function releaseProjectChannels(projectId: string): Promise<void> {
+  await releaseTelegramBot(projectId);
+  await deleteSlackInstall(projectId);
+  await deleteTeamsInstall(projectId);
+  await db
+    .delete(chatChannelBindings)
+    .where(and(eq(chatChannelBindings.projectId, projectId), inArray(chatChannelBindings.platform, ['slack', 'teams'])));
+}
 
 export async function deleteProjectSecrets(
   projectId: string,
