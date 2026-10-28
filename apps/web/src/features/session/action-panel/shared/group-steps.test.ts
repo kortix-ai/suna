@@ -2,7 +2,7 @@ import type { ToolPart } from '@/ui';
 import { toolCallBlock, type SessionLogMessage } from '@kortix/sdk';
 import { describe, expect, it } from 'bun:test';
 import { collectAllToolCalls } from '@kortix/ui/session-panel';
-import { groupSteps } from './group-steps';
+import { groupSteps } from '@kortix/sdk';
 
 // `groupSteps` and its unit tests live in `@kortix/sdk`
 // (`packages/sdk/src/core/turns/segments/group-steps.test.ts`). This file keeps

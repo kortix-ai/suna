@@ -55,7 +55,3 @@ export function requireEnvValue(name: string, ...files: string[]): string {
   if (!value) throw new Error(`${name} was not found in ${candidateEnvFiles(files).join(', ')}`);
   return value;
 }
-
-export function firstExistingExplicitEnvFile(): string | null {
-  return explicitEnvFiles().find((candidate) => existsSync(candidate)) ?? null;
-}

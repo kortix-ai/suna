@@ -228,6 +228,17 @@ if (repoChecks) {
     run(['node', '--test', 'scripts/dev-local.test.mjs']),
     run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
     run(['node', '--test', 'scripts/test-guard.test.mjs']),
+    run(['node', '--test', 'scripts/refresh-staged-web-artifacts.test.mjs']),
+    // No package owns these: `./infra` discovers every edge-worker and deploy-script
+    // test, and the two lockfile checks need Bun (Bun.YAML, Bun.semver), not vitest.
+    run([
+      'bun',
+      'test',
+      './infra',
+      './scripts/eslint-policy.test.mjs',
+      './tests/unit/dependency-advisories.test.js',
+      './tests/unit/undici-advisory.test.js',
+    ]),
   ]);
   await rejectFocusedTests();
 }

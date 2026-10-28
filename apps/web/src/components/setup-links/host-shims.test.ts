@@ -6,17 +6,7 @@
 import { expect, test } from 'bun:test';
 
 import { connectorHeadline, useConnectorLinkInfo } from '@kortix/ui/markdown/setup-links/connector-link-info';
-import { nextConnectorPollDelay } from './connector-poll';
-import { resolveConnectorStart } from './connector-start';
 import { useConnectorIntake } from './connector-intake';
-
-test('the moved start rule resolves through the old host path', () => {
-  expect(typeof resolveConnectorStart).toBe('function');
-});
-
-test('the moved poll schedule resolves through the old host path', () => {
-  expect(nextConnectorPollDelay(0, 0)).toBe(3_000);
-});
 
 test('the moved link-info surface resolves through the old host path', () => {
   expect(typeof connectorHeadline).toBe('function');
