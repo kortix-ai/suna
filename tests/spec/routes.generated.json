@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 960,
+  "count": 965,
   "routes": [
     {
       "method": "GET",
@@ -2315,8 +2315,20 @@
       "path": "/v1/projects/:projectId/channels/telegram"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/access-requests/:user_id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users/:user_id"
     },
     {
       "method": "POST",
@@ -2325,6 +2337,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/users/:user_id/photo"
     },
     {
       "method": "GET",
