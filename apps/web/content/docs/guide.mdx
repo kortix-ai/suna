@@ -219,7 +219,7 @@ A change to an agent takes effect when it lands in the project. New sessions sta
 | **Apps** | The project's Apps whose access is restricted or private. |
 | **Kortix permissions** | Actions in Kortix itself, such as starting sessions or merging changes. |
 | **Project repository access** | A copy of the project's repository in `/workspace` on the session's computer, on the session's own branch. In `kortix.yaml`, this is `workspace.project_repository: true`. The agents a new project starts with have it. |
-| **Tools** | Built-in abilities such as web search, image search, reading web pages and project memory. |
+| **Tools** | Built-in abilities such as web search, image search, image generation, reading web pages and project memory. See [Kortix tools](/docs/developers#kortix-tools). |
 
 **An agent acts as itself, not as you.** Kortix gives each agent its own identity in each project. The agent does the same thing whoever runs it. Your own role does not lend it extra power.
 
@@ -679,6 +679,8 @@ Kortix-managed models need no key. They are the models Platinum Inference offers
 When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For any Kortix fee on your own keys, see [Plans & credits](/docs/guide#billing).
 
 A provider key belongs to the whole project.
+
+**A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the plan's chat limit. Reaching the image limit does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images yet. See [Generate images](/docs/developers#generate-images).
 
 #### Which model a session uses
 

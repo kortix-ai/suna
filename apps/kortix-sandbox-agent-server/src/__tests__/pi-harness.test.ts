@@ -32,7 +32,7 @@ import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
-import { SESSION_LOG_EVENTS, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
+import { SESSION_LOG_EVENTS, toV1, upcast as upcastSessionLog, type SessionLogMessage } from '@kortix/api-contract/session-log'
 import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env'
 import { flushSessionLogJournal, resetSessionLogJournalForTests, startSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { spawnSync } from 'node:child_process'
@@ -80,12 +80,15 @@ function startFakeGateway() {
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
   const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
+  /** `/images/generations` (the image_gen tool's route), when a test sets it. */
+  let images: ((body: { prompt: string }) => Response | Promise<Response>) | null = null
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
       const url = new URL(req.url)
+      if (req.method === 'POST' && images && url.pathname.endsWith('/images/generations')) return images((await req.json()) as { prompt: string })
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
       const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
       sent.push(json.messages)
@@ -138,6 +141,9 @@ function startFakeGateway() {
     sampling,
     script: (steps: Step[]) => {
       script = [...steps]
+    },
+    images: (handle: typeof images) => {
+      images = handle
     },
     stop: () => server.stop(true),
   }
@@ -287,6 +293,7 @@ beforeEach(() => {
   process.env.KORTIX_PT_ENV_PATH = absentBoxState
 })
 afterEach(async () => {
+  gateway.images(null)
   for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })
@@ -643,7 +650,7 @@ describe('pi harness', () => {
     }
     expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
@@ -661,8 +668,8 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     // Step 2 of 2 is the last: the model may not call another tool.
     expect(gateway.sampling.slice(before)).toEqual([
-      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
-      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 15, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
   })
 
@@ -890,6 +897,17 @@ describe('pi harness', () => {
     expect(tool.state.status).toBe('error')
     expect(tool.state.error).toContain('denies this write call')
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
+  })
+
+  test('edit deny denies image_gen', async () => {
+    const r = await boot({
+      script: [{ tool: 'image_gen', args: { action: 'generate', prompts: ['a red cube'] } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies this image_gen call')
+    expect(existsSync(join(r.workspace, 'output'))).toBe(false)
   })
 
   test('a path deny holds for every spelling of the path the read tool resolves', async () => {
@@ -1527,7 +1545,7 @@ describe('project tools on pi', () => {
       env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
       prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
     })
-    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'codemode', 'task'])
     await promptAndSettle(r, 'look up order 42')
     const part = toolParts(await page(r), 'lookup_order')[0]!
     expect(part.state.status).toBe('completed')
@@ -2129,14 +2147,14 @@ describe('pi subagents extension', () => {
     const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
     const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
     runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
     await runtime.reconfigure()
-    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'web_search', 'image_search', 'image_gen', 'scrape_webpage', 'memory', 'show', 'question', 'codemode', 'task'])
   })
 
   test('several task calls in one message run their subagents concurrently', async () => {
@@ -3990,6 +4008,81 @@ describe('pi codemode', () => {
     return page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
   }
 
+  const savedImageEnv = { KORTIX_LLM_BASE_URL: process.env.KORTIX_LLM_BASE_URL, KORTIX_TOKEN: process.env.KORTIX_TOKEN }
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedImageEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  /**
+   * The gateway's image route answers once `count` requests are in flight, so a tool that runs its
+   * calls one by one never gets an answer from it (a 2 s fallback answers it, and `peak` says so).
+   */
+  const heldImages = (count: number) => {
+    // Kortix tools read the process env (`sessionEnv`), not the rig's.
+    process.env.KORTIX_LLM_BASE_URL = gateway.baseUrl
+    process.env.KORTIX_TOKEN = TOKEN
+    const seen = { peak: 0, requests: 0 }
+    let inFlight = 0
+    let release!: () => void
+    const all = new Promise<void>((resolve) => (release = resolve))
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
+    gateway.images(async () => {
+      seen.requests++
+      seen.peak = Math.max(seen.peak, ++inFlight)
+      if (inFlight === count) release()
+      await Promise.race([all, Bun.sleep(2_000)])
+      inFlight--
+      return Response.json({ model: 'codex/gpt-image-2', provider: 'openai-codex', data: [{ b64_json: png.toString('base64') }], size: '1024x1024' })
+    })
+    return seen
+  }
+
+  /** Each tool part's status changes, in the order the runtime published them: `<tool>#<n>:<status>` (n: the call's order of first appearance). */
+  const toolTimeline = () => {
+    const events: string[] = []
+    const order = new Map<string, number>()
+    const onFrame = (frame: { type: string; properties: unknown }) => {
+      const part = (frame.properties as { part?: { type?: string; tool?: string; callID?: string; state?: { status?: string } } }).part
+      if (frame.type !== 'message.part.updated' || part?.type !== 'tool' || !part.callID) return
+      if (!order.has(part.callID)) order.set(part.callID, order.size + 1)
+      const event = `${part.tool}#${order.get(part.callID)}:${part.state?.status}`
+      if (!events.includes(event)) events.push(event)
+    }
+    return { events, hooks: { onFrame } as PiRuntimeHooks }
+  }
+
+  test('two image_gen calls in one step run at the same time; two bash calls in one step run in turn', async () => {
+    const seen = heldImages(2)
+    const timeline = toolTimeline()
+    const bash = (n: number) => ({ tool: 'bash', args: { command: `echo ${n}` } })
+    const r = await boot({
+      hooks: timeline.hooks,
+      script: [
+        { tools: [{ tool: 'image_gen', args: { action: 'generate', prompts: ['a red cube'] } }, { tool: 'image_gen', args: { action: 'generate', prompts: ['a blue sphere'] } }] },
+        { tools: [bash(1), bash(2)] },
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(seen.peak).toBe(2)
+    const images = parts.filter((p) => p.tool === 'image_gen')
+    expect(images.map((p) => p.state.status)).toEqual(['completed', 'completed'])
+    expect(images.map((p) => JSON.parse(p.state.output).images[0].prompt)).toEqual(['a red cube', 'a blue sphere'])
+    // Both image calls start before either ends; the second bash call starts after the first ends.
+    expect(timeline.events.filter((e) => /:(running|completed)$/.test(e))).toEqual([
+      'image_gen#1:running',
+      'image_gen#2:running',
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      expect.stringMatching(/^image_gen#[12]:completed$/),
+      'bash#3:running',
+      'bash#3:completed',
+      'bash#4:running',
+      'bash#4:completed',
+    ])
+  })
+
   test('on by default: one script runs two tools, and the model sees only its output', async () => {
     const r = await boot({
       script: [
@@ -4023,7 +4116,7 @@ describe('pi codemode', () => {
     const only = await boot({ script: [script("return await tools.bash({ command: 'echo only' })"), { text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
     first = gateway.sampling.length
     const parts = await run(only)
-    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(gateway.sampling[first]!.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
     expect(String(gateway.sent[first]!.find((m) => m.role === 'system')?.content)).toContain('Call show directly to present outputs')
     expect(parts[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('only') })
   })
@@ -4035,7 +4128,7 @@ describe('pi codemode', () => {
     })
     const first = gateway.sampling.length
     const [part] = await run(r)
-    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'show'])
+    expect(gateway.sampling[first]?.toolNames.sort()).toEqual(['codemode', 'image_gen', 'show'])
     expect(part?.tool).toBe('show')
     expect(part?.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Presentation proof' } })
     expect(JSON.parse(part?.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Presentation proof' } })
@@ -4113,6 +4206,166 @@ describe('pi codemode', () => {
     expect(part!.state.output).toContain('rejected:Call task directly, not from a script.')
     expect(part!.state.output).toContain('rejected:Call question directly, not from a script.')
     expect(r.service.runtime()!.questions.list()).toHaveLength(0)
+  })
+
+  test("a script's image_gen and show calls run, each published as its own native part with its input and output", async () => {
+    const seen = heldImages(2)
+    const r = await boot({
+      script: [
+        script(
+          "const [a, b] = await Promise.all([tools.image_gen({ action: 'generate', prompts: ['a red cube'] }), tools.image_gen({ action: 'generate', prompts: ['a blue sphere'] })]); await tools.show({ action: 'show', type: 'text', content: 'Two images' }); return [a, b].map((o) => JSON.parse(o).images[0].prompt).join('+')",
+        ),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    // Not refused: both images were generated, at the same time (pi runs a parallel tool's nested calls concurrently).
+    expect(seen.peak).toBe(2)
+    expect(parts.map((p) => p.tool)).toEqual(['codemode', 'image_gen', 'image_gen', 'show'])
+    const [code, cube, sphere, show] = parts
+    expect(code!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('a red cube+a blue sphere') })
+    // The script card lists every call it made as a text row (packages/ui codemode-tool.tsx `scriptCalls`, from
+    // `metadata.calls`); the image itself is drawn once, by the call's own part below.
+    expect(code!.state.metadata.calls.map((c: Part) => [c.name, c.status])).toEqual([
+      ['image_gen', 'ok'],
+      ['image_gen', 'ok'],
+      ['show', 'ok'],
+    ])
+    for (const [part, prompt] of [[cube!, 'a red cube'], [sphere!, 'a blue sphere']] as const) {
+      // A nested call's part sits on the script's message, under pi's nested id `<script call>/<n>`.
+      expect(part.messageID).toBe(code!.messageID)
+      expect(part.callID).toStartWith(`${code!.callID}/`)
+      expect(part.state).toMatchObject({ status: 'completed', input: { action: 'generate', prompts: [prompt] }, time: { start: expect.any(Number), end: expect.any(Number) } })
+      const output = JSON.parse(part.state.output)
+      expect(output.images).toEqual([{ path: expect.stringContaining(join(r.workspace, 'output', 'images')), size: '1024x1024', prompt, sha256: expect.any(String) }])
+      // R38: the digest names the bytes saved on disk.
+      expect(output.images[0].sha256).toBe(createHash('sha256').update(readFileSync(output.images[0].path)).digest('hex'))
+    }
+    expect(show!.state).toMatchObject({ status: 'completed', input: { type: 'text', content: 'Two images' } })
+    expect(JSON.parse(show!.state.output)).toMatchObject({ success: true, entry: { type: 'text', content: 'Two images' } })
+    // The model made one call: the session log keeps one tool_call block, the nested calls stay its display data.
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    const blocks = log.threads[0]!.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'tool_call')
+    expect(blocks.map((b) => (b as { name: string }).name)).toEqual(['codemode'])
+    expect(((blocks[0] as { result: { details: { calls: Array<{ name: string; status: string }> } } }).result.details.calls).map((c) => [c.name, c.status])).toEqual([
+      ['image_gen', 'complete'],
+      ['image_gen', 'complete'],
+      ['show', 'complete'],
+    ])
+    // The saved transcript (a cold reload, a restore) gives back each nested part as it was published live.
+    const saved = toV1(log).rows.flatMap((row) => row.parts as unknown as Part[]).filter((p) => p.type === 'tool' && p.tool !== 'codemode')
+    expect(saved).toEqual([cube!, sphere!, show!])
+  })
+
+  test("the session log maps a direct image_gen call to its own part, not to a script's nested one before it", async () => {
+    heldImages(1)
+    const r = await boot({
+      script: [
+        // A bash call makes the batch sequential: the script (and its nested part) runs before the direct call.
+        { tools: [script("return await tools.image_gen({ action: 'generate', prompts: ['nested'] })"), { tool: 'image_gen', args: { action: 'generate', prompts: ['direct'] } }, { tool: 'bash', args: { command: 'true' } }] },
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(parts.map((p) => [p.tool, p.state.input.prompts?.[0] ?? null])).toEqual([['codemode', null], ['image_gen', 'nested'], ['image_gen', 'direct'], ['bash', null]])
+    const direct = parts[2]!
+    const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
+    const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'tool_call' && b.name === 'image_gen') as { id: string; call_id: string }
+    expect(block).toMatchObject({ id: direct.id, call_id: direct.callID })
+  })
+
+  test('a script cannot pass the turn image cap: its third 4-prompt image_gen call is refused before any request', async () => {
+    const seen = heldImages(1)
+    const r = await boot({
+      script: [
+        script(
+          "const out = []; for (const p of ['a', 'b', 'c']) { try { await tools.image_gen({ action: 'generate', prompts: [p + '1', p + '2', p + '3', p + '4'] }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')",
+        ),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    expect(seen.requests).toBe(8)
+    expect(parts[0]!.state.output).toContain('ok|ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    expect(parts.slice(1).map((p) => [p.tool, p.state.status])).toEqual([
+      ['image_gen', 'completed'],
+      ['image_gen', 'completed'],
+      ['image_gen', 'error'],
+    ])
+  })
+
+  test("direct and script image_gen calls of one turn share the turn image cap", async () => {
+    const seen = heldImages(1)
+    const four = (p: string) => ({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => `${p}${n}`) })
+    const r = await boot({
+      script: [
+        { tool: 'image_gen', args: four('direct') },
+        script("const out = []; for (const p of ['s', 't']) { try { await tools.image_gen({ action: 'generate', prompts: [1, 2, 3, 4].map((n) => p + n) }); out.push('ok') } catch (e) { out.push(e.message) } } return out.join('|')"),
+        { text: 'done' },
+      ],
+    })
+    const parts = await run(r)
+    // 4 direct + 4 from the script; the script's second call (12 images) is refused.
+    expect(seen.requests).toBe(8)
+    expect(parts.find((p) => p.tool === 'codemode')!.state.output).toContain('ok|Image limit for this turn reached (10 images; 8 used, 4 asked).')
+    // The next turn starts again.
+    gateway.script([{ tool: 'image_gen', args: four('next') }, { text: 'done' }])
+    await run(r, 'again')
+    expect(seen.requests).toBe(12)
+  })
+
+  test("edit: deny and ask decide a script's image_gen call like a direct one; an ask attaches to the call's own part", async () => {
+    const call = "const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompts: ['a red cube'] })]); return o.status + ':' + (o.reason?.message ?? JSON.parse(o.value).images[0].prompt)"
+    const denied = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const deniedParts = await run(denied)
+    expect(deniedParts[0]!.state.output).toContain('rejected:The project policy denies this image_gen call.')
+    expect(deniedParts[1]!.state).toMatchObject({ status: 'error', error: 'The project policy denies this image_gen call.' })
+    expect(existsSync(join(denied.workspace, 'output', 'images'))).toBe(false)
+
+    const seen = heldImages(1)
+    const asked = await boot({
+      script: [script(call), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { image_gen: 'ask' } } } }) },
+    })
+    const rt = asked.service.runtime()!
+    expect((await prompt(asked, rt.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => rt.permissions.list().length === 1)
+    const [pending] = (await asked.user('/permission').then((res) => res.json())) as Array<Record<string, any>>
+    // image_gen asks under its capability, `edit` (interactions.ts).
+    expect(pending).toMatchObject({ permission: 'edit', metadata: { prompts: ['a red cube'] } })
+    const page = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const nested = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'image_gen')!
+    expect(pending!.tool).toEqual({ messageID: nested.messageID, callID: nested.callID })
+    expect(seen.requests).toBe(0)
+    expect((await asked.user(`/permission/${pending!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    const after = (await asked.bearer(`/kortix/runtime/messages/${rt.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Part[] }> }
+    const tools = after.messages.flatMap((m) => m.parts).filter((p) => p.type === 'tool')
+    expect(tools.find((p) => p.tool === 'codemode')!.state.output).toContain('fulfilled:a red cube')
+    expect(tools.find((p) => p.tool === 'image_gen')!.state.status).toBe('completed')
+    expect(seen.requests).toBe(1)
+  })
+
+  test("the project policy still decides a script's image_gen call, on the call's own part", async () => {
+    const r = await boot({
+      script: [script("const [o] = await Promise.allSettled([tools.image_gen({ action: 'generate', prompts: ['a red cube'] })]); return o.status + ':' + o.reason?.message"), { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { image_gen: 'deny' } } } }) },
+    })
+    const parts = await run(r)
+    expect(parts.map((p) => p.tool)).toEqual(['codemode', 'image_gen'])
+    expect(parts[0]!.state.output).toContain('rejected:The project policy denies this image_gen call.')
+    expect(parts[1]!.state).toMatchObject({ status: 'error', error: 'The project policy denies this image_gen call.' })
+    expect(existsSync(join(r.workspace, 'output', 'images'))).toBe(false)
+  })
+
+  test('codemode only still declares image_gen to the model', async () => {
+    const r = await boot({ script: [{ text: 'done' }], env: { KORTIX_PI_CODEMODE: 'only' } })
+    const first = gateway.sampling.length
+    await run(r)
+    expect(gateway.sampling[first]!.toolNames).toContain('image_gen')
   })
 
   test('the session log keeps one code call with its nested calls, and a restore brings back the store', async () => {

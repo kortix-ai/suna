@@ -9,3 +9,8 @@ export function useSandboxImage(filePath: string, enabled: boolean) {
   const { sandboxUrl } = useSandboxContext();
   return useSdkSandboxImage({ sandboxUrl, filePath, enabled });
 }
+
+/** The open session's sandbox origin: the scope of the shared image store's path keys (`lib/files/shared-image`). */
+export function useSandboxUrl(): string | undefined {
+  return useSandboxContext().sandboxUrl;
+}

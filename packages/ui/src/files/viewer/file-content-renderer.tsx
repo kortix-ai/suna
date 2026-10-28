@@ -10,6 +10,7 @@ import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { InfoBanner } from '../../primitives/info-banner';
 import Loading from '../../primitives/loading';
+import { ImageUnavailable } from '../renderers/image-frame';
 import { StatusDot } from '../../primitives/status';
 import { MermaidDiagram } from '../renderers/mermaid/mermaid-diagram';
 import { cn } from '../../lib/utils';
@@ -28,12 +29,15 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
-import React, { lazy, Suspense, useCallback } from 'react';
+import React, { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { useReducedMotion, type Variant } from 'motion/react';
+import { Disclosure, DisclosureContent } from '../../primitives/disclosure';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
 import { FileHeader } from './file-header';
 import { useFileContentState } from './use-file-content-state';
+import { type FileCaption, useFileCaption } from '../../internal/stores/file-preview-store';
 import { Download } from '../../internal/icons/download';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +84,58 @@ function RendererFallback() {
     <div className="flex h-full items-center justify-center">
       <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
+  );
+}
+
+/** kortix-brand `motion.easing.out`: enter and exit. */
+const EASE_OUT = [0, 0, 0.2, 1] as const;
+
+/**
+ * The caption's disclosure motion (kortix-brand motion.md: a disclosure is
+ * `duration-moderate`, ease-out; the exit runs faster, at `duration-normal`).
+ * Height and opacity together, so the image above shrinks and grows with it.
+ * Reduced motion: no transition, the caption is simply there or not.
+ */
+export function captionMotion(reduceMotion: boolean): { expanded: Variant; collapsed: Variant } {
+  const enter = reduceMotion ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT };
+  const exit = reduceMotion ? { duration: 0 } : { duration: 0.15, ease: EASE_OUT };
+  return {
+    expanded: { height: 'auto', opacity: 1, transition: enter },
+    collapsed: { height: 0, opacity: 0, transition: exit },
+  };
+}
+
+/**
+ * An image with its caption under it: a generated image's prompt and the model
+ * that made it, in a disclosure the viewer's details toggle (ⓘ, the trigger on
+ * the zoom shelf, `ImageRenderer` `info`) opens. Only an image opened with a
+ * caption has one; any other file renders exactly as without it.
+ */
+function CaptionedImage({
+  caption,
+  open,
+  onOpenChange,
+  children,
+}: {
+  caption: FileCaption | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const reduceMotion = !!useReducedMotion();
+  const variants = useMemo(() => captionMotion(reduceMotion), [reduceMotion]);
+  if (!caption) return <>{children}</>;
+  return (
+    <Disclosure open={open} onOpenChange={onOpenChange} variants={variants} className="flex h-full min-h-0 flex-col">
+      {/* flex-1: the image area takes what the caption leaves, frame by frame. */}
+      <div className="min-h-0 flex-1">{children}</div>
+      <DisclosureContent className="shrink-0">
+        <div data-file-caption="" className="border-border max-h-32 overflow-y-auto border-t px-4 py-3">
+          <p className="text-foreground text-sm text-pretty">{caption.text}</p>
+          {caption.model ? <p className="text-muted-foreground mt-1 font-mono text-xs">{caption.model}</p> : null}
+        </div>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
 
@@ -156,6 +212,13 @@ export interface FileContentRendererProps {
    *  their own bytes (xlsx, sqlite, the HTML frame), which a cache refetch
    *  cannot reach. */
   reloadKey?: number;
+  /**
+   * A full-screen viewer (the preview modal, the panel's file preview) shows
+   * an image's caption under it when it was opened with one (a generated
+   * image's prompt and model). Off for every embedded render: a Files grid
+   * tile, a `show` card.
+   */
+  showCaption?: boolean;
 }
 
 export function FileContentRenderer({
@@ -177,6 +240,7 @@ export function FileContentRenderer({
   findText,
   codeEditorEditorClassName,
   reloadKey = 0,
+  showCaption = false,
 }: FileContentRendererProps) {
   const {
     source, Breadcrumbs, fileContent, isLoading, error,
@@ -186,7 +250,7 @@ export function FileContentRenderer({
     isJsonFile, isHtmlFile, isMarkdownPreview, setIsMarkdownPreview, isJsonTreeView,
     setIsJsonTreeView, isHtmlPreview, setIsHtmlPreview, fileDiagErrorCount, fileDiagWarningCount,
     fileDiagnostics, tHardcodedUi, tI18nHardcoded, blobUrl, rawBlob,
-    blobLoading, blobError, heicImageUrl, heicConverting, displayContent,
+    blobLoading, blobError, sharedImagePath, retrySharedImage, heicImageUrl, heicConverting, displayContent,
     handleDownload, handleSave, handleDiscard, handleEditorChange, imageDataUrl,
     needsBlob, isContentReady, contentError, showLoadingState, isSandboxWaking,
     isNotFound,
@@ -200,6 +264,14 @@ export function FileContentRenderer({
     onStatusChange,
     targetLine,
   });
+  const storedCaption = useFileCaption(filePath);
+  const caption = showCaption ? storedCaption : undefined;
+  // The caption is hidden until the details toggle opens it; per file, so the next image starts closed.
+  const tImageGen = useTranslations('imageGen');
+  const [captionOpenFor, setCaptionOpenFor] = useState<string | null>(null);
+  const captionOpen = captionOpenFor === filePath;
+  const onCaptionOpenChange = (open: boolean) => setCaptionOpenFor(open ? filePath : null);
+  const imageInfo = caption ? { pressed: captionOpen, label: tImageGen('details') } : undefined;
   const bytesOnly = !!source.bytesOnly;
   // The table has no lines: a jump to a line (a content-search match) opens
   // CSV and TSV in the code editor.
@@ -298,7 +370,12 @@ export function FileContentRenderer({
           {contentError &&
             !showLoadingState &&
             !isSandboxWaking &&
-            (errorFallback ? (
+            (sharedImagePath && !isNotFound ? (
+              // An image never shows the read's raw error text (R38).
+              <div className="flex h-full items-center justify-center p-8">
+                <ImageUnavailable onRetry={retrySharedImage} />
+              </div>
+            ) : errorFallback ? (
               errorFallback(contentError, filePath)
             ) : isNotFound ? (
               <FileNotFoundState filePath={filePath} />
@@ -321,27 +398,33 @@ export function FileContentRenderer({
 
           {/* Image content (non-HEIC) */}
           {!isLoading && !error && imageDataUrl && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer
-                url={imageDataUrl}
-                className="h-full"
-                fileName={fileName}
-                controls={imageControls}
-              />
-            </Suspense>
+            <CaptionedImage caption={caption} open={captionOpen} onOpenChange={onCaptionOpenChange}>
+              <Suspense fallback={<RendererFallback />}>
+                <ImageRenderer
+                  url={imageDataUrl}
+                  className="h-full"
+                  fileName={fileName}
+                  controls={imageControls}
+                  info={imageInfo}
+                />
+              </Suspense>
+            </CaptionedImage>
           )}
 
           {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
           {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
           {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-            <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer
-                url={heicImageUrl}
-                className="h-full"
-                fileName={fileName}
-                controls={imageControls}
-              />
-            </Suspense>
+            <CaptionedImage caption={caption} open={captionOpen} onOpenChange={onCaptionOpenChange}>
+              <Suspense fallback={<RendererFallback />}>
+                <ImageRenderer
+                  url={heicImageUrl}
+                  className="h-full"
+                  fileName={fileName}
+                  controls={imageControls}
+                  info={imageInfo}
+                />
+              </Suspense>
+            </CaptionedImage>
           )}
 
           {/* The rich renderers below get `showDownload={false}`: every host of
