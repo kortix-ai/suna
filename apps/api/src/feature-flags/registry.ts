@@ -392,9 +392,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'beta',
     // A goal keeps its state in Files, and every drive is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // On by default wherever Platinum is configured (Marko, 2026-10-28): Goals
-    // is a v1 product. Volumes and Loops, which it needs, are on there too.
-    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
+    // Off by default; a project turns it on (Marko, 2026-10-28). Not marked
+    // work in progress: Goals is being finished as a usable v1.
+    platformDefault: () => false,
     enforcement: 'ui-only',
     enforcementNote:
       'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
