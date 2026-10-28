@@ -55,9 +55,11 @@ export interface ProjectConfigSummary {
      *  follows the project default. */
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
-    /** True for a platform-owned agent the API injects (the Meta coordinator),
-     *  not one declared in `kortix.yaml`. Hosts render it read-only. */
+    /** True for a platform-owned agent the API injects (My Kortix), not one
+     *  declared in `kortix.yaml`. Hosts render it read-only. */
     platform?: boolean;
+    /** The `builtin_agents` key of a built-in agent (`my_kortix`). */
+    builtin?: 'my_kortix';
     enabled?: boolean;
     sandbox?: string | null;
     /** The space from `agents.<name>.space`. Grouping only; null/absent is

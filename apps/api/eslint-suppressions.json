@@ -767,7 +767,7 @@
   },
   "src/config-releases/builder.ts": {
     "kortix-api/projects-surface": {
-      "count": 4
+      "count": 3
     },
     "kortix-api/replica-local": {
       "count": 3
@@ -1518,7 +1518,7 @@
   },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
-      "count": 13
+      "count": 12
     },
     "no-console": {
       "count": 20

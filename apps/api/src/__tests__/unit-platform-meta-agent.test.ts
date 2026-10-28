@@ -1,23 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  addPlatformMetaAgent,
-  buildPlatformMetaOpenCodeConfig,
-  builtinAgentConfigView,
   declaredBuiltinAgents,
   enabledBuiltinAgentKey,
+  MY_KORTIX_BLOCK,
   MY_KORTIX_DESCRIPTION,
-  platformMetaAgentGrant,
+  MY_KORTIX_PROMPT,
   resolveBuiltinAgents,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
-import { grantFromLoadedAgents } from '../projects/agents';
+import { builtinAgentConfigView, withMyKortixAgent } from '../projects/lib/builtin-agents';
+import { compileMyKortixAgentConfig, compileSelectedAgentConfig } from '../projects/lib/compile-agent-config';
+import { grantFromLoadedAgents, myKortixGrant, sandboxFromLoadedAgents } from '../projects/agents';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
-  test('adds one reserved meta agent and replaces a project collision', () => {
-    const config = addPlatformMetaAgent({
+  test('adds one My Kortix row, built by the manifest summarizer, and replaces a project collision', () => {
+    const config = withMyKortixAgent({
       agents: [
         {
           name: 'meta',
@@ -46,47 +46,104 @@ describe('platform meta agent', () => {
     });
 
     expect(config.agents.filter((agent) => agent.name === 'meta')).toHaveLength(1);
-    expect(config.agents[0]).toMatchObject({
+    expect(config.agents[0]).toEqual({
       name: 'meta',
-      path: '/workspace/AGENTS.md',
-      // Platform-owned: hosts render it read-only and never open the editor.
+      path: 'builtin#agents.meta',
+      description: MY_KORTIX_DESCRIPTION,
+      mode: 'primary',
+      model: null,
+      space: null,
+      source: 'kortix.yaml',
+      enabled: true,
+      sandbox: 'meta',
+      scope: { env: [], connectors: [], kortix_permissions: 'all', kortix_cli: 'all', apps: [] },
+      // Platform-owned: hosts render it read-only.
       platform: true,
-      scope: {
-        env: [],
-        connectors: [],
-        kortix_permissions: 'all',
-      },
+      builtin: 'my_kortix',
     });
     expect(config.open_code_default_agent).toBe('meta');
     expect(config.default_agent).toBe('meta');
   });
 
-  test('defines the My Kortix agent that follows the platform guide', () => {
-    expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
-      agent: {
-        meta: {
-          description: MY_KORTIX_DESCRIPTION,
-          mode: 'primary',
-          prompt:
-            "You are My Kortix. Follow /workspace/AGENTS.md. Run the project through the Kortix CLI with the user's own permissions: answer and configure yourself, delegate every production task to a session of the narrowest project agent via --prompt, and report the verified result.\n\n" +
-            'When you hand a task to another agent (an AI employee) with the `agent` tool, leave `session` at its default (separate): the agent gets its own session the user can open. Use `session: "same"` only for quick sub-steps.\n\n' +
-            'Prefer generative UI: when an answer is a plan, comparison, ranking, list of places or options, steps, a checklist, or 2 or more numbers, load the `kortix-genui` skill first and answer with `openui` blocks. Keep chat, short facts and code as prose.',
-        },
-      },
+  test('the block is a v3 agent: codemode only, every tool/skill/subagent/command, no connector/secret/App', () => {
+    expect(MY_KORTIX_BLOCK).toEqual({
+      description: MY_KORTIX_DESCRIPTION,
+      mode: 'primary',
+      prompt: MY_KORTIX_PROMPT,
+      codemode: 'only',
+      tools: 'all',
+      skills: 'all',
+      subagents: 'all',
+      commands: 'all',
+      connectors: 'none',
+      secrets: 'none',
+      apps: 'none',
+      kortix_permissions: 'all',
+      workspace: { project_repository: false },
+      sandbox: 'meta',
     });
     expect(MY_KORTIX_DESCRIPTION).toBe(
       'The one agent you talk to. It routes each task to the agent made for it and runs it, with your permissions.',
     );
   });
 
+  // A live onboarding session delegated with `kortix sessions new … --prompt`,
+  // then `kortix sessions wait-for` inside bash (killed at 30 s), then
+  // `kortix sessions cp`. The prompt now names the `agent` tool and forbids that.
+  test('the prompt delegates with the `agent` tool, never the CLI spawn/wait/copy pattern', () => {
+    expect(MY_KORTIX_PROMPT).toContain('Delegate every production task to the narrowest project agent with the `agent` tool.');
+    expect(MY_KORTIX_PROMPT).toContain('waits until it finishes (up to 30 minutes) and returns its final message');
+    expect(MY_KORTIX_PROMPT).toContain(
+      'Never delegate or wait with `kortix sessions new`, `kortix sessions wait-for` or `kortix sessions cp`.',
+    );
+    expect(MY_KORTIX_PROMPT).toContain('Call `agent`, `question` and `show` directly.');
+    expect(MY_KORTIX_PROMPT).toContain('`kortix-genui`');
+    expect(MY_KORTIX_PROMPT).not.toContain('via --prompt');
+  });
+
+  test('compiles through the v3 compiler exactly like a declared `agents.meta` block', () => {
+    const generic = compileSelectedAgentConfig({ kortix_version: 3, agents: { meta: MY_KORTIX_BLOCK } }, 'meta');
+    expect(compileMyKortixAgentConfig(null)).toEqual(generic);
+    // A v1/v2 manifest contributes no agents.
+    expect(compileMyKortixAgentConfig({ kortix_version: 2, agents: { kortix: {} } })).toEqual(generic);
+    expect(generic.schema).toBe(3);
+    expect(generic.agent.meta).toMatchObject({
+      description: MY_KORTIX_DESCRIPTION,
+      mode: 'primary',
+      prompt: MY_KORTIX_PROMPT,
+      codemode: 'only',
+    });
+  });
+
+  test("in a v3 project it may start the project's subagents and run its commands", () => {
+    const manifest = {
+      kortix_version: 3,
+      default_agent: 'kortix',
+      agents: {
+        kortix: { mode: 'primary', prompt: 'Main.' },
+        researcher: { mode: 'subagent', description: 'Researches.', prompt: 'Research.' },
+      },
+      commands: { recap: { prompt: 'Recap the day.' } },
+    };
+    const compiled = compileMyKortixAgentConfig(manifest);
+    expect(compiled).toEqual(
+      compileSelectedAgentConfig({ ...manifest, agents: { ...manifest.agents, meta: MY_KORTIX_BLOCK } }, 'meta'),
+    );
+    expect(Object.keys(compiled.agent).filter((name) => !compiled.agent[name]!.disable).sort()).toEqual(['meta', 'researcher']);
+    expect(compiled.agent.meta!.permission).toMatchObject({ task: { '*': 'deny', researcher: 'allow' } });
+    expect(compiled.commands?.recap?.agents).toEqual(['meta']);
+  });
+
   test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
     expect(resolvePlatformMetaSandbox(undefined)).toBe('meta');
     expect(resolvePlatformMetaSandbox('meta')).toBe('meta');
     expect(() => resolvePlatformMetaSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
+    expect(sandboxFromLoadedAgents('meta', { specs: [], errors: [] })).toBe('meta');
+    expect(sandboxFromLoadedAgents('meta', { specs: [], errors: [], builtinAgents: { my_kortix: false } })).toBeNull();
   });
 
-  test('grants the coordinator every project action without secrets or connectors', () => {
-    expect(platformMetaAgentGrant()).toEqual({
+  test('the grant derives from the block: every project action, no secret, connector or App', () => {
+    expect(myKortixGrant()).toEqual({
       agent: 'meta',
       permissions: 'all',
       connectors: [],
@@ -111,21 +168,27 @@ describe('platform meta agent', () => {
     expect(enabledBuiltinAgentKey('meta', { my_kortix: true })).toBe('my_kortix');
     expect(enabledBuiltinAgentKey('meta', { my_kortix: false })).toBeNull();
     expect(enabledBuiltinAgentKey('kortix', { my_kortix: true })).toBeNull();
-    expect(builtinAgentConfigView('my_kortix', 3, 'kortix')).toMatchObject({
+  });
+
+  test('GET /agents/meta/config is the v3 view of the block, read-only', () => {
+    const view = builtinAgentConfigView('my_kortix', 'kortix');
+    expect(view).toMatchObject({
       agent: 'meta',
       builtin: 'my_kortix',
+      schema_version: 3,
       editable: false,
-      block: null,
       default_agent: 'kortix',
+      harness: 'pi',
     });
+    const { description, mode, prompt, workspace: _workspace, ...governance } = MY_KORTIX_BLOCK;
+    const behavior = { description, mode, prompt };
+    expect(view.block as Record<string, unknown>).toEqual({ ...governance, repository_access: false, behavior, opencode: behavior });
   });
 
   test('a kortix.yaml that turns My Kortix off strips a meta session to no project action', () => {
     const governed = { specs: [], errors: [], defaultAgent: 'kortix', schemaVersion: 3 };
-    expect(grantFromLoadedAgents('meta', governed)).toEqual(platformMetaAgentGrant());
-    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(
-      platformMetaAgentGrant(),
-    );
+    expect(grantFromLoadedAgents('meta', governed)).toEqual(myKortixGrant());
+    expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: true } })).toEqual(myKortixGrant());
     expect(grantFromLoadedAgents('meta', { ...governed, builtinAgents: { my_kortix: false } })).toEqual({
       agent: 'meta',
       permissions: [],

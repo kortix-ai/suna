@@ -1,11 +1,11 @@
 import type { AgentGrant } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
-import { disabledPlatformMetaAgentGrant, platformMetaAgentGrant } from '../lib/platform-meta-agent';
+import { MY_KORTIX_BLOCK } from '../lib/platform-meta-agent';
 import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { parseManifestString } from '../manifest-io';
-import { extractAgents, loadProjectAgents } from './parse';
+import { extractAgents, loadProjectAgents, parseAgentBlock } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
 
 /**
@@ -38,6 +38,27 @@ export async function resolveAgentGrant(
   project: GitBackedProject,
 ): Promise<AgentGrant | null> {
   return grantFromLoadedAgents(agentName, await loadProjectAgents(project));
+}
+
+/**
+ * My Kortix's spec: `MY_KORTIX_BLOCK` through the parser every kortix.yaml
+ * `agents.<name>` block goes through. Its grant, sandbox pin and roster row
+ * read this spec like a declared agent's.
+ */
+export const MY_KORTIX_SPEC: AgentSpec = (() => {
+  const parsed = parseAgentBlock(META_AGENT_NAME, MY_KORTIX_BLOCK, 'builtin', 3);
+  if (!('enabled' in parsed)) throw new Error(`MY_KORTIX_BLOCK does not parse: ${parsed.error}`);
+  return parsed;
+})();
+
+/** The built-in agent spec `agentName` names while the project runs it, else undefined. */
+function builtinSpecOf(agentName: string, loaded: LoadedAgents): AgentSpec | undefined {
+  return isMetaAgentName(agentName) && loaded.builtinAgents?.my_kortix !== false ? MY_KORTIX_SPEC : undefined;
+}
+
+/** The deny-all grant: no project action, connector, secret or App. */
+function denyAllGrant(agentName: string): AgentGrant {
+  return { agent: agentName, permissions: [], connectors: [], env: [] };
 }
 
 /**
@@ -81,7 +102,7 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   if (!name) return false;
   if (name === DEFAULT_AGENT_SENTINEL) return true;
   // My Kortix is launchable unless kortix.yaml turned it off.
-  if (isMetaAgentName(name)) return loaded.builtinAgents?.my_kortix !== false;
+  if (isMetaAgentName(name)) return builtinSpecOf(name, loaded) !== undefined;
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
@@ -132,6 +153,11 @@ function grantFromSpec(agentName: string, spec: AgentSpec): AgentGrant | null {
   );
 }
 
+/** My Kortix's grant: `grantFromSpec` of its spec, like a declared agent's. */
+export function myKortixGrant(): AgentGrant {
+  return grantFromSpec(META_AGENT_NAME, MY_KORTIX_SPEC)!;
+}
+
 /**
  * Every declared, enabled agent's grant, by name: what each agent's sessions
  * would receive. The non-escalation check (iam/agent-grant-ceiling.ts) diffs
@@ -162,19 +188,17 @@ export function grantsOfManifestText(text: string | null, format: ManifestFormat
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
-  // The reserved platform coordinator is injected by the platform and is NEVER
-  // declared in a project manifest, so manifest resolution cannot answer for it:
-  // a governed project falls through to the unlisted default-DENY below, and an
-  // ungoverned one returns the UNRESTRICTED null. Both are wrong, and the wrong
-  // answers were load-bearing — `remintGrantForAgentSwitch` re-resolves the
-  // running agent's grant on EVERY prompt and writes it onto the session's
-  // token, so the deny-all overwrote the coordinator's real grant on its first
-  // turn (every later `kortix` call then 403'd) and the null made the re-mint
-  // refuse the prompt outright. Its grant is platform-owned, at mint and here.
-  // A kortix.yaml that turned My Kortix off (`builtin_agents.my_kortix: false`)
-  // strips an existing `meta` session of every project action on its next prompt.
+  // My Kortix (`meta`) is declared by the platform, never in kortix.yaml, so
+  // the manifest's own specs cannot answer for it: a governed project would
+  // fall through to the unlisted deny-all below and an ungoverned one to the
+  // UNRESTRICTED null. `remintGrantForAgentSwitch` writes this grant onto the
+  // token on EVERY prompt, so both wrong answers were load-bearing. Its spec
+  // comes from `MY_KORTIX_BLOCK`; a kortix.yaml that turned My Kortix off
+  // (`builtin_agents.my_kortix: false`) strips an existing `meta` session of
+  // every project action on its next prompt.
   if (isMetaAgentName(agentName)) {
-    return loaded.builtinAgents?.my_kortix === false ? disabledPlatformMetaAgentGrant() : platformMetaAgentGrant();
+    const builtin = builtinSpecOf(agentName, loaded);
+    return builtin ? grantFromSpec(agentName, builtin) : denyAllGrant(agentName);
   }
 
   // No [[agents]] section parsed and no errors → project hasn't adopted
@@ -226,7 +250,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     // allowed to use gets nothing, which is the same rule the secrets path
     // already follows (secret-grant.ts passes rethrowReadErrors for this).
     if (loaded.errors.length > 0) {
-      return { agent: agentName, permissions: [], connectors: [], env: [] };
+      return denyAllGrant(agentName);
     }
     return null;
   }
@@ -234,7 +258,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // Governance adopted but this concrete agent is unlisted → default-deny
   // everything, including secrets/env (an unlisted agent receives no project
   // secrets).
-  return { agent: agentName, permissions: [], connectors: [], env: [] };
+  return denyAllGrant(agentName);
 }
 
 /** Resolve the selected agent's sandbox template without repository I/O. */
@@ -243,6 +267,8 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
     agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
       ? loaded.defaultAgent
       : agentName;
+  const builtin = builtinSpecOf(concreteName, loaded);
+  if (builtin) return builtin.sandbox ?? null;
   return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
 }
 

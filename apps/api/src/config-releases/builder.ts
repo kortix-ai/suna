@@ -21,9 +21,9 @@ import { refreshMirror, runGitCapture } from '../projects/git/mirror';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
+  resolveMyKortixAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from '../projects/lib/compile-agent-config';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 import type { GitBackedProject } from '../projects/git/types';
 import { bumpBounded } from '../shared/ttl-memo';
 import { configArchiveKey, getConfigArchiveStore, type ConfigArchiveStore } from './store';
@@ -249,7 +249,7 @@ async function compileGovernance(
 ): Promise<string | null> {
   if (variant === 'project') return resolveCompiledAgentConfigForSession(project, commit);
   if (variant === 'none') return EMPTY_GOVERNANCE;
-  if (variant === 'meta') return buildPlatformMetaOpenCodeConfig();
+  if (variant === 'meta') return resolveMyKortixAgentConfigForSession(project, commit);
   return resolveSelectedAgentConfigForSession(project, variant.slice('agent:'.length), commit);
 }
 

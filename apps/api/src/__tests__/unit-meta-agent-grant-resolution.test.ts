@@ -18,8 +18,7 @@
 // re-mint is now a no-op for meta, and pin that nothing else moved.
 import { describe, expect, test } from 'bun:test';
 
-import { grantFromLoadedAgents, type LoadedAgents } from '../projects/agents';
-import { platformMetaAgentGrant } from '../projects/lib/platform-meta-agent';
+import { grantFromLoadedAgents, myKortixGrant as platformMetaAgentGrant, type LoadedAgents } from '../projects/agents';
 import { remintDecisionFor } from '../projects/lib/session-token-grant';
 import { agentGrantDiffers } from '../projects/lib/secret-grant';
 

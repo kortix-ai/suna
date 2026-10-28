@@ -86,21 +86,44 @@ describe('builtin_agents.my_kortix absent (on)', () => {
     expect(config.builtin_agents).toEqual({ my_kortix: true });
     expect(config.default_agent).toBe('meta');
     expect(config.agents.map((agent) => agent.name)).toEqual(['meta', 'kortix']);
-    expect(config.agents[0]).toMatchObject({ platform: true });
+    expect(config.agents[0]).toMatchObject({
+      platform: true,
+      builtin: 'my_kortix',
+      mode: 'primary',
+      sandbox: 'meta',
+      scope: { env: [], connectors: [], kortix_permissions: 'all', apps: [] },
+    });
     expect(config.agents[0]?.description).toContain('The one agent you talk to');
   });
 
-  test('GET /agents/meta/config answers the read-only built-in view, not 404', async () => {
+  test('GET /agents/meta/config answers the v3 view of the server-side block, read-only', async () => {
     const res = await call(ON, '/agents/meta/config');
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({
+    const body = (await res.json()) as { block: Record<string, unknown> & { behavior: Record<string, unknown> } };
+    expect(body).toMatchObject({
       agent: 'meta',
       builtin: 'my_kortix',
       editable: false,
-      block: null,
       schema_version: 3,
       default_agent: 'kortix',
+      harness: 'pi',
     });
+    // The same wire shape a declared v3 agent answers: governance keys plus `behavior`.
+    expect(body.block).toMatchObject({
+      codemode: 'only',
+      tools: 'all',
+      skills: 'all',
+      subagents: 'all',
+      commands: 'all',
+      connectors: 'none',
+      secrets: 'none',
+      apps: 'none',
+      kortix_permissions: 'all',
+      sandbox: 'meta',
+      repository_access: false,
+    });
+    expect(body.block.behavior).toMatchObject({ mode: 'primary' });
+    expect(String(body.block.behavior.prompt)).toContain('with the `agent` tool');
   });
 
   test('a write to the built-in agent is refused with builtin_agent_managed, and nothing commits', async () => {

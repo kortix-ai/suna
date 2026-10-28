@@ -135,9 +135,11 @@ unbootable.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
 (`meta_agent` flag) is never assigned the project's release. It gets the `meta`
-variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
-the image default config dir, with no archive. Its release ID does not change
-when the base branch moves. Its box holds no project checkout and the meta
+variant: a governance-only release with no archive. The governance is the v3
+compile of My Kortix's server-side block (`MY_KORTIX_BLOCK`) injected as
+`agents.meta` into the project's manifest at that commit
+(`resolveMyKortixAgentConfigForSession`). Its release ID changes only when
+that compiled set changes (a project agent or command My Kortix may use). Its box holds no project checkout and the meta
 image has no `bun`, so a config dir whose tools import a dependency can never
 load there. A failure a meta session reported never counts toward the project
 quarantine (`notFromMetaSession` in `quarantine.ts`).

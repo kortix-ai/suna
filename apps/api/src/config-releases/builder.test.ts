@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { refreshMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { compileMyKortixAgentConfig } from '../projects/lib/compile-agent-config';
 import {
   __clearConfigReleaseCachesForTests,
   buildConfigArchive,
@@ -563,7 +563,8 @@ describe('buildConfigRelease', () => {
   // session of the project.
   test('the meta variant is the platform governance alone, whatever the config dir holds', async () => {
     const first = await buildConfigRelease(project, seed(), 'meta', { store });
-    expect(first.compiled_governance).toBe(buildPlatformMetaOpenCodeConfig());
+    // A v2 manifest contributes no agents: My Kortix's block compiles alone.
+    expect(first.compiled_governance).toBe(JSON.stringify(compileMyKortixAgentConfig(null)));
     expect(first.release_id).toBe(configReleaseId(null, first.compiled_governance_etag));
     expect(first.config_dir).toBeNull();
     expect(first.config_tree_id).toBeNull();

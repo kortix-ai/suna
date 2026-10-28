@@ -41,7 +41,7 @@ import { resolveSessionSecretGrant } from './secret-grant';
 import { AmbiguousSecretGrantError, intersectSecretGrants, listProjectSecretsSnapshotForUser } from '../secrets';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { piPackageBundleForSession } from '../../pi-packages/bundle';
-import { manifestPiCodemode, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
+import { manifestPiCodemode, manifestPiPackages, resolveCompiledAgentConfigForSession, resolveMyKortixAgentConfigForSession, resolveSelectedAgentConfigForSession } from './compile-agent-config';
 
 
 
@@ -66,7 +66,6 @@ import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { recordedWorkspaceVolume } from '../../platform/services/workspace-volume';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
-import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
@@ -165,25 +164,30 @@ async function resolveSessionAgentConfig(input: SessionSandboxEnvInput): Promise
   // project's sandbox env is byte-for-byte unaffected by this. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = input.platformMetaAgent
-    ? buildPlatformMetaOpenCodeConfig()
-    : null;
+  let compiledAgentConfig: string | null = null;
   // The agent's pi packages and codemode, read off the SAME fetch that
   // compiles the agent config, so they cost no extra git round trip.
   let manifestPackages: unknown[] = [];
   let manifestCodemode: 'off' | 'on' | 'only' | null = null;
-  if (input.defaultBranch && !input.platformMetaAgent) {
-    const gitProject = {
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.yaml',
-      gitAuthToken: null,
-    };
-    const onManifest = (raw: Record<string, unknown>) => {
-      manifestPackages = manifestPiPackages(raw, input.agentName);
-      manifestCodemode = manifestPiCodemode(raw, input.agentName);
-    };
+  const onManifest = (raw: Record<string, unknown>) => {
+    manifestPackages = manifestPiPackages(raw, input.agentName);
+    manifestCodemode = manifestPiCodemode(raw, input.agentName);
+  };
+  const gitProject = input.defaultBranch
+    ? {
+        projectId: input.projectId,
+        repoUrl: input.repoUrl,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      }
+    : null;
+  // My Kortix compiles like a declared v3 agent, from its server-side block
+  // injected into the project's manifest (platform-meta-agent.ts).
+  if (input.platformMetaAgent) {
+    compiledAgentConfig = await resolveMyKortixAgentConfigForSession(gitProject, input.baseRef, { onManifest });
+  }
+  if (gitProject && !input.platformMetaAgent) {
     compiledAgentConfig =
       !(input.repositoryAccess ?? true)
         ? await resolveSelectedAgentConfigForSession(

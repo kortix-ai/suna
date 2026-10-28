@@ -50,8 +50,8 @@ import { RESPONSE_ISSUE_LIMIT, auth, boundedIssues, errors, json } from '../../o
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents, agentNotDeclaredError, grantsByAgent } from '../agents';
-import { projectBuiltinAgents } from '../lib/builtin-agents';
-import { builtinAgentConfigView, builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
+import { builtinAgentConfigView, projectBuiltinAgents } from '../lib/builtin-agents';
+import { builtinAgentWriteRefusal, enabledBuiltinAgentKey } from '../lib/platform-meta-agent';
 import { assertNoGrantEscalation, changedPolicySet } from '../../iam/agent-grant-ceiling';
 import { isRepoFileNotFoundError, readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
@@ -308,10 +308,10 @@ export function registerAgentConfigRoutes(): void {
       if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
       // A built-in agent the project runs (My Kortix, slug `meta`) is listed by
-      // /detail but declared nowhere in kortix.yaml. Its config is
-      // platform-owned: answer the read-only view, never the roster 404.
+      // /detail but declared nowhere in kortix.yaml. It answers the v3 view of
+      // its server-side block, `editable: false`, never the roster 404.
       const builtinKey = enabledBuiltinAgentKey(agentName, projectBuiltinAgents(manifest.raw, loaded.row.metadata));
-      if (builtinKey) return c.json(builtinAgentConfigView(builtinKey, read.schemaVersion, read.defaultAgent));
+      if (builtinKey) return c.json(builtinAgentConfigView(builtinKey, read.defaultAgent));
 
       // A name the manifest does not declare is a 404, not an empty success:
       // the dashboard's editor contract says a missing agent answers 404 (its
