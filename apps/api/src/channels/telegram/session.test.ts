@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { config } from '../../config';
 import type { TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
-import { renderTelegramPrompt, telegramMessageEvent, telegramNotice, telegramThreadId, type TelegramMessage } from './session';
+import { renderTelegramPrompt, telegramMessageEvent, telegramNotice, telegramQuestionText, telegramThreadId, type TelegramMessage } from './session';
 
 const message: TelegramMessage = {
   message_id: 7,
@@ -96,5 +96,24 @@ describe('telegram notices for a session (run errors)', () => {
     const inbound = { ...target, messageId: '7' };
     expect(telegramNotice(inbound, { kind: 'create_pending' })).toBe('Kortix is still starting a session for this chat. The agent replies here when it is ready.');
     expect(telegramNotice(inbound, { kind: 'follow_up_failed' })).toBe("This chat's Kortix session cannot take new messages. Send /new to start a new conversation, then send your message again.");
+  });
+});
+
+describe('telegram question text', () => {
+  test('a question shows its header, its numbered options and the footer, and always fits one message', () => {
+    const text = telegramQuestionText(
+      [{ header: 'Pick', question: 'Which database?', options: [{ label: 'Postgres', description: 'managed' }, { label: 'SQLite', description: '' }] }],
+      'Tap an option.',
+    );
+    expect(text).toBe('Pick: Which database?\n1. Postgres — managed\n2. SQLite\n\nTap an option.');
+    const long = telegramQuestionText(
+      [{ header: '', question: 'q'.repeat(10_000), options: [{ label: 'l'.repeat(300), description: '' }] }],
+      'f'.repeat(300),
+    );
+    expect(long.length).toBeLessThanOrEqual(4096);
+    expect(long).toEndWith('f'.repeat(190));
+    // An emoji across the limit is dropped whole: a lone surrogate fails the Bot API call.
+    const emoji = telegramQuestionText([{ header: '', question: `${'q'.repeat(3_899)}😀`, options: [] }], `${'f'.repeat(189)}😀`);
+    expect(emoji).toBe(`${'q'.repeat(3_899)}\n\n${'f'.repeat(189)}`);
   });
 });

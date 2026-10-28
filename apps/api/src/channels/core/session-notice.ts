@@ -2,32 +2,30 @@
  * The session-addressed half of the conversation core (conversation.ts holds the
  * inbound half). It tells the chat a session talks in about an outcome the agent
  * cannot report: its run ended in an error, or its sandbox did not start (or is
- * still being retried).
+ * still being retried). It also posts the agent's questions there.
  *
- * The chat is the session's newest `chat_threads` row on a platform in
- * SESSION_PORTS, while the project's install still names the bot that bound it.
- * No such row posts nothing: a web, CLI, trigger, Slack, Teams or Email session;
- * a chat that sent `/new` (forgetChatThread drops its row); a disconnected or
- * replaced bot (the install row is gone). `metadata.telegram` is never read: it
- * outlives `/new`.
+ * The chat is the session's newest `chat_threads` row on a platform whose
+ * adapter registered a port, while the project's install still names the
+ * workspace that bound it. No such row reaches nothing: a session no chat
+ * started, a chat that was reset (forgetChatThread drops its row), a removed or
+ * replaced install. Session metadata is never read: it outlives a reset. A
+ * platform that renders through a live turn (channels/turn-relay.ts), or that
+ * must not message its sender, registers no port.
  */
 import { chatEventDedup, chatInstalls, chatThreads } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
-import type { ChannelPlatform, ChannelPort, SessionNotice } from './conversation';
+import type { ChannelPlatform, ChannelPort, ChannelTarget, SessionNotice, SessionQuestion } from './conversation';
 
-/**
- * The ports a session can reach. Lazy: projects/routes imports this module, and a
- * port module imports the core and the session lifecycle. Slack and Teams render
- * through their live turn (channels/turn-relay.ts). Email is absent on purpose: it
- * sends no status mail to a sender (email/session.ts).
- */
-const SESSION_PORTS: Partial<Record<ChannelPlatform, () => Promise<ChannelPort>>> = {
-  telegram: async () => (await import('../telegram/session')).telegramPort,
-};
-const SESSION_PLATFORMS = Object.keys(SESSION_PORTS);
+// replica-local: ports are code; each adapter registers its own at import.
+const SESSION_PORTS = new Map<ChannelPlatform, ChannelPort>();
+
+/** A platform's port for session-addressed notices. */
+export function registerSessionPort(platform: ChannelPlatform, port: ChannelPort): void {
+  SESSION_PORTS.set(platform, port);
+}
 
 /** How long a once-per-session notice stays claimed: longer than any retry ladder. */
 const ONCE_TTL_MS = 24 * 60 * 60_000;
@@ -39,36 +37,55 @@ const ONCE_TTL_MS = 24 * 60 * 60_000;
  */
 export async function notifySessionChannel(notice: SessionNotice, opts: { once?: string } = {}): Promise<void> {
   try {
-    const [row] = await db
-      .select({
-        platform: chatThreads.platform,
-        workspaceId: chatThreads.workspaceId,
-        threadId: chatThreads.threadId,
-        projectId: chatThreads.projectId,
-      })
-      .from(chatThreads)
-      .innerJoin(
-        chatInstalls,
-        and(
-          eq(chatInstalls.platform, chatThreads.platform),
-          eq(chatInstalls.workspaceId, chatThreads.workspaceId),
-          eq(chatInstalls.projectId, chatThreads.projectId),
-        ),
-      )
-      .where(and(eq(chatThreads.sessionId, notice.sessionId), inArray(chatThreads.platform, SESSION_PLATFORMS)))
-      .orderBy(desc(chatThreads.lastMessageAt))
-      .limit(1);
-    if (!row) return;
-    const platform = row.platform as ChannelPlatform;
-    const load = SESSION_PORTS[platform];
-    if (!load) return;
+    const chat = await findSessionChat(notice.sessionId);
+    if (!chat) return;
     // A turn another surface prompted (the web, a reminder) is not the chat's to hear.
-    if (notice.kind === 'run_failed' && notice.promptSource && notice.promptSource !== platform) return;
+    if (notice.kind === 'run_failed' && notice.promptSource && notice.promptSource !== chat.target.platform) return;
     if (opts.once && !(await claimOnce(opts.once))) return;
-    await (await load()).notify({ ...row, platform }, notice);
+    await chat.port.notify(chat.target, notice);
   } catch (error) {
     logger.warn('[channel] session notice failed', { sessionId: notice.sessionId, kind: notice.kind, error: String(error) });
   }
+}
+
+/**
+ * Post an agent question in the session's chat. The platform it was posted on,
+ * or null: no chat, a port that posts no questions, or a refused or failed
+ * post. The caller then releases the question as not posted.
+ */
+export async function postSessionQuestion(ask: SessionQuestion): Promise<ChannelPlatform | null> {
+  try {
+    const chat = await findSessionChat(ask.sessionId);
+    return chat?.port.postQuestion && (await chat.port.postQuestion(chat.target, ask)) ? chat.target.platform : null;
+  } catch (error) {
+    logger.warn('[channel] session question not posted', { sessionId: ask.sessionId, error: String(error) });
+    return null;
+  }
+}
+
+/** The session's chat and its port, or null (see the header). */
+async function findSessionChat(sessionId: string): Promise<{ target: ChannelTarget; port: ChannelPort } | null> {
+  const [row] = await db
+    .select({
+      platform: chatThreads.platform,
+      workspaceId: chatThreads.workspaceId,
+      threadId: chatThreads.threadId,
+      projectId: chatThreads.projectId,
+    })
+    .from(chatThreads)
+    .innerJoin(
+      chatInstalls,
+      and(
+        eq(chatInstalls.platform, chatThreads.platform),
+        eq(chatInstalls.workspaceId, chatThreads.workspaceId),
+        eq(chatInstalls.projectId, chatThreads.projectId),
+      ),
+    )
+    .where(and(eq(chatThreads.sessionId, sessionId), inArray(chatThreads.platform, [...SESSION_PORTS.keys()])))
+    .orderBy(desc(chatThreads.lastMessageAt))
+    .limit(1);
+  const port = row ? SESSION_PORTS.get(row.platform as ChannelPlatform) : undefined;
+  return row && port ? { target: { ...row, platform: row.platform as ChannelPlatform }, port } : null;
 }
 
 async function claimOnce(key: string): Promise<boolean> {
