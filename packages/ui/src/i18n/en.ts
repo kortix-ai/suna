@@ -4471,6 +4471,7 @@ const catalog = {
       "textacdd1e734125": "Telegram",
       "textacf0b83e8622": "Consoles",
       "textacfc5be785a9": "Disconnect",
+      "textad1fb9ec0cb3": "Automations",
       "textad26af1426b3": "LLM gateway",
       "textad3d9699142e": "Save securely",
       "textad60d663069e": "Set up Directory Sync",
@@ -5895,7 +5896,22 @@ const catalog = {
       "text37737d817d12": "Back to project",
       "text9eebeabf6094": "Could not check your access",
       "text078931e34187": "Project admin needs the settings grant",
-      "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it."
+      "textb24d48611918": "It needs {grant}. Anyone who manages this project can grant it.",
+      "text6d65ed5c7500": "automation",
+      "textdb87a63d537e": "New automation",
+      "textbdff71b20b9c": "Search automations",
+      "textb777509a8aea": "No automations yet",
+      "text8fbb8c347fc0": "Run agents or wake a session on a schedule, an app event, a webhook, or a merged change request.",
+      "textf09c738f5caf": "Create an automation and your agent runs on its own, no prompt needed.",
+      "text5ffd973e20ed": "Change request merged",
+      "text41bec5c0977c": "Created at runtime",
+      "text8898c02a816e": "Stored in the database, not in kortix.yaml. Agents and the CLI create them.",
+      "textb3c0ab96930c": "Next run",
+      "text89919c510d89": "Wakes {value0}",
+      "textba6393ea2b12": "Starts {value0}",
+      "textd7846b4e605e": "Calls {value0}",
+      "text0f393e09c59d": "Delete this automation?",
+      "textf4f30f5b483c": "It stops firing. This cannot be undone."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -6805,7 +6821,8 @@ const catalog = {
     "calendarFiredSr": "Fired",
     "calendarFailed": "Failed",
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
-    "calendarUpcomingSr": "Upcoming"
+    "calendarUpcomingSr": "Upcoming",
+    "onEvent": "On an event"
   },
   "computers": {
     "connectYourComputer": "Connect your computer",

@@ -25,6 +25,7 @@ import {
 import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookRejectedRunBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { isRuntimeAutomationSlug, runtimeWebhookSpec } from '../lib/automations';
 
 const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 
@@ -51,7 +52,8 @@ export function registerTriggerWebhooksRoutes(): void {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
     if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
-    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
+    // A kortix.yaml slug, or a runtime automation id (`automation.<hex>`, `reminder.<hex>`).
+    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug) && !isRuntimeAutomationSlug(slug)) {
       return c.json({ error: 'Invalid trigger slug' }, 400);
     }
 
@@ -85,11 +87,14 @@ export function registerTriggerWebhooksRoutes(): void {
     // Trigger CRUD can commit on another API replica. Refresh this replica's
     // mirror before authentication, but bound the unauthenticated Git work by
     // project. Rotating source IPs cannot force more than one refresh per 30s.
-    if (consumeProjectWebhookManifestRefreshBudget(projectId)) {
-      invalidateProjectMirror(projectId);
-    }
-    const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
-    const spec = specs.find((s) => s.slug === slug);
+    // A runtime automation lives in the database only: no manifest read for it.
+    const spec = isRuntimeAutomationSlug(slug)
+      ? await runtimeWebhookSpec(projectId, slug)
+      : await (async () => {
+          if (consumeProjectWebhookManifestRefreshBudget(projectId)) invalidateProjectMirror(projectId);
+          const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
+          return specs.find((s) => s.slug === slug) ?? null;
+        })();
     if (!spec || spec.type !== 'webhook' || !spec.enabled) return reject('trigger_not_found');
 
     const rawBody = await c.req.text();

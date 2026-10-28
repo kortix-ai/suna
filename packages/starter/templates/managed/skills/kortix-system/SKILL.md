@@ -163,7 +163,7 @@ install link. Owners, accounts, `not granted`, `undecryptable`:
 | The user wants | Use |
 | --- | --- |
 | Follow up on THIS task later ("check tomorrow if they replied") | A loop: `kortix loop "<what to check, what to do>" --in 24h [--every 1h]` |
-| Wait mid-task, resume with full context | A loop, then end the turn |
+| Wait mid-task, resume with full context (later, or when a CR merges / a webhook or event arrives) | A loop, then end the turn; on an event: `kortix automations add "<what to do>" --on cr-merged --cr <id>` |
 | Recurring project work (a daily digest) | A trigger: `on: { cron: "0 0 9 * * 1-5", timezone: <IANA> }` or `on: { every: 1h }` |
 | A one-off project job | A trigger: `on: { at: <ISO-8601> }` |
 | Project code on a cadence, no agent | A trigger: `run: { app: <slug>, path: /tick }` |

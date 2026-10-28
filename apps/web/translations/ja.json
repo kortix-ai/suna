@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "アクセス権を確認できませんでした",
       "text078931e34187": "プロジェクト管理には設定の権限が必要です",
       "textb24d48611918": "{grant} が必要です。このプロジェクトを管理している人なら誰でも付与できます。",
-      "textce53edc1b757": "セッションのループを今すぐ実行しました"
+      "textce53edc1b757": "セッションのループを今すぐ実行しました",
+      "text6d65ed5c7500": "オートメーション",
+      "textdb87a63d537e": "新しいオートメーション",
+      "textbdff71b20b9c": "オートメーションを検索",
+      "textb777509a8aea": "オートメーションはまだありません",
+      "text8fbb8c347fc0": "スケジュール、アプリイベント、Webhook、またはマージされた変更リクエストで、エージェントを実行するかセッションを再開します。",
+      "textf09c738f5caf": "オートメーションを作成すると、プロンプトなしでエージェントが自動で動きます。",
+      "text5ffd973e20ed": "変更リクエストがマージされた",
+      "text41bec5c0977c": "実行時に作成",
+      "text8898c02a816e": "kortix.yaml ではなくデータベースに保存されます。エージェントと CLI が作成します。",
+      "textb3c0ab96930c": "次回の実行",
+      "text89919c510d89": "{value0} を再開",
+      "textba6393ea2b12": "{value0} を開始",
+      "textd7846b4e605e": "{value0} を呼び出す",
+      "text0f393e09c59d": "このオートメーションを削除しますか？",
+      "textf4f30f5b483c": "以後は実行されません。この操作は元に戻せません。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -21493,7 +21508,8 @@
     "calendarFiredSr": "実行済み",
     "calendarFailed": "失敗",
     "calendarEstimatedSr": "過去の実行（スケジュールからの推定）",
-    "calendarUpcomingSr": "予定"
+    "calendarUpcomingSr": "予定",
+    "onEvent": "イベント発生時"
   },
   "computers": {
     "connectYourComputer": "コンピューターを接続",

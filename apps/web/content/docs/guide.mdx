@@ -50,7 +50,7 @@ When an agent changes the project itself, for example a skill or its memory, it 
 | Skills | Written playbooks an agent follows for a specific task. | [Skills](/docs/guide#skills) |
 | Drive | Shared folders for people and agents, including the company's memory. | [Drive](/docs/guide#drive) |
 | Connectors | Governed access to the apps, APIs and services your team uses. | [Connectors](/docs/guide#connectors) |
-| Automations | Schedules, webhooks and app events that start agents, plus loops. | [Automations](/docs/guide#automations) |
+| Automations | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Automations](/docs/guide#automations) |
 | Outcomes | An agent owns an objective until an independent check confirms it is met. | [Outcomes](/docs/guide#outcomes) |
 | Computers | Each session gets its own cloud computer. You can also connect your own machine. | [Computers](/docs/guide#computers) |
 | Apps | Sites, services and backends that agents build and deploy from a project. | [Apps](/docs/guide#apps) |
@@ -149,7 +149,7 @@ Roles and groups are on the [Teams](/docs/guide#teams) page.
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session with an agent. |
-| **Customize** | **My Kortix**, your **Agents**, **Review**, **Members**, **Models** and **Settings**. Settings opens **Project admin**: the project's libraries (**Connectors**, **Secrets**, **Skills**, **Tools**, **Extensions**, **Drives**, **Triggers**, **Loops**, **Models**, **Repo**) and its settings. |
+| **Customize** | **My Kortix**, your **Agents**, **Review**, **Members**, **Models** and **Settings**. Settings opens **Project admin**: the project's libraries (**Connectors**, **Secrets**, **Skills**, **Tools**, **Extensions**, **Drives**, **Automations**, **Models**, **Repo**) and its settings. |
 | **Drive** | Shared folders: **My files**, **Company**, and **All files** for admins. |
 | **Apps** | The project's Apps. |
 | **Sessions** | Your sessions. |
@@ -508,15 +508,27 @@ To remove access, open **Settings** → **Personal access keys** → **Connected
 
 <video src="/media/guide/automations.mp4" aria-label="Automations in Kortix: creating a daily scheduled trigger" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-An automation starts agent work with nobody at the keyboard. In Kortix, an automation is a **trigger**. A trigger has two parts: what starts it, and what the agent should do. Each run is a new session on its own cloud computer.
+An automation starts agent work with nobody at the keyboard. It has two parts: a **source**, what fires it, and a **target**, what a fire does.
 
-### The kinds of trigger
-
-| Trigger | Starts when | Good for |
+| Source | Fires when | Good for |
 | --- | --- | --- |
-| **Schedule** | A time arrives, or a fixed period passes. | Daily reports, weekly reviews, regular checks. |
-| **Webhook** | Another system sends a signed request to the trigger's address. | Form tools, payment systems, code hosts. |
+| **Schedule** | A time arrives, or a fixed period passes (`cron`, `every`, `at`, `in`). | Daily reports, weekly reviews, regular checks. |
+| **Webhook** | Another system sends a signed request to the automation's address. | Form tools, payment systems, code hosts. |
+| **Connector event** | Something happens in a connected app. | New issues, new messages, new orders. |
 | **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the above. See [Apps](/docs/guide#apps). |
+| **Change request merged** | A change request of the project merges. | Release notes, a check after a deploy. |
+
+| Target | A fire | Called |
+| --- | --- | --- |
+| **Agent** | Starts a new session of that agent, on its own cloud computer. | A trigger |
+| **Session** | Wakes one session that already exists, with its full history. | A loop |
+
+Any source works with either target. An automation lives in one of two places:
+
+- **In `kortix.yaml`**, under `triggers:`. It changes through a commit, so it is reviewed like code. The page and the API mark it **kortix.yaml**.
+- **Created at runtime**, in the database. An agent or a person creates it with one command or API call: no commit, and it is gone when you remove it. Every loop is one. The page marks it **Created at runtime**.
+
+<a id="the-kinds-of-trigger" />
 
 To react to something outside Kortix, use a webhook when the other system can send one. Otherwise, use a schedule that checks it.
 
@@ -525,7 +537,7 @@ To react to something outside Kortix, use a webhook when the other system can se
 1. Kortix fills in your instruction with the details of the event, such as fields from the webhook's request.
 2. It starts a new session by default, with your chosen agent and model, on its own computer.
 3. The agent does the work, using the connectors it may use.
-4. The **Triggers** page shows the trigger's last run and its status. The session appears in your lists.
+4. The **Automations** page shows the automation's last run and its status. The session appears in your lists.
 
 A few rules keep this safe:
 
@@ -538,11 +550,11 @@ A few rules keep this safe:
 ### Set it up
 
 <Steps>
-<Step title="Open Triggers">
-Open your project, then **Triggers**. The tabs are **All**, **Schedules** and **Webhooks**. **App events** appears once the project has one.
+<Step title="Open Automations">
+Open your project, then **Project admin → Automations**. The tabs are **All**, **Schedules** and **Webhooks**. **App events** appears once the project has one. Runtime automations list under **Created at runtime**.
 </Step>
-<Step title="Create the trigger">
-Select **New trigger**, then **Set up manually**. Under **When**, choose a schedule or a webhook.
+<Step title="Create the automation">
+Select **New automation**, then **Set up manually**. Under **When**, choose a schedule or a webhook. This adds it to `kortix.yaml`.
 </Step>
 <Step title="Write the instruction">
 Under **Then**, write what the agent should do, and pick the agent and the model.
@@ -554,11 +566,13 @@ Choose **Create trigger**. Select **Run now** to try it once.
 
 A webhook also needs a signing secret, stored as a project secret.
 
+To create one at runtime, use the CLI: `kortix automations add "<prompt>"` with a source flag (`--every 1h`, `--on webhook --secret-env NAME`, `--on cr-merged --cr <id>`) and a target (`--session <id>`, the default inside a session, or `--agent <name>`).
+
 <a id="reminders" />
 
 ### Loops
 
-A loop is different from a trigger. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. Loops are on by default (flag key `reminders`). **Project admin → Loops** lists them. Loops were called reminders until 2026-10; `kortix remind` and `kortix reminders` still work.
+A loop is an automation with a schedule source and a session target. It does not start a new session. It sends a message into one session that already exists, later, once or on repeat. For example: "in 24 hours, check whether the vendor replied." The session wakes with its full history and continues. A session can also be woken by a webhook, an event or a merged change request: `kortix automations add "…" --on cr-merged --cr <id>`. Loops are on by default (flag key `reminders`). **Project admin → Automations** lists them under **Created at runtime**, and the session shows the automations that wake it. `kortix loop`, `kortix loops`, `kortix remind` and `kortix reminders` still work with the same flags.
 
 ### Keeping automations under control
 

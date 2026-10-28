@@ -8,7 +8,7 @@
  * groups:
  *
  *  - **Project resources**: the GLOBAL variant of every library page
- *    (Connectors, Skills, Triggers, Loops, Models, Secrets, Apps, and Repo
+ *    (Connectors, Skills, Automations, Models, Secrets, Apps, and Repo
  *    with `drives` on), mounted with no props beyond `projectId`. This is
  *    their only home: Customize keeps Agents and Review (Marko, 2026-10-27).
  *    A page below a section (a connector, `/admin/connectors/<app>`) renders
@@ -33,8 +33,9 @@
  * that pushes its own route (ConnectorsPage opening a connector) still leaves
  * for that route: the resource pages take no base-path prop yet.
  *
- * Loops and Apps are pages of the host app, not of this package. The host
- * passes them in `hostSections`; a row without a page is not listed.
+ * Apps is a page of the host app, not of this package. The host passes it in
+ * `hostSections`; a row without a page is not listed. Loops were one until
+ * 2026-10-28: they are automations on the Automations page now.
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
@@ -96,7 +97,7 @@ export {
 type SectionPage = ComponentType<{ projectId: string }>;
 
 /** Pages that live in the host app (`apps/web`), passed in by its route. */
-export type ProjectAdminHostSections = Partial<Record<'loops' | 'apps', SectionPage>>;
+export type ProjectAdminHostSections = Partial<Record<'apps', SectionPage>>;
 
 function lazyPage<M>(load: () => Promise<M>, pick: (mod: M) => SectionPage) {
   return lazy(withStaleChunkRecovery(() => load().then((mod) => ({ default: pick(mod) }))));
@@ -121,8 +122,8 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
 const RESOURCE_LABEL_KEYS: Partial<Record<ProjectAdminResourceKey, string>> = {
   connectors: 'textc3d2e79ebdd0',
   skills: 'text66d0f523a379',
-  triggers: 'texte62f2148a64d',
-  loops: 'textc08f99e3947d',
+  // "Automations": triggers and loops are one page (2026-10-28).
+  triggers: 'textad1fb9ec0cb3',
   models: 'textd17d2d78d76e',
   secrets: 'textd8707d411d99',
   apps: 'text89dd748442c1',
@@ -258,7 +259,7 @@ export function ProjectAdminDashboard({
   const drivesOn = drives.enabled;
   const resourceRows = useMemo<RailRow[]>(() => {
     const allowed = new Set(allowedTabs.split(','));
-    return PROJECT_ADMIN_RESOURCES.filter((r) => (r.host ? !!hostSections[r.key as 'loops' | 'apps'] : true))
+    return PROJECT_ADMIN_RESOURCES.filter((r) => (r.host ? !!hostSections[r.key as 'apps'] : true))
       .filter((r) => !r.capability || allowed.has(r.capability))
       .filter((r) => r.flag !== 'drives' || drivesOn)
       .map((r) => {
@@ -343,7 +344,7 @@ export function ProjectAdminDashboard({
   const ActivePage = !active
     ? null
     : isProjectAdminResource(active)
-      ? (RESOURCE_PAGES[active] ?? hostSections[active as 'loops' | 'apps'] ?? null)
+      ? (RESOURCE_PAGES[active] ?? hostSections[active as 'apps'] ?? null)
       : SETTINGS_PAGES[active];
 
   const members =
@@ -422,7 +423,7 @@ export function ProjectAdminDashboard({
                 <div
                   className={cn(
                     'flex min-h-0 flex-1 flex-col overflow-hidden',
-                    (active === 'loops' || active === 'apps') && HOST_PANE_CLASS,
+                    active === 'apps' && HOST_PANE_CLASS,
                   )}
                 >
                   {content ?? <ActivePage projectId={projectId} />}

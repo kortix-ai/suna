@@ -1,6 +1,11 @@
 import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app';
+/**
+ * The source of an automation (a trigger or a loop). `change_request` fires
+ * when a change request of the project merges; only a runtime automation
+ * (`lib/automations.ts`) can have it today, kortix.yaml cannot declare it.
+ */
+export type GitTriggerType = 'cron' | 'webhook' | 'event' | 'app' | 'change_request';
 
 
 /** For type=event only — which app event on which connector fires the trigger. */
@@ -83,6 +88,12 @@ export interface GitTriggerSpec {
   /** For type=app only: the slug of the App whose emitted events fire this trigger. Absent for every other type. */
   app?: string | null;
   /**
+   * For type=change_request only: which merges fire it. `crId` = one change
+   * request, `base` = any request merged into that branch. Both null: every
+   * merge in the project. Absent for every other type.
+   */
+  changeRequest?: { crId: string | null; base: string | null } | null;
+  /**
    * What a fire does when it is not an agent run: call an App. A fire wakes
    * the App and sends the payload to `method path` (apps/app-call.ts). Absent:
    * the fire starts or continues an agent session, as before.
@@ -141,9 +152,12 @@ export interface GitTriggerSpec {
    */
   filter: TriggerFilter | null;
   /**
-   * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
-   * row that re-prompts `pinnedSessionId`. The manifest never declares one, so
-   * manifest reconcile skips these rows instead of pruning them.
+   * Set only on an automation whose target is a session (`lib/session-reminders.ts`,
+   * `lib/automations.ts`): a DB-native row that wakes `pinnedSessionId`. A loop is
+   * the schedule source of it; a webhook, connector event, App event or merged
+   * change request can be its source too. The manifest never declares one, so
+   * manifest reconcile skips these rows instead of pruning them. The field keeps
+   * its old name: stored rows carry it in `schedule_spec`.
    */
   reminder?: SessionReminderFields | null;
 }

@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "Dein Zugriff konnte nicht geprüft werden",
       "text078931e34187": "Die Projektverwaltung braucht die Einstellungsberechtigung",
       "textb24d48611918": "Sie braucht {grant}. Jeder, der dieses Projekt verwaltet, kann sie erteilen.",
-      "textce53edc1b757": "Sitzungsschleife jetzt ausgeführt"
+      "textce53edc1b757": "Sitzungsschleife jetzt ausgeführt",
+      "text6d65ed5c7500": "Automatisierung",
+      "textdb87a63d537e": "Neue Automatisierung",
+      "textbdff71b20b9c": "Automatisierungen suchen",
+      "textb777509a8aea": "Noch keine Automatisierungen",
+      "text8fbb8c347fc0": "Agenten ausführen oder eine Sitzung wecken: per Zeitplan, App-Ereignis, Webhook oder zusammengeführter Änderungsanfrage.",
+      "textf09c738f5caf": "Erstelle eine Automatisierung, und dein Agent läuft von selbst, ohne Prompt.",
+      "text5ffd973e20ed": "Änderungsanfrage zusammengeführt",
+      "text41bec5c0977c": "Zur Laufzeit erstellt",
+      "text8898c02a816e": "In der Datenbank gespeichert, nicht in kortix.yaml. Agenten und die CLI erstellen sie.",
+      "textb3c0ab96930c": "Nächster Lauf",
+      "text89919c510d89": "Weckt {value0}",
+      "textba6393ea2b12": "Startet {value0}",
+      "textd7846b4e605e": "Ruft {value0} auf",
+      "text0f393e09c59d": "Diese Automatisierung löschen?",
+      "textf4f30f5b483c": "Sie wird nicht mehr ausgelöst. Das lässt sich nicht rückgängig machen."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -21493,7 +21508,8 @@
     "calendarFiredSr": "Ausgelöst",
     "calendarFailed": "Fehlgeschlagen",
     "calendarEstimatedSr": "Vergangene Ausführung, aus dem Zeitplan geschätzt",
-    "calendarUpcomingSr": "Bevorstehend"
+    "calendarUpcomingSr": "Bevorstehend",
+    "onEvent": "Bei einem Ereignis"
   },
   "computers": {
     "connectYourComputer": "Deinen Computer verbinden",

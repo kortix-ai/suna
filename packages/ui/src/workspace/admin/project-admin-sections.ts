@@ -1,5 +1,4 @@
 import {
-  AlarmIcon,
   AppWindowIcon,
   BookOpenTextIcon,
   CpuIcon,
@@ -40,7 +39,6 @@ export type ProjectAdminResourceKey =
   | 'tools'
   | 'extensions'
   | 'triggers'
-  | 'loops'
   | 'models'
   | 'secrets'
   | 'apps'
@@ -84,8 +82,9 @@ export const PROJECT_ADMIN_RESOURCES: readonly ProjectAdminResource[] = [
   { key: 'extensions', icon: PuzzlePieceIcon, capability: 'agent', host: false },
   { key: 'drives', icon: HardDrivesIcon, capability: null, host: false, flag: 'drives' },
   { key: 'apps', icon: AppWindowIcon, capability: null, host: true },
+  // Automations: kortix.yaml triggers and runtime automations (loops) on one page.
+  // The key stays `triggers`: it is the URL segment, and live links name it.
   { key: 'triggers', icon: TimerIcon, capability: 'triggers', host: false },
-  { key: 'loops', icon: AlarmIcon, capability: 'reminders', host: true },
   { key: 'models', icon: CpuIcon, capability: 'models', host: false },
   { key: 'repo', icon: FoldersIcon, capability: 'files', host: false, flag: 'drives' },
 ];
@@ -101,6 +100,8 @@ export function parseProjectAdminSection(
   raw: string | null | undefined,
 ): ProjectAdminSectionKey | null {
   if (!raw) return null;
+  // `/admin/loops` was the Loops page until 2026-10-28: loops are automations now.
+  if (raw === 'loops') return 'triggers';
   const resource = PROJECT_ADMIN_RESOURCES.find((r) => r.key === raw);
   if (resource) return resource.key;
   const setting = parseProjectSettingsSection(raw);
@@ -132,7 +133,7 @@ export function projectAdminNavTarget(tab: string): ProjectAdminSectionKey | nul
   if (direct) return direct;
   if (tab.startsWith('llm-')) return 'models';
   if (tab === 'channels') return 'connectors';
-  if (tab === 'reminders') return 'loops';
+  if (tab === 'reminders') return 'triggers';
   if (tab === 'settings' || tab === 'workspace') return 'general';
   if (tab === 'experimental') return 'feature-flags';
   if (tab === 'snapshots') return 'sandbox';

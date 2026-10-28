@@ -76,6 +76,7 @@ import {
   contract,
   qk,
   useProjectApps,
+  useProjectAutomations,
   useProjectTriggerEventApps,
   useTriggerRuns,
 } from '@kortix/sdk/react';
@@ -120,6 +121,7 @@ import {
   triggersForAgent,
 } from './schedule/trigger-filter';
 import { TriggerList } from './schedule/trigger-list';
+import { RuntimeAutomations, runtimeRowsFor } from './runtime-automations';
 import { runsInFlight } from './schedule/trigger-runs-logic';
 import { runsOf } from './schedule/trigger-runs-panel';
 import {
@@ -364,6 +366,9 @@ export function ScheduleView({
     ...contract('config'),
     refetchInterval: 10_000,
   });
+
+  // Runtime automations (loops included) list below the kortix.yaml ones (`RuntimeAutomations`).
+  const hasRuntime = runtimeRowsFor(useProjectAutomations(projectId).data?.automations ?? [], agentName).length > 0;
 
   const [query, setQuery] = useState('');
   // The input shows every keystroke; the list filters 200 ms after the last one.
@@ -800,7 +805,7 @@ export function ScheduleView({
               />
             ) : filter !== 'all' && ofKind.length === 0 ? (
               <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
-            ) : triggers.length === 0 && agentName ? (
+            ) : triggers.length === 0 && hasRuntime ? null : triggers.length === 0 && agentName ? (
               // One muted line (brand: no icon tile). New trigger is already
               // in the header, preselected to this agent.
               <EmptyState size="sm" title={tAgentScope('triggersEmpty')} />
@@ -856,6 +861,8 @@ export function ScheduleView({
               />
             )}
 
+
+            {showContent && filter === 'all' ? <RuntimeAutomations projectId={projectId} agentName={agentName} /> : null}
 
             {showContent && eventsOn && filter === 'event' ? (
               <EventAppsStrip

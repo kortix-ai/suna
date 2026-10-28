@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "Impossibile verificare il tuo accesso",
       "text078931e34187": "L’amministrazione del progetto richiede il permesso delle impostazioni",
       "textb24d48611918": "Richiede {grant}. Chiunque gestisca questo progetto può concederlo.",
-      "textce53edc1b757": "Ciclo di sessione eseguito ora"
+      "textce53edc1b757": "Ciclo di sessione eseguito ora",
+      "text6d65ed5c7500": "automazione",
+      "textdb87a63d537e": "Nuova automazione",
+      "textbdff71b20b9c": "Cerca automazioni",
+      "textb777509a8aea": "Ancora nessuna automazione",
+      "text8fbb8c347fc0": "Esegui agenti o riattiva una sessione con una pianificazione, un evento di app, un webhook o una richiesta di modifica unita.",
+      "textf09c738f5caf": "Crea un'automazione e il tuo agente lavora da solo, senza prompt.",
+      "text5ffd973e20ed": "Richiesta di modifica unita",
+      "text41bec5c0977c": "Creata in fase di esecuzione",
+      "text8898c02a816e": "Salvata nel database, non in kortix.yaml. La creano gli agenti e la CLI.",
+      "textb3c0ab96930c": "Prossima esecuzione",
+      "text89919c510d89": "Riattiva {value0}",
+      "textba6393ea2b12": "Avvia {value0}",
+      "textd7846b4e605e": "Chiama {value0}",
+      "text0f393e09c59d": "Eliminare questa automazione?",
+      "textf4f30f5b483c": "Smette di attivarsi. L'operazione non può essere annullata."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -21493,7 +21508,8 @@
     "calendarFiredSr": "Scattato",
     "calendarFailed": "Non riuscito",
     "calendarEstimatedSr": "Attivazione passata, stimata dalla pianificazione",
-    "calendarUpcomingSr": "In arrivo"
+    "calendarUpcomingSr": "In arrivo",
+    "onEvent": "A un evento"
   },
   "computers": {
     "connectYourComputer": "Collega il tuo computer",

@@ -48,7 +48,9 @@ describe('Project admin /admin/<section> scheme', () => {
   test('legacy overlay ids land on the section that owns them', () => {
     expect(projectAdminNavTarget('llm-providers')).toBe('models');
     expect(projectAdminNavTarget('channels')).toBe('connectors');
-    expect(projectAdminNavTarget('reminders')).toBe('loops');
+    expect(projectAdminNavTarget('reminders')).toBe('triggers');
+    // `/admin/loops` was the Loops page: loops are automations, on one page.
+    expect(parseProjectAdminSection('loops')).toBe('triggers');
     expect(projectAdminNavTarget('experimental')).toBe('feature-flags');
     expect(projectAdminNavTarget('snapshots')).toBe('sandbox');
     expect(projectAdminNavTarget('settings')).toBe('general');

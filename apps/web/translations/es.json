@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "No se pudo comprobar tu acceso",
       "text078931e34187": "La administración del proyecto necesita el permiso de configuración",
       "textb24d48611918": "Necesita {grant}. Cualquier persona que gestione este proyecto puede concederlo.",
-      "textce53edc1b757": "Bucle de sesión ejecutado ahora"
+      "textce53edc1b757": "Bucle de sesión ejecutado ahora",
+      "text6d65ed5c7500": "automatización",
+      "textdb87a63d537e": "Nueva automatización",
+      "textbdff71b20b9c": "Buscar automatizaciones",
+      "textb777509a8aea": "Aún no hay automatizaciones",
+      "text8fbb8c347fc0": "Ejecuta agentes o despierta una sesión con una programación, un evento de app, un webhook o una solicitud de cambio fusionada.",
+      "textf09c738f5caf": "Crea una automatización y tu agente se ejecuta solo, sin prompt.",
+      "text5ffd973e20ed": "Solicitud de cambio fusionada",
+      "text41bec5c0977c": "Creada en tiempo de ejecución",
+      "text8898c02a816e": "Guardada en la base de datos, no en kortix.yaml. La crean los agentes y la CLI.",
+      "textb3c0ab96930c": "Próxima ejecución",
+      "text89919c510d89": "Despierta {value0}",
+      "textba6393ea2b12": "Inicia {value0}",
+      "textd7846b4e605e": "Llama a {value0}",
+      "text0f393e09c59d": "¿Eliminar esta automatización?",
+      "textf4f30f5b483c": "Deja de dispararse. No se puede deshacer."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -21493,7 +21508,8 @@
     "calendarFiredSr": "Activado",
     "calendarFailed": "Falló",
     "calendarEstimatedSr": "Activación pasada, estimada a partir de la programación",
-    "calendarUpcomingSr": "Próxima"
+    "calendarUpcomingSr": "Próxima",
+    "onEvent": "Ante un evento"
   },
   "computers": {
     "connectYourComputer": "Conectar tu ordenador",

@@ -53,15 +53,12 @@ describe('notification emails follow the transactional email rules', () => {
     expect(email.text).toContain(`Open automations: ${href}`);
   });
 
-  test('a loop alert opens the Loops page and its button says so', () => {
-    // `/admin/loops` since 2026-10-28; a row stored before carries `/reminders`.
+  test('a loop alert says Open automations: loops are automations', () => {
+    // A row stored before 2026-10-28 carries `/admin/loops` or `/reminders`; both redirect to Automations.
     for (const url of [`/projects/${PID}/admin/loops?notification=n1`, `/projects/${PID}/reminders?notification=n1`]) {
-      for (const kind of ['automation_failed', 'automation_recovered'] as const) {
-        const email = renderImmediateNotificationEmail({ ...failed, kind, url })!;
-        expect(email.text).toContain(`Open loops: ${absoluteAppUrl(url)}`);
-        expect(email.html).toContain('Open loops');
-        expect(`${email.html}\n${email.text}`).not.toContain('Open automations');
-      }
+      const email = renderImmediateNotificationEmail({ ...failed, url })!;
+      expect(email.text).toContain(`Open automations: ${absoluteAppUrl(url)}`);
+      expect(`${email.html}\n${email.text}`).not.toContain('Open loops');
     }
   });
 

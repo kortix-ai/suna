@@ -13,6 +13,7 @@ import { renderSessionKey } from './trigger-payload';
 import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
+import { automationTargetOf } from './automations';
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
@@ -390,8 +391,10 @@ export async function fireGitTrigger(input: {
       if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
+  // Dispatch on the target (lib/automations.ts), never on the slug or the source.
+  const target = automationTargetOf(spec);
   // An App target is a call to the App, not a session: no actor, model or prompt.
-  if (spec.target?.app) return fireAppTarget(input, spec.target);
+  if (target.kind === 'app') return fireAppTarget(input, spec.target!);
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
   // See resolveTriggerActor().
@@ -399,14 +402,15 @@ export async function fireGitTrigger(input: {
   if (!automation) {
     return { status: 'failed', error: 'No account owner available to own the session', retryable: false };
   }
+  // A session target wakes one existing session, whatever its source: a loop's
+  // schedule, a webhook, a connector or App event, a merged change request.
+  if (target.kind === 'session') return fireSessionReminder(input, automation);
   // A config trigger never runs into a private channel (PRIVATE_CHANNEL_TRIGGER).
-  const runSpace = spec.reminder ? null : triggerRunSpace(await liveTriggerSpace(project.projectId, spec.slug), spec.agent);
+  const runSpace = triggerRunSpace(await liveTriggerSpace(project.projectId, spec.slug), spec.agent);
   if (runSpace?.kind === 'channel' && runSpace.visibility === 'private') {
     return { status: 'failed', ...PRIVATE_CHANNEL_TRIGGER, retryable: false };
   }
   const actor = automation;
-
-  if (spec.reminder) return fireSessionReminder(input, actor);
 
   const sessionKey = renderSessionKey(spec, payload);
   const queued = await queueExistingTriggerSession(input, actor, sessionKey);
@@ -516,7 +520,7 @@ async function fireSessionReminder(
   const runAs = author ?? (sessionId ? await memberSessionCreator(project, sessionId) : null) ?? actor;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor: runAs, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: runAs, text: reminderPromptText(spec, input.renderedPrompt), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
         bindTurnIdentity: !!author,
@@ -561,7 +565,7 @@ async function fireReminderSuccessor(
     body: {
       agent_name: spec.agent,
       initial_prompt:
-        `${reminderPromptText(spec)}\n\n` +
+        `${reminderPromptText(spec, input.renderedPrompt)}\n\n` +
         `This loop belonged to session ${failedSessionId}, which failed. You continue its work: ` +
         'read what it kept in Files (/drives) before you act.',
       metadata: { reminder_successor_of: failedSessionId },

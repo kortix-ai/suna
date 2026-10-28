@@ -20477,7 +20477,22 @@
       "text9eebeabf6094": "Impossible de vérifier votre accès",
       "text078931e34187": "L’administration du projet nécessite l’autorisation des paramètres",
       "textb24d48611918": "Elle nécessite {grant}. Toute personne qui gère ce projet peut l’accorder.",
-      "textce53edc1b757": "Boucle de session exécutée maintenant"
+      "textce53edc1b757": "Boucle de session exécutée maintenant",
+      "text6d65ed5c7500": "automatisation",
+      "textdb87a63d537e": "Nouvelle automatisation",
+      "textbdff71b20b9c": "Rechercher des automatisations",
+      "textb777509a8aea": "Aucune automatisation pour l'instant",
+      "text8fbb8c347fc0": "Exécutez des agents ou réveillez une session selon un planning, un événement d'app, un webhook ou une demande de modification fusionnée.",
+      "textf09c738f5caf": "Créez une automatisation et votre agent s'exécute seul, sans prompt.",
+      "text5ffd973e20ed": "Demande de modification fusionnée",
+      "text41bec5c0977c": "Créée à l'exécution",
+      "text8898c02a816e": "Stockée dans la base de données, pas dans kortix.yaml. Les agents et la CLI les créent.",
+      "textb3c0ab96930c": "Prochaine exécution",
+      "text89919c510d89": "Réveille {value0}",
+      "textba6393ea2b12": "Démarre {value0}",
+      "textd7846b4e605e": "Appelle {value0}",
+      "text0f393e09c59d": "Supprimer cette automatisation ?",
+      "textf4f30f5b483c": "Elle ne se déclenchera plus. Cette action est irréversible."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -21493,7 +21508,8 @@
     "calendarFiredSr": "Déclenché",
     "calendarFailed": "Échec",
     "calendarEstimatedSr": "Déclenchement passé, estimé à partir de la planification",
-    "calendarUpcomingSr": "À venir"
+    "calendarUpcomingSr": "À venir",
+    "onEvent": "Sur un événement"
   },
   "computers": {
     "connectYourComputer": "Connecter votre ordinateur",

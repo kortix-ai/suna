@@ -94,7 +94,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
-  { key: 'triggers', label: 'Triggers' },
+  { key: 'triggers', label: 'Automations' },
   { key: 'reminders', label: 'Loops' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
@@ -188,7 +188,8 @@ export const ADMIN_SECTION: Partial<Record<CapabilityTab['key'], string>> = {
   skills: 'skills',
   connectors: 'connectors',
   triggers: 'triggers',
-  reminders: 'loops',
+  // Loops are automations: one page since 2026-10-28.
+  reminders: 'triggers',
   models: 'models',
   secrets: 'secrets',
   files: 'repo',
