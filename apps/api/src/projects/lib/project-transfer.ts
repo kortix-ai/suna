@@ -154,6 +154,8 @@ export const PROJECT_TRANSFER_LEAVE_TABLES: Readonly<Record<string, string>> = {
   // Completed one-off migration runs — operations history, not live state.
   legacy_sandbox_migrations: 'completed ops migration run record',
   suna_account_migrations: 'completed ops migration run record',
+  // The retired v1 transcript mirror (P8.2): no code reads it since Release B2; Release B3 drops it.
+  session_transcript_mirrors: 'retired v1 mirror, read by no code, dropped by Release B3',
 };
 
 export type ProjectTransferErrorCode =

@@ -322,7 +322,7 @@ Every session's saved conversation is its session log. An instance that ran a ve
 [session-log] backfill: the session logs hold every v1 mirror message; no code reads the mirror again
 ```
 
-Later versions drop the v1 store and no longer convert it. Their `kortix-migrate` step refuses while the store holds a conversation that the pass has not finished (`session_transcript_mirrors drop refused`). Nothing is swapped, and the previous version keeps serving. To finish the conversion:
+Later versions no longer convert the v1 store, and a later one drops it. Update past `0.14.9` only after the line above appears: a later version does not show a conversation that the pass has not converted. The version that drops the store refuses to migrate while the store holds such a conversation (`session_transcript_mirrors drop refused`); nothing is swapped, and the previous version keeps serving. To finish the conversion:
 
 1. Pin the converting version: `kortix self-host update --tag 0.14.9`.
 2. Wait for the line above in `kortix self-host logs kortix-api`.
