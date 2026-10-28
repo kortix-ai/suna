@@ -35,11 +35,11 @@ export interface StarterFile {
 }
 
 // There is one USER-FACING starter kit:
-// - `general-knowledge-worker`: the full skill kit on the OpenCode REST runtime.
+// - `general-knowledge-worker`: the full skill kit.
 //
 // `minimal` (base only, no domain skills) is kept purely as an INTERNAL
 // building block: the project-clone seed path (`buildProjectSeedFilesFromItem`)
-// uses it to lay down the OpenCode runtime floor and canonical skill source
+// uses it to lay down the kortix_version 3 floor and canonical skill source
 // before a `registry:project`'s own skills/agents are layered on top, so a
 // specialized project template isn't
 // polluted with every general-knowledge skill. It is not surfaced in the
@@ -188,8 +188,30 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
     }
   }
 
+  const manifest = byPath.get('kortix.yaml');
+  if (manifest) manifest.content = registerStarterSkills(manifest.content, [...byPath.keys()]);
+
   const files = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+const SKILL_FILE_RE = new RegExp(`^${SKILLS_DIR}/([^/]+)/SKILL\\.md$`);
+
+/**
+ * Fill the base manifest's empty `skills: {}` registry with every project
+ * skill the selected layers ship (`skills/<name>/SKILL.md`), so the registry
+ * always matches the folders on disk: `minimal` registers none, the
+ * general-knowledge-worker layer registers its kit. Kortix skills are always
+ * registered and never listed.
+ */
+function registerStarterSkills(manifest: string, paths: string[]): string {
+  const names = paths
+    .map((path) => SKILL_FILE_RE.exec(path)?.[1])
+    .filter((name): name is string => name !== undefined && !isKortixManagedSkillName(name))
+    .sort((a, b) => a.localeCompare(b));
+  if (names.length === 0) return manifest;
+  const registry = names.map((name) => `  ${name}: ${SKILLS_DIR}/${name}`).join('\n');
+  return manifest.replace(/^skills: \{\}$/m, `skills:\n${registry}`);
 }
 
 /**
