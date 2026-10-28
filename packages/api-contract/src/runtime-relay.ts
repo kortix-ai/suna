@@ -322,7 +322,7 @@ export interface CompiledAgent {
   permission?: unknown;
   /** kortix.yaml v3: the registered extensions a session of this agent loads (`CompiledAgentSet.extensions`). */
   extensions?: string[];
-  /** kortix.yaml v3: pi's codemode tool. Omitted: `on`. */
+  /** kortix.yaml v3: pi's codemode tool. Omitted: `on` for the session agent, none for a subagent. */
   codemode?: 'on' | 'only' | 'off';
 }
 
