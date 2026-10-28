@@ -5,6 +5,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { H, W } from './session-window';
 import { WorkspaceFramework } from './workspace-framework';
 
 // The hero's adjective cycles through the three pillars and "open" (kortix-brand D16, D21).
@@ -79,7 +80,13 @@ export function SandBandHero() {
           between the rails. */}
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
         <div className="bg-card relative flex flex-col items-center gap-7 overflow-hidden px-4 py-7 lg:gap-10 lg:px-0 lg:pt-17 lg:pb-10">
-          <div id="demo" className="relative w-full max-w-304 scroll-mt-24">
+          {/* Width follows the screen height too, so the switch, the window
+              (1264 × 860) and the step strip fit one viewport under the navbar. */}
+          <div
+            id="demo"
+            className="relative w-full max-w-304 scroll-mt-24"
+            style={{ maxWidth: `min(100%, calc((100svh - 16rem) * ${W} / ${H}))` }}
+          >
             <WorkspaceFramework />
           </div>
           {/* What the two views show, in one line. */}
