@@ -22725,9 +22725,6 @@
     "stopReason": "ゴールページから停止",
     "stoppedToast": "ゴールを停止しました",
     "stopError": "ゴールを停止できませんでした。もう一度お試しください。",
-    "makeGoal": "これをゴールにする",
-    "makeGoalSent": "このチャットにゴール化を依頼しました",
-    "makeGoalError": "依頼できませんでした。もう一度お試しください。",
     "needsAttention": "要対応",
     "newGoal": "新しいゴール",
     "newGoalTitle": "新しいゴール",
@@ -22736,8 +22733,6 @@
     "newGoalStart": "ゴールを開始",
     "cancel": "キャンセル",
     "forPerson": "{person} 向け",
-    "makeGoalConfirm": "エージェントがこの会話を完了条件付きのゴールにし、確認で完了が確かめられるまで取り組みます。",
-    "makeGoalSend": "エージェントに依頼",
     "answerInChat": "チャットで回答",
     "forYou": "あなた向け",
     "forMember": "チームメンバー向け"

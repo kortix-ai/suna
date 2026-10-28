@@ -14,7 +14,7 @@ folder still lists and reads.
 | One owner at a time; `handover` starts a fresh owner | `handoverGoal`; kortixd finds the last `role: owner` (`harness/shared/on-idle-hook.ts`) |
 | Caps: wakes per UTC day (the heartbeat moves to the next day), sessions per goal | `recordWake`, `repair` (run by `check --enforce` after each owner turn) |
 | Wake on a merged change request (origin session metadata `goal=<folder>`) | `apps/api/src/projects/lib/goal-wake.ts` `wakeGoal`: the one seam for the Automations "change request merged" source and goal targets |
-| A person stops or answers a goal; "Make this a goal" | SDK `stopProjectGoal`, `replyToProjectGoal`, `makeSessionGoal`; `apps/web/src/features/workspace/goals/*`, `session-goal-indicator.tsx` |
+| A person stops a goal or starts one (New goal) | SDK `stopProjectGoal`; `useStartGoal` (`MAKE_GOAL_PROMPT`); `apps/web/src/features/workspace/goals/*`, `session-goal-indicator.tsx` |
 
 Merged on `dev`: #10314 (`b6d7c82ca7`), the flag gate #10589 (`4693ec3103`),
 the CLI help coverage #10591 (`2fdff2edba`). Production gets it with the next

@@ -22725,9 +22725,6 @@
     "stopReason": "Parada na página da meta",
     "stoppedToast": "Meta parada",
     "stopError": "Não foi possível parar a meta. Tente novamente.",
-    "makeGoal": "Transformar em meta",
-    "makeGoalSent": "Pedido enviado a este chat para virar uma meta",
-    "makeGoalError": "Não foi possível pedir. Tente novamente.",
     "needsAttention": "Precisa de atenção",
     "newGoal": "Nova meta",
     "newGoalTitle": "Nova meta",
@@ -22736,8 +22733,6 @@
     "newGoalStart": "Iniciar meta",
     "cancel": "Cancelar",
     "forPerson": "para {person}",
-    "makeGoalConfirm": "O agente transforma esta conversa em uma meta com critérios de conclusão e trabalha nela até que uma verificação confirme que está concluída.",
-    "makeGoalSend": "Pedir ao agente",
     "answerInChat": "Responder no chat",
     "forYou": "para você",
     "forMember": "para um colega"

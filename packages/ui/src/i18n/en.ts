@@ -7527,9 +7527,6 @@ const catalog = {
     "stopReason": "Stopped from the Goal page",
     "stoppedToast": "Goal stopped",
     "stopError": "Could not stop the goal. Try again.",
-    "makeGoal": "Make this a goal",
-    "makeGoalSent": "Asked this chat to make it a goal",
-    "makeGoalError": "Could not ask. Try again.",
     "needsAttention": "Needs attention",
     "newGoal": "New goal",
     "newGoalTitle": "New goal",
@@ -7540,8 +7537,6 @@ const catalog = {
     "forPerson": "for {person}",
     "forYou": "for you",
     "forMember": "for a teammate",
-    "makeGoalConfirm": "The agent turns this conversation into a goal with done criteria, then works it until a check confirms it is done.",
-    "makeGoalSend": "Ask the agent",
     "answerInChat": "Answer in chat"
   },
   "agentEditor": {

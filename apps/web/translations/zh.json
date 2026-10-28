@@ -22725,9 +22725,6 @@
     "stopReason": "从目标页面停止",
     "stoppedToast": "目标已停止",
     "stopError": "无法停止目标。请重试。",
-    "makeGoal": "将此设为目标",
-    "makeGoalSent": "已请此对话将其设为目标",
-    "makeGoalError": "无法发送请求。请重试。",
     "needsAttention": "需要关注",
     "newGoal": "新目标",
     "newGoalTitle": "新目标",
@@ -22736,8 +22733,6 @@
     "newGoalStart": "开始目标",
     "cancel": "取消",
     "forPerson": "负责人：{person}",
-    "makeGoalConfirm": "智能体会把这段对话变成带完成标准的目标，并持续推进，直到检查确认已完成。",
-    "makeGoalSend": "请智能体处理",
     "answerInChat": "在对话中回答",
     "forYou": "给你",
     "forMember": "给团队成员"

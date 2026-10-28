@@ -22725,9 +22725,6 @@
     "stopReason": "Zaustavljeno sa stranice cilja",
     "stoppedToast": "Cilj zaustavljen",
     "stopError": "Cilj nije mogao da se zaustavi. Pokušaj ponovo.",
-    "makeGoal": "Napravi cilj od ovoga",
-    "makeGoalSent": "Ovaj čet je zamoljen da od toga napravi cilj",
-    "makeGoalError": "Zahtev nije uspeo. Pokušaj ponovo.",
     "needsAttention": "Traži pažnju",
     "newGoal": "Novi cilj",
     "newGoalTitle": "Novi cilj",
@@ -22736,8 +22733,6 @@
     "newGoalStart": "Pokreni cilj",
     "cancel": "Otkaži",
     "forPerson": "za {person}",
-    "makeGoalConfirm": "Agent pretvara ovaj razgovor u cilj sa kriterijumima završetka i radi na njemu dok provera ne potvrdi da je završen.",
-    "makeGoalSend": "Pitaj agenta",
     "answerInChat": "Odgovori u četu",
     "forYou": "za tebe",
     "forMember": "za člana tima"

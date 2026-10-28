@@ -93,7 +93,7 @@ export function useGoalPerson(projectId: string) {
 /**
  * Start a goal from its outcome: a new session whose first message is the
  * outcome plus `MAKE_GOAL_PROMPT`, so the agent writes GOAL.md and its done
- * criteria (the same request "Make this a goal" sends from a chat).
+ * criteria.
  */
 export function useStartGoal(projectId: string) {
   const newSession = useNewProjectSession(projectId);

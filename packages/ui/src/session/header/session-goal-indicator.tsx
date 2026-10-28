@@ -7,22 +7,15 @@
  * heartbeat's last and next wake, and what the goal waits on a person for,
  * with a link to the goal page. The dot on the chip turns orange when the goal
  * needs attention, so a broken goal is visible from its own session.
- *
- * A session with no goal shows "Make this a goal" instead: it asks this
- * session's agent to turn the conversation into a goal (`makeSessionGoal`).
  */
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import { useNow } from '../../internal/reminders/use-refetch-after-fire';
 import { Button } from '../../primitives/button';
-import { Hint } from '../../primitives/hint';
-import { errorToast, successToast } from '../../primitives/toast';
 import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { StatusDot } from '../../primitives/status';
 import { useLocale, useTranslations } from '../../i18n';
-import { makeSessionGoal } from '@kortix/sdk';
 import { useFeatureFlag, useSessionGoal } from '@kortix/sdk/react';
-import { useMutation } from '@tanstack/react-query';
 import { TargetIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useSessionIds } from '../../providers/session-ids';
@@ -42,48 +35,10 @@ export function SessionGoalIndicator() {
   const now = useNow();
   const { projectId, sessionId } = useSessionIds<{ projectId: string; sessionId: string }>();
   const gate = useFeatureFlag(projectId, 'goals');
-  const { goal, role, isLoading } = useSessionGoal(gate.enabled ? projectId : null, sessionId);
+  const { goal, role } = useSessionGoal(gate.enabled ? projectId : null, sessionId);
   const issueText = useGoalIssueText();
   const [open, setOpen] = useState(false);
-  const makeGoal = useMutation({
-    mutationFn: () => makeSessionGoal(projectId, sessionId),
-    onSuccess: () => successToast(t('makeGoalSent')),
-    onError: () => errorToast(t('makeGoalError')),
-  });
 
-  if (gate.enabled && projectId && sessionId && !isLoading && !goal) {
-    // Asking sends a message into this chat, so the person confirms first.
-    return (
-      <Popover open={open} onOpenChange={setOpen}>
-        <Hint label={t('makeGoal')}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t('makeGoal')}
-              disabled={makeGoal.isPending || makeGoal.isSuccess}
-              data-testid="session-make-goal"
-            >
-              <TargetIcon className="text-muted-foreground size-4" />
-            </Button>
-          </PopoverTrigger>
-        </Hint>
-        <PopoverContent align="end" className="flex w-72 flex-col gap-3 p-4">
-          <p className="text-foreground text-sm font-medium">{t('makeGoal')}</p>
-          <p className="text-muted-foreground text-xs">{t('makeGoalConfirm')}</p>
-          <Button
-            size="sm"
-            className="w-fit"
-            disabled={makeGoal.isPending}
-            onClick={() => makeGoal.mutate(undefined, { onSettled: () => setOpen(false) })}
-            data-testid="session-make-goal-confirm"
-          >
-            {t('makeGoalSend')}
-          </Button>
-        </PopoverContent>
-      </Popover>
-    );
-  }
   if (!goal || !role || !projectId) return null;
   const doc = goal.goal;
   const progress = goalProgress(doc);

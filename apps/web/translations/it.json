@@ -22725,9 +22725,6 @@
     "stopReason": "Fermato dalla pagina dell’obiettivo",
     "stoppedToast": "Obiettivo fermato",
     "stopError": "Impossibile fermare l’obiettivo. Riprova.",
-    "makeGoal": "Rendilo un obiettivo",
-    "makeGoalSent": "Chiesto a questa chat di renderlo un obiettivo",
-    "makeGoalError": "Impossibile chiedere. Riprova.",
     "needsAttention": "Richiede attenzione",
     "newGoal": "Nuovo obiettivo",
     "newGoalTitle": "Nuovo obiettivo",
@@ -22736,8 +22733,6 @@
     "newGoalStart": "Avvia obiettivo",
     "cancel": "Annulla",
     "forPerson": "per {person}",
-    "makeGoalConfirm": "L’agente trasforma questa conversazione in un obiettivo con criteri di completamento, poi ci lavora finché una verifica conferma che è raggiunto.",
-    "makeGoalSend": "Chiedi all’agente",
     "answerInChat": "Rispondi nella chat",
     "forYou": "per te",
     "forMember": "per un collega"
