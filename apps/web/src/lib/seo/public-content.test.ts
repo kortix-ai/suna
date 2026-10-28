@@ -139,7 +139,8 @@ describe('public SEO/AEO content coverage', () => {
     expect(resolved?.markdown).toContain(
       'A plain-language guide to Kortix',
     );
-    expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
+    // The docs are one page: the developer reference is a section of it.
+    expect(resolved?.markdown).toContain('## Quickstart');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
 
     const mdx = `---

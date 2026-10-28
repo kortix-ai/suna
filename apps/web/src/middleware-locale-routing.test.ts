@@ -232,7 +232,8 @@ describe('docs Markdown negotiation without the middleware', () => {
     expect(source).toContain("destination: '/markdown/docs/index.md'");
     expect(source).toContain("destination: '/markdown/docs/:path*.md'");
     const docs = getPublicContentRecords().filter((record) => record.htmlPath.startsWith('/docs'));
-    expect(docs.length).toBeGreaterThan(5);
+    // One docs page, plus the unlisted Capture and audit-actions pages.
+    expect(docs.length).toBeGreaterThan(1);
     for (const record of docs.slice(0, 20)) {
       const target =
         record.htmlPath === '/docs'
