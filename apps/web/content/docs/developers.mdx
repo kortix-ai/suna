@@ -5768,7 +5768,9 @@ While the session starts, pick the view by this rule:
 
 Saved history is the copy of the session log that the API stores. A stopped sandbox does not block it. The first read holds the newest 40 messages, and `loadOlder()` pages back. An unknown `savedTranscript` is `'loading'`, never `'none'`. To show a session before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It never throws. Its `empty` field is `true` when the copy proves the conversation empty and no turn ended or is open: show the composer then. The function reads the session log. `useSession` reads that log page again when it binds.
 
-`readSavedSessionCopy` resolves `{ log, empty, envelope }`. `log` is the newest session-log page (`GET …/log`). A new session with no stored log yet answers `404` `session_log_missing`: `log` is `null`, and nothing else is read. `envelope` is deprecated.
+`readSavedSessionCopy` resolves `{ log, empty, envelope }`. `log` is the newest session-log page (`GET …/log`). A new session with no stored log yet answers `404` `session_log_missing`: `log` is `null`, and nothing else is read. `envelope` is deprecated and always `null`.
+
+No hook reads `GET …/transcript`. When `GET …/log` fails (a `5xx`, the network, a `404` with no `code`, an invalid page), `useSession` keeps the copy already on screen and reads the page again after 2 s, 10 s and 30 s, or after the API's `Retry-After` (at most 60 s). Without a log in the store, `loadOlder()` pages the runtime.
 
 A sub-agent's saved history: `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the session log, and the thread comes from `useSessionLogThread(parentSession, childRuntimeSessionId)`.
 

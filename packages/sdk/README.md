@@ -735,7 +735,7 @@ session-log types, and a test fails when the two differ. See the
 `@kortix/sdk/react` adds `useSessionLog(session)` and
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
-first when the API holds a log for the session No project flag is read.
+first when the API holds a log for the session. No project flag is read.
 Until a session's log answers a page, the hooks return `source: 'v1'`: the `fromV1`
 conversion of the runtime's v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
