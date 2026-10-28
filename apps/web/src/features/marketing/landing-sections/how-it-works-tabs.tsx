@@ -6,8 +6,7 @@ import { StepModels } from '@/features/marketing/how-it-work/step/step-models';
 import { StepSourceOfTruth } from '@/features/marketing/how-it-work/step/step-source-of-truth';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-// Copy follows the accuracy gate in how-it-work/how-it-works-content.ts:
-// connector credentials are brokered server-side; a session machine is "its
+// Copy accuracy: connector credentials are brokered server-side; a session machine is "its
 // own isolated machine", never a microVM.
 const TABS: {
   id: string;

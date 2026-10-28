@@ -336,13 +336,13 @@ export function registerSessionLogRoutes(): void {
         'included) and each text stored by reference. A box still journaling at an older generation then gets 409. ' +
         'Gzipped when the request accepts gzip and the body is 1 KiB or more. 404 `no_session_log`: no stored log, nothing claimed. ' +
         '413 `session_log_too_large`: the live messages are over `SESSION_LOG_RESTORE_MAX_BYTES`; the claim stands and the answer ' +
-        'carries every thread, rev and seq but no message.',
+        'carries every rev and seq and the part of the log that fits (`kept`): what the model sees, else the newest turns, else no message.',
       ...auth,
       request: { params },
       responses: {
         200: json(SessionLogRestoreSchema, 'The claimed generation and the whole stored log'),
         404: json(SessionLogRestoreMissingSchema, 'The session has no stored log; nothing was claimed'),
-        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered without messages'),
+        413: json(SessionLogRestoreTooLargeSchema, 'The log is over the restore cap; claimed, answered with the part that fits'),
         ...errors(403, 503),
       },
     }),

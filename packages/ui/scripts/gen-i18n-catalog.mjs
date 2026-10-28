@@ -36,7 +36,7 @@ const ROOTS = [join(PKG_DIR, 'src')];
 // The apps/web files that wire the package translator into the host. apps/web
 // product files import '@kortix/ui/i18n' too, but they render in apps/web only,
 // which ships its own catalogs, so their keys stay out of the bundled catalog.
-const ADOPTERS = ['components/kortix-ui-provider.tsx', 'i18n/translator.ts', 'test-utils/ui-host.tsx'];
+const ADOPTERS = ['components/kortix-ui-provider.tsx', 'i18n/translator.ts'];
 const SMALL = 50_000;
 const UI_TRANSLATOR_NS = 'hardcodedUi.i18nComplete';
 export const HEX_KEY = /(['"`])(text[0-9a-f]{12})\1/g;

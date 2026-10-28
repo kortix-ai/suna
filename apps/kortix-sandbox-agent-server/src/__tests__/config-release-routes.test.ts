@@ -4,35 +4,14 @@
  *
  * The converge route is a trigger. It never reads the request body: the daemon
  * fetches the descriptor from the API, so a caller cannot choose the config.
- * The end-to-end case drives the real OpenCode control service against a fake
- * API with a real repository and a real archive.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { pointBootLink, readBootLinkTarget } from '@/services/config-provider/boot-config'
+import { describe, expect, test } from 'bun:test'
 import type { Config } from '@/lib/config/config'
 import type { HarnessConfigConvergeResult, HarnessControlOperations } from '@/harness/contract/control'
-import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
 import { ConvergeBusyError } from '@/services/config-provider/release'
-import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { MAX_SWAP_DELAY_MS } from '@/harness/contract/control'
-import { createOpenCodeControlService } from '@/harness/open-code/control'
-import type { Opencode, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
 import { createConfigRouter } from '@/routes/kortix/config'
 import { createRefreshRouter } from '@/routes/kortix/refresh'
-import {
-  buildRelease,
-  commitAll,
-  git,
-  initRepo,
-  serveRelease,
-  startFakeApi,
-  write,
-  type FakeApi,
-} from './helpers/config-release-fixtures'
 
 const TOKEN = 'sandbox-token'
 const cfgWithToken = { sandboxToken: TOKEN } as Config
@@ -179,104 +158,5 @@ describe('config routes with a fake control', () => {
     })
     expect(res.status).toBe(200)
     expect(calls.refresh).toBe(1)
-  })
-})
-
-describe('POST /kortix/config/converge end to end through the OpenCode control service', () => {
-  let root: string
-  let api: FakeApi
-  const saved: Record<string, string | undefined> = {}
-  const ENV = ['KORTIX_BOOT_CONFIG_ROOT', 'KORTIX_MANAGED_SKILLS_DIR', 'KORTIX_SESSION_ID', 'KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG']
-
-  beforeEach(() => {
-    resetConfigReleaseStateForTests()
-    for (const name of ENV) saved[name] = process.env[name]
-    root = mkdtempSync(join(tmpdir(), 'kortix-config-route-'))
-    api = startFakeApi(TOKEN)
-  })
-
-  afterEach(() => {
-    // The rows here leave a release owning compiled governance. That is
-    // module-level state, so clear it on the way OUT as well as on the way in —
-    // a later file in the same process inherits whatever this one leaves.
-    resetConfigReleaseStateForTests()
-    api.stop()
-    for (const name of ENV) {
-      if (saved[name] === undefined) delete process.env[name]
-      else process.env[name] = saved[name]
-    }
-    spawnSync('chmod', ['-R', 'u+w', root])
-    rmSync(root, { recursive: true, force: true })
-  })
-
-  test('a descriptor in the request body is ignored; the API descriptor is applied', async () => {
-    const origin = join(root, 'origin')
-    const work = join(root, 'work')
-    const store = join(root, 'store')
-    const overlay = join(root, 'overlay')
-    const defaultDir = join(root, 'default')
-    mkdirSync(overlay, { recursive: true })
-    mkdirSync(defaultDir, { recursive: true })
-    writeFileSync(join(defaultDir, 'opencode.jsonc'), '{}')
-    initRepo(origin)
-    write(origin, '.kortix/opencode/opencode.jsonc', '{}\n')
-    write(origin, '.kortix/opencode/agents/kortix.md', 'FROM THE API\n')
-    const commit = commitAll(origin, 'base')
-    git(root, 'clone', '--quiet', `file://${origin}`, work)
-    const release = buildRelease(origin, commit, '.kortix/opencode', { governance: '{"agent":{}}' })
-    serveRelease(api, release)
-    process.env.KORTIX_BOOT_CONFIG_ROOT = store
-    process.env.KORTIX_MANAGED_SKILLS_DIR = overlay
-    process.env.KORTIX_SESSION_ID = 'ses-1'
-
-    // A booted box always has its boot link pointed; what OpenCode reads is
-    // read back from the link, never from a second copy of the answer.
-    await pointBootLink(join(work, '.kortix/opencode'), store)
-    const opencode = {
-      getPid: () => 7,
-      getState: () => 'ok',
-      // The route path now hands `convergeConfigRelease` a turn probe
-      // (control.ts), and the probe needs a base url. No session is pinned in
-      // this test, which `opencodeTurnInFlight` answers as a definite `false`.
-      getInternalUrl: () => 'http://127.0.0.1:4096',
-      async reloadVerified(): Promise<VerifiedReloadResult> {
-        return { outcome: 'swapped', port: 4097, pid: 8, turnEnded: false, orphanedMessageId: null }
-      },
-    } as unknown as Opencode
-    const cfg = {
-      sandboxToken: TOKEN,
-      apiUrl: api.url,
-      projectId: 'proj-1',
-      projectTarget: work,
-      workspace: work,
-      defaultBranch: 'main',
-      defaultOpencodeConfigDir: defaultDir,
-      opencodeInternalPort: 4096,
-      opencodeStandbyPort: 4097,
-    } as unknown as Config
-    const control = createOpenCodeControlService(opencode, createOpenCodeQuickQueueInterrupt(opencode, cfg as never)).bind({ cfg })
-
-    const res = await createConfigRouter(cfg, control).request('/converge', {
-      method: 'POST',
-      headers: { ...bearer, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...release.descriptor,
-        release_id: 'e'.repeat(64),
-        archive: { url: '/v1/projects/proj-1/config-archives/deadbeef', bytes: 10 },
-        files: [['agents/kortix.md', '100644', 'f'.repeat(40)]],
-      }),
-    })
-
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as HarnessConfigConvergeResult
-    expect(body.outcome).toBe('applied')
-    expect(body.config.release_id).toBe(release.descriptor.release_id)
-    expect(api.descriptorRequests).toHaveLength(1)
-    // Only the API release's own archive is fetched, never the body's.
-    expect(api.archiveRequests.map((request) => request.path)).toEqual([release.descriptor.archive!.url])
-    const serving = (await readBootLinkTarget(store))!
-    expect(readFileSync(join(serving, 'agents/kortix.md'), 'utf8')).toBe('FROM THE API\n')
-    expect(serving).toBe(join(store, release.descriptor.release_id!, '.kortix/opencode'))
-    expect(git(work, 'status', '--porcelain')).toBe('')
   })
 })

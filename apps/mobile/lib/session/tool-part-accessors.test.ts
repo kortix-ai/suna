@@ -156,7 +156,7 @@ describe('error helpers (SDK re-exports)', () => {
   });
 });
 
-// Ported from apps/web lib/markdown-detect.ts semantics.
+// Ported from `looksLikeMarkdown` (@kortix/shared/tool-output) semantics.
 describe('looksLikeMarkdown', () => {
   test('unambiguous syntax matches', () => {
     expect(looksLikeMarkdown('## Heading')).toBe(true);
