@@ -34,6 +34,8 @@ const out = (result: unknown) => result as string
 
 function router(handle: (call: Call) => unknown | Response): void {
   server = Bun.serve({
+    // The exact address the tool dials: another process on 127.0.0.1:<port> beside a wildcard bind would answer instead.
+    hostname: '127.0.0.1',
     port: 0,
     async fetch(req) {
       const call = { path: new URL(req.url).pathname, headers: Object.fromEntries(req.headers), body: await req.json() }
@@ -41,6 +43,8 @@ function router(handle: (call: Call) => unknown | Response): void {
       const reply = await handle(call)
       return reply instanceof Response ? reply : Response.json(reply)
     },
+    // A throwing handler answers JSON naming the throw, never Bun's HTML error page.
+    error: (err) => Response.json({ success: false, error: `fake threw: ${err}` }, { status: 500 }),
   })
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
   process.env.KORTIX_TOKEN = 'kortix_sb_test'
@@ -802,6 +806,20 @@ describe('show', () => {
       const result = JSON.parse(out(await show({ type: 'image', path: 'big.png' })))
       expect(result.entry.path).toBe(join(dir, 'big.png'))
       expect(result.entry).not.toHaveProperty('sha256')
+    })
+
+    test('a digest that misses the 2 s deadline is left out and show still answers', async () => {
+      writeFileSync(join(dir, 'cat.png'), PNG)
+      const native = AbortSignal.timeout
+      const patched = AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }
+      patched.timeout = () => AbortSignal.abort(new DOMException('deadline', 'TimeoutError'))
+      try {
+        const result = JSON.parse(out(await show({ type: 'image', path: 'cat.png' })))
+        expect(result).toMatchObject({ success: true, entry: { type: 'image', path: join(dir, 'cat.png') } })
+        expect(result.entry).not.toHaveProperty('sha256')
+      } finally {
+        patched.timeout = native
+      }
     })
 
     test('an image path that is a directory carries none and still shows', async () => {

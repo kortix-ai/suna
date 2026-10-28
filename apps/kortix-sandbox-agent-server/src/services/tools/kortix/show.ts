@@ -12,8 +12,9 @@
  * An entry whose `path` is an image file (by extension) of at most 32 MiB
  * gains `sha256`, the lowercase hex digest of its bytes, so a client can match
  * it to the same picture it already holds (an image_gen result copied
- * elsewhere). The files are hashed at the same time, streamed, within 2 s in
- * total; a file that cannot be read in time gets no `sha256`.
+ * elsewhere). The files are hashed at the same time, streamed (symlinks
+ * followed); `show` waits for them at most 2 s in total, and a digest that is
+ * not ready by then (a slow or hung mount) is left out.
  */
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
@@ -228,15 +229,23 @@ async function imageSha256(path: string, signal: AbortSignal): Promise<string | 
   }
 }
 
-/** Add `sha256` to each image entry, all at once, within HASH_TIMEOUT_MS. */
+/**
+ * Add `sha256` to each image entry, all at once. Waits at most HASH_TIMEOUT_MS: `stat` takes no
+ * signal and an aborted stream waits for its in-flight read, so the work races the deadline and
+ * only digests ready before it are written. Late work settles on its own (imageSha256 never rejects).
+ */
 async function addImageDigests(entries: ShowEntry[]): Promise<void> {
   const signal = AbortSignal.timeout(HASH_TIMEOUT_MS)
-  await Promise.all(
+  const digests = new Map<ShowEntry, string>()
+  const work = Promise.all(
     entries.map(async (entry) => {
       const sha256 = entry.path ? await imageSha256(entry.path, signal) : undefined
-      if (sha256) entry.sha256 = sha256
+      if (sha256 && !signal.aborted) digests.set(entry, sha256)
     }),
   )
+  const deadline = new Promise<void>((done) => (signal.aborted ? done() : signal.addEventListener('abort', () => done(), { once: true })))
+  await Promise.race([work, deadline])
+  for (const [entry, sha256] of digests) entry.sha256 = sha256
 }
 
 // ── Tool definition ────────────────────────────────────────────────────────
