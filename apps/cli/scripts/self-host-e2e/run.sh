@@ -147,8 +147,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "API_PORT=$API_PORT" \
   "SUPABASE_PORT=$SUPABASE_PORT" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
-  "DAYTONA_API_KEY=self-host-control-plane-e2e" >/dev/null
+  "ALLOWED_SANDBOX_PROVIDERS=platinum" >/dev/null
 ok "Config initialized without prompts"
 
 section "Start Stack"

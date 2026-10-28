@@ -136,7 +136,7 @@ resource "aws_security_group" "this" {
 
   #trivy:ignore:AVD-AWS-0104 general-purpose box — outbound to registries/ACME/apt/sandbox targets, no fixed allowlist
   egress {
-    description = "All outbound (image pulls, ACME, Daytona API, etc.)"
+    description = "All outbound (image pulls, ACME, Platinum API, etc.)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

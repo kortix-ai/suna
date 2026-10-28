@@ -62,8 +62,7 @@ load_local_env() {
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
   # Default only — the shared .env (decrypted above) or a personal .env.local
-  # (below) decides the real provider order (e.g. "platinum,daytona").
-  # Platinum is the reference provider; Daytona is a legacy opt-in fallback.
+  # (below) can override it. Platinum is the only sandbox provider.
   export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-platinum}"
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Platinum)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
@@ -137,11 +136,11 @@ ensure_dev_tunnel() {
 
   # Non-cloud providers run on this machine — no public callback needed.
   # Honor an explicit opt-out too.
-  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
+  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || "$default_provider" != "platinum" ]]; then
     export KORTIX_URL="$api_origin"
     printf '%s' "$api_origin" > "$TUNNEL_URL_FILE"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
-    if [[ "$default_provider" == "platinum" || "$default_provider" == "daytona" ]]; then
+    if [[ "$default_provider" == "platinum" ]]; then
       echo "[dev] ⚠️  Default sandbox provider ($default_provider) is a cloud provider but the tunnel is off —"
       echo "[dev]     sessions will fail with 'OpenCode runtime is not ready' because the"
       echo "[dev]     sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."

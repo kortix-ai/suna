@@ -44,7 +44,6 @@
 #   --update-interval <secs>   Auto-updater poll interval (default: 86400). Env: KORTIX_SELFHOST_UPDATE_INTERVAL.
 #   --instance <name>          Self-host instance name (default: default). Env: KORTIX_SELFHOST_INSTANCE.
 #   --platinum-key <key>       Platinum API key (the reference sandbox provider). Env: PLATINUM_API_KEY.
-#   --daytona-key <key>        Legacy fallback only (removal scheduled, no support). Env: DAYTONA_API_KEY.
 #   -h, --help                 Show this help.
 #
 # Note on env var naming: KORTIX_SELFHOST_CHANNEL (not KORTIX_CHANNEL) is used
@@ -72,7 +71,6 @@ AUTO_UPDATE="${KORTIX_SELFHOST_AUTO_UPDATE:-on}"
 UPDATE_INTERVAL="${KORTIX_SELFHOST_UPDATE_INTERVAL:-86400}"
 INSTANCE="${KORTIX_SELFHOST_INSTANCE:-default}"
 PLATINUM_KEY="${PLATINUM_API_KEY:-}"
-DAYTONA_KEY="${DAYTONA_API_KEY:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -84,7 +82,6 @@ while [ $# -gt 0 ]; do
     --update-interval) UPDATE_INTERVAL="${2:?--update-interval requires a value}"; shift 2 ;;
     --instance) INSTANCE="${2:?--instance requires a value}"; shift 2 ;;
     --platinum-key) PLATINUM_KEY="${2:?--platinum-key requires a value}"; shift 2 ;;
-    --daytona-key) DAYTONA_KEY="${2:?--daytona-key requires a value}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
@@ -196,16 +193,11 @@ if [ -n "$DOMAIN" ]; then
 fi
 
 # ─── Optional: sandbox provider now, instead of later ────────────────────────
-# Platinum is the reference provider and comes first. Daytona is a legacy
-# fallback: its removal is scheduled and it gets no support guarantee.
+# Platinum is the only sandbox provider.
 PROVIDER_ARGS=()
 PROVIDERS=""
 if [ -n "$PLATINUM_KEY" ]; then
   PROVIDER_ARGS+=("PLATINUM_API_KEY=$PLATINUM_KEY"); PROVIDERS="platinum"
-fi
-if [ -n "$DAYTONA_KEY" ]; then
-  warn "--daytona-key: Daytona is a legacy fallback (removal scheduled, no support guarantee). Use --platinum-key."
-  PROVIDER_ARGS+=("DAYTONA_API_KEY=$DAYTONA_KEY"); PROVIDERS="${PROVIDERS:+$PROVIDERS,}daytona"
 fi
 if [ -n "$PROVIDERS" ]; then
   log "configuring sandbox providers: $PROVIDERS"

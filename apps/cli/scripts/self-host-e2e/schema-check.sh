@@ -102,19 +102,15 @@ case "$API_IMAGE" in
   *) die "API_IMAGE must be kortix/kortix-api:<tag> (got '$API_IMAGE') — init derives images from the tag" ;;
 esac
 $CLI self-host init --instance "$INSTANCE" --local-images --tag "$API_TAG" >/dev/null
-# Schema-only gate: this never provisions a sandbox. `self-host init` defaults
-# the provider to daytona, which makes env-validation require Daytona creds, so
-# supply dummy ones — they only need to be present for the API to boot; Daytona
-# is never actually called during a schema check (provider use is lazy).
+# Schema-only gate: this never provisions a sandbox. On self-host a missing
+# PLATINUM_API_KEY is a boot warning, not an error, and provider use is lazy,
+# so the API boots without any sandbox credential.
 $CLI self-host env set --instance "$INSTANCE" \
   "API_PUBLIC_URL=http://localhost:$API_PORT" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \
   "API_PORT=$API_PORT" "SUPABASE_PORT=$SUPABASE_PORT" "POSTGRES_PORT=$POSTGRES_PORT" \
   "FRONTEND_PORT=$FRONTEND_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
-  "DAYTONA_API_KEY=schema-check-dummy" \
-  "DAYTONA_SERVER_URL=https://daytona.invalid" \
-  "DAYTONA_TARGET=schema-check" >/dev/null
+  "ALLOWED_SANDBOX_PROVIDERS=platinum" >/dev/null
 ok "config initialized"
 
 section "Bring Up Data Plane (db, auth, rest, kong, migrate, api)"

@@ -8,7 +8,7 @@
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
 #   2. Deploy-target — staging auto-builds. Production deploys through the
-#      gated workflow. Dev uses ECS. PR previews use Platinum or Daytona.
+#      gated workflow. Dev uses ECS. PR previews use Platinum.
 #
 # Staging defaults to BUILD on uncertainty. Dev and PR previews default to SKIP.
 # Production auto-builds always skip because deploy-prod.yml owns that release.
