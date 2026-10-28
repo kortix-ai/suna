@@ -21064,7 +21064,9 @@
     "secretsEmptyProject": "No project secrets yet.",
     "secretsEmptyTitle": "No secrets yet",
     "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
-    "connectorsSearch": "Search connectors"
+    "connectorsSearch": "Search connectors",
+    "sandboxSecretsEmptyTitle": "Nema tajni za sandbox",
+    "sandboxSecretsEmptyDescription": "Agent dobija promenljive okruženja i tajne koje se primenjuju na mreži. Prijave za modele i akreditivi konektora ostaju u Kortixu: Modeli i Konektori određuju ko ih koristi."
   },
   "connectorsAppReturn": {
     "done": "Gotovo. Nazad u Kortix aplikaciju"

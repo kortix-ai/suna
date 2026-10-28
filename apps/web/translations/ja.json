@@ -21064,7 +21064,9 @@
     "secretsEmptyProject": "No project secrets yet.",
     "secretsEmptyTitle": "No secrets yet",
     "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
-    "connectorsSearch": "Search connectors"
+    "connectorsSearch": "Search connectors",
+    "sandboxSecretsEmptyTitle": "サンドボックスのシークレットはありません",
+    "sandboxSecretsEmptyDescription": "エージェントが受け取るのは環境変数とネットワークで適用されるシークレットです。モデルのログインとコネクタの認証情報は Kortix が保持し、誰が使うかはモデルとコネクタの設定で決まります。"
   },
   "connectorsAppReturn": {
     "done": "完了。Kortix アプリに戻る"

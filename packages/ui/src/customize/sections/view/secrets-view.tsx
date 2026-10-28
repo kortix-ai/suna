@@ -480,8 +480,12 @@ export function SecretsView({
                 <EmptyState
                   icon={KeyRound}
                   size="sm"
-                  title={tI18nComplete.raw('text5aa40906d187')}
-                  description={tI18nComplete.raw('text234482872368')}
+                  title={agentGrant && projectRows.length > 0 ? tAgentScope('sandboxSecretsEmptyTitle') : tI18nComplete.raw('text5aa40906d187')}
+                  description={
+                    agentGrant && projectRows.length > 0
+                      ? tAgentScope('sandboxSecretsEmptyDescription')
+                      : tI18nComplete.raw('text234482872368')
+                  }
                   action={
                     canManage ? (
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={openCreate}>

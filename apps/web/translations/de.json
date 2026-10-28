@@ -21064,7 +21064,9 @@
     "secretsEmptyProject": "No project secrets yet.",
     "secretsEmptyTitle": "No secrets yet",
     "secretsEmptyDescription": "Secrets added to the project show up here for this agent.",
-    "connectorsSearch": "Search connectors"
+    "connectorsSearch": "Search connectors",
+    "sandboxSecretsEmptyTitle": "Keine Sandbox-Secrets",
+    "sandboxSecretsEmptyDescription": "Ein Agent erhält Umgebungsvariablen und im Netzwerk erzwungene Secrets. Modell-Logins und Connector-Zugangsdaten bleiben bei Kortix: Modelle und Connectors legen fest, wer sie nutzt."
   },
   "connectorsAppReturn": {
     "done": "Fertig. Zurück zur Kortix-App"

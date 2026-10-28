@@ -1869,6 +1869,8 @@ const catalog = {
     }
   },
   "agentScope": {
+    "sandboxSecretsEmptyTitle": "No sandbox secrets",
+    "sandboxSecretsEmptyDescription": "An agent receives environment variables and network-enforced secrets. Model logins and connector credentials stay with Kortix: Models and Connectors decide who uses them.",
     "modeAll": "All",
     "modeSpecific": "Specific",
     "modeNone": "None",
