@@ -79,8 +79,9 @@ customers. A signed Order keeps the Terms version it names.
    `TERMS_VERSION` to the merge day, `TERMS_EFFECTIVE` 37 days later, and
    `TERMS_CHANGES` to one sentence per change.
 3. If the change affects what a person accepts at signup, change the
-   consent line too (`packages/ui/src/internal/auth/auth-card-shell.tsx`,
-   key `auth.customerLogoNotice` for the publicity clause).
+   consent line too (`packages/ui/src/internal/auth/auth-card-shell.tsx`).
+   The publicity clause has no line of its own on `/auth`; the notice email
+   and the Terms carry it.
 4. Merge to `dev`. The notice ships with the next prod release.
 
 `runTermsNoticeSweep` (`apps/api/src/billing/services/terms-notices.ts`) runs

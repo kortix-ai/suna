@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 **/node_modules/
+# A node_modules symlink is a file, which the patterns above miss.
+**/node_modules
 .pnpm-store/
 
 # Build outputs

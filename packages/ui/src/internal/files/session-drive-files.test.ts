@@ -81,4 +81,22 @@ describe('session drive files', () => {
     expect(sandboxReads).toEqual(['/workspace/report.md', '/drives/unmounted/a.txt']);
     expect(driveReads).toHaveLength(2);
   });
+
+  test("closing a scope opened over a session page restores the page's scope", async () => {
+    openSession();
+    // A review item from another session opens its files over the page.
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(qk.drives.session('p1', 's2'), {
+      drives: [{ driveId: 'review', mountPath: '/drives/me', subdir: '/' }],
+      personal: true,
+    });
+    const closeReview = setSessionDriveFilesScope({ projectId: 'p1', sessionId: 's2', queryClient });
+    await readFileAsBlob('/drives/me/a.gif');
+    closeReview();
+    await readFileAsBlob('/drives/me/b.gif');
+    expect(driveReads).toEqual([
+      { driveId: 'review', path: '/a.gif' },
+      { driveId: DRIVE, path: '/Users/ana/b.gif' },
+    ]);
+  });
 });
