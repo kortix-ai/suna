@@ -8,7 +8,7 @@ import { cn } from '../../lib/utils';
 import { type SessionStartResult } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useContext, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 
 import { TranscriptRowsContext } from '../thread/transcript-rows';
 
@@ -169,12 +169,15 @@ export function SessionStartingLoader({
   note,
   reason,
   failure,
+  fallback = null,
 }: {
   projectId?: string;
   sessionId?: string;
   note?: string | null;
   reason?: string | null;
   failure?: StartFailure;
+  /** What a routine wake shows. Default: nothing. */
+  fallback?: ReactNode;
 }) {
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
@@ -184,7 +187,7 @@ export function SessionStartingLoader({
   const restartable =
     now - clockStart >= STUCK_AFTER_MS && canOfferBootRestart(session, projectId, sessionId);
 
-  if (!statusNote && !restartable) return null;
+  if (!statusNote && !restartable) return fallback;
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
       <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">
@@ -203,6 +206,36 @@ export function SessionStartingLoader({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The body of a tool card (Terminal, Browser, Files) opened while the session's
+ * computer boots: the wake's status when it needs attention, else a spinner and
+ * one line, centered where the live tool will appear.
+ */
+export function SessionBootStatus({
+  projectId,
+  sessionId,
+}: {
+  projectId?: string;
+  sessionId?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <SessionStartingLoader
+      projectId={projectId}
+      sessionId={sessionId}
+      fallback={
+        <div
+          role="status"
+          className="text-muted-foreground flex h-full min-h-0 w-full flex-1 items-center justify-center gap-2 px-4 text-xs"
+        >
+          <Loading variant="spokes" className="size-4 shrink-0 motion-reduce:animate-none" />
+          {tI18nComplete.raw('textac4e05b19878')}
+        </div>
+      }
+    />
   );
 }
 

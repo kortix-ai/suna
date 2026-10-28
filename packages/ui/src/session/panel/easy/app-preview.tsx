@@ -42,7 +42,16 @@ import {
   SparkleIcon as SparklesSolid,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   PreviewLoadingOverlay,
   SandboxAddressBar,
@@ -159,8 +168,6 @@ export function AppPreview({
   const [slow, setSlow] = useState(false);
 
   const addressRef = useRef<HTMLInputElement>(null);
-
-  const isMobile = useIsMobile();
 
   // Copy link mints a PUBLIC share and copies `/share/session/{token}`.
   // It used to copy `previewUrl` — the authenticated `/v1/p/{sandbox}/{port}/…`
@@ -314,56 +321,27 @@ export function AppPreview({
 
   return (
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
-      <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
-        <DetailSidebarToggle />
-        <SandboxAddressBar
-          displayValue={current}
-          hasPreview={hasPreview}
-          isLoading={isLoading}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onBack={goBack}
-          onForward={goForward}
-          onReload={reload}
-          onHome={() => navigateTo('')}
-          onNavigate={navigateTo}
-          suggestions={suggestions}
-          placeholder={tI18nComplete.raw('text878abd024f27')}
-          inputRef={addressRef}
-          trailing={
-            // An app has no file to save and no text to put on a clipboard, so
-            // `Copy link` is the one copy action — the thing you can hand
-            // someone for a running port.
-            <ViewerActions copy={appCopy} shareContext={shareContext} shareInput={shareInput} />
-          }
-        />
-
-        {/* Opening the app in a real browser tab is the only capability the
-            panel itself cannot offer, so it is a visible control outside the
-            pill. */}
-        <ButtonGroup className="shrink-0">
-          <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
-            <Button
-              variant="secondary"
-              size="icon"
-              disabled={!hasPreview}
-              aria-label={tI18nComplete.raw('text306ef19c8ac3')}
-              onClick={() => {
-                if (!previewUrl) return;
-                track('app_opened_new_tab');
-                window.open(previewUrl, '_blank', 'noopener,noreferrer');
-              }}
-              className="size-7 shrink-0 active:scale-[0.96]"
-            >
-              <ArrowSquareOutIcon className="size-3.5" />
-            </Button>
-          </Hint>
-
-          <PanelWidthButton isMobile={isMobile} />
-
-          <CloseButton onClose={onClose} />
-        </ButtonGroup>
-      </div>
+      <AppPreviewToolbar
+        previewUrl={previewUrl}
+        onClose={onClose}
+        displayValue={current}
+        isLoading={isLoading}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        onBack={goBack}
+        onForward={goForward}
+        onReload={reload}
+        onHome={() => navigateTo('')}
+        onNavigate={navigateTo}
+        suggestions={suggestions}
+        inputRef={addressRef}
+        trailing={
+          // An app has no file to save and no text to put on a clipboard, so
+          // `Copy link` is the one copy action — the thing you can hand
+          // someone for a running port.
+          <ViewerActions copy={appCopy} shareContext={shareContext} shareInput={shareInput} />
+        }
+      />
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {isLoading && hasPreview && !noApp && (
@@ -453,6 +431,95 @@ export function AppPreview({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The Browser card's toolbar: sidebar toggle, address bar, open in a new tab,
+ * width, close. Shared by the live preview and the booting card, so the two
+ * cannot drift.
+ */
+function AppPreviewToolbar({
+  previewUrl,
+  onClose,
+  ...address
+}: Omit<ComponentProps<typeof SandboxAddressBar>, 'hasPreview' | 'placeholder'> & {
+  previewUrl?: string | null;
+  onClose: () => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const isMobile = useIsMobile();
+  return (
+    <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
+      <DetailSidebarToggle />
+      <SandboxAddressBar
+        {...address}
+        hasPreview={!!previewUrl}
+        placeholder={tI18nComplete.raw('text878abd024f27')}
+      />
+
+      {/* Opening the app in a real browser tab is the only capability the
+          panel itself cannot offer, so it is a visible control outside the
+          pill. */}
+      <ButtonGroup className="shrink-0">
+        <Hint label={tI18nComplete.raw('text306ef19c8ac3')} side="bottom">
+          <Button
+            variant="secondary"
+            size="icon"
+            disabled={!previewUrl}
+            aria-label={tI18nComplete.raw('text306ef19c8ac3')}
+            onClick={() => {
+              if (!previewUrl) return;
+              track('app_opened_new_tab');
+              window.open(previewUrl, '_blank', 'noopener,noreferrer');
+            }}
+            className="size-7 shrink-0 active:scale-[0.96]"
+          >
+            <ArrowSquareOutIcon className="size-3.5" />
+          </Button>
+        </Hint>
+
+        <PanelWidthButton isMobile={isMobile} />
+
+        <CloseButton onClose={onClose} />
+      </ButtonGroup>
+    </div>
+  );
+}
+
+const noop = () => {};
+
+/**
+ * The Browser card while the session's computer boots: the real toolbar, every
+ * control that needs the computer disabled, over `children` (the boot status).
+ * Mounts nothing that reaches the sandbox: no proxy, no app list, no frame.
+ */
+export function AppPreviewBooting({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const addressRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
+      <AppPreviewToolbar
+        onClose={onClose}
+        displayValue=""
+        isLoading={false}
+        canGoBack={false}
+        canGoForward={false}
+        onBack={noop}
+        onForward={noop}
+        onReload={noop}
+        onHome={noop}
+        onNavigate={noop}
+        inputRef={addressRef}
+        disabled
+      />
+      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }
