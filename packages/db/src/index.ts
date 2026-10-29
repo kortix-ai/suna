@@ -291,6 +291,7 @@ export {
   connectorProjectSettings,
   connectorSyncFences,
   connectorCalls,
+  connectorHeldCalls,
   connectorAttachments,
   promptAttachments,
   jobQueue,
