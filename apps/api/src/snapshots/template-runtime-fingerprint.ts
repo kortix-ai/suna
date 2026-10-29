@@ -15,6 +15,9 @@ import {
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
+  VOXL_SHA256_AMD64,
+  VOXL_SHA256_ARM64,
+  VOXL_VERSION,
 } from '@kortix/shared';
 import { SANDBOX_VERSION } from '../config';
 import {
@@ -210,7 +213,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // runtime user cannot read it and `localhost` never resolves — Bun fetch to
 // an http://localhost origin dials ::1 and fails (db-suites red on every
 // fresh worker sandbox until a manual chmod; KRTX-1814).
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v50';
+// v51: the session desktop (Xvfb + XFCE + voxl on :6901, desktop.ts) and the
+// entrypoint that starts it; voxl's version and digests join the integrity key.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v51';
 
 // The runtime layer bakes source artifacts into every template's rootfs. The
 // first set is the kortix-agent binary (its source, package.json and the shared
@@ -252,6 +257,9 @@ const runtimeIntegrityKey = () =>
     UV_SHA256_ARM64,
     BUN_SHA256_AMD64,
     BUN_SHA256_ARM64,
+    VOXL_VERSION,
+    VOXL_SHA256_AMD64,
+    VOXL_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
   `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${PI_SYSTEM_PACKAGES.join(',')}:${runtimeIntegrityKey()}`;
