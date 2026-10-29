@@ -3,7 +3,7 @@ import { MARKETING_RELEASE_TRANSLATION_KEYS } from '@/i18n/marketing-release-tra
 import { useTranslations } from '@/i18n/use-translations';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 
-import { FILES, MANIFEST } from '@/features/marketing/framework/content';
+import { MANIFEST } from '@/features/marketing/framework/content';
 import { cn } from '@kortix/ui';
 import { PauseIcon, PlayIcon } from '@phosphor-icons/react';
 import { useReducedMotion } from 'motion/react';
@@ -31,7 +31,7 @@ const LAST_TRIGGER = MANIFEST.indexOf('  - slug: weekly-post') + 1;
 type Layer = 'session' | 'framework';
 type Step = { label: string; layer: Layer; focus?: FrameworkFocus };
 
-/** Two modes, played in one loop: four Workspace steps, then five Framework steps. */
+/** Two modes, played in one loop: four Workspace steps, then four Framework steps. */
 const sourceMODES: { label: string; steps: Step[] }[] = [
   {
     label: 'Workspace',
@@ -46,15 +46,6 @@ const sourceMODES: { label: string; steps: Step[] }[] = [
     label: 'Framework',
     steps: [
       { label: 'Agents as code', layer: 'framework', focus: block('agents') },
-      {
-        label: 'pi extensions',
-        layer: 'framework',
-        focus: {
-          file: 'extensions/block-secrets.ts',
-          from: 1,
-          to: FILES['extensions/block-secrets.ts'].length,
-        },
-      },
       { label: 'Connectors and policies', layer: 'framework', focus: block('connectors') },
       { label: 'Triggers run 24/7', layer: 'framework', focus: block('triggers') },
       {
@@ -86,7 +77,7 @@ const STEP_MS = 7500;
  * its stretch: the goal sent and worked, HubSpot connected and a write
  * approved, a schedule created and its first run, the session shared and a
  * teammate writing in it. Framework puts a kortix.yaml block in focus per
- * step, opens the pi extension file, then `kortix ship` prints. One Arcadia project throughout. Nothing plays or advances until 60% of the player is in view.
+ * step, then `kortix ship` prints. One Arcadia project throughout. Nothing plays or advances until 60% of the player is in view.
  * Pause, or opening a file in the framework view, holds the step. Reduced
  * motion: no auto-advance, no timeline, every scene in its final state.
  */
