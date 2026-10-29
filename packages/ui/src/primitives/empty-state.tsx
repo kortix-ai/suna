@@ -3,9 +3,10 @@
 /**
  * Kortix <EmptyState> — centered empty view.
  *
- * Minimal. An icon, a one-line headline, an optional body, and up to two
- * actions (primary + secondary). A calm teaching moment rather than a
- * brick wall.
+ * Minimal. The fanned-card artwork (`EmptyArt`, with `icon` on its front card,
+ * or a blank document without one), a one-line headline, an optional body,
+ * and up to two actions (primary + secondary). Every empty view draws the
+ * same picture, title and body; only the glyph and the words change.
  *
  *   <EmptyState
  *     icon={IconInbox}
@@ -15,6 +16,7 @@
  *   />
  */
 
+import { EmptyArt } from './empty-art';
 import {
   Empty,
   EmptyContent,
@@ -33,9 +35,9 @@ import type { ReactNode } from 'react';
 
 export interface EmptyStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;
-  /** Custom artwork in place of `icon`. */
+  /** Custom artwork in place of `EmptyArt`. */
   media?: ReactNode;
-  title: string;
+  title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
   secondaryAction?: ReactNode;
@@ -53,26 +55,17 @@ export function EmptyState({
   size = 'default',
   className,
 }: EmptyStateProps) {
-  const iconSize = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10';
   const maxW = size === 'sm' ? 'max-w-[240px]' : 'max-w-[320px]';
 
   return (
     <Empty className={cn('', className)}>
       <EmptyHeader className={maxW}>
-        {media ? (
-          <EmptyMedia className="mb-5">{media}</EmptyMedia>
-        ) : (
-          IconComponent && (
-            <EmptyMedia className="mb-4">
-              <IconComponent className={cn(iconSize, 'text-muted-foreground')} />
-            </EmptyMedia>
-          )
-        )}
+        <EmptyMedia className="mb-5">{media ?? <EmptyArt icon={IconComponent} />}</EmptyMedia>
         <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">
           {title}
         </EmptyTitle>
         {description && (
-          <EmptyDescription className="text-muted-foreground/80 mt-1.5">
+          <EmptyDescription className="text-muted-foreground mt-1.5">
             {description}
           </EmptyDescription>
         )}

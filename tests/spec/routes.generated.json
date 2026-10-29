@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 979,
+  "count": 980,
   "routes": [
     {
       "method": "GET",
@@ -2717,6 +2717,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/jwks.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/link-preview"
     },
     {
       "method": "GET",
