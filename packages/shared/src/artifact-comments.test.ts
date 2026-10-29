@@ -72,4 +72,25 @@ describe('artifact text re-anchoring', () => {
   test('does not let a later worse match overwrite a better one', () => {
     expect(reanchorArtifactText('xxabcdefghijklmnopqrsXyy abcXefghijklmnopqrXtyy', anchor('abcdefghijklmnopqrst'))).toEqual({ start: 2, end: 22, outdated: false });
   });
+
+  test('disambiguates repeated exact quotes with bounded context', () => {
+    const repeated = 'a'.repeat(1_048_576);
+    expect(reanchorArtifactText(`${repeated}L a R`, anchor('a', 'L ', ' R')))
+      .toEqual({ start: repeated.length + 2, end: repeated.length + 3, outdated: false });
+  });
+
+  test('keeps leading deletions when context selects one of repeated fuzzy quotes', () => {
+    const quote = 'abcdefghijklmnopqrstuvwxyz123456';
+    const shortened = quote.slice(3);
+    expect(reanchorArtifactText(`L${shortened}R -- ${shortened}R`, anchor(quote, 'L', 'R')))
+      .toEqual({ start: 1, end: 1 + shortened.length, outdated: false });
+  });
+
+  test('finds a contextual fuzzy quote at the end of a 16 MiB document with dense false context candidates', () => {
+    const repeated = 'ab'.repeat((16 * 1024 * 1024 - 34) / 2);
+    const text = `${repeated}a${'ab'.repeat(16)}a`;
+    expect(text.length).toBe(16 * 1024 * 1024);
+    expect(reanchorArtifactText(text, anchor(`${'ab'.repeat(15)}Xb`, 'a', 'a')))
+      .toEqual({ start: repeated.length + 1, end: repeated.length + 33, outdated: false });
+  });
 });

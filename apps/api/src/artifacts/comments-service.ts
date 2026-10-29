@@ -52,7 +52,7 @@ function commentView(row: Comment) {
     author_session_id: row.authorSessionId,
     body: row.deletedAt ? '' : row.body,
     mentions: row.deletedAt ? [] : row.mentions,
-    marks: row.deletedAt ? null : row.marks,
+    marks: row.deletedAt ? [] : row.marks,
     screenshot_key: row.deletedAt ? null : row.screenshotKey,
     created_at: row.createdAt.toISOString(),
     edited_at: row.editedAt?.toISOString() ?? null,
