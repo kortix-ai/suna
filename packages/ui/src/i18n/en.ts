@@ -839,6 +839,14 @@ const catalog = {
         "session_groups": {
           "name": "Session groups",
           "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
+        },
+        "artifact_comments": {
+          "name": "Artifact comments",
+          "description": "Discuss docs and pages in threads with people and agents. Requires Artifacts."
+        },
+        "chrome": {
+          "name": "Kortix in Chrome",
+          "description": "Let a session use your connected Chrome browser. You can take over or stop it at any time."
         }
       },
       "channelsSwitch": {

@@ -1338,6 +1338,13 @@
       "when": 1793296202000,
       "tag": "20261029175002_connector_held_calls_sweep_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1793309438986,
+      "tag": "20261029213038_artifact_activity_tables_rls",
+      "breakpoints": true
     }
   ]
 }
