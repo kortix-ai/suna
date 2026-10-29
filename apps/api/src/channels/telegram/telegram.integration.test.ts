@@ -46,7 +46,7 @@ import { connectorConnectionIsConnected } from '../../projects/lib/session-conne
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { config as appConfig } from '../../config';
-import { forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
+import { CHANNEL_FILES_MAX_BYTES, forgetChatThread, resetChannelLifecycleForTest, setChannelLifecycleForTest } from '../core/conversation';
 import { notifySessionChannel, notifyStartFailure } from '../core/session-notice';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { adoptChatThreads, bindChatThread, claimThreadCreate } from '../core/threads';
@@ -104,10 +104,10 @@ const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
 const downloads: string[] = [];
 /**
  * A message's files by file id: getFile answers `docs/<id>` and states the size unless `hideSize`;
- * `refuse` answers 400 with that description; `noLength` streams the bytes with no content-length.
+ * `refuse` answers 400 with that description.
  * Any other id is a profile photo, served as JPEG.
  */
-const stored = new Map<string, { bytes: Uint8Array<ArrayBuffer>; noLength?: boolean; hideSize?: boolean; refuse?: string }>();
+const stored = new Map<string, { bytes: Uint8Array<ArrayBuffer>; hideSize?: boolean; refuse?: string }>();
 const fake = Bun.serve({
   port: 0,
   async fetch(req) {
@@ -116,15 +116,6 @@ const fake = Bun.serve({
       downloads.push(path);
       if (!path.startsWith(`/file/bot${TOKEN}/`)) return new Response('Not Found', { status: 404 });
       const file = path.startsWith(`/file/bot${TOKEN}/docs/`) ? stored.get(path.split('/').pop()!) : undefined;
-      if (file?.noLength) {
-        const { bytes } = file;
-        return new Response(new ReadableStream({
-          start(c) {
-            for (let i = 0; i < bytes.length; i += 65_536) c.enqueue(bytes.subarray(i, i + 65_536));
-            c.close();
-          },
-        }));
-      }
       return new Response(file?.bytes ?? JPEG, { headers: { 'content-type': 'image/jpeg' } });
     }
     const [, botToken, method] = path.split('/');
@@ -1611,10 +1602,38 @@ describe('Telegram files — migrated PostgreSQL', () => {
 
   test('a body over the cap with no content-length stops at the cap', async () => {
     await bindChat(6006);
-    stored.set('big-2', { bytes: new Uint8Array(9 * 1024 * 1024), noLength: true, hideSize: true });
-    await handleTelegramEvent(mediaUpdate({ document: { file_id: 'big-2', file_name: 'big.bin' } }, { chat: 6006 }));
+    stored.set('big-2', { bytes: new Uint8Array(0), hideSize: true });
+    const chunk = 64 * 1024;
+    let pulled = 0;
+    let cancelled = false;
+    const realFetch = globalThis.fetch;
+    const fileFetches: string[] = [];
+    // In process, so the reader drives each pull: over HTTP the fake would push the whole body anyway.
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.includes('/file/')) return realFetch(input, init);
+      fileFetches.push(new URL(url).pathname);
+      // 9 MiB with no content-length, one 64 KiB chunk per read.
+      return new Response(new ReadableStream({
+        pull(c) {
+          if (pulled >= 9 * 1024 * 1024) return c.close();
+          pulled += chunk;
+          c.enqueue(new Uint8Array(chunk));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }, { highWaterMark: 0 }));
+    }) as typeof fetch);
+    try {
+      await handleTelegramEvent(mediaUpdate({ document: { file_id: 'big-2', file_name: 'big.bin' } }, { chat: 6006 }));
+    } finally {
+      fetchSpy.mockRestore();
+    }
     expect(getFiles()).toEqual([{ file_id: 'big-2' }]);
-    expect(downloads).toEqual([`/file/bot${TOKEN}/docs/big-2`]);
+    expect(fileFetches).toEqual([`/file/bot${TOKEN}/docs/big-2`]);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThanOrEqual(CHANNEL_FILES_MAX_BYTES + chunk);
     expect(delivered[0]).not.toHaveProperty('parts');
     expect(delivered[0]!.text).toContain('The document was not attached');
   });
