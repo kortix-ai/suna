@@ -201,6 +201,10 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
+  // The deterministic test stack sets it: held connector calls and Capture
+  // ingest run only as queued jobs.
+  KORTIX_JOB_WORKER_ENABLED: optBoolFalse,
   // Kill switch for the scheduled account-deletion sweep. True skips every
   // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
   ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
@@ -1275,6 +1279,7 @@ export const config = {
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
