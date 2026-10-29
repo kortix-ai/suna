@@ -90,6 +90,7 @@ function panelValue(overrides: Partial<SessionPanelValue>): SessionPanelValue {
     openFiles: noop,
     openAudit: noop,
     openReminders: noop,
+    openDesktop: noop,
     ...overrides,
   };
 }

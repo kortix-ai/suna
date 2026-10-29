@@ -30,6 +30,7 @@ import { useTranslations } from '../../i18n';
 
 import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
+import { SessionDesktop } from './session-desktop';
 import { SessionFilesBooting, SessionFilesExplorer } from './session-files-explorer';
 import { SessionBootStatus } from '../status/session-starting-loader';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
@@ -112,6 +113,7 @@ export interface SessionPanelValue {
   openFiles: (changes?: boolean) => void;
   openAudit: () => void;
   openReminders: () => void;
+  openDesktop: () => void;
 }
 
 /**
@@ -560,6 +562,23 @@ export function SessionPanelProvider({
     });
   }, [openDetail, projectId, projectSessionId, tReminders]);
 
+  /** The session computer's live screen (`SessionDesktop`), at the wide split
+   *  a presentation gets: the stream is a 16:10 screen, not a text column. */
+  const openDesktop = useCallback(() => {
+    openDetail({
+      key: 'desktop',
+      title: 'Desktop',
+      hideHeader: true,
+      padded: false,
+      body: (
+        <SessionBootGate boot={<SessionBootStatus projectId={projectId} sessionId={projectSessionId} />}>
+          <SessionDesktop projectId={projectId} projectSessionId={projectSessionId} onClose={closeDetail} />
+        </SessionBootGate>
+      ),
+    });
+    setPanelSplit(70);
+  }, [openDetail, closeDetail, setPanelSplit, projectId, projectSessionId]);
+
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
    * tab — it opens only when asked for, exactly like Terminal and Audit, so
@@ -626,7 +645,7 @@ export function SessionPanelProvider({
 
   const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
     sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openBrowser, openFiles,
+    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
   });
 
   // The panel comes back with the session: what it showed is remembered while
@@ -755,6 +774,7 @@ export function SessionPanelProvider({
       openFiles,
       openAudit,
       openReminders,
+      openDesktop,
     }),
     [
       sessionId,
@@ -777,6 +797,7 @@ export function SessionPanelProvider({
       openFiles,
       openAudit,
       openReminders,
+      openDesktop,
     ],
   );
 
