@@ -10135,156 +10135,6 @@
       },
       "isRLSEnabled": false
     },
-    "kortix.connector_held_calls": {
-      "name": "connector_held_calls",
-      "schema": "kortix",
-      "columns": {
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "input_enc": {
-          "name": "input_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dispatched_at": {
-          "name": "dispatched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_deadline": {
-          "name": "run_deadline",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_execution_id": {
-          "name": "run_execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_decider": {
-          "name": "chat_decider",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_connector_held_calls_run_due": {
-          "name": "idx_connector_held_calls_run_due",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "run_deadline",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"connector_held_calls\".\"state\" in ('queued', 'dispatched')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "connector_held_calls_project_id_projects_project_id_fk": {
-          "name": "connector_held_calls_project_id_projects_project_id_fk",
-          "tableFrom": "connector_held_calls",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "connector_held_calls_execution_fk": {
-          "name": "connector_held_calls_execution_fk",
-          "tableFrom": "connector_held_calls",
-          "tableTo": "connector_calls",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "execution_id"
-          ],
-          "columnsTo": [
-            "execution_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "connector_held_calls_state_check": {
-          "name": "connector_held_calls_state_check",
-          "value": "\"kortix\".\"connector_held_calls\".\"state\" in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "kortix.connector_policies": {
       "name": "connector_policies",
       "schema": "kortix",
@@ -29926,6 +29776,509 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.connector_held_calls": {
+      "name": "connector_held_calls",
+      "schema": "kortix",
+      "columns": {
+        "execution_id": {
+          "name": "execution_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_enc": {
+          "name": "input_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dispatched_at": {
+          "name": "dispatched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_deadline": {
+          "name": "run_deadline",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_execution_id": {
+          "name": "run_execution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_decider": {
+          "name": "chat_decider",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_connector_held_calls_run_due": {
+          "name": "idx_connector_held_calls_run_due",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_deadline",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"connector_held_calls\".\"state\" in ('queued', 'dispatched')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "connector_held_calls_project_id_projects_project_id_fk": {
+          "name": "connector_held_calls_project_id_projects_project_id_fk",
+          "tableFrom": "connector_held_calls",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "connector_held_calls_execution_fk": {
+          "name": "connector_held_calls_execution_fk",
+          "tableFrom": "connector_held_calls",
+          "tableTo": "connector_calls",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "execution_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "connector_held_calls_state_check": {
+          "name": "connector_held_calls_state_check",
+          "value": "\"kortix\".\"connector_held_calls\".\"state\" in ('held', 'queued', 'dispatched', 'ok', 'error', 'refused', 'unknown', 'cancelled')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.chrome_attachments": {
+      "name": "chrome_attachments",
+      "schema": "kortix",
+      "columns": {
+        "attachment_id": {
+          "name": "attachment_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "chrome_id": {
+          "name": "chrome_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_reason": {
+          "name": "end_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chrome_attachments_chrome": {
+          "name": "idx_chrome_attachments_chrome",
+          "columns": [
+            {
+              "expression": "chrome_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_chrome_attachments_session": {
+          "name": "idx_chrome_attachments_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chrome_attachments_chrome_fk": {
+          "name": "chrome_attachments_chrome_fk",
+          "tableFrom": "chrome_attachments",
+          "tableTo": "chrome_connections",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "chrome_id"
+          ],
+          "columnsTo": [
+            "chrome_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chrome_attachments_status": {
+          "name": "chrome_attachments_status",
+          "value": "\"kortix\".\"chrome_attachments\".\"status\" in ('pending', 'granted', 'connected', 'denied', 'ended', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.chrome_connections": {
+      "name": "chrome_connections",
+      "schema": "kortix",
+      "columns": {
+        "chrome_id": {
+          "name": "chrome_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "os": {
+          "name": "os",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_label": {
+          "name": "profile_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "extension_version": {
+          "name": "extension_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_mode": {
+          "name": "access_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'always'"
+        },
+        "tab_scope": {
+          "name": "tab_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'all'"
+        },
+        "relay_owner_id": {
+          "name": "relay_owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chrome_connections_user": {
+          "name": "idx_chrome_connections_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chrome_connections_access_mode": {
+          "name": "chrome_connections_access_mode",
+          "value": "\"kortix\".\"chrome_connections\".\"access_mode\" in ('always', 'ask', 'off')"
+        },
+        "chrome_connections_tab_scope": {
+          "name": "chrome_connections_tab_scope",
+          "value": "\"kortix\".\"chrome_connections\".\"tab_scope\" in ('own', 'all')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "kortix.chrome_grants": {
+      "name": "chrome_grants",
+      "schema": "kortix",
+      "columns": {
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "chrome_id": {
+          "name": "chrome_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chrome_grants_chrome": {
+          "name": "idx_chrome_grants_chrome",
+          "columns": [
+            {
+              "expression": "chrome_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chrome_grants_chrome_fk": {
+          "name": "chrome_grants_chrome_fk",
+          "tableFrom": "chrome_grants",
+          "tableTo": "chrome_connections",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "chrome_id"
+          ],
+          "columnsTo": [
+            "chrome_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chrome_grants_decision": {
+          "name": "chrome_grants_decision",
+          "value": "\"kortix\".\"chrome_grants\".\"decision\" in ('allow', 'deny')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

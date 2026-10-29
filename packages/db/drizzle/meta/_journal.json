@@ -1300,19 +1300,26 @@
     {
       "idx": 185,
       "version": "7",
+      "when": 1793101077645,
+      "tag": "20261027113757_chrome_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
       "when": 1793283748685,
       "tag": "20261029142228_connector_call_status_approved",
       "breakpoints": true
     },
     {
-      "idx": 186,
+      "idx": 187,
       "version": "7",
       "when": 1793283782135,
       "tag": "20261029142302_connector_held_calls",
       "breakpoints": true
     },
     {
-      "idx": 187,
+      "idx": 188,
       "version": "7",
       "when": 1793288566816,
       "tag": "20261029154246_connector_held_calls_sweep_indexes",

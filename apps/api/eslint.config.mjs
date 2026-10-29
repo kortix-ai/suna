@@ -193,7 +193,11 @@ export default tseslint.config(
     files: [
       'src/channels/core/channel-access.ts',
       'src/channels/core/channel-access-profiles.ts',
+      'src/channels/core/command-list.ts',
+      'src/channels/core/commands.ts',
       'src/channels/core/conversation.ts',
+      'src/channels/core/display.ts',
+      'src/channels/core/model-choice.ts',
       'src/channels/core/prompt.ts',
       'src/channels/core/questions.ts',
       'src/channels/core/session-notice.ts',

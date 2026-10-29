@@ -1,6 +1,7 @@
 /**
  * Minimal Telegram Bot API client for the server side of the channel: install
- * (getMe, setWebhook, getWebhookInfo, deleteWebhook), the pairing/typing
+ * (getMe, setWebhook, getWebhookInfo, deleteWebhook), the command menu
+ * (getMyCommands, setMyCommands, deleteMyCommands), the pairing/typing
  * replies, and the agent's questions (sendMessage with buttons, then
  * answerCallbackQuery and the edit on a press), the allowed users' names
  * and photos, and a message's files (getChat, getFile and the file download). Agent-sent

@@ -25,7 +25,6 @@ import {
   UnknownTranscriptCursorError,
 } from './session-transcript-mirror';
 import { readStoredTranscriptWindow } from '../session-log-read';
-import { SessionLogConvertingError } from '../session-log-backfill';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
@@ -308,8 +307,6 @@ async function readMirrorSafely(
     // failure, and swallowing it here would answer "nothing was captured" for
     // a session that holds a full history.
     if (err instanceof UnknownTranscriptCursorError) throw err;
-    // A history the backfill converts (over the size cap): nothing to serve yet, and expected.
-    if (err instanceof SessionLogConvertingError) return null;
     console.warn(
       `[transcript-mirror] read failed for session ${sessionId}:`,
       err instanceof Error ? err.message : err,

@@ -40,7 +40,6 @@ import { startProjectMaintenance, stopProjectMaintenance } from './workers/proje
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
-import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
 import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
@@ -280,8 +279,6 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
-  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
-  startSessionLogBackfillWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();
 }
@@ -312,7 +309,6 @@ async function stopSingletonWorkers() {
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
   stopSessionModelFallbackWorker();
-  stopSessionLogBackfillWorker();
   stopGatewaySpendBackfillWorker();
   await Promise.all(drains);
 }

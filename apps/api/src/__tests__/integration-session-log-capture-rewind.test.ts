@@ -205,7 +205,7 @@ describe('a box without a journal: rewind, re-pin, size', () => {
     await captureJournallessSessionLog(second, box(ROOT, msgs(span(0, 12))));
     const before = await logRows(first);
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    const memory = config.SESSION_LOG_BACKFILL_MEMORY_MB;
+    const memory = config.SESSION_LOG_THREAD_MEMORY_MB;
     const RealWorker = globalThis.Worker;
     const spawned: string[] = [];
     let running = 0;
@@ -225,7 +225,7 @@ describe('a box without a journal: rewind, re-pin, size', () => {
     config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
     try {
       // No room: the process limit (1 MB) is under RSS alone.
-      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
+      config.SESSION_LOG_THREAD_MEMORY_MB = 1;
       expect(await captureJournallessSessionLog(first)).toBeNull();
       expect(spawned).toEqual([]);
       const deferred = warn.mock.calls.filter(([line]) => String(line).startsWith('[session-log] capture deferred'));
@@ -233,7 +233,7 @@ describe('a box without a journal: rewind, re-pin, size', () => {
       expect(deferred[0]![1]).toMatchObject({ session_id: first });
       expect(await logRows(first)).toEqual(before);
       // Room again: the next call runs, and two sessions' threads never run at once.
-      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1_000_000;
+      config.SESSION_LOG_THREAD_MEMORY_MB = 1_000_000;
       expect(await Promise.all([captureJournallessSessionLog(first), captureJournallessSessionLog(second)])).toEqual([null, null]);
       expect(spawned).toEqual(['session-transcript-capture-thread.ts', 'session-transcript-capture-thread.ts']);
       expect(most).toBe(1);
@@ -241,7 +241,7 @@ describe('a box without a journal: rewind, re-pin, size', () => {
       globalThis.Worker = RealWorker;
       warn.mockRestore();
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-      config.SESSION_LOG_BACKFILL_MEMORY_MB = memory;
+      config.SESSION_LOG_THREAD_MEMORY_MB = memory;
     }
   });
 

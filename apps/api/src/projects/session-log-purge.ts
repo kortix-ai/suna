@@ -7,9 +7,8 @@
  * | a session was deleted     | delete + 30 days |
  * | the account was closed    | close + 80 days  |
  *
- * "Rows" are the v2 `session_log*` rows, the v1 `session_transcript_*` rows until
- * the v1 mirror is drained (`mirrorDrained`), and every other table that holds the
- * session's content (`purgeRows`). The session row itself stays as a shell of ids
+ * "Rows" are the `session_log*` rows and every other table that holds the session's
+ * content (`purgeRows`). The session row itself stays as a shell of ids
  * and dates: usage, billing and audit rows still name it.
  * "Objects" are everything under `<project_id>/<session_id>/` in the
  * `session-attachments` bucket: uploads, offloaded log texts (P2.3) and the
@@ -87,8 +86,6 @@ import {
   sessionLogThreads,
   sessionPendingQuestions,
   sessionRuntimeProjections,
-  sessionTranscriptMessages,
-  sessionTranscriptMirrors,
   voiceCallTurns,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
@@ -98,12 +95,11 @@ import { deleteSessionWorkspaceVolume, WORKSPACE_VOLUME_SESSION_KEY } from '../p
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { sessionAttachmentStore } from './lib/session-attachments';
-import { mirrorDrained } from './session-log-capture';
 
 /**
  * Days from a session delete to its rows purge: the restore window too. The SQL twin is
  * `kortix.session_delete_due_at` (migration `20261022130858924_mirror_sessions_without_log.sql`),
- * which the purge below and the backfill selection read.
+ * which the purge below reads.
  */
 export const SESSION_DELETE_ROWS_DAYS = 30;
 /** Days from an account closure to its purge: all gone by day 80 < 90. */
@@ -228,11 +224,9 @@ async function unshelledSessions(limit: number): Promise<DueSession[]> {
 }
 
 /**
- * Every content row of one session, then its done marker, in one transaction. `drained`:
- * the v1 mirror is drained (`mirrorDrained`), so its tables are not touched; the Release B2
- * migration drops them with every row left in them.
+ * Every content row of one session, then its done marker, in one transaction.
  *
- * Content is the conversation in both stores, and everything else that copies it: model
+ * Content is the conversation (the session log), and everything else that copies it: model
  * requests and responses, prompt commands, voice turns, questions and answers, runtime
  * projections and contexts, Slack stream state, notifications, share links, held connector
  * call inputs and outcomes, and connector result summaries. A row that usage, billing or
@@ -241,7 +235,7 @@ async function unshelledSessions(limit: number): Promise<DueSession[]> {
  * A deleted session's own row keeps only ids, dates and `SHELL_METADATA_KEYS`; a session
  * of a closed account keeps its row as it is (the account deletion erases it whole).
  */
-async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<void> {
+async function purgeRows(row: DueSession, now: Date): Promise<void> {
   const id = row.session_id;
   const inProject = (t: { projectId: PgColumn; sessionId: PgColumn }) =>
     and(eq(t.projectId, row.project_id), sql`${t.sessionId}::text = ${id}`);
@@ -250,10 +244,6 @@ async function purgeRows(row: DueSession, now: Date, drained: boolean): Promise<
     await tx.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, id));
     await tx.delete(sessionLogBlobs).where(eq(sessionLogBlobs.sessionId, id));
     await tx.delete(sessionLogs).where(eq(sessionLogs.sessionId, id));
-    if (!drained) {
-      await tx.delete(sessionTranscriptMessages).where(eq(sessionTranscriptMessages.sessionId, id));
-      await tx.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, id));
-    }
     await tx.delete(voiceCallTurns).where(eq(voiceCallTurns.sessionId, id));
     await tx.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.sessionId, id));
     await tx.delete(sessionRuntimeProjections).where(eq(sessionRuntimeProjections.sessionId, id));
@@ -303,11 +293,10 @@ export async function purgeSessionContent(
 
   await forgetReopenedAccounts();
   result.liveClosed = await liveClosedAccounts(now);
-  const drained = await mirrorDrained();
   const due = await dueSessions(now, batchSize);
   for (const row of [...due, ...(await unshelledSessions(batchSize - due.length))]) {
     try {
-      await purgeRows(row, now, drained);
+      await purgeRows(row, now);
       result.sessions += 1;
       logger.debug('[session-purge] rows purged', { sessionId: row.session_id, reason: row.reason });
     } catch (error) {
