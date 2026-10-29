@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { extensionEntries, prebuildPackages } from './prebuild';
+import { extensionEntries, PI_HOST_MODULES, prebuildPackages } from './prebuild';
+import { VIRTUAL_MODULES } from '../../../kortix-sandbox-agent-server/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/virtual-modules.js';
+
+test("the prebuild host modules match pi's installed virtual modules", () => {
+  expect(([...PI_HOST_MODULES] as string[]).sort()).toEqual(Object.keys(VIRTUAL_MODULES).sort());
+});
 
 let root: string;
 let nodeModules: string;

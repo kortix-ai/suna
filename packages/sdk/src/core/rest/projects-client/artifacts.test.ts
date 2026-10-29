@@ -5,6 +5,7 @@ import { configureKortix } from '../../http/config';
 import * as artifacts from './artifacts';
 
 const originalFetch = globalThis.fetch;
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const base = 'https://artifact-sdk.example/v1/projects/project-a/artifacts/artifact-a';
 const anchor = { type: 'text' as const, version: 'commit-a', quote: 'Revenue', prefix: '', suffix: ' is final.' };
 const comment: artifacts.ArtifactComment = {
@@ -34,6 +35,15 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 afterEach(() => { globalThis.fetch = originalFetch; });
+
+test('resolved comment mentions expose the exact person, session, and agent union', () => {
+  type Mention = { kind: 'user'; user_id: string }
+    | { kind: 'session'; session_id: string; agent_name: string }
+    | { kind: 'agent'; agent_name: string };
+  const exported: Equal<artifacts.ArtifactCommentMention, Mention> = true;
+  const returned: Equal<artifacts.ArtifactComment['mentions'], Mention[]> = true;
+  expect([exported, returned]).toEqual([true, true]);
+});
 
 test('listArtifactComments reads open threads by default and supports resolved or all', async () => {
   response = { threads: [thread] };
@@ -91,6 +101,19 @@ test('getArtifactCommentThread resolves a bare thread id within its project', as
   response = { thread };
   expect(await artifacts.getArtifactCommentThread('project-a', 'thread-a')).toEqual(thread);
   expect(calls[0]?.url).toBe('https://artifact-sdk.example/v1/projects/project-a/artifact-comment-threads/thread-a');
+});
+
+test('sendArtifactComments preserves the batch id and agent and returns the target session', async () => {
+  const result = { session_id: 'next-session', created: true };
+  response = result;
+  expect(await artifacts.sendArtifactComments('project-a', 'artifact-a', {
+    thread_ids: ['thread-a'], batch_id: 'batch-a', agent: 'reviewer',
+  })).toEqual(result);
+  expect(calls[0]).toMatchObject({ url: `${base}/comments/send`, method: 'POST',
+    body: { thread_ids: ['thread-a'], batch_id: 'batch-a', agent: 'reviewer' } });
+  const handle = createKortix({ backendUrl: 'https://artifact-sdk.example/v1', getToken: async () => 'session-token' }).project('project-a');
+  await handle.artifacts.comments.send('artifact-a', { thread_ids: ['thread-a'] });
+  expect((calls[1]!.body as { batch_id: string }).batch_id).toMatch(/^[0-9a-f-]{36}$/);
 });
 
 test('comment errors preserve the HTTP status and code for callers', async () => {

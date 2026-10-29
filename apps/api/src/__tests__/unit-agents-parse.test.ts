@@ -42,6 +42,7 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // stale copy-paste, say).
   test('56 grantable project actions (all of PROJECT_ACTIONS)', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(56);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(true);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent
